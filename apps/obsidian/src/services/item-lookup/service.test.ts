@@ -114,8 +114,7 @@ describe("ItemLookup", () => {
     await lookup.search("");
     await waitForCallCount(deps.loadItems, 1);
     db.emitChanged();
-    // The gate runs but finds nothing changed, so no second hydration occurs.
-    await waitForCallCount(deps.loadItems, 2);
+    await waitForCallCount(deps.loadSignature, 2);
     expect(deps.loadItems).toHaveBeenCalledOnce();
   });
 
@@ -390,12 +389,9 @@ async function waitForCallCount(
   fn: ReturnType<typeof vi.fn>,
   count: number,
 ): Promise<void> {
-  // The chunked build yields a macrotask between chunks, so flush both micro-
-  // and macrotasks while waiting for an intermediate call count.
-  for (let i = 0; i < 50; i++) {
-    if (fn.mock.calls.length === count) return;
-    await new Promise((resolve) => setTimeout(resolve));
-  }
+  await vi.waitFor(() =>
+    expect(fn.mock.calls.length).toBeGreaterThanOrEqual(count),
+  );
 }
 
 function createDeps(

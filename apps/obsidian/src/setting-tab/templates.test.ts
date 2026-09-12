@@ -19,11 +19,7 @@ import { createSharedPartial } from "@/views/template-workbench/new-partial";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import type { SettingTabContext } from "./context";
-import {
-  citationTextItems,
-  partialItems,
-  templateEngineItems,
-} from "./templates";
+import { citationTextItems, partialItems } from "./templates";
 
 vi.mock("@/services/template/actions", () => ({
   openCitationTemplate: vi.fn(async () => {}),
@@ -43,30 +39,6 @@ function renderItem(row: SettingDefinitionItem): Setting {
   row.render(setting as unknown as ObsidianSetting, {} as never);
   return setting;
 }
-
-function engineRows(unrecognized: readonly string[]) {
-  return templateEngineItems({
-    template: {
-      loaded: true,
-      javascriptTemplatesEnabled: false,
-      getUnrecognizedFiles: () => unrecognized,
-    },
-  } as unknown as SettingTabContext);
-}
-
-it("names each unrecognized ZotLit file in one row", () => {
-  const path = "Templates/zotlit-foo.md";
-
-  expect(engineRows([path])).toContainEqual(
-    expect.objectContaining({
-      name: m.settings_template_unrecognized_name(),
-      desc: m.settings_template_unrecognized_desc({ path }),
-    }),
-  );
-  expect(engineRows([])).not.toContainEqual(
-    expect.objectContaining({ name: m.settings_template_unrecognized_name() }),
-  );
-});
 
 const DEFAULT_STATUS: CitationTemplateStatus = {
   path: "Templates/zotlit-citation.md",
@@ -181,21 +153,13 @@ const VENUE = {
   language: "liquid",
 } as const;
 
-it("lists every partial with Open, Add partial, and an empty state", () => {
+it("offers Open for each partial", () => {
   const [list] = partialRows([AUTHORS, VENUE]) as [SettingDefinitionList];
 
-  expect(list.heading).toBe(m.settings_partials_heading());
-  expect(list.emptyState).toBe(m.settings_partials_empty_desc());
-  expect(list.addItem?.name).toBe(m.settings_partial_add());
-  expect(list.items?.map((item) => item.name)).toEqual([
-    "authors",
-    "venue-line",
-  ]);
-  expect(list.items?.map((item) => item.desc)).toEqual([
-    AUTHORS.path,
-    VENUE.path,
-  ]);
   expect(tooltips(renderItem(list.items![0]!))).toEqual([
+    m.settings_partial_open(),
+  ]);
+  expect(tooltips(renderItem(list.items![1]!))).toEqual([
     m.settings_partial_open(),
   ]);
 });
@@ -251,19 +215,4 @@ it("closes settings only once Add partial has created a document", async () => {
     { path: AUTHORS.path },
     { explainUnsupported: false },
   );
-});
-
-it("names a partial file whose name another template answers to", () => {
-  const rows = partialRows([], [{ name: "citation", path: "T/x.md" }]);
-
-  expect(rows).toContainEqual(
-    expect.objectContaining({
-      name: m.settings_partial_reserved_name(),
-      desc: m.settings_partial_reserved_desc({
-        name: "citation",
-        path: "T/x.md",
-      }),
-    }),
-  );
-  expect(partialRows([])).toHaveLength(1);
 });

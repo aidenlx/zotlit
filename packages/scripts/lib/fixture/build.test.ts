@@ -1806,6 +1806,10 @@ describe("the generated Obsidian vault", () => {
   });
 
   it("selects the available, partial, and fully unavailable scope cases", async () => {
+    const original = await readFile(layout.pluginDataPath);
+    await using restore = new AsyncDisposableStack();
+    restore.defer(() => writeFile(layout.pluginDataPath, original));
+
     for (const scopeCase of SCOPE_CASES) {
       await selectScopeCase(layout, scopeCase.id);
       const data = JSON.parse(

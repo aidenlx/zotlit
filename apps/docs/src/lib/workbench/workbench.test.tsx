@@ -25,7 +25,7 @@ vi.mock("@zotlit/workbench/ui", async (original) => {
 
 it("renders editor examples and independent Preview after StrictMode replays effects", async () => {
   vi.mocked(createWorkbenchEditor).mockClear();
-  using page = open({ strict: true });
+  await using page = await open({ strict: true });
   const owners = vi
     .mocked(createWorkbenchEditor)
     .mock.results.map((result) => result.value);
@@ -58,20 +58,20 @@ it("renders editor examples and independent Preview after StrictMode replays eff
   );
 });
 
-it("releases the StrictMode editor owner when the page closes", () => {
+it("releases the StrictMode editor owner when the page closes", async () => {
   vi.mocked(createWorkbenchEditor).mockClear();
-  const page = open({ strict: true });
+  const page = await open({ strict: true });
   const owners = vi
     .mocked(createWorkbenchEditor)
     .mock.results.map((result) => result.value);
-  page[Symbol.dispose]();
+  await page[Symbol.asyncDispose]();
   expect(owners).toHaveLength(2);
   for (const owner of owners)
     expect(owner[Symbol.dispose]).toHaveBeenCalledOnce();
 });
 
 it("keeps independent Preview and Explorer choices when a new document opens", async () => {
-  using page = open({ strict: true });
+  await using page = await open({ strict: true });
   await page.settle();
   const refresh = () =>
     [...page.host.querySelectorAll("label")]
@@ -96,7 +96,7 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
 });
 
 it("shows filename and property examples for the current Sample Item", async () => {
-  using page = open();
+  await using page = await open();
   await page.settle();
   for (const [key, filename, title] of [
     [
@@ -129,7 +129,7 @@ it("shows filename and property examples for the current Sample Item", async () 
 });
 
 it("mounts the shared editor with the web theme and its searchable Base UI chooser", async () => {
-  using page = open();
+  await using page = await open();
   await page.settle();
   expect(page.host.querySelector('[data-part="tab-bar"]')?.className).toBe(
     WEB_THEME.classes?.tabBar?.["tab-bar"],
@@ -163,7 +163,7 @@ it("mounts the shared editor with the web theme and its searchable Base UI choos
 });
 
 it("hands a Default copy from the Profile menu to the native import flow", async () => {
-  using page = open();
+  await using page = await open();
   await page.settle();
   const copies: string[] = [];
   using _copy = vi

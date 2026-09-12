@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { SAMPLE_ITEMS, SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 
@@ -26,10 +26,12 @@ const sample: SampleItem = {
     annotations: [],
   },
 };
+
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
+afterEach(() => vi.unstubAllGlobals());
+
 function mount() {
   using cleanup = new DisposableStack();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  cleanup.defer(() => vi.unstubAllGlobals());
   const container = cleanup.adopt(document.createElement("div"), (element) =>
     element.remove(),
   );

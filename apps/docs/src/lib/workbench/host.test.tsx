@@ -98,10 +98,13 @@ describe("the web host", () => {
   });
 
   it("asks a confirmation in a dialog and answers with the reader's choice", async () => {
-    const answer = host.confirm({
-      title: "Change the format?",
-      body: "The old value stays one undo away.",
-      confirm: "Change",
+    let answer!: Promise<boolean>;
+    act(() => {
+      answer = host.confirm({
+        title: "Change the format?",
+        body: "The old value stays one undo away.",
+        confirm: "Change",
+      });
     });
     await act(async () => {});
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
@@ -123,21 +126,24 @@ describe("the web host", () => {
   it("keeps empty groups and returns keyboard focus to the originating chooser", async () => {
     const anchor = document.getElementById("anchor")!;
     anchor.focus();
-    const answer = host.suggester({
-      anchor,
-      title: "Choose an annotation",
-      selected: "a",
-      groups: [
-        {
-          label: "Current Item",
-          options: [],
-          empty: "This Item has no annotations.",
-        },
-        {
-          label: "Examples",
-          options: [{ id: "a", label: "Example annotation" }],
-        },
-      ],
+    let answer!: Promise<string | null>;
+    act(() => {
+      answer = host.suggester({
+        anchor,
+        title: "Choose an annotation",
+        selected: "a",
+        groups: [
+          {
+            label: "Current Item",
+            options: [],
+            empty: "This Item has no annotations.",
+          },
+          {
+            label: "Examples",
+            options: [{ id: "a", label: "Example annotation" }],
+          },
+        ],
+      });
     });
     await act(async () => {});
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
@@ -154,18 +160,21 @@ describe("the web host", () => {
   });
 
   it("offers a searchable picker and resolves the option chosen", async () => {
-    const answer = host.suggester({
-      title: "Choose a paper",
-      groups: [
-        {
-          label: "Samples",
-          options: [
-            { id: "a", label: "Attention is all you need", hint: "2017" },
-            { id: "b", label: "Deep residual learning" },
-          ],
-        },
-      ],
-      selected: "b",
+    let answer!: Promise<string | null>;
+    act(() => {
+      answer = host.suggester({
+        title: "Choose a paper",
+        groups: [
+          {
+            label: "Samples",
+            options: [
+              { id: "a", label: "Attention is all you need", hint: "2017" },
+              { id: "b", label: "Deep residual learning" },
+            ],
+          },
+        ],
+        selected: "b",
+      });
     });
     await act(async () => {});
     expect(texts('[role="option"]')).toEqual([

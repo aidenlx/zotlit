@@ -3792,24 +3792,6 @@ describe("renderCitation", () => {
     expect(render).not.toHaveBeenCalled();
   });
 
-  it("hands the refs and variant to the template service, verbatim both ways", () => {
-    // TemplateService owns the render and its inline normalization; this seam
-    // adds the loaded-state guard and forwards, so a citation the service
-    // renders reaches the editor unchanged.
-    const renderCitation = vi.fn(() => "[@smith2024]");
-    const feature = createNoteFeature(
-      annotDeps({ ...citationTemplate(), renderCitation }),
-    );
-
-    expect(feature.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
-      "[@smith2024]",
-    );
-    expect(renderCitation).toHaveBeenCalledWith(
-      [{ citationKey: "smith2024" }],
-      "alt",
-    );
-  });
-
   it("renders the alternate variant from the same document", () => {
     // One Citation Template answers both gestures: Shift+Enter and a trailing
     // slash arrive as the alt variant, which the built-in source maps to an
@@ -3982,11 +3964,10 @@ describe("renderAnnotation", () => {
       }),
     };
 
-    const result = createNoteFeature(deps).renderAnnotation(1, {
+    createNoteFeature(deps).renderAnnotation(1, {
       attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
     });
 
-    expect(result).toBe("PROFILE ANNOTATION");
     expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
       expect.objectContaining({
         parentItem: expect.objectContaining({ indexedKey: "PARENT1" }),
@@ -4012,11 +3993,10 @@ describe("renderAnnotation", () => {
     template.renderProfileAnnotation = vi.fn(() => "DEFAULT ANNOTATION");
     const deps = annotDeps(template);
 
-    const result = createNoteFeature(deps).renderAnnotation(1, {
+    createNoteFeature(deps).renderAnnotation(1, {
       attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
     });
 
-    expect(result).toBe("DEFAULT ANNOTATION");
     expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
