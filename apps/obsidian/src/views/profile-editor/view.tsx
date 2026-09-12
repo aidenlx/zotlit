@@ -71,6 +71,7 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { listInstalledStyles } from "@/services/pandoc/styles";
@@ -1448,7 +1449,9 @@ function EditorContent({
                   annotation ? null : m.workbench_preview_choose_annotation()
                 }
                 formatProblem={
-                  formatProblem ? diagnosticText(m, formatProblem) : null
+                  formatProblem
+                    ? diagnosticText(workbenchM, formatProblem)
+                    : null
                 }
                 annotationSelector={
                   view.preview ? (
@@ -1503,7 +1506,7 @@ function EditorContent({
                         : [
                             {
                               position: diagnostic.position,
-                              message: diagnosticText(m, diagnostic),
+                              message: diagnosticText(workbenchM, diagnostic),
                             },
                           ],
                     ),
@@ -1514,7 +1517,7 @@ function EditorContent({
                         : [
                             {
                               position,
-                              message: problemText(m, problem).message,
+                              message: problemText(workbenchM, problem).message,
                             },
                           ];
                     }),
@@ -1543,7 +1546,9 @@ function EditorContent({
               <AnnotationPane
                 controller={controller}
                 problem={
-                  formatProblem ? diagnosticText(m, formatProblem) : null
+                  formatProblem
+                    ? diagnosticText(workbenchM, formatProblem)
+                    : null
                 }
                 reveal={reveal}
                 onSelection={selection("annotation")}

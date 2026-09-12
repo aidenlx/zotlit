@@ -11,6 +11,7 @@ import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemSearchDeps } from "@/services/item-lookup/search-modal";
@@ -174,7 +175,7 @@ export async function chooseWorkbenchAnnotation(
 ): Promise<string | null> {
   const options = (examples: readonly AnnotationChoice[]) =>
     examples.map((example) => {
-      const option = annotationOption(m, example);
+      const option = annotationOption(workbenchM, example);
       return {
         id: option.value,
         label: option.label,
@@ -374,7 +375,7 @@ export function AnnotationSelectionList({
                 className={selectionOption}
                 onClick={() => onSelect(example.id)}
               >
-                {annotationOption(m, example).label}
+                {annotationOption(workbenchM, example).label}
               </button>
             ))}
           </SelectionGroup>

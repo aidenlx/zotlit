@@ -37,6 +37,7 @@ import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 import {
@@ -274,7 +275,7 @@ export function createProfileEditorHost(
     },
     ...rest,
     messages: {
-      ...m,
+      ...workbenchM,
       workbench_name_value_no_style: citationStyleLabel,
     },
     getLocale: () => runtime.getLocale(),
@@ -328,7 +329,7 @@ export function createProfileEditorHost(
       const modal = new EditorDialog(app, {
         ...request,
         content: wrap(
-          <WorkbenchMessagesProvider messages={m}>
+          <WorkbenchMessagesProvider messages={workbenchM}>
             {request.content}
           </WorkbenchMessagesProvider>,
         ),
@@ -374,7 +375,7 @@ export function createProfileEditorHost(
       element.style.top = `${bounds.bottom}px`;
       root.render(
         wrap(
-          <WorkbenchMessagesProvider messages={m}>
+          <WorkbenchMessagesProvider messages={workbenchM}>
             {content}
           </WorkbenchMessagesProvider>,
         ),
