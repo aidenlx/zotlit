@@ -32,7 +32,7 @@ const PORT_RANGE = 10;
 const MAX_PORT = 65535;
 
 /** Outcome of one bind attempt: the listener, a busy port, or a dead end. */
-type BindResult = ServerType | "in-use" | "failed";
+type BindResult = { server: ServerType; port: number } | "in-use" | "failed";
 
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
@@ -291,10 +291,10 @@ export class LocalServerService extends Service<void> {
       // other bind failure repeats on every port, so stop after the first.
       if (result === "in-use") continue;
       if (result === "failed") return;
-      this.#server = result;
-      this.#boundPort = port;
+      this.#server = result.server;
+      this.#boundPort = result.port;
       this.#refreshAvailability();
-      this.#emitter.emit("listening", port);
+      this.#emitter.emit("listening", result.port);
       return;
     }
     logger.error("No free port for the local server", {
@@ -330,7 +330,7 @@ export class LocalServerService extends Service<void> {
               address: info.address,
               port: info.port,
             });
-            resolve(server);
+            resolve({ server, port: info.port });
           },
         );
         server.on("error", (error: NodeJS.ErrnoException) => {

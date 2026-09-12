@@ -1,5 +1,3 @@
-import { createServer } from "node:net";
-import type { AddressInfo } from "node:net";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -27,14 +25,6 @@ const VAULT_NAME = "Research";
 const BOOKS_PROFILE = "Bk7Qm2Xr9Tz4";
 
 const ITEM = { key: "IANNP5A2", title: "Why research findings are false" };
-
-/** A port nothing holds, so the listener binds without racing a fixed one. */
-async function freePort(): Promise<number> {
-  await using probe = createServer();
-  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-  const { port } = probe.address() as AddressInfo;
-  return port;
-}
 
 interface SettingsStub {
   service: SettingsService;
@@ -152,10 +142,9 @@ async function harness(
     device?: Map<string, unknown>;
   } = {},
 ): Promise<Harness> {
-  const port = await freePort();
   const settings = makeSettings({
     "server.enabled": true,
-    "server.port": port,
+    "server.port": 0,
     ...options.settings,
   });
   const device = makeDevice(options.device);
@@ -227,14 +216,14 @@ it("opens a version-2 grant from the launch URL it hands the browser", async () 
   expect(`${parsed.origin}${parsed.pathname}`).toBe(
     `${DOCS_SITE_URL}/workbench`,
   );
-  expect(fragment.get(CONNECT_FRAGMENT_PORT)).toBe(
-    String(bridge.settings.service.current!["server.port"]),
+  const res = await fetch(
+    `http://127.0.0.1:${fragment.get(CONNECT_FRAGMENT_PORT)}${LOCAL_BRIDGE_PATHS.codeBootstrap}`,
+    {
+      method: "POST",
+      headers: { Origin: DOCS_SITE_URL },
+      body: JSON.stringify({ code: fragment.get(CONNECT_FRAGMENT_CODE) }),
+    },
   );
-
-  const res = await bridge.call(LOCAL_BRIDGE_PATHS.codeBootstrap, {
-    method: "POST",
-    body: JSON.stringify({ code: fragment.get(CONNECT_FRAGMENT_CODE) }),
-  });
 
   expect(res.status).toBe(200);
   await expect(res.json()).resolves.toMatchObject({
