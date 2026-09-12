@@ -29,61 +29,22 @@ describe("eta grammar", () => {
     expect(closes).toEqual(["%>", "%>", "%>", "-%>", "_%>"]);
   });
 
-  it("mounts JavaScript inside a tag body", () => {
-    const source = "# <%= zt.title %>";
-    expect(nodeNames(source)).toEqual([
-      "Template",
-      "Text",
-      "Tag",
-      "TagOpenInterp",
-      "Script",
-      "ExpressionStatement",
-      "MemberExpression",
-      "VariableName",
-      ".",
-      "PropertyName",
-      "TagClose",
-    ]);
-  });
-
-  it("parses the annotation shortcut as a call expression", () => {
-    const source = "<%~ renderAnnotation(a) %>";
-    expect(nodeNames(source)).toEqual([
-      "Template",
-      "Tag",
-      "TagOpenRaw",
-      "Script",
-      "ExpressionStatement",
-      "CallExpression",
-      "VariableName",
-      "ArgList",
-      "(",
-      "VariableName",
-      ")",
-      "TagClose",
-    ]);
-  });
-
-  it("keeps a lone < in host text", () => {
-    expect(nodeNames("a < b <%= c %>")).toEqual([
-      "Template",
-      "Text",
-      "Tag",
-      "TagOpenInterp",
-      "Script",
-      "ExpressionStatement",
-      "VariableName",
-      "TagClose",
-    ]);
-  });
-
-  it("recovers a split JavaScript block across tags", () => {
-    // The engine runs this as one program; the editor sees two partial scripts.
-    const source = "<% if (x) { %>y<% } %>";
-    const names = nodeNames(source);
-    expect(names.filter((n) => n === "Tag")).toHaveLength(2);
-    expect(names).toContain("IfStatement");
-    expect(names).toContain("⚠");
+  it.each([
+    '<%= "%>" %>',
+    "<%= '%>' %>",
+    "<%= `%>` %>",
+    "<% /* %> */ value %>",
+    "<% /** %> **/ value %>",
+    '<%= "escaped \\\" %>" %>',
+    "a <<%= value %>",
+  ])("keeps the engine's final delimiter in %s", (source) => {
+    const closers: string[] = [];
+    etaLanguage.parser.parse(source).iterate({
+      enter(node) {
+        if (node.name === "TagClose") closers.push(source.slice(node.from));
+      },
+    });
+    expect(closers).toEqual(["%>"]);
   });
 });
 
@@ -113,6 +74,18 @@ describe("etaRange", () => {
       kind: "output",
       inLiteral: true,
     });
+  });
+
+  it.each(["<% '", '<% "', "<% `", "<% /*", "<% 'value\\"])(
+    "keeps unfinished literal context in %s",
+    (text) => {
+      const range = etaRange(text, text.length);
+      expect(range?.inLiteral || range?.kind === "comment").toBe(true);
+    },
+  );
+
+  it("ends context immediately after a complete tag", () => {
+    expect(etaRange("<%= x %>", 8)).toBeNull();
   });
 
   it("returns null on host text and on the open delimiter", () => {

@@ -6,4 +6,6 @@ export const Template = 1,
   TagOpenInterp = 5,
   TagOpenRaw = 6,
   TagContent = 7,
-  TagClose = 8;
+  String = 8,
+  BlockComment = 9,
+  TagClose = 10;

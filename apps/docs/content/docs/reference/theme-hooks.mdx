@@ -111,27 +111,34 @@ body {
 
 ## Template editor hooks [#template-editor]
 
-The Profile Editor colors template source through one set of classes, in every pane that holds template code: the note body, the annotation format, a property expression, the note name, and the whole file in Source. The Template Workbench on this site emits the same classes.
+The Profile Editor uses these classes to style frontmatter and color template source and Markdown markers. They appear in the note body, annotation format, property expressions, note name, and whole profile document. The Template Workbench on this site emits the same classes.
 
-| Class                     | Meaning                                                                  |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `zt-template-editor`      | The element that holds one template editor pane.                         |
-| `zt-template-delimiter`   | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
-| `zt-template-keyword`     | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
-| `zt-template-variable`    | A variable or root name: `zt`, `it`.                                     |
-| `zt-template-property`    | A property name after a dot, or a YAML or JSON key.                      |
-| `zt-template-filter`      | A Liquid filter or a function call: `map`, `note_links`.                 |
-| `zt-template-string`      | A string literal.                                                        |
-| `zt-template-value`       | A number, boolean, or null.                                              |
-| `zt-template-operator`    | An operator: `.`, `>`, `\|`.                                             |
-| `zt-template-punctuation` | Other punctuation: `,`, `:`, brackets.                                   |
-| `zt-template-comment`     | Comment text, and YAML document markers.                                 |
-| `zt-template-invalid`     | Source the parser refuses.                                               |
-| `zt-template-hover`       | The popover that explains the token under the pointer, in Obsidian only. |
+Liquid tokens keep their own colors inside YAML values and Markdown code spans and fences. Eta highlighting covers tag delimiters. Markdown hints mark headings, lists, and quotes in the note and annotation bodies, with normal text size and weight.
+
+| Class                              | Meaning                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `zt-template-editor`               | The element that holds one template editor pane.                         |
+| `zt-template-delimiter`            | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
+| `zt-template-keyword`              | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
+| `zt-template-variable`             | A variable or root name: `zt`, `it`.                                     |
+| `zt-template-property`             | A property name after a dot, or a JSON key.                              |
+| `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                 |
+| `zt-template-string`               | A string literal.                                                        |
+| `zt-template-value`                | A number, boolean, or null.                                              |
+| `zt-template-operator`             | An operator: `.`, `>`, `\|`.                                             |
+| `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets.                                   |
+| `zt-template-comment`              | Template comment text.                                                   |
+| `zt-template-invalid`              | Source the parser refuses.                                               |
+| `zt-template-frontmatter`          | A frontmatter line, including its opening and closing boundaries.        |
+| `zt-template-markdown-marker`      | A Markdown heading, list, or quote marker in a body.                     |
+| `zt-template-markdown-list-marker` | An additional class on a Markdown list marker.                           |
+| `zt-template-hover`                | The popover that explains the token under the pointer, in Obsidian only. |
 
 ### Default appearance [#template-defaults]
 
 The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
+
+Frontmatter takes `--text-muted`. Template tokens keep their colors inside frontmatter. Heading and quote markers take `--text-faint`; list markers take `--list-marker-color`. These roles change color only. All Profile Editor panes keep their existing monospace font, code size, spacing, and background.
 
 Set a custom property on the editor hook to recolor one kind of token in every pane, or style a token class directly:
 
