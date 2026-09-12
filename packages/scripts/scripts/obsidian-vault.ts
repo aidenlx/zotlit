@@ -457,20 +457,26 @@ async function rebuildFixtureVault(
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
 
-  const pluginBundleDir = join(
+  // The dev build's output is the source: `build:dev` declares `dist-dev` as
+  // its turbo output, so it holds the current bundle on a fresh run and on a
+  // cache hit alike, whatever `ZT_VAULT_CASE` the build saw. Reading the
+  // target's own bundle first would recycle it forever — the seed would carry
+  // the vault's old bundle, and `--purge` would copy that same bundle straight
+  // back, so a new build could never reach the vault.
+  const distDev = join(workspaceRoot, "apps", "obsidian", "dist-dev");
+  const hasDistDev = await access(join(distDev, "main.js")).then(
+    () => true,
+    () => false,
+  );
+  // The target's own bundle stands in when this script runs on its own, with
+  // no dev build in the worktree.
+  const vaultBundleDir = join(
     resolve(target),
     ".obsidian",
     "plugins",
     pluginId,
   );
-  const hasBundle = await access(join(pluginBundleDir, "main.js")).then(
-    () => true,
-    () => false,
-  );
-  // A Development Vault that has not been seeded yet (a Vault Case opened for
-  // the first time) holds no bundle, so the dev build's output stands in.
-  const distDev = join(workspaceRoot, "apps", "obsidian", "dist-dev");
-  const hasDistDev = await access(join(distDev, "main.js")).then(
+  const hasVaultBundle = await access(join(vaultBundleDir, "main.js")).then(
     () => true,
     () => false,
   );
@@ -480,10 +486,10 @@ async function rebuildFixtureVault(
     liveUpdatePort,
     zoteroHttpPort,
     linkedAttachmentVaultDir: resolve(target),
-    pluginBundleDir: hasBundle
-      ? pluginBundleDir
-      : hasDistDev
-        ? distDev
+    pluginBundleDir: hasDistDev
+      ? distDev
+      : hasVaultBundle
+        ? vaultBundleDir
         : undefined,
   });
 }
