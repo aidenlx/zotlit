@@ -176,9 +176,12 @@ describe("TemplateWorkbenchView", () => {
       cleanup.defer(() => act(async () => view.close()));
       await act(async () => view.open());
       const tokens = (hook: string) =>
-        [...view.contentEl.querySelectorAll(`.${hook}`)].map(
-          (node) => node.textContent,
-        );
+        [
+          ...(
+            view.contentEl.querySelector('[role="tabpanel"]:not([hidden])') ??
+            view.contentEl
+          ).querySelectorAll(`.${hook}`),
+        ].map((node) => node.textContent);
       for (const tab of ["annotation", "name"] as const) {
         await act(async () => view.store.getState().setTab(tab));
         expect(tokens("zt-template-delimiter")).toEqual(
@@ -196,6 +199,27 @@ describe("TemplateWorkbenchView", () => {
       expect(tokens("zt-template-markdown-marker")).toEqual(["#"]);
     },
   );
+
+  it("mounts Note and Annotation editors once as they are visited", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
+    expect(view.contentEl.querySelectorAll(".cm-editor")).toHaveLength(1);
+
+    await act(async () => view.store.getState().setTab("annotation"));
+    const editors = view.contentEl.querySelectorAll<HTMLElement>(".cm-editor");
+    expect(editors).toHaveLength(2);
+    expect([...editors]).toContain(note);
+    const annotation = editors[1]!;
+
+    await act(async () => view.store.getState().setTab("note"));
+    expect([...view.contentEl.querySelectorAll(".cm-editor")]).toEqual([
+      note,
+      annotation,
+    ]);
+  });
 
   it("keeps Eta wrapping and undo when switching to Advanced", async () => {
     await using cleanup = new AsyncDisposableStack();
