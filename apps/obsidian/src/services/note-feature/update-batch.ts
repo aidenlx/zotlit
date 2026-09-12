@@ -14,6 +14,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { missingPartialNotice } from "@/lib/workbench-recovery";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type { BatchProfilePickerDeps } from "@/services/batch-profile-choice";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
@@ -291,9 +292,10 @@ export async function runBatchUpdate(
       loadingLabel: m.batch_update_loading_label(),
       loadFailed: m.batch_update_load_failed(),
       runFailed: (error) =>
-        error instanceof InertTemplateError
+        missingPartialNotice(error, { app: deps.app }) ??
+        (error instanceof InertTemplateError
           ? error.message
-          : m.batch_update_run_failed(),
+          : m.batch_update_run_failed()),
       progressLabel: m.batch_update_progress_label(),
       confirmIntro: ({ actionable, notFound }) =>
         withUnavailableLibraries(

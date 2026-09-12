@@ -7,7 +7,7 @@ import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
-import { openProfileEditor } from "@/views/profile-editor/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
@@ -27,8 +27,8 @@ vi.mock("@/services/note-feature", async (importOriginal) => ({
   openCompanionNote: vi.fn(),
 }));
 
-vi.mock("@/views/profile-editor/register", () => ({
-  openProfileEditor: vi.fn(),
+vi.mock("@/views/template-workbench/register", () => ({
+  openTemplateWorkbench: vi.fn(),
 }));
 
 const SOURCE_ID = "abc12345";
@@ -173,7 +173,7 @@ describe("clipboard Profile protocol handoff", () => {
   });
 
   it("waits for import consent and then opens the returned document", async () => {
-    vi.mocked(openProfileEditor).mockClear();
+    vi.mocked(openTemplateWorkbench).mockClear();
     const consent =
       Promise.withResolvers<
         Awaited<ReturnType<ProtocolDeps["importProfile"]>>
@@ -189,16 +189,16 @@ describe("clipboard Profile protocol handoff", () => {
       clipboard: "true",
     });
     expect(importProfile).toHaveBeenCalledWith({ source: "clipboard" });
-    expect(openProfileEditor).not.toHaveBeenCalled();
+    expect(openTemplateWorkbench).not.toHaveBeenCalled();
     consent.resolve({ path: file.path } as Awaited<
       ReturnType<ProtocolDeps["importProfile"]>
     >);
     await vi.waitFor(() =>
-      expect(openProfileEditor).toHaveBeenCalledWith(app, file),
+      expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file),
     );
   });
   it("leaves the editor closed after import cancellation", async () => {
-    vi.mocked(openProfileEditor).mockClear();
+    vi.mocked(openTemplateWorkbench).mockClear();
     const importProfile = vi.fn(async () => undefined);
     using _handlers = register({ importProfile });
     handlers.get("zotlit/import-profile")!({
@@ -206,7 +206,7 @@ describe("clipboard Profile protocol handoff", () => {
       clipboard: "true",
     });
     await Promise.resolve();
-    expect(openProfileEditor).not.toHaveBeenCalled();
+    expect(openTemplateWorkbench).not.toHaveBeenCalled();
   });
   it.each([undefined, "false", ""])(
     "does not read clipboard without the explicit flag: %s",

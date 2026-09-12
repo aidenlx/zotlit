@@ -1,6 +1,10 @@
 // The render result shape and its identity stamp, shared by the renderer and
 // the scheduler that decides which result is still current.
 
+import type { CitationVariant } from "@zotlit/db";
+
+import type { CitationExampleId } from "./citation-examples";
+import type { PartialContext } from "./partial-preview";
 import type { RenderRequest } from "./request";
 
 /**
@@ -13,6 +17,7 @@ export type RenderDiagnosticCode =
   | "contract-version-mismatch"
   | "invalid-profile"
   | "missing-dependency"
+  | "missing-partial"
   | "property-append-conflict"
   | "property-error"
   | "property-javascript"
@@ -53,25 +58,47 @@ export interface RenderIdentity {
   readonly snapshotRevision: string;
   readonly annotationId?: string;
   readonly annotationRevision?: string;
+  /** The Citation Variant a Citation Template render produced its text under. */
+  readonly citationVariant?: CitationVariant;
+  /** The built-in example set it rendered; absent when the chosen Item supplied one. */
+  readonly citationExample?: CitationExampleId;
+  /** The caller a Shared Partial render read its root data as. */
+  readonly partialContext?: PartialContext;
+  /** The Profile that render's bindings came from; absent for the default one. */
+  readonly partialProfile?: string;
 }
 
 export function renderIdentity({
   source,
   snapshot,
   annotation,
+  citation,
+  partial,
   mode,
 }: RenderRequest): RenderIdentity {
   return {
     ...(mode ? { previewMode: mode } : {}),
-    sourceRevision: profileSourceRevision(source),
+    sourceRevision: templateSourceRevision(source),
     snapshotRevision: snapshot.revision,
     ...(annotation
       ? { annotationId: annotation.id, annotationRevision: annotation.revision }
       : {}),
+    ...(citation
+      ? {
+          citationVariant: citation.variant,
+          ...(citation.example ? { citationExample: citation.example } : {}),
+        }
+      : {}),
+    ...(partial
+      ? {
+          partialContext: partial.context,
+          ...(partial.profile ? { partialProfile: partial.profile } : {}),
+        }
+      : {}),
   };
 }
 
-export interface ProfileRenderResult extends RenderIdentity {
+export interface TemplateRenderResult extends RenderIdentity {
   readonly filename: string | null;
   /** What each entry produced on its own, in list order. */
   readonly properties: readonly RenderedProperty[];
@@ -91,6 +118,10 @@ export interface ProfileRenderResult extends RenderIdentity {
   readonly annotation: string | null;
   /** The selected example's computed citation, for matching field and completion values. */
   readonly annotationCitation: string | null;
+  /** The Citation Template's own output for the selected set; null for a Profile. */
+  readonly citation: string | null;
+  /** The Shared Partial's own output under the chosen context; null otherwise. */
+  readonly partial: string | null;
   /**
    * Where each highlight the format rendered landed in `creationBody`, in
    * reading order, so a host can point at the many outputs of the one format.
@@ -106,7 +137,7 @@ export interface RenderedRange {
 }
 
 /** FNV-1a over the source, so a result can name the revision it rendered. */
-export function profileSourceRevision(source: string): string {
+export function templateSourceRevision(source: string): string {
   let hash = 2_166_136_261;
   for (let index = 0; index < source.length; index++) {
     hash ^= source.charCodeAt(index);
@@ -115,10 +146,11 @@ export function profileSourceRevision(source: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-export function failedRender(
-  identity: RenderIdentity,
-  diagnostic: RenderDiagnostic,
-): ProfileRenderResult {
+/**
+ * A result that produced nothing, which every partial result fills in from: a
+ * render that failed outright, and one whose document produces a single part.
+ */
+export function emptyRender(identity: RenderIdentity): TemplateRenderResult {
   return {
     ...identity,
     filename: null,
@@ -129,7 +161,16 @@ export function failedRender(
     managedRegion: null,
     annotation: null,
     annotationCitation: null,
+    citation: null,
+    partial: null,
     annotationRanges: [],
-    diagnostics: [diagnostic],
+    diagnostics: [],
   };
+}
+
+export function failedRender(
+  identity: RenderIdentity,
+  diagnostic: RenderDiagnostic,
+): TemplateRenderResult {
+  return { ...emptyRender(identity), diagnostics: [diagnostic] };
 }

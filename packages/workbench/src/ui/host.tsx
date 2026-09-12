@@ -11,7 +11,7 @@ import type {
 import type { SuggestionSource } from "#/language/completion";
 import type { RenderRequest } from "#/render/request";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderedProperty,
   RenderedRange,
 } from "#/render/result";
@@ -147,6 +147,18 @@ export interface WorkbenchToggleProps {
   readonly onChange: (value: boolean) => void;
 }
 
+/** The partial registry and the create flow one host owns for its editors. */
+export interface WorkbenchPartials {
+  /** The registered names, read per keystroke so a new file offers at once. */
+  names(): readonly string[];
+  /**
+   * Name and create one partial, seeded with what the reader has typed.
+   *
+   * @returns the created name, or `null` when the reader dismisses the prompt.
+   */
+  create(query: string): Promise<string | null>;
+}
+
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
   readonly toggle?: ComponentType<WorkbenchToggleProps>;
@@ -165,11 +177,18 @@ export interface WorkbenchHost {
   tooltip(text: string): HTMLAttributes<HTMLElement>;
   notice(text: string): void;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
-  render: (request: RenderRequest) => Promise<ProfileRenderResult>;
+  render: (request: RenderRequest) => Promise<TemplateRenderResult>;
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
   /** Completion and hover presentation, with the editor's mount for window-local overlays. */
   editorPopups?(read: SuggestionSource, parent: HTMLElement): Extension;
+  /**
+   * The Shared Partials a render or include call completes from, and the flow
+   * that creates one. A host that supplies it owns the list — the vault's
+   * registered names — and the draft's own scan answers for a host that does
+   * not.
+   */
+  partials?: WorkbenchPartials;
   matchData: WorkbenchMatchData;
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;

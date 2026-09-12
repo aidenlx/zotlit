@@ -14,7 +14,7 @@ import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
-import { openNativeProfile } from "@/views/profile-editor/register";
+import { openNativeProfile } from "@/views/template-workbench/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -52,6 +52,7 @@ export {
 import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
 import { shareProfile } from "./share-profile-modal";
+import { partialItems } from "./templates";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
 const logger = getLogger(["setting-tab", "profiles"]);
@@ -144,8 +145,9 @@ export function literatureNoteItems(
 
 /**
  * The "Literature note profiles" page: the default Profile as a row of its own,
- * then the Profile documents as a list, then the documents ZotLit refused to
- * load. Editing a Profile means editing its document.
+ * then the Profile documents as a list, then the Partials every Profile shares,
+ * then the documents ZotLit refused to load. Editing a Profile means editing
+ * its document.
  */
 export function profilesPage(
   ctx: SettingTabContext,
@@ -157,6 +159,7 @@ export function profilesPage(
     items: [
       defaultProfileItem(ctx),
       profilesList(ctx),
+      ...partialItems(ctx),
       ...excludedDocumentItems(ctx),
     ],
   };

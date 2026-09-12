@@ -7,6 +7,7 @@ updated: "2.0.0"
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
@@ -137,7 +138,17 @@ Calls from shared partials use the calling Profile's section, with isolated anno
 
 The data argument becomes the child template's `zt` variable, direct passthrough not merged with the parent's data. When omitted, the child inherits the parent's `zt`.
 
-The name resolves to a registered template. During Profile rendering, `"annotation"` selects the Profile's Annotation Section. Outside Profile rendering, it finds `zotlit-annotation.eta.md`. Other names keep their existing lookup; each is a name, not a file path.
+The name resolves to a registered template, not to a file path. During Profile rendering, `"annotation"` selects the Profile's Annotation Section.
+
+### Calling a partial [#calling-a-partial]
+
+A partial is called by its name, with the data it needs as the second argument:
+
+```eta
+<%~ include("authors", zt) %>
+```
+
+The argument becomes the partial's `zt`. Omit it and the partial inherits the caller's `zt`. Completion inside `include("` lists every partial in the vault, and accepting a name writes the whole call, `zt` argument included. A call you have already given arguments keeps them, and only the name is replaced.
 
 ### The `content` include
 
@@ -283,24 +294,23 @@ linkHelper(alias?, subpath?)
 
 `zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types without a cached image (everything except `image` and `ink`).
 
-## Template file naming
+## Template Document naming [#template-document-naming]
 
-Template files sit directly inside the configured template folder. The naming pattern:
+A Template Document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, and the filename prefix alone says what a document is: `zotlit-profile.<slug>.md` for a Profile, `zotlit-citation.md` for the citation text, and `zotlit-partial.<name>.md` for one partial. See [Template Document naming](/docs/reference/templates/syntax#template-document-naming) for the full rule and the reserved partial names.
 
+An Eta document declares its language in a YAML manifest at the top of the file, before the source:
+
+```md
+---
+language: eta
+---
+
+<%= zt.title %>
 ```
-zotlit-<name>.<language>.md
-```
 
-- `<name>`: alphanumeric characters or hyphens (`[A-Za-z0-9-]+`).
-- `<language>`: `liquid` or `eta`.
+`language` is the manifest's only legal key, and its values are `liquid` and `eta`. A document with no manifest is Liquid, so every Eta citation document and Eta partial needs this block. Switch a document between the two from the Template Workbench View's pane menu, with <UiLabel name={m.template_workbench_change_language()} />; it rewrites the manifest key and leaves the source as written.
 
-The six canonical names: `filename`, `note`, `annotation`, `content`, `cite`, `cite2`.
-
-Each canonical name corresponds to a template file: the `filename` template is stored as `zotlit-filename.eta.md`, following the same pattern as the other five types.
-
-## Liquid-wins shadowing
-
-When both a `.liquid.md` and `.eta.md` file exist for the same name, the Liquid file takes precedence. The Eta file is ignored.
+A Profile document declares its language with the `language` key of its own manifest.
 
 ## No async
 

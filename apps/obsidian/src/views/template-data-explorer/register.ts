@@ -11,7 +11,7 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import {
-  activeProfileEditor,
+  activeTemplateWorkbench,
   openProfileExplorer,
 } from "@/views/note-preview/register";
 
@@ -59,7 +59,7 @@ export async function openTemplateDataExplorer(
   app: App,
   state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
 ): Promise<void> {
-  const editor = activeProfileEditor(app);
+  const editor = activeTemplateWorkbench(app);
   if (!state && editor) return openProfileExplorer(app, editor);
   const { workspace } = app;
   let leaf = workspace

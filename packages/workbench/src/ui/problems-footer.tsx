@@ -8,7 +8,7 @@ import { useId } from "react";
 import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
-import { problemText } from "./problems";
+import { problemAction, problemText } from "./problems";
 import { useParts } from "./theme";
 
 import { entryPosition } from "#/document/controller";
@@ -45,17 +45,24 @@ export function problemWhere(
 export function ProblemsFooter({
   problem,
   onOpen,
+  onAction,
 }: {
   /** The problem to name; nothing is drawn for `null`. */
   problem: WorkbenchProblem | null;
   /** Opens the pane the problem is repaired in. */
   onOpen: (problem: WorkbenchProblem) => void;
+  /**
+   * Performs the repair a problem carries its own button for. A host that
+   * supplies none leaves the reader with the pane button alone.
+   */
+  onAction?: (problem: WorkbenchProblem) => void;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("problemsFooter");
   const headingId = useId();
   if (problem === null) return null;
   const text = problemText(m, problem);
+  const action = onAction ? problemAction(m, problem) : null;
   return (
     <section aria-labelledby={headingId} {...part("problems")}>
       <p id={headingId} {...part("problems-heading")}>
@@ -64,6 +71,17 @@ export function ProblemsFooter({
       <p {...part("problems-text")}>
         {text.message}{" "}
         <span {...part("problems-recovery")}>{text.recovery}</span>{" "}
+        {action ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onAction!(problem)}
+              {...part("problems-action")}
+            >
+              {action}
+            </button>{" "}
+          </>
+        ) : null}
         <button
           type="button"
           onClick={() => onOpen(problem)}

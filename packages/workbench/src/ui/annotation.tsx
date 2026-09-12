@@ -11,6 +11,8 @@ import { useDocumentRevision } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useWorkbenchHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { usePartialBoxes } from "./partial-boxes";
+import type { PartialPlaceholderHost } from "./partial-boxes";
 import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
@@ -143,17 +145,21 @@ export function annotationOption(
 export function AnnotationPane({
   controller,
   problem,
+  partials,
   ...editor
 }: Pick<
   SliceEditorProps,
   "controller" | "reveal" | "suggest" | "onSelection"
 > & {
   problem: string | null;
+  /** The Shared Partials this section's calls name, previewed as an annotation. */
+  partials?: PartialPlaceholderHost;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
   const problemId = useId();
   useDocumentRevision(controller);
+  const boxes = usePartialBoxes(controller, "annotation", partials);
   if (
     !controller.annotationSection ||
     controller.problems.some(
@@ -175,9 +181,11 @@ export function AnnotationPane({
           controller={controller}
           slice="annotation"
           label={m.workbench_annotation_label()}
+          extensions={boxes.extensions}
           invalid={problem !== null}
           describedBy={problem ? problemId : undefined}
         />
+        {boxes.boxes}
       </div>
     </>
   );

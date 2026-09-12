@@ -72,11 +72,21 @@ function makeHandlers(options?: {
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: "1.2.3",
     getIdentity: () => IDENTITY,
+    loadCitation: async () => ({ kind: "not-found" }) as const,
     loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
     templates: {
+      getCitationTemplateStatus: () => ({
+        path: "Templates/zotlit-citation.md",
+        customized: false,
+        language: "liquid" as const,
+        inertPath: null,
+        compileError: null,
+      }),
+      renderCitationData: () => "",
       javascriptTemplatesEnabled: false,
       compileErrors: new Map(),
       getTemplateFileStatuses: () => [],
+      getPartialDocument: () => null,
       render: () => "",
       renderFilename: () => "",
       analyzeRootVariables: () => null,

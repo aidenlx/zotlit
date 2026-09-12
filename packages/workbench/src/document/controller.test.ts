@@ -43,6 +43,21 @@ function noteEdit(
   });
 }
 
+/** A Profile document carrying two partials in its manifest's transport list. */
+const BUNDLED = HAND_WRITTEN.replace(
+  "language: liquid",
+  [
+    "language: liquid",
+    "partials:",
+    "  - name: authors",
+    "    language: liquid",
+    "    source: Authors",
+    "  - name: venue-line",
+    "    language: liquid",
+    "    source: Venue",
+  ].join("\n"),
+);
+
 describe("WorkbenchDocumentController", () => {
   it("reads the note body as the region between the manifest and the annotation header", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);
@@ -254,6 +269,65 @@ describe("WorkbenchDocumentController", () => {
     );
 
     expect(controller.dependencies).toEqual(["cite", "summary"]);
+  });
+
+  it("leaves out a call no Shared Partial can answer", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace(
+        "# {{ zt.title }}",
+        `{% render 'citation' %}{% render 'note' %}{% render 'content' %}
+{% render 'filename' %}{% render 'annotation' %}{% render 'summary' %}`,
+      ),
+    );
+
+    expect(controller.dependencies).toEqual(["summary"]);
+  });
+
+  it("reports the transport copy as a problem on the vault host alone", () => {
+    const native = new WorkbenchDocumentController(BUNDLED, {
+      runtime: "native",
+    });
+
+    // A Profile edited beside the vault reads its partials from files, so the
+    // manifest copy is text with two homes until Unpack partials runs.
+    expect(native.problems).toEqual([
+      expect.objectContaining({
+        code: "bundled-partial",
+        params: { names: "authors, venue-line" },
+        slice: "advanced",
+      }),
+    ]);
+    const { range } = native.problems[0]!;
+    expect(BUNDLED.slice(range!.from, range!.to)).toContain("name: authors");
+
+    // The web host has no vault to unpack into, so the copy is the bundle.
+    expect(new WorkbenchDocumentController(BUNDLED).problems).toEqual([]);
+  });
+
+  it("drops the transport copy of the partials a host has written to files", () => {
+    const bundled = BUNDLED;
+    const controller = new WorkbenchDocumentController(bundled, {
+      runtime: "native",
+    });
+
+    expect(controller.dropBundledPartials(["authors"])).toBe(true);
+    expect(controller.document!.manifest.partials).toEqual([
+      { name: "venue-line", language: "liquid", source: "Venue" },
+    ]);
+    // The reader's own manifest bytes survive the edit.
+    expect(controller.source).toContain("# my own profile, do not reformat");
+    expect(controller.source).toContain("filename: '{{ zt.citationKey }}'");
+
+    // The last entry goes with its key, so the problem goes with it.
+    expect(controller.dropBundledPartials(["venue-line"])).toBe(true);
+    expect(controller.source).not.toContain("partials:");
+    expect(controller.problems).toEqual([]);
+
+    // One undo step each, so the reader gets the bundle back as it was.
+    expect(controller.undo()).toBe(true);
+    expect(controller.undo()).toBe(true);
+    expect(controller.source).toBe(bundled);
+    expect(controller.dropBundledPartials(["unknown"])).toBe(false);
   });
 
   it("reports an Eta profile as unsupported on the web and points at the value", () => {
@@ -562,4 +636,113 @@ it("keeps invalid JSON rule drafts in the document and points repair at the row"
   expect(controller.problems).toEqual([]);
   controller.undo();
   expect(controller.source).toBe(source);
+});
+
+describe("a plain Template Document", () => {
+  const CITATION = `---
+language: liquid
+---
+{{ zt.citations | pandoc_cite }}
+`;
+
+  it("holds one source slice under its manifest and one citation render scope", () => {
+    const controller = new WorkbenchDocumentController(CITATION, {
+      kind: "citation",
+    });
+    expect(controller.kind).toBe("citation");
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+    // The manifest is three lines of 4, 16 and 4 characters, each with its
+    // break, so the source starts at offset 25.
+    expect(controller.sliceRange("source")).toEqual({
+      from: 25,
+      to: CITATION.length,
+    });
+    expect(controller.sliceText("source")).toBe(
+      "{{ zt.citations | pandoc_cite }}\n",
+    );
+    expect(controller.templateRegions).toEqual([
+      { from: 25, to: CITATION.length, root: "citation", expression: false },
+    ]);
+    expect(controller.problems).toEqual([]);
+  });
+
+  it("takes the whole document as its source when it carries no manifest", () => {
+    const bare = "{{ zt.citations | pandoc_cite }}\n";
+    const controller = new WorkbenchDocumentController(bare, {
+      kind: "citation",
+    });
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+    expect(controller.sliceRange("source")).toEqual({
+      from: 0,
+      to: bare.length,
+    });
+
+    expect(controller.setPlainLanguage("eta")).toBe(true);
+    expect(controller.source).toBe(`---\nlanguage: eta\n---\n${bare}`);
+    controller.undo();
+    expect(controller.source).toBe(bare);
+  });
+
+  it("rewrites the manifest language in place and leaves the source as authored", () => {
+    const controller = new WorkbenchDocumentController(CITATION, {
+      kind: "citation",
+    });
+    expect(controller.setPlainLanguage("eta")).toBe(true);
+    expect(controller.source).toBe(
+      CITATION.replace("language: liquid", "language: eta"),
+    );
+    expect(controller.plainDocument?.manifest.language).toBe("eta");
+  });
+
+  it("reports a manifest it cannot read on the one editor that holds it", () => {
+    const controller = new WorkbenchDocumentController(
+      "---\nlanguage: [\n---\nx\n",
+      { kind: "citation" },
+    );
+    expect(controller.plainDocument).toBeNull();
+    expect(controller.problems).toEqual([
+      expect.objectContaining({ code: "invalid-manifest", slice: "source" }),
+    ]);
+  });
+
+  it("hands the one editor the manifest an external edit invalidated", () => {
+    const controller = new WorkbenchDocumentController(CITATION, {
+      kind: "citation",
+    });
+    expect(controller.sliceRange("source").from).toBe(25);
+
+    const broken = CITATION.replace("language: liquid", "language: [");
+    controller.applyExternalSource(broken);
+
+    expect(controller.plainDocument).toBeNull();
+    // The manifest sits inside the slice the reader repairs it in, as it does
+    // for a document whose manifest never parsed.
+    expect(controller.sliceRange("source")).toEqual({
+      from: 0,
+      to: broken.length,
+    });
+  });
+
+  it("adds the language key to a manifest that omits it", () => {
+    const controller = new WorkbenchDocumentController(
+      "---\n# the set this renders\n---\nx\n",
+      { kind: "citation" },
+    );
+    // An empty or comment-only manifest is valid and names the Liquid default.
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+
+    expect(controller.setPlainLanguage("eta")).toBe(true);
+    expect(controller.source).toBe(
+      "---\n# the set this renders\nlanguage: eta\n---\nx\n",
+    );
+    expect(controller.plainDocument?.manifest.language).toBe("eta");
+    controller.undo();
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+  });
+
+  it("refuses a language rewrite on a Profile document, whose own tab writes it", () => {
+    expect(
+      new WorkbenchDocumentController(HAND_WRITTEN).setPlainLanguage("eta"),
+    ).toBe(false);
+  });
 });

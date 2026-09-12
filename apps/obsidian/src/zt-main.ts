@@ -40,6 +40,7 @@ import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
+import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationPresentation } from "./views/citation-presentation/register";
@@ -47,13 +48,13 @@ import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
-import {
-  openNativeProfile,
-  registerProfileEditor,
-} from "./views/profile-editor/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
+import {
+  openNativeProfile,
+  registerTemplateWorkbenchView,
+} from "./views/template-workbench/register";
 import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
 
@@ -273,6 +274,7 @@ export default class ZotLitPlugin extends Plugin {
       profile: services.profile,
       customize,
     });
+    addCitationTemplateActions(this, { template: services.template });
     addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
@@ -359,7 +361,7 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
-    registerProfileEditor(this, {
+    registerTemplateWorkbenchView(this, {
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,
@@ -377,6 +379,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         settings: services.settings,
         templates: services.template,
+        profile: services.profile,
         bibliographyRender: services.bibliographyRender,
         citationIndex: services.citationIndex,
       },

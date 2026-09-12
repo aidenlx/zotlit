@@ -133,12 +133,18 @@ export {
   type TemplateParentItemData,
 } from "./lib/context/zt-template-item";
 export {
+  CITATION_VARIANTS,
   citekeysToCiteTemplateData,
+  DEFAULT_CITATION_VARIANT,
   DEFAULT_LOCATOR_LABEL_SHORT,
+  isCitationVariant,
   narrowBaseDataToCiteItemData,
   resolveCitedItem,
+  type CitationTemplateData,
+  type CitationVariant,
   type CiteRef,
   type ResolvedCiteRef,
+  type TemplateCiteItemData,
 } from "./lib/context/zt-template-cite";
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {

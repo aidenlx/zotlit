@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { diagnosticText, problemText } from "./problems";
+import { diagnosticText, problemAction, problemText } from "./problems";
 import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -49,6 +49,52 @@ describe("problemText", () => {
       message: m.workbench_problem_invalid_document(),
       recovery: m.workbench_problem_invalid_document_recovery(),
     });
+  });
+
+  it("names the bundled partials a vault-side document still carries, with an unpack button", () => {
+    const controller = new WorkbenchDocumentController(
+      DEFAULT_PROFILE_SOURCE.replace(
+        "filename:",
+        [
+          "partials:",
+          "  - name: authors",
+          "    language: liquid",
+          "    source: Authors",
+          "filename:",
+        ].join("\n"),
+      ),
+      { runtime: "native" },
+    );
+    const problem = controller.problems[0]!;
+
+    expect(problem.code).toBe("bundled-partial");
+    expect(problemText(m, problem)).toEqual({
+      message: m.workbench_problem_bundled_partial({ names: "authors" }),
+      recovery: m.workbench_problem_bundled_partial_recovery(),
+    });
+    expect(problemAction(m, problem)).toBe(
+      m.workbench_problem_bundled_partial_unpack(),
+    );
+    expect(
+      problemAction(m, { code: "invalid-document", slice: "advanced" }),
+    ).toBeNull();
+  });
+
+  it("leaves the web host to read a bundle as the transport it is", () => {
+    const controller = new WorkbenchDocumentController(
+      DEFAULT_PROFILE_SOURCE.replace(
+        "filename:",
+        [
+          "partials:",
+          "  - name: authors",
+          "    language: liquid",
+          "    source: Authors",
+          "filename:",
+        ].join("\n"),
+      ),
+    );
+
+    expect(controller.problems).toEqual([]);
   });
 
   it("names the manifest field a schema failure came from", () => {
@@ -101,6 +147,16 @@ describe("diagnosticText", () => {
         part: "profile",
       }),
     ).toBe("Template dependency 'summary' uses an unsupported language.");
+  });
+
+  it("names the Shared Partial the engine could not resolve", () => {
+    expect(
+      diagnosticText(m, {
+        code: "missing-partial",
+        params: { name: "venue-line" },
+        part: "render",
+      }),
+    ).toBe(m.workbench_diagnostic_missing_partial({ name: "venue-line" }));
   });
 
   it("shows the engine's own failure text for a render error", () => {

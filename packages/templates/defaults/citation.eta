@@ -1,0 +1,5 @@
+<% if (zt.variant === "alt") { %>
+  <%= pandocCite(zt.citations, "prefer-author-in-text") %>
+<% } else { %>
+  <%= pandocCite(zt.citations) %>
+<% } %>

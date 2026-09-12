@@ -1,5 +1,14 @@
 # The Profile Editor keeps Liquid assistance and basic Eta editing
 
+> Amended 2026-09-12: Eta semantic completion and Eta Template Hover return to this
+> support tier. Both read the small Eta grammar and the template contract, not a
+> JavaScript tree, so the editor keeps the bundle saving this decision was made for.
+> The JavaScript parser, JavaScript syntax coloring, and full JavaScript context
+> analysis stay outside the tier, and Eta tag bodies keep their plain code styling.
+> Because a plain tag body carries no token element, Template Hover resolves from the
+> document offset under the pointer and confirms the pointer against the resolved
+> token's own boxes. The bundle limit and every other decision below stay in effect.
+
 The Profile Editor gives frontmatter one text color and adds small Markdown hints while
 keeping Liquid highlighting and assistance primary. Markdown hints color
 heading, list, and quote markers in Note, Annotation, and the corresponding

@@ -11,7 +11,7 @@ import type { Settings } from "@/services/settings/schema";
 import {
   profileCustomization,
   saveProfileCustomization,
-} from "@/views/profile-editor/preferences";
+} from "@/views/template-workbench/preferences";
 
 import { createCustomize } from "./customize";
 import type {

@@ -1,8 +1,13 @@
 import type { CliData, CliHandler } from "obsidian";
 
-import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import { DEFAULT_CITATION_VARIANT, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 // The Template Workbench commands and their response boundaries.
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  CitationTemplateData,
+  CitationVariant,
+  ContractRoot,
+  TemplateSlot,
+} from "@zotlit/db";
 import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 import type { RootVariableUse } from "@zotlit/templates/facade";
@@ -18,16 +23,23 @@ import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileDiagnostic } from "@/services/profile/service";
+import { RESERVED_PARTIAL_NAMES } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
+  CitationTemplateStatus,
   CompileError,
   LiteratureNoteTemplateStatus,
   ResolvedLiteratureNoteTemplate,
   SettleOutcome,
+  SharedPartialDocument,
   TemplateFileStatus,
 } from "@/services/template/service";
 
-import type { TemplateDataLoadResult } from "./data";
+import type {
+  CitationDataLoadResult,
+  CitationSelector,
+  TemplateDataLoadResult,
+} from "./data";
 import {
   dataLoadDiagnostic,
   diagnostic,
@@ -61,8 +73,13 @@ import {
   parseStatusRequest,
   targetMismatch,
 } from "./request";
-import type { ParsedRequest } from "./request";
+import type { ParsedRequest, RenderRequest } from "./request";
 import { schemaAssets } from "./schema";
+import {
+  CITATION_TEMPLATE,
+  isPartialTemplate,
+  partialTemplateName,
+} from "./vocabulary";
 
 export type { WorkbenchIdentity } from "./envelope";
 
@@ -98,6 +115,11 @@ const ADHOC_FIELD_KEY = "zotlit:frontmatter-eval/adhoc";
 const DEFAULT_SETTLE_TIMEOUT_MS = 5_000;
 const logger = getLogger("template-workbench");
 
+/** A data load a render awaits, with the loaded shape left to the caller. */
+type RenderDataResult<T> =
+  | { kind: "data"; data: T }
+  | Exclude<TemplateDataLoadResult, { kind: "data" }>;
+
 interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
   pluginVersion: string;
@@ -106,13 +128,21 @@ interface TemplateWorkbenchDeps {
     indexedKey: string,
     root: ContractRoot,
   ) => Promise<TemplateDataLoadResult>;
+  /** Citation Template data for one example set or one chosen Item. */
+  loadCitation: (
+    selector: CitationSelector,
+    variant: CitationVariant,
+  ) => Promise<CitationDataLoadResult>;
   settleTimeoutMs?: number;
   templates: {
     readonly javascriptTemplatesEnabled: boolean;
     readonly compileErrors: ReadonlyMap<string, CompileError>;
     getTemplateFileStatuses: () => readonly TemplateFileStatus[];
+    getCitationTemplateStatus: () => CitationTemplateStatus;
+    getPartialDocument: (name: string) => SharedPartialDocument | null;
     render: (name: string, data: object) => string;
     renderFilename: (data: object) => string;
+    renderCitationData: (data: CitationTemplateData) => string;
     waitUntilSettled: (timeoutMs: number) => Promise<SettleOutcome>;
     analyzeRootVariables: (name: string) => RootVariableUse[] | null;
     getTemplateSource: (name: TemplateSlot) => Promise<string>;
@@ -273,6 +303,140 @@ export function createTemplateWorkbenchHandlers(
       ? deps.templates.renderFilename(data)
       : deps.templates.render(slot, data);
 
+  /**
+   * The answering half of `template-render`, shared by both Templates it
+   * renders: the data-load failure, the bare Markdown a `format=markdown` call
+   * asks for, the success envelope, and the template fault. What differs above
+   * it — the Template's identity, the data it reads, and how it renders — the
+   * caller decides and hands over here, so an envelope or diagnostic change
+   * needs one edit.
+   */
+  const renderResponse = async <T>(
+    request: RenderRequest,
+    plan: {
+      echoed: object;
+      load: () => Promise<RenderDataResult<T>>;
+      render: (data: T) => string;
+    },
+  ): Promise<string> => {
+    const { echoed } = plan;
+    const result = await plan.load();
+    if (result.kind !== "data") {
+      return envelope(TEMPLATE_RENDER_COMMAND, {
+        ok: false,
+        ...echoed,
+        diagnostic: dataLoadDiagnostic(result, selectedObject(request)),
+      });
+    }
+    try {
+      const markdown = plan.render(result.data);
+      if (request.format === "markdown") return markdown;
+      return envelope(TEMPLATE_RENDER_COMMAND, {
+        ok: true,
+        ...echoed,
+        markdown,
+      });
+    } catch (error) {
+      return envelope(TEMPLATE_RENDER_COMMAND, {
+        ok: false,
+        ...echoed,
+        diagnostic: templateFaultDiagnostic(error, {
+          template: request.template,
+          compileErrors: deps.templates.compileErrors,
+        }),
+      });
+    }
+  };
+
+  /**
+   * Render the Citation Template. It is a Template Document, so its identity
+   * comes from the Citation Template status rather than from the Legacy
+   * Template File slots, which a converted vault no longer reports.
+   */
+  const renderCitation = (
+    request: RenderRequest,
+    identity: WorkbenchIdentity,
+  ): Promise<string> =>
+    renderResponse(request, {
+      echoed: {
+        request,
+        identity,
+        template: citationTemplateIdentity(
+          deps.templates.getCitationTemplateStatus(),
+        ),
+        warnings: rootVariableWarnings(
+          deps.templates.analyzeRootVariables(CITATION_TEMPLATE),
+        ),
+      },
+      load: () =>
+        deps.loadCitation(request, request.variant ?? DEFAULT_CITATION_VARIANT),
+      render: (data) => deps.templates.renderCitationData(data),
+    });
+
+  /**
+   * Render one Shared Partial as called from the root the request names: the
+   * note or annotation of one Zotero object, or one Citation set. A partial is
+   * a Template Document, so its identity comes from the partial the vault
+   * registered rather than from the Legacy Template File slots.
+   */
+  const renderPartial = (
+    request: RenderRequest,
+    name: string,
+    identity: WorkbenchIdentity,
+  ): Promise<string> => {
+    if (RESERVED_PARTIAL_NAMES.has(name)) {
+      return Promise.resolve(
+        envelope(TEMPLATE_RENDER_COMMAND, {
+          ok: false,
+          request,
+          identity,
+          diagnostic: reservedPartialNameDiagnostic(name),
+        }),
+      );
+    }
+    const document = deps.templates.getPartialDocument(name);
+    if (!document) {
+      const carrier = bundledPartialCarrier(
+        deps.literatureNotes?.getDocumentStatuses() ?? [],
+        name,
+      );
+      return Promise.resolve(
+        envelope(TEMPLATE_RENDER_COMMAND, {
+          ok: false,
+          request,
+          identity,
+          diagnostic:
+            carrier === null
+              ? missingPartialDiagnostic(name)
+              : bundledPartialDiagnostic(name, carrier),
+        }),
+      );
+    }
+    const root = request.root ?? "note";
+    return renderResponse(request, {
+      echoed: {
+        request,
+        identity,
+        template: {
+          name: request.template,
+          language: document.language,
+          source: { kind: "vault" as const, path: document.path },
+        },
+        warnings: rootVariableWarnings(
+          deps.templates.analyzeRootVariables(name),
+        ),
+      },
+      load: () =>
+        root === "citation"
+          ? deps.loadCitation(
+              request,
+              request.variant ?? DEFAULT_CITATION_VARIANT,
+            )
+          : deps.loadData(selectedObject(request), root),
+      render: (data) => deps.templates.render(name, data as object),
+    });
+  };
+
   return {
     [TEMPLATE_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
       const request = parseStatusRequest(params);
@@ -310,12 +474,15 @@ export function createTemplateWorkbenchHandlers(
       parseDataRequest,
       async (request, identity) => {
         const echoed = { request, identity };
-        const result = await deps.loadData(request.key, request.root);
+        const result =
+          "example" in request || request.root === "citation"
+            ? await deps.loadCitation(request, "main")
+            : await deps.loadData(request.key, request.root);
         if (result.kind !== "data") {
           return envelope(TEMPLATE_DATA_COMMAND, {
             ok: false,
             ...echoed,
-            diagnostic: dataLoadDiagnostic(result, request.key),
+            diagnostic: dataLoadDiagnostic(result, selectedObject(request)),
           });
         }
 
@@ -330,7 +497,7 @@ export function createTemplateWorkbenchHandlers(
             logger.error("Template data contract metadata is missing", {
               error,
               command: TEMPLATE_DATA_COMMAND,
-              key: request.key,
+              selected: selectedObject(request),
               root: request.root,
             });
             throw error;
@@ -357,56 +524,42 @@ export function createTemplateWorkbenchHandlers(
       TEMPLATE_RENDER_COMMAND,
       parseRenderRequest,
       async (request, identity) => {
+        if (request.template === CITATION_TEMPLATE) {
+          return await renderCitation(request, identity);
+        }
+        if (isPartialTemplate(request.template)) {
+          return await renderPartial(
+            request,
+            partialTemplateName(request.template),
+            identity,
+          );
+        }
+        const slot = request.template;
         const template = templateIdentity(
           deps.templates.getTemplateFileStatuses(),
-          request.template,
+          slot,
         );
         if (!template) {
           return envelope(TEMPLATE_RENDER_COMMAND, {
             ok: false,
             request,
             identity,
-            diagnostic: inactiveTemplateDiagnostic(request.template),
+            diagnostic: inactiveTemplateDiagnostic(slot),
           });
         }
-        const echoed = {
-          request,
-          identity,
-          template,
-          warnings: rootVariableWarnings(
-            deps.templates.analyzeRootVariables(request.template),
-          ),
-        };
-        const result = await deps.loadData(
-          request.key,
-          TEMPLATE_SLOT_ROOTS[request.template],
-        );
-        if (result.kind !== "data") {
-          return envelope(TEMPLATE_RENDER_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: dataLoadDiagnostic(result, request.key),
-          });
-        }
-
-        try {
-          const markdown = renderSlot(request.template, result.data);
-          if (request.format === "markdown") return markdown;
-          return envelope(TEMPLATE_RENDER_COMMAND, {
-            ok: true,
-            ...echoed,
-            markdown,
-          });
-        } catch (error) {
-          return envelope(TEMPLATE_RENDER_COMMAND, {
-            ok: false,
-            ...echoed,
-            diagnostic: templateFaultDiagnostic(error, {
-              template: request.template,
-              compileErrors: deps.templates.compileErrors,
-            }),
-          });
-        }
+        return await renderResponse(request, {
+          echoed: {
+            request,
+            identity,
+            template,
+            warnings: rootVariableWarnings(
+              deps.templates.analyzeRootVariables(slot),
+            ),
+          },
+          load: () =>
+            deps.loadData(selectedObject(request), TEMPLATE_SLOT_ROOTS[slot]),
+          render: (data) => renderSlot(slot, data),
+        });
       },
     ),
 
@@ -1150,6 +1303,92 @@ function templateIdentity(
   const status = statuses.find((candidate) => candidate.name === name);
   if (!status) return undefined;
   return { name, ...status.winner };
+}
+
+/**
+ * The active Citation Template a render answered from: the vault's
+ * `zotlit-citation.md`, or the built-in source standing in for it.
+ */
+function citationTemplateIdentity(status: CitationTemplateStatus): {
+  name: typeof CITATION_TEMPLATE;
+  language: CitationTemplateStatus["language"];
+  source: TemplateFileStatus["winner"]["source"];
+} {
+  return {
+    name: CITATION_TEMPLATE,
+    language: status.language,
+    source: status.customized
+      ? { kind: "vault", path: status.path }
+      : { kind: "embedded-default" },
+  };
+}
+
+/**
+ * What a request selected, as a message names it: the Indexed Key, or the
+ * example set standing in for one. A Legacy Template File slot takes no
+ * example set, and a built-in example set is synthesized rather than looked
+ * up, so only the key half ever reaches a load failure.
+ */
+function selectedObject(
+  request: { key: string } | { example: string },
+): string {
+  return "key" in request ? request.key : request.example;
+}
+
+/**
+ * A partial the vault registers no document for, which the Workbench and a
+ * refused Literature Note render report under the same code.
+ */
+function missingPartialDiagnostic(name: string): Diagnostic {
+  return diagnostic("MISSING_PARTIAL", `No Shared Partial named '${name}'.`, {
+    template: name,
+  });
+}
+
+/**
+ * The first installed Profile document whose manifest still carries `name`,
+ * or null when none does. A manifest entry is a share transport, so a partial
+ * found only there answers no render until it is unpacked into its own file.
+ */
+function bundledPartialCarrier(
+  statuses: readonly LiteratureNoteTemplateStatus[],
+  name: string,
+): string | null {
+  for (const status of statuses) {
+    if (
+      status.validation.state === "valid" &&
+      status.validation.manifest.partials?.some(
+        (partial) => partial.name === name,
+      )
+    )
+      return status.reference;
+  }
+  return null;
+}
+
+/**
+ * A partial the vault registers no document for because a Profile document
+ * still carries it in its manifest, where nothing renders it.
+ */
+function bundledPartialDiagnostic(name: string, reference: string): Diagnostic {
+  return diagnostic(
+    "BUNDLED_PARTIAL",
+    `No Shared Partial named '${name}': the Profile document '${reference}' still carries it in its manifest.`,
+    { template: name },
+  );
+}
+
+/**
+ * A partial name another Template already answers to.
+ *
+ * @see RESERVED_PARTIAL_NAMES for which names those are and why.
+ */
+function reservedPartialNameDiagnostic(name: string): Diagnostic {
+  return diagnostic(
+    "RESERVED_PARTIAL_NAME",
+    `'${name}' names another ZotLit Template, so no Shared Partial answers to it.`,
+    { parameter: "template" },
+  );
 }
 
 function inactiveTemplateDiagnostic(name: TemplateSlot): Diagnostic {

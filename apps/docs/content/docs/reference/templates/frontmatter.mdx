@@ -26,7 +26,7 @@ ZotLit always writes `zotero-key`. User configuration cannot override it.
 
 ## User-configured fields
 
-Configured in the Profile's template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row at <SettingsPath /> with <UiLabel name={m.settings_template_eject()} />. Each field has four parts:
+Configured in the Profile's template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row at <SettingsPath /> with <UiLabel name={m.settings_template_customize()} />. Each field has four parts:
 
 | Part                                                      | Description                                             |
 | --------------------------------------------------------- | ------------------------------------------------------- |
@@ -120,7 +120,7 @@ Attempting to use a reserved key is rejected in both the settings modal and the 
 
 ## Validation
 
-The Profile Editor and the Template Workbench CLI validate in this order:
+The Template Workbench View and the Template Workbench CLI validate in this order:
 
 1. **Empty key:** "Enter a key."
 2. **Reserved key:** "'\{key\}' is managed by ZotLit and can't be used."

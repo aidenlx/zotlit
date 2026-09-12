@@ -8,6 +8,7 @@ import {
   literatureNoteTemplateDependencies,
   parseLiteratureNotePack,
   planLiteratureNotePackRevert,
+  unpackLiteratureNotePartials,
 } from "./literature-note-pack";
 import type {
   LiteratureNotePackFile,
@@ -420,4 +421,59 @@ ${body}
       ).toEqual(["summary"]);
     },
   );
+});
+
+describe("bundled partial unpacking", () => {
+  const bundled = [
+    { name: "authors", language: "liquid", source: "{{ zt.creators }}" },
+    { name: "venue-line", language: "eta", source: "<%= zt.publication %>" },
+  ] as const;
+
+  it("writes a partial the vault holds no document for", () => {
+    expect(unpackLiteratureNotePartials(bundled, new Map())).toEqual([
+      {
+        name: "authors",
+        verdict: "write",
+        document: "---\nlanguage: liquid\n---\n{{ zt.creators }}",
+      },
+      {
+        name: "venue-line",
+        verdict: "write",
+        document: "---\nlanguage: eta\n---\n<%= zt.publication %>",
+      },
+    ]);
+  });
+
+  it("leaves a document that already holds the same source and language", () => {
+    const held = new Map([
+      ["authors", { language: "liquid", source: "{{ zt.creators }}" }],
+    ] as const);
+
+    expect(
+      unpackLiteratureNotePartials(bundled, held).map(
+        ({ name, verdict }) => `${name}:${verdict}`,
+      ),
+    ).toEqual(["authors:unchanged", "venue-line:write"]);
+  });
+
+  it("asks about a document holding other text, another language, or none the caller could read", () => {
+    const held = new Map([
+      ["authors", { language: "liquid", source: "{{ zt.authors }}" }],
+      ["venue-line", null],
+    ] as const);
+
+    expect(
+      unpackLiteratureNotePartials(bundled, held).map(
+        ({ name, verdict }) => `${name}:${verdict}`,
+      ),
+    ).toEqual(["authors:conflict", "venue-line:conflict"]);
+    expect(
+      unpackLiteratureNotePartials(
+        bundled,
+        new Map([
+          ["authors", { language: "eta", source: "{{ zt.creators }}" }],
+        ] as const),
+      )[0]!.verdict,
+    ).toBe("conflict");
+  });
 });

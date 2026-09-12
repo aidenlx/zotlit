@@ -79,6 +79,15 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   a call rather than a call, so it is left out. The controller keeps the answer
   as `noteRegions`, and a host reads the same function over a pane's own text.
   @see docs/adr/0034-template-rendering-shortcut-is-annotation-specific.md
+- `partialCalls(source, region, language)` — every Shared Partial call inside
+  one region: a Liquid `render` or `include` tag, or an Eta `include("name", …)`
+  call, whose first argument is a plain quoted name, with the name, the
+  arguments the call passes after it, and the line it owns. It skips the same
+  raw, comment, and code regions `noteRegions` does, and skips the five names
+  another ZotLit template already answers to — `filename`, `note`, `annotation`,
+  `content`, and `citation` — which no partial can be given. Any pane reads its
+  own calls through it — the note body, the Annotation Section, and the one
+  editor a plain document opens.
 - The controller's `annotationSection` — the Annotation Section's header line
   and the source under it, which is also the `annotation` slice. A draft the
   parser refuses keeps the regions it had, so the reader repairs the text in the
@@ -139,8 +148,20 @@ render yet. Its state — `result`, `busy`, `stale` — is what every result sur
 paints. Outside the editor provider the tree paints inert, which the web's
 skeleton relies on. The components so far: `TabBar` and
 `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a host's own
-controls as children), and `ProblemsFooter` with `problemText` and
-`diagnosticText`, the words for every core code.
+controls as children), and `ProblemsFooter` with `problemText`,
+`problemAction`, and `diagnosticText`, the words for every core code. A host
+that passes `onAction` gets the button `problemAction` names for the codes a
+host can repair on the reader's word; a Profile edited beside a vault reports
+`bundled-partial` for the partials its manifest still carries, and the vault
+host unpacks them into files with `dropBundledPartials`.
+
+`usePartialBoxes(controller, slice, host)` draws the Partial Placeholder over
+every Shared Partial call in one pane: the editor extension to pass that pane
+and the boxes to render beside it. The host answers the names the vault
+registers, the names the last render could not resolve, opening a partial,
+creating one, and rendering one for the caller that pane's slice supplies —
+a missing partial is the engine's own render failure, never a scan, so the
+box's Create and Pick another appear only for a name a render reported.
 
 The host supplies `messages` and `getLocale` through `WorkbenchHostProvider`.
 The web passes its Paraglide facade; Obsidian passes its Language Pack facade.

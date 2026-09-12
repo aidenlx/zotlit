@@ -1,6 +1,6 @@
 // Deterministic description of the Fixture.
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
+import { CONTRACT_VERSION, USER_LIBRARY_ID } from "@zotlit/db";
 
 /** Names My Library in the printed Library table, beside the group IDs. */
 export const PERSONAL_SELECTOR = "my-library";
@@ -1267,6 +1267,44 @@ export const LITERATURE_NOTE_PROFILES = [
   },
 ] as const;
 
+/**
+ * The Fixture's Shared Partial. The Books Profile note body calls it, the
+ * Profile import example bundles a different edition under this name, and
+ * removing the file is what makes a Literature Note create refuse.
+ */
+export const FIXTURE_PARTIAL_NAME = "book-details";
+
+/**
+ * The Configured vault's `zotlit-citation.md`: the shipped Citation Template
+ * default with one visible edit, so an inserted alternate citation reads as
+ * the reader's own rather than the built-in text.
+ */
+export const CITATION_DOCUMENT_EDIT: FixtureTemplateEdit = {
+  find: '{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+  replace: 'cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+};
+
+/** One Shared Partial the Fixture Vault holds, as its `zotlit-partial.<name>.md` file carries it. */
+export interface FixtureSharedPartial {
+  /** The partial's vault-global name, which a render call names. */
+  readonly name: string;
+  readonly language: "liquid" | "eta";
+  /** The template source below the document's manifest. */
+  readonly source: string;
+}
+
+/** Shared Partial documents placed in the Fixture template folder. */
+export const SHARED_PARTIAL_DOCUMENTS: readonly FixtureSharedPartial[] = [
+  {
+    name: FIXTURE_PARTIAL_NAME,
+    language: "liquid",
+    source: `> [!info] Book details
+> Type: {{ zt.itemType }}
+> Citation key: {{ zt.citationKey | default: zt.key }}
+`,
+  },
+];
+
 /** Literature Note Template documents placed in the Fixture template folder. */
 export const LITERATURE_NOTE_DOCUMENTS = [
   {
@@ -1279,7 +1317,7 @@ citationStyle: ${INSTALLED_STYLES[0]!.id}
 version: 1.0.0
 author: ZotLit
 description: A visibly distinct book layout for the End-to-end Run
-contract: 2
+contract: ${CONTRACT_VERSION}
 filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
 frontmatter:
   - key: fixture-title
@@ -1299,6 +1337,8 @@ frontmatter:
 ## Book details
 
 Citation key: {{ zt.citationKey }}
+
+{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}
 {% endmanaged %}
 
 --- zotlit:annotation ---
@@ -1454,15 +1494,52 @@ export interface FixtureFrontmatterField {
   readonly language: "liquid";
 }
 
-/** One legacy Literature Note Template slot file the Upgrader vault ejects. */
-export interface FixtureLegacyTemplate {
-  /** Slot name; the file is `zotlit-<name>.liquid.md` in the template folder. */
-  readonly name: "filename" | "note" | "content" | "annotation";
+/**
+ * One find-and-replace against a shipped default, which stands in for a
+ * reader's own customization.
+ */
+export interface FixtureTemplateEdit {
   /** Text present in the shipped default source; the build fails otherwise. */
   readonly find: string;
   /** Visible edit that stands in for a user's customization. */
   readonly replace: string;
 }
+
+/**
+ * Shipped default one ejected Legacy Template File starts from: a Literature
+ * Note slot's default file, or one 2.1.x citation branch.
+ */
+export type FixtureLegacyTemplateOrigin =
+  | "filename"
+  | "note"
+  | "content"
+  | "annotation"
+  | "cite"
+  | "cite2";
+
+/**
+ * The bare 2.1.x partial the Upgrader vault ejects. The one-pass conversion
+ * renames it to `zotlit-partial.annotation-callout.md`.
+ */
+export const UPGRADER_LEGACY_PARTIAL_NAME = "annotation-callout";
+
+/**
+ * One 2.1.x Legacy Template File the Upgrader vault ejects. The file is
+ * `zotlit-<name>.<language>.md` in the template folder, and its text is the
+ * shipped default of the same name with the edit applied. The bare partial is
+ * the exception: it has no default of its own, so it names the one it starts
+ * from in `from`.
+ */
+export type FixtureLegacyTemplate = FixtureTemplateEdit & {
+  /** The language the file is written in; it picks the extension. */
+  readonly language: "liquid" | "eta";
+} & (
+    | { readonly name: FixtureLegacyTemplateOrigin }
+    | {
+        readonly name: typeof UPGRADER_LEGACY_PARTIAL_NAME;
+        readonly from: FixtureLegacyTemplateOrigin;
+      }
+  );
 
 export interface FixtureVaultCase {
   id: "configured" | "fresh" | "upgrader";
@@ -1479,7 +1556,7 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   {
     id: "configured",
     summary:
-      "Current settings, the Books Profile, Literature Notes (one stamped under the Books Profile), and Imported Notes. This is the default.",
+      "Current settings, the Books Profile, an edited Citation Template, the Shared Partial that Profile calls, Literature Notes (one stamped under the Books Profile), and Imported Notes. This is the default.",
   },
   {
     id: "fresh",
@@ -1489,7 +1566,7 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   {
     id: "upgrader",
     summary:
-      "A ZotLit v2.1 vault: version-9 settings, ejected legacy slot files with visible edits, an edited Managed Frontmatter list.",
+      "A ZotLit v2.1 vault: version-9 settings, an edited Managed Frontmatter list, and ejected Legacy Template Files with visible edits: the note slots, a mixed-language citation pair, and one bare partial.",
   },
 ];
 
@@ -1539,26 +1616,58 @@ export const UPGRADER_FRONTMATTER_FIELDS: readonly FixtureFrontmatterField[] = [
 ];
 
 /**
- * Legacy slot files the Upgrader vault ejects into its template folder. Each
- * starts from the shipped Liquid default and carries one visible edit, so a
- * converted document is recognizably the user's own and the trashed files are
- * easy to tell from the defaults.
+ * Legacy Template Files the Upgrader vault ejects into its template folder:
+ * the four Literature Note slots, the two citation slots, and one bare
+ * partial. Each starts from a shipped default and carries one visible edit, so
+ * a converted document is recognizably the user's own and the trashed files
+ * are easy to tell from the defaults.
+ *
+ * The pair is mixed-language on purpose: `cite` is Liquid and `cite2` is Eta,
+ * so the fold takes the Liquid side and the conversion leaves the Eta file in
+ * the vault and names it in its notice.
  */
 export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
   {
     name: "filename",
+    language: "liquid",
     find: "{{ zt.citationKey",
     replace: "lit-{{ zt.citationKey",
   },
   {
     name: "note",
+    language: "liquid",
     find: "# {{ zt.title }}",
     replace: "# {{ zt.title }} (v2.1 template)",
   },
-  { name: "content", find: "## Notes", replace: "## Zotero notes" },
+  {
+    name: "content",
+    language: "liquid",
+    find: "## Notes",
+    replace: "## Zotero notes",
+  },
   {
     name: "annotation",
+    language: "liquid",
     find: "[!note] Page",
     replace: "[!quote] Page",
+  },
+  {
+    name: "cite",
+    language: "liquid",
+    find: "{{ zt.citations | pandoc_cite }}",
+    replace: "({{ zt.citations | pandoc_cite }})",
+  },
+  {
+    name: "cite2",
+    language: "eta",
+    find: "<%= pandocCite(",
+    replace: "cf. <%= pandocCite(",
+  },
+  {
+    name: UPGRADER_LEGACY_PARTIAL_NAME,
+    language: "liquid",
+    from: "annotation",
+    find: "[!note] Page",
+    replace: "[!tip] Page",
   },
 ];

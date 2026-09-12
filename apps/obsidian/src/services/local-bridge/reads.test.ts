@@ -50,14 +50,14 @@ language: liquid
 ---
 # {{ zt.title }}
 
-{% render 'cite' %}
+{% render 'citation' %}
 
 --- zotlit:annotation ---
 {{ zt.text }}
 `;
 
-const CITE_PARTIAL: LiteratureNoteTemplatePartial = {
-  name: "cite",
+const CITATION_TEMPLATE: LiteratureNoteTemplatePartial = {
+  name: "citation",
   language: "liquid",
   source: "[@{{ zt.citationKey }}]",
 };
@@ -152,7 +152,7 @@ async function harness(
     loaded: Promise.resolve({ ...defaults, "attachment.import": true }),
   } as unknown as Pick<SettingsService, "loaded">;
 
-  const partials = options.partials ?? [CITE_PARTIAL];
+  const partials = options.partials ?? [CITATION_TEMPLATE];
   const reads = createLocalBridgeReads({
     app,
     settings,
@@ -339,7 +339,7 @@ it("answers the exact source of a Profile the vault holds", async () => {
       // `shasum -a 256` over the same bytes, as an oracle independent of the
       // hash the read computes.
       revision:
-        "0b198711d2e2994319d4d1f242dbe613e29783fc75907084628f7373d5033803",
+        "1f59f628754b790a18be99ff3319b480b310402bc0a766d875f8e841c61c654d",
     },
   });
 });
@@ -366,7 +366,7 @@ it("bundles the partials the submitted draft calls", async () => {
 
   expect(res.status).toBe(200);
   await expect(res.json()).resolves.toEqual({
-    templates: [CITE_PARTIAL],
+    templates: [CITATION_TEMPLATE],
     diagnostics: [],
   });
 });
@@ -385,13 +385,16 @@ it("reports a partial no vault holds as a diagnostic", async () => {
   };
   expect(bundle.templates).toEqual([]);
   expect(bundle.diagnostics).toEqual([
-    { code: "missing-dependency", message: expect.stringContaining("cite") },
+    {
+      code: "missing-dependency",
+      message: expect.stringContaining("citation"),
+    },
   ]);
 });
 
-it("bundles the cite partial a draft never calls", async () => {
+it("bundles the Citation Template a draft never calls", async () => {
   await using bridge = await harness();
-  const source = BOOKS_SOURCE.replace("{% render 'cite' %}", "");
+  const source = BOOKS_SOURCE.replace("{% render 'citation' %}", "");
 
   const res = await bridge.request(LOCAL_BRIDGE_PATHS.templateDependencies, {
     method: "POST",
@@ -399,7 +402,7 @@ it("bundles the cite partial a draft never calls", async () => {
   });
 
   await expect(res.json()).resolves.toEqual({
-    templates: [CITE_PARTIAL],
+    templates: [CITATION_TEMPLATE],
     diagnostics: [],
   });
 });
@@ -407,8 +410,8 @@ it("bundles the cite partial a draft never calls", async () => {
 it("keeps the partials that resolved when one call goes unanswered", async () => {
   await using bridge = await harness();
   const source = BOOKS_SOURCE.replace(
-    "{% render 'cite' %}",
-    "{% render 'cite' %}\n{% render 'header' %}",
+    "{% render 'citation' %}",
+    "{% render 'citation' %}\n{% render 'header' %}",
   );
 
   const res = await bridge.request(LOCAL_BRIDGE_PATHS.templateDependencies, {
@@ -417,7 +420,7 @@ it("keeps the partials that resolved when one call goes unanswered", async () =>
   });
 
   await expect(res.json()).resolves.toEqual({
-    templates: [CITE_PARTIAL],
+    templates: [CITATION_TEMPLATE],
     diagnostics: [
       {
         code: "missing-dependency",
@@ -428,10 +431,12 @@ it("keeps the partials that resolved when one call goes unanswered", async () =>
 });
 
 it("reports a dependency the web Workbench cannot run as a diagnostic", async () => {
-  await using bridge = await harness({ partials: [CITE_PARTIAL, ETA_PARTIAL] });
+  await using bridge = await harness({
+    partials: [CITATION_TEMPLATE, ETA_PARTIAL],
+  });
   const source = BOOKS_SOURCE.replace(
-    "{% render 'cite' %}",
-    "{% render 'cite' %}\n{% render 'footer' %}",
+    "{% render 'citation' %}",
+    "{% render 'citation' %}\n{% render 'footer' %}",
   );
 
   const res = await bridge.request(LOCAL_BRIDGE_PATHS.templateDependencies, {
@@ -443,7 +448,7 @@ it("reports a dependency the web Workbench cannot run as a diagnostic", async ()
     templates: { name: string }[];
     diagnostics: { code: string }[];
   };
-  expect(bundle.templates.map(({ name }) => name)).toEqual(["cite"]);
+  expect(bundle.templates.map(({ name }) => name)).toEqual(["citation"]);
   expect(bundle.diagnostics).toEqual([
     {
       code: "unsupported-dependency",
@@ -502,7 +507,7 @@ it("logs the operation and never the source, the snapshot, or the credential", a
   expect(logged).toContain("selected-profile");
   expect(logged).toContain("selected-item");
   expect(logged).not.toContain("Bearer");
-  expect(logged).not.toContain("{% render 'cite' %}");
+  expect(logged).not.toContain("{% render 'citation' %}");
   expect(logged).not.toContain(ITEM.title);
   expect(logged).not.toContain(ITEM_NOTE_PATH);
 });

@@ -3,7 +3,7 @@
 ## Scope
 
 This file governs the Template Workbench on the docs site at `/workbench`
-and its Obsidian counterpart: the Profile Editor with its Note preview and
+and its Obsidian counterpart: the Template Workbench View with its Note preview and
 Template data explorer panes. It holds judgment — task order, density,
 alignment, disclosure, wording roles — as observable sentences an agent can
 check against a rendered page. Reusable mechanics live in the shared kit and
@@ -170,7 +170,7 @@ data in the pane menu. It rereads the available fields, annotations, or built-in
 examples for the current selection. Automatic refresh continues; in on-demand
 mode, Run renders the preview. Sidebars keep a small selection trigger near
 the current task. The pane menu provides actions in both layouts. Place Open
-template workbench in the Profile Editor's pane menu.
+template workbench in the Template Workbench View's pane menu.
 
 The Note preview pane keeps its settings in native chrome, in three pane menu
 sections: the selection actions; one checked choice that starts with the verb
@@ -192,14 +192,14 @@ Use CSS selectors on Obsidian's native sidebar containers to switch these
 layouts. Container membership determines the layout; keep viewport and
 layout detection out of JavaScript state.
 
-In Obsidian, all Profile editor text buttons and standalone selects share the
-Match tab's outlined native surface. Define its normal, hover, and border
-variables once on the Profile editor root. Share text-button classes through
-`profileEditorButton`; call sites add layout and state only. Match condition
+In Obsidian, all Template Workbench View text buttons and standalone selects
+share the Match tab's outlined native surface. Define its normal, hover, and
+border variables once on the view root. Share text-button classes through
+`templateWorkbenchButton`; call sites add layout and state only. Match condition
 controls retain their joined input surface through local variable overrides.
 Use native icon controls for row actions and navigation.
 
-In the Obsidian Profile editor, property cards keep the compact 8 px inset and
+In the Obsidian Template Workbench View, property cards keep the compact 8 px inset and
 native medium radius. Preserve the title button’s native padding and align the
 expanded form to the title and summary with a matching inline inset
 (`--size-2-3`). Use 6 px within field groups and 12 px between groups. Keep
@@ -345,8 +345,9 @@ Shared surfaces and their owners:
 | `toast.add()` | [toast.tsx](src/components/ui/toast.tsx) | Routine action confirmations |
 | `ResultHeader`, `ResultBody`, `ResultColumn`, `PreviewControls` | `@zotlit/workbench/ui` | The rendered result and its stale notice on both hosts; a host that owns its own heading composes `ResultBody` |
 | Render scheduler `staleReason` | `@zotlit/workbench/ui` | Which stale sentence a host shows: hold, on demand, or none |
-| Theme parts per component | [web theme](src/lib/workbench/theme.tsx), [Obsidian theme](../obsidian/src/views/profile-editor/theme.tsx) | Every class a shared part wears; a new part needs a value in both |
-| `profileEditorButton`, `selectionBar`, `selectionControl`, `selectionHint` | Obsidian theme | Text buttons, the selection row, its triggers, and hint text in the Obsidian panes |
+| Theme parts per component | [web theme](src/lib/workbench/theme.tsx), [Obsidian theme](../obsidian/src/views/template-workbench/theme.tsx) | Every class a shared part wears; a new part needs a value in both, unless only one host draws it |
+| `partial-box`, `partial-name`, `partial-arguments`, `partial-problem`, `partial-action` | Obsidian theme | The Partial Placeholder. Shared Partials are vault files (ADR 0055), so the web passes no placeholder host and carries no values for these parts |
+| `templateWorkbenchButton`, `selectionBar`, `selectionControl`, `selectionHint` | Obsidian theme | Text buttons, the selection row, its triggers, and hint text in the Obsidian panes |
 | `addAction`, `onPaneMenu` with `setSection` and `setChecked` | Obsidian API | Header actions and grouped, checked pane menu items |
 
 ## Patterns to avoid

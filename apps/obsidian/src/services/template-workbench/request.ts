@@ -2,12 +2,26 @@
 
 import type { CliData } from "obsidian";
 
-import { parseIndexedKey, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import {
+  DEFAULT_CITATION_VARIANT,
+  parseIndexedKey,
+  TEMPLATE_SLOT_ROOTS,
+} from "@zotlit/db";
+import type { CitationVariant, ContractRoot, TemplateSlot } from "@zotlit/db";
 import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
+import {
+  isCitationExampleId,
+  isPartialContext,
+} from "@zotlit/workbench/render";
+import type {
+  CitationExampleId,
+  PartialContext,
+} from "@zotlit/workbench/render";
+
+import { isPartialNameShape } from "@/services/template/defaults";
 
 import { diagnostic } from "./envelope";
 import type { Diagnostic, WorkbenchIdentity } from "./envelope";
@@ -16,15 +30,27 @@ import type { GuideTopic } from "./guide";
 import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
 import {
   choices,
+  CITATION_EXAMPLE_NAMES,
+  CITATION_TEMPLATE,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  isPartialTemplate,
+  PARTIAL_CONTEXT_NAMES,
+  partialTemplateName,
   quotedList,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./vocabulary";
+import type { RenderTemplate } from "./vocabulary";
 
 export {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 };
 
@@ -55,11 +81,20 @@ export const FRONTMATTER_SET_PARAMS = [
 ] as const;
 export const FRONTMATTER_REMOVE_PARAMS = ["field"] as const;
 export const FRONTMATTER_REORDER_PARAMS = ["order"] as const;
-export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
+export const DATA_PARAMS = [
+  "key",
+  "root",
+  "example",
+  "format",
+  "expect-source",
+] as const;
 export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
   "key",
   "template",
+  "root",
+  "variant",
+  "example",
   "format",
   "expect-source",
 ] as const;
@@ -73,17 +108,25 @@ export const DOCUMENT_RENDER_PARAMS = [
 export const GUIDE_PARAMS = ["topic"] as const;
 export const SOURCE_PARAMS = ["template"] as const;
 
-export interface DataRequest {
-  key: string;
+/**
+ * What one command reads: an Indexed Key naming a live Zotero object, or —
+ * for the `citation` root alone — one built-in example set.
+ */
+type ObjectSelector = { key: string } | { example: CitationExampleId };
+
+export type DataRequest = ObjectSelector & {
   root: ContractRoot;
   format: "json";
-}
+};
 
-export interface RenderRequest {
-  key: string;
-  template: TemplateSlot;
+export type RenderRequest = ObjectSelector & {
+  template: RenderTemplate;
+  /** The caller a partial render reads its data as; absent for every other Template. */
+  root?: PartialContext;
+  /** The Citation Variant a citation render names; absent for every other Template. */
+  variant?: CitationVariant;
   format: "markdown" | "json";
-}
+};
 
 export type DocumentRenderRequest =
   | { key: string; profile: string }
@@ -98,17 +141,17 @@ export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
 
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
   const root = parseContractRoot(params.root);
   if (root === null) return invalid("root", rootVocabulary());
+
+  const selector = parseObjectSelector(params, root === "citation");
+  if (selector.kind === "invalid") return selector;
 
   const format = params.format ?? "json";
   if (format !== "json") {
     return invalid("format", "format must be 'json'.");
   }
-  return withExpectations(params, { key, root, format: "json" });
+  return withExpectations(params, { ...selector.value, root, format: "json" });
 }
 
 export function parseRenderRequest(
@@ -117,27 +160,144 @@ export function parseRenderRequest(
   const rejected = rejectAccepted(params, {
     command: "template-render",
     accepted: RENDER_PARAMS,
-    hints: { root: "template-render infers the data root from template." },
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
 
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
-  const template = parseTemplateSlot(params.template);
+  const template = parseRenderTemplate(params.template);
   if (template === null) {
     return invalid(
       "template",
-      `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`,
+      `template must be ${quotedList(RENDER_TEMPLATE_NAMES)}.`,
     );
   }
+  const partial = partialTemplateName(template);
+  if (partial !== null && !isPartialNameShape(partial)) {
+    return invalid(
+      "template",
+      "A Shared Partial name is letters, digits, and hyphens: template=partial:<name>.",
+    );
+  }
+  const root = parsePartialRoot(params, partial !== null);
+  if (root.kind === "invalid") return root;
+  // A partial read as called from a Citation takes the same set the Citation
+  // Template does; under every other caller it takes the caller's own object.
+  const citationSet =
+    template === CITATION_TEMPLATE || root.value.root === "citation";
+
+  const selector = parseObjectSelector(params, citationSet);
+  if (selector.kind === "invalid") return selector;
+
+  const variant = parseCitationVariant(params, citationSet);
+  if (variant.kind === "invalid") return variant;
 
   const format = params.format ?? "json";
   if (format !== "markdown" && format !== "json") {
     return invalid("format", "format must be 'markdown' or 'json'.");
   }
-  return withExpectations(params, { key, template, format });
+  return withExpectations(params, {
+    ...selector.value,
+    template,
+    ...root.value,
+    ...variant.value,
+    format,
+  });
 }
+
+/**
+ * The caller a partial render reads its data as. Only a partial has one to
+ * choose: every other Template names the root its own slot answers for.
+ */
+function parsePartialRoot(
+  params: CliData,
+  partial: boolean,
+): ParsedRequest<{ root?: PartialContext }> {
+  const root = params.root;
+  if (root === undefined) {
+    return { kind: "valid", value: partial ? { root: "note" } : {} };
+  }
+  if (!partial) {
+    return invalid(
+      "root",
+      "template-render infers the data root from template; root names the caller a partial is rendered as, on template=partial:<name> only.",
+    );
+  }
+  if (!isPartialContext(root)) {
+    return invalid(
+      "root",
+      `root must be ${quotedList(PARTIAL_CONTEXT_NAMES)}.`,
+    );
+  }
+  return { kind: "valid", value: { root } };
+}
+
+/**
+ * The object a command reads. Every root takes an Indexed Key; the `citation`
+ * root takes one built-in example set instead, since a Citation the user has
+ * yet to insert has no Zotero object of its own.
+ */
+function parseObjectSelector(
+  params: CliData,
+  citation: boolean,
+): ParsedRequest<ObjectSelector> {
+  const example = params.example;
+  if (example !== undefined) {
+    if (!citation) return invalid("example", EXAMPLE_IS_CITATION_ONLY_MESSAGE);
+    if (params.key !== undefined) {
+      return invalid(
+        "example",
+        `Select the Citation with example=${choices(CITATION_EXAMPLE_NAMES)} or with key=<indexed-key>, not both.`,
+      );
+    }
+    if (!isCitationExampleId(example)) {
+      return invalid(
+        "example",
+        `example must be ${quotedList(CITATION_EXAMPLE_NAMES)}.`,
+      );
+    }
+    return { kind: "valid", value: { example } };
+  }
+
+  const key = selectorKey(params);
+  if (key === null) {
+    return invalid(
+      "key",
+      citation
+        ? `key must be an Indexed Key, or select a built-in Citation with example=${choices(CITATION_EXAMPLE_NAMES)}.`
+        : "key must be an Indexed Key.",
+    );
+  }
+  return { kind: "valid", value: { key } };
+}
+
+/** The Citation Variant a citation render names; `main` when it names none. */
+function parseCitationVariant(
+  params: CliData,
+  citation: boolean,
+): ParsedRequest<{ variant?: CitationVariant }> {
+  const variant = params.variant;
+  if (variant === undefined) {
+    return {
+      kind: "valid",
+      value: citation ? { variant: DEFAULT_CITATION_VARIANT } : {},
+    };
+  }
+  if (!citation) {
+    return invalid(
+      "variant",
+      `variant names a Citation Variant; it applies to template=${CITATION_TEMPLATE} only.`,
+    );
+  }
+  if (!(CITATION_VARIANT_NAMES as readonly string[]).includes(variant)) {
+    return invalid(
+      "variant",
+      `variant must be ${quotedList(CITATION_VARIANT_NAMES)}.`,
+    );
+  }
+  return { kind: "valid", value: { variant: variant as CitationVariant } };
+}
+
+const EXAMPLE_IS_CITATION_ONLY_MESSAGE =
+  "example selects a built-in Citation set; it applies to the citation root only. Every other root selects a Zotero object with key=<indexed-key>.";
 
 /** Select one Profile, installed document, or in-memory source override. */
 export function parseDocumentRenderRequest(
@@ -498,6 +658,12 @@ function parseTemplateSlot(value: string | undefined): TemplateSlot | null {
   return value !== undefined && Object.hasOwn(TEMPLATE_SLOT_ROOTS, value)
     ? (value as TemplateSlot)
     : null;
+}
+
+function parseRenderTemplate(value: string | undefined): RenderTemplate | null {
+  if (value === CITATION_TEMPLATE) return CITATION_TEMPLATE;
+  if (value !== undefined && isPartialTemplate(value)) return value;
+  return parseTemplateSlot(value);
 }
 
 function rootVocabulary(): string {

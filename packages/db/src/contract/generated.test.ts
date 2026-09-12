@@ -2,6 +2,7 @@ import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, it } from "vitest";
 
 import annotationSchema from "./generated/annotation.schema.json";
+import citationSchema from "./generated/citation.schema.json";
 import filenameSchema from "./generated/filename.schema.json";
 import ir from "./generated/ir.json";
 import runtimeIr from "./generated/ir.runtime.json";
@@ -12,6 +13,7 @@ const schemas = {
   note: noteSchema,
   annotation: annotationSchema,
   filename: filenameSchema,
+  citation: citationSchema,
 };
 
 describe("contract artifacts", () => {
@@ -33,6 +35,11 @@ describe("contract artifacts", () => {
       filename: {
         type: "TemplateFilenameItemData",
         templates: templateSlotsForRoot("filename"),
+        references: [],
+      },
+      citation: {
+        type: "CitationTemplateData",
+        templates: templateSlotsForRoot("citation"),
         references: [],
       },
     });
@@ -402,6 +409,41 @@ function* walkIR(value: unknown): Generator<Record<string, unknown>> {
   yield value as Record<string, unknown>;
   for (const child of Object.values(value)) yield* walkIR(child);
 }
+
+describe("citation root schema", () => {
+  const root = citationSchema.$defs.CitationTemplateData;
+
+  it("requires the variant beside the two parallel citation arrays", () => {
+    expect(Object.keys(root.properties)).toEqual([
+      "variant",
+      "items",
+      "citations",
+    ]);
+    expect(root.required).toEqual(["variant", "items", "citations"]);
+  });
+
+  it("literalizes both Citation Variants, documented and in declaration order", () => {
+    const options = citationSchema.$defs.CitationVariant.oneOf;
+    expect(options.map(({ const: value }) => value)).toEqual(["main", "alt"]);
+    for (const option of options) {
+      expect(option.description).toMatch(/\S/);
+    }
+  });
+
+  it("keeps a cited item open for the Zotero fields beyond the typed ones", () => {
+    expect(
+      citationSchema.$defs.TemplateCiteItemData.additionalProperties,
+    ).toMatchObject({
+      description: expect.stringMatching(/Additional Zotero fields/),
+    });
+  });
+
+  it("names the root itself, since no Legacy Template File slot renders it", () => {
+    expect(citationSchema.description).toBe(
+      "The serialized `zt` data of the `citation` root.",
+    );
+  });
+});
 
 describe("annotation root schema", () => {
   const root = annotationSchema.$defs.AnnotationTemplateContext;

@@ -1,6 +1,6 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
-import type { ProfileRenderResult } from "#/render/result";
+import type { TemplateRenderResult } from "#/render/result";
 import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
@@ -82,10 +82,13 @@ export function ResultRegion({
   );
 }
 
+/** Which of the four outputs a preview shows, which picks its heading and body. */
+export type ResultMode = "note" | "annotation" | "citation" | "partial";
+
 export interface ResultBodyProps {
-  result: ProfileRenderResult | null;
-  annotationResult?: ProfileRenderResult | null;
-  mode: "note" | "annotation";
+  result: TemplateRenderResult | null;
+  annotationResult?: TemplateRenderResult | null;
+  mode: ResultMode;
   stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
   staleReason: "hold" | "demand" | "live" | null;
@@ -121,6 +124,8 @@ export function ResultBody({
   const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
+  const showCitation = mode === "citation";
+  const showPartial = mode === "partial";
   const previewProblem = showAnnotation
     ? (annotationResult?.diagnostics.find(
         ({ part }) => part === "annotation",
@@ -159,7 +164,7 @@ export function ResultBody({
       <ResultRegion emphasis={false}>
         {result ? (
           <Suspense fallback={pending}>
-            {!showAnnotation && (
+            {showNote && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
@@ -208,7 +213,15 @@ export function ResultBody({
                 )}
               </p>
             )}
-            {showAnnotation ? (
+            {showCitation || showPartial ? (
+              <Markdown
+                markdown={
+                  (showPartial ? result.partial : result.citation) ?? ""
+                }
+                properties={[]}
+                showMarkdown={showMarkdown}
+              />
+            ) : showAnnotation ? (
               annotationResult ? (
                 <Markdown
                   markdown={annotationResult.annotation ?? ""}

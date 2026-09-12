@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 
 import {
   buildFilenameContext,
+  citekeysToCiteTemplateData,
   CollectionCache,
   fetchNoteContext,
   fetchAnnotationsTemplateData,
@@ -18,9 +19,18 @@ import {
   resolveItemTags,
   withAnnotationCitation,
 } from "@zotlit/db";
-import type { Annotation, ContractRoot, Item, NoteResolvers } from "@zotlit/db";
+import type {
+  Annotation,
+  CitationTemplateData,
+  CitationVariant,
+  ContractRoot,
+  Item,
+  NoteResolvers,
+} from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { TemplateError } from "@zotlit/templates/facade";
+import { citationExampleData } from "@zotlit/workbench/render";
+import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { annotationCitation } from "@/lib/annotation-render";
 import { creatorSummary } from "@/lib/item-summary";
@@ -28,6 +38,7 @@ import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import {
   buildObsidianInertNoteResolvers,
@@ -37,8 +48,13 @@ import {
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-/** The Template the annotation root's `citation` getter renders. */
-const CITE_TEMPLATE = "cite";
+/**
+ * The object one Citation's data is built from: a built-in example set, or an
+ * Indexed Key naming a live Item.
+ */
+export type CitationSelector =
+  | { readonly key: string }
+  | { readonly example: CitationExampleId };
 
 export type TemplateDataLoadResult =
   | { kind: "data"; data: object }
@@ -46,6 +62,11 @@ export type TemplateDataLoadResult =
   | { kind: "no-parent-item" }
   | { kind: "annotation-required" }
   | { kind: "annotation-attachment-missing" };
+
+/** {@link TemplateDataLoadResult} with the Citation Template data typed. */
+export type CitationDataLoadResult =
+  | { kind: "data"; data: CitationTemplateData }
+  | Exclude<TemplateDataLoadResult, { kind: "data" }>;
 
 export interface TemplateDataDeps {
   app: App;
@@ -55,7 +76,7 @@ export interface TemplateDataDeps {
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
   settings: Pick<SettingsService, "loaded">;
-  templates: Pick<TemplateService, "ready" | "render">;
+  templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
   zoteroPref: Pick<
     ZoteroPrefService,
     "ready" | "dataDir" | "baseAttachmentPath"
@@ -67,6 +88,9 @@ export async function loadTemplateData(
   indexedKey: string,
   root: ContractRoot,
 ): Promise<TemplateDataLoadResult> {
+  if (root === "citation") {
+    return await loadCitationData(deps, { key: indexedKey }, "main");
+  }
   const [settings] = await Promise.all([
     deps.settings.loaded,
     deps.noteIndex.whenIndexed(),
@@ -125,9 +149,40 @@ export async function loadTemplateData(
 }
 
 /**
+ * The Citation Template data one example set or one chosen Item produces:
+ * `zt.citations` with `zt.items` beside it, under `variant`. A chosen Item
+ * yields a one-item set with no locator, prefix, or suffix — what the
+ * suggester inserts for a plain Enter. An example set reads nothing from the
+ * database.
+ */
+export async function loadCitationData(
+  deps: Pick<TemplateDataDeps, "db" | "settings">,
+  selector: CitationSelector,
+  variant: CitationVariant,
+): Promise<CitationDataLoadResult> {
+  if ("example" in selector) {
+    return {
+      kind: "data",
+      data: citationExampleData(selector.example, variant),
+    };
+  }
+  await deps.settings.loaded;
+  using lease = await deps.db.acquireRead();
+  const selected = resolveNoteItem(lease.client, selector.key);
+  if (selected.kind !== "item") return selected;
+  const { item } = selected;
+  const citationKey =
+    "citationKey" in item.fields ? (item.fields.citationKey ?? null) : null;
+  return {
+    kind: "data",
+    data: citekeysToCiteTemplateData([{ citationKey, item }], variant),
+  };
+}
+
+/**
  * Render the annotation root's `citation` field, labeling its failure with the
- * Template that raised it: the getter runs the `cite` Template, so a fault
- * that names no Template belongs to `cite`.
+ * Template that raised it: the getter runs the Citation Template, so a fault
+ * that names no Template belongs to it.
  */
 function renderAnnotationCitation(
   parentItem: Parameters<typeof annotationCitation>[0],
@@ -139,14 +194,14 @@ function renderAnnotationCitation(
   } catch (error) {
     if (error instanceof InertTemplateError) {
       if (error.templateName !== undefined) throw error;
-      throw new InertTemplateError(error.message, CITE_TEMPLATE, {
+      throw new InertTemplateError(error.message, CITATION_TEMPLATE_NAME, {
         cause: error,
       });
     }
     if (error instanceof TemplateError) throw error;
     throw new TemplateError(
       error instanceof Error ? error.message : String(error),
-      CITE_TEMPLATE,
+      CITATION_TEMPLATE_NAME,
       { cause: error },
     );
   }

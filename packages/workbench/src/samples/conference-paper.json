@@ -1,5 +1,5 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "item": {
     "key": "CNPF226A",
     "indexedKey": "CNPF226A",
@@ -681,5 +681,5 @@
       "reason": "The Attachment has no permitted vault-relative target."
     }
   ],
-  "revision": "e949e2741959b150993a7847065ac76114257ff15d18110def73f8e5b54e93fa"
+  "revision": "a41bdf02772720f5339a3859dcb545cfcb0011ae5331ab1a7565f86edde6244e"
 }

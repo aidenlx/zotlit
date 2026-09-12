@@ -5,6 +5,7 @@ import type {
   LiteratureNoteTemplatePartial,
 } from "./literature-note-template";
 import { updateLiteratureNoteTemplateManifestKeys } from "./literature-note-template-manifest-edit";
+import { formatPlainTemplateDocument } from "./plain-template-document";
 
 export type { LiteratureNoteTemplatePartial } from "./literature-note-template";
 
@@ -61,6 +62,70 @@ export function parseLiteratureNotePack(
   };
 }
 
+/**
+ * What one bundled partial does to the vault's own Shared Partial files:
+ * `write` for a name no document answers, `unchanged` for a document that
+ * already holds this very source under this very language, `conflict` for one
+ * that holds something else, which only a keep-or-replace answer settles,
+ * `refused` for a name no Shared Partial file can be given, and `other-case`
+ * for a name the vault's own files answer only under another case — one file
+ * answers both spellings on a case-insensitive filesystem while a call
+ * resolves by exact name. The last two reach no vault path and keep their
+ * transport copy.
+ */
+export type LiteratureNotePartialUnpackVerdict =
+  | "write"
+  | "unchanged"
+  | "conflict"
+  | "refused"
+  | "other-case";
+
+/** One bundled partial and the file it unpacks to. */
+export interface LiteratureNotePartialUnpack {
+  readonly name: string;
+  readonly verdict: LiteratureNotePartialUnpackVerdict;
+  /** The plain Template Document bytes the partial's own file holds. */
+  readonly document: string;
+}
+
+/**
+ * Decide what the manifest's transport copy of each partial does to the files
+ * a vault already holds, so a caller writes what is new, leaves identical text
+ * alone, and asks about the rest before any byte of the reader's own file goes.
+ *
+ * @param held - what the vault holds under each name, keyed by name: a name
+ *   the map does not carry has no document, and one mapped to `null` has a
+ *   document whose text is unavailable, which reads as a conflict.
+ * @param accepts - whether a name a bundle brings may become a file of its
+ *   own. A name held under a document of the vault's own is settled before
+ *   this is asked, so a reserved name still reads as `unchanged`.
+ */
+export function unpackLiteratureNotePartials(
+  bundled: readonly LiteratureNoteTemplatePartial[],
+  held: ReadonlyMap<
+    string,
+    Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
+  >,
+  accepts: (name: string) => boolean = () => true,
+): LiteratureNotePartialUnpack[] {
+  return bundled.map((partial) => {
+    const current = held.get(partial.name);
+    const verdict: LiteratureNotePartialUnpackVerdict = !held.has(partial.name)
+      ? accepts(partial.name)
+        ? "write"
+        : "refused"
+      : current?.language === partial.language &&
+          current.source === partial.source
+        ? "unchanged"
+        : "conflict";
+    return {
+      name: partial.name,
+      verdict,
+      document: formatPlainTemplateDocument(partial.source, partial.language),
+    };
+  });
+}
+
 export interface LiteratureNotePackCurrentFile {
   readonly key: string;
   readonly source: string | null;
@@ -92,9 +157,11 @@ export interface LiteratureNotePackDiffRow {
 }
 
 /**
- * The partial names a document's own templates call, before any bundle resolves
- * them. The reserved `annotation` name is the document's own section rather
- * than a partial, so it is left out.
+ * Every name a document's own templates call, sorted, before any bundle
+ * resolves them. A name another Template already answers — the document's own
+ * Annotation Section among them — is a call this scan reports all the same:
+ * which of them can be a Shared Partial is the caller's own list to hold, and
+ * this package carries none.
  */
 export function literatureNoteTemplateDependencies(
   document: LiteratureNoteTemplateDocument,
@@ -104,7 +171,7 @@ export function literatureNoteTemplateDependencies(
     document.annotationSection.source,
     document.manifest.filename,
   ].flatMap(referencedPartialNames);
-  return [...new Set(names)].filter((name) => name !== "annotation").sort();
+  return [...new Set(names)].sort();
 }
 
 /** The fields Share and Import can change while retaining authored template text. */

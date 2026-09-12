@@ -8,13 +8,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import {
-  activeProfileEditor,
-  subscribeActiveProfileEditor,
+  activeTemplateWorkbench,
+  subscribeActiveTemplateWorkbench,
 } from "@/views/note-preview/register";
 import type {
-  ProfileAuthoringContext,
-  ProfileEditorView,
-} from "@/views/profile-editor/view";
+  TemplateAuthoringContext,
+  TemplateWorkbenchView,
+} from "@/views/template-workbench/view";
 
 import { TemplateDataExplorerView } from "./view";
 import type { ExplorerViewDeps } from "./view";
@@ -31,9 +31,9 @@ vi.mock("@/views/note-preview/register", () => ({
   ) => {
     result.done = () => app.workspace.onLayoutReady(callback);
   },
-  subscribeActiveProfileEditor: vi.fn(),
+  subscribeActiveTemplateWorkbench: vi.fn(),
   registerCompanionHistory: vi.fn(() => () => {}),
-  activeProfileEditor: vi.fn(),
+  activeTemplateWorkbench: vi.fn(),
 }));
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
@@ -73,14 +73,17 @@ it("binds copied context to its editor, addresses field requests, and releases w
     loadLocalStorage: () => null,
   } as unknown as App;
   const editorLeaf = { app } as unknown as WorkspaceLeaf;
-  const context: ProfileAuthoringContext = {
+  const context: TemplateAuthoringContext = {
     leaf: editorLeaf,
     path: "profiles/paper.md",
+    kind: "profile",
     item: { id: "PAPER001", title: "Paper" },
     root: "note",
     tab: "note",
     advanced: false,
     annotationId: null,
+    citation: null,
+    partial: null,
     canInsertField: true,
   };
   const editor = {
@@ -88,11 +91,11 @@ it("binds copied context to its editor, addresses field requests, and releases w
     authoringContext: context,
     getViewData: () => "A note",
     chooseItem: vi.fn(),
-  } as unknown as ProfileEditorView;
-  let binding: (editor: ProfileEditorView | null) => void = () => {};
-  vi.mocked(activeProfileEditor).mockReturnValue(editor);
+  } as unknown as TemplateWorkbenchView;
+  let binding: (editor: TemplateWorkbenchView | null) => void = () => {};
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
   const unbind = vi.fn();
-  vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
       binding = listener;
       listener(editor);
@@ -133,7 +136,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
         node: expect.objectContaining({ path: ["title"] }),
       }),
     );
-    vi.mocked(activeProfileEditor).mockReturnValue(null);
+    vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
     const insertions = trigger.mock.calls.filter(
       ([name]) => name === "zotlit:insert-template-field",
     ).length;
@@ -143,7 +146,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
         ([name]) => name === "zotlit:insert-template-field",
       ),
     ).toHaveLength(insertions);
-    vi.mocked(activeProfileEditor).mockReturnValue(editor);
+    vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
     const before = vi.mocked(loadTemplateData).mock.calls.length;
     view.leaf.pinned = true;
     await act(async () =>
@@ -187,9 +190,9 @@ it("binds copied context to its editor, addresses field requests, and releases w
       },
       getViewData: () => "Books output.",
       chooseItem: vi.fn(),
-    } as unknown as ProfileEditorView;
+    } as unknown as TemplateWorkbenchView;
     view.leaf.pinned = true;
-    vi.mocked(activeProfileEditor).mockReturnValue(earlierPeer);
+    vi.mocked(activeTemplateWorkbench).mockReturnValue(earlierPeer);
     const heldInsertion = insertion()!;
     await act(async () => binding(earlierPeer));
     expect(view.contentEl.textContent).toContain("Native paper");
@@ -246,8 +249,8 @@ it("restores independent Explorer navigation after delayed data and keeps search
     },
     loadLocalStorage: () => null,
   } as unknown as App;
-  vi.mocked(activeProfileEditor).mockReturnValue(null);
-  vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
+  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
       listener(null);
       return () => {};
@@ -378,14 +381,17 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
     },
     loadLocalStorage: () => null,
   } as unknown as App;
-  let context: ProfileAuthoringContext = {
+  let context: TemplateAuthoringContext = {
     leaf: {} as WorkspaceLeaf,
     path: "profiles/paper.md",
+    kind: "profile",
     item: { id: "PAPER001", title: "First paper" },
     root: "note",
     tab: "note",
     advanced: false,
     annotationId: null,
+    citation: null,
+    partial: null,
     canInsertField: true,
   };
   let accepted = true;
@@ -400,10 +406,10 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
         if (event.name === "zotlit:authoring-context") event.callback(context);
       return true;
     }),
-  } as unknown as ProfileEditorView;
+  } as unknown as TemplateWorkbenchView;
   Object.defineProperty(editor, "leaf", { value: context.leaf });
-  vi.mocked(activeProfileEditor).mockReturnValue(editor);
-  vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
+  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
       listener(editor);
       return () => {};
@@ -483,13 +489,16 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     loadLocalStorage: () => null,
   } as unknown as App;
   const editorLeaf = { app } as unknown as WorkspaceLeaf;
-  const context: ProfileAuthoringContext = {
+  const context: TemplateAuthoringContext = {
     leaf: editorLeaf,
     path: "profiles/paper.md",
+    kind: "profile",
     item: { id: "PAPER001", title: "Paper" },
     root: "note",
     tab: "note",
     annotationId: null,
+    citation: null,
+    partial: null,
     advanced: false,
     canInsertField: true,
   };
@@ -497,9 +506,9 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     leaf: editorLeaf,
     authoringContext: context,
     chooseItem: vi.fn(),
-  } as unknown as ProfileEditorView;
-  vi.mocked(activeProfileEditor).mockReturnValue(editor);
-  vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+  } as unknown as TemplateWorkbenchView;
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
+  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
       listener(editor);
       return () => {};

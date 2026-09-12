@@ -85,7 +85,28 @@ export function problemText(
         message: m.workbench_problem_reserved_annotation_partial(),
         recovery: m.workbench_problem_reserved_annotation_partial_recovery(),
       };
+    case "bundled-partial":
+      return {
+        message: m.workbench_problem_bundled_partial({
+          names: String(problem.params?.names),
+        }),
+        recovery: m.workbench_problem_bundled_partial_recovery(),
+      };
   }
+}
+
+/**
+ * The button one problem carries beside its recovery line, for a problem the
+ * host can repair on the reader's word. Absent for every code whose repair is
+ * the reader's own edit.
+ */
+export function problemAction(
+  m: WorkbenchMessages,
+  problem: WorkbenchProblem,
+): string | null {
+  return problem.code === "bundled-partial"
+    ? m.workbench_problem_bundled_partial_unpack()
+    : null;
 }
 
 /** The one line a render diagnostic reads as. */
@@ -115,6 +136,12 @@ export function diagnosticText(
         : m.workbench_diagnostic_property_javascript({
             key: String(params.key),
           });
+    case "missing-partial":
+      // The engine's own render failure, which names the partial it could not
+      // resolve; ADR 0055 rules out reading a missing partial off a scan.
+      return m.workbench_diagnostic_missing_partial({
+        name: String(params.name),
+      });
     case "unsupported-dependency":
       // The renderer names the dependency it refused and leaves the words
       // here; a Local Bridge that reports its own bundle failure sends the

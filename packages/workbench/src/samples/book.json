@@ -1,5 +1,5 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "item": {
     "key": "NW2CPDTC",
     "indexedKey": "NW2CPDTC",
@@ -240,5 +240,5 @@
       "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "c4d3265e82a82b58047ac0cf0d1da7e688b5dfe644a28ebc8f8289bd19df2264"
+  "revision": "bf38b34fa28345d700cf89072e847b333a3eeabfb623644c4783da7aeca25061"
 }

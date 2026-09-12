@@ -16,7 +16,7 @@ import {
   renderProfile,
 } from "@zotlit/workbench/render";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
 
@@ -30,7 +30,7 @@ import { Workbench } from "./workbench";
 // given and hold one render open.
 const { renderInThread } = vi.hoisted(() => ({
   renderInThread:
-    vi.fn<(request: RenderRequest) => Promise<ProfileRenderResult>>(),
+    vi.fn<(request: RenderRequest) => Promise<TemplateRenderResult>>(),
 }));
 
 vi.mock("./render", () => ({ renderInThread }));

@@ -1,14 +1,20 @@
 // Shared ranking for template field and language suggestions.
 import type { Suggestion, SuggestionConfig } from "./suggestions";
 
-/** Rank once in the core so host widgets display the same order. */
+/**
+ * Rank once in the core so host widgets display the same order. A pinned
+ * option — one that acts rather than naming something the query could match —
+ * closes the list whatever the reader has typed.
+ */
 export function rankSuggestions(
   options: Suggestion[],
   query: string,
   config: SuggestionConfig,
 ): Suggestion[] {
   const fields = config.fields ?? [];
+  const pinned = options.filter((option) => option.pinned);
   return options
+    .filter((option) => !option.pinned)
     .map((option, index) => {
       const common = fields.findIndex((field) => field.path === option.path);
       const displayLabel = common < 0 ? option.label : fields[common]!.label;
@@ -27,7 +33,8 @@ export function rankSuggestions(
     })
     .filter(({ score }) => Number.isFinite(score))
     .sort((a, b) => a.score - b.score || a.order - b.order)
-    .map(({ option }) => option);
+    .map(({ option }) => option)
+    .concat(pinned);
 }
 
 function matchScore(value: string, search: string): number {

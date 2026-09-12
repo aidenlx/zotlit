@@ -76,7 +76,7 @@ declare module "obsidian" {
     on(
       name: "zotlit:workbench-selection",
       callback: (
-        selection: import("../views/profile-editor/selection").WorkbenchSelectionEvent,
+        selection: import("../views/template-workbench/selection").WorkbenchSelectionEvent,
       ) => void,
       ctx?: any,
     ): EventRef;
@@ -107,7 +107,7 @@ declare module "obsidian" {
     on(
       name: "zotlit:authoring-context",
       callback: (
-        context: import("@/views/profile-editor/view").ProfileAuthoringContext,
+        context: import("@/views/template-workbench/view").TemplateAuthoringContext,
       ) => void,
       ctx?: any,
     ): EventRef;
@@ -115,6 +115,14 @@ declare module "obsidian" {
     on(
       name: "zotlit:switch-profile",
       callback: (request: { path: string }) => void,
+      ctx?: any,
+    ): EventRef;
+
+    /** `document` is the vault path of the Template Document holding the call
+     *  that refused; the Default Profile stands in when there is none. */
+    on(
+      name: "zotlit:open-template-workbench",
+      callback: (document?: string) => void,
       ctx?: any,
     ): EventRef;
   }

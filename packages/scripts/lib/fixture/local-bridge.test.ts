@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { CONTRACT_VERSION } from "@zotlit/db";
 import {
   BRIDGE_VERSION,
   DOCS_DEV_SERVER_ORIGIN,
@@ -15,7 +16,7 @@ import {
   localBridgeOrigin,
 } from "@zotlit/workbench/bridge";
 
-import { buildFixture } from "./build.ts";
+import { buildFixture, FIXTURE_PARTIAL_NAME } from "./build.ts";
 import { getFixtureLayout } from "./layout.ts";
 import { startMockLocalBridge } from "./local-bridge-server.ts";
 import { createMockLocalBridge } from "./local-bridge.ts";
@@ -23,6 +24,14 @@ import { createMockLocalBridge } from "./local-bridge.ts";
 import { getWorkspaceRoot } from "#package-roots";
 
 const ORIGIN = "https://zotlit.aidenlx.site";
+/** The Citation Template the Fixture Vault holds: the shipped default with the
+ *  Spec's visible edit on the alternate branch. */
+const FIXTURE_CITATION_SOURCE = `{% if zt.variant == "alt" %}
+  cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% else %}
+  {{ zt.citations | pandoc_cite }}
+{% endif %}
+`;
 /** The port a launch URL names, which the in-process app answers on. */
 const PORT = 23_120;
 const PARENT_STYLE_ID = "http://www.zotero.org/styles/fixture-parent";
@@ -81,7 +90,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       storage: memoryStorage(),
       compatibility: {
         bridgeVersion: BRIDGE_VERSION,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
     });
     // Nothing but the fragment says where the bridge is: the page reaches the
@@ -179,7 +188,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const schemas = await client.readTemplateSchema();
     expect(Object.keys(schemas)).toEqual(["note", "annotation", "filename"]);
     expect(schemas.note).toMatchObject({
-      $id: "urn:zotlit:template-contract:v2:note",
+      $id: "urn:zotlit:template-contract:v3:note",
     });
 
     const snapshot = await client.loadSelectedItem();
@@ -207,7 +216,11 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const dependencies = await client.readTemplateDependencies({
       source: profile.source,
     });
-    expect(dependencies.templates).toHaveLength(0);
+    // The Fixture Books Profile calls the vault's own Shared Partial, which
+    // the bundle resolves from the template folder.
+    expect(dependencies.templates).toEqual([
+      expect.objectContaining({ name: FIXTURE_PARTIAL_NAME }),
+    ]);
     expect(dependencies.diagnostics).toEqual([]);
     await expect(client.listCitationStyles()).resolves.toContainEqual({
       id: "http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
@@ -352,10 +365,13 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     ).resolves.toEqual({
       state: "unavailable",
       reason: "version-mismatch",
-      expected: { bridgeVersion: 999, templateDataContractVersion: 2 },
+      expected: {
+        bridgeVersion: 999,
+        templateDataContractVersion: CONTRACT_VERSION,
+      },
       received: {
         bridgeVersion: BRIDGE_VERSION,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
     });
     await expect(incompatible.readTemplateSchema()).rejects.toBeInstanceOf(
@@ -399,11 +415,11 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       reason: "version-mismatch",
       expected: {
         bridgeVersion: BRIDGE_VERSION,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
       received: {
         bridgeVersion: BRIDGE_VERSION + 1,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
     });
 
@@ -436,14 +452,22 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       });
 
     await expect(
-      save(profile.source.replace("contract: 2", "contract: 999")),
+      save(
+        profile.source.replace(
+          `contract: ${CONTRACT_VERSION}`,
+          "contract: 999",
+        ),
+      ),
     ).resolves.toMatchObject({
       state: "refused",
       reason: "unsupported-profile",
     });
     await expect(
       save(
-        profile.source.replace("contract: 2\n", "contract: 2\nlanguage: eta\n"),
+        profile.source.replace(
+          `contract: ${CONTRACT_VERSION}\n`,
+          `contract: ${CONTRACT_VERSION}\nlanguage: eta\n`,
+        ),
       ),
     ).resolves.toMatchObject({
       state: "refused",
@@ -474,8 +498,8 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     await expect(
       save(
         profile.source.replace(
-          "contract: 2\n",
-          "contract: 2\nminAppVersion: 99.0.0\n",
+          `contract: ${CONTRACT_VERSION}\n`,
+          `contract: ${CONTRACT_VERSION}\nminAppVersion: 99.0.0\n`,
         ),
       ),
     ).resolves.toMatchObject({
@@ -507,7 +531,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
         `partials:
   - name: summary
     language: liquid
-    source: "{% render 'cite' %}"
+    source: "{% render 'citation' %}"
   - name: unused
     language: liquid
     source: Unused
@@ -518,23 +542,28 @@ frontmatter:\n`,
       client.readTemplateDependencies({ source: withDependencies }),
     ).resolves.toEqual({
       templates: [
+        expect.objectContaining({ name: FIXTURE_PARTIAL_NAME }),
         {
-          name: "cite",
+          name: "citation",
           language: "liquid",
-          source: "{{ zt.citations | pandoc_cite }}\n",
+          source: FIXTURE_CITATION_SOURCE,
         },
         {
           name: "summary",
           language: "liquid",
-          source: "{% render 'cite' %}",
+          source: "{% render 'citation' %}",
         },
       ],
       diagnostics: [],
     });
-    // The saved file still calls nothing, which is what the draft replaced.
+    // The saved file calls the vault's Shared Partial and nothing else, which
+    // is what the draft added to.
     await expect(
       client.readTemplateDependencies({ source: profile.source }),
-    ).resolves.toEqual({ templates: [], diagnostics: [] });
+    ).resolves.toEqual({
+      templates: [expect.objectContaining({ name: FIXTURE_PARTIAL_NAME })],
+      diagnostics: [],
+    });
 
     const missingDependency = withDependencies.replace(
       "{% render 'summary' %}",
@@ -554,15 +583,16 @@ frontmatter:\n`,
 
     const unsupportedDependency = withDependencies
       .replace("language: liquid", "language: eta")
-      .replace("{% render 'cite' %}", "<%~ include('cite') %>");
+      .replace("{% render 'citation' %}", "<%~ include('citation') %>");
     await expect(
       client.readTemplateDependencies({ source: unsupportedDependency }),
     ).resolves.toMatchObject({
       templates: [
+        expect.objectContaining({ name: FIXTURE_PARTIAL_NAME }),
         {
-          name: "cite",
+          name: "citation",
           language: "liquid",
-          source: "{{ zt.citations | pandoc_cite }}\n",
+          source: FIXTURE_CITATION_SOURCE,
         },
       ],
       diagnostics: [
@@ -735,7 +765,7 @@ function clientFor(
     storage: options.storage ?? memoryStorage(),
     compatibility: {
       bridgeVersion: options.expectedBridgeVersion ?? BRIDGE_VERSION,
-      templateDataContractVersion: 2,
+      templateDataContractVersion: CONTRACT_VERSION,
     },
   });
 }

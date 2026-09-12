@@ -77,7 +77,7 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
   const f = stack.use(
     await profileServiceFixture({
       "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-summary.liquid.md": "Shared summary",
+      "templates/zotlit-partial.summary.md": "Shared summary",
     }),
   );
   const before = new Map(f.vault.contents);
@@ -97,9 +97,7 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
   using controls = observeControls(modal.contentEl);
   modal.onOpen();
   expect(controls.toggle(m.profile_share_folders()).getValue()).toBe(false);
-  expect(modal.contentEl.textContent).toContain(
-    m.profile_share_partials({ names: "summary" }),
-  );
+  expect(controls.toggle("summary").getValue()).toBe(true);
   controls.click(m.profile_share_bump());
   controls.type(m.profile_share_author(), "Research group");
   controls.type(m.profile_share_description(), "Revised notes");
@@ -164,7 +162,7 @@ it.each(["default", id] as const)(
   async (selector) => {
     await using f = await profileServiceFixture({
       "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-summary.liquid.md": "Shared summary",
+      "templates/zotlit-partial.summary.md": "Shared summary",
     });
     using opened = vi.spyOn(Modal.prototype, "open");
     const container = document.createElement("div");
@@ -299,3 +297,68 @@ Annotation`;
     modal.onClose();
   },
 );
+
+it("checks the partials the profile calls, and drops one the reader clears", async () => {
+  await using f = await profileServiceFixture({
+    "templates/zotlit-profile.books.md": source.replace(
+      '{% render "summary" %}',
+      '{% render "authors" %}',
+    ),
+    "templates/zotlit-partial.authors.md": "{{ zt.creators }}",
+    "templates/zotlit-partial.venue-line.md": "{{ zt.publicationTitle }}",
+  });
+  using clipboard = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockResolvedValue();
+  const modal = new ShareProfileModal(f.app, await f.profile.prepareShare(id));
+  modal.contentEl = document.createElement("div");
+  using controls = observeControls(modal.contentEl);
+  modal.onOpen();
+  expect(controls.toggle("authors").getValue()).toBe(true);
+  expect(controls.toggle("venue-line").getValue()).toBe(false);
+
+  // Checked: the call is answered inside the one shared file.
+  controls.toggle("venue-line").toggle(true);
+  await controls.click(m.profile_share_copy());
+  expect(
+    new TemplateFacade()
+      .parseLiteratureNoteTemplate(clipboard.mock.calls[0]![0])
+      .manifest.partials?.map(({ name }) => name),
+  ).toEqual(["authors", "venue-line"]);
+
+  // Cleared: the recipient gets nothing for that name.
+  controls.toggle("venue-line").toggle(false);
+  controls.toggle("authors").toggle(false);
+  await controls.click(m.profile_share_copy());
+  expect(
+    new TemplateFacade().parseLiteratureNoteTemplate(
+      clipboard.mock.calls[1]![0],
+    ).manifest.partials,
+  ).toBeUndefined();
+  modal.onClose();
+});
+
+it("opens for a profile whose call no document answers, and names it", async () => {
+  // Story 43 leaves this behind: the reader renamed the partial file and the
+  // call in the profile still spells the old name.
+  await using f = await profileServiceFixture({
+    "templates/zotlit-profile.books.md": source,
+    "templates/zotlit-partial.venue-line.md": "{{ zt.publicationTitle }}",
+  });
+  const plan = await f.profile.prepareShare(id);
+
+  expect(plan.missing).toEqual(["summary"]);
+  expect(plan.reachable).toEqual([]);
+  expect(plan.partials).toEqual(["venue-line"]);
+
+  const modal = new ShareProfileModal(f.app, plan);
+  modal.contentEl = document.createElement("div");
+  using controls = observeControls(modal.contentEl);
+  modal.onOpen();
+
+  expect(modal.contentEl.textContent).toContain(
+    m.profile_share_missing_partials({ names: "summary" }),
+  );
+  expect(controls.toggle("venue-line").getValue()).toBe(false);
+  modal.onClose();
+});

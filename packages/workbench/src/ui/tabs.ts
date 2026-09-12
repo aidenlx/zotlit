@@ -1,5 +1,7 @@
 // The authoring tabs, in the order the pane offers them, with the label and
-// the lede each opens with.
+// the lede each opens with. The Template Document kind picks the set.
+
+import type { WorkbenchDocumentKind } from "#/document/controller";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -9,8 +11,11 @@ export type WorkbenchTab =
   | "properties"
   | "name"
   | "profile"
-  | "match";
+  | "match"
+  | "citation"
+  | "partial";
 
+/** The tabs a Profile document opens with, which is also the web Workbench's set. */
 export const TABS: readonly WorkbenchTab[] = [
   "note",
   "properties",
@@ -20,6 +25,17 @@ export const TABS: readonly WorkbenchTab[] = [
   "profile",
 ];
 
+const KIND_TABS: Record<WorkbenchDocumentKind, readonly WorkbenchTab[]> = {
+  profile: TABS,
+  citation: ["citation"],
+  partial: ["partial"],
+};
+
+/** The tabs `kind` shows, in the order the tab strip offers them. */
+export function tabsFor(kind: WorkbenchDocumentKind): readonly WorkbenchTab[] {
+  return KIND_TABS[kind];
+}
+
 const TAB_LABEL: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   note: "workbench_tab_note",
   annotation: "workbench_tab_annotation",
@@ -27,6 +43,8 @@ const TAB_LABEL: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   match: "workbench_tab_match",
   name: "workbench_tab_name_and_folder",
   profile: "workbench_tab_profile",
+  citation: "workbench_tab_citation",
+  partial: "workbench_tab_partial",
 };
 
 const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
@@ -36,6 +54,8 @@ const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   match: "workbench_match_conditions_desc",
   name: "workbench_name_lede",
   profile: "workbench_profile_lede",
+  citation: "workbench_citation_lede",
+  partial: "workbench_partial_lede",
 };
 
 export function tabLabel(m: WorkbenchMessages, tab: WorkbenchTab): string {

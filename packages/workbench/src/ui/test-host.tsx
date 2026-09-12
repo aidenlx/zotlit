@@ -2,7 +2,7 @@
 // live in memory, and the theme names each part's class after the part.
 
 import type { RenderRequest } from "#/render/request";
-import type { ProfileRenderResult } from "#/render/result";
+import type { TemplateRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
 import type { ReactNode } from "react";
 
@@ -29,7 +29,7 @@ import { failedRender, renderIdentity } from "#/render/result";
 export interface PendingRender {
   readonly request: RenderRequest;
   /** Answers with `result` merged over an empty result for this request. */
-  answer(result?: Partial<ProfileRenderResult>): void;
+  answer(result?: Partial<TemplateRenderResult>): void;
   reject(error: unknown): void;
 }
 
@@ -74,7 +74,7 @@ export function fakeHost(): FakeHost {
     // Every render is held open, so a test decides when a result lands and
     // what the reader had time to change before it did.
     render: (request) =>
-      new Promise<ProfileRenderResult>((resolve, reject) => {
+      new Promise<TemplateRenderResult>((resolve, reject) => {
         const identity = renderIdentity(request);
         renders.push({
           request,

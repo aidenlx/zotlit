@@ -2,7 +2,7 @@
 // Companion views consume source values through their own render owners.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
-import type { ProfileRenderResult } from "#/render/result";
+import type { TemplateRenderResult } from "#/render/result";
 import {
   createContext,
   useContext,
@@ -25,7 +25,7 @@ import type {
 } from "./store";
 
 export interface WorkbenchEditorInstance<
-  R extends ProfileRenderResult = ProfileRenderResult,
+  R extends TemplateRenderResult = TemplateRenderResult,
 > extends Disposable {
   readonly store: WorkbenchStore;
   readonly scheduler: RenderScheduler<R>;
@@ -41,9 +41,9 @@ interface WorkbenchEditorOptions {
 }
 
 /** Own one editor's view state and rendering through its host adapter. */
-export function createWorkbenchEditor<R extends ProfileRenderResult>(
+export function createWorkbenchEditor<R extends TemplateRenderResult>(
   options: WorkbenchEditorOptions & {
-    mapResult: (result: ProfileRenderResult) => R;
+    mapResult: (result: TemplateRenderResult) => R;
   },
 ): WorkbenchEditorInstance<R>;
 export function createWorkbenchEditor(
@@ -56,7 +56,7 @@ export function createWorkbenchEditor({
   store: providedStore,
   mapResult,
 }: WorkbenchEditorOptions & {
-  mapResult?: (result: ProfileRenderResult) => ProfileRenderResult;
+  mapResult?: (result: TemplateRenderResult) => TemplateRenderResult;
 }): WorkbenchEditorInstance {
   const store =
     providedStore ??
