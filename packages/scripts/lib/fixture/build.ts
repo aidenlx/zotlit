@@ -18,6 +18,7 @@ import {
 } from "./pristine.ts";
 import {
   ANNOTATIONS,
+  assertSeededCitationKeys,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
@@ -71,6 +72,8 @@ export {
   NOTES,
   PERSONAL_SELECTOR,
   SCOPE_CASES,
+  SEEDED_CITATION_KEYS,
+  seededCitationKeyDrift,
   UNAVAILABLE_GROUP_IDS,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_TEMPLATES,
@@ -147,6 +150,8 @@ export async function buildFixture(
     options.stressItemCount === undefined
       ? ITEMS
       : [...ITEMS, ...createStressItems(options.stressItemCount)];
+
+  assertSeededCitationKeys(items);
 
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
@@ -1162,6 +1167,14 @@ function literatureNote(
     "---",
     `# ${item.title}`,
     "",
+    ...(item.literatureNoteCitations === undefined
+      ? []
+      : [
+          `This note rests on ${item.literatureNoteCitations
+            .map((key) => `[@${key}]`)
+            .join(" ")}.`,
+          "",
+        ]),
     ...attachments,
     ...(attachments.length === 0 ? [] : [""]),
   ].join("\n");

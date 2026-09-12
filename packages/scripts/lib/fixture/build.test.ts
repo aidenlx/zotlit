@@ -50,15 +50,18 @@ import {
   ITEMS,
   legacyTemplateFilename,
   legacyTemplateSource,
+  LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   SCOPE_CASES,
+  SEEDED_CITATION_KEYS,
+  seededCitationKeyDrift,
   selectScopeCase,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_TEMPLATES,
   VAULT_CASES,
 } from "./build.ts";
-import type { FixtureLayout } from "./build.ts";
+import type { FixtureLayout, PersistedLibraryScope } from "./build.ts";
 import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
@@ -1054,6 +1057,111 @@ describe("the generated Zotero database", () => {
   });
 });
 
+/** Whether a Library takes part in a saved Library Scope. */
+function inLibraryScope(
+  libraryID: number,
+  scope: PersistedLibraryScope,
+): boolean {
+  if (scope.mode === "all") return true;
+  const library = LIBRARIES.find(
+    (candidate) => candidate.libraryID === libraryID,
+  );
+  if (library === undefined) return false;
+  return scope.libraries.some((selector) =>
+    selector.type === "personal"
+      ? library.type === "user"
+      : selector.groupID === library.groupID,
+  );
+}
+
+describe("the seeded Citation Keys", () => {
+  it("resolves every declared key the way the Spec fixes it", () => {
+    expect(seededCitationKeyDrift(ITEMS)).toEqual([]);
+  });
+
+  it("reports a declared unique key that no Item holds", () => {
+    expect(
+      seededCitationKeyDrift(
+        ITEMS.filter(
+          ({ citationKey }) => citationKey !== "labArchiveAlpha2021",
+        ),
+      ),
+    ).toEqual([
+      'seeded Citation Key "labArchiveAlpha2021" resolves as missing, the Spec declares unique',
+    ]);
+  });
+
+  it("reports a declared ambiguous key that one Item alone holds", () => {
+    expect(
+      seededCitationKeyDrift(
+        ITEMS.filter(
+          ({ key, libraryID }) => !(key === "GGGG7777" && libraryID === 3),
+        ),
+      ),
+    ).toEqual([
+      'seeded Citation Key "duplicateAcross2019" resolves as unique, the Spec declares ambiguous',
+    ]);
+  });
+
+  it("reports a declared missing key an Item has taken over", () => {
+    expect(
+      seededCitationKeyDrift(
+        ITEMS.map((item) =>
+          item.key === "EEEE5555"
+            ? { ...item, citationKey: "nonexistentCitekeyForSmokeTest2099" }
+            : item,
+        ),
+      ),
+    ).toEqual([
+      'seeded Citation Key "nonexistentCitekeyForSmokeTest2099" resolves as unique, the Spec declares missing',
+    ]);
+  });
+
+  it("keeps the scope-sensitive keys resolving the way the seeded page names", () => {
+    const scoped = [
+      "labArchiveAlpha2021",
+      "sharedReadingAlpha2023",
+      "consortiumAlpha2020",
+    ];
+    const resolving = SCOPE_CASES.map(({ id, scope }) => [
+      id,
+      scoped.filter((key) =>
+        ITEMS.some(
+          (item) =>
+            item.citationKey === key && inLibraryScope(item.libraryID, scope),
+        ),
+      ),
+    ]);
+
+    expect(resolving).toEqual([
+      [
+        "all",
+        [
+          "labArchiveAlpha2021",
+          "sharedReadingAlpha2023",
+          "consortiumAlpha2020",
+        ],
+      ],
+      [
+        "available",
+        [
+          "labArchiveAlpha2021",
+          "sharedReadingAlpha2023",
+          "consortiumAlpha2020",
+        ],
+      ],
+      ["partial", ["labArchiveAlpha2021"]],
+      ["unavailable", []],
+    ]);
+  });
+
+  it("keeps the unique, ambiguous, and missing cases all represented", () => {
+    const declared = new Set(Object.values(SEEDED_CITATION_KEYS));
+
+    expect([...declared].sort()).toEqual(["ambiguous", "missing", "unique"]);
+  });
+});
+
 describe("a Stress Build", () => {
   it("leaves the default build at the Fixture Spec size", () => {
     using db = openClient();
@@ -1178,6 +1286,8 @@ describe("a Stress Build", () => {
 describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [
+      "citation-only-test.md",
+      "cited-work-node-test.md",
       "citekey-smoke-test.md",
       "literature-note-citation-test.md",
       "pandoc-export-error-intent.md",
@@ -1196,6 +1306,41 @@ describe("the generated Obsidian vault", () => {
 
       expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
     }
+  });
+
+  it("cites every declared Citation Key somewhere in the vault", async () => {
+    const markdown = await Promise.all(
+      (await readdir(layout.vaultDir, { recursive: true }))
+        .filter((entry) => entry.endsWith(".md"))
+        .map((entry) => readFile(join(layout.vaultDir, entry), "utf-8")),
+    );
+    const body = markdown.join("\n");
+
+    expect(
+      Object.keys(SEEDED_CITATION_KEYS).filter(
+        (key) => !body.includes(`@${key}`),
+      ),
+    ).toEqual([]);
+  });
+
+  it("holds a note whose only link is one citation", async () => {
+    const page = await readFile(
+      join(layout.vaultDir, "citation-only-test.md"),
+      "utf-8",
+    );
+
+    expect(page).toContain("[@rougierTenSimpleRules2014]");
+    expect(page).not.toContain("[[");
+    expect(page.match(/\[@/gu)).toHaveLength(1);
+  });
+
+  it("cites a second work from a seeded Literature Note", async () => {
+    const note = await readFile(
+      join(layout.vaultDir, "literatures", "rougierTenSimpleRules2014.md"),
+      "utf-8",
+    );
+
+    expect(note).toContain("[@ioannidisWhyMost2005]");
   });
 
   it("carries descriptive Profile import examples outside the template folder", async () => {
