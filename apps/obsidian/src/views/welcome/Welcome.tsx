@@ -331,6 +331,49 @@ function FooterLink() {
   );
 }
 
+/**
+ * The accent surface a callout that carries an action wears: the accent at the
+ * two opacities the timeline nodes use, so it reads as the same palette.
+ */
+const ACCENT_CALLOUT_SURFACE = {
+  background: "hsla(var(--interactive-accent-hsl), 0.14)",
+  borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
+};
+
+/**
+ * A titled callout. The body runs the full width of the card and the action
+ * takes the row below it, the same order the timeline steps read in. Holding
+ * the action in a side column instead costs the body the width of one button
+ * for every line it wraps, and leaves that column empty below the first line.
+ */
+function Callout({
+  tone,
+  title,
+  action,
+  children,
+}: {
+  tone: "accent" | "muted";
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "zt:relative zt:mt-6 zt:rounded-lg zt:border zt:px-6 zt:py-5.5",
+        tone === "muted" && "zt:border-border zt:bg-muted",
+      )}
+      style={tone === "accent" ? ACCENT_CALLOUT_SURFACE : undefined}
+    >
+      <StepHeading>{title}</StepHeading>
+      <p className="zt:mt-1 zt:text-sm zt:text-pretty zt:text-muted-foreground">
+        {children}
+      </p>
+      {action ? <div className="zt:mt-3">{action}</div> : null}
+    </div>
+  );
+}
+
 function MigrationBanner() {
   const actions = useWelcomeActions();
   const templateConversionPending = useWelcomeStore(
@@ -344,76 +387,62 @@ function MigrationBanner() {
   const [converting, setConverting] = useState(false);
   if (templateConversionPending) {
     return (
-      <div
-        className="zt:relative zt:mt-6 zt:flex zt:flex-wrap zt:items-center zt:gap-4.5 zt:rounded-lg zt:border zt:px-6 zt:py-5.5"
-        style={{
-          background: "hsla(var(--interactive-accent-hsl), 0.14)",
-          borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
-        }}
+      <Callout
+        tone="accent"
+        title={m.welcome_template_conversion_title()}
+        action={
+          <Button
+            variant="cta"
+            icon="combine"
+            loading={converting}
+            disabled={converting}
+            onClick={() => {
+              setConverting(true);
+              void actions.convertLiteratureNoteTemplates().finally(() => {
+                setConverting(false);
+              });
+            }}
+          >
+            {m.welcome_template_conversion_action()}
+          </Button>
+        }
       >
-        <div className="zt:min-w-0 zt:flex-1 zt:basis-[220px]">
-          <StepHeading>{m.welcome_template_conversion_title()}</StepHeading>
-          <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-            {m.welcome_template_conversion_body({
-              path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
-            })}
-          </p>
-        </div>
-        <Button
-          variant="cta"
-          icon="combine"
-          loading={converting}
-          disabled={converting}
-          onClick={() => {
-            setConverting(true);
-            void actions.convertLiteratureNoteTemplates().finally(() => {
-              setConverting(false);
-            });
-          }}
-        >
-          {m.welcome_template_conversion_action()}
-        </Button>
-      </div>
+        {m.welcome_template_conversion_body({
+          path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+        })}
+      </Callout>
     );
   }
   if (result) {
     return (
-      <div className="zt:relative zt:mt-6 zt:rounded-lg zt:border zt:border-border zt:bg-muted zt:px-6 zt:py-5.5">
-        <StepHeading>
-          {m.welcome_template_conversion_completed_title()}
-        </StepHeading>
-        <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-          {m.welcome_template_conversion_completed_body({
-            path: result.document,
-            count: result.trashed,
-          })}
-        </p>
-      </div>
+      <Callout
+        tone="muted"
+        title={m.welcome_template_conversion_completed_title()}
+      >
+        {m.welcome_template_conversion_completed_body({
+          path: result.document,
+          count: result.trashed,
+        })}
+      </Callout>
     );
   }
   if (!v1TemplatesPresent) return null;
   return (
-    <div
-      className="zt:relative zt:mt-6 zt:flex zt:flex-wrap zt:items-center zt:gap-4.5 zt:rounded-lg zt:border zt:px-6 zt:py-5.5"
-      style={{
-        background: "hsla(var(--interactive-accent-hsl), 0.14)",
-        borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
-      }}
+    <Callout
+      tone="accent"
+      title={m.welcome_migration_title()}
+      action={
+        <Button
+          variant="cta"
+          icon="book-marked"
+          onClick={() => actions.openExternal(MIGRATION_GUIDE)}
+        >
+          {m.welcome_action_open_migration_guide()}
+        </Button>
+      }
     >
-      <div className="zt:min-w-0 zt:flex-1 zt:basis-[220px]">
-        <StepHeading>{m.welcome_migration_title()}</StepHeading>
-        <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-          {m.welcome_migration_body()}
-        </p>
-      </div>
-      <Button
-        variant="cta"
-        icon="book-marked"
-        onClick={() => actions.openExternal(MIGRATION_GUIDE)}
-      >
-        {m.welcome_action_open_migration_guide()}
-      </Button>
-    </div>
+      {m.welcome_migration_body()}
+    </Callout>
   );
 }
 
