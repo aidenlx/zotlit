@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { expect, onTestFinished, test } from "vitest";
 
-import { paraglideVitePlugin } from "./index.js";
+import { generateParaglide, paraglideVitePlugin } from "./index.js";
 
 async function fixture(prefix = "paraglide-") {
   const scratch = resolve(import.meta.dirname, "../../../tmp");
@@ -39,6 +39,20 @@ async function fixture(prefix = "paraglide-") {
   );
   return root;
 }
+
+test("generates messages without starting Vite", async () => {
+  const root = await fixture();
+  const outdir = join(root, "generated");
+  await generateParaglide({
+    project: join(root, "project.inlang"),
+    outdir,
+    outputStructure: "message-modules",
+    strategy: ["baseLocale"],
+  });
+  expect(
+    await readFile(join(outdir, "messages/greeting.js"), "utf8"),
+  ).toContain("First greeting");
+});
 
 test("generates before framework configuration and updates messages through Vite watching", async () => {
   const root = await fixture("cache-demo-");

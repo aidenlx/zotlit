@@ -8,6 +8,20 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
+export type { CompilerOptions } from "@inlang/paraglide-js";
+
+const defaultIsServer = "import.meta.env?.SSR ?? typeof window === 'undefined'";
+
+/** Compile a Paraglide facade without starting Vite. */
+export async function generateParaglide(
+  options: CompilerOptions,
+): Promise<void> {
+  await compile({
+    ...options,
+    isServer: options.isServer ?? defaultIsServer,
+  });
+}
+
 /**
  * Uses Paraglide's compiler and incremental output cache with Vite-owned watching.
  * Initial generation runs in `config`: framework plugins can scan dependencies
@@ -111,9 +125,7 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
         previousCompilation: options.cleanOutdir ? undefined : previous,
         cleanOutdir: options.cleanOutdir ?? false,
         outputStructure,
-        isServer:
-          options.isServer ??
-          "import.meta.env?.SSR ?? typeof window === 'undefined'",
+        isServer: options.isServer ?? defaultIsServer,
       });
       inputs = reads;
     } catch (error) {

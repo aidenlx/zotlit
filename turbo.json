@@ -57,7 +57,7 @@
         "@zotlit/templates#build",
         "@zotlit/workbench#build",
         "@zotlit/zotero-types#build",
-        "@zotlit/docs#build",
+        "@zotlit/docs#generate:messages",
         "@zotlit/docs#cf-typegen:check"
       ]
     },

@@ -16,6 +16,7 @@
     "deploy:beta": "cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check",
+    "generate:messages": "node scripts/generate-messages.ts",
     "generate:template-data": "node scripts/generate-template-data.ts",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
