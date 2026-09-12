@@ -140,6 +140,12 @@ export interface FixtureItem {
   /** Fixture Vault filename stem when a prose page needs a stable target. */
   literatureNoteName?: string;
   /**
+   * Citation Keys the seeded Literature Note cites in its body, so a
+   * Literature Note carries citation edges of its own and a local graph can
+   * walk from one literature node to a second.
+   */
+  literatureNoteCitations?: readonly string[];
+  /**
    * Literature Note Profile the seeded note belongs to, written as a Profile
    * stamp. An absent value seeds the note under the default Profile, unstamped.
    */
@@ -492,6 +498,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "rougierTenSimpleRules2014",
     literatureNoteName: "rougierTenSimpleRules2014",
+    literatureNoteCitations: ["ioannidisWhyMost2005"],
     title: "Ten Simple Rules for Better Figures",
     venue: "PLOS Computational Biology",
     date: "2014",
@@ -582,6 +589,67 @@ export const ITEMS: readonly FixtureItem[] = [
     collectionIDs: [],
   },
 ];
+
+/** How a seeded Citation Key resolves against the Items the build writes. */
+export type SeededCitationKeyResolution = "unique" | "ambiguous" | "missing";
+
+/**
+ * The Citation Keys the seeded vault cites for its graph cases, with the
+ * resolution each case rests on: one Item behind a Literature Note, several
+ * behind an ambiguous key, none behind an unresolved key.
+ * {@link assertSeededCitationKeys} holds the build to this map, so an Item
+ * edit that retires a case stops the build instead of leaving a seeded page
+ * that no longer shows what it names. Declare a key here as you seed a page
+ * that cites it.
+ */
+export const SEEDED_CITATION_KEYS: Readonly<
+  Record<string, SeededCitationKeyResolution>
+> = {
+  Hensher2011: "unique",
+  consortiumAlpha2020: "unique",
+  duplicateAcross2019: "ambiguous",
+  ioannidisWhyMost2005: "unique",
+  labArchiveAlpha2021: "unique",
+  nonexistentCitekeyForSmokeTest2099: "missing",
+  rougierTenSimpleRules2014: "unique",
+  sharedReadingAlpha2023: "unique",
+  "wallgren-petterssonDistalMyopathyCaused2007": "unique",
+  wangMutationalClinicalSpectrum2020a: "unique",
+  wittNebulinRegulatesThin2006: "unique",
+  xuNoCitationKeyProperty2019: "missing",
+  yinClinicopathologicalFeaturesMutational2021: "unique",
+};
+
+function citationKeyResolution(
+  items: readonly FixtureItem[],
+  key: string,
+): SeededCitationKeyResolution {
+  const held = items.filter((item) => item.citationKey === key).length;
+  if (held === 0) return "missing";
+  return held === 1 ? "unique" : "ambiguous";
+}
+
+/** One message per seeded Citation Key that left its declared resolution. */
+export function seededCitationKeyDrift(
+  items: readonly FixtureItem[],
+): readonly string[] {
+  return Object.entries(SEEDED_CITATION_KEYS).flatMap(([key, declared]) => {
+    const resolution = citationKeyResolution(items, key);
+    return resolution === declared
+      ? []
+      : [
+          `seeded Citation Key "${key}" resolves as ${resolution}, the Spec declares ${declared}`,
+        ];
+  });
+}
+
+/** Stops a build whose Items no longer carry the seeded citation cases. */
+export function assertSeededCitationKeys(items: readonly FixtureItem[]): void {
+  const drift = seededCitationKeyDrift(items);
+  if (drift.length > 0) {
+    throw new Error(drift.join("; "));
+  }
+}
 
 function author(firstName: string, lastName: string): FixtureCreator {
   return { firstName, lastName, creatorType: "author", fieldMode: 0 };
