@@ -283,6 +283,8 @@ declare module "obsidian" {
     nodeLookup?: Record<string, { x: number; y: number } | undefined>;
     /** World-to-screen: `screen_css = (world * scale + pan) / devicePixelRatio`. */
     scale?: number;
+    /** Native text fade offset, in zoom octaves. */
+    fTextShowMult?: number;
     panX?: number;
     panY?: number;
     /**
@@ -340,6 +342,7 @@ declare module "obsidian" {
     style?: GraphTextStyle;
   }
   interface GraphTextContainer extends GraphTextDisplay {
+    updateTransform?(): void;
     addChild(child: GraphTextDisplay): unknown;
     removeChild(child: GraphTextDisplay): unknown;
   }
