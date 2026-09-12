@@ -1263,7 +1263,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const templates = this.#deps.templates;
     if (!templates.loaded) return;
     menu.addItem((item) => {
-      item.setSection("zotlit").setTitle(m.template_workbench_partials());
+      item
+        .setSection("zotlit")
+        .setTitle(m.template_workbench_partials())
+        .setIcon("puzzle");
       const submenu = item.setSubmenu();
       for (const partial of templates.getPartialDocuments())
         submenu.addItem((entry) =>
