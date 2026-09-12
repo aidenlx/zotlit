@@ -45,6 +45,7 @@ import {
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
+  FIXTURE_PARTIAL_NAME,
   getFixtureLayout,
   INSTALLED_STYLES,
   ITEMS,
@@ -55,6 +56,7 @@ import {
   SCOPE_CASES,
   selectScopeCase,
   UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
   VAULT_CASES,
 } from "./build.ts";
@@ -1183,6 +1185,7 @@ describe("the generated Obsidian vault", () => {
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
       "pandoc-export-success.md",
+      "profile-examples/profile-import-partials.md",
       "profile-examples/profile-import-replacement-v1.md",
       "profile-examples/profile-import-replacement-v2.md",
       "profile-examples/profile-import-unavailable-style.md",
@@ -1201,6 +1204,7 @@ describe("the generated Obsidian vault", () => {
   it("carries descriptive Profile import examples outside the template folder", async () => {
     const examples = await Promise.all(
       [
+        "profile-import-partials.md",
         "profile-import-replacement-v1.md",
         "profile-import-replacement-v2.md",
         "profile-import-unavailable-style.md",
@@ -1218,6 +1222,10 @@ describe("the generated Obsidian vault", () => {
         expect.stringContaining("id: AbsentStyle1"),
         expect.stringContaining(
           "Fixture sample for testing Profile import with an unavailable citation style.",
+        ),
+        expect.stringContaining("id: ImportPart1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import with bundled Shared Partials.",
         ),
       ]),
     );
@@ -1593,6 +1601,65 @@ describe("the generated Obsidian vault", () => {
     merge: replace`);
   });
 
+  it("writes the Citation Template with its visible edit", async () => {
+    const source = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-citation.md"),
+      "utf-8",
+    );
+
+    expect(source).toMatch(/^---\nlanguage: liquid\n---\n/);
+    // The alternate branch carries the edit; the main branch stays shipped, so
+    // the two gestures read apart at a glance.
+    expect(source).toContain(
+      'cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+    );
+    expect(source).toContain("{{ zt.citations | pandoc_cite }}");
+  });
+
+  it("writes the Shared Partial the Books Profile calls", async () => {
+    const partial = await readFile(
+      join(
+        layout.vaultDir,
+        "templates",
+        `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+      ),
+      "utf-8",
+    );
+    const profile = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+
+    expect(partial).toMatch(/^---\nlanguage: liquid\n---\n/);
+    expect(partial).toContain("[!info] Book details");
+    // The call sits in the Managed Block, so removing the file refuses a
+    // Literature Note create as well as an update.
+    expect(profile).toContain(
+      `{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}`,
+    );
+  });
+
+  it("bundles a differing edition of that partial in a Profile import example", async () => {
+    const bundle = await readFile(
+      join(layout.vaultDir, "profile-examples", "profile-import-partials.md"),
+      "utf-8",
+    );
+    const held = await readFile(
+      join(
+        layout.vaultDir,
+        "templates",
+        `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+      ),
+      "utf-8",
+    );
+
+    expect(bundle).toContain(`  - name: ${FIXTURE_PARTIAL_NAME}\n`);
+    expect(bundle).toContain("  - name: reading-log\n");
+    // Import asks keep or replace only when the bytes differ, so the bundled
+    // edition must not be the vault's own text.
+    expect(held).not.toContain("Bundled book details");
+  });
+
   it("selects the available, partial, and fully unavailable scope cases", async () => {
     for (const scopeCase of SCOPE_CASES) {
       await selectScopeCase(layout, scopeCase.id);
@@ -1694,7 +1761,7 @@ describe("a Vault Case", () => {
     ]);
   });
 
-  it("ejects every legacy slot file with its visible edit, and no Profile document", async () => {
+  it("ejects every Legacy Template File with its visible edit, and no Profile document", async () => {
     const upgrader = await buildVaultCase("upgrader");
     const templates = join(upgrader.vaultDir, "templates");
 
@@ -1704,6 +1771,9 @@ describe("a Vault Case", () => {
         "zotlit-content.liquid.md",
         "zotlit-filename.liquid.md",
         "zotlit-note.liquid.md",
+        "zotlit-cite.liquid.md",
+        "zotlit-cite2.eta.md",
+        `zotlit-${UPGRADER_LEGACY_PARTIAL_NAME}.liquid.md`,
       ].sort(),
     );
     for (const template of UPGRADER_LEGACY_TEMPLATES) {
@@ -1727,13 +1797,62 @@ describe("a Vault Case", () => {
     expect(await readdir(upgrader.vaultDir)).not.toContain("books");
   });
 
-  it("fails when a shipped default drifts away from its edit", async () => {
+  it("ejects a mixed-language citation pair the conversion folds to Liquid", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const templates = join(upgrader.vaultDir, "templates");
+
+    // `cite` is the Liquid side the fold takes, so its edit reaches the
+    // converted `zotlit-citation.md`.
+    await expect(
+      readFile(join(templates, "zotlit-cite.liquid.md"), "utf-8"),
+    ).resolves.toBe("({{ zt.citations | pandoc_cite }})\n");
+    // `cite2` is the Eta side the fold leaves in the vault and names in its
+    // notice, so the alternate gesture falls back to the built-in branch.
+    await expect(
+      readFile(join(templates, "zotlit-cite2.eta.md"), "utf-8"),
+    ).resolves.toBe(
+      'cf. <%= pandocCite(zt.citations, "prefer-author-in-text") %>\n',
+    );
+  });
+
+  it("ejects one bare partial from the shipped annotation default", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+
+    const source = await readFile(
+      join(
+        upgrader.vaultDir,
+        "templates",
+        `zotlit-${UPGRADER_LEGACY_PARTIAL_NAME}.liquid.md`,
+      ),
+      "utf-8",
+    );
+
+    // The bare name is the partial's own; the shipped source is the annotation
+    // slot's, so the file reads as a factored-out callout.
+    expect(source).toContain("[!tip] Page");
+    expect(source).not.toContain("[!note] Page");
+    expect(source).toContain("{% bq %}");
+  });
+
+  it("fails when a shipped slot default drifts away from its edit", async () => {
     await expect(
       legacyTemplateSource({
         name: "note",
+        language: "liquid",
         find: "text the default note template never held",
         replace: "",
       }),
-    ).rejects.toThrow("update UPGRADER_LEGACY_TEMPLATES");
+    ).rejects.toThrow("update the Fixture Spec");
+  });
+
+  it("fails when a shipped citation branch drifts away from its edit", async () => {
+    await expect(
+      legacyTemplateSource({
+        name: "cite",
+        language: "liquid",
+        find: "text the default cite branch never held",
+        replace: "",
+      }),
+    ).rejects.toThrow("update the Fixture Spec");
   });
 });
