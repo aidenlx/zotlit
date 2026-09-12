@@ -39,6 +39,8 @@
   "workbench_partial_missing": "缺失",
   "workbench_partial_missing_show": "查看片段“{name}”的问题",
   "workbench_diagnostic_missing_partial": "模板文件夹中没有片段“{name}”。",
+  "workbench_preview_retained": "正在显示上一次成功的预览。",
+  "workbench_preview_unavailable": "预览不可用。",
   "workbench_problem_show": "查看问题",
   "workbench_problems_collapse": "收起",
   "workbench_problems_none": "此预览未发现问题",

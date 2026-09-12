@@ -144,8 +144,14 @@ answers one request with a promise on the calling thread and whose rejection
 reads as a `render-error` diagnostic. An optional `mapResult` gives successful
 and failed results the host's own result shape. The host calls `setInput` with the
 paper, the annotation example, its own bundle, and `hold` where nothing may
-render yet. Its state — `result`, `busy`, `stale` — is what every result surface
-paints. Its `trigger` says whether Run or the quiet time after an edit asked
+render yet — `hold: "invalid"` for the one hold that is a failure, a document
+the parser refuses, which reads as `staleReason: "invalid"`. Its state —
+`result`, `retained`, `busy`, `stale` — is what every result surface paints.
+`retained` is the last result that produced output, kept while the document is
+invalid or `result` is a failed attempt, and the reader is still on the paper,
+example, caller, and mode it was rendered for, so a repair reads against
+working output rather than an empty pane; a source edit leaves that match
+intact. Its `trigger` says whether Run or the quiet time after an edit asked
 for the shown result, and `attempt` counts the results it has published, so two
 attempts over the same bytes stay distinct. Outside the editor provider the
 tree paints inert, which the web's skeleton relies on. The components so far:

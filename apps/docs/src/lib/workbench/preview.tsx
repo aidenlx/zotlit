@@ -55,7 +55,7 @@ export function WebPreview({
   source: string;
   sample: SampleItem;
   resources: RenderResources | undefined;
-  hold: boolean;
+  hold: boolean | "invalid";
   mode: ResultColumnProps["mode"];
   sampleBar: ReactNode;
   annotationChoice: string;
@@ -126,7 +126,7 @@ export function WebPreview({
     state.mode,
     state.live,
   ]);
-  const { result, busy, stale, staleReason, trigger, attempt } =
+  const { result, retained, busy, stale, staleReason, trigger, attempt } =
     useRenderState(scheduler);
   // The editor owns the explanation, so this preview publishes what its render
   // found and takes it back when it closes.
@@ -172,12 +172,13 @@ export function WebPreview({
         preview={{ mode: state.mode, live: state.live }}
         onChange={(next) => store.setState(next)}
         busy={busy}
-        disabled={hold || scheduler === null}
+        disabled={hold !== false || scheduler === null}
         onRun={() => scheduler?.run()}
       />
       <ResultColumn
         result={result}
         annotationResult={annotationResult}
+        retained={retained}
         mode={mode}
         stale={stale}
         staleReason={staleReason}

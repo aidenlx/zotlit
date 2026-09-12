@@ -323,7 +323,8 @@ export function Workbench() {
   // A draft the parser refuses renders as nothing, so the last good result
   // stands beside the Problems strip while the reader repairs it, rather than
   // emptying the sheet and reporting the same parse error twice.
-  const renderable = !refused && controller.document !== null;
+  const unparsed = controller.document === null;
+  const renderable = !refused && !unparsed;
 
   useEffect(
     () =>
@@ -334,13 +335,14 @@ export function Workbench() {
       scheduler?.setInput({
         snapshot: sample,
         annotation: selectedAnnotation,
-        hold: !renderable || resourcesStale,
+        hold: unparsed ? "invalid" : !renderable || resourcesStale,
         resources,
       }),
     [
       scheduler,
       sample,
       selectedAnnotation,
+      unparsed,
       renderable,
       resources,
       resourcesStale,
@@ -1178,7 +1180,7 @@ export function Workbench() {
           source={controller.source}
           sample={sample}
           resources={resources}
-          hold={!renderable || resourcesStale}
+          hold={unparsed ? "invalid" : !renderable || resourcesStale}
           mode={showAnnotation ? "annotation" : "note"}
           onShowProblem={problems.select}
           publishProblems={setPreviewProblems}

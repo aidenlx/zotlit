@@ -376,6 +376,7 @@ export const WEB_THEME: WorkbenchTheme = {
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
       "problem-heading": "font-semibold",
+      "problem-output": "mt-1 text-fd-muted-foreground",
       "problem-open": "cursor-pointer underline underline-offset-2",
       empty: "text-sm text-fd-muted-foreground",
       pending: "text-sm text-fd-muted-foreground",

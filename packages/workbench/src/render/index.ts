@@ -67,6 +67,7 @@ export type {
 export {
   emptyRender,
   failedRender,
+  renderFailed,
   templateSourceRevision,
   renderIdentity,
 } from "./result";

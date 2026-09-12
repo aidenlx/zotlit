@@ -115,6 +115,7 @@ const INERT_STORE = createWorkbenchStore();
 
 const INERT_STATE: RenderSchedulerState = {
   result: null,
+  retained: null,
   busy: false,
   stale: false,
   staleReason: null,

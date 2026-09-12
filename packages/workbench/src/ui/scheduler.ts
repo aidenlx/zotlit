@@ -14,6 +14,7 @@ import type { PreviewMode } from "./store";
 
 import {
   failedRender,
+  renderFailed,
   templateSourceRevision,
   renderIdentity,
 } from "#/render/result";
@@ -40,8 +41,12 @@ export interface RenderSchedulerInput {
    * Holds rendering while the host cannot answer for this draft — a Profile it
    * refuses, or a dependency bundle read for another one. Unlike Stop, a render
    * in flight is dropped, and the result still shown reads as stale.
+   *
+   * `"invalid"` names the one hold that is a failure rather than a wait: a
+   * document the parser refuses. The preview reads it the way it reads a
+   * render that failed, and names the output it kept.
    */
-  readonly hold?: boolean;
+  readonly hold?: boolean | "invalid";
 }
 
 /**
@@ -55,12 +60,19 @@ export interface RenderSchedulerState<
   R extends TemplateRenderResult = TemplateRenderResult,
 > {
   readonly result: R | null;
+  /**
+   * The last result that produced output, kept while `result` is a failed
+   * attempt the reader can still compare against it. Null once the retained
+   * output describes a paper, example, caller, or mode the reader has left,
+   * which is what keeps another preview's result out of this one.
+   */
+  readonly retained: R | null;
   /** Set from the moment a render starts until its result lands or is dropped. */
   readonly busy: boolean;
   /** Whether `result` describes a draft, paper, or mode the reader has left. */
   readonly stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while the shown result is current. */
-  readonly staleReason: "hold" | "demand" | "live" | null;
+  readonly staleReason: "hold" | "invalid" | "demand" | "live" | null;
   /** How the attempt behind `result` started; `null` while none has landed. */
   readonly trigger: RenderTrigger | null;
   /**
@@ -106,9 +118,15 @@ function staleReasonFor(
   input: Pick<RenderSchedulerInput, "hold" | "live">,
   current: boolean,
 ): RenderSchedulerState["staleReason"] {
+  if (input.hold === "invalid") return "invalid";
   if (input.hold === true) return "hold";
   if (current) return null;
   return input.live ? "live" : "demand";
+}
+
+/** Whether nothing may render, for either reason a host gives. */
+function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
+  return input.hold === true || input.hold === "invalid";
 }
 
 export function createRenderScheduler<R extends TemplateRenderResult>({
@@ -120,12 +138,15 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
   let input = initial;
   let state: RenderSchedulerState<R> = {
     result: null,
+    retained: null,
     busy: false,
     stale: false,
     staleReason: staleReasonFor(initial, false),
     trigger: null,
     attempt: 0,
   };
+  // The last result that produced output, whatever has failed since.
+  let produced: R | null = null;
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
   // A host may reach a disposed scheduler from a continuation it started while
@@ -136,6 +157,30 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
   cleanup.defer(() => listeners.clear());
   cleanup.defer(abandon);
 
+  /**
+   * Whether a result describes the paper, example, caller, and mode the reader
+   * is on now. A result already on screen describes the example it was
+   * rendered for, so a reader who chooses another one has moved past it. The
+   * source is left out: an edit makes a result stale without making it
+   * another preview's.
+   */
+  function sameSelection(result: RenderIdentity): boolean {
+    return !(
+      (input.snapshot !== null &&
+        result.snapshotRevision !== input.snapshot.revision) ||
+      (input.annotation != null &&
+        (result.annotationId !== input.annotation.id ||
+          result.annotationRevision !== input.annotation.revision)) ||
+      (input.citation != null &&
+        (result.citationVariant !== input.citation.variant ||
+          (result.citationExample ?? null) !== input.citation.example)) ||
+      (input.partial != null &&
+        (result.partialContext !== input.partial.context ||
+          (result.partialProfile ?? null) !== input.partial.profile)) ||
+      result.previewMode !== input.mode
+    );
+  }
+
   function publish(next: {
     result?: R | null;
     busy?: boolean;
@@ -144,24 +189,19 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     if (closed) return;
     const result = next.result === undefined ? state.result : next.result;
     const busy = next.busy ?? state.busy;
+    if (result !== null && !renderFailed(result)) produced = result;
+    // Only a failure sends the reader back to working output, and only where
+    // that output still answers for the selection they are reading now. A
+    // document the parser refuses is such a failure: no attempt ever ran.
+    const broken =
+      input.hold === "invalid" || (result !== null && renderFailed(result));
+    const retained =
+      broken && produced !== null && sameSelection(produced) ? produced : null;
     const identityMismatch =
       result !== null &&
       (result.sourceRevision !== templateSourceRevision(input.source) ||
-        (input.snapshot !== null &&
-          result.snapshotRevision !== input.snapshot.revision) ||
-        // A result already on screen describes the example it was rendered
-        // for, so a reader who chooses another one has moved past it.
-        (input.annotation != null &&
-          (result.annotationId !== input.annotation.id ||
-            result.annotationRevision !== input.annotation.revision)) ||
-        (input.citation != null &&
-          (result.citationVariant !== input.citation.variant ||
-            (result.citationExample ?? null) !== input.citation.example)) ||
-        (input.partial != null &&
-          (result.partialContext !== input.partial.context ||
-            (result.partialProfile ?? null) !== input.partial.profile)) ||
-        result.previewMode !== input.mode);
-    const stale = input.hold === true || identityMismatch;
+        !sameSelection(result));
+    const stale = held(input) || identityMismatch;
     const staleReason = staleReasonFor(
       input,
       result !== null && !identityMismatch,
@@ -170,6 +210,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     if (
       !landed &&
       result === state.result &&
+      retained === state.retained &&
       busy === state.busy &&
       stale === state.stale &&
       staleReason === state.staleReason
@@ -178,6 +219,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     }
     state = {
       result,
+      retained,
       busy,
       stale,
       staleReason,
@@ -189,8 +231,8 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
 
   /** What a render would be asked for now, or `null` while nothing may run. */
   function nextRequest(): RenderRequest | null {
-    const { snapshot, annotation, citation, partial, resources, hold } = input;
-    if (closed || hold === true || snapshot === null) return null;
+    const { snapshot, annotation, citation, partial, resources } = input;
+    if (closed || held(input) || snapshot === null) return null;
     return {
       mode: input.mode,
       source: input.source,
@@ -306,23 +348,11 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     pause,
     fail(diagnostic) {
       abandon();
+      // The failure names every selection a render reads, so a Citation or
+      // Shared Partial preview matches it against its own input rather than
+      // reading it as another preview's result.
       publish({
-        result: failed(
-          failedRender(
-            {
-              previewMode: input.mode,
-              sourceRevision: templateSourceRevision(input.source),
-              snapshotRevision: input.snapshot?.revision ?? "",
-              ...(input.annotation
-                ? {
-                    annotationId: input.annotation.id,
-                    annotationRevision: input.annotation.revision,
-                  }
-                : {}),
-            },
-            diagnostic,
-          ),
-        ),
+        result: failed(failedRender(renderIdentity(input), diagnostic)),
         busy: false,
         trigger: "automatic",
       });

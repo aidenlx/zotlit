@@ -88,10 +88,16 @@ export type ResultMode = "note" | "annotation" | "citation" | "partial";
 export interface ResultBodyProps {
   result: TemplateRenderResult | null;
   annotationResult?: TemplateRenderResult | null;
+  /**
+   * The last successful output kept for this document and preview selection,
+   * which a failed attempt is read against. Null where no matching success
+   * stands, which is what an unavailable preview says.
+   */
+  retained?: TemplateRenderResult | null;
   mode: ResultMode;
   stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
-  staleReason: "hold" | "demand" | "live" | null;
+  staleReason: "hold" | "invalid" | "demand" | "live" | null;
   showMarkdown: boolean;
   showManaged: boolean;
   sourceAvailable?: boolean;
@@ -109,6 +115,7 @@ export interface ResultBodyProps {
 export function ResultBody({
   result,
   annotationResult,
+  retained = null,
   mode,
   staleReason,
   showMarkdown,
@@ -121,7 +128,6 @@ export function ResultBody({
   const m = useWorkbenchMessages();
   const part = useParts("resultColumn");
   const Markdown = useWorkbenchHost().markdown;
-  const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
   const showCitation = mode === "citation";
@@ -136,16 +142,32 @@ export function ResultBody({
   // What this mode shows. A render that failed produced nothing at all, which
   // is not the same as a template that produced an empty result, so the
   // failure reads as a failure rather than as empty content.
-  const output = showPartial
-    ? result?.partial
-    : showCitation
-      ? result?.citation
-      : showAnnotation
-        ? annotationResult?.annotation
-        : showManaged
-          ? result?.managedRegion
-          : result?.creationBody;
-  const failed = previewProblem !== undefined && (output ?? null) === null;
+  const outputOf = (source: TemplateRenderResult | null | undefined) =>
+    (showPartial
+      ? source?.partial
+      : showCitation
+        ? source?.citation
+        : showAnnotation
+          ? source?.annotation
+          : showManaged
+            ? source?.managedRegion
+            : source?.creationBody) ?? null;
+  const output = outputOf(showAnnotation ? annotationResult : result);
+  // A document the parser refuses never reached a render, and its explanation
+  // is the editor's; the result on screen is as far behind as a failed one.
+  const failed =
+    staleReason === "invalid" ||
+    (previewProblem !== undefined && output === null);
+  // A failure leaves the last successful output standing, so the reader
+  // repairs the source against working output rather than an empty pane.
+  const kept =
+    failed && retained !== null && outputOf(retained) !== null
+      ? retained
+      : null;
+  // What the region paints: retained output wherever a failure kept some.
+  const shown = kept ?? result;
+  const annotationShown = kept ?? annotationResult ?? null;
+  const filenameTooltip = useTooltip(shown?.filename ?? "");
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
   // "Rendering…" is honest only while a render is on its way: on demand the
   // notice below says Run starts one, and a hold shows its own problem.
@@ -175,48 +197,63 @@ export function ResultBody({
         </div>
       )}
       <ResultRegion emphasis={false}>
-        {result ? (
+        {shown || failed ? (
           <Suspense fallback={pending}>
-            {showNote && !failed && (
+            {showNote && !failed && shown && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
                     {m.workbench_result_filename()}:{" "}
                   </span>
-                  {result.filename}
+                  {shown.filename}
                 </p>
               </header>
             )}
-            {previewProblem && (
-              <p role="status" {...part("problem")}>
-                <strong {...part("problem-heading")}>
-                  {m.workbench_preview_problem()}
-                </strong>{" "}
-                {diagnosticText(m, previewProblem)}{" "}
-                {onShowProblem && (
-                  <button
-                    type="button"
-                    disabled={!sourceAvailable}
-                    onClick={() => onShowProblem(previewProblem)}
-                    {...part("problem-open")}
-                  >
-                    {m.workbench_problem_show()}
-                  </button>
+            {(previewProblem || failed) && (
+              <div role="status" {...part("problem")}>
+                {previewProblem && (
+                  <p {...part("problem-text")}>
+                    <strong {...part("problem-heading")}>
+                      {m.workbench_preview_problem()}
+                    </strong>{" "}
+                    {diagnosticText(m, previewProblem)}{" "}
+                    {onShowProblem && (
+                      <button
+                        type="button"
+                        disabled={!sourceAvailable}
+                        onClick={() => onShowProblem(previewProblem)}
+                        {...part("problem-open")}
+                      >
+                        {m.workbench_problem_show()}
+                      </button>
+                    )}
+                  </p>
                 )}
-              </p>
+                {failed && (
+                  <p
+                    {...part(
+                      "problem-output",
+                      kept === null ? "unavailable" : "retained",
+                    )}
+                  >
+                    {kept === null
+                      ? m.workbench_preview_unavailable()
+                      : m.workbench_preview_retained()}
+                  </p>
+                )}
+              </div>
             )}
-            {failed ? null : showCitation || showPartial ? (
+            {(failed && kept === null) ||
+            shown === null ? null : showCitation || showPartial ? (
               <Markdown
-                markdown={
-                  (showPartial ? result.partial : result.citation) ?? ""
-                }
+                markdown={(showPartial ? shown.partial : shown.citation) ?? ""}
                 properties={[]}
                 showMarkdown={showMarkdown}
               />
             ) : showAnnotation ? (
-              annotationResult ? (
+              annotationShown ? (
                 <Markdown
-                  markdown={annotationResult.annotation ?? ""}
+                  markdown={annotationShown.annotation ?? ""}
                   properties={[]}
                   showMarkdown={showMarkdown}
                 />
@@ -224,24 +261,24 @@ export function ResultBody({
                 pending
               )
             ) : showNote && showManaged ? (
-              result.managedRegion === null ? (
+              shown.managedRegion === null ? (
                 <p {...part("empty")}>{m.workbench_result_managed_none()}</p>
               ) : (
                 <Markdown
-                  markdown={result.managedRegion}
+                  markdown={shown.managedRegion}
                   properties={[]}
                   showMarkdown={showMarkdown}
                 />
               )
             ) : (
               <Markdown
-                markdown={result.creationBody ?? ""}
+                markdown={shown.creationBody ?? ""}
                 // The sheet is the note, so its list is the fold every
                 // entry merged into, not each entry's own contribution.
-                properties={result.fold}
-                frontmatterBlock={result.frontmatterBlock}
+                properties={shown.fold}
+                frontmatterBlock={shown.frontmatterBlock}
                 showMarkdown={showMarkdown}
-                marks={result.annotationRanges}
+                marks={shown.annotationRanges}
               />
             )}
           </Suspense>
@@ -264,6 +301,7 @@ export interface ResultColumnProps extends ResultBodyProps {
 export function ResultColumn({
   result,
   annotationResult,
+  retained,
   mode,
   stale,
   staleReason,
@@ -322,6 +360,7 @@ export function ResultColumn({
       <ResultBody
         result={result}
         annotationResult={annotationResult}
+        retained={retained}
         mode={mode}
         stale={stale}
         staleReason={staleReason}

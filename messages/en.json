@@ -1511,6 +1511,8 @@
   "workbench_embed_file_unavailable": "Embedded file unavailable",
   "workbench_preview_problem": "Preview needs attention",
   "workbench_preview_stale": "Showing the last preview. Resolve the problem below to update it.",
+  "workbench_preview_retained": "Showing the last successful preview.",
+  "workbench_preview_unavailable": "Preview unavailable.",
   "workbench_problems_heading": "Problems",
   "workbench_problem_show": "Show problem",
   "workbench_problems_collapse": "Collapse",

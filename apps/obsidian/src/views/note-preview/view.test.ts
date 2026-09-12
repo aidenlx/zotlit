@@ -943,6 +943,12 @@ Annotation`,
     expect(preview.contentEl.textContent).toContain(
       m.workbench_diagnostic_missing_partial({ name: "book-details" }),
     );
+    // The note that last rendered stands beside the failure, named as the
+    // last preview that worked, so the repair is read against it.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).toContain("Personal space.");
     // Automatic checks stay compact: the suggestion waits to be asked for.
     expect(test.editor.contentEl.textContent).not.toContain(
       m.workbench_diagnostic_missing_partial_suggestion(),
@@ -972,6 +978,11 @@ Annotation`,
     expect(preview.contentEl.textContent).toContain("Repaired output.");
     expect(preview.contentEl.textContent).not.toContain(
       m.workbench_preview_problem(),
+    );
+    // A successful check publishes the new output and takes the retained
+    // notice with the failure it explained.
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_preview_retained(),
     );
     // An area the reader opened keeps its space; the repaired failure is gone.
     expect(area.isConnected).toBe(true);
@@ -1135,6 +1146,56 @@ Annotation`,
     expect(test.fixture.writes.process).not.toHaveBeenCalled();
   });
 
+  it("hides retained output once the preview selection has moved on", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+
+    // Reading another field is not another preview: the rendering root, and
+    // the output kept for it, are the ones the reader already had.
+    const calls = vi.mocked(renderNativeTemplate).mock.calls.length;
+    await act(async () =>
+      test.editor.setPresentation({ fieldFocus: { field: "title" } }),
+    );
+    await advance();
+    expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "sample:book", title: "Sample book" }),
+    );
+    await advance();
+    // Another paper is another preview, so the first one's note is not read
+    // as its comparison.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_unavailable(),
+    );
+    expect(preview.contentEl.textContent).not.toContain("Personal space.");
+  });
+
   it("takes a closed preview's findings back out of the editor", async () => {
     await using test = await setup();
     vi.useFakeTimers();
@@ -1185,10 +1246,33 @@ Annotation`,
     await advance();
     expect(preview.contentEl.querySelector('[role="alert"]')).not.toBeNull();
     expect(preview.contentEl.textContent).toContain("Personal space.");
+    // A document the parser refuses reads as a failure, so the preview names
+    // the output it kept rather than a wait it is not in.
     expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).not.toContain(
       m.workbench_preview_stale(),
     );
+    expect(
+      [...preview.contentEl.querySelectorAll("button")].some(
+        (button) => button.textContent === m.workbench_problem_show(),
+      ),
+    ).toBe(true);
     expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
+
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "sample:book", title: "Sample book" }),
+    );
+    await advance();
+    // The kept output answers for the paper the reader has left.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_unavailable(),
+    );
+    expect(preview.contentEl.textContent).not.toContain("Personal space.");
+
     await act(async () =>
       test.editor.setViewData(
         PROFILE_SOURCE.replace("Personal space.", "Repaired output."),
@@ -1198,6 +1282,9 @@ Annotation`,
     await advance();
     expect(preview.contentEl.textContent).toContain("Repaired output.");
     expect(preview.contentEl.querySelector('[role="alert"]')).toBeNull();
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_preview_unavailable(),
+    );
   });
   it("holds pinned Item context, retains output after source closure, and disables source actions", async () => {
     await using test = await setup();

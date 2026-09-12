@@ -164,7 +164,12 @@ export class NativePreviewSession implements Disposable {
       sourceProblem = error instanceof Error ? error.message : String(error);
     }
     this.state.setState({ source, sourceProblem, entries });
-    this.#scheduler.setInput({ source, hold: sourceProblem !== null });
+    // A document the parser refuses is a failure, not a wait: the preview
+    // names the output it kept and leads to the explanation.
+    this.#scheduler.setInput({
+      source,
+      hold: sourceProblem !== null && "invalid",
+    });
   }
   setItem(item: WorkbenchItemChoice | null): void {
     if (this.#closed || item?.id === this.state.getState().item?.id) return;

@@ -290,6 +290,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "filename-text": "zt:[overflow-wrap:anywhere]",
       problem: "zt:text-sm zt:text-(--text-error) zt:[overflow-wrap:anywhere]",
       "problem-heading": "zt:font-semibold",
+      "problem-output": "zt:mt-1 zt:text-muted-foreground",
       stale: "zt:text-sm zt:text-muted-foreground",
       behind:
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal zt:text-muted-foreground",

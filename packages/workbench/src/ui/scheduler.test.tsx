@@ -26,6 +26,14 @@ const PAPER = SAMPLE_ITEMS[0]!;
 const OTHER_PAPER = SAMPLE_ITEMS[1]!;
 const EXAMPLE = SAMPLE_ANNOTATIONS[0]!;
 const OTHER_EXAMPLE = SAMPLE_ANNOTATIONS[1]!;
+const CITATION = { variant: "main", example: "one-item" } as const;
+const OTHER_CITATION = { variant: "main", example: "two-items" } as const;
+const PARTIAL = {
+  name: "book-details",
+  context: "note",
+  profile: null,
+} as const;
+const OTHER_PARTIAL = { ...PARTIAL, context: "annotation" } as const;
 
 /** The controls a reader presses, beside what the result surfaces read. */
 function Preview({ live = true }: { live?: boolean }) {
@@ -37,7 +45,7 @@ function Preview({ live = true }: { live?: boolean }) {
     })),
   );
   const preview = useStore(store);
-  const { result, busy, stale, staleReason } = useRenderState();
+  const { result, retained, busy, stale, staleReason } = useRenderState();
   return (
     <>
       <PreviewControls
@@ -57,6 +65,7 @@ function Preview({ live = true }: { live?: boolean }) {
       >
         {result?.creationBody ?? ""}
       </div>
+      <div data-testid="retained">{retained?.creationBody ?? ""}</div>
       <div data-testid="diagnostics">
         {(result?.diagnostics ?? [])
           .map(({ code, message }) => `${code}: ${message ?? ""}`)
@@ -86,6 +95,7 @@ const advance = (ms: number) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 const output = () => screen.getByTestId("result");
+const retained = () => screen.getByTestId("retained");
 const diagnostics = () => screen.getByTestId("diagnostics");
 const press = (label: string) => fireEvent.click(screen.getByText(label));
 
@@ -179,6 +189,8 @@ it("renders only on Run while the refresh setting is On demand", async () => {
 
 const SUPERSEDED: readonly {
   what: string;
+  /** The selection this dimension starts on, where a Note preview carries none. */
+  start?: (mounted: Mounted) => void;
   supersede: (mounted: Mounted) => void;
 }[] = [
   {
@@ -197,6 +209,30 @@ const SUPERSEDED: readonly {
       scheduler.setInput({ snapshot: PAPER, annotation: OTHER_EXAMPLE }),
   },
   {
+    what: "citation example",
+    start: ({ scheduler }) => scheduler.setInput({ citation: CITATION }),
+    supersede: ({ scheduler }) =>
+      scheduler.setInput({ citation: OTHER_CITATION }),
+  },
+  {
+    what: "citation variant",
+    start: ({ scheduler }) => scheduler.setInput({ citation: CITATION }),
+    supersede: ({ scheduler }) =>
+      scheduler.setInput({ citation: { ...CITATION, variant: "alt" } }),
+  },
+  {
+    what: "partial caller",
+    start: ({ scheduler }) => scheduler.setInput({ partial: PARTIAL }),
+    supersede: ({ scheduler }) =>
+      scheduler.setInput({ partial: OTHER_PARTIAL }),
+  },
+  {
+    what: "caller profile",
+    start: ({ scheduler }) => scheduler.setInput({ partial: PARTIAL }),
+    supersede: ({ scheduler }) =>
+      scheduler.setInput({ partial: { ...PARTIAL, profile: "reading" } }),
+  },
+  {
     what: "preview mode",
     supersede: ({ scheduler }) => scheduler.setInput({ mode: "update" }),
   },
@@ -212,8 +248,9 @@ it.each(
   ),
 )(
   "never shows the result for a superseded $what in $mode",
-  async ({ live, supersede }) => {
+  async ({ live, start, supersede }) => {
     using mounted = open({ live });
+    if (start) act(() => start(mounted));
     await startRender(live);
     expect(mounted.host.renders).toHaveLength(1);
     act(() => supersede(mounted));
@@ -287,6 +324,63 @@ it("shows a rejected render as a diagnostic carrying the engine's message", asyn
   expect(output().dataset["stale"]).toBe("false");
 });
 
+it("keeps the last successful preview while a failure is repaired", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  // The first attempt fails outright, so nothing successful stands behind it.
+  await advance(300);
+  await act(async () => host.renders[0]!.reject(new Error("Unclosed tag")));
+  expect(retained().textContent).toBe("");
+
+  act(() => void controller.setManifestKey("name", "Working"));
+  await advance(300);
+  await act(async () => host.renders[1]!.answer({ creationBody: "Working" }));
+  // Nothing has failed since, so the result on screen is the current one.
+  expect(retained().textContent).toBe("");
+
+  act(() => void controller.setManifestKey("name", "Broken"));
+  await advance(300);
+  await act(async () => host.renders[2]!.reject(new Error("Unclosed tag")));
+  // The edit left the output behind the source without making it another
+  // preview's, so it stands while the reader repairs the template.
+  expect(output().textContent).toBe("");
+  expect(retained().textContent).toBe("Working");
+
+  act(() => void controller.setManifestKey("name", "Repaired"));
+  await advance(300);
+  await act(async () => host.renders[3]!.answer({ creationBody: "Repaired" }));
+  expect(output().textContent).toBe("Repaired");
+  expect(retained().textContent).toBe("");
+});
+
+it("takes retained output back once another annotation example is chosen", async () => {
+  using mounted = open();
+  const { host, controller, scheduler } = mounted;
+  await advance(300);
+  await act(async () => host.renders[0]!.answer({ creationBody: "Working" }));
+  act(() => void controller.setManifestKey("name", "Broken"));
+  await advance(300);
+  await act(async () => host.renders[1]!.reject(new Error("Unclosed tag")));
+  expect(retained().textContent).toBe("Working");
+
+  act(() => scheduler.setInput({ snapshot: PAPER, annotation: OTHER_EXAMPLE }));
+  // That output answers for the example the reader has left.
+  expect(retained().textContent).toBe("");
+});
+
+it("names every selection on a failure the host reports", async () => {
+  using mounted = open();
+  const { scheduler } = mounted;
+  act(() => scheduler.setInput({ citation: CITATION, partial: PARTIAL }));
+  act(() =>
+    scheduler.fail({ code: "render-error", message: "No citation data" }),
+  );
+  expect(diagnostics().textContent).toBe("render-error: No citation data");
+  // The failure carries the Citation set and the caller it was reported for,
+  // so a Citation Template or Shared Partial preview reads it as its own.
+  expect(output().dataset["stale"]).toBe("false");
+});
+
 it("names the attempt behind each result and counts the attempts apart", async () => {
   using mounted = open();
   const { host, scheduler } = mounted;
@@ -339,6 +433,27 @@ it("holds rendering on the host's word while the last result stands", async () =
   );
   await advance(300);
   expect(host.renders).toHaveLength(2);
+});
+
+it("tells a document the parser refuses from a hold that is only a wait", async () => {
+  using mounted = open();
+  const { host, scheduler } = mounted;
+  await advance(300);
+  await act(async () => host.renders[0]!.answer({ creationBody: "Good" }));
+
+  act(() => scheduler.setInput({ hold: true }));
+  // Nothing failed: the host simply cannot answer for this draft yet.
+  expect(output().dataset["staleReason"]).toBe("hold");
+  expect(retained().textContent).toBe("");
+
+  act(() => scheduler.setInput({ hold: "invalid" }));
+  // The parser refused the draft, so the output on screen is what worked last.
+  expect(output().dataset["staleReason"]).toBe("invalid");
+  expect(retained().textContent).toBe("Good");
+  expect(host.renders).toHaveLength(1);
+
+  act(() => scheduler.setInput({ snapshot: PAPER, annotation: OTHER_EXAMPLE }));
+  expect(retained().textContent).toBe("");
 });
 
 it("reads a fresh scheduler in on-demand mode as behind before any render starts", () => {

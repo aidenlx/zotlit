@@ -153,6 +153,68 @@ it("tells a failed render from a template that produced nothing", () => {
   expect(screen.queryByRole("status")).toBeNull();
 });
 
+it("reads a failure against the last successful preview, or names none", () => {
+  const broken: TemplateRenderResult = {
+    ...result,
+    filename: null,
+    creationBody: null,
+    managedRegion: null,
+    annotation: null,
+    diagnostics: [{ code: "render-error", message: "Unclosed tag" }],
+  };
+  using kept = column({ result: broken, retained: result });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_retained(),
+  );
+  // The working output stands beside the failure for the repair to be read
+  // against; the note name belongs to the attempt that produced it.
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  kept[Symbol.dispose]();
+  cleanup();
+
+  using _none = column({ result: broken });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_unavailable(),
+  );
+  expect(screen.queryByTestId("markdown")).toBeNull();
+});
+
+it("keeps the hold notice its own sentence while the last result stands", () => {
+  using _mounted = column({ stale: true, staleReason: "hold" });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_stale(),
+  );
+  expect(screen.queryByText(m.workbench_preview_retained())).toBeNull();
+});
+
+it("reads a document the parser refuses as a failure, not as a wait", () => {
+  using kept = column({
+    stale: true,
+    staleReason: "invalid",
+    retained: result,
+  });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_retained(),
+  );
+  expect(screen.queryByText(m.workbench_preview_stale())).toBeNull();
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  kept[Symbol.dispose]();
+  cleanup();
+
+  // Nothing successful stands for this selection, so the preview says so even
+  // before any attempt has run.
+  using _none = column({ result: null, stale: true, staleReason: "invalid" });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_unavailable(),
+  );
+  expect(screen.queryByTestId("markdown")).toBeNull();
+});
+
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
   function Controls() {

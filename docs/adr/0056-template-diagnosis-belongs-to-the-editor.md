@@ -22,6 +22,15 @@ status: accepted
 > alone. Remove the control here once an ordinary editor or settings workflow
 > offers unpacking.
 
+> Amended 2026-09-13: the scheduler's hold carried two conditions under one
+> sentence — a document the parser refuses, and a preview that is paused or
+> cannot render yet. They are separate inputs now. A document that does not
+> parse is a failure: it takes the retained-preview sentence and offers Show
+> problem, the same as a render that failed. Every other hold keeps its
+> established wording, as do the on-demand wait and the pending live check.
+> One sentence over both causes was the wrong-cause failure the design guide
+> names.
+
 The citation-template walkthrough showed a missing partial's name,
 explanation, and two recovery actions squeezed into one source-line widget.
 The preview repeated the failure. Researchers need room to read an

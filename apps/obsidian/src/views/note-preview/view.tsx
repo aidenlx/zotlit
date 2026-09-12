@@ -1135,7 +1135,7 @@ function PreviewContent({
   /** Reads one problem in the editor's Problems area. */
   showProblem: (id: string | null, reveal: boolean) => void;
 }) {
-  const { result, busy, stale, staleReason, trigger, attempt } =
+  const { result, retained, busy, stale, staleReason, trigger, attempt } =
     useRenderState(scheduler);
   const {
     context,
@@ -1308,6 +1308,7 @@ function PreviewContent({
           <ResultBody
             result={result}
             annotationResult={result}
+            retained={retained}
             mode={mode}
             stale={stale}
             staleReason={staleReason}

@@ -3,9 +3,15 @@
 
 import type { CitationVariant } from "@zotlit/db";
 
-import type { CitationExampleId } from "./citation-examples";
-import type { PartialContext } from "./partial-preview";
-import type { RenderRequest } from "./request";
+import type {
+  CitationExampleId,
+  CitationPreviewSelection,
+} from "./citation-examples";
+import type {
+  PartialContext,
+  PartialPreviewSelection,
+} from "./partial-preview";
+import type { AnnotationExample } from "./sample-annotations";
 
 /**
  * What went wrong, in the vocabulary a host writes its own wording against. One
@@ -104,6 +110,11 @@ export interface RenderIdentity {
   readonly partialProfile?: string;
 }
 
+/**
+ * The stamp one render is known by. Takes a request, and equally the
+ * selections a scheduler composes a result of its own from — a failure the
+ * host reports carries the same dimensions, so it is matched the same way.
+ */
 export function renderIdentity({
   source,
   snapshot,
@@ -111,11 +122,19 @@ export function renderIdentity({
   citation,
   partial,
   mode,
-}: RenderRequest): RenderIdentity {
+}: {
+  readonly source: string;
+  /** `null` where no paper is loaded, which leaves the revision unnamed. */
+  readonly snapshot: { readonly revision: string } | null;
+  readonly mode?: "create" | "update";
+  readonly annotation?: AnnotationExample | null;
+  readonly citation?: CitationPreviewSelection | null;
+  readonly partial?: PartialPreviewSelection | null;
+}): RenderIdentity {
   return {
     ...(mode ? { previewMode: mode } : {}),
     sourceRevision: templateSourceRevision(source),
-    snapshotRevision: snapshot.revision,
+    snapshotRevision: snapshot?.revision ?? "",
     ...(annotation
       ? { annotationId: annotation.id, annotationRevision: annotation.revision }
       : {}),
@@ -209,4 +228,21 @@ export function failedRender(
   diagnostic: RenderDiagnostic,
 ): TemplateRenderResult {
   return { ...emptyRender(identity), diagnostics: [diagnostic] };
+}
+
+/**
+ * Whether an attempt produced nothing at all. A template that renders empty
+ * text still produced it, so a valid empty result stays apart from a failure,
+ * and only a failure sends a reader to the last preview that worked.
+ */
+export function renderFailed(result: TemplateRenderResult): boolean {
+  return (
+    result.diagnostics.length > 0 &&
+    result.filename === null &&
+    result.creationBody === null &&
+    result.managedRegion === null &&
+    result.annotation === null &&
+    result.citation === null &&
+    result.partial === null
+  );
 }
