@@ -9,6 +9,7 @@ import { compile } from "@zotlit/obsidian-i18n/compiler";
 import {
   EXCLUDE_MESSAGE_PREFIXES,
   INCLUDE_MESSAGES,
+  SCOPED_MESSAGE_MODULES,
   TARGET_LOCALE_MESSAGE_PREFIXES,
 } from "#language-pack-options";
 
@@ -20,6 +21,7 @@ const result = await compile({
   output: "src/lib/i18n/generated",
   excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
   includeMessages: INCLUDE_MESSAGES,
+  scopedMessageModules: SCOPED_MESSAGE_MODULES,
   targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
 });
 process.stdout.write(`Generated ${result.messageCount} Message wrappers\n`);

@@ -12,6 +12,11 @@ export const INCLUDE_MESSAGES = [
   "zotero.prefs_notify_url",
 ] as const;
 
+/** Scoped facade used where the Workbench passes its Messages as an object. */
+export const SCOPED_MESSAGE_MODULES = {
+  "workbench-messages.ts": ["workbench_"],
+} as const;
+
 /** Lifecycle copy has to be readable before its Language Pack exists. */
 export const TARGET_LOCALE_MESSAGE_PREFIXES = [
   "notice_language_pack_",
