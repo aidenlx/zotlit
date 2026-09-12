@@ -16,13 +16,14 @@ function items(webWorkbenchEnabled: boolean) {
     webWorkbenchEnabled,
     app: { loadLocalStorage: () => null, saveLocalStorage: () => {} },
     settings: { current: { "log.to-file": false } },
+    template: { loaded: false },
     localServer: { effectivePort: null },
     localBridge: { connection: null },
   } as unknown as SettingTabContext);
 }
 
 it("includes the editor-choice preference only in web-enabled builds", () => {
-  const preferenceName = m.profile_editor_preference_name();
+  const preferenceName = m.template_workbench_preference_name();
 
   const row = items(true).find(
     (item): item is SettingDefinitionItem<SettingsKey> =>
@@ -36,9 +37,9 @@ it("includes the editor-choice preference only in web-enabled builds", () => {
     (control) => control instanceof DropdownComponent,
   ) as DropdownComponent;
   expect(dropdown.options).toEqual([
-    { value: "ask", label: m.profile_editor_preference_ask() },
-    { value: "web", label: m.profile_editor_preference_web() },
-    { value: "native", label: m.profile_editor_name() },
+    { value: "ask", label: m.template_workbench_preference_ask() },
+    { value: "web", label: m.template_workbench_preference_web() },
+    { value: "native", label: m.template_workbench_name() },
   ]);
 
   expect(items(false)).not.toContainEqual(

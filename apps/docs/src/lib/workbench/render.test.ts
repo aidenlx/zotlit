@@ -6,7 +6,7 @@ import {
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
 
@@ -15,7 +15,7 @@ import { renderInThread } from "./render";
 // The synchronous renderer stands in for the real one, so a test can read the
 // runtime it was handed and the value the caller gets back.
 const { renderProfile } = vi.hoisted(() => ({
-  renderProfile: vi.fn<() => ProfileRenderResult>(),
+  renderProfile: vi.fn<() => TemplateRenderResult>(),
 }));
 
 vi.mock("@zotlit/workbench/render", async (importActual) => ({
@@ -34,7 +34,7 @@ const REQUEST: RenderRequest = {
   annotation: EXAMPLE,
 };
 
-const RESULT = { filename: "Kept work.md" } as ProfileRenderResult;
+const RESULT = { filename: "Kept work.md" } as TemplateRenderResult;
 
 const present = globalThis.Temporal;
 

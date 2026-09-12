@@ -8,6 +8,8 @@ import type {
   TFile,
 } from "obsidian";
 
+import type { CitationVariant } from "@zotlit/db";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
@@ -25,8 +27,8 @@ const AT_TRIGGER = regex("(?:^|[\\s(\\[{（【「\"'])@([^\\s\\]】]*)$");
 
 export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
   readonly #deps: CitationSuggestDeps;
-  /** Set in {@link onTrigger}: query ended with `/`, so render `cite2`. */
-  #secondary = false;
+  /** Set in {@link onTrigger}: the Citation Variant the open query asks for. */
+  #variant: CitationVariant = "main";
 
   constructor(deps: CitationSuggestDeps) {
     super(deps.app);
@@ -35,8 +37,8 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
-      { command: "/ ↵", purpose: m.instruction_insert_secondary_citation() },
-      { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
+      { command: "/ ↵", purpose: m.instruction_insert_alternate_citation() },
+      { command: "⇧↵", purpose: m.instruction_insert_alternate_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
     this.scope.register(["Shift"], "Enter", (evt) => {
@@ -60,7 +62,7 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const trigger = resolveCitationTrigger(line, cursor.ch, atTrigger);
     if (!trigger) return null;
 
-    this.#secondary = trigger.secondary;
+    this.#variant = trigger.variant;
 
     return {
       start: { line: cursor.line, ch: trigger.start },
@@ -86,8 +88,11 @@ export class CitationEditorSuggest extends EditorSuggest<SearchHit> {
     const context = this.context;
     if (!context) return;
 
-    const secondary = this.#secondary || Keymap.isModifier(evt, "Shift");
-    const outcome = resolveCitationInsert(this.#deps, hit, secondary);
+    const variant: CitationVariant =
+      this.#variant === "alt" || Keymap.isModifier(evt, "Shift")
+        ? "alt"
+        : "main";
+    const outcome = resolveCitationInsert(this.#deps, hit, variant);
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);
       return;
@@ -143,8 +148,8 @@ export type CitationInsertOutcome =
  *
  * Returns the rendered citation to insert, or the notice message to show:
  * an item without a citekey, a citekey several Zotero Items answer to, a
- * resolution snapshot that has not answered yet, an inert cite template, or a
- * template not loaded yet. An Ambiguous Citation Key is refused rather than
+ * resolution snapshot that has not answered yet, an inert Citation Template,
+ * or a template not loaded yet. An Ambiguous Citation Key is refused rather than
  * inserted, because the inserted text carries the key alone and would lose the
  * identity the user picked here. A snapshot still resolving reports every key
  * as missing, so it is refused too rather than let an ambiguous key through
@@ -154,7 +159,7 @@ export type CitationInsertOutcome =
 export function resolveCitationInsert(
   deps: Pick<CitationSuggestDeps, "noteFeature" | "citationIndex">,
   hit: SearchHit,
-  secondary: boolean,
+  variant: CitationVariant,
 ): CitationInsertOutcome {
   const citationKey =
     "citationKey" in hit.item.fields ? hit.item.fields.citationKey : null;
@@ -182,7 +187,7 @@ export function resolveCitationInsert(
   try {
     rendered = deps.noteFeature.renderCitation(
       [{ citationKey, item: hit.item }],
-      secondary,
+      variant,
     );
   } catch (e) {
     if (!(e instanceof InertTemplateError)) throw e;
@@ -202,8 +207,8 @@ export interface CitationTrigger {
   end: number;
   /** Search query (trailing `/` stripped; at-queries have `_` → space applied). */
   query: string;
-  /** Trailing `/` was present. */
-  secondary: boolean;
+  /** The Citation Variant the query asks for: `"alt"` when it ended with `/`. */
+  variant: CitationVariant;
 }
 
 /**
@@ -223,12 +228,12 @@ export function resolveCitationTrigger(
   const bracketMatch = TRIGGER.exec(beforeCursor);
   if (bracketMatch) {
     const raw = bracketMatch[1] ?? "";
-    const secondary = raw.endsWith("/");
+    const alternate = raw.endsWith("/");
     return {
       start: bracketMatch.index,
       end: closingBracketAt(line, ch) ? ch + 1 : ch,
-      query: secondary ? raw.slice(0, -1) : raw,
-      secondary,
+      query: alternate ? raw.slice(0, -1) : raw,
+      variant: alternate ? "alt" : "main",
     };
   }
 
@@ -238,14 +243,14 @@ export function resolveCitationTrigger(
   if (!atMatch) return null;
 
   const raw = atMatch[1] ?? "";
-  const secondary = raw.endsWith("/");
-  const stripped = secondary ? raw.slice(0, -1) : raw;
+  const alternate = raw.endsWith("/");
+  const stripped = alternate ? raw.slice(0, -1) : raw;
 
   return {
     start: ch - raw.length - 1,
     end: ch,
     query: stripped.replaceAll("_", " "),
-    secondary,
+    variant: alternate ? "alt" : "main",
   };
 }
 

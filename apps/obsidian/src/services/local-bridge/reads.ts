@@ -178,16 +178,17 @@ export function createLocalBridgeReads(
   };
 }
 
-/** The partial the page renders an annotation's citation through. */
-const CITE_PARTIAL = "cite";
+/** The name the page renders an annotation's citation through. */
+const CITATION_TEMPLATE = "citation";
 
 /**
  * The partials this exact draft calls, resolved through the vault's own pack
- * export — which offers the installed partials and the built-in `cite` alike.
- * `cite` is bundled whether the draft calls it or not, because the page renders
- * each annotation's citation through it the way Obsidian does. A call no vault
- * can answer and a partial the web Workbench cannot run are diagnostics rather
- * than a refusal, so the page keeps every partial that did resolve.
+ * export — which offers the installed partials and the Citation Template
+ * alike. The Citation Template is bundled whether the draft calls it or not,
+ * because the page renders each annotation's citation through it the way
+ * Obsidian does. A call no vault can answer and a partial the web Workbench
+ * cannot run are diagnostics rather than a refusal, so the page keeps every
+ * partial that did resolve.
  */
 async function dependencyBundle(
   template: Pick<TemplateService, "exportLiteratureNotePackSource">,
@@ -195,7 +196,7 @@ async function dependencyBundle(
 ): Promise<TemplateDependenciesResponse> {
   const missing: string[] = [];
   const bundled = await template.exportLiteratureNotePackSource(source, {
-    include: [CITE_PARTIAL],
+    include: [CITATION_TEMPLATE],
     onMissingPartial: (name) => missing.push(name),
   });
   const { manifest } = new TemplateFacade().parseLiteratureNoteTemplate(

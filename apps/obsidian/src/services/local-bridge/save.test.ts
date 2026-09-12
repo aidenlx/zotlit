@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { CONTRACT_VERSION } from "@zotlit/db";
 import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
@@ -19,12 +20,15 @@ const DEFAULT_PATH = "templates/zotlit-profile.default.md";
 const NOTE_PATH = "literatures/An exported paper.md";
 const NOTE_SOURCE = "---\nzotero-key: MAIN2345\n---\n# An exported paper\n";
 
+/** The manifest line a web-supported Profile carries. */
+const CONTRACT_STAMP = `contract: ${CONTRACT_VERSION}`;
+
 /** The Profile document the vault holds, as the page loaded it. */
 const BOOKS_SOURCE = `---
 id: ${BOOKS_PROFILE}
 name: Books
 version: 1.0.0
-contract: 2
+contract: ${CONTRACT_VERSION}
 filename: '{{ zt.title }}'
 ---
 # {{ zt.title }}
@@ -50,14 +54,14 @@ const crlf = (source: string): string => source.replaceAll("\n", "\r\n");
  * bytes rather than the plugin's own hash of them.
  */
 const REVISION = {
-  books: "3b0d51c3af56baa119ae81c38905eb95fdcc755f849f9840d4d3c1404f8b8e8d",
+  books: "fb6852caecea54b786922f956716729cebf41b7ad4c3ae77171094ba6128fffc",
   booksEdited:
-    "21128b02a7ae91b9a153897e92173586170d6fde17eb4aa67d30c295ea8f397e",
-  booksCrlf: "55292641fd0cff80cb366ebfc88f71ed563ff6299e576e31b6912e43e73ad6b1",
+    "b2a6dc511ecac6497c79fd02f96eb2e85bca467de477cef4e6a2f5d136499d6e",
+  booksCrlf: "ad6bf5cc6c584f012fa76fcdf0f2e0f34b285d6d869816522fe52f4e44033193",
   booksCrlfEdited:
-    "883462c46b935d6291f595f6dbe9b0e6954936156dfd9051f520e8dc28ee9d3e",
+    "6d6e5befd81c1f8cb5c8b22353225c18f322c5036073e469e56fb12ac697d3a2",
   defaultDraft:
-    "cf5f3cd2093d304ef97023339008f55e99fcf64363ddf82c60b48042f3358c20",
+    "dc2b9c7053fb0f0c56fb7f07d0477fc912ab65fb491fd6e11d6c00e85b219e54",
 } as const;
 
 /** A revision no document in this vault has. */
@@ -250,14 +254,17 @@ it("refuses an Eta document and one that computes a property in JavaScript", asy
   const eta = await bridge.save({
     reference: BOOKS_PROFILE,
     expected: { state: "revision", revision: REVISION.books },
-    source: BOOKS_SOURCE.replace("contract: 2", "contract: 2\nlanguage: eta"),
+    source: BOOKS_SOURCE.replace(
+      CONTRACT_STAMP,
+      `${CONTRACT_STAMP}\nlanguage: eta`,
+    ),
   });
   const javaScript = await bridge.save({
     reference: BOOKS_PROFILE,
     expected: { state: "revision", revision: REVISION.books },
     source: BOOKS_SOURCE.replace(
-      "contract: 2",
-      "contract: 2\nfrontmatter:\n  - key: status\n    js: '\"unread\"'\n    merge: keep",
+      CONTRACT_STAMP,
+      `${CONTRACT_STAMP}\nfrontmatter:\n  - key: status\n    js: '"unread"'\n    merge: keep`,
     ),
   });
 
@@ -293,7 +300,8 @@ it("refuses an installed Eta dependency without writing the Profile", async () =
   await using bridge = await harness({
     files: {
       [BOOKS_PATH]: BOOKS_SOURCE,
-      "templates/zotlit-byline.eta.md": "<%= it.zt.title %>",
+      "templates/zotlit-partial.byline.md":
+        "---\nlanguage: eta\n---\n<%= it.zt.title %>",
     },
   });
   bridge.app.saveLocalStorage = vi.fn();

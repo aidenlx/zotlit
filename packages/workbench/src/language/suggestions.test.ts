@@ -357,7 +357,105 @@ describe("suggestions: filters, tags, and partials", () => {
 
   it("completes partial names after render and include", () => {
     expect(labels('{% render "ci')).toEqual(["cite"]);
+    expect(labels('{% include "ci')).toEqual(["cite"]);
     expect(labels('<%~ include("c', eta)).toEqual(["cite", "content"]);
+  });
+
+  it("lists every registered partial and ends with the create entry", () => {
+    const vault: SuggestionConfig = {
+      ...note,
+      partials: ["authors", "venue-line"],
+      createPartial: {
+        label: "New partial…",
+        detail: "Name a new partial, then insert the call.",
+        run: () => Promise.resolve(null),
+      },
+    };
+    // No call names either partial yet, and the list still holds both.
+    expect(labels('{% render "', vault)).toEqual([
+      "authors",
+      "venue-line",
+      "New partial…",
+    ]);
+    // A query no partial matches leaves the create entry reachable.
+    expect(labels('{% render "ven', vault)).toEqual([
+      "venue-line",
+      "New partial…",
+    ]);
+    expect(labels('{% render "zzz', vault)).toEqual(["New partial…"]);
+  });
+
+  it("hands the create entry the typed name and writes the answer", async () => {
+    const asked: string[] = [];
+    const source = '{% render "ven';
+    const result = suggestions(source, source.length, {
+      ...note,
+      partials: [],
+      createPartial: {
+        label: "New partial…",
+        detail: "Name a new partial, then insert the call.",
+        run: (query) => {
+          asked.push(query);
+          return Promise.resolve("venue-line");
+        },
+      },
+    })!;
+    const option = result.options.find((o) => o.label === "New partial…")!;
+    const insert = await option.resolveInsert!();
+    expect(insert).toBe('venue-line" with zt as zt %}');
+    expect(asked).toEqual(["ven"]);
+    const edit = completionEdit(source, result, { ...option, insert: insert! });
+    expect(
+      source.slice(0, edit.from) + edit.insert + source.slice(edit.to),
+    ).toBe('{% render "venue-line" with zt as zt %}');
+  });
+
+  describe("an accepted name finishes the call it was opened on", () => {
+    /** The source an accepted `venue-line` leaves behind; `|` is the caret. */
+    const accept = (source: string, config: SuggestionConfig = note) => {
+      const plain = source.replace("|", "");
+      const result = suggestions(plain, source.indexOf("|"), {
+        ...config,
+        partials: ["venue-line"],
+      })!;
+      const option = result.options.find((o) => o.label === "venue-line")!;
+      const edit = completionEdit(plain, result, option);
+      return plain.slice(0, edit.from) + edit.insert + plain.slice(edit.to);
+    };
+
+    it.each([
+      // Liquid's render opens an isolated scope, so zt travels by name.
+      ['{% render "|', '{% render "venue-line" with zt as zt %}'],
+      ['{% render "| %}', '{% render "venue-line" with zt as zt %}'],
+      ['{% render "ven|" %}', '{% render "venue-line" with zt as zt %}'],
+      // include shares the caller's scope, so it needs no clause.
+      ['{% include "|" %}', '{% include "venue-line" %}'],
+      // A single-quoted call keeps its own quote.
+      ["{% include '|' %}", "{% include 'venue-line' %}"],
+    ])("writes %s as %s", (source, expected) => {
+      expect(accept(source)).toBe(expected);
+    });
+
+    it("hands Eta's include the root as its second argument", () => {
+      expect(accept('<%~ include("|") %>', eta)).toBe(
+        '<%~ include("venue-line", zt) %>',
+      );
+    });
+
+    it("replaces the name alone in a call that carries its own arguments", () => {
+      expect(accept('{% render "ven|" with zt as zt %}')).toBe(
+        '{% render "venue-line" with zt as zt %}',
+      );
+      expect(accept('<%~ include("ven|", other) %>', eta)).toBe(
+        '<%~ include("venue-line", other) %>',
+      );
+    });
+  });
+
+  it("offers no create entry to a host that writes no files", () => {
+    expect(labels('{% render "', { ...note, partials: ["cite"] })).toEqual([
+      "cite",
+    ]);
   });
 
   it("stays silent inside comments and string literals", () => {

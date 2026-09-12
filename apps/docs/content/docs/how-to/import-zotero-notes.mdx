@@ -170,13 +170,13 @@ Imported notes use their Profile's <SettingsPath page={m.settings_page_profiles(
 
 ## Citations in imported notes
 
-The imported note's body is the Zotero note's HTML converted to Markdown. Citations within it render through your `cite` template.
+The imported note's body is the Zotero note's HTML converted to Markdown. Citations within it render through [the citation text](/docs/how-to/customize-a-template#citation-text), always as the `main` variant.
 
 Each cited reference resolves its citation key in this order:
 
 1. The live Zotero item's own citation key.
 2. The citation snapshot embedded in the Zotero note.
-3. A visible sentinel: the Zotero item key with `?` appended (e.g. `-@ABC123?` in the default cite template). The trailing `?` makes unresolved citations greppable in your vault.
+3. A visible sentinel: the Zotero item key with `?` appended (e.g. `-@ABC123?` in the built-in citation text). The trailing `?` makes unresolved citations greppable in your vault.
 
 If every cited reference within a single citation is unresolvable (no citation key from any source), ZotLit keeps that citation's original HTML verbatim. Nothing is lost.
 

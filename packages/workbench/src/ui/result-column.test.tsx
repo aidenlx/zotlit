@@ -1,4 +1,4 @@
-import type { ProfileRenderResult } from "#/render/result";
+import type { TemplateRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -15,7 +15,7 @@ import { m } from "./test-messages";
 
 import { failedRender } from "#/render/result";
 
-const result: ProfileRenderResult = {
+const result: TemplateRenderResult = {
   ...failedRender(
     { sourceRevision: "1", snapshotRevision: "2" },
     { code: "render-error" },

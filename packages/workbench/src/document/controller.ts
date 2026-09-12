@@ -1,3 +1,4 @@
+import type { PartialContext } from "#/render/partial-preview";
 import {
   history,
   isolateHistory,
@@ -17,17 +18,25 @@ import type {
 import { diffChars } from "diff";
 
 import { ANNOTATION_HEADER } from "@zotlit/templates/constants";
+import type { TemplateLanguage } from "@zotlit/templates/constants";
 import { updateLiteratureNoteTemplateMatch } from "@zotlit/templates/facade";
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
+  formatPlainTemplateDocument,
   LiteratureNoteTemplateError,
+  parsePlainTemplateDocument,
   parseLiteratureNoteTemplate,
+  PlainTemplateDocumentError,
 } from "@zotlit/templates/facade";
 import type {
   LiteratureNoteTemplateDocument,
   LiteratureNoteTemplateErrorCode,
+  PlainTemplateDocument,
 } from "@zotlit/templates/facade";
-import { literatureNoteTemplateDependencies } from "@zotlit/templates/literature-note-pack";
+import {
+  literatureNoteTemplateDependencies,
+  updateLiteratureNotePackMetadata,
+} from "@zotlit/templates/literature-note-pack";
 
 import { jsonSliceHistory } from "./json-source";
 import {
@@ -44,13 +53,23 @@ import type {
   ManifestScalar,
   WorkbenchSliceRange,
 } from "./manifest-patch";
-import { noteRegions } from "./regions";
+import { noteRegions, RESERVED_CALL_NAMES } from "./regions";
 import type { NoteRegions } from "./regions";
 
 import { pairingState, pairingHistory } from "#/language/pairing-state";
+import { DEFAULT_PARTIAL_CONTEXT } from "#/render/partial-preview";
 
 /** The pane that edits one Managed Frontmatter entry's expression. */
 export type WorkbenchEntrySliceId = `entry:${number}`;
+
+/**
+ * The Template Document this controller holds. A Profile document carries the
+ * manifest, the note body, and the Annotation Section that the six Profile
+ * tabs edit; the Citation Template and a Shared Partial are plain documents —
+ * an optional manifest naming the language, then one source — which one editor
+ * holds whole.
+ */
+export type WorkbenchDocumentKind = "profile" | "citation" | "partial";
 
 /**
  * A pane a problem is repaired in. Every id but `details` is an editor over one
@@ -63,6 +82,7 @@ export type WorkbenchSliceId =
   | "filename"
   | "advanced"
   | "details"
+  | "source"
   | WorkbenchEntrySliceId;
 
 /** The Annotation Section as its two panes address it, in master offsets. */
@@ -86,9 +106,13 @@ export function entryPosition(id: WorkbenchSliceId): number | null {
   return name === "entry" ? Number(position) : null;
 }
 
-/** Why a draft is refused: the parser's own codes, plus the web host's three. */
+/**
+ * Why a draft is refused: the parser's own codes, the web host's three, and
+ * the vault host's one.
+ */
 export type WorkbenchProblemCode =
   | LiteratureNoteTemplateErrorCode
+  | "bundled-partial"
   | "unsupported-js"
   | "unsupported-language"
   | "unsupported-partial-language";
@@ -135,7 +159,10 @@ export class WorkbenchDocumentController {
   #state: EditorState;
   #readOnly: boolean;
   readonly #runtime: "web" | "native";
+  readonly #kind: WorkbenchDocumentKind;
+  #context: PartialContext = DEFAULT_PARTIAL_CONTEXT;
   #document: LiteratureNoteTemplateDocument | null = null;
+  #plain: PlainTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
   #entries: readonly ManagedEntrySource[] | null = null;
@@ -150,9 +177,17 @@ export class WorkbenchDocumentController {
 
   constructor(
     source: string,
-    options: { runtime?: "web" | "native"; readOnly?: boolean } = {},
+    options: {
+      runtime?: "web" | "native";
+      readOnly?: boolean;
+      kind?: WorkbenchDocumentKind;
+      /** The caller a Shared Partial opens as called from. @default "note" */
+      context?: PartialContext;
+    } = {},
   ) {
     this.#runtime = options.runtime ?? "web";
+    this.#kind = options.kind ?? "profile";
+    if (options.context) this.#context = options.context;
     this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
@@ -177,6 +212,10 @@ export class WorkbenchDocumentController {
         }),
       ],
     });
+    // The one editor a plain document opens holds this slice, so it exists
+    // from the start, including for a draft whose manifest never parsed.
+    if (this.#kind !== "profile")
+      this.#ranges.set("source", { from: 0, to: source.length });
     this.#analyze();
   }
 
@@ -199,6 +238,25 @@ export class WorkbenchDocumentController {
     return this.#state;
   }
 
+  /** The Template Document kind this controller was opened for. */
+  get kind(): WorkbenchDocumentKind {
+    return this.#kind;
+  }
+
+  /**
+   * The caller a Shared Partial's one editor reads its root data as, which
+   * completion and the preview alike follow.
+   *
+   * @see {@link PartialContext} for whose choice it is.
+   */
+  get partialContext(): PartialContext {
+    return this.#context;
+  }
+
+  setPartialContext(context: PartialContext): void {
+    this.#context = context;
+  }
+
   #language: "liquid" | "eta" = "liquid";
 
   /** The last valid engine remains available while the author repairs a draft. */
@@ -209,6 +267,55 @@ export class WorkbenchDocumentController {
   /** The parsed document, or null while the draft does not parse. */
   get document(): LiteratureNoteTemplateDocument | null {
     return this.#document;
+  }
+
+  /**
+   * The parsed plain document — the manifest and the source under it — or null
+   * on a Profile document and while a plain draft does not parse.
+   */
+  get plainDocument(): PlainTemplateDocument | null {
+    return this.#plain;
+  }
+
+  /**
+   * The language the draft's manifest names, which every language-aware read
+   * of the source follows — the Partial Placeholder among them. A draft that
+   * stopped parsing keeps the last language that did, so a repair in progress
+   * keeps the boxes the reader is working in.
+   */
+  get language(): TemplateLanguage {
+    return (
+      this.#document?.manifest.language ??
+      this.#plain?.manifest.language ??
+      "liquid"
+    );
+  }
+
+  /**
+   * Writes the manifest's `language`, adding the key to a manifest that omits
+   * it and the manifest itself to a document that carries none — an empty
+   * manifest is valid and names the Liquid default. The source is left as
+   * authored: a Template changes language by being rewritten, never by being
+   * converted.
+   * @returns false on a Profile document, whose language the Profile tab writes.
+   */
+  setPlainLanguage(language: TemplateLanguage): boolean {
+    if (this.#kind === "profile") return false;
+    const plain = this.#plain;
+    if (plain === null) return false;
+    if (plain.sourceStart > 0) {
+      return this.setManifestKey("language", language);
+    }
+    this.dispatch({
+      changes: {
+        from: 0,
+        to: 0,
+        insert: formatPlainTemplateDocument("", language),
+      },
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
+    return true;
   }
 
   get problems(): readonly WorkbenchProblem[] {
@@ -227,9 +334,12 @@ export class WorkbenchDocumentController {
   }
 
   /**
-   * The partial names this draft calls, sorted, which is what a Local Bridge
-   * bundles for the preview. A draft that does not parse keeps the last list
-   * that did, so a repair in progress never drops the bundle it needs.
+   * The Shared Partial names this draft calls, sorted, which is what a Local
+   * Bridge bundles for the preview. A name no Shared Partial can be given is
+   * left out, so a pane that offers this list offers no call a partial file
+   * could never answer. A draft that does not parse keeps the last list that
+   * did, so a repair in progress never drops the bundle it needs.
+   * @see {@link RESERVED_CALL_NAMES}
    */
   get dependencies(): readonly string[] {
     return this.#dependencies;
@@ -266,10 +376,19 @@ export class WorkbenchDocumentController {
 
   /** Render scopes in master offsets, shared by completion and embedded highlighting. */
   get templateRegions(): readonly (WorkbenchSliceRange & {
-    root: "note" | "annotation" | "filename";
+    root: "note" | "annotation" | "filename" | "citation";
     expression: boolean;
     language?: "liquid" | "eta" | "json-e";
   })[] {
+    if (this.#kind !== "profile") {
+      return [
+        {
+          ...this.sliceRange("source"),
+          root: this.#kind === "citation" ? "citation" : this.#context,
+          expression: false,
+        },
+      ];
+    }
     const annotation = this.annotationSection?.source;
     const filename =
       this.filenameSlice ?? manifestNodeRange(this.source, ["filename"]);
@@ -474,7 +593,46 @@ export class WorkbenchDocumentController {
     } catch {
       return false;
     }
-    if (next === this.#text) return true;
+    this.#rewrite(next);
+    return true;
+  }
+
+  /**
+   * Drops the manifest's transport copy of each partial `names` holds, as one
+   * undo step: a file of the host's own answers each of those names now,
+   * whether the host just wrote it or the reader had written it already.
+   * @returns false on a document that does not parse, and on one whose
+   *   manifest carries none of those names — the state the caller wanted.
+   */
+  dropBundledPartials(names: readonly string[]): boolean {
+    let document;
+    try {
+      document = parseLiteratureNoteTemplate(this.#text);
+    } catch {
+      return false;
+    }
+    const partials = document.manifest.partials ?? [];
+    const kept = partials.filter(({ name }) => !names.includes(name));
+    if (kept.length === partials.length) return false;
+    let next: string;
+    try {
+      next = updateLiteratureNotePackMetadata(this.#text, {
+        partials: kept.length > 0 ? kept : undefined,
+      });
+    } catch {
+      return false;
+    }
+    this.#rewrite(next);
+    return true;
+  }
+
+  /**
+   * Replaces the document with `next` through the one changed span between
+   * them, so a whole-document rewrite lands as one undo step and leaves every
+   * byte the two share where the author put it.
+   */
+  #rewrite(next: string): void {
+    if (next === this.#text) return;
     let from = 0;
     while (
       from < this.#text.length &&
@@ -493,7 +651,6 @@ export class WorkbenchDocumentController {
       userEvent: "input.form",
       annotations: isolateHistory.of("full"),
     });
-    return true;
   }
 
   /**
@@ -705,6 +862,10 @@ export class WorkbenchDocumentController {
   #analyze(): void {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
+    if (this.#kind !== "profile") {
+      this.#analyzePlain(source);
+      return;
+    }
     this.#readManifest(source);
     try {
       const document = parseLiteratureNoteTemplate(source);
@@ -718,16 +879,23 @@ export class WorkbenchDocumentController {
         from: document.annotationSection.start,
         to: document.annotationSection.end,
       });
-      this.#dependencies = literatureNoteTemplateDependencies(document);
-      this.#problems = webProblems(document, source).filter(
-        (problem) =>
-          this.#runtime === "web" ||
-          ![
-            "unsupported-language",
-            "unsupported-partial-language",
-            "unsupported-js",
-          ].includes(problem.code),
+      this.#dependencies = literatureNoteTemplateDependencies(document).filter(
+        (name) => !RESERVED_CALL_NAMES.includes(name),
       );
+      this.#problems = [
+        ...webProblems(document, source).filter(
+          (problem) =>
+            this.#runtime === "web" ||
+            ![
+              "unsupported-language",
+              "unsupported-partial-language",
+              "unsupported-js",
+            ].includes(problem.code),
+        ),
+        ...(this.#runtime === "web"
+          ? []
+          : bundledPartialProblems(document, source)),
+      ];
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
       this.#document = null;
@@ -763,6 +931,34 @@ export class WorkbenchDocumentController {
       });
     }
     this.#regions = noteRegions(source, this.sliceRange("note"));
+  }
+
+  /**
+   * Re-derives the one source slice and the Problems list of a plain document.
+   * A draft whose manifest does not parse takes the whole document as its
+   * slice, so the one editor it opens holds the manifest the reader repairs.
+   */
+  #analyzePlain(source: string): void {
+    try {
+      const plain = parsePlainTemplateDocument(source);
+      this.#plain = plain;
+      this.#ranges.set("source", {
+        from: plain.sourceStart,
+        to: source.length,
+      });
+      this.#problems = [];
+    } catch (error) {
+      if (!(error instanceof PlainTemplateDocumentError)) throw error;
+      this.#plain = null;
+      this.#ranges.set("source", { from: 0, to: source.length });
+      this.#problems = [
+        {
+          code: error.code,
+          slice: "source",
+          range: this.#lineAround(error.offset),
+        },
+      ];
+    }
   }
 
   /**
@@ -909,6 +1105,29 @@ function webProblems(
       }
     }
   return problems;
+}
+
+/**
+ * The vault host's own restriction: a Profile edited beside the vault reads
+ * its partials from `zotlit-partial.<name>.md` files, so the manifest's
+ * transport copy is text with two homes until it is unpacked. The web host
+ * has no vault to unpack into and reads the copy as the bundle it is.
+ * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
+ */
+function bundledPartialProblems(
+  document: LiteratureNoteTemplateDocument,
+  source: string,
+): readonly WorkbenchProblem[] {
+  const partials = document.manifest.partials ?? [];
+  if (partials.length === 0) return [];
+  return [
+    {
+      code: "bundled-partial",
+      params: { names: partials.map(({ name }) => name).join(", ") },
+      slice: "advanced",
+      ...at(source, ["partials"]),
+    },
+  ];
 }
 
 /** The manifest node's own text, so a problem points at the value it is about. */

@@ -8,7 +8,7 @@ import {
   SAMPLE_ITEMS,
   renderProfile,
 } from "@zotlit/workbench/render";
-import type { ProfileRenderResult } from "@zotlit/workbench/render";
+import type { TemplateRenderResult } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
 vi.mock("@zotlit/workbench/ui", async (original) => {
@@ -130,7 +130,7 @@ describe("preview scheduling", () => {
   });
 
   it("disposes every StrictMode effect owner and drops late completion after close", async () => {
-    let deliver!: (result: ProfileRenderResult) => void;
+    let deliver!: (result: TemplateRenderResult) => void;
     renderInThread.mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -179,10 +179,10 @@ describe("preview scheduling", () => {
   });
 
   it("pauses queued and future work while an in-flight render completes", async () => {
-    let deliver!: (result: ProfileRenderResult) => void;
+    let deliver!: (result: TemplateRenderResult) => void;
     renderInThread.mockImplementation(
       () =>
-        new Promise<ProfileRenderResult>((resolve) => {
+        new Promise<TemplateRenderResult>((resolve) => {
           deliver = resolve;
         }),
     );

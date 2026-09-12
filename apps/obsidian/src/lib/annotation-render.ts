@@ -3,7 +3,6 @@
 import { basename } from "node:path";
 
 import {
-  citekeysToCiteTemplateData,
   fetchAnnotationsTemplateData,
   narrowBaseDataToCiteItemData,
   withAnnotationCitation,
@@ -21,7 +20,6 @@ import type {
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
-import { inlineCitation } from "@zotlit/templates";
 
 import { creatorSummary } from "@/lib/item-summary";
 import { fileUrlLink } from "@/lib/markdown-link";
@@ -100,7 +98,7 @@ export function renderAnnotations(
   client: NodeDatabaseClient,
   annotations: readonly Annotation[],
   options: {
-    template: Pick<TemplateService, "render">;
+    template: Pick<TemplateService, "render" | "renderCitation">;
     zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     groupIdMemo?: GroupIDMemo;
@@ -132,30 +130,29 @@ export function renderAnnotations(
 }
 
 /**
- * Render an annotation's page-pinned citation through the `cite` template —
+ * Render an annotation's page-pinned citation through the Citation Template —
  * the parent item with the annotation's page label as locator (label
- * `"page"`), mirroring Zotero's own annotation citations. `null` when there is
- * no parent item or it carries no citation key. Shared by the `zt.citation`
- * template field above and the annot-view "Copy citation" action
- * (`renderAnnotationCitation`).
+ * `"page"`), mirroring Zotero's own annotation citations. The main Citation
+ * Variant carries it, so an annotation excerpt and an Enter-inserted citation
+ * agree. `null` when there is no parent item or it carries no citation key.
+ * Shared by the `zt.citation` template field above and the annot-view "Copy
+ * citation" action (`renderAnnotationCitation`).
  */
 export function annotationCitation(
   parentItem: TemplateParentItemData | null,
   pageLabel: string | null,
-  template: Pick<TemplateService, "render">,
+  template: Pick<TemplateService, "renderCitation">,
 ): string | null {
   if (!parentItem?.citekey) return null;
-  return inlineCitation(
-    template.render(
-      "cite",
-      citekeysToCiteTemplateData([
-        {
-          citationKey: parentItem.citekey,
-          item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
-          label: "page",
-          locator: pageLabel,
-        },
-      ]),
-    ),
+  return template.renderCitation(
+    [
+      {
+        citationKey: parentItem.citekey,
+        item: narrowBaseDataToCiteItemData(parentItem, parentItem.citekey),
+        label: "page",
+        locator: pageLabel,
+      },
+    ],
+    "main",
   );
 }

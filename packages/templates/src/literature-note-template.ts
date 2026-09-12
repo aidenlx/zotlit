@@ -3,10 +3,7 @@
 import annotationEta from "@defaults/annotation.eta?raw";
 import annotationLiquid from "@defaults/annotation.liquid?raw";
 import * as v from "valibot";
-import {
-  parseDocument as parseYamlDocument,
-  stringify as stringifyYaml,
-} from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 
 import {
   ANNOTATION_HEADER,
@@ -15,6 +12,11 @@ import {
   RESERVED_FRONTMATTER_KEYS,
 } from "./constants";
 import type { FrontmatterField, TemplateLanguage } from "./constants";
+import {
+  parseManifestYaml,
+  splitDocumentFrontmatter,
+  trimCarriageReturn,
+} from "./document-frontmatter";
 
 const [MANAGED_OPEN_TAG, MANAGED_CLOSE_TAG] = MANAGED_BLOCK_TAG_NAMES;
 const OPEN_MANAGED = `{% ${MANAGED_OPEN_TAG} %}`;
@@ -254,6 +256,14 @@ export function convertLegacyFrontmatterFields(
   );
 }
 
+/**
+ * The `zt` contract a synthesized manifest stamps. It is the same number as
+ * `CONTRACT_VERSION` in `@zotlit/db`, which the engine layer does not depend
+ * on; the web Workbench refuses a Profile whose stamp names another contract,
+ * so the two move together.
+ */
+const SYNTHESIZED_CONTRACT_VERSION = 3;
+
 /** Synthesize one document from the three legacy Literature Note slots. */
 export function synthesizeLegacyLiteratureNoteTemplate(
   legacy: LegacyLiteratureNoteTemplates,
@@ -315,7 +325,7 @@ export function synthesizeLegacyLiteratureNoteTemplate(
       description:
         manifestOverrides.description ??
         "Converted from legacy Literature Note Templates.",
-      contract: 2,
+      contract: SYNTHESIZED_CONTRACT_VERSION,
       filename: legacy.filename.source,
       language,
       ...(manifestOverrides.frontmatter === undefined
@@ -396,7 +406,20 @@ export function parseLiteratureNoteTemplate(
   source: string,
 ): LiteratureNoteTemplateDocument {
   const { manifestSource, manifestStart, bodyStart } = splitDocument(source);
-  const rawManifest = parseManifestYaml(manifestSource, manifestStart);
+  const rawManifest = parseManifestYaml(
+    manifestSource,
+    manifestStart,
+    ({ message, offset, cause }) =>
+      new LiteratureNoteTemplateError(
+        "invalid-manifest",
+        `Invalid Literature Note Template manifest: ${message}`,
+        {
+          recovery: "Correct the YAML syntax in the manifest.",
+          offset,
+          cause,
+        },
+      ),
+  );
 
   try {
     const result = v.safeParse(manifestSchema, rawManifest);
@@ -504,11 +527,8 @@ function splitDocument(source: string): {
   manifestStart: number;
   bodyStart: number;
 } {
-  const firstLineEnd = source.indexOf("\n");
-  if (
-    firstLineEnd === -1 ||
-    trimCarriageReturn(source.slice(0, firstLineEnd)) !== "---"
-  ) {
+  const split = splitDocumentFrontmatter(source);
+  if (split.kind === "no-manifest") {
     throw new LiteratureNoteTemplateError(
       "invalid-document",
       "Literature Note Template document must start with manifest frontmatter",
@@ -519,30 +539,17 @@ function splitDocument(source: string): {
       },
     );
   }
-
-  let lineStart = firstLineEnd + 1;
-  while (lineStart <= source.length) {
-    const lineEnd = source.indexOf("\n", lineStart);
-    const end = lineEnd === -1 ? source.length : lineEnd;
-    if (trimCarriageReturn(source.slice(lineStart, end)) === "---") {
-      return {
-        manifestSource: source.slice(firstLineEnd + 1, lineStart),
-        manifestStart: firstLineEnd + 1,
-        bodyStart: lineEnd === -1 ? source.length : lineEnd + 1,
-      };
-    }
-    if (lineEnd === -1) break;
-    lineStart = lineEnd + 1;
+  if (split.kind === "unclosed-manifest") {
+    throw new LiteratureNoteTemplateError(
+      "invalid-document",
+      "Literature Note Template manifest is not closed",
+      {
+        recovery: 'Add a closing "---" line before the template body.',
+        offset: source.length,
+      },
+    );
   }
-
-  throw new LiteratureNoteTemplateError(
-    "invalid-document",
-    "Literature Note Template manifest is not closed",
-    {
-      recovery: 'Add a closing "---" line before the template body.',
-      offset: source.length,
-    },
-  );
+  return split;
 }
 
 /**
@@ -557,23 +564,6 @@ export function literatureNoteTemplateManifestRange(source: string): {
 } {
   const { manifestSource, manifestStart } = splitDocument(source);
   return { from: manifestStart, to: manifestStart + manifestSource.length };
-}
-
-function parseManifestYaml(source: string, start: number): unknown {
-  const document = parseYamlDocument(source, { uniqueKeys: true });
-  if (document.errors.length > 0) {
-    const error = document.errors[0]!;
-    throw new LiteratureNoteTemplateError(
-      "invalid-manifest",
-      `Invalid Literature Note Template manifest: ${error.message}`,
-      {
-        recovery: "Correct the YAML syntax in the manifest.",
-        offset: start + error.pos[0],
-        cause: error,
-      },
-    );
-  }
-  return document.toJS();
 }
 
 /** The document boundary is independent of Markdown and template syntax. */
@@ -796,10 +786,6 @@ function lineAt(source: string, index: number): number {
     if (source[offset] === "\n") line += 1;
   }
   return line;
-}
-
-function trimCarriageReturn(line: string): string {
-  return line.endsWith("\r") ? line.slice(0, -1) : line;
 }
 
 function hasOwn(value: unknown, key: string): boolean {

@@ -196,7 +196,11 @@ function templateMigrationNotice(
   result: LiteratureNoteTemplateMigrationResult,
 ): string {
   if (result.outcome === "converted") {
-    return m.notice_literature_note_template_conversion_success();
+    return result.kept.length > 0
+      ? m.notice_literature_note_template_conversion_kept({
+          files: result.kept.join(", "),
+        })
+      : m.notice_literature_note_template_conversion_success();
   }
   switch (result.diagnostic.code) {
     case "legacy-render-mismatch":

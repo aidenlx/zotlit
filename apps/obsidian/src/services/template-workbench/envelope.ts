@@ -1,4 +1,4 @@
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type { ContractRoot } from "@zotlit/db";
 import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
@@ -9,7 +9,7 @@ import type {
 // stable machine surface agent scripts read, the message is context for a human
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
-import { TemplateError } from "@zotlit/templates/facade";
+import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
@@ -26,6 +26,7 @@ import type {
 
 import type { TemplateDataLoadResult } from "./data";
 import type { SchemaAsset } from "./schema";
+import type { RenderTemplate } from "./vocabulary";
 
 /**
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
@@ -95,6 +96,12 @@ export const DIAGNOSTIC_HINTS = {
     "Rename the manifest partial named 'annotation' and update its calls. The Annotation Section supplies Profile annotation rendering.",
   DOCUMENT_INVALID:
     "Correct the document validation error, then inspect or render it again.",
+  RESERVED_PARTIAL_NAME:
+    "Rename the Shared Partial file to a name ZotLit does not already use. 'citation' names the Citation Template, and 'filename', 'note', 'annotation', and 'content' name the Literature Note Template slots.",
+  MISSING_PARTIAL:
+    "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
+  BUNDLED_PARTIAL:
+    "The partial named in details.template is still carried in a Profile document's manifest. Open that document in the Template Workbench and run Unpack partials, which writes zotlit-partial.<name>.md and clears the manifest entry.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -284,15 +291,16 @@ export function dataLoadDiagnostic(
  * Classify a fault raised while a command evaluated Template data or rendered
  * a Template.
  *
- * @param template - The slot the render command invoked. The data command
- *   passes `null`: reading a data root runs no Template of its own, so
+ * @param template - The Template the render command invoked: a Legacy
+ *   Template File slot, or the Citation Template. The data command passes
+ *   `null`: reading a data root runs no Template of its own, so
  *   `details.template` then appears only when the error itself names one (see
- *   the `cite` label the annotation root's citation getter attaches).
+ *   the label the annotation root's citation getter attaches).
  */
 export function templateFaultDiagnostic(
   error: unknown,
   options: {
-    template: TemplateSlot | null;
+    template: RenderTemplate | null;
     compileErrors: ReadonlyMap<string, CompileError>;
   },
 ): Diagnostic {
@@ -305,6 +313,14 @@ export function templateFaultDiagnostic(
   if (error instanceof InertTemplateError) {
     const details = named === null ? undefined : { template: named };
     return diagnostic("ETA_OPT_IN_REQUIRED", message, details);
+  }
+
+  // The engine reached a name nothing is registered under, which for a
+  // template is a Shared Partial the vault holds no document for.
+  if (error instanceof MissingTemplateError) {
+    return diagnostic("MISSING_PARTIAL", message, {
+      template: error.templateName,
+    });
   }
 
   const compileError =

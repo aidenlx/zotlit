@@ -10,7 +10,7 @@ import type { SliceReveal } from "./slice-editor";
 import type { WorkbenchTab } from "./tabs";
 
 /** The template root a pane edits, which the Explorer and the preview follow. */
-export type TemplateRoot = "note" | "annotation" | "filename";
+export type TemplateRoot = "note" | "annotation" | "filename" | "citation";
 
 /** The Data Explorer's two renderings. */
 

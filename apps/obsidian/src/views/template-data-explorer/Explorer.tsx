@@ -20,13 +20,13 @@ import {
   ItemSelectionList,
   AnnotationSelectionList,
   selectionName,
-} from "@/views/profile-editor/selection";
+} from "@/views/template-workbench/selection";
 import {
-  profileEditorButton,
+  templateWorkbenchButton,
   selectionBar,
   selectionControl,
   selectionHint,
-} from "@/views/profile-editor/theme";
+} from "@/views/template-workbench/theme";
 
 import { ExplorerActionsContext } from "./actions";
 import { useExplorerStore, useExplorerStoreApi } from "./store";
@@ -106,13 +106,13 @@ export function Explorer({
           </p>
           <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2">
             <button
-              className={profileEditorButton}
+              className={templateWorkbenchButton}
               onClick={() => actions.onRefresh()}
             >
               {m.workbench_example_retry()}
             </button>
             <button
-              className={profileEditorButton}
+              className={templateWorkbenchButton}
               onClick={() => actions.onChooseItem()}
             >
               {m.template_data_explorer_choose_item()}
@@ -218,7 +218,7 @@ export function Explorer({
                 {error ?? m.workbench_example_missing_item()}
               </p>
               <button
-                className={profileEditorButton}
+                className={templateWorkbenchButton}
                 onClick={() => actions.onRefresh()}
               >
                 {m.workbench_example_retry()}

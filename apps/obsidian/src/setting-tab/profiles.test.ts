@@ -18,7 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
-import { openNativeProfile } from "@/views/profile-editor/register";
+import { openNativeProfile } from "@/views/template-workbench/register";
 
 import type { SettingTabContext } from "./context";
 import {
@@ -28,7 +28,7 @@ import {
   setProfileControlValue,
 } from "./profiles";
 
-vi.mock("@/views/profile-editor/register", () => ({
+vi.mock("@/views/template-workbench/register", () => ({
   openNativeProfile: vi.fn(async () => {}),
 }));
 
@@ -45,6 +45,11 @@ function context(): SettingTabContext {
       diagnostics: [],
       loaded: true,
       defaultDocumentPath: "templates/zotlit-profile.default.md",
+    },
+    template: {
+      loaded: true,
+      getPartialDocuments: () => [],
+      getReservedPartialFiles: () => [],
     },
   } as unknown as SettingTabContext;
 }

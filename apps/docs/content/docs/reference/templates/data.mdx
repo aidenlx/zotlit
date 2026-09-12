@@ -17,7 +17,7 @@ This page lists every property available on `zt` in each template type. Use the 
 
 The `zt` root for the `note` template: every item field plus the runtime-computed fields assembled at the app layer (backlinks, resolved attachment links, flattened annotations, author conveniences).
 
-The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-content.liquid.md`) share this context.
+The note body of a Profile document, and the `{% managed %}` block inside it, share this context.
 
 <ContractTable section="note-and-content-templates" />
 
@@ -25,7 +25,7 @@ The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-co
 
 The `zt` root of the `annotation` template: one annotation ([`TemplateAnnotation`](#annotation-entry)) plus [`citation`](#annotation-template-citation). Entries of `zt.annotations` on the note root carry no citation — only the single-annotation render resolves one.
 
-The annotation template (`zotlit-annotation.liquid.md`) receives a single annotation as `zt`.
+The Annotation Section of a Profile document receives a single annotation as `zt`.
 
 <ContractTable section="annotation-template" />
 
@@ -33,7 +33,7 @@ The annotation template (`zotlit-annotation.liquid.md`) receives a single annota
 
 The `zt` root of the `filename` template: an item's own fields, its collections, Primary Creators, an Author Summary, and inert `notePath` / `noteLink` stubs. It reads only this item when naming a note.
 
-The filename template (`zotlit-filename.liquid.md`) receives exactly the properties below.
+The `filename` template in a Profile document's manifest receives exactly the properties below.
 
 <ContractTable section="filename-template" />
 
@@ -49,9 +49,69 @@ Each Zotero item type exposes its own field set. Expand a type to see the `zt` p
 
 <ContractTable section="common-fields" />
 
-## Citation templates [#citation-templates]
+## Citation template [#citation-templates]
 
-<include>./_citation-templates.mdx</include>
+The citation-template data root (`zt`): `citations[i].item === items[i]`.
+
+The citation template (`zotlit-citation.md`) renders one in-text citation.
+
+Pass `zt.citations` to the Pandoc Citation formatter, which reads `prefix`, `suffix`, `suppressAuthor`, `locator`, and `labelShort`, and omits entries whose `item.citationKey` is null.
+
+| Language | Form                    | Expression                                                   |
+| -------- | ----------------------- | ------------------------------------------------------------ |
+| Liquid   | `normal`                | `{{ zt.citations \| pandoc_cite }}`                          |
+| Eta      | `normal`                | `<%= pandocCite(zt.citations) %>`                            |
+| Liquid   | `prefer-author-in-text` | `{{ zt.citations \| pandoc_cite: "prefer-author-in-text" }}` |
+| Eta      | `prefer-author-in-text` | `<%= pandocCite(zt.citations, "prefer-author-in-text") %>`   |
+
+<ContractTable section="citation-templates" />
+
+### Citation variants [#citation-variant]
+
+The gesture a Citation was requested with, handed to the Citation Template as `zt.variant`: `"main"` for Enter, `"alt"` for Shift+Enter or a trailing `/` in the suggester query. The enum names the gesture alone — the Citation Template decides what each variant renders.
+
+The built-in citation template renders the author-in-text form for `alt` and the bracketed form for `main`.
+
+- `"main"`: Enter in the suggester, the insert modal, and an annotation's `citation`.
+- `"alt"`: Shift+Enter, or a trailing `/` in the suggester query.
+
+### Citation item [#citation-item]
+
+One cited item within a Citation: the pure item data plus the citation-scoped properties, which never live on the item. Exposed to the Citation Template as `zt.citations`, with `zt.items` the same items bare.
+
+Each entry in `zt.citations`. Loop over them with `{% for citation in zt.citations %}`.
+
+<ContractTable section="citation-item" />
+
+### Cited item fields [#cited-item-fields]
+
+A cited item's data, in the same template vocabulary as the note root and narrowed to the fields both a live Zotero item and a note's embedded CSL-JSON snapshot supply. Vault and library context — tags, dates-added/modified, library identity, and the note resolvers — stays on the note root, which the embedded snapshot cannot express. An unresolved reference becomes a stub with every field null, so a citation template never null-checks the item itself.
+
+Each cited item also carries every [item field](#item-fields) of its type. The note-root properties it leaves behind are `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`.
+
+<ContractTable section="cited-item-fields" />
+
+### Locator label abbreviations [#locator-label-abbreviations]
+
+`labelShort` maps the CSL `label` to its Pandoc locator term. Any label not listed (including `"page"`) yields `p.`.
+
+| `label`     | `labelShort` |
+| ----------- | ------------ |
+| `book`      | `bk.`        |
+| `chapter`   | `chap.`      |
+| `column`    | `col.`       |
+| `figure`    | `fig.`       |
+| `folio`     | `fol.`       |
+| `issue`     | `no.`        |
+| `line`      | `l.`         |
+| `note`      | `n.`         |
+| `opus`      | `op.`        |
+| `paragraph` | `para.`      |
+| `part`      | `pt.`        |
+| `section`   | `sec.`       |
+| `sub-verbo` | `s.v.`       |
+| `verse`     | `v.`         |
+| `volume`    | `vol.`       |
 
 ## Annotation entries [#annotation-entry]
 

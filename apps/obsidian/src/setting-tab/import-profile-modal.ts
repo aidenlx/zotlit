@@ -193,6 +193,8 @@ export class ImportProfileModal extends Modal {
   >();
   readonly result = this.#decision.promise;
   readonly #options: ProfileImportOptions = { includeMatch: true };
+  /** The conflicting partials the reader chose to replace; the rest stay. */
+  readonly #replacePartials = new Set<string>();
   #closed = false;
   #saving = false;
   #revision = 0;
@@ -231,6 +233,7 @@ export class ImportProfileModal extends Modal {
       }),
     });
     this.#match(this.contentEl);
+    this.#partials(this.contentEl);
     const error = note(this.contentEl, { status: true });
     const footer = dialogFooter(this);
     const button = footerButton(footer, m.profile_import_replace(), () =>
@@ -316,17 +319,11 @@ export class ImportProfileModal extends Modal {
       cls: NOTE_CLASS,
       text: m.profile_import_contents({ path: initial.path }),
     });
-    if (initial.manifest.partials?.length)
-      facts.createEl("p", {
-        cls: NOTE_CLASS,
-        text: m.profile_import_partials({
-          names: initial.manifest.partials.map(({ name }) => name).join(", "),
-        }),
-      });
     facts.createEl("p", {
       cls: NOTE_CLASS,
       text: m.profile_import_none_changed(),
     });
+    this.#partials(controls);
     const error = note(controls, { status: true });
     const panel = previewPanel(preview, {
       path: m.settings_profile_preview_path(),
@@ -401,6 +398,69 @@ export class ImportProfileModal extends Modal {
         onChange?.();
       });
   }
+  /**
+   * What the bundled partials do to the template folder, and the one choice
+   * they can raise: a document already holding other text under the same name
+   * is kept unless the reader says to replace it, so no file of theirs goes
+   * without their word.
+   */
+  #partials(container: HTMLElement): void {
+    const plan = this.#plan.partials;
+    if (plan.length === 0) return;
+    const group = container.createDiv({ cls: "zt:flex zt:flex-col zt:gap-2" });
+    // A name a document of this vault's own already answers — identical text,
+    // or a reserved name another Template carries — reaches no file and needs
+    // no word here: nothing in the template folder changes for it.
+    const unpacked = plan
+      .filter(({ verdict }) => verdict === "write")
+      .map(({ name }) => name);
+    if (unpacked.length > 0)
+      group.createEl("p", {
+        cls: NOTE_CLASS,
+        text: m.profile_import_partials({ names: unpacked.join(", ") }),
+      });
+    // A name the Shared Partial name rule refuses reaches no file either, and
+    // it does need a word: the profile keeps carrying its copy.
+    const refused = plan
+      .filter(({ verdict }) => verdict === "refused")
+      .map(({ name }) => name);
+    if (refused.length > 0)
+      group.createEl("p", {
+        cls: NOTE_CLASS,
+        text: m.profile_import_partials_refused({ names: refused.join(", ") }),
+      });
+    // A well-formed name the folder already answers in another case reaches no
+    // file of its own: one file answers both spellings, so the profile keeps
+    // carrying this copy too — for a reason of its own.
+    const otherCase = plan
+      .filter(({ verdict }) => verdict === "other-case")
+      .map(({ name }) => name);
+    if (otherCase.length > 0)
+      group.createEl("p", {
+        cls: NOTE_CLASS,
+        text: m.profile_import_partials_other_case({
+          names: otherCase.join(", "),
+        }),
+      });
+    for (const { name } of plan.filter(
+      ({ verdict }) => verdict === "conflict",
+    )) {
+      const row = group.createDiv({
+        cls: "zt:flex zt:items-center zt:justify-between zt:gap-3",
+      });
+      row.createSpan({
+        text: m.profile_import_partial_replace({ name }),
+        cls: "zt:text-sm zt:leading-(--line-height-tight)",
+      });
+      new ToggleComponent(row)
+        .setValue(this.#replacePartials.has(name))
+        .onChange((value) => {
+          if (value) this.#replacePartials.add(name);
+          else this.#replacePartials.delete(name);
+        });
+    }
+  }
+
   async #save(
     plan: PreparedProfileImport,
     button: ButtonComponent,
@@ -412,6 +472,7 @@ export class ImportProfileModal extends Modal {
     try {
       const profile = await plan.import({
         includeMatch: this.#options.includeMatch,
+        replacePartials: [...this.#replacePartials],
       });
       this.#decision.resolve(profile);
       this.close();

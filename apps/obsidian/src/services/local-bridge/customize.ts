@@ -21,8 +21,8 @@ import type { TemplateService } from "@/services/template/service";
 import {
   profileCustomization,
   saveProfileCustomization,
-} from "@/views/profile-editor/preferences";
-import type { ProfileCustomization } from "@/views/profile-editor/preferences";
+} from "@/views/template-workbench/preferences";
+import type { ProfileCustomization } from "@/views/template-workbench/preferences";
 
 import type { LocalBridgeService } from "./service";
 import type { SelectedItemIdentity } from "./sessions";

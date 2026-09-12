@@ -11,13 +11,13 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit ships a built-in Liquid default for every template type. These are embedded in the plugin and used when no ejected file exists in the template folder. This page shows each default verbatim and explains what it renders.
+ZotLit ships a built-in Liquid default for every template. This page shows each default verbatim, explains what it renders, and names the document that holds it once you customize it.
 
-Ejected files in the template folder override these defaults. See [Customize a template](/docs/how-to/customize-a-template) to create one.
+A Profile document carries the note, content, filename, and annotation templates together. The citation text is its own document. Until a document exists, ZotLit renders the built-in text shown below. See [Customize a template](/docs/how-to/customize-a-template) for how to create one.
 
 ## Note template
 
-Filename: `zotlit-note.liquid.md`
+In a Profile document: the note body, above the Annotation Section.
 
 ```liquid
 # {{ zt.title }}
@@ -36,7 +36,7 @@ Filename: `zotlit-note.liquid.md`
 
 ## Content template
 
-Filename: `zotlit-content.liquid.md`
+In a Profile document: the part of the note body inside the `{% managed %}` / `{% endmanaged %}` block.
 
 ```liquid
 {% if zt.notes.size > 0 %}
@@ -68,7 +68,7 @@ The `render_annotation` tag passes each annotation as `zt`. See [Annotation rend
 
 ## Annotation template
 
-Filename: `zotlit-annotation.liquid.md`
+In a Profile document: the Annotation Section, the final section after the standalone line `--- zotlit:annotation ---`.
 
 ```liquid
 {% bq %}
@@ -102,44 +102,57 @@ Rendered output for an annotation on page 42 with an image excerpt, highlighted 
 
 The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.
 
-## Citation template
+## Citation text [#citation-text]
 
-Filename: `zotlit-cite.liquid.md`
-
-```liquid
-{{ zt.citations | pandoc_cite }}
-```
-
-Produces Pandoc Citation source such as `[@smith2024, {p. 62}; -@doe2021]`.
-
-ZotLit normalizes the rendered output of both citation templates to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders — the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
-
-| Behavior             | Detail                                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------- |
-| Prefix and suffix    | Preserves each item's `prefix` and `suffix`.                                                    |
-| Suppress author      | `suppressAuthor` true renders `-@key`.                                                          |
-| Locator              | Renders an explicit locator such as `, {p. 62}` from `labelShort` and `locator`.                |
-| Complex citation key | Adds braces when Pandoc requires them. For example, `KX67D9YM?` renders as `@{KX67D9YM?}`.      |
-| Missing citation key | Omits items whose `item.citationKey` is null. An empty array or all-null array renders nothing. |
-| Form                 | Uses `normal`, which always produces a bracketed Citation Cluster.                              |
-
-## Alternate citation template
-
-Filename: `zotlit-cite2.liquid.md`
+In its own document, `zotlit-citation.md` in the template folder. One template answers both citation gestures, and `zt.variant` says which one the reader made:
 
 ```liquid
-{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% if zt.variant == "alt" %}
+  {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% else %}
+  {{ zt.citations | pandoc_cite }}
+{% endif %}
 ```
 
-`cite2` prefers an Author-in-text Citation. One item without a prefix or suppressed author renders as `@smith2024`. A locator stays in a trailing group: `@smith2024 [{p. 62}]`.
+`zt.variant` is `"main"` or `"alt"`. `"main"` comes from Enter in the citation suggester or the insert modal; `"alt"` comes from Shift+Enter, or from a trailing `/` in the suggester query. It names the gesture the reader made, and this template decides what each gesture renders. See [Citation variant](/docs/reference/templates/data#citation-variant).
 
-The formatter falls back to a normal Citation Cluster when the first retained item has a prefix or suppresses its author. For example, a `"see "` prefix renders `[see @smith2024]`, and `suppressAuthor` renders `[-@smith2024]`.
+The `else` branch of the built-in default renders a bracketed Citation Cluster, such as `[@smith2024, {p. 62}; -@doe2021]`. The `"alt"` branch asks Pandoc for the author-in-text form, which falls back to a bracketed cluster whenever the first retained item carries a prefix or suppresses its author.
 
-Later items stay attached to the first Author-in-text Citation. For example, two items render as `@smith2024 [@doe2021]`.
+| Input                        | `"main"`                | `"alt"`                                           |
+| ---------------------------- | ----------------------- | ------------------------------------------------- |
+| One key `smith2024`          | `[@smith2024]`          | `@smith2024`                                      |
+| Two keys                     | `[@a2020; @b2021]`      | First item in text, the rest in trailing brackets |
+| Locator `62`                 | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                            |
+| `suppressAuthor`             | `[-@smith2024]`         | `[-@smith2024]`, a cluster                        |
+| Prefix `see `                | `[see @smith2024]`      | `[see @smith2024]`, a cluster                     |
+| An item with no citation key | Dropped from the output | Dropped from the output                           |
+
+The `pandoc_cite` filter behaves the same in both branches:
+
+| Behavior             | Detail                                                                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prefix and suffix    | Preserves each item's `prefix` and `suffix`.                                                                                                                                                         |
+| Suppress author      | `suppressAuthor` true renders `-@key`.                                                                                                                                                               |
+| Locator              | Renders an explicit locator such as `, {p. 62}` from `labelShort` and `locator`.                                                                                                                     |
+| Complex citation key | Adds braces when Pandoc requires them. For example, `KX67D9YM?` renders as `@{KX67D9YM?}`.                                                                                                           |
+| Missing citation key | Omits items whose `item.citationKey` is null. An empty array or all-null array renders nothing.                                                                                                      |
+| Form                 | `normal` always produces a bracketed Citation Cluster; `prefer-author-in-text` produces an author-in-text citation only when the first retained item has no prefix and does not suppress its author. |
+
+ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders — the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
+
+Only the Liquid edition is built in. The same template in Eta reads:
+
+```eta
+<% if (zt.variant === "alt") { %>
+  <%= pandocCite(zt.citations, "prefer-author-in-text") %>
+<% } else { %>
+  <%= pandocCite(zt.citations) %>
+<% } %>
+```
 
 ## Filename template
 
-Filename: `zotlit-filename.liquid.md`
+In a Profile document: the `filename` key of its YAML manifest.
 
 ```liquid
 {{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}
@@ -159,7 +172,7 @@ Filename: `zotlit-filename.liquid.md`
 
 ## Live recompilation
 
-Editing a template file in your vault triggers live recompilation via a file watcher. Changes take effect immediately without reloading the plugin. Deleting an ejected file restores that template to the built-in default shown above.
+Editing a Template Document in your vault triggers live recompilation through a file watcher. Changes take effect immediately, without reloading the plugin. Moving a document to trash returns its templates to the built-in defaults shown above.
 
 ## See also
 
@@ -176,12 +189,12 @@ Editing a template file in your vault triggers live recompilation via a file wat
   />
   <Card
     title="How templates work"
-    description="Template types, languages, and the defaults-plus-eject model."
+    description="Template documents, languages, and where each template lives."
     href="/docs/concepts/how-templates-work"
   />
   <Card
     title="Customize a template"
-    description="Eject, edit, and test a template."
+    description="Open a template document, edit it, and test the result."
     href="/docs/how-to/customize-a-template"
   />
   <Card

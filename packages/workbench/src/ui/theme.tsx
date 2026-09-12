@@ -180,7 +180,12 @@ export interface WorkbenchParts {
     | "managed-label"
     | "managed-line"
     | "annotation-toggle"
-    | "annotation-edit";
+    | "annotation-edit"
+    | "partial-box"
+    | "partial-name"
+    | "partial-arguments"
+    | "partial-problem"
+    | "partial-action";
   previewControls:
     | "controls"
     | "label"
@@ -240,6 +245,7 @@ export interface WorkbenchParts {
     | "problems-heading"
     | "problems-text"
     | "problems-recovery"
+    | "problems-action"
     | "problems-open";
 }
 

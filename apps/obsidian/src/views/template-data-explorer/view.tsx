@@ -28,12 +28,12 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { TemplateService } from "@/services/template/service";
 import {
-  activeProfileEditor,
+  activeTemplateWorkbench,
   registerCompanionHistory,
   onCompanionStateRestored,
-  subscribeActiveProfileEditor,
+  subscribeActiveTemplateWorkbench,
 } from "@/views/note-preview/register";
-import { createProfileEditorHost } from "@/views/profile-editor/host";
+import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import {
   chooseWorkbenchItem,
   searchWorkbenchItem,
@@ -42,13 +42,13 @@ import {
   subscribeWorkbenchSelection,
   selectionViewTitle,
   updateSelectionTitle,
-} from "@/views/profile-editor/selection";
-import { getSampleItem } from "@/views/profile-editor/selection-data";
-import { profileEditorTheme } from "@/views/profile-editor/theme";
+} from "@/views/template-workbench/selection";
+import { getSampleItem } from "@/views/template-workbench/selection-data";
+import { templateWorkbenchTheme } from "@/views/template-workbench/theme";
 import type {
-  ProfileAuthoringContext,
-  ProfileEditorView,
-} from "@/views/profile-editor/view";
+  TemplateAuthoringContext,
+  TemplateWorkbenchView,
+} from "@/views/template-workbench/view";
 
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
@@ -71,7 +71,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
   settings: SettingsService;
   templates: Pick<
     TemplateService,
-    "javascriptTemplatesEnabled" | "ready" | "render"
+    "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"
   >;
   pluginVersion: string;
 }
@@ -80,8 +80,8 @@ export class TemplateDataExplorerView extends ItemView {
   readonly #deps: ExplorerViewDeps;
   #root: Root | null = null;
   #cleanup: DisposableStack | null = null;
-  #editor: ProfileEditorView | null = null;
-  #host: ReturnType<typeof createProfileEditorHost> | null = null;
+  #editor: TemplateWorkbenchView | null = null;
+  #host: ReturnType<typeof createTemplateWorkbenchHost> | null = null;
   #actions: ExplorerActions | null = null;
   #closed = false;
   #choiceGeneration = 0;
@@ -203,7 +203,11 @@ export class TemplateDataExplorerView extends ItemView {
       if (!launch)
         onCompanionStateRestored(this.app, result, () => {
           if (!this.#cleanup) return;
-          this.#editor = activeProfileEditor(this.app, this.leaf, this.#editor);
+          this.#editor = activeTemplateWorkbench(
+            this.app,
+            this.leaf,
+            this.#editor,
+          );
           if (this.#editor) this.#apply(this.#editor.authoringContext);
           this.#mount();
         });
@@ -248,6 +252,7 @@ export class TemplateDataExplorerView extends ItemView {
               leaf: this.leaf,
               path: value.sourceFile,
               item,
+              kind: "profile",
               root,
               annotationId,
               tab:
@@ -257,6 +262,11 @@ export class TemplateDataExplorerView extends ItemView {
                     ? "name"
                     : "note",
               advanced: false,
+              // The workspace saves a Profile Explorer alone, which names no
+              // Citation set and no Shared Partial; the editor supplies both
+              // the moment it arrives.
+              citation: null,
+              partial: null,
               canInsertField: false,
             }
           : null,
@@ -397,7 +407,9 @@ export class TemplateDataExplorerView extends ItemView {
         apply: (selection) => {
           if (selection.kind === "item")
             this.#selectItem(selection.item, false);
-          else {
+          // The Citation set reaches this Explorer with the editor's authoring
+          // context, which is the one place its own data reads it from.
+          else if (selection.kind === "annotation") {
             const state = this.#session.state.getState();
             if (state.annotationId !== selection.annotationId)
               this.#session.setTarget(
@@ -430,7 +442,7 @@ export class TemplateDataExplorerView extends ItemView {
       }),
     );
     this.#host = cleanup.use(
-      createProfileEditorHost(this.app, {
+      createTemplateWorkbenchHost(this.app, {
         render: (request) =>
           Promise.resolve(
             failedRender(renderIdentity(request), { code: "render-error" }),
@@ -498,7 +510,7 @@ export class TemplateDataExplorerView extends ItemView {
     });
     cleanup.defer(() => this.app.vault.offref(rename));
     cleanup.defer(
-      subscribeActiveProfileEditor(
+      subscribeActiveTemplateWorkbench(
         this.app,
         (editor) => {
           this.#editor = editor;
@@ -528,7 +540,7 @@ export class TemplateDataExplorerView extends ItemView {
       if (key) this.#session.setTarget({ id: key, title: key }, "note");
     } else this.#session.refresh();
   }
-  #apply(context: ProfileAuthoringContext, explicit = false): void {
+  #apply(context: TemplateAuthoringContext, explicit = false): void {
     const previous = this.#session.state.getState().context;
     if (!explicit && this.leaf.pinned && previous) {
       this.#session.state.setState({
@@ -546,7 +558,7 @@ export class TemplateDataExplorerView extends ItemView {
     if (!this.#host || !this.#actions) return;
     this.#root?.render(
       <WorkbenchHostProvider host={this.#host}>
-        <WorkbenchThemeProvider theme={profileEditorTheme}>
+        <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
           <ExplorerStoreProvider value={this.#session.state}>
             <ExplorerActionsContext value={this.#actions}>
               <Explorer
@@ -562,7 +574,7 @@ export class TemplateDataExplorerView extends ItemView {
                       ? ["liquid", "eta"]
                       : ["liquid"],
                   onInsertNode: (node) => {
-                    const editor = activeProfileEditor(
+                    const editor = activeTemplateWorkbench(
                       this.app,
                       this.leaf,
                       this.#editor,
@@ -635,7 +647,7 @@ export class TemplateDataExplorerView extends ItemView {
         pluginVersion: this.#deps.pluginVersion,
       });
   }
-  #sourceEditor(): ProfileEditorView | null {
+  #sourceEditor(): TemplateWorkbenchView | null {
     return this.#editor &&
       this.#session.state.getState().context?.path ===
         this.#editor.authoringContext.path

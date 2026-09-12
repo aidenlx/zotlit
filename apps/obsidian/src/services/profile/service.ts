@@ -20,6 +20,7 @@ import {
   LiteratureNotePackError,
   updateLiteratureNotePackMetadata,
 } from "@zotlit/templates/literature-note-pack";
+import type { LiteratureNotePartialUnpack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import {
@@ -53,6 +54,7 @@ import type { SettingsService } from "@/services/settings/service";
 import {
   DEFAULT_FRONTMATTER_FIELDS,
   DEFAULT_TEMPLATES,
+  RESERVED_PARTIAL_NAMES,
 } from "@/services/template/defaults";
 import type {
   LiteratureNoteTemplateStatus,
@@ -114,11 +116,25 @@ export interface ProfileShareOptions {
   description: string;
   includeFolders?: boolean;
   includeMatch?: boolean;
+  /** The partials the reader checked; the bundle carries exactly these. */
+  partials?: readonly string[];
 }
 
 export interface PreparedProfileShare {
   readonly manifest: LiteratureNoteTemplateManifest;
+  /** Every partial the bundle can carry, sorted by name. */
   readonly partials: readonly string[];
+  /**
+   * The partials the textual dependency scan reaches from this Profile, which
+   * the checklist opens with. The scan reads a quoted name wherever it stands,
+   * a prose mention included, so it recommends and the reader decides.
+   */
+  readonly reachable: readonly string[];
+  /**
+   * Names the Profile calls that no document in the vault answers, so the
+   * sheet says which calls travel unresolved rather than refusing to open.
+   */
+  readonly missing: readonly string[];
   readonly filename: string;
   render(options: ProfileShareOptions): string;
 }
@@ -128,10 +144,18 @@ export type PreparedProfileImport = {
   profile: ResolvedProfile;
   source: string;
   path: string;
+  /**
+   * What every partial the manifest carries does to the template folder: a new
+   * file, identical text left alone, or a document holding other text, which
+   * the reader answers by naming it in `import`'s `replacePartials`.
+   */
+  partials: readonly LiteratureNotePartialUnpack[];
   /** The match choice can change while the target snapshot stays fixed. */
-  import(
-    options?: Pick<ProfileImportOptions, "includeMatch">,
-  ): Promise<LiteratureNoteProfile>;
+  import(options?: {
+    includeMatch?: ProfileImportOptions["includeMatch"];
+    /** The conflicting partials the reader chose to replace. */
+    replacePartials?: readonly string[];
+  }): Promise<LiteratureNoteProfile>;
 } & (
   | { kind: "fresh" }
   | {
@@ -598,25 +622,69 @@ export class ProfileService extends Service {
         profile.bindings[binding],
       ]),
     ) as ProfileBindings;
+    // A call the vault answers with no document is what story 43 leaves behind
+    // after a rename, and what a quoted name in prose looks like. Neither can
+    // block the sheet: the name simply is not among the ones offered.
+    const missingPartials = new Set<string>();
     const source = await this.#deps.template.exportLiteratureNotePackSource(
       updateProfilePackMetadata(await this.getSource(selector), {
         id,
         name: label,
         ...bindings,
       }),
-      { includeFolders: true },
+      {
+        includeFolders: true,
+        onMissingPartial: (name) => missingPartials.add(name),
+      },
     );
     const facade = new TemplateFacade();
     const { manifest } = facade.parseLiteratureNoteTemplate(source);
-    const partials = manifest.partials?.map(({ name }) => name) ?? [];
-    logger.debug("Prepared Profile sharing", { selector, id, partials });
+    const bundled = manifest.partials ?? [];
+    // The document's own copy of a name stands ahead of the vault's, the way
+    // the export itself resolves the two.
+    const entries = new Map(
+      [...this.#deps.template.getPartialEntries(), ...bundled].map(
+        (partial) => [partial.name, partial] as const,
+      ),
+    );
+    // A reserved name travels for a host that has no template folder to read:
+    // the web Workbench renders an annotation's citation through the bundled
+    // `citation` (ADR 0055). It belongs to that document rather than to the
+    // partials the reader picks among, and an import drops it again — the
+    // recipient's own Citation Template answers that name.
+    const offered = (names: Iterable<string>) =>
+      [...names]
+        .filter((name) => !RESERVED_PARTIAL_NAMES.has(name))
+        .sort((left, right) => left.localeCompare(right));
+    const partials = offered(entries.keys());
+    const reachable = offered(bundled.map(({ name }) => name));
+    const carried = bundled.filter(({ name }) =>
+      RESERVED_PARTIAL_NAMES.has(name),
+    );
+    const missing = offered(missingPartials);
+    logger.debug("Prepared Profile sharing", {
+      selector,
+      id,
+      partials,
+      reachable,
+      missing,
+    });
     return {
       manifest,
       partials,
+      reachable,
+      missing,
       filename: `zotlit-profile.${profileSlug(label)}${selector === DEFAULT_PROFILE ? `-${id}` : ""}.md`,
       render: (options) => {
         const version = options.version.trim();
         if (!version) throw new Error(m.profile_share_version_required());
+        const checked = [
+          ...carried,
+          ...(options.partials ?? reachable).flatMap((name) => {
+            const entry = entries.get(name);
+            return entry ? [entry] : [];
+          }),
+        ].sort((left, right) => left.name.localeCompare(right.name));
         return updateProfilePackMetadata(
           source,
           {
@@ -626,6 +694,7 @@ export class ProfileService extends Service {
             ...(!options.includeFolders
               ? { folder: undefined, importFolder: undefined }
               : {}),
+            partials: checked.length > 0 ? checked : undefined,
           },
           { includeMatch: options.includeMatch },
         );
@@ -758,25 +827,45 @@ export class ProfileService extends Service {
         },
       };
     }
-    logger.debug("Prepared Profile import", { id, path, kind: decision.kind });
+    // The manifest's partials are a transport: import unpacks each into the
+    // Shared Partial file it belongs in, then drops the entry it came from.
+    const partials = this.#deps.template.planPartialUnpack(
+      manifest.partials ?? [],
+    );
+    logger.debug("Prepared Profile import", {
+      id,
+      path,
+      kind: decision.kind,
+      partials: partials.map(({ name, verdict }) => `${name}:${verdict}`),
+    });
     return {
       ...decision,
       manifest,
       source: content,
       path,
+      partials,
       profile: bindProfile(this.#deps.settings.current!, {
         selector: id,
         document,
         entry,
       }),
-      import: ({ includeMatch: approvedMatch = includeMatch } = {}) =>
+      import: ({
+        includeMatch: approvedMatch = includeMatch,
+        replacePartials,
+      } = {}) =>
         this.#mutate(async () => {
           await this.#settle();
           const current = this.#importTarget(id);
           if (current?.path !== held?.path)
             throw new Error(m.profile_import_changed());
-          const importedContent =
-            approvedMatch === includeMatch ? content : render(approvedMatch);
+          const { dropped } = await this.#deps.template.unpackPartials(
+            partials,
+            { replace: replacePartials },
+          );
+          const importedContent = withoutBundledPartials(
+            approvedMatch === includeMatch ? content : render(approvedMatch),
+            dropped,
+          );
           if (held) {
             const file = this.#deps.app.vault.getFileByPath(path);
             if (!file) throw new Error(m.profile_import_changed());
@@ -1149,6 +1238,27 @@ function profileSource(
   const content = `---\n${header.toString()}---${source.slice(headerEnd + 4)}`;
   facade.parseLiteratureNoteTemplate(content);
   return content;
+}
+
+/**
+ * The document without the transport entries `dropped` names: each of those
+ * partials answers from a document of its own now — the one unpacked from the
+ * bundle, or the reader's own that the unpack left standing — so the manifest
+ * copy has no reader left. An entry no Shared Partial file can carry stays,
+ * and the Template Workbench reports it as a bundled partial.
+ */
+function withoutBundledPartials(
+  source: string,
+  dropped: readonly string[],
+): string {
+  if (dropped.length === 0) return source;
+  const { manifest } = new TemplateFacade().parseLiteratureNoteTemplate(source);
+  const kept = (manifest.partials ?? []).filter(
+    ({ name }) => !dropped.includes(name),
+  );
+  return updateProfilePackMetadata(source, {
+    partials: kept.length > 0 ? kept : undefined,
+  });
 }
 
 function updateProfilePackMetadata(

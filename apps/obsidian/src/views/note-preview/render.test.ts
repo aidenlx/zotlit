@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
@@ -8,7 +9,7 @@ import { annotationSamples } from "@zotlit/workbench/ui";
 import {
   getSampleItem,
   SAMPLE_ITEM_CHOICES,
-} from "@/views/profile-editor/selection-data";
+} from "@/views/template-workbench/selection-data";
 
 import {
   createRenderFixture,
@@ -16,7 +17,12 @@ import {
   SAVED_NOTE,
 } from "./__fixtures__/render";
 import { presentCitations } from "./markdown";
-import { renderNativeProfile, previewBaseline } from "./render";
+import {
+  renderNativeProfile,
+  previewBaseline,
+  renderNativeTemplate,
+  renderRegisteredPartial,
+} from "./render";
 
 /** Where the counting template records how often its body has rendered. */
 const BODY_RENDERS = "__zotlitPreviewBodyRenders";
@@ -458,5 +464,77 @@ Body render <%= (globalThis.${BODY_RENDERS} = (globalThis.${BODY_RENDERS} ?? 0) 
     expect(failed.diagnostics).toContainEqual(
       expect.objectContaining({ code: "citation-style-error" }),
     );
+  });
+});
+
+describe("native Citation rendering", () => {
+  it("reads a real Item from the database, not from the snapshot it was chosen with", async () => {
+    await using fixture = await createRenderFixture();
+    // The snapshot was taken above; the reader then edits the Item in Zotero.
+    // The Data Explorer's citation root reads the change at once, so the
+    // preview beside it has to read the same Item.
+    using lease = await fixture.deps.db.acquireRead();
+    (lease.client.$client as DatabaseSync).exec(
+      "update itemDataValues set value = 'Readable figures' where valueID = 1;",
+    );
+
+    const result = await renderNativeTemplate(fixture.deps, {
+      source: "{{ zt.items[0].title }}",
+      snapshot: fixture.snapshot,
+      citation: { variant: "main", example: null },
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.citation).toBe("Readable figures");
+  });
+});
+
+describe("renderRegisteredPartial", () => {
+  it("reads the caller's own annotation data under the Annotation context, unlike the Note context", async () => {
+    await using fixture = await createRenderFixture({
+      partials: { "venue-line": "Page {{ zt.pageLabel }}" },
+    });
+    const { example } = annotationSamples(fixture.snapshot, null);
+    const request = {
+      source: PROFILE_SOURCE,
+      snapshot: fixture.snapshot,
+      annotation: example,
+    };
+
+    const underAnnotation = await renderRegisteredPartial(
+      fixture.deps,
+      request,
+      { name: "venue-line", context: "annotation", profile: null },
+    );
+    const underNote = await renderRegisteredPartial(fixture.deps, request, {
+      name: "venue-line",
+      context: "note",
+      profile: null,
+    });
+
+    // The fixture's annotation carries pageLabel "2" (see the fixture's
+    // itemAnnotations row); the note root has no such field.
+    expect(underAnnotation).toBe("Page 2");
+    expect(underNote).not.toBe(underAnnotation);
+  });
+
+  it("renders from a partial document's own source, which names no Profile", async () => {
+    await using fixture = await createRenderFixture({
+      partials: { "venue-line": "Venue {{ zt.title }}" },
+    });
+
+    // The partial's own editor previews its own text, so the request source is
+    // the partial rather than a Profile document. It names no Profile to bind,
+    // and the render still reaches the note root.
+    const rendered = await renderRegisteredPartial(
+      fixture.deps,
+      {
+        source: "---\nlanguage: liquid\n---\nVenue {{ zt.title }}",
+        snapshot: fixture.snapshot,
+      },
+      { name: "venue-line", context: "note", profile: null },
+    );
+
+    expect(rendered).toBe("Venue Better figures");
   });
 });

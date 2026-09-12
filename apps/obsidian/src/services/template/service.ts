@@ -2,14 +2,24 @@ import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, EventRef, TAbstractFile } from "obsidian";
 
+import { citekeysToCiteTemplateData } from "@zotlit/db";
+import type {
+  CitationTemplateData,
+  CitationVariant,
+  CiteRef,
+} from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { inlineCitation } from "@zotlit/templates";
 import type {
   AutoTrim,
   FrontmatterLanguage,
 } from "@zotlit/templates/constants";
 import {
+  formatPlainTemplateDocument,
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
+  MissingTemplateError,
+  parsePlainTemplateDocument,
   TemplateError,
   TemplateFacade,
 } from "@zotlit/templates/facade";
@@ -27,34 +37,54 @@ import type {
   CompiledManagedFrontmatter,
   FrontmatterField,
 } from "@zotlit/templates/frontmatter";
-import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
-import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
+import {
+  exportLiteratureNotePack,
+  unpackLiteratureNotePartials,
+} from "@zotlit/templates/literature-note-pack";
+import type {
+  LiteratureNotePartialUnpack,
+  LiteratureNoteTemplatePartial,
+} from "@zotlit/templates/literature-note-pack";
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
+import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import {
+  CITATION_TEMPLATE_NAME,
+  CITATION_TEMPLATE_SOURCE,
+  citationPath,
+  classifyTemplateFolderFile,
   DEFAULT_TEMPLATES,
-  GLOBAL_TEMPLATE_NAMES,
+  isLegacyCitationName,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
-  templateFileFromPath,
+  partialNameRefusal,
+  partialPath,
+  RESERVED_PARTIAL_NAMES,
   templatePath,
   TEMPLATE_NAMES,
 } from "./defaults";
 import type { TemplateName } from "./defaults";
-import { InertTemplateError } from "./errors";
+import {
+  InertTemplateError,
+  MissingPartialError,
+  PartialNameError,
+} from "./errors";
 import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
+/** Bounded wait for the reconciler after this service writes a document. */
+const SETTLE_TIMEOUT_MS = 5_000;
 const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
   new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
 
@@ -164,9 +194,210 @@ export interface ConvertedLegacyProfileDocument extends ConvertedLegacyLiteratur
   readonly legacyFiles: readonly string[];
 }
 
+/** One 2.1.x Legacy Template File that folds into a plain Template Document. */
+export interface LegacyTemplateFile {
+  /** The bare 2.1.x name: `cite`, `cite2`, or the partial's own name. */
+  readonly name: string;
+  /** The `zotlit-<name>.(liquid|eta).md` file that owns the name. */
+  readonly path: string;
+  readonly language: TemplateLanguage;
+  /** The JavaScript Templates gate leaves this Eta file uncompiled. */
+  readonly inert: boolean;
+  /** Editions that lose to {@link path}, trashed along with it. */
+  readonly shadowed: readonly string[];
+}
+
+/** The Legacy Template Files the one-shot conversion still has to fold. */
+export interface LegacyTemplateDocuments {
+  /** `cite` before `cite2`, the order they fold in. */
+  readonly citation: readonly LegacyTemplateFile[];
+  /** Every bare partial file, by name. */
+  readonly partials: readonly LegacyTemplateFile[];
+}
+
+/** The plain Template Documents {@link LegacyTemplateDocuments} converts into. */
+export interface ConvertedLegacyTemplateDocuments {
+  /** Documents to create, each already verified. */
+  readonly documents: readonly {
+    readonly path: string;
+    readonly source: string;
+  }[];
+  /** Legacy files the documents replace, to move to trash. */
+  readonly trashed: readonly string[];
+  /** Legacy files no document claims, left in place and reported: the Eta
+   *  side of a mixed-language `cite` / `cite2` pair. */
+  readonly kept: readonly string[];
+}
+
 interface ReconciledLiteratureNoteTemplate {
   path: string;
   document: LiteratureNoteTemplateDocument;
+}
+
+/** One Shared Partial as its document parsed it, ready to bundle into a pack. */
+interface RegisteredPartial {
+  path: string;
+  language: TemplateLanguage;
+  source: string;
+}
+
+/** The Citation Template as it currently resolves; `path` is `null` while the
+ *  built-in source stands in for a vault document. */
+interface RegisteredCitationTemplate {
+  path: string | null;
+  language: TemplateLanguage;
+  source: string;
+}
+
+/**
+ * One Shared Partial as the agent CLI reports it: the document that owns the
+ * name, and the language that document renders in.
+ */
+export interface SharedPartialDocument {
+  readonly name: string;
+  /** Where `zotlit-partial.<name>.md` lives. */
+  readonly path: string;
+  readonly language: TemplateLanguage;
+}
+
+/** What {@link TemplateService.unpackPartials} did with each planned partial. */
+export interface PartialUnpackOutcome {
+  /** The names a Shared Partial document now holds the bundle's source under. */
+  readonly written: readonly string[];
+  /** The names the reader's own document answers, left exactly as they were. */
+  readonly kept: readonly string[];
+  /**
+   * Every name whose transport copy has no reader left — written, already
+   * identical, or answered by the reader's own document — so the caller drops
+   * exactly those manifest entries. A name no Shared Partial file can carry
+   * stays out: the manifest copy is all that answers it.
+   */
+  readonly dropped: readonly string[];
+  /**
+   * The names no Shared Partial file can be given, which reached no vault path
+   * and keep their manifest entries. A caller that reports nothing for these
+   * leaves Unpack partials looking inert, since the entry is still there to
+   * report the next time the document is read.
+   */
+  readonly refused: readonly string[];
+  /**
+   * The names the template folder holds a file for under another case. One
+   * file answers both spellings, while a call resolves by exact name, so these
+   * keep their manifest entries — the copy that still answers the call.
+   */
+  readonly otherCase: readonly string[];
+}
+
+/** The Citation Template's state, as the Citations settings row reads it. */
+export interface CitationTemplateStatus {
+  /** Where `zotlit-citation.md` lives, whether or not the vault holds it. */
+  readonly path: string;
+  /** The vault holds the document; `false` means the built-in text renders. */
+  readonly customized: boolean;
+  readonly language: TemplateLanguage;
+  /** The document's path while it is Eta and the JavaScript Templates gate
+   *  keeps it inert, `null` otherwise. */
+  readonly inertPath: string | null;
+  readonly compileError: string | null;
+}
+
+/**
+ * The reconciliation work one folder scan or one debounce window collected,
+ * bucketed by the Template Document kind that reconciles each entry.
+ */
+interface TemplateWork {
+  readonly names: Set<string>;
+  readonly documentReferences: Set<string>;
+  readonly partialNames: Set<string>;
+  /** Holds {@link CITATION_TEMPLATE_NAME} while the one Citation Template
+   *  awaits reconciliation; a set so it clears and counts with every other
+   *  bucket. */
+  readonly citation: Set<string>;
+  readonly unrecognizedPaths: Set<string>;
+}
+
+function emptyTemplateWork(): TemplateWork {
+  return {
+    names: new Set(),
+    documentReferences: new Set(),
+    partialNames: new Set(),
+    citation: new Set(),
+    unrecognizedPaths: new Set(),
+  };
+}
+
+/** Every bucket of `work`, so the whole set clears and counts as one. */
+function templateWorkBuckets(work: TemplateWork): readonly Set<string>[] {
+  return [
+    work.names,
+    work.documentReferences,
+    work.partialNames,
+    work.citation,
+    work.unrecognizedPaths,
+  ];
+}
+
+function isTemplateWorkEmpty(work: TemplateWork): boolean {
+  return templateWorkBuckets(work).every((bucket) => bucket.size === 0);
+}
+
+/** Move everything `pending` holds into the work one flush reconciles. */
+function takeTemplateWork(pending: TemplateWork): TemplateWork {
+  const work: TemplateWork = {
+    names: new Set(pending.names),
+    documentReferences: new Set(pending.documentReferences),
+    partialNames: new Set(pending.partialNames),
+    citation: new Set(pending.citation),
+    unrecognizedPaths: new Set(pending.unrecognizedPaths),
+  };
+  for (const bucket of templateWorkBuckets(pending)) bucket.clear();
+  return work;
+}
+
+/**
+ * Route one template-folder file into the bucket its Template Document kind
+ * reconciles from — the one place a kind maps to its reconciliation.
+ *
+ * @returns whether `path` landed in a bucket. A file ZotLit ignores lands in
+ *   none.
+ */
+function collectTemplatePath(work: TemplateWork, path: string): boolean {
+  const classified = classifyTemplateFolderFile(path);
+  switch (classified?.kind) {
+    // A Legacy Template File keeps 2.1.x's registration by bare name until the
+    // one-shot conversion trashes it, so a note template that calls a legacy
+    // partial still resolves and the conversion reads one reconciled winner.
+    case "legacy-slot":
+    case "legacy-citation":
+    case "legacy-partial":
+      work.names.add(classified.name);
+      return true;
+    case "profile":
+      work.documentReferences.add(classified.reference);
+      return true;
+    case "partial":
+      work.partialNames.add(classified.name);
+      return true;
+    case "citation":
+      work.citation.add(CITATION_TEMPLATE_NAME);
+      return true;
+    case "unrecognized":
+      work.unrecognizedPaths.add(path);
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * The language the folded Citation Template is written in. Liquid wins a
+ * mixed `cite` / `cite2` pair, the way it wins every other name, and the Eta
+ * side stays in the vault.
+ */
+function foldCitationLanguage(
+  files: readonly LegacyTemplateFile[],
+): TemplateLanguage {
+  return files.every((file) => file.language === "eta") ? "eta" : "liquid";
 }
 
 /** A recorded compile error: its message, and the liquidjs caret-annotated
@@ -217,8 +448,23 @@ export class TemplateService extends Service<void> {
   readonly #winners = new Map<string, TemplateWinner>();
   readonly #shadowed = new Map<string, string>();
   readonly #inertEta = new Map<string, string>();
-  readonly #pendingFlush = new Set<string>();
-  readonly #pendingDocumentFlush = new Set<string>();
+  readonly #pending: TemplateWork = emptyTemplateWork();
+  /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
+  readonly #partials = new Map<string, RegisteredPartial>();
+  /** Partial name → the text of a document the JavaScript Templates gate left
+   *  inert. Nothing renders it here; a Share still carries what the reader
+   *  wrote, since the gate rules out running the text, not copying it. */
+  readonly #inertPartials = new Map<string, LiteratureNoteTemplatePartial>();
+  /** Every name the folder holds a `zotlit-partial.<name>.md` for, whether or
+   *  not it compiled: the vault's namespace, which completion offers and the
+   *  name rule checks a new name against. */
+  readonly #partialNames = new Set<string>();
+  /** Reserved name → the partial file claiming it, reported in settings. */
+  readonly #reservedPartialFiles = new Map<string, string>();
+  /** The Citation Template currently registered, `null` while none compiles. */
+  #citation: RegisteredCitationTemplate | null = null;
+  /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
+  readonly #unrecognizedFiles = new Set<string>();
   readonly #literatureNoteDocuments = new Map<
     string,
     ReconciledLiteratureNoteTemplate
@@ -278,12 +524,79 @@ export class TemplateService extends Service<void> {
     return this.#loaded;
   }
 
+  /**
+   * Vault paths of the `zotlit-` prefixed Markdown files in the template
+   * folder that answer to no Template Document kind, sorted, so the setting
+   * tab can name each one. A file without the prefix is ignored and absent.
+   */
+  getUnrecognizedFiles(): readonly string[] {
+    this.#requireLoaded("getUnrecognizedFiles");
+    return [...this.#unrecognizedFiles].sort();
+  }
+
+  /**
+   * The Legacy Template File slots and how each currently resolves — empty
+   * once conversion has run: a converted vault keeps its note sources in
+   * Profile documents and its citation text in the Citation Template, so no
+   * slot remains.
+   */
   getTemplateFileStatuses(): readonly TemplateFileStatus[] {
     this.#requireLoaded("getTemplateFileStatuses");
-    const names = this.#settings.current?.["note.template-conversion-pending"]
-      ? TEMPLATE_NAMES
-      : GLOBAL_TEMPLATE_NAMES;
-    return this.#getTemplateFileStatuses(names);
+    return this.#settings.current?.["note.template-conversion-pending"]
+      ? this.#getTemplateFileStatuses(TEMPLATE_NAMES)
+      : [];
+  }
+
+  /**
+   * How the Citation Template currently resolves: the vault's
+   * `zotlit-citation.md`, or the built-in source that stands in for it.
+   */
+  getCitationTemplateStatus(): CitationTemplateStatus {
+    this.#requireLoaded("getCitationTemplateStatus");
+    const path = citationPath(this.#currentTemplateFolder());
+    const inertPath = this.#inertEta.get(CITATION_TEMPLATE_NAME) ?? null;
+    return {
+      path,
+      customized: this.#app.vault.getFileByPath(path) !== null,
+      language: this.#citation?.language ?? "liquid",
+      inertPath,
+      compileError:
+        this.#compileErrors.get(CITATION_TEMPLATE_NAME)?.message ?? null,
+    };
+  }
+
+  /**
+   * The Citation Template document, created from the built-in source when the
+   * vault holds none, so a first edit starts from the text ZotLit renders.
+   *
+   * Awaits {@link ready} first: the "Customize citation text" command is
+   * registered before the folder scan finishes, so an invocation during
+   * startup waits for the scan instead of failing the loaded-state check.
+   */
+  async materializeCitationTemplate(): Promise<TFile> {
+    await this.ready;
+    this.#requireLoaded("materializeCitationTemplate");
+    const path = citationPath(this.#currentTemplateFolder());
+    const existing = this.#app.vault.getFileByPath(path);
+    if (existing) return existing;
+    await ensureFolder(this.#app, this.#currentTemplateFolder() || "/");
+    const file = await this.#app.vault.create(path, CITATION_TEMPLATE_SOURCE);
+    await this.#settle();
+    return file;
+  }
+
+  /**
+   * Move the Citation Template document to Obsidian's recoverable trash, so
+   * the built-in citation text renders again and a bad edit is undoable.
+   */
+  async restoreCitationTemplate(): Promise<void> {
+    this.#requireLoaded("restoreCitationTemplate");
+    const file = this.#app.vault.getFileByPath(
+      citationPath(this.#currentTemplateFolder()),
+    );
+    if (!file) return;
+    await this.#app.fileManager.trashFile(file);
+    await this.#settle();
   }
 
   #getTemplateFileStatuses(
@@ -369,16 +682,56 @@ export class TemplateService extends Service<void> {
       frontmatter,
       hasManagedBlock: document.managedBlock !== null,
       renderForCreate: <T extends object>(data: T) =>
-        facade.renderLiteratureNoteTemplateForCreate(document, data),
+        this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateForCreate(document, data),
+          path,
+        ),
       renderForUpdate: <T extends object>(data: T) =>
-        facade.renderLiteratureNoteTemplateForUpdate(document, data),
+        this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateForUpdate(document, data),
+          path,
+        ),
       renderAnnotation: <T extends object>(data: T) =>
-        facade.renderLiteratureNoteTemplateAnnotation(document, data),
+        this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateAnnotation(document, data),
+          path,
+        ),
       renderFilename: <T extends object>(data: T) =>
         toSingleLine(
-          facade.renderLiteratureNoteTemplateFilename(document, data),
+          this.#classifyRender(
+            () => facade.renderLiteratureNoteTemplateFilename(document, data),
+            path,
+          ),
         ),
     };
+  }
+
+  /**
+   * Run one render and name the artifact any failure belongs to, so a Shared
+   * Partial the JavaScript Templates gate left inert reports the localized
+   * inert notice instead of the facade's bare "not found". Every render path
+   * — {@link render} and every Profile document render — passes through here.
+   *
+   * @param documentPath - the document being rendered, when one is: a call to
+   *   a partial the vault holds no document for is re-raised as a
+   *   {@link MissingPartialError} naming it, which is where the refusal
+   *   notice's Open template workbench action goes.
+   */
+  #classifyRender<T>(render: () => T, documentPath?: string): T {
+    try {
+      return render();
+    } catch (error) {
+      const failure = classifyRenderFailure(
+        error,
+        this.#compileErrors,
+        this.#inertEta,
+      );
+      throw documentPath !== undefined &&
+        failure instanceof MissingTemplateError &&
+        !(failure instanceof MissingPartialError)
+        ? new MissingPartialError(documentPath, failure.templateName, error)
+        : failure;
+    }
   }
 
   /** Render one annotation through its Profile document or legacy slot. */
@@ -525,6 +878,20 @@ export class TemplateService extends Service<void> {
         }),
       )
     ).filter((partial) => partial !== null);
+    // A Shared Partial bundles the source its document holds, without the
+    // manifest line that named the language — a document the JavaScript
+    // Templates gate left inert among them, which is why this reads the same
+    // set the Share sheet offers. The Citation Template joins them under its
+    // own name, so a host that renders an annotation's citation — the web
+    // Workbench — gets the text this vault would produce.
+    partials.push(...this.getPartialEntries());
+    if (this.#citation) {
+      partials.push({
+        name: CITATION_TEMPLATE_NAME,
+        language: this.#citation.language,
+        source: this.#citation.source,
+      });
+    }
     return exportLiteratureNotePack(source, partials, options);
   }
 
@@ -662,11 +1029,404 @@ export class TemplateService extends Service<void> {
         name,
       );
     }
-    try {
-      return this.#facade.render(name, data);
-    } catch (error) {
-      throw classifyRenderFailure(error, this.#compileErrors, this.#inertEta);
+    return this.#classifyRender(() => this.#facade.render(name, data));
+  }
+
+  /**
+   * Render one in-text Citation through the Citation Template: `refs` become
+   * `zt.citations` and `zt.items`, and `variant` names the gesture as
+   * `zt.variant`. The output is normalized to its inline form, so a template
+   * that spans lines still inserts one in-text token.
+   *
+   * @throws {@link InertTemplateError} when the Citation Template document is
+   *   Eta and the JavaScript Templates gate is off.
+   * @throws when the document has a compile error or fails to render.
+   */
+  renderCitation(refs: readonly CiteRef[], variant: CitationVariant): string {
+    return this.renderCitationData(citekeysToCiteTemplateData(refs, variant));
+  }
+
+  /**
+   * Render one in-text Citation from Citation Template data that is already
+   * built — a built-in example set, or a set another leg assembled — and
+   * normalize the output to its inline form.
+   *
+   * @throws {@link InertTemplateError} when the Citation Template document is
+   *   Eta and the JavaScript Templates gate is off.
+   * @throws when the document has a compile error or fails to render.
+   */
+  renderCitationData(data: CitationTemplateData): string {
+    return inlineCitation(this.render(CITATION_TEMPLATE_NAME, data));
+  }
+
+  /**
+   * The Shared Partial document `name` answers to, read off the folder scan: a
+   * document the JavaScript Templates gate left inert or the parser refused
+   * still owns the name, and still names the language its manifest declares.
+   *
+   * @returns null while the template folder holds no `zotlit-partial.<name>.md`.
+   */
+  getPartialDocument(name: string): SharedPartialDocument | null {
+    this.#requireLoaded("getPartialDocument");
+    const registered = this.#partials.get(name);
+    if (registered)
+      return { name, path: registered.path, language: registered.language };
+    const path = partialPath(this.#currentTemplateFolder(), name);
+    if (this.#inertEta.get(name) === path)
+      return { name, path, language: "eta" };
+    // A document the parser refused names no language, so it reads as the
+    // Liquid default a manifest-less document declares.
+    return this.#app.vault.getFileByPath(path) === null
+      ? null
+      : { name, path, language: "liquid" };
+  }
+
+  /**
+   * Every Shared Partial the template folder holds a document for, sorted by
+   * name — the vault's one flat namespace, which completion offers, the
+   * settings list shows, and a new name is checked against. A document that
+   * failed to compile keeps its name here: the file exists, so the name is
+   * taken.
+   */
+  getPartialNames(): readonly string[] {
+    this.#requireLoaded("getPartialNames");
+    return [...this.#partialNames].sort();
+  }
+
+  /** {@link getPartialNames} as documents, for a caller that shows the file. */
+  getPartialDocuments(): readonly SharedPartialDocument[] {
+    return this.getPartialNames()
+      .map((name) => this.getPartialDocument(name))
+      .filter((document) => document !== null);
+  }
+
+  /**
+   * {@link getPartialNames} as bundle entries — the name, the language, and
+   * the source under the manifest — which is what a Share writes into a
+   * Profile manifest's transport list.
+   *
+   * A document the JavaScript Templates gate left inert is carried all the
+   * same: the gate rules out running the text on this device, not copying it,
+   * and the recipient's own gate decides there. A document that failed to
+   * parse has no source to separate from its manifest, so it is left out and
+   * the Share sheet reports the name as one the bundle could not answer.
+   */
+  getPartialEntries(): readonly LiteratureNoteTemplatePartial[] {
+    this.#requireLoaded("getPartialEntries");
+    return this.getPartialNames().flatMap((name) => {
+      const registered = this.#partials.get(name);
+      if (registered)
+        return [
+          { name, language: registered.language, source: registered.source },
+        ];
+      const inert = this.#inertPartials.get(name);
+      return inert ? [inert] : [];
+    });
+  }
+
+  /**
+   * What each partial a Profile manifest bundles does to the template folder,
+   * read against the documents the vault holds right now.
+   *
+   * A name another Template already answers — `citation`, which the Citation
+   * Template carries — reads as `unchanged`: this vault renders that name with
+   * a document of its own, so no partial file is written for it and its
+   * transport entry simply goes.
+   *
+   * A name the vault answers only under another case — a bundled `Authors`
+   * against the vault's own `authors` — reads as `other-case`: one file
+   * answers both on a case-insensitive filesystem, while a call resolves by
+   * exact name, so the bundle keeps the copy that still answers `Authors`.
+   *
+   * A name the Shared Partial name rule refuses outright reads as `refused`,
+   * so an import says which names stay in the profile rather than promising a
+   * file the write then declines to make.
+   *
+   * @see unpackPartials for the write this plan feeds.
+   */
+  planPartialUnpack(
+    bundled: readonly LiteratureNoteTemplatePartial[],
+  ): readonly LiteratureNotePartialUnpack[] {
+    this.#requireLoaded("planPartialUnpack");
+    const held = new Map<
+      string,
+      Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
+    >();
+    const otherCase = new Set<string>();
+    for (const partial of bundled) {
+      if (RESERVED_PARTIAL_NAMES.has(partial.name)) {
+        held.set(partial.name, partial);
+        continue;
+      }
+      const name = this.#heldPartialName(partial.name);
+      if (name !== partial.name) {
+        if (name !== undefined) otherCase.add(partial.name);
+        continue;
+      }
+      const registered = this.#partials.get(name);
+      held.set(
+        partial.name,
+        registered
+          ? { language: registered.language, source: registered.source }
+          : null,
+      );
     }
+    const plan = unpackLiteratureNotePartials(
+      bundled,
+      held,
+      // A name the vault answers under this very spelling is settled above, so
+      // `taken` speaks for the case-folded ones alone.
+      (name) => partialNameRefusal(name, this.#partialNames) === null,
+    );
+    // The name rule refuses a case-folded name only because the vault answers
+    // it, which is a reason of its own. This plan says so once, and every
+    // caller reads that one decision.
+    return plan.map((step) =>
+      otherCase.has(step.name)
+        ? { ...step, verdict: "other-case" as const }
+        : step,
+    );
+  }
+
+  /**
+   * Write the planned partials into the template folder, leaving every
+   * document the vault already holds exactly as it is: a `conflict` the reader
+   * did not name in `replace` keeps their file, and so does a file that
+   * appeared between the plan and this write.
+   *
+   * Either way that name has no transport left — the reader's own document
+   * answers it from now on — so it lands in `dropped` beside the ones written.
+   * The names that stay out of `dropped` are the ones the manifest copy alone
+   * answers: a `refused` name no Shared Partial file can carry, and an
+   * `other-case` name the folder holds a file for under another case.
+   */
+  async unpackPartials(
+    plan: readonly LiteratureNotePartialUnpack[],
+    options: { replace?: readonly string[] } = {},
+  ): Promise<PartialUnpackOutcome> {
+    await this.ready;
+    this.#requireLoaded("unpackPartials");
+    const replace = new Set(options.replace);
+    const folder = this.#currentTemplateFolder();
+    const written: string[] = [];
+    const kept: string[] = [];
+    const refused: string[] = [];
+    const otherCase: string[] = [];
+    const dropped: string[] = [];
+    for (const step of plan) {
+      if (step.verdict === "unchanged") {
+        dropped.push(step.name);
+        continue;
+      }
+      // One file answers every spelling of a name, so writing here would land
+      // in the reader's own document while the call keeps asking for a name
+      // the registry has no exact key for.
+      if (step.verdict === "other-case") {
+        otherCase.push(step.name);
+        continue;
+      }
+      // The name arrives inside a pasted bundle, so it passes the rule every
+      // entry point shares before it ever reaches a vault path.
+      if (partialNameRefusal(step.name, [])) {
+        refused.push(step.name);
+        continue;
+      }
+      const declined = step.verdict === "conflict" && !replace.has(step.name);
+      if (!declined && (await this.#writePartialFile(folder, step)))
+        written.push(step.name);
+      else kept.push(step.name);
+      dropped.push(step.name);
+    }
+    if (written.length > 0) await this.#settle();
+    logger.debug("Unpacked bundled partials", {
+      written,
+      kept,
+      refused,
+      otherCase,
+    });
+    return { written, kept, dropped, refused, otherCase };
+  }
+
+  /**
+   * The name this vault's own Shared Partial files answer `name` under, folded
+   * the way {@link partialNameRefusal} folds it; `undefined` when none does.
+   */
+  #heldPartialName(name: string): string | undefined {
+    const folded = name.toLowerCase();
+    return [...this.#partialNames].find(
+      (taken) => taken.toLowerCase() === folded,
+    );
+  }
+
+  /**
+   * Write one planned partial into the document it belongs in. A `conflict`
+   * reaches here only once the reader has approved that very name, so it is
+   * the one step that replaces a document — every other write creates.
+   *
+   * @returns false when a document the plan never read holds the path, which
+   *   is left exactly as the reader wrote it.
+   */
+  async #writePartialFile(
+    folder: string,
+    step: LiteratureNotePartialUnpack,
+  ): Promise<boolean> {
+    if (step.verdict === "conflict") {
+      const held = this.#heldPartialName(step.name);
+      const file =
+        held === undefined
+          ? null
+          : this.#app.vault.getFileByPath(partialPath(folder, held));
+      if (file) {
+        await this.#app.vault.process(file, () => step.document);
+        return true;
+      }
+    }
+    await ensureFolder(this.#app, folder || "/");
+    try {
+      await this.#app.vault.create(
+        partialPath(folder, step.name),
+        step.document,
+      );
+    } catch (error) {
+      if (!isFileExistsError(error)) throw error;
+      logger.debug("A partial document appeared after the unpack plan", {
+        name: step.name,
+      });
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * The partial files whose name already answers to another Template, keyed by
+   * that name — nothing renders them, so settings names each one instead.
+   */
+  getReservedPartialFiles(): readonly { name: string; path: string }[] {
+    this.#requireLoaded("getReservedPartialFiles");
+    return [...this.#reservedPartialFiles]
+      .map(([name, path]) => ({ name, path }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  /**
+   * Create `zotlit-partial.<name>.md` and wait for the reconciler to register
+   * it, so the caller can open the document and render through it at once.
+   *
+   * Awaits {@link ready} first, the way {@link materializeCitationTemplate}
+   * does: a create flow reached during startup waits for the folder scan.
+   *
+   * @param name a name the caller has already folded with
+   *   `normalizePartialName`.
+   * @throws {@link PartialNameError} when the name breaks the rule every entry
+   *   point shares.
+   */
+  async createPartial(
+    name: string,
+    options: { source?: string; language?: TemplateLanguage } = {},
+  ): Promise<TFile> {
+    await this.ready;
+    this.#requireLoaded("createPartial");
+    const refusal = partialNameRefusal(name, this.#partialNames);
+    if (refusal) throw new PartialNameError(name, refusal);
+    const folder = this.#currentTemplateFolder();
+    await ensureFolder(this.#app, folder || "/");
+    const source = options.source ?? "";
+    const file = await this.#app.vault.create(
+      partialPath(folder, name),
+      options.language === undefined
+        ? source
+        : formatPlainTemplateDocument(source, options.language),
+    );
+    await this.#settle();
+    logger.debug("Created a Shared Partial", { name, path: file.path });
+    return file;
+  }
+
+  /**
+   * Move a Shared Partial's document to Obsidian's recoverable trash. Every
+   * template that still calls the name reports a missing partial from then on:
+   * ZotLit rewrites no caller.
+   */
+  async deletePartial(name: string): Promise<void> {
+    this.#requireLoaded("deletePartial");
+    const file = this.#app.vault.getFileByPath(
+      partialPath(this.#currentTemplateFolder(), name),
+    );
+    if (!file) return;
+    await this.#app.fileManager.trashFile(file);
+    await this.#settle();
+  }
+
+  /**
+   * Render a draft Shared Partial — the unsaved bytes of
+   * `zotlit-partial.<name>.md` — against the installed partials, without
+   * registering the draft or writing it. This is what the Template Workbench
+   * View previews while the reader types.
+   *
+   * @throws {@link InertTemplateError} when the draft names Eta and the
+   *   JavaScript Templates gate is off.
+   * @throws {@link PlainTemplateDocumentError} when the draft's manifest is
+   *   malformed, and whatever the compile or the render itself raises.
+   */
+  renderPartialSource<T extends object>(
+    source: string,
+    data: T,
+    options: { name: string },
+  ): string {
+    this.#requireLoaded("renderPartialSource");
+    return this.#renderPlainSource(source, data, {
+      name: options.name,
+      path: partialPath(this.#currentTemplateFolder(), options.name),
+    });
+  }
+
+  /**
+   * Render one plain Template Document's draft bytes under the name the facade
+   * registers that document by, without registering the draft or writing it.
+   *
+   * @param options.path - the document's own vault path, which the inert
+   *   notice names; the draft may not be written there yet.
+   */
+  #renderPlainSource<T extends object>(
+    source: string,
+    data: T,
+    options: { name: string; path: string },
+  ): string {
+    const parsed = parsePlainTemplateDocument(source);
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      throw new InertTemplateError(
+        m.settings_template_inert_eta({ path: options.path }),
+        options.name,
+      );
+    }
+    return this.#classifyRender(() =>
+      this.#facade.render(options.name, data, {
+        source: parsed.source,
+        language,
+      }),
+    );
+  }
+
+  /**
+   * Render one in-text Citation through a draft Citation Template — the
+   * unsaved bytes of `zotlit-citation.md` — against the installed partials,
+   * without registering the draft or writing it. This is what the Template
+   * Workbench View previews while the reader types.
+   *
+   * @throws {@link InertTemplateError} when the draft names Eta and the
+   *   JavaScript Templates gate is off.
+   * @throws {@link PlainTemplateDocumentError} when the draft's manifest is
+   *   malformed, and whatever the compile or the render itself raises.
+   */
+  renderCitationSource(source: string, data: CitationTemplateData): string {
+    this.#requireLoaded("renderCitationSource");
+    return inlineCitation(
+      this.#renderPlainSource(source, data, {
+        name: CITATION_TEMPLATE_NAME,
+        path: citationPath(this.#currentTemplateFolder()),
+      }),
+    );
   }
 
   /**
@@ -714,17 +1474,189 @@ export class TemplateService extends Service<void> {
 
   /** Vault files that make the default Profile use legacy Literature Note slots. */
   getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
+    return this.#legacyLiteratureNoteSlots().flatMap(({ paths }) => paths);
+  }
+
+  /**
+   * Each legacy Literature Note slot a vault file backs right now, with the
+   * files behind it. A name with no file of its own stays out: its built-in
+   * renders the slot before the conversion and after it alike.
+   */
+  #legacyLiteratureNoteSlots(): {
+    name: TemplateName;
+    paths: string[];
+  }[] {
     return this.#getTemplateFileStatuses(TEMPLATE_NAMES)
       .filter((status) =>
         LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name),
       )
-      .flatMap((status) => [
-        ...(status.winner.source.kind === "vault"
-          ? [status.winner.source.path]
-          : []),
-        ...status.shadowedFiles,
-        ...status.inertFiles,
-      ]);
+      .map((status) => ({
+        name: status.name,
+        paths: [
+          ...(status.winner.source.kind === "vault"
+            ? [status.winner.source.path]
+            : []),
+          ...status.shadowedFiles,
+          ...status.inertFiles,
+        ],
+      }))
+      .filter(({ paths }) => paths.length > 0);
+  }
+
+  /**
+   * The vault's remaining 2.1.x Legacy Template Files that convert into plain
+   * Template Documents: the `cite` and `cite2` citation slots, and every bare
+   * `zotlit-<name>.(liquid|eta).md` partial.
+   */
+  getLegacyTemplateDocuments(): LegacyTemplateDocuments {
+    this.#requireLoaded("getLegacyTemplateDocuments");
+    const citation: LegacyTemplateFile[] = [];
+    const partials: LegacyTemplateFile[] = [];
+    // Sorted, so `cite` folds before `cite2` and both lists read stably.
+    for (const name of [...this.#winners.keys()].sort()) {
+      if (isTemplateName(name)) continue;
+      const file = this.#legacyTemplateFile(name);
+      if (!file) continue;
+      (isLegacyCitationName(name) ? citation : partials).push(file);
+    }
+    return { citation, partials };
+  }
+
+  /**
+   * Build and verify, in memory, the plain Template Documents the vault's
+   * remaining Legacy Template Files convert into: one Citation Template
+   * folding `cite` and `cite2`, and one `zotlit-partial.<name>.md` per bare
+   * partial. Nothing is written — the caller persists the returned documents
+   * only once every verification passed.
+   *
+   * The fold is verified against the registry the whole one-shot pass leaves
+   * behind, which retires the legacy Literature Note slots as well as the
+   * citation slots: those slot files fold into the default Profile document
+   * and reach the trash in this same pass, so each name a vault file backs
+   * today renders its built-in from there on.
+   *
+   * @param refs the citation the fold verifies both Citation Variants
+   *   against, from one real Zotero item.
+   * @throws {@link LegacyTemplateConversionError} when a variant's output
+   *   differs from the legacy file it replaces, or when the fold is Eta while
+   *   the JavaScript Templates gate is off.
+   */
+  async convertLegacyTemplateDocuments(
+    refs: readonly CiteRef[],
+  ): Promise<ConvertedLegacyTemplateDocuments> {
+    this.#requireLoaded("convertLegacyTemplateDocuments");
+    const folder = this.#currentTemplateFolder();
+    const { citation, partials } = this.getLegacyTemplateDocuments();
+    const documents: { path: string; source: string }[] = [];
+    const trashed: string[] = [];
+    const kept: string[] = [];
+
+    if (citation.length > 0) {
+      const language = foldCitationLanguage(citation);
+      if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+        throw new LegacyTemplateConversionError(
+          "unsupported-legacy-template",
+          "The legacy citation templates are Eta while JavaScript Templates are disabled",
+          {
+            difference: "inert template",
+            recovery:
+              "Enable JavaScript Templates on this device, then retry conversion.",
+          },
+        );
+      }
+      const legacy: {
+        language: TemplateLanguage;
+        main?: string;
+        alt?: string;
+      } = { language };
+      // Every bare name the pass unregisters with the files it trashes: the
+      // citation slots folded below, and the Literature Note slots the same
+      // pass folds into the default Profile document. The fold is verified
+      // against the registry that remains, so a branch that renders one of
+      // them is refused rather than written.
+      const removedNames: string[] = this.#legacyLiteratureNoteSlots().map(
+        ({ name }) => name,
+      );
+      for (const file of citation) {
+        if (file.language !== language) {
+          kept.push(file.path);
+          continue;
+        }
+        legacy[file.name === "cite" ? "main" : "alt"] =
+          await this.#readLegacyTemplateFile(file.path);
+        trashed.push(file.path, ...file.shadowed);
+        removedNames.push(file.name);
+      }
+      const { source } = this.#facade.convertLegacyCitationTemplates(
+        legacy,
+        {
+          main: citekeysToCiteTemplateData(refs, "main"),
+          alt: citekeysToCiteTemplateData(refs, "alt"),
+        },
+        { removedNames },
+      );
+      documents.push({
+        path: citationPath(folder),
+        source: formatPlainTemplateDocument(source, language),
+      });
+    }
+
+    for (const file of partials) {
+      documents.push({
+        path: partialPath(folder, file.name),
+        source: formatPlainTemplateDocument(
+          await this.#readLegacyTemplateFile(file.path),
+          file.language,
+        ),
+      });
+      trashed.push(file.path, ...file.shadowed);
+    }
+    logger.debug("Planned the legacy Template Document conversion", {
+      documents: documents.map(({ path }) => path),
+      trashed,
+      kept,
+    });
+    return { documents, trashed, kept };
+  }
+
+  /** The reconciled state of one bare legacy name, `null` when no file backs it. */
+  #legacyTemplateFile(name: string): LegacyTemplateFile | null {
+    const winner = this.#winners.get(name);
+    if (!winner) return null;
+    const shadowed = this.#shadowed.get(name);
+    if (winner.source.kind === "vault") {
+      return {
+        name,
+        path: winner.source.path,
+        language: winner.language,
+        inert: false,
+        shadowed: shadowed ? [shadowed] : [],
+      };
+    }
+    const inertPath = this.#inertEta.get(name);
+    if (!inertPath) return null;
+    return {
+      name,
+      path: inertPath,
+      language: "eta",
+      inert: true,
+      shadowed: shadowed ? [shadowed] : [],
+    };
+  }
+
+  async #readLegacyTemplateFile(path: string): Promise<string> {
+    const file = this.#app.vault.getFileByPath(path);
+    if (!file) {
+      throw new LegacyTemplateConversionError(
+        "unsupported-legacy-template",
+        `Legacy template file '${path}' is no longer in the vault`,
+        {
+          difference: "missing legacy file",
+          recovery: "Reload the template folder, then retry conversion.",
+        },
+      );
+    }
+    return await this.#app.vault.cachedRead(file);
   }
 
   /** Build and byte-verify the converted default Profile document in memory. */
@@ -837,9 +1769,9 @@ export class TemplateService extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     // Registered before the initial scan, so an edit landing while the scan
-    // runs queues instead of being dropped: #rebuildFolder clears
-    // #pendingFlush before it walks the folder, so anything queued during the
-    // walk survives into the debounced flush that follows.
+    // runs queues instead of being dropped: #rebuildFolder clears #pending
+    // before it walks the folder, so anything queued during the walk survives
+    // into the debounced flush that follows.
     stack.defer(this.#registerVaultEvents());
     await this.#rebuildFolder(this.#lastTemplateFolder);
 
@@ -907,11 +1839,16 @@ export class TemplateService extends Service<void> {
     try {
       const generation = ++this.#folderGeneration;
       this.#cancelFlush();
-      this.#pendingFlush.clear();
-      this.#pendingDocumentFlush.clear();
+      for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
       this.#shadowed.clear();
       this.#inertEta.clear();
       this.#winners.clear();
+      this.#partials.clear();
+      this.#inertPartials.clear();
+      this.#partialNames.clear();
+      this.#reservedPartialFiles.clear();
+      this.#citation = null;
+      this.#unrecognizedFiles.clear();
       this.#facade.reset();
       this.#compileErrors.clear();
       this.#literatureNoteDocuments.clear();
@@ -922,17 +1859,10 @@ export class TemplateService extends Service<void> {
           ? this.#app.vault.getRoot()
           : this.#app.vault.getFolderByPath(folder);
 
-      const names = new Set<string>();
-      const documentReferences = new Set<string>();
+      const work = emptyTemplateWork();
       if (root) {
         for (const child of root.children) {
-          if (child instanceof TFile) {
-            const parsed = templateFileFromPath(child.path);
-            if (parsed) names.add(parsed.name);
-            else if (child.extension === "md") {
-              documentReferences.add(child.name);
-            }
-          }
+          if (child instanceof TFile) collectTemplatePath(work, child.path);
         }
       } else {
         logger.debug("Template folder not found; embedded defaults remain", {
@@ -941,21 +1871,19 @@ export class TemplateService extends Service<void> {
       }
 
       for (const name of TEMPLATE_NAMES) {
-        if (!names.has(name)) this.#useDefault(name);
+        if (!work.names.has(name)) this.#useDefault(name);
       }
+      // Reconciled on every rebuild, file or none: with no document the
+      // built-in source registers, so `citation` always resolves to something.
+      work.citation.add(CITATION_TEMPLATE_NAME);
 
-      await Promise.all([
-        ...[...names].map((name) => this.#reconcileName(name, generation)),
-        ...[...documentReferences].map((reference) =>
-          this.#reconcileDocument(reference, generation),
-        ),
-      ]);
+      await this.#reconcileWork(work, generation);
       if (generation !== this.#folderGeneration) return;
 
       this.#emitter.emit("compile-status-changed");
       logger.debug("Template folder rebuilt", {
         folder,
-        count: names.size,
+        count: work.names.size,
       });
     } finally {
       this.#settlingTasks -= 1;
@@ -977,18 +1905,16 @@ export class TemplateService extends Service<void> {
     this.#queueTemplatePath(file.path);
   }
 
+  /** Queue one vault event's path; a watched file is a direct child of the
+   *  configured template folder (no recursion). */
   #queueTemplatePath(path: string): void {
     const normalized = normalizeVaultPath(path);
-    const parsed = templateFileFromPath(normalized);
-    if (parsed && this.#isWatchedTemplatePath(normalized)) {
-      this.#pendingFlush.add(parsed.name);
-    } else if (
-      isWatchedDocumentPath(normalized, this.#currentTemplateFolder())
+    if (
+      normalizeVaultPath(dirname(normalized)) !== this.#currentTemplateFolder()
     ) {
-      this.#pendingDocumentFlush.add(normalized.split("/").at(-1)!);
-    } else {
       return;
     }
+    if (!collectTemplatePath(this.#pending, normalized)) return;
     this.#scheduleFlush();
   }
 
@@ -1004,25 +1930,42 @@ export class TemplateService extends Service<void> {
     this.#settlingTasks += 1;
     try {
       const generation = this.#folderGeneration;
-      const names = [...this.#pendingFlush];
-      const documentReferences = [...this.#pendingDocumentFlush];
-      this.#pendingFlush.clear();
-      this.#pendingDocumentFlush.clear();
-      await Promise.all([
-        ...names.map((name) => this.#reconcileName(name, generation)),
-        ...documentReferences.map((reference) =>
-          this.#reconcileDocument(reference, generation),
-        ),
-      ]);
+      const work = takeTemplateWork(this.#pending);
+      await this.#reconcileWork(work, generation);
 
       if (generation !== this.#folderGeneration) return;
 
       this.#emitter.emit("compile-status-changed");
-      logger.debug("Template flush completed", { count: names.length });
+      logger.debug("Template flush completed", { count: work.names.size });
     } finally {
       this.#settlingTasks -= 1;
       this.#resolveSettledWaiters();
     }
+  }
+
+  /**
+   * Reconcile every bucket of `work`: a `zotlit-` file no kind claims is
+   * reported or dropped by whether it still exists, and each remaining kind
+   * reconciles through its own routine.
+   */
+  async #reconcileWork(work: TemplateWork, generation: number): Promise<void> {
+    for (const path of work.unrecognizedPaths) {
+      if (this.#app.vault.getFileByPath(path)) {
+        this.#unrecognizedFiles.add(path);
+      } else {
+        this.#unrecognizedFiles.delete(path);
+      }
+    }
+    await Promise.all([
+      ...[...work.names].map((name) => this.#reconcileName(name, generation)),
+      ...[...work.documentReferences].map((reference) =>
+        this.#reconcileDocument(reference, generation),
+      ),
+      ...[...work.partialNames].map((name) =>
+        this.#reconcilePartial(name, generation),
+      ),
+      ...(work.citation.size > 0 ? [this.#reconcileCitation(generation)] : []),
+    ]);
   }
 
   /**
@@ -1043,6 +1986,18 @@ export class TemplateService extends Service<void> {
     const etaFile = this.#app.vault.getFileByPath(
       templatePath(folder, name, "eta"),
     );
+
+    // One bare name, two file forms: the 2.1.x Legacy Template File and the
+    // `zotlit-partial.<name>.md` document that replaces it. The document owns
+    // the name — the conversion writes it before it trashes the legacy file,
+    // so the deletion event that follows leaves the registered partial alone.
+    if (this.#partials.has(name)) {
+      if (!liquidFile && !etaFile) {
+        this.#winners.delete(name);
+        this.#shadowed.delete(name);
+      }
+      return;
+    }
 
     // A shadowed eta file is reported as shadowed regardless of the gate —
     // the liquid edition wins either way, so the flag never changes its fate.
@@ -1149,6 +2104,200 @@ export class TemplateService extends Service<void> {
   }
 
   /**
+   * Register the Shared Partial `name` from its `zotlit-partial.<name>.md`
+   * document, which carries the partial's language and its source.
+   *
+   * A partial whose document fails to parse or to compile is left undefined
+   * and records a compile error, and one written in Eta while the JavaScript
+   * Templates gate is off is left inert — a template that calls it then fails
+   * loudly rather than rendering a hole.
+   */
+  async #reconcilePartial(name: string, generation: number): Promise<void> {
+    if (generation !== this.#folderGeneration) return;
+
+    const path = partialPath(this.#currentTemplateFolder(), name);
+    const file = this.#app.vault.getFileByPath(path);
+
+    // A reserved name already answers to another Template, so the file owns
+    // nothing: it is reported by name in settings rather than registered.
+    if (RESERVED_PARTIAL_NAMES.has(name)) {
+      if (file) {
+        logger.debug("Partial file claims a reserved template name", {
+          name,
+          path,
+        });
+        this.#reservedPartialFiles.set(name, path);
+      } else {
+        this.#reservedPartialFiles.delete(name);
+      }
+      return;
+    }
+
+    if (!file) {
+      this.#partialNames.delete(name);
+      this.#removePartial(name);
+      return;
+    }
+    this.#partialNames.add(name);
+
+    let source: string;
+    try {
+      source = await this.#app.vault.cachedRead(file);
+    } catch (error) {
+      if (generation !== this.#folderGeneration) return;
+      logger.warn("Failed to read partial file", { error, path });
+      this.#removePartial(name);
+      return;
+    }
+    if (generation !== this.#folderGeneration) return;
+
+    let parsed;
+    try {
+      parsed = parsePlainTemplateDocument(source);
+    } catch (error) {
+      this.#removePartial(name);
+      this.#compileErrors.set(name, { message: errorMessage(error) });
+      logger.warn("Failed to parse partial document", { error, path });
+      return;
+    }
+
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      if (this.#inertEta.get(name) !== path) {
+        logger.debug(
+          "Eta partial inert while JavaScript templates are disabled",
+          {
+            name,
+            path,
+          },
+        );
+      }
+      this.#removePartial(name);
+      this.#inertEta.set(name, path);
+      this.#inertPartials.set(name, { name, language, source: parsed.source });
+      return;
+    }
+
+    this.#removePartial(name);
+    this.#partials.set(name, { path, language, source: parsed.source });
+    this.#defineTemplate(name, parsed.source, language);
+  }
+
+  /**
+   * Resolve the Citation Template from `zotlit-citation.md`, or register the
+   * built-in source when the vault holds no document. Either way the template
+   * answers to {@link CITATION_TEMPLATE_NAME}, so every citation render and
+   * the pack export reach it by that one name.
+   *
+   * A document that fails to parse or to compile is left undefined and records
+   * a compile error, and one written in Eta while the JavaScript Templates gate
+   * is off is left inert: inserting a citation then reports the inert notice
+   * rather than quietly falling back to the built-in text.
+   */
+  async #reconcileCitation(generation: number): Promise<void> {
+    if (generation !== this.#folderGeneration) return;
+
+    const name = CITATION_TEMPLATE_NAME;
+    const path = citationPath(this.#currentTemplateFolder());
+    const file = this.#app.vault.getFileByPath(path);
+    if (!file) {
+      this.#useBuiltInCitation();
+      return;
+    }
+
+    let source: string;
+    try {
+      source = await this.#app.vault.cachedRead(file);
+    } catch (error) {
+      if (generation !== this.#folderGeneration) return;
+      logger.warn("Failed to read the Citation Template", { error, path });
+      this.#useBuiltInCitation();
+      return;
+    }
+    if (generation !== this.#folderGeneration) return;
+
+    let parsed;
+    try {
+      parsed = parsePlainTemplateDocument(source);
+    } catch (error) {
+      this.#unregisterCitation();
+      this.#compileErrors.set(name, { message: errorMessage(error) });
+      logger.warn("Failed to parse the Citation Template", { error, path });
+      return;
+    }
+
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      if (this.#inertEta.get(name) !== path) {
+        logger.debug(
+          "Citation Template inert while JavaScript templates are disabled",
+          { path },
+        );
+      }
+      this.#unregisterCitation();
+      this.#inertEta.set(name, path);
+      return;
+    }
+
+    this.#registerCitation({ path, language, source: parsed.source });
+  }
+
+  /** Register the packaged Citation Template, as a vault with no document renders it. */
+  #useBuiltInCitation(): void {
+    this.#registerCitation({
+      path: null,
+      language: "liquid",
+      source: CITATION_TEMPLATE_SOURCE,
+    });
+  }
+
+  /**
+   * Register the source that won the Citation Template, and log the branch on
+   * every change of winner, so a diagnosis reads which source rendered a
+   * citation instead of re-instrumenting the reconcile.
+   */
+  #registerCitation(citation: RegisteredCitationTemplate): void {
+    const previous = this.#citation;
+    this.#unregisterCitation();
+    this.#citation = citation;
+    this.#defineTemplate(
+      CITATION_TEMPLATE_NAME,
+      citation.source,
+      citation.language,
+    );
+    if (
+      previous?.path !== citation.path ||
+      previous.language !== citation.language
+    ) {
+      logger.debug("Citation Template resolved", {
+        selected: citation.path === null ? "built-in" : "vault",
+        path: citation.path,
+        language: citation.language,
+      });
+    }
+  }
+
+  #unregisterCitation(): void {
+    this.#citation = null;
+    this.#unregisterTemplate(CITATION_TEMPLATE_NAME);
+  }
+
+  #removePartial(name: string): void {
+    this.#partials.delete(name);
+    this.#inertPartials.delete(name);
+    this.#unregisterTemplate(name);
+  }
+
+  /** Drop every trace of `name`: its compiled editions and the status a
+   *  previous reconcile recorded for it. */
+  #unregisterTemplate(name: string): void {
+    this.#compileErrors.delete(name);
+    this.#inertEta.delete(name);
+    this.#facade.remove(name, "liquid");
+    this.#facade.remove(name, "eta");
+  }
+
+  /**
    * Compile and register a vault template, recording any compile error. A
    * template that fails to compile is removed from the facade and never falls
    * back to a package default: it fails loudly through {@link render} and
@@ -1197,14 +2346,18 @@ export class TemplateService extends Service<void> {
     }
   }
 
+  /** Wait for the debounced reconciler to observe a write this service made,
+   *  so a caller reads the state its own change produced. */
+  async #settle(): Promise<void> {
+    if ((await this.waitUntilSettled(SETTLE_TIMEOUT_MS)) !== "settled") {
+      throw new Error("The template folder did not finish scanning");
+    }
+  }
+
   #currentTemplateFolder(): string {
     return normalizeVaultPath(
       this.#settings.current?.["template.folder"] ?? this.#lastTemplateFolder,
     );
-  }
-
-  #isWatchedTemplatePath(path: string): boolean {
-    return isWatchedTemplatePath(path, this.#currentTemplateFolder());
   }
 
   /**
@@ -1243,8 +2396,7 @@ export class TemplateService extends Service<void> {
     return (
       this.#settlingTasks === 0 &&
       this.#flushTimer === null &&
-      this.#pendingFlush.size === 0 &&
-      this.#pendingDocumentFlush.size === 0
+      isTemplateWorkEmpty(this.#pending)
     );
   }
 
@@ -1363,23 +2515,4 @@ function errorMessage(error: unknown): string {
 /** Collapse rendered filename output to one trimmed line. */
 function toSingleLine(rendered: string): string {
   return rendered.trim().replaceAll(/\s*\n\s*/g, "");
-}
-
-/** A watched template is a `zotlit-<name>.(liquid|eta).md` file directly inside `folder` (no recursion). */
-function isWatchedTemplatePath(path: string, folder: string): boolean {
-  const normalized = normalizeVaultPath(path);
-  return (
-    templateFileFromPath(normalized) !== null &&
-    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
-  );
-}
-
-/** A document is a direct Markdown child of the configured template folder. */
-function isWatchedDocumentPath(path: string, folder: string): boolean {
-  const normalized = normalizeVaultPath(path);
-  return (
-    normalized.endsWith(".md") &&
-    templateFileFromPath(normalized) === null &&
-    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
-  );
 }

@@ -11,10 +11,11 @@ import {
   getItemsByKey,
   getLibraryByGroupID,
 } from "@zotlit/db";
+import type { CiteRef, CitationVariant } from "@zotlit/db";
 import { makeItem } from "@zotlit/db/test-utils";
 import { getPackageRoot } from "@zotlit/scripts/package-roots";
-import { TemplateEngine } from "@zotlit/templates";
-import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
+import { inlineCitation, TemplateEngine } from "@zotlit/templates";
+import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderAnnotations } from "@/lib/annotation-render";
@@ -66,7 +67,7 @@ const ATTACHMENT = `${ITEMS}/T2P8T29G`;
 
 /**
  * Render cited items as `[@key; @key]`, dropping the unresolved ones. Mirrors
- * the default `cite` template's citation-prop rendering (9.2-CSL #02):
+ * the built-in Citation Template's citation-prop rendering (9.2-CSL #02):
  * `-@key` when suppressed, `, <labelShort> <locator>` when a locator is
  * present. Locator/labelShort/suppressAuthor are optional so this stub still
  * matches every citekey-only test unchanged.
@@ -734,11 +735,11 @@ describe("annotation template mode", () => {
   it("carries zt.citation onto a subsumed annotation paragraph via the real render path (9.2-CSL #05)", () => {
     // The import leg wires `renderAnnotationParagraph` to `renderAnnotations`,
     // whose annotation-template data must expose `zt.citation` — the parent
-    // item rendered through the `cite` template with the annotation's page
+    // item rendered through the Citation Template with the annotation's page
     // label as locator. A custom template referencing it should surface the
     // same `[@citekey, p. N]` the annot-view drag-insert produces.
     const facade = new TemplateFacade();
-    facade.define("cite", defaultCite, "liquid");
+    facade.define("citation", defaultCitation, "liquid");
     facade.define("annotation", "> [!note]\n>\n> <%= zt.citation %>", "eta");
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([
@@ -757,7 +758,21 @@ describe("annotation template mode", () => {
         deps.client as never,
         keys.map((key) => ({ key }) as never),
         {
-          template: facade as never,
+          // The two template seams `renderAnnotations` reaches for, wired to
+          // one facade the way TemplateService wires them to its own.
+          template: {
+            render: (name: string, data: object) => facade.render(name, data),
+            renderCitation: (
+              refs: readonly CiteRef[],
+              variant: CitationVariant,
+            ) =>
+              inlineCitation(
+                facade.render(
+                  "citation",
+                  citekeysToCiteTemplateData(refs, variant),
+                ),
+              ),
+          } as never,
           zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
           attachmentImport: {
             decide: blockedDecide,
@@ -917,7 +932,7 @@ describe("citation resolution", () => {
     expect(md).toContain("[@GRP1TEM?]");
   });
 
-  it("trims the rendered cite so it stays inline (cite.eta's trailing \\n)", () => {
+  it("trims the rendered citation so it stays inline (the document's trailing \\n)", () => {
     mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(TurndownService, note(`x ${oneCite} y`), {
       ...deps,
@@ -962,12 +977,12 @@ describe("citation resolution", () => {
     expect(md).toContain("[@Hensher2011, chap. 3]");
   });
 
-  it("threads locator/label/suppress-author through the production renderCite glue (citekeysToCiteTemplateData + the real default cite template)", () => {
-    // Exercises the actual service.ts wiring (renderCite → citekeysToCiteTemplateData →
-    // ctx.template.render("cite", ...)), not the hand-written `renderCite` stub used by
-    // every other test in this file.
+  it("threads locator/label/suppress-author through the production renderCite glue (citekeysToCiteTemplateData + the built-in Citation Template)", () => {
+    // Exercises the actual service.ts wiring (renderCite →
+    // template.renderCitation → the Citation Template), not the hand-written
+    // `renderCite` stub used by every other test in this file.
     const facade = new TemplateFacade();
-    facade.define("cite", defaultCite, "liquid");
+    facade.define("citation", defaultCitation, "liquid");
     mockDbCitekeys({ KX67D9YM: "Hensher2011" });
     const md = parseNote(
       TurndownService,
@@ -986,7 +1001,7 @@ describe("citation resolution", () => {
       {
         ...deps,
         renderCite: (items) =>
-          facade.render("cite", citekeysToCiteTemplateData(items)),
+          facade.render("citation", citekeysToCiteTemplateData(items, "main")),
       },
     );
     expect(md).toContain("[-@Hensher2011, {p. 62}]");
@@ -1053,7 +1068,7 @@ describe("citation resolution — DB item data (9.2-CSL #03)", () => {
   it("exposes the DB-resolved item's title/date to a custom author-year cite template through the production renderCite glue", () => {
     const engine = new TemplateEngine();
     engine.define(
-      "cite",
+      "citation",
       "<%= zt.citations.map(c => `${c.item.title} (${c.item.date?.year ?? 'n.d.'})`).join('; ') %>",
     );
     vi.mocked(getItemsByKey).mockReturnValue([
@@ -1067,7 +1082,7 @@ describe("citation resolution — DB item data (9.2-CSL #03)", () => {
     const md = parseNote(TurndownService, note(oneCite), {
       ...deps,
       renderCite: (items) =>
-        engine.render("cite", citekeysToCiteTemplateData(items)),
+        engine.render("citation", citekeysToCiteTemplateData(items, "main")),
     });
     expect(md).toContain("Stated choice methods (2011)");
   });
@@ -1075,7 +1090,7 @@ describe("citation resolution — DB item data (9.2-CSL #03)", () => {
   it("still uses the note's embedded snapshot citekey when the DB item carries none, while keeping the DB item's other data", () => {
     const engine = new TemplateEngine();
     engine.define(
-      "cite",
+      "citation",
       "<%= zt.citations.map(c => `${c.item.citekey}: ${c.item.title}`).join('; ') %>",
     );
     vi.mocked(getItemsByKey).mockReturnValue([
@@ -1096,7 +1111,7 @@ describe("citation resolution — DB item data (9.2-CSL #03)", () => {
       {
         ...deps,
         renderCite: (items) =>
-          engine.render("cite", citekeysToCiteTemplateData(items)),
+          engine.render("citation", citekeysToCiteTemplateData(items, "main")),
       },
     );
     expect(md).toContain("Embedded2020: Stated choice methods");
@@ -1125,11 +1140,11 @@ describe("citation resolution — embedded item data (9.2-CSL #04)", () => {
 
   function withDataTemplate(): ParseNoteDeps {
     const engine = new TemplateEngine();
-    engine.define("cite", dataDrivenCite);
+    engine.define("citation", dataDrivenCite);
     return {
       ...deps,
       renderCite: (items) =>
-        engine.render("cite", citekeysToCiteTemplateData(items)),
+        engine.render("citation", citekeysToCiteTemplateData(items, "main")),
     };
   }
 

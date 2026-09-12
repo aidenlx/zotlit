@@ -23,7 +23,8 @@ export type ExplorerSectionId =
   | "links"
   | "record"
   | "annotation"
-  | "source";
+  | "source"
+  | "citation";
 
 export interface ExplorerSection {
   readonly id: ExplorerSectionId;
@@ -46,6 +47,7 @@ const SECTION_LABELS: Record<ExplorerSectionId, WorkbenchMessageLabel> = {
   record: "workbench_explorer_section_record",
   annotation: "workbench_explorer_section_annotation",
   source: "workbench_explorer_section_source",
+  citation: "workbench_explorer_section_citation",
 };
 
 /** Item fields follow Zotero's Info pane order inside each section. */
@@ -127,6 +129,10 @@ const SECTIONS: Record<TemplateRoot, readonly SectionSpec[]> = {
       ],
     },
   ],
+  // The citation root's three fields are all common, so this spec names none
+  // of them and stands as the root's home for any field the taxonomy has yet
+  // to place.
+  citation: [{ id: "citation", keys: [] }],
 };
 
 /**
@@ -140,6 +146,7 @@ const HIDDEN: Record<TemplateRoot, ReadonlySet<string>> = {
   note: new Set(ITEM_HIDDEN),
   annotation: new Set(),
   filename: new Set([...ITEM_HIDDEN, "notePath", "noteLink"]),
+  citation: new Set(),
 };
 
 /** ZotLit's own fields on an item root, which Zotero has no label for. */

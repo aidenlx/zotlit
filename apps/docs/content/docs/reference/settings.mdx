@@ -29,7 +29,7 @@ The top of the page links to the release notes, the documentation, the community
 | <UiLabel name={m.settings_profile_folder_name()} />            | `note.literature-folder`    | Folder picker                                                                                                   | `literatures`                                                     | None                   | Synced  |
 | <UiLabel name={m.settings_citation_references_style_name()} /> | `citation.references-style` | Dropdown (lists installed styles)                                                                               | <UiLabel name={m.settings_citation_references_style_default()} /> | Zotero style directory | Synced  |
 | <UiLabel name={m.settings_profile_document_name()} />          | (default Profile)           | <UiLabel name={m.settings_template_customize()} /> and <UiLabel name={m.settings_profile_document_restore()} /> | <UiLabel name={m.settings_profile_document_builtin()} />          | None                   | Synced  |
-| <UiLabel name={m.settings_profile_properties_name()} />        | (template document)         | <UiLabel name={m.profile_editor_customize()} /> action                                                          | Built-in fields                                                   | None                   | None    |
+| <UiLabel name={m.settings_profile_properties_name()} />        | (template document)         | <UiLabel name={m.template_workbench_customize()} /> action                                                      | Built-in fields                                                   | None                   | None    |
 
 These four rows are the bindings of the default Profile. ZotLit stores them under `note.default-profile` in `data.json`. Every other Profile inherits a binding it does not set itself. See <SettingsPath page={m.settings_page_profiles()} />.
 
@@ -65,9 +65,9 @@ An empty `zotlit-csl` property stops the note the same way, and its built-in exp
 
 The document that renders a literature note: its filename, its properties, and its body.
 
-Until you customize it, the Profile uses ZotLit's built-in Literature Note Template and the row reads <UiLabel name={m.settings_profile_document_builtin_desc()} />. <UiLabel name={m.settings_template_customize()} /> creates or opens the template document before editing becomes available in the Profile Editor. The row then names that file and offers <UiLabel name={m.settings_profile_document_restore()} />.
+Until you customize it, the Profile uses ZotLit's built-in Literature Note Template and the row reads <UiLabel name={m.settings_profile_document_builtin_desc()} />. <UiLabel name={m.settings_template_customize()} /> creates or opens the template document before editing becomes available in the Template Workbench View. The row then names that file and offers <UiLabel name={m.settings_profile_document_restore()} />.
 
-Select <UiLabel name={m.settings_template_customize()} /> to open the document in the Profile Editor. Select <UiLabel name={m.settings_profile_document_restore()} /> to move it to Obsidian's configured trash and return the Profile to the built-in template.
+Select <UiLabel name={m.settings_template_customize()} /> to open the document in the Template Workbench View. Select <UiLabel name={m.settings_profile_document_restore()} /> to move it to Obsidian's configured trash and return the Profile to the built-in template.
 
 ### Properties [#properties]
 
@@ -127,6 +127,31 @@ Each row offers these actions:
 A new Profile starts with the default Profile's template. Its own document can set a folder, citation style, appearance, or Profile Match.
 
 Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first.
+
+### Partials [#partials]
+
+The <UiLabel name={m.settings_partials_heading()} /> list at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> holds every partial in the vault. A partial is a piece of template text that any template renders by name, so several Profiles can share it. The list sits below the Profile list, and it covers the whole vault rather than one Profile.
+
+Until you add one, the list reads <UiLabel name={m.settings_partials_empty_desc()} /> Its header carries one action, <UiLabel name={m.settings_partial_add()} />, which asks for a name and creates the file.
+
+Each partial has one row with its name and its vault path:
+
+| Action                                                                                         | Effect                                                                     |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_partial_open()} />                                                   | Opens the partial in the Template Workbench View.                          |
+| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_partial_delete()} /> | Moves the partial's file to Obsidian's configured trash after you confirm. |
+
+The delete confirmation reads <UiLabel name={m.settings_partial_delete_confirm_title()} /> with the body <UiLabel name={m.settings_partial_delete_confirm_body({ path: "…" })} /> It rewrites no caller, so every template that calls the deleted partial reports a missing partial afterwards.
+
+Renaming a partial is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no call, so each caller reports a missing partial until you change the name in the call yourself.
+
+A partial file whose name belongs to another ZotLit template registers nothing and gets its own row instead:
+
+| Row                                                   | Text                                                                          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_partial_reserved_name()} /> | <UiLabel name={m.settings_partial_reserved_desc({ path: "…", name: "…" })} /> |
+
+See [Template Document naming](/docs/reference/templates/syntax#template-document-naming) for the reserved names and the filename rule.
 
 ### Profile Match [#profile-match]
 
@@ -377,25 +402,29 @@ references, and exports. Installation applies to every vault on this device.
 
 Before installation, its status is: "Not installed. References Sidebar stays a plain list until you install it." This supported state does not show a lifecycle notice.
 
-### Citation text templates [#citation-templates]
+### Citation text [#citation-templates]
 
-The <UiLabel name={m.settings_citation_templates_heading()} /> group holds one row per citation template: <UiLabel name={m.settings_template_name_cite()} /> and <UiLabel name={m.settings_template_name_cite2()} />. They set the Markdown that the insert-citation commands write into the editor.
+One row, after the <UiLabel name={m.settings_citation_references_heading()} /> group. <UiLabel name={m.settings_citation_text_name()} />: <UiLabel name={m.settings_citation_text_desc()} /> It covers both citation gestures; the template itself decides what the main and the alternate gesture render.
 
-Each row provides:
+A second line under the description names the document. While the vault holds no citation document, that line reads <UiLabel name={m.settings_template_using_default()} />; once the document exists, it is the document's vault path. The document is `zotlit-citation.md` in the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />.
 
-- <UiLabel name={m.settings_template_eject()} />: ejects the built-in default to
-  a file you can edit.
-- <UiLabel name={m.settings_template_open()} />: opens the ejected file in the
-  editor.
-- <UiLabel name={m.settings_template_reset()} />: deletes the ejected file and
-  reverts to the built-in (destructive; requires confirmation).
-- <UiLabel name={m.settings_template_delete()} />: removes the ejected file
-  (destructive; requires confirmation).
-- <UiLabel name={m.settings_template_language_tooltip()} />: dropdown to switch
-  between <UiLabel name={m.settings_template_language_liquid()} /> and
-  <UiLabel name={m.settings_template_language_eta()} />.
+The row carries two icon-only buttons, whose names below are their tooltips:
 
-Both files live in the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />.
+| Button                                             | Effect                                                                                                                                                   |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_citation_text_open()} /> | Opens the document in the Template Workbench View. With no document in the vault, it first creates `zotlit-citation.md` from the built-in citation text. |
+| <UiLabel name={m.settings_template_reset()} />     | Moves the document to Obsidian's configured trash. Destructive, and present only once the document exists.                                               |
+
+The reset confirmation reads <UiLabel name={m.settings_citation_text_reset_confirm_title()} /> with the body <UiLabel name={m.settings_citation_text_reset_confirm_body({ path: "…" })} /> Reset trashes the file rather than rewriting its contents, so you can recover it from the trash. A notice follows: <UiLabel name={m.notice_citation_text_reset()} />
+
+The row adds a warning line in two cases:
+
+| Case                                                                                                        | Line                                                                                |
+| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| The document declares `language: eta` while <UiLabel name={m.settings_template_js_enable_name()} /> are off | <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />                     |
+| The template fails to compile                                                                               | <UiLabel name={m.settings_template_compile_error()} /> and the engine's own message |
+
+In both cases the citation text is inert. Inserting a citation shows the same message as a notice, and ZotLit does not fall back to the built-in text. See [Citation templates](/docs/reference/templates/data#citation-templates) for the data a citation template receives, and [Citation text](/docs/reference/templates/defaults#citation-text) for the built-in default.
 
 ### Native Pandoc workflow [#native-pandoc]
 
@@ -597,6 +626,16 @@ JavaScript (Eta) templates are gated behind a per-device toggle. Enabling shows 
 
 Options for <UiLabel name={m.settings_template_trim_leading_name()} /> and <UiLabel name={m.settings_template_trim_trailing_name()} />: <UiLabel name={m.settings_template_trim_disable()} />, <UiLabel name={m.settings_template_trim_nl()} />, <UiLabel name={m.settings_template_trim_slurp()} />.
 
+#### Unrecognized ZotLit files [#unrecognized-files]
+
+A `zotlit-` file in the template folder that is neither a Template Document nor a 2.1 template file gets one diagnostic row in this group:
+
+| Row                                                        | Text                                                                    |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| <UiLabel name={m.settings_template_unrecognized_name()} /> | <UiLabel name={m.settings_template_unrecognized_desc({ path: "…" })} /> |
+
+A file without the `zotlit-` prefix is ignored and gets no row. See [Template Document naming](/docs/reference/templates/syntax#template-document-naming).
+
 ### Logging [#logging]
 
 | Label                                              | Key           | Control  | Default | Dependency                                             | Storage |
@@ -643,19 +682,19 @@ wrong or outdated.
 
 ZotLit 2.1 reorganized the settings tab around the literature note. Every row keeps its name, so Obsidian's own settings search still finds a setting by the name you know.
 
-| Old location                                                     | New location                                                                                                                                                               |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Literature note folder**, on the Literature note profiles page | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                               |
-| **Note import** page                                             | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                          |
-| **Highlight mappings**, on the Literature note profiles page     | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                          |
-| **Frontmatter** field list, under the Templates page             | The template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row on the main page with <UiLabel name={m.profile_editor_customize()} />. |
-| **Template folder**, on the Templates page                       | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                             |
-| **JavaScript templates** and trim, on the Templates page         | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                           |
-| **Citation** and **Alternate citation**, on the Templates page   | The <UiLabel name={m.settings_citation_templates_heading()} /> group on <SettingsPath page={m.settings_page_citations()} />                                                |
-| **Zotero database** page                                         | The <UiLabel name={m.settings_zotero_connection_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                    |
-| **Library** page                                                 | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                     |
-| **Live updates** page                                            | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                              |
-| **Maintenance** page                                             | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                         |
+| Old location                                                     | New location                                                                                                                                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Literature note folder**, on the Literature note profiles page | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                                   |
+| **Note import** page                                             | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                              |
+| **Highlight mappings**, on the Literature note profiles page     | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                              |
+| **Frontmatter** field list, under the Templates page             | The template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row on the main page with <UiLabel name={m.template_workbench_customize()} />. |
+| **Template folder**, on the Templates page                       | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                                 |
+| **JavaScript templates** and trim, on the Templates page         | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                               |
+| **Citation** and **Alternate citation**, on the Templates page   | One <UiLabel name={m.settings_citation_text_name()} /> row on <SettingsPath page={m.settings_page_citations()} />. Both gestures now come from one template.                   |
+| **Zotero database** page                                         | The <UiLabel name={m.settings_zotero_connection_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                        |
+| **Library** page                                                 | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                         |
+| **Live updates** page                                            | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                                  |
+| **Maintenance** page                                             | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                             |
 
 The legacy template rows for the literature note, the managed region, the annotation, and the note filename are no longer in settings. A literature note's body, filename, and properties come from its Profile's template document.
 

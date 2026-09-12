@@ -1,7 +1,6 @@
 import type { TFile } from "obsidian";
 
 import {
-  citekeysToCiteTemplateData,
   CollectionCache,
   fetchAnnotationsTemplateData,
   fetchNoteContext,
@@ -13,6 +12,7 @@ import {
   resolveItemTags,
 } from "@zotlit/db";
 import type {
+  CitationVariant,
   CiteRef,
   GroupIDMemo,
   Item,
@@ -23,7 +23,6 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
-import { inlineCitation } from "@zotlit/templates";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import {
@@ -370,7 +369,10 @@ export interface NoteFeature {
     options: WriteNoteUpdateOptions,
   ): Promise<UpdateResult>;
   /** @see renderCitation */
-  renderCitation(items: readonly CiteRef[], secondary?: boolean): string | null;
+  renderCitation(
+    items: readonly CiteRef[],
+    variant: CitationVariant,
+  ): string | null;
   /** @see renderAnnotation */
   renderAnnotation(
     annotationItemId: number,
@@ -485,8 +487,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       getImportedNotesForItem(ctx, indexedKey),
     overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
-    renderCitation: (items, secondary = false) =>
-      renderCitation(ctx, items, secondary),
+    renderCitation: (items, variant) => renderCitation(ctx, items, variant),
     renderAnnotation: (annotationItemId, options) =>
       renderAnnotation(ctx, annotationItemId, options),
     renderAnnotationCitation: (annotationItemId) =>
@@ -1324,9 +1325,12 @@ async function writeNoteUpdate(
   });
 }
 
-/** Compose a managed update from its steps: prepare and refresh frontmatter,
- *  then for the `full` scope replace the managed body region. A document field
- *  refusal returns before either write. Shared by
+/** Compose a managed update from its steps: prepare the frontmatter, then for
+ *  the `full` scope replace the managed body region, then commit the prepared
+ *  frontmatter. A document field refusal returns before either write, and the
+ *  body render — where a call to a Shared Partial the vault holds no document
+ *  for raises — runs while the note is still untouched, so a refusal leaves
+ *  both the Properties block and the body as authored. Shared by
  *  {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
  *  already-built context and its prepared `attachmentImport`. */
 async function applyManagedUpdate(
@@ -1351,13 +1355,14 @@ async function applyManagedUpdate(
     profile,
     document,
   } = input;
-  const diagnostic = await refreshFrontmatter(ctx, file, {
+  const prepared = prepareFrontmatter({
     context,
     itemKey,
-    profile,
     document,
+    diagnosticContext: { path: file.path },
   });
-  if (diagnostic) return { ...NO_BODY_UPDATE, diagnostic };
+  if ("diagnostic" in prepared)
+    return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
   const result =
     scope === "full"
       ? document
@@ -1368,6 +1373,7 @@ async function applyManagedUpdate(
           })
         : await replaceManagedBody(ctx, file, { context, itemKey })
       : NO_BODY_UPDATE;
+  await commitFrontmatter(ctx, file, { context, itemKey, profile, prepared });
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
 
@@ -1469,16 +1475,25 @@ async function overwriteNote(
     sourcePath: file.path,
     settings: profile.settings,
   });
-  const diagnostic = await refreshFrontmatter(ctx, file, {
+  const prepared = prepareFrontmatter({
     context,
     itemKey: indexedKey,
-    profile,
     document,
+    diagnosticContext: { path: file.path },
   });
-  if (diagnostic) return { ...NO_BODY_UPDATE, diagnostic };
+  if ("diagnostic" in prepared)
+    return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  // The body renders before either write, so a render that raises — a call to
+  // a Shared Partial the vault holds no document for — leaves the note whole.
   const body = document
     ? document.renderForCreate(context)
     : ctx.template.render("note", context);
+  await commitFrontmatter(ctx, file, {
+    context,
+    itemKey: indexedKey,
+    profile,
+    prepared,
+  });
   await ctx.app.vault.process(file, (content) => {
     const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
     return `${prefix}${body}`;
@@ -1493,27 +1508,22 @@ async function overwriteNote(
 }
 
 /**
- * Render the configured cite template for the given items. Synchronous (called
- * from `selectSuggestion`/`onChooseSuggestion` handlers, which can't await), so
- * it returns `null` instead of throwing when the template isn't loaded yet;
- * the caller shows a "still loading" notice in that case.
+ * Render the Citation Template for the given items under one Citation Variant.
+ * Synchronous (called from `selectSuggestion`/`onChooseSuggestion` handlers,
+ * which can't await), so it returns `null` instead of throwing when the
+ * template isn't loaded yet; the caller shows a "still loading" notice then.
  *
- * @param secondary - render the bare `cite2` template (narrative/in-prose,
- *   e.g. `@key`) instead of the default bracketed `cite` template (`[@key]`).
- * @returns the rendered citation in inline form ({@link inlineCitation}).
+ * @param variant - the gesture the citation was requested with, which the
+ *   Citation Template reads as `zt.variant`.
+ * @returns the rendered citation in inline form.
  */
 function renderCitation(
   ctx: NoteFeatureDeps,
   items: readonly CiteRef[],
-  secondary = false,
+  variant: CitationVariant,
 ): string | null {
   if (!ctx.template.loaded || !ctx.profile.loaded) return null;
-  return inlineCitation(
-    ctx.template.render(
-      secondary ? "cite2" : "cite",
-      citekeysToCiteTemplateData(items),
-    ),
-  );
+  return ctx.template.renderCitation(items, variant);
 }
 
 /**
@@ -1613,9 +1623,9 @@ function renderAnnotationCitation(
  * Assumes the caller has settled note-index and template readiness (and pinned
  * the client via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
  * so before acquiring the lease. `template.ready` in particular gates
- * `refreshFrontmatter`, which reads `template.frontmatterFields` and writes
- * before `render()` would throw — without it, an early update could strip
- * managed frontmatter to the still-empty compiled fields.
+ * `commitFrontmatter`, which reads `template.frontmatterFields` — without it,
+ * an early update could strip managed frontmatter to the still-empty compiled
+ * fields.
  */
 async function contextForIndexedKey(
   ctx: NoteFeatureDeps,
@@ -1653,25 +1663,21 @@ async function contextForIndexedKey(
   return { context, noteImport };
 }
 
-async function refreshFrontmatter(
+/** Write one already-prepared Managed Frontmatter patch into the note's
+ *  Properties block. Kept apart from {@link prepareFrontmatter} so a caller
+ *  runs every render that can raise before this, its first write. */
+async function commitFrontmatter(
   ctx: OpsContext,
   file: TFile,
   input: {
     context: NoteTemplateContext;
     itemKey: string;
     profile: ResolvedProfile;
-    document: ResolvedLiteratureNoteTemplate | undefined;
+    prepared: PreparedManagedFrontmatter;
   },
-): Promise<ManagedFrontmatterRefusalDiagnostic | undefined> {
-  const prepared = prepareFrontmatter({
-    context: input.context,
-    itemKey: input.itemKey,
-    document: input.document,
-    diagnosticContext: { path: file.path },
-  });
-  if ("diagnostic" in prepared) return prepared.diagnostic;
+): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
-    applyComposedFrontmatter(ctx, fm, { ...input, prepared });
+    applyComposedFrontmatter(ctx, fm, input);
   });
 }
 

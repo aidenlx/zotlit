@@ -2,15 +2,15 @@ import type { App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  activeProfileEditor,
+  activeTemplateWorkbench,
   openProfileExplorer,
 } from "@/views/note-preview/register";
-import type { ProfileEditorView } from "@/views/profile-editor/view";
+import type { TemplateWorkbenchView } from "@/views/template-workbench/view";
 
 import { openTemplateDataExplorer } from "./register";
 
 vi.mock("@/views/note-preview/register", () => ({
-  activeProfileEditor: vi.fn(),
+  activeTemplateWorkbench: vi.fn(),
   openProfileExplorer: vi.fn(async () => {}),
 }));
 vi.mock("./view", () => ({
@@ -20,8 +20,8 @@ vi.mock("./view", () => ({
 
 describe("Explorer entry point", () => {
   it("reopens fields beside the active workbench editor instead of selecting another window", async () => {
-    const editor = { leaf: { group: "native-group" } } as ProfileEditorView;
-    vi.mocked(activeProfileEditor).mockReturnValue(editor);
+    const editor = { leaf: { group: "native-group" } } as TemplateWorkbenchView;
+    vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
     const getLeavesOfType = vi.fn();
     const getRightLeaf = vi.fn();
     const app = {
@@ -35,8 +35,8 @@ describe("Explorer entry point", () => {
 });
 
 it("opens an explicit Item in an unlinked unpinned Explorer and preserves other groups", async () => {
-  const editor = {} as ProfileEditorView;
-  vi.mocked(activeProfileEditor).mockReturnValue(editor);
+  const editor = {} as TemplateWorkbenchView;
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(editor);
   const grouped = {
     group: "other-workbench",
     pinned: false,
@@ -70,7 +70,7 @@ it("opens an explicit Item in an unlinked unpinned Explorer and preserves other 
 });
 
 it("creates an explicit Explorer instead of replacing a pinned or grouped pane", async () => {
-  vi.mocked(activeProfileEditor).mockReturnValue(null);
+  vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
   const existing = {
     group: "saved-group",
     pinned: true,

@@ -17,6 +17,7 @@ import {
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
   UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
@@ -192,10 +193,15 @@ ${UPGRADER_PLUGIN_VERSION}, and this note.frontmatter-fields list:
 
 ${UPGRADER_FRONTMATTER_FIELDS.map((f) => `  ${f.key.padEnd(12)} ${f.expr}`).join("\n")}
 
-Its template folder holds these ejected slot files. Each starts from the
-shipped Liquid default and carries one visible edit:
+Its template folder holds these ejected Legacy Template Files. Each starts
+from a shipped default and carries one visible edit:
 
-${UPGRADER_LEGACY_TEMPLATES.map((t) => `${`  zotlit-${t.name}.liquid.md`.padEnd(30)}${JSON.stringify(t.find)} -> ${JSON.stringify(t.replace)}`).join("\n")}
+${UPGRADER_LEGACY_TEMPLATES.map((t) => `${`  zotlit-${t.name}.${t.language}.md`.padEnd(38)}${JSON.stringify(t.find)} -> ${JSON.stringify(t.replace)}`).join("\n")}
+
+The citation pair is mixed-language on purpose. The one-pass conversion folds
+the Liquid cite into zotlit-citation.md and renames the bare partial to
+zotlit-partial.${UPGRADER_LEGACY_PARTIAL_NAME}.md. It leaves the Eta cite2
+file in the vault and names it in its notice.
 
 On load, ZotLit migrates the settings to the current version, sets
 note.template-conversion-pending, and opens the conversion prompt.`;

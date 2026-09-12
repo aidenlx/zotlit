@@ -1,7 +1,9 @@
 // A view-owned scheduler consumes values and rejects work for superseded inputs.
+import type { CitationPreviewSelection } from "#/render/citation-examples";
+import type { PartialPreviewSelection } from "#/render/partial-preview";
 import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderDiagnostic,
   RenderIdentity,
 } from "#/render/result";
@@ -12,7 +14,7 @@ import type { PreviewMode } from "./store";
 
 import {
   failedRender,
-  profileSourceRevision,
+  templateSourceRevision,
   renderIdentity,
 } from "#/render/result";
 
@@ -23,6 +25,16 @@ export interface RenderSchedulerInput {
   /** The paper a render is shown against; `null` while the host loads one. */
   readonly snapshot: ItemSnapshot | null;
   readonly annotation?: AnnotationExample | null;
+  /**
+   * The Citation set and Variant a Citation Template render reads. A new object
+   * per choice, so a reader's pick of another example or variant is a new input.
+   */
+  readonly citation?: CitationPreviewSelection | null;
+  /**
+   * The context and Profile a Shared Partial render reads. A new object per
+   * choice, so the reader's pick of another caller is a new input.
+   */
+  readonly partial?: PartialPreviewSelection | null;
   readonly resources?: RenderResources;
   /**
    * Holds rendering while the host cannot answer for this draft — a Profile it
@@ -33,7 +45,7 @@ export interface RenderSchedulerInput {
 }
 
 export interface RenderSchedulerState<
-  R extends ProfileRenderResult = ProfileRenderResult,
+  R extends TemplateRenderResult = TemplateRenderResult,
 > {
   readonly result: R | null;
   /** Set from the moment a render starts until its result lands or is dropped. */
@@ -44,21 +56,21 @@ export interface RenderSchedulerState<
   readonly staleReason: "hold" | "demand" | "live" | null;
 }
 
-export interface RenderSchedulerOptions<R extends ProfileRenderResult> {
+export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
   /** Renders one request on the calling thread. */
   readonly render: (request: RenderRequest) => Promise<R>;
   /**
    * The host's own shape for a result this scheduler composed itself, so a
    * failure reads like every other result the host publishes.
    */
-  readonly failed: (result: ProfileRenderResult) => R;
+  readonly failed: (result: TemplateRenderResult) => R;
   readonly input: RenderSchedulerInput;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
 }
 
 export interface RenderScheduler<
-  R extends ProfileRenderResult = ProfileRenderResult,
+  R extends TemplateRenderResult = TemplateRenderResult,
 > extends Disposable {
   readonly getState: () => RenderSchedulerState<R>;
   readonly subscribe: (listener: () => void) => () => void;
@@ -84,7 +96,7 @@ function staleReasonFor(
   return input.live ? "live" : "demand";
 }
 
-export function createRenderScheduler<R extends ProfileRenderResult>({
+export function createRenderScheduler<R extends TemplateRenderResult>({
   render,
   failed,
   input: initial,
@@ -113,7 +125,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     const busy = next.busy ?? state.busy;
     const identityMismatch =
       result !== null &&
-      (result.sourceRevision !== profileSourceRevision(input.source) ||
+      (result.sourceRevision !== templateSourceRevision(input.source) ||
         (input.snapshot !== null &&
           result.snapshotRevision !== input.snapshot.revision) ||
         // A result already on screen describes the example it was rendered
@@ -121,6 +133,12 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         (input.annotation != null &&
           (result.annotationId !== input.annotation.id ||
             result.annotationRevision !== input.annotation.revision)) ||
+        (input.citation != null &&
+          (result.citationVariant !== input.citation.variant ||
+            (result.citationExample ?? null) !== input.citation.example)) ||
+        (input.partial != null &&
+          (result.partialContext !== input.partial.context ||
+            (result.partialProfile ?? null) !== input.partial.profile)) ||
         result.previewMode !== input.mode);
     const stale = input.hold === true || identityMismatch;
     const staleReason = staleReasonFor(
@@ -141,13 +159,15 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
 
   /** What a render would be asked for now, or `null` while nothing may run. */
   function nextRequest(): RenderRequest | null {
-    const { snapshot, annotation, resources, hold } = input;
+    const { snapshot, annotation, citation, partial, resources, hold } = input;
     if (closed || hold === true || snapshot === null) return null;
     return {
       mode: input.mode,
       source: input.source,
       snapshot,
       ...(annotation ? { annotation } : {}),
+      ...(citation ? { citation } : {}),
+      ...(partial ? { partial } : {}),
       ...(resources ? { resources } : {}),
     };
   }
@@ -231,6 +251,8 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         input.mode === previous.mode &&
         input.snapshot === previous.snapshot &&
         input.annotation === previous.annotation &&
+        input.citation === previous.citation &&
+        input.partial === previous.partial &&
         input.resources === previous.resources &&
         input.hold === previous.hold;
       if (sameRenderInput && input.live === previous.live) return;
@@ -258,7 +280,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
           failedRender(
             {
               previewMode: input.mode,
-              sourceRevision: profileSourceRevision(input.source),
+              sourceRevision: templateSourceRevision(input.source),
               snapshotRevision: input.snapshot?.revision ?? "",
               ...(input.annotation
                 ? {

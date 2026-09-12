@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
+  citekeysToCiteTemplateData,
   CollectionCache,
   fetchAnnotationsTemplateData,
   fetchNoteContext,
@@ -24,9 +25,9 @@ import type {
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { filenameSuffix } from "@zotlit/templates";
-import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
-import { TemplateFacade } from "@zotlit/templates/facade";
+import { filenameSuffix, inlineCitation } from "@zotlit/templates";
+import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
+import { MissingTemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
 import type {
@@ -756,6 +757,7 @@ describe("createNote", () => {
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
         renderProfileAnnotation: () => "",
+        renderCitation: () => "",
         renderFilename<T extends object>(data: T): string {
           const d = data as {
             title: string | null;
@@ -949,6 +951,7 @@ describe("createNote", () => {
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
         renderProfileAnnotation: () => "",
+        renderCitation: () => "",
         renderFilename: () => "Root",
         render: () => "body",
       },
@@ -1309,6 +1312,7 @@ describe("createNote", () => {
           frontmatterFields: [],
           getLiteratureNoteTemplate: () => undefined,
           renderProfileAnnotation: () => "",
+          renderCitation: () => "",
           renderFilename: () => {
             renderFilenameCalledBeforeSignal = true;
             return "Root";
@@ -1608,6 +1612,59 @@ describe("createNote", () => {
     expect(renderLegacy).not.toHaveBeenCalledWith("note", expect.anything());
   });
 
+  it("rejects with MissingTemplateError and writes nothing when the Profile document calls a Shared Partial the vault holds no document for", async () => {
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const item = makeCreateGateItem();
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    // The error a Profile document render raises for a call to a partial the
+    // folder holds no document for; `template/service.test.ts` proves the real
+    // TemplateService surfaces exactly this out of `renderForCreate`.
+    const document = makeDocumentTemplate();
+    document.renderForCreate.mockImplementation(() => {
+      throw new MissingTemplateError("venue-line");
+    });
+    const deps: SyncRenderDeps = {
+      app,
+      template: {
+        ...makeTemplate(),
+        getLiteratureNoteTemplate: (reference) =>
+          reference === "books.md" ? document : undefined,
+      },
+      db: makeDb(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
+      }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+
+    await expect(
+      createNoteFeature(deps).createNote(item, { profile: profileId }),
+    ).rejects.toMatchObject({
+      name: "MissingTemplateError",
+      templateName: "venue-line",
+    });
+    expect(app.vault.create).not.toHaveBeenCalled();
+  });
+
   it.each([
     { entry: { key: "scripted", js: "zt.title" }, field: "scripted" },
     { entry: { js: "({ title: zt.title })" }, field: "entry #1" },
@@ -1903,6 +1960,7 @@ describe("overwriteNote", () => {
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
         renderProfileAnnotation: () => "",
+        renderCitation: () => "",
         renderFilename: () => "",
         render: () => "New body content",
       },
@@ -1986,6 +2044,7 @@ function makeUpdateHarness(options: {
     frontmatterFields: options.frontmatterFields ?? [],
     getLiteratureNoteTemplate: () => undefined,
     renderProfileAnnotation: () => "",
+    renderCitation: () => "",
     renderFilename: () => "",
     render: <T extends object>(name: string, _data: T): string =>
       name === "content" ? renderContent() : "",
@@ -2433,6 +2492,66 @@ describe("updateNote", () => {
     expect(harness.renderContent).not.toHaveBeenCalled();
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
   });
+
+  it.each([
+    {
+      what: "update",
+      run: (deps: SyncRenderDeps) =>
+        createNoteFeature(deps).updateNote(makeFile("Books/Root.md"), {
+          indexedKey: "ABC12345",
+        }),
+      render: "renderForUpdate" as const,
+    },
+    {
+      what: "overwrite",
+      run: (deps: SyncRenderDeps) =>
+        createNoteFeature(deps).overwriteNote(
+          makeFile("Books/Root.md"),
+          "ABC12345",
+        ),
+      render: "renderForCreate" as const,
+    },
+  ])(
+    "writes neither properties nor body when an $what renders through a missing Shared Partial",
+    async ({ run, render }) => {
+      const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+      stubIndexedKeyUpdate(updateContext());
+      const original = `User prefix\n${formatManagedRegion("OLD")}\nUser suffix`;
+      const harness = makeUpdateHarness({
+        content: original,
+        frontmatter: {
+          [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+          title: "Old title",
+        },
+        settings: {
+          profiles: [{ id: profileId, label: "Books", document: "books.md" }],
+        },
+      });
+      const document = makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter([
+          { key: "title", merge: "replace", expr: "zt.title" },
+        ]),
+      });
+      document[render].mockImplementation(() => {
+        throw new MissingTemplateError("venue-line");
+      });
+      harness.deps.template.getLiteratureNoteTemplate = () => document;
+
+      await expect(run(harness.deps)).rejects.toMatchObject({
+        name: "MissingTemplateError",
+        templateName: "venue-line",
+      });
+
+      // The refusal notice says nothing was written, so neither the Properties
+      // block nor the body may carry a render that never finished.
+      expect(harness.content()).toBe(original);
+      expect(harness.frontmatter()).toEqual({
+        [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+        title: "Old title",
+      });
+      expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("uses document Managed Frontmatter in entry order and preserves other keys", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -3636,6 +3755,10 @@ describe("renderCitation", () => {
         renderProfileAnnotation: () => "",
         renderFilename: () => "",
         render,
+        renderCitation: (refs, variant) =>
+          inlineCitation(
+            render("citation", citekeysToCiteTemplateData(refs, variant)),
+          ),
       },
       db: makeDb(),
       noteIndex: {
@@ -3660,39 +3783,67 @@ describe("renderCitation", () => {
       },
     };
 
-    const result = createNoteFeature(deps).renderCitation([
-      { citationKey: "root2024" },
-    ]);
+    const result = createNoteFeature(deps).renderCitation(
+      [{ citationKey: "root2024" }],
+      "main",
+    );
 
     expect(result).toBeNull();
     expect(render).not.toHaveBeenCalled();
   });
 
-  it("renders the default cite template without a trailing line break", () => {
-    // A vault template file ends with a newline; inserting that into the
-    // editor on confirm would add a line break after the citation.
-    const result = createNoteFeature(
-      annotDeps(citeTemplate(`${defaultCite}\n`)),
-    ).renderCitation([{ citationKey: "smith2024" }]);
+  it("hands the refs and variant to the template service, verbatim both ways", () => {
+    // TemplateService owns the render and its inline normalization; this seam
+    // adds the loaded-state guard and forwards, so a citation the service
+    // renders reaches the editor unchanged.
+    const renderCitation = vi.fn(() => "[@smith2024]");
+    const feature = createNoteFeature(
+      annotDeps({ ...citationTemplate(), renderCitation }),
+    );
 
-    expect(result).toBe("[@smith2024]");
+    expect(feature.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
+      "[@smith2024]",
+    );
+    expect(renderCitation).toHaveBeenCalledWith(
+      [{ citationKey: "smith2024" }],
+      "alt",
+    );
   });
 
-  it("normalizes a multi-line cite template to inline form", () => {
-    // Citations are in-text tokens: line-break runs collapse to one space and
-    // the ends are trimmed, whatever whitespace the template renders.
-    const source =
-      "[@<%= zt.citations[0].item.citationKey %>,\n   p. 1]   \n\n";
+  it("renders the alternate variant from the same document", () => {
+    // One Citation Template answers both gestures: Shift+Enter and a trailing
+    // slash arrive as the alt variant, which the built-in source maps to an
+    // Author-in-text Citation.
     const result = createNoteFeature(
-      annotDeps(citeTemplate(source, { language: "eta" })),
-    ).renderCitation([{ citationKey: "smith2024" }]);
+      annotDeps(citationTemplate(defaultCitation)),
+    ).renderCitation([{ citationKey: "smith2024" }], "alt");
 
-    expect(result).toBe("[@smith2024, p. 1]");
+    expect(result).toBe("@smith2024");
   });
 
-  it("carries the selected item's full narrowed data through to the cite template (9.2-CSL #03)", () => {
+  it("hands the variant to a document that branches on zt.variant", () => {
+    // The variant names the gesture only: a custom document decides what each
+    // one renders, so a vault can map alt to anything it likes.
+    const feature = createNoteFeature(
+      annotDeps(
+        citationTemplate(
+          "{% if zt.variant == 'alt' %}~{{ zt.citations[0].item.citationKey }}~" +
+            "{% else %}<{{ zt.citations[0].item.citationKey }}>{% endif %}",
+        ),
+      ),
+    );
+
+    expect(feature.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
+      "<smith2024>",
+    );
+    expect(feature.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
+      "~smith2024~",
+    );
+  });
+
+  it("carries the selected item's full narrowed data through to the Citation Template (9.2-CSL #03)", () => {
     // Citation-suggest passes the selected search hit's full item alongside
-    // its citationKey; a data-driven (author-year) cite template should see
+    // its citationKey; a data-driven (author-year) Citation Template should see
     // the item's title/date, not just a citekey-only stub.
     const deps: SyncRenderDeps = {
       app: makeApp(),
@@ -3703,11 +3854,10 @@ describe("renderCitation", () => {
         getLiteratureNoteTemplate: () => undefined,
         renderProfileAnnotation: () => "",
         renderFilename: () => "",
-        render: (_name, data) =>
-          (
-            data as { citations: { item: { title: string | null } }[] }
-          ).citations
-            .map((c) => c.item.title)
+        render: () => "",
+        renderCitation: (refs) =>
+          citekeysToCiteTemplateData(refs, "main")
+            .citations.map((c) => c.item.title)
             .join("; "),
       },
       db: makeDb(),
@@ -3740,9 +3890,10 @@ describe("renderCitation", () => {
       citationKey: "root2024",
     });
 
-    const result = createNoteFeature(deps).renderCitation([
-      { citationKey: "root2024", item },
-    ]);
+    const result = createNoteFeature(deps).renderCitation(
+      [{ citationKey: "root2024", item }],
+      "main",
+    );
 
     expect(result).toBe("Stated choice methods");
   });
@@ -3761,6 +3912,7 @@ describe("renderAnnotation", () => {
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
         renderProfileAnnotation: vi.fn(),
+        renderCitation: () => "",
         renderFilename: () => "",
         render: vi.fn(),
       },
@@ -3807,7 +3959,7 @@ describe("renderAnnotation", () => {
     app.metadataCache.getFileCache.mockReturnValue({
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
     });
-    const template = citeTemplate();
+    const template = citationTemplate();
     template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
     const deps = {
       ...annotDeps(template),
@@ -3856,7 +4008,7 @@ describe("renderAnnotation", () => {
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
     );
-    const template = citeTemplate();
+    const template = citationTemplate();
     template.renderProfileAnnotation = vi.fn(() => "DEFAULT ANNOTATION");
     const deps = annotDeps(template);
 
@@ -3887,7 +4039,7 @@ describe("renderAnnotation", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: "Deleted (Nn4Pp6Qq8Rr0)",
       },
     });
-    const template = citeTemplate();
+    const template = citationTemplate();
     template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
     const deps = {
       ...annotDeps(template),
@@ -3923,13 +4075,13 @@ describe("renderAnnotation", () => {
   });
 });
 
-/** A template service backed by the real engine, with a `cite` + optional `annotation` pair. */
-function citeTemplate(
-  citeSource = defaultCite,
+/** A template service backed by the real engine, with a `citation` + optional `annotation` pair. */
+function citationTemplate(
+  citationSource = defaultCitation,
   opts?: { annotation?: string; language?: TemplateLanguage },
 ): SyncRenderDeps["template"] {
   const facade = new TemplateFacade();
-  facade.define("cite", citeSource, opts?.language ?? "liquid");
+  facade.define("citation", citationSource, opts?.language ?? "liquid");
   if (opts?.annotation !== undefined) {
     facade.define("annotation", opts.annotation, "eta");
   }
@@ -3943,6 +4095,10 @@ function citeTemplate(
     renderFilename: () => "",
     render: <T extends object>(name: string, data: T): string =>
       facade.render(name, data),
+    renderCitation: (refs, variant) =>
+      inlineCitation(
+        facade.render("citation", citekeysToCiteTemplateData(refs, variant)),
+      ),
   };
 }
 
@@ -4002,13 +4158,13 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
     );
     const result = render(
       annotDeps(
-        citeTemplate(defaultCite, { annotation: "<%= zt.citation %>" }),
+        citationTemplate(defaultCitation, { annotation: "<%= zt.citation %>" }),
       ),
     );
     expect(result).toContain("[@Hensher2011, {p. 62}]");
   });
 
-  it("routes the annotation citation through the user's cite template (locator = page label)", () => {
+  it("routes the annotation citation through the user's Citation Template (locator = page label)", () => {
     vi.mocked(getAnnotationsByItemId).mockReturnValue([
       { key: "ANN1" } as never,
     ]);
@@ -4019,7 +4175,7 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
       "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
     const result = render(
       annotDeps(
-        citeTemplate(cite, {
+        citationTemplate(cite, {
           annotation: "<%= zt.citation %>",
           language: "eta",
         }),
@@ -4037,7 +4193,7 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
     );
     const result = render(
       annotDeps(
-        citeTemplate(defaultCite, {
+        citationTemplate(defaultCitation, {
           annotation: "<%= JSON.stringify(zt.citation) %>",
         }),
       ),
@@ -4060,12 +4216,12 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([["ANN1", annData("Hensher2011", "62")]]),
     );
-    expect(renderCite(annotDeps(citeTemplate()))).toContain(
+    expect(renderCite(annotDeps(citationTemplate()))).toContain(
       "[@Hensher2011, {p. 62}]",
     );
   });
 
-  it("routes the copied citation through the user's cite template (locator = page label)", () => {
+  it("routes the copied citation through the user's Citation Template (locator = page label)", () => {
     vi.mocked(getAnnotationsByItemId).mockReturnValue([
       { key: "ANN1" } as never,
     ]);
@@ -4075,7 +4231,7 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
     const cite =
       "<%= zt.citations.map(c => `{{${c.item.citationKey}|${c.locator}}}`).join('') %>";
     expect(
-      renderCite(annotDeps(citeTemplate(cite, { language: "eta" }))),
+      renderCite(annotDeps(citationTemplate(cite, { language: "eta" }))),
     ).toContain("{{Hensher2011|62}}");
   });
 
@@ -4086,19 +4242,33 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([["ANN1", annData(null, "62")]]),
     );
-    expect(renderCite(annotDeps(citeTemplate()))).toBeNull();
+    expect(renderCite(annotDeps(citationTemplate()))).toBeNull();
   });
 
-  it("normalizes the copied citation to inline form", () => {
-    // A vault cite template's trailing newline must not reach the clipboard.
+  it("asks the template service for the main variant with the page as locator", () => {
+    // The Citation Template owns the text and its inline normalization; this
+    // path decides only which refs and which variant render, and copies what
+    // comes back.
     vi.mocked(getAnnotationsByItemId).mockReturnValue([
       { key: "ANN1" } as never,
     ]);
     vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
       new Map([["ANN1", annData("Hensher2011", "62")]]),
     );
-    expect(renderCite(annotDeps(citeTemplate(`${defaultCite}\n`)))).toBe(
-      "[@Hensher2011, {p. 62}]",
+    const renderCitation = vi.fn(() => "[@Hensher2011, {p. 62}]");
+
+    expect(
+      renderCite(annotDeps({ ...citationTemplate(), renderCitation })),
+    ).toBe("[@Hensher2011, {p. 62}]");
+    expect(renderCitation).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          citationKey: "Hensher2011",
+          label: "page",
+          locator: "62",
+        }),
+      ],
+      "main",
     );
   });
 });
@@ -4124,6 +4294,7 @@ function makeTemplate() {
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => undefined,
     renderProfileAnnotation: () => "",
+    renderCitation: () => "",
     renderFilename<T extends object>(data: T): string {
       const { title, key } = data as { title: string | null; key: string };
       return title ?? key;

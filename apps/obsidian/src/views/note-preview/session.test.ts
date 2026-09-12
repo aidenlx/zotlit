@@ -11,7 +11,7 @@ import {
   createWorkbenchStore,
 } from "@zotlit/workbench/ui";
 
-import { SAMPLE_ITEM_CHOICES } from "@/views/profile-editor/selection-data";
+import { SAMPLE_ITEM_CHOICES } from "@/views/template-workbench/selection-data";
 
 import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
 import { nativeResult } from "./render";
@@ -20,7 +20,7 @@ import { NativePreviewSession } from "./session";
 
 afterEach(() => vi.useRealTimers());
 
-/** The scheduler the Profile Editor holds, with the renders it drove recorded. */
+/** The scheduler the Template Workbench holds, with the renders it drove recorded. */
 function scheduling(live: boolean) {
   const render = vi.fn((request: RenderRequest) =>
     Promise.resolve<NativeRenderResult>(

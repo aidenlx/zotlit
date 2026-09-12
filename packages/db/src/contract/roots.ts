@@ -5,18 +5,23 @@
  * changes. Each `zotlit:*` command namespace versions its own CLI Contract
  * beside its envelope, so a bump here says nothing about an answer's shape.
  */
-export const CONTRACT_VERSION = 2;
+export const CONTRACT_VERSION = 3;
 
 /** Every emitted `zt` data root, in the order the contract documents them. */
-export const CONTRACT_ROOTS = ["note", "annotation", "filename"] as const;
+export const CONTRACT_ROOTS = [
+  "note",
+  "annotation",
+  "filename",
+  "citation",
+] as const;
 
 /** A `zt` data root a Template renders against. */
 export type ContractRoot = (typeof CONTRACT_ROOTS)[number];
 
 /**
- * The contract root each Template name's `zt` resolves to. `cite` / `cite2` are
- * absent: citation-scoped data needs synthesized Citation Items and Locators,
- * which is a follow-up.
+ * The contract root each Legacy Template File slot's `zt` resolves to. The
+ * `citation` root is absent: the Citation Template is a Template Document, not
+ * a slot, and callers name it directly.
  */
 export const TEMPLATE_SLOT_ROOTS = {
   note: "note",

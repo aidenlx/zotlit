@@ -9,18 +9,18 @@ import type {
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { runProfileEditorAction } from "@/views/profile-editor/actions";
-import {
-  PROFILE_EDITOR_VIEW_TYPE,
-  ProfileEditorView,
-} from "@/views/profile-editor/view";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
+import { runTemplateWorkbenchAction } from "@/views/template-workbench/actions";
+import {
+  TEMPLATE_WORKBENCH_VIEW_TYPE,
+  TemplateWorkbenchView,
+} from "@/views/template-workbench/view";
 
 import type { PreviewViewDeps } from "./view";
 import { NotePreviewView, NOTE_PREVIEW_VIEW_TYPE } from "./view";
 
 const logger = getLogger(["views", "workbench-association"]);
-const openings = new WeakMap<ProfileEditorView, Promise<void>>();
+const openings = new WeakMap<TemplateWorkbenchView, Promise<void>>();
 
 /**
  * Native history gates ItemViews on navigation, while Outline needs these panes
@@ -71,37 +71,37 @@ export function onCompanionStateRestored(
 }
 
 /** Native group order wins; unlinked panes follow Outline's app-wide file context. */
-export function activeProfileEditor(
+export function activeTemplateWorkbench(
   app: App,
   leaf: WorkspaceLeaf | null = app.workspace.activeLeaf,
-  retained: ProfileEditorView | null = null,
-): ProfileEditorView | null {
-  if (leaf?.view instanceof ProfileEditorView) return leaf.view;
+  retained: TemplateWorkbenchView | null = null,
+): TemplateWorkbenchView | null {
+  if (leaf?.view instanceof TemplateWorkbenchView) return leaf.view;
   if (leaf?.group) {
     const editor = app.workspace
       .getGroupLeaves(leaf.group)
-      .find((peer) => peer.view instanceof ProfileEditorView)?.view;
-    return editor instanceof ProfileEditorView ? editor : null;
+      .find((peer) => peer.view instanceof TemplateWorkbenchView)?.view;
+    return editor instanceof TemplateWorkbenchView ? editor : null;
   }
-  if (leaf?.pinned && leaf.view.getViewType() !== PROFILE_EDITOR_VIEW_TYPE)
+  if (leaf?.pinned && leaf.view.getViewType() !== TEMPLATE_WORKBENCH_VIEW_TYPE)
     return retained &&
       app.workspace
-        .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
+        .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
         .some((peer) => peer.view === retained)
       ? retained
       : null;
   const view = app.workspace.getActiveFileView();
-  return view instanceof ProfileEditorView ? view : null;
+  return view instanceof TemplateWorkbenchView ? view : null;
 }
 
 /** Each caller owns its native subscriptions, including peer layout changes. */
-export function subscribeActiveProfileEditor(
+export function subscribeActiveTemplateWorkbench(
   app: App,
-  listener: (editor: ProfileEditorView | null) => void,
+  listener: (editor: TemplateWorkbenchView | null) => void,
   leaf?: WorkspaceLeaf,
 ): () => void {
   using cleanup = new DisposableStack();
-  let editor: ProfileEditorView | null = null;
+  let editor: TemplateWorkbenchView | null = null;
   let ready = false;
   let initialized = false;
   let pinned = leaf?.pinned;
@@ -111,7 +111,7 @@ export function subscribeActiveProfileEditor(
   });
   const refresh = () => {
     if (disposed || !ready) return;
-    const next = activeProfileEditor(app, leaf, editor);
+    const next = activeTemplateWorkbench(app, leaf, editor);
     const unpinned = pinned && !leaf?.pinned;
     pinned = leaf?.pinned;
     if (initialized && next === editor && !unpinned) return;
@@ -160,13 +160,13 @@ export function registerNotePreview(
   );
   plugin.addCommand({
     id: "open-template-workbench",
-    name: m.profile_editor_open_workbench(),
+    name: m.template_workbench_open_layout(),
     checkCallback(checking) {
-      const editor = activeProfileEditor(app);
+      const editor = activeTemplateWorkbench(app);
       if (!editor) return false;
       if (!checking)
-        void runProfileEditorAction("open-workbench", () =>
-          openProfileWorkbench(app, editor),
+        void runTemplateWorkbenchAction("open-workbench", () =>
+          openWorkbenchLayout(app, editor),
         );
       return true;
     },
@@ -175,10 +175,10 @@ export function registerNotePreview(
     id: "open-note-preview",
     name: m.profile_preview_open(),
     checkCallback(checking) {
-      const editor = activeProfileEditor(app);
+      const editor = activeTemplateWorkbench(app);
       if (!editor) return false;
       if (!checking)
-        void runProfileEditorAction("open-preview", () =>
+        void runTemplateWorkbenchAction("open-preview", () =>
           openNotePreview(app, editor),
         );
       return true;
@@ -191,11 +191,11 @@ const workspaceOpenings = new WeakMap<App, Promise<void>>();
 type ProfileSource = { file: string | null; defaultProfile: boolean };
 
 /** Resolve restored leaves before deciding whether this Profile already has a workbench. */
-export async function findProfileWorkbench(
+export async function findWorkbenchLayout(
   app: App,
   source: ProfileSource,
-  requesting?: ProfileEditorView,
-): Promise<ProfileEditorView | null> {
+  requesting?: TemplateWorkbenchView,
+): Promise<TemplateWorkbenchView | null> {
   if (
     requesting?.leaf.group &&
     requesting.leaf.getContainer() !== app.workspace.rootSplit &&
@@ -210,9 +210,11 @@ export async function findProfileWorkbench(
     )
   )
     return requesting;
-  for (const leaf of app.workspace.getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)) {
+  for (const leaf of app.workspace.getLeavesOfType(
+    TEMPLATE_WORKBENCH_VIEW_TYPE,
+  )) {
     if (leaf.getContainer() === app.workspace.rootSplit) continue;
-    if (!(leaf.view instanceof ProfileEditorView)) {
+    if (!(leaf.view instanceof TemplateWorkbenchView)) {
       const state = leaf.view.getState();
       if (
         state.file !== source.file &&
@@ -222,7 +224,7 @@ export async function findProfileWorkbench(
       await leaf.loadIfDeferred();
     }
     const candidate = leaf.view;
-    if (!(candidate instanceof ProfileEditorView)) continue;
+    if (!(candidate instanceof TemplateWorkbenchView)) continue;
     if (
       candidate !== requesting &&
       !(source.defaultProfile && candidate.isDefaultProfile) &&
@@ -235,9 +237,9 @@ export async function findProfileWorkbench(
 }
 
 /** Reveal the Profile's workbench, or move this editor into a dedicated window. */
-export function openProfileWorkbench(
+export function openWorkbenchLayout(
   app: App,
-  editor: ProfileEditorView,
+  editor: TemplateWorkbenchView,
 ): Promise<void> {
   const pending = openings.get(editor);
   if (pending) return pending;
@@ -245,7 +247,7 @@ export function openProfileWorkbench(
     .catch(() => {})
     .then(async () => {
       const { workspace } = app;
-      const existing = await findProfileWorkbench(
+      const existing = await findWorkbenchLayout(
         app,
         {
           file: editor.file?.path ?? null,
@@ -256,7 +258,7 @@ export function openProfileWorkbench(
       if (existing && existing !== editor) {
         if (editor.file && !existing.file && existing.isDefaultProfile) {
           await existing.leaf.setViewState({
-            type: PROFILE_EDITOR_VIEW_TYPE,
+            type: TEMPLATE_WORKBENCH_VIEW_TYPE,
             state: {
               ...existing.getState(),
               file: editor.file.path,
@@ -269,7 +271,7 @@ export function openProfileWorkbench(
       }
       const container = editor.leaf.getContainer();
       const otherEditor = workspace
-        .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
+        .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
         .some(
           (leaf) => leaf !== editor.leaf && leaf.getContainer() === container,
         );
@@ -310,14 +312,14 @@ export function openProfileWorkbench(
 
 async function revealWorkbench(
   app: App,
-  editor: ProfileEditorView,
+  editor: TemplateWorkbenchView,
 ): Promise<void> {
   await app.workspace.revealLeaf(editor.leaf);
   app.workspace.setActiveLeaf(editor.leaf, { focus: true });
   editor.leaf.getContainer().focus();
 }
 
-function hasWorkbenchPanes(app: App, editor: ProfileEditorView): boolean {
+function hasWorkbenchPanes(app: App, editor: TemplateWorkbenchView): boolean {
   const container = editor.leaf.getContainer();
   return [EXPLORER_VIEW_TYPE, NOTE_PREVIEW_VIEW_TYPE].some((type) =>
     app.workspace.getLeavesOfType(type).some((leaf) => {
@@ -340,7 +342,7 @@ function hasWorkbenchPanes(app: App, editor: ProfileEditorView): boolean {
 /** Reopen the result beside its editor without opening the other workbench pane. */
 export async function openNotePreview(
   app: App,
-  editor: ProfileEditorView,
+  editor: TemplateWorkbenchView,
 ): Promise<void> {
   const leaf = await openCompanion(app, editor, NOTE_PREVIEW_VIEW_TYPE);
   await app.workspace.revealLeaf(leaf);
@@ -350,7 +352,7 @@ export async function openNotePreview(
 /** Reopen the fields in the same window as the authoring session. */
 export async function openProfileExplorer(
   app: App,
-  editor: ProfileEditorView,
+  editor: TemplateWorkbenchView,
 ): Promise<void> {
   const leaf = await openCompanion(app, editor, EXPLORER_VIEW_TYPE);
   await app.workspace.revealLeaf(leaf);
@@ -359,7 +361,7 @@ export async function openProfileExplorer(
 
 async function openCompanion(
   app: App,
-  editor: ProfileEditorView,
+  editor: TemplateWorkbenchView,
   type: typeof EXPLORER_VIEW_TYPE | typeof NOTE_PREVIEW_VIEW_TYPE,
 ): Promise<WorkspaceLeaf> {
   const { workspace } = app;

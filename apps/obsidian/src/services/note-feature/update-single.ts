@@ -8,6 +8,7 @@ import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
+import { missingPartialNotice } from "@/lib/workbench-recovery";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
@@ -92,14 +93,17 @@ export function updateNoteToast(
 ): {
   loading: string;
   success: (result: UpdateResult) => string | DocumentFragment;
-  error: (_msg: string, e: unknown) => string;
+  error: (_msg: string, e: unknown) => string | DocumentFragment;
 } {
   const diagnosticContent = (diagnostic: NoteOperationDiagnostic) =>
     options.app
       ? noteOperationDiagnosticContent(options.app, diagnostic)
       : noteOperationDiagnosticNotice(diagnostic);
-  const error = (_msg: string, e: unknown): string =>
-    e instanceof InertTemplateError ? e.message : m.notice_update_note_failed();
+  const error = (_msg: string, e: unknown): string | DocumentFragment =>
+    missingPartialNotice(e, options) ??
+    (e instanceof InertTemplateError
+      ? e.message
+      : m.notice_update_note_failed());
   if (scope === "metadata") {
     return {
       loading: m.notice_updating_note_metadata(),
@@ -173,9 +177,10 @@ export async function createNoteTaskWithToast(
       loading: m.notice_creating_note(),
       success: (result) => createNoteSuccessNotice(result, options),
       error: (_msg, e) =>
-        e instanceof EmptyFilenameError || e instanceof InertTemplateError
+        missingPartialNotice(e, options) ??
+        (e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message
-          : m.notice_create_note_failed(),
+          : m.notice_create_note_failed()),
       swallowError: false,
     });
     return result.outcome === "created" ? result.file : null;

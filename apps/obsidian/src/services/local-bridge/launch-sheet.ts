@@ -48,7 +48,7 @@ export function createLaunchSheet(app: App): ConfirmLaunch {
       text.createDiv({
         text:
           value === "web"
-            ? m.profile_editor_web_open()
+            ? m.template_workbench_web_open()
             : m.modal_workbench_launch_native(),
       });
       text.createDiv({

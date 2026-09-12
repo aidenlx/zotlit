@@ -7,13 +7,14 @@ import {
   sentenceCase,
   visibleSectionIds,
 } from "./explorer-sections";
+import type { TemplateRoot } from "./store";
 import { m } from "./test-messages";
 
 import { buildDisplayTree } from "#/explorer/index";
 
 const nodesOf = (data: Record<string, unknown>) =>
   buildDisplayTree(data, { expanded: new Set() });
-const reader = (root: "note" | "annotation" | "filename", locale = "en") => ({
+const reader = (root: TemplateRoot, locale = "en") => ({
   m,
   root,
   locale,
@@ -129,6 +130,35 @@ describe("explorerSections", () => {
       "record",
     ]);
     expect(sections[1]?.rows[0]?.label).toBe(m.workbench_field_color_hex());
+  });
+
+  it("gives the citation root one Common section over its three fields", () => {
+    const citation = {
+      item: { citationKey: "smith2020" },
+      locator: "12-14",
+      label: "page",
+      labelShort: "p.",
+      suppressAuthor: false,
+      prefix: null,
+      suffix: null,
+    };
+    const sections = explorerSections(
+      nodesOf({
+        variant: "main",
+        items: [citation.item],
+        citations: [citation],
+      }),
+      reader("citation"),
+    );
+    // A Citation Item's own properties and a cited item's fields sit under
+    // `citations` and `items`; the taxonomy names top-level fields, so the
+    // reader reaches both by expanding those two rows.
+    expect(
+      sections.map((section) => [
+        section.id,
+        section.rows.map((row) => row.node.key),
+      ]),
+    ).toEqual([["common", ["variant", "citations", "items"]]]);
   });
 
   it("tells a host which sections this data shows", () => {

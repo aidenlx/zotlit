@@ -1,6 +1,7 @@
 export { MatchPane } from "./match";
 // The Workbench UI: the headless component tree both the web Template
-// Workbench and the Obsidian Profile Editor mount over one Profile document
+// Workbench and the Obsidian Template Workbench View mount over one Template
+// Document
 // (ADR 0044). It renders structure and behaviour; the host supplies the look
 // through `WorkbenchThemeProvider` and its popups through
 // `WorkbenchHostProvider`, and each editor instance keeps its view state in
@@ -41,7 +42,7 @@ export type {
   WorkbenchSuggesterOption,
   WorkbenchSuggesterRequest,
 } from "./host";
-export { diagnosticText, problemText } from "./problems";
+export { diagnosticText, problemAction, problemText } from "./problems";
 export type { ProblemText } from "./problems";
 export { ProblemsFooter, problemWhere } from "./problems-footer";
 export { createRenderScheduler } from "./scheduler";
@@ -61,8 +62,10 @@ export type {
   WorkbenchViewActions,
   WorkbenchViewState,
 } from "./store";
+export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
+export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
-export { TABS, tabLabel, tabLede } from "./tabs";
+export { TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export type { WorkbenchTab } from "./tabs";
 export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
 export type {
@@ -76,6 +79,8 @@ export type {
 
 export { NotePane } from "./note-pane";
 export type { NotePaneProps } from "./note-pane";
+export { usePartialBoxes } from "./partial-boxes";
+export type { PartialBoxes, PartialPlaceholderHost } from "./partial-boxes";
 export { SliceEditor } from "./slice-editor";
 export type {
   SliceEditorProps,
@@ -94,7 +99,11 @@ export {
   ResultHeader,
   ResultRegion,
 } from "./result-column";
-export type { ResultBodyProps, ResultColumnProps } from "./result-column";
+export type {
+  ResultBodyProps,
+  ResultColumnProps,
+  ResultMode,
+} from "./result-column";
 export {
   PropertyList,
   PropertyValue,

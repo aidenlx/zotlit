@@ -32,14 +32,32 @@ _Avoid_: multi-field entry, mapping entry, extra slot
 ### Templates
 
 **Template**:
-A template file in the vault's template folder defining Markdown output — `zotlit-<name>.liquid.md` (Liquid, the default language), or `zotlit-<name>.eta.md` when JavaScript Templates are enabled. The extension names the rendering language; when both files exist for one name, the Liquid file wins and the Eta file is flagged as shadowed. Falls back to the embedded defaults (Liquid only) when no vault file exists. A Template changes language by replacing its file with the other extension's edition — content is never converted between languages. Templates include each other by name, not by file, so one set may mix languages. Named templates:
-- `note` — full Literature Note body on **create** and **overwrite**
-- `content` — Managed Region body on **update** (the rest of the note is preserved)
-- `annotation` — single annotation rendering (drag-insert and optional Annotation Paragraph subsuming); superseded by the Annotation Section
-- `cite` / `cite2` — primary / secondary in-text citation format
-- `filename` — a new Literature Note's filename (see Filename Template)
-
+The source a Template Document holds, written in one rendering language — Liquid by default, or Eta when JavaScript Templates are enabled — and rendered with `zt` data to produce Markdown output. Templates call each other by name, not by file, so a set may mix languages. A Template changes language by replacing its source with the other language's edition; content is never converted between languages.
 _Avoid_: format, layout, schema
+
+**Legacy Template File** _(2.1.x)_:
+A per-slot file `zotlit-<name>.liquid.md` or `zotlit-<name>.eta.md` from the 2.1.x format: the slots `note`, `content`, `annotation`, `filename`, `cite`, and `cite2`, plus any non-canonical name that served as a partial. The one-shot converter folds the note slots into the default Profile document, folds `cite` and `cite2` into the Citation Template, and renames each partial file. The term exists for the converter and its prompt alone.
+_Avoid_: template (bare, for the retired shape), slot file (in UI copy)
+
+**Template Document**:
+Any file in the template folder that the Template Workbench edits: a Profile document, the Citation Template, or a Shared Partial. The filename prefix names the kind; a document carries an optional manifest and one source in one rendering language. One editor view opens every kind; the kind picks the tabs and the preview's root data.
+_Avoid_: template file (the retired per-slot files), slot
+
+**Citation Template**:
+The one vault-global Template Document, `zotlit-citation.md`, that renders every in-text Citation: the citation suggester's insert, and an annotation's `zt.citation`. It receives the Citation Variant and renders both variants from one source. User-facing copy calls it **Citation text**.
+_Avoid_: cite template, cite2, alternate citation template (a variant, not a second template), citation format
+
+**Citation Variant**:
+The gesture a Citation was requested with, handed to the Citation Template as an enum: **main** (Enter) or **alt** (Shift+Enter, or a trailing `/` in the suggester query). The variant names the gesture only; the Citation Template decides what each variant renders. User-facing copy says **main citation** and **alternate citation**.
+_Avoid_: secondary citation, parenthetical / author-in-text (one possible mapping, not the variant), alt flag (it is an enum)
+
+**Shared Partial**:
+A vault-global Template Document, `zotlit-partial.<name>.md`, that any template renders by name. Partials live in one flat namespace; a Profile, the Citation Template, or another partial calls one with a render or include tag. A partial has no root data of its own: it renders with the data of the template that calls it. User-facing copy says **partial**.
+_Avoid_: snippet, block, include file, annotation partial (the Annotation Section belongs to the Profile document), bundled partial (the manifest copy is a sharing transport, not the partial)
+
+**Partial Preview Context**:
+The caller a Shared Partial is previewed as called from — Note, Annotation, or Citation — which picks the root data the partial's own editor renders, completes, and explores against. It is the reader's choice, remembered per file twice — with the workspace, which carries it back with a restored leaf, and on this device, which carries it back when the partial is closed and opened again — and it opens on Note. ADR 0055 rules out reading it off the callers: a partial nothing calls yet names no caller, and one two roots call names two. User-facing copy says **Preview as called from Note**.
+_Avoid_: partial root (a partial has no root of its own), inferred context, caller detection
 
 **Literature Note Template**:
 The single authoring object controlling what Literature Notes look like: one document per Literature Note Profile with a manifest, a note source with an optional Managed Block, and a required final Annotation Section. Both sources use one rendering language and may render shared partials by name; this document supersedes the `note`/`content` Template pair.
@@ -141,7 +159,7 @@ The `filename` Template, evaluated to determine a new Literature Note's filename
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
 **Template Workbench**:
-The workflow for building and testing a Literature Note Profile's template document. Three surfaces serve it: the web Workbench, the Template Workbench CLI, and the Profile Editor. The term names the activity, not one surface.
+The workflow for building and testing a Template Document: a Profile document, the Citation Template, or a Shared Partial. Three surfaces serve it: the web Workbench (Profile documents only), the Template Workbench CLI, and the Template Workbench View. The term names the activity, not one surface.
 _Avoid_: workbench (bare, too vague)
 
 **Template Workbench CLI** _(Obsidian)_:
@@ -178,20 +196,24 @@ The Template Data Explorer re-anchored at a single Annotation, exactly what the 
 The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
 
-**Profile Editor** _(Obsidian)_:
-The main-area view that edits one Profile document with the Workbench UI: the same tabs, panes, and one undo history as the web Workbench, over the vault file, saved the way Obsidian saves any note. The native Markdown view keeps working on the same file; the two are one click apart.
-_Avoid_: native Workbench, template editor, profile view, Obsidian Workbench
+**Template Workbench View** _(Obsidian)_:
+The main-area view that edits one Template Document with the Workbench UI, over the vault file, saved the way Obsidian saves any note. For a Profile document it shows the same tabs, panes, and one undo history as the web Workbench; for the Citation Template or a Shared Partial it shows one editor with no Basic and Source modes, and the preview follows the document's kind. The native Markdown view keeps working on the same file; the two are one click apart. Its tab title is the document's name and kind.
+_Avoid_: Profile Editor (the retired name, from when the view opened Profile documents alone), native Workbench, template editor, profile view, Obsidian Workbench
+
+**Partial Placeholder**:
+The compact inline chip that the Workbench's Basic mode shows in place of a render or include call with a plain quoted partial name: the name, a short argument summary, a preview arrow, and an Edit partial action. The chip inherits the data of the slice it sits in. A call whose partial is missing shows the problem on the chip with Create and Pick actions. The Annotation placeholder is the same shape for the Annotation Section call.
+_Avoid_: partial chip, partial widget, inline partial (the source is unchanged beneath the chip)
 
 **Template Hover** _(Obsidian)_:
-The Profile Editor's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token without closing, swaps its content and anchor once the pointer has rested on the next token for that same delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
+The Template Workbench View's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token without closing, swaps its content and anchor once the pointer has rested on the next token for that same delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
 _Avoid_: hover card (the Citation Popover's retired alias), template-editor hover, token tooltip
 
 **Note Preview** _(Obsidian)_:
-The companion view that shows what the Profile Editor's document produces for the selected Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It follows its natively linked editor, or the active editor when unlinked and unpinned, like Outline.
+The companion view that shows what the Template Workbench View's document produces for the selected Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It follows its natively linked editor, or the active editor when unlinked and unpinned, like Outline.
 _Avoid_: template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
 
 **Workbench UI**:
-The shared, headless component layer that both the web Workbench and the Profile Editor mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.
+The shared, headless component layer that both the web Workbench and the Template Workbench View mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.
 _Avoid_: shared components (too vague), design system (the hosts own their look), Workbench shell (the host's layout)
 
 **Render Scheduler**:
@@ -392,7 +414,7 @@ A pinpoint reference within a cited work (CSL locator), e.g. a page number, with
 ### Citation insertion
 
 **Citation Suggester** _(Obsidian)_:
-The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — primary format by default; a trailing `/` in the query or Shift+Enter selects the secondary format. It remains available independently of the Document Citation Set and In-text Citation Rendering. Distinct from the command-palette insert modal.
+The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — the **main** Citation Variant by default; a trailing `/` in the query or Shift+Enter asks for **alt**. It remains available independently of the Document Citation Set and In-text Citation Rendering. Distinct from the command-palette insert modal.
 _Avoid_: autocomplete, citation picker, editor suggester (names the mechanism, not the feature)
 
 **Bracket Trigger**:

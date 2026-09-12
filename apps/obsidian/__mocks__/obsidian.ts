@@ -1175,6 +1175,12 @@ function inputElStub(): HTMLInputElement {
       input.validationMessage = message;
     },
     reportValidity: () => !input.validationMessage,
+    // A dialog wires its own key handling and takes focus; a test drives the
+    // component through `type` instead, so both stand in as no-ops.
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    focus: () => {},
+    select: () => {},
   };
   return input as unknown as HTMLInputElement;
 }
