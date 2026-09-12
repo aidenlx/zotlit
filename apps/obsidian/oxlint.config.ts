@@ -4,8 +4,10 @@ import baseConfig from "@zotlit/config/oxlint";
 
 export default defineConfig({
   extends: [baseConfig],
+  jsPlugins: ["./scripts/oxlint-plugin-popout-windows.ts"],
   rules: {
     "no-console": "error",
+    "zotlit-obsidian/no-cross-window-instanceof": "error",
     // Repeats the base pattern: a rule set here replaces the base entry.
     "no-restricted-imports": [
       "error",
@@ -47,6 +49,20 @@ export default defineConfig({
     {
       // The one module that wraps Obsidian's popover itself.
       files: ["src/lib/popout-aware-hover-popover.ts"],
+      rules: {
+        "no-restricted-imports": "off",
+      },
+    },
+    {
+      // This stand-in implements the runtime helper that the rule requires.
+      files: ["vitest.setup.js"],
+      rules: {
+        "zotlit-obsidian/no-cross-window-instanceof": "off",
+      },
+    },
+    {
+      // The rule test reaches the package-local Oxlint module in scripts/.
+      files: ["src/lint/popout-windows.test.ts"],
       rules: {
         "no-restricted-imports": "off",
       },

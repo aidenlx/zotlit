@@ -1228,9 +1228,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     );
   }
   #history(event: KeyboardEvent, redo: boolean): boolean | void {
-    const target = event.target;
+    const target = event.target as Node | null;
     if (
-      target instanceof HTMLElement &&
+      target?.instanceOf(HTMLElement) &&
       target.closest("input, textarea, [contenteditable], .cm-editor")
     )
       return;
