@@ -97,6 +97,35 @@ function refusedCitationData(chain: readonly Error[]): boolean {
 }
 
 /**
+ * What the engine itself said one thrown failure was, as the fact two attempts
+ * are told apart by. A render path that tries one part of a document after
+ * another reads this to report one fault once: the template the engine could
+ * not resolve, or the place it stopped inside the template it named. Undefined
+ * where the engine named neither, which leaves two such failures separate —
+ * equal wording is not equal cause, so nothing here reads a message.
+ */
+export function renderFailureCause(
+  error: unknown,
+): RenderFailureCause | undefined {
+  const chain = errorChain(error);
+  const missing = chain.find(
+    (link): link is MissingTemplateError =>
+      link instanceof MissingTemplateError,
+  );
+  if (missing) return { missing: missing.templateName };
+  const at = engineLocation(chain);
+  return at ? { at } : undefined;
+}
+
+/** @see renderFailureCause */
+export interface RenderFailureCause {
+  /** The template the engine could not resolve at all. */
+  readonly missing?: string;
+  /** Where it stopped in the template it named. */
+  readonly at?: RenderEngineLocation;
+}
+
+/**
  * Where the engine said it happened. liquidjs carries the token it raised on,
  * whose file is the registered name the source was parsed under; the facade's
  * own {@link TemplateError} carries that name for a failure inside a named

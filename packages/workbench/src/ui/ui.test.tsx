@@ -521,6 +521,134 @@ describe("the Problems area", () => {
     expect(area.textContent).toContain(m.workbench_problems_location_unknown());
   });
 
+  it("reads repeated occurrences as one problem and equal words at two targets as two", () => {
+    // One style the citation engine refused, reported by the note's own
+    // citations and again by the annotation's: one cause, one repair target,
+    // one explanation, and the place each occurrence was reported from.
+    const styleFailure = {
+      code: "citation-style-error",
+      params: { styleId: "numeric" },
+      message: "The citation style could not be used.",
+      part: "render",
+    } as const;
+    // Two entries failing in the very same words are two problems: the words
+    // establish nothing, and each entry is repaired on its own row.
+    const property = (position: number, key: string) =>
+      ({
+        code: "property-error",
+        params: { key },
+        message: "Cannot read properties of undefined",
+        part: "properties",
+        position,
+      }) as const;
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses(
+          [],
+          [
+            { ...styleFailure, engine: { template: "paper:body", line: 3 } },
+            {
+              ...styleFailure,
+              engine: { template: "paper:annotation", line: 2 },
+            },
+            property(1, "title"),
+            property(2, "tags"),
+          ],
+        )}
+        onOpen={() => {}}
+        open
+      />,
+    );
+    const { ui } = mounted;
+    render(ui);
+
+    const area = screen.getByRole("region", {
+      name: m.workbench_problems_heading(),
+    });
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 3 }),
+    );
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual([
+      m.workbench_problems_object_style({ styleId: "numeric" }),
+      m.workbench_problems_object_property({ key: "title" }),
+      m.workbench_problems_object_property({ key: "tags" }),
+    ]);
+    // The grouped occurrences keep the places they were each reported from.
+    expect(area.textContent).toContain(
+      m.workbench_problems_engine_source_line({
+        template: "paper:body",
+        line: 3,
+      }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problems_engine_source_line({
+        template: "paper:annotation",
+        line: 2,
+      }),
+    );
+  });
+
+  it("holds the selected problem through a check and offers Next problem once it goes", () => {
+    const remaining = {
+      code: "render-error",
+      message: "Later",
+      part: "render",
+    } as const;
+    function Harness(): ReactNode {
+      const [repaired, setRepaired] = useState(false);
+      const problems = useWorkbenchProblems({
+        diagnoses: workbenchDiagnoses(
+          [],
+          repaired
+            ? [remaining]
+            : [{ code: "render-error", message: "First" }, remaining],
+        ),
+        trigger: "automatic",
+        attempt: 1,
+      });
+      const { setOpen } = problems;
+      useEffect(() => {
+        setOpen(true);
+      }, [setOpen]);
+      return (
+        <>
+          <button type="button" onClick={() => setRepaired(true)}>
+            repair
+          </button>
+          <ProblemsFooter problems={problems} onOpen={() => {}} />
+        </>
+      );
+    }
+    using mounted = mount(<Harness />);
+    const { ui } = mounted;
+    render(ui);
+    const area = screen.getByRole("region", {
+      name: m.workbench_problems_heading(),
+    });
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 2 }),
+    );
+    expect(area.textContent).toContain("First");
+
+    fireEvent.click(screen.getByText("repair"));
+    // The repaired problem is reported as gone and the remaining one is
+    // offered, so nothing reads as success and nothing moves on its own.
+    expect(area.textContent).toContain(m.workbench_problems_resolved());
+    expect(area.textContent).not.toContain(m.workbench_problems_none());
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 1 }),
+    );
+    expect(area.textContent).not.toContain("Later");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_next() }),
+    );
+    expect(area.textContent).toContain("Later");
+    expect(area.textContent).not.toContain(m.workbench_problems_resolved());
+  });
+
   it("keeps an open area after a check finds nothing, and gives its space back on Collapse", () => {
     function Harness(): ReactNode {
       const [failing, setFailing] = useState(true);

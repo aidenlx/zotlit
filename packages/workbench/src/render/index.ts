@@ -26,6 +26,8 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
+import { renderFailureCause } from "./attribution";
+import type { RenderFailureCause } from "./attribution";
 import { engineEvidence } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
@@ -94,8 +96,8 @@ export type {
   RenderEngineLocation,
   RenderIdentity,
 } from "./result";
-export { renderFailureDiagnostic } from "./attribution";
-export type { RenderCallerSource } from "./attribution";
+export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
+export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
 export { SAMPLE_ANNOTATIONS } from "./sample-annotations";
@@ -161,6 +163,9 @@ export function renderProfile(
   let preview: string | null = null;
   let annotationCitation: string | null = null;
   let formatFailure: RenderDiagnostic | null = null;
+  // What the engine said the format failure was, kept so a note failing on the
+  // same fault is recognized by that account rather than by matching wording.
+  let formatCause: RenderFailureCause | undefined;
 
   try {
     for (const partial of supported) {
@@ -209,6 +214,7 @@ export function renderProfile(
       }
     } catch (error) {
       preview = null;
+      formatCause = renderFailureCause(error);
       formatFailure = {
         code: "render-error",
         message: errorMessage(error),
@@ -280,13 +286,16 @@ export function renderProfile(
       evidence: engineEvidence(error),
       part: isAnnotationError(error) ? "annotation" : "render",
     });
-    // Direct format renders use a profile-qualified name; note calls use the
-    // registered partial name. Match those names to report the same fault once.
-    const sameFormatFailure =
-      formatFailure?.message?.replace(
-        `file:${document.manifest.id}:annotation,`,
-        "file:annotation,",
-      ) === errorMessage(error);
+    // The note calls the same Annotation Section the format render already
+    // failed in, so the two failures are one problem when the engine's own
+    // account of each names the same cause. Direct part renders carry the
+    // Profile's qualified name and a call reaches the section under its
+    // registered one, so the qualifier is dropped before the names are read.
+    const sameFormatFailure = sameCause(
+      formatCause,
+      renderFailureCause(error),
+      document.manifest.id,
+    );
     return {
       ...failure,
       annotation: preview,
@@ -499,6 +508,31 @@ function rendered({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Whether two thrown failures are the one fault, by the engine's own account
+ * of each. `qualifier` is the Profile id its own parts are registered under, so
+ * a part reached through a call is read as the part it is. Either account
+ * missing leaves the failures separate: an unclassified one the engine
+ * attributed to nothing is grouped with nothing.
+ */
+function sameCause(
+  left: RenderFailureCause | undefined,
+  right: RenderFailureCause | undefined,
+  qualifier: string,
+): boolean {
+  if (left === undefined || right === undefined) return false;
+  if (left.missing !== undefined || right.missing !== undefined)
+    return left.missing === right.missing;
+  if (left.at === undefined || right.at === undefined) return false;
+  const part = (name: string) =>
+    name.startsWith(`${qualifier}:`) ? name.slice(qualifier.length + 1) : name;
+  return (
+    part(left.at.template) === part(right.at.template) &&
+    left.at.line === right.at.line &&
+    left.at.column === right.at.column
+  );
 }
 
 /** Liquid retains the source token when a note call fails inside the format. */

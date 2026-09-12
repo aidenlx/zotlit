@@ -43,8 +43,9 @@ export type {
   WorkbenchSuggesterRequest,
 } from "./host";
 export {
-  diagnosisEngineSource,
+  diagnosisEngineSources,
   diagnosisExplanation,
+  diagnosisLabel,
   diagnosisReport,
   diagnosisWhere,
   diagnosticText,

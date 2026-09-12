@@ -236,11 +236,14 @@ export type WorkbenchDiagnosis =
       readonly id: string;
       readonly kind: "document";
       readonly problem: WorkbenchProblem;
+      /** Every occurrence grouped under this one problem, the first included. */
+      readonly occurrences: readonly WorkbenchProblem[];
     }
   | {
       readonly id: string;
       readonly kind: "render";
       readonly diagnostic: RenderDiagnostic;
+      readonly occurrences: readonly RenderDiagnostic[];
     };
 
 /**
@@ -272,6 +275,7 @@ export function documentDiagnosis(
     id: `document:${problem.code}:${problem.slice}:${problem.range?.from ?? ""}`,
     kind: "document",
     problem,
+    occurrences: [problem],
   };
 }
 
@@ -287,23 +291,43 @@ export function renderDiagnosis(
     id: `render:${code}:${diagnosticSubject(diagnostic)}:${part ?? ""}:${position ?? ""}${repair}`,
     kind: "render",
     diagnostic,
+    occurrences: [diagnostic],
   };
 }
 
 /**
  * Every problem one Workbench has found, parser problems first: the document
  * has to parse before a render can say anything about it.
+ *
+ * Occurrences that share an identity are one problem with several places, so a
+ * partial missing from two checks is read once rather than as two competing
+ * explanations. Nothing here compares wording: two failures that say the same
+ * thing about different objects, or at different repair targets, stay two
+ * problems, and an unclassified failure the engine attributed to nothing keeps
+ * whatever the identity already tells apart.
  */
 export function workbenchDiagnoses(
   problems: readonly WorkbenchProblem[],
   diagnostics: readonly RenderDiagnostic[],
 ): WorkbenchDiagnosis[] {
-  const found = [
+  const grouped = new Map<string, WorkbenchDiagnosis>();
+  for (const found of [
     ...problems.map(documentDiagnosis),
     ...diagnostics.map(renderDiagnosis),
-  ];
-  const seen = new Set<string>();
-  return found.filter(({ id }) => !seen.has(id) && seen.add(id));
+  ]) {
+    const kept = grouped.get(found.id);
+    if (kept === undefined) {
+      grouped.set(found.id, found);
+      continue;
+    }
+    // The first occurrence stays the one the explanation is written from; the
+    // later ones add only the places this problem was found.
+    grouped.set(found.id, {
+      ...kept,
+      occurrences: [...kept.occurrences, ...found.occurrences],
+    } as WorkbenchDiagnosis);
+  }
+  return [...grouped.values()];
 }
 
 /** One problem as the Problems area reads it, top to bottom. */
@@ -455,24 +479,41 @@ export function diagnosisWhere(
 }
 
 /**
- * What the engine itself reported, as its own sentence. It names the template
- * the engine failed inside, which a call may have reached from elsewhere, so it
- * is read apart from the suggestion and from the navigation control. Null when
- * the failure named no template.
+ * What the engine itself reported, as its own sentences — one for each place
+ * the grouped occurrences were reported from, in the order the checks found
+ * them. Each names the template the engine failed inside, which a call may
+ * have reached from elsewhere, so they are read apart from the suggestion and
+ * from the navigation control. Empty when no occurrence named a template.
  */
-export function diagnosisEngineSource(
+export function diagnosisEngineSources(
   m: WorkbenchMessages,
   diagnosis: WorkbenchDiagnosis,
-): string | null {
-  if (diagnosis.kind === "document") return null;
-  const { engine } = diagnosis.diagnostic;
-  if (!engine) return null;
-  return engine.line === undefined
-    ? m.workbench_problems_engine_source({ template: engine.template })
-    : m.workbench_problems_engine_source_line({
-        template: engine.template,
-        line: engine.line,
-      });
+): string[] {
+  if (diagnosis.kind === "document") return [];
+  const said = new Set<string>();
+  for (const { engine } of diagnosis.occurrences) {
+    if (!engine) continue;
+    said.add(
+      engine.line === undefined
+        ? m.workbench_problems_engine_source({ template: engine.template })
+        : m.workbench_problems_engine_source_line({
+            template: engine.template,
+            line: engine.line,
+          }),
+    );
+  }
+  return [...said];
+}
+
+/**
+ * How one problem reads in the selector: the object it is about, which is what
+ * the explanation itself leads with.
+ */
+export function diagnosisLabel(
+  m: WorkbenchMessages,
+  diagnosis: WorkbenchDiagnosis,
+): string {
+  return diagnosisExplanation(m, diagnosis).object;
 }
 
 /**

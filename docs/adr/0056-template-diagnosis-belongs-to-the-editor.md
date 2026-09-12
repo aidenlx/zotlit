@@ -37,6 +37,14 @@ status: accepted
 > One sentence over both causes was the wrong-cause failure the design guide
 > names.
 
+> Amended 2026-09-13: the selected problem is held from the moment the area is
+> open, whether the reader chose it or read whichever came first, and it is
+> let go once a check finds nothing at all. A compact area follows the first
+> problem found, because nothing is being read there; an open one does not,
+> because a check would otherwise change the explanation under the reader. A
+> check that finds nothing ends the reading, so the next failure arrives as
+> the problem it is rather than as a resolved state with Next problem.
+
 The citation-template walkthrough showed a missing partial's name,
 explanation, and two recovery actions squeezed into one source-line widget.
 The preview repeated the failure. Researchers need room to read an

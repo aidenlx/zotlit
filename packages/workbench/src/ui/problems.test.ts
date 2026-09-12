@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  diagnosisEngineSource,
+  diagnosisEngineSources,
   diagnosisExplanation,
   diagnosisLocated,
   diagnosisWhere,
@@ -192,12 +192,12 @@ describe("attribution", () => {
   });
 
   it("reads the engine's own location apart from the call it sends the reader to", () => {
-    expect(diagnosisEngineSource(m, callerData)).toBe(
+    expect(diagnosisEngineSources(m, callerData)).toEqual([
       m.workbench_problems_engine_source_line({
         template: "citation",
         line: 4,
       }),
-    );
+    ]);
     expect(diagnosisWhere(m, callerData)).toBe(
       m.workbench_problems_where_call(),
     );
@@ -227,12 +227,12 @@ describe("attribution", () => {
       m.workbench_problems_where_advanced(),
     );
     // The engine's claim survives; it is not promoted into a repair location.
-    expect(diagnosisEngineSource(m, unknown)).toBe(
+    expect(diagnosisEngineSources(m, unknown)).toEqual([
       m.workbench_problems_engine_source_line({
         template: "paper:body",
         line: 5,
       }),
-    );
+    ]);
     expect(diagnosisExplanation(m, unknown).suggestion).toBe(
       m.workbench_diagnostic_render_error_suggestion(),
     );
@@ -253,10 +253,10 @@ describe("attribution", () => {
 
   it("says no verified location for a failure the engine reported nowhere", () => {
     expect(
-      diagnosisEngineSource(
+      diagnosisEngineSources(
         m,
         renderDiagnosis({ code: "render-error", message: "boom" }),
       ),
-    ).toBeNull();
+    ).toEqual([]);
   });
 });

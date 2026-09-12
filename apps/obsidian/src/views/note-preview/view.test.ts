@@ -258,6 +258,18 @@ function problemsButton(view: Editor, label: string): void {
   button.click();
 }
 
+/** Chooses the problem the Problems selector offers as `label`. */
+function chooseProblem(view: Editor, label: string): void {
+  const select = problemsArea(view).querySelector("select");
+  if (!select) throw new Error("The Problems selector is not shown");
+  const option = Array.from(select.options).find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!option) throw new Error(`Missing problem: ${label}`);
+  select.value = option.value;
+  select.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 /**
  * An editor showing `source` with a preview open on it, both settled. The
  * editor's own content element is in the document, so the Problems area the
@@ -1384,6 +1396,127 @@ Annotation`,
       problemsButton(test.editor, m.workbench_problems_copy()),
     );
     expect(copied).toEqual([inspected, inspected]);
+  });
+
+  it("works through two problems one at a time, keeping each one's report", async () => {
+    const copied = stubClipboard();
+    await using test = await setup();
+    vi.useFakeTimers();
+    // Two problems a reader can tell apart: the fixture's own manifest value
+    // the rows cannot read, and a call to a partial the vault does not hold.
+    const source = PROFILE_SOURCE.replace(
+      "Personal space.",
+      `{% render "book-details" %}`,
+    );
+    const preview = await failing(test, source);
+    const area = problemsArea(test.editor);
+    const partial = m.workbench_problems_object_partial({
+      name: "book-details",
+    });
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 2 }),
+    );
+
+    // Show problem reads the preview's own failure in full. One explanation
+    // is shown at a time, so the other problem's guidance is not on screen.
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied.at(-1)).toContain("Problem code: missing-partial");
+    const first = copied.at(-1)!;
+
+    // Choosing the other problem reads that one, with its own captured
+    // evidence, and asks for no navigation: the source stays where it is.
+    const at = test.editor.store.getState().presentation.reveal;
+    await act(async () =>
+      chooseProblem(test.editor, m.workbench_tab_properties()),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    expect(test.editor.store.getState().presentation.reveal).toBe(at);
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied.at(-1)).toContain("Problem code: invalid-manifest");
+
+    // Back to the partial, and a repair that resolves only that one.
+    await act(async () => chooseProblem(test.editor, partial));
+    await act(async () => test.editor.setViewData(PROFILE_SOURCE, false));
+    await advance();
+    // The remaining problem keeps the area from reporting success, and the
+    // reader is offered the next explanation rather than moved to it.
+    expect(area.textContent).toContain(m.workbench_problems_resolved());
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 1 }),
+    );
+    expect(area.textContent).not.toContain(m.workbench_problems_none());
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    // The resolved problem keeps the report the reader inspected.
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy_last()),
+    );
+    expect(copied.at(-1)).toBe(first);
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_next()),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+
+    // The second repair leaves nothing, and the area keeps the space it had.
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]'),
+        false,
+      ),
+    );
+    await advance();
+    expect(area.isConnected).toBe(true);
+    expect(area.textContent).toContain(m.workbench_problems_none());
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+  });
+
+  it("counts the problems found while a check stops at its first error", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    // Two broken filters, and the engine stops at the one it reached first.
+    // The count says what was found; it claims nothing about the rest.
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]').replace(
+        "Personal space.",
+        "{{ zt.title | bogus_one }} {{ zt.title | bogus_two }}",
+      ),
+    );
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 1 }),
+    );
+    // The one it stopped at, explained; the second fault is undiscovered and
+    // the count makes no claim about it.
+    expect(area.textContent).toContain("undefined filter: bogus_one");
+    // One problem is read on its own, with nothing to choose between.
+    expect(area.querySelector("select")).toBeNull();
   });
 
   it("takes a closed preview's findings back out of the editor", async () => {

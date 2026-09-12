@@ -473,12 +473,20 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-summary":
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
+      // A value that changes as problems are repaired, so its digits hold
+      // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-count":
+        "zt:shrink-0 zt:text-muted-foreground zt:tabular-nums zt:whitespace-nowrap",
       "problems-text": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
       "problems-toggle": cn(
         templateWorkbenchButton,
         "zt:ms-auto zt:shrink-0 zt:px-1.5 zt:py-1",
       ),
       "problems-body": "zt:flex zt:min-w-0 zt:flex-col zt:gap-1",
+      // The chooser leads the explanation where the object line otherwise
+      // would, at its own width rather than stretched across the column.
+      "problems-select": "zt:min-w-0 zt:max-w-full zt:self-start",
+      "problems-next": templateWorkbenchButton,
       "problems-object": "zt:font-semibold zt:[overflow-wrap:anywhere]",
       "problems-recovery": "zt:text-pretty zt:text-muted-foreground",
       // A reported location names the engine's own template, which is one

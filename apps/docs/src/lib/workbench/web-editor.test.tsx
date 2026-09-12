@@ -65,6 +65,61 @@ describe("a draft the parser refuses", () => {
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
   });
 
+  it("counts the problems found and reads the one the reader chooses", async () => {
+    await using page = await open();
+    await page.settle();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    // Two failures a reader can tell apart: a property expression and the
+    // annotation format, each with its own object and its own repair.
+    const broken = view.state.doc
+      .toString()
+      .replace("expr: zt.title\n", "expr: zt.title | bogus_one\n")
+      .replace("{{ zt.text }}", "{{ zt.text | bogus_two }}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+
+    const area = page.host.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    act(() =>
+      area.querySelector<HTMLElement>('[data-part="problems-toggle"]')!.click(),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 2 }),
+    );
+    const select = area.querySelector("select")!;
+    expect(select.getAttribute("aria-label")).toBe(
+      m.workbench_problems_selected(),
+    );
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      m.workbench_annotation_label(),
+      m.workbench_problems_object_property({ key: "title" }),
+    ]);
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+
+    // Choosing the other problem reads that one and asks for no navigation.
+    const tab = chosenTab(page.host);
+    act(() => {
+      select.value = select.options[1]!.value;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_property_error_suggestion(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+    expect(chosenTab(page.host)).toBe(tab);
+  });
+
   it("opens Profile for a field that tab writes", async () => {
     await using page = await open();
     page.press(m.workbench_advanced());

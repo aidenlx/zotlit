@@ -1,8 +1,13 @@
-// The editor's Problems area: one detected problem, led by the object it is
-// about, and the disclosure the reader controls. Automatic checks leave that
-// choice alone; Show problem, a source marker, and a failed explicit Run open
-// it. Its controls navigate, disclose, and report — every repair is the
-// reader's own edit, described in the suggestion.
+// The editor's Problems area: one detected problem at a time, led by the
+// object it is about, and the disclosure the reader controls. Automatic checks
+// leave that choice alone; Show problem, a source marker, and a failed
+// explicit Run open it. Its controls navigate, disclose, and report — every
+// repair is the reader's own edit, described in the suggestion.
+//
+// Several problems are counted and offered in a selector, and the selected one
+// is the one that stays through a check. A repair that resolves it while
+// others remain says so and offers Next problem, so the explanation the reader
+// is on changes when the reader asks and not when a check lands.
 //
 // Technical details shows the report text, and Copy error report copies that
 // same text. The report was captured with its attempt, so it keeps describing
@@ -22,8 +27,9 @@ import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchDiagnosis } from "./problems";
 import {
-  diagnosisEngineSource,
+  diagnosisEngineSources,
   diagnosisExplanation,
+  diagnosisLabel,
   diagnosisLocated,
   diagnosisReport,
   diagnosisWhere,
@@ -31,6 +37,7 @@ import {
   problemText,
 } from "./problems";
 import type { RenderTrigger } from "./scheduler";
+import { WorkbenchOption, WorkbenchSelect } from "./select";
 import { useParts } from "./theme";
 
 import { captureProblemReport, formatRenderReport } from "#/render/report";
@@ -40,18 +47,29 @@ export { problemWhere } from "./problems";
 /** The Problems area's own state: which problem is read, and whether in full. */
 export interface WorkbenchProblemsState {
   readonly diagnoses: readonly WorkbenchDiagnosis[];
-  /** The problem the area explains; `null` once every one is resolved. */
+  /** The problem the area explains; `null` once the selected one is resolved. */
   readonly selected: WorkbenchDiagnosis | null;
+  /**
+   * The problem the reader is reading, whether or not this check still finds
+   * it, so a resolved explanation can still name what it was about.
+   */
+  readonly inspected: WorkbenchDiagnosis | null;
   /** The reader's own open-or-collapsed choice, which checks never change. */
   readonly open: boolean;
   /**
-   * The selected problem's captured report, or the last one read once every
+   * The selected problem's captured report, or the last one read once that
    * problem is resolved. Bounded to what is being inspected: one repair does
    * not build a history, and a later problem brings its own report.
    */
   readonly report: RenderReport | null;
   /** Whether `report` describes a failure this check no longer finds. */
   readonly resolved: boolean;
+  /**
+   * The problem to read once the selected one is resolved and others remain;
+   * `null` while the selected problem stands and once nothing is left. Only
+   * the reader moves the explanation on, so a check never selects it.
+   */
+  readonly next: WorkbenchDiagnosis | null;
   /** Reads one problem in full, which a source marker and Show problem do. */
   readonly select: (id: string) => void;
   readonly setOpen: (open: boolean) => void;
@@ -88,8 +106,20 @@ export function useWorkbenchProblems({
   const [open, setOpen] = useState(false);
   // Selection keys on the problem's identity rather than its place in the
   // list, so a check that finds the same problem keeps the reader's place.
+  // An open area holds the problem being read from the moment it is read: its
+  // repair is then a resolved explanation rather than a silent move to the
+  // next problem. A compact area reads whichever problem comes first, and a
+  // check that finds nothing lets the selection go, so the next failure
+  // arrives as the problem it is.
+  const first = diagnoses[0] ?? null;
   const selected =
-    diagnoses.find(({ id }) => id === selectedId) ?? diagnoses[0] ?? null;
+    selectedId === null
+      ? first
+      : (diagnoses.find(({ id }) => id === selectedId) ?? null);
+  useEffect(() => {
+    if (first === null) setSelectedId(null);
+    else if (open) setSelectedId((kept) => kept ?? first.id);
+  }, [first, open]);
   const opened = useRef(attempt);
   const failed = diagnoses.length > 0;
   useEffect(() => {
@@ -136,12 +166,21 @@ export function useWorkbenchProblems({
   useEffect(() => {
     if (current !== null) setInspected(current);
   }, [current]);
+  // The problem the reader is reading, kept past the repair that resolves it
+  // so the area can still name what the resolved explanation was about. A
+  // cache of what this render already computed, not state of its own.
+  const reading = useRef<WorkbenchDiagnosis | null>(null);
+  if (selected !== null) reading.current = selected;
   return {
     diagnoses,
     selected,
+    inspected: selected ?? reading.current,
     open,
     report: current ?? (selected === null ? inspected : null),
     resolved: current === null,
+    // Offered rather than taken: a check that resolves the selected problem
+    // leaves the reader on its resolved state until they ask for the next one.
+    next: selected === null ? first : null,
     select(id) {
       setSelectedId(id);
       setOpen(true);
@@ -170,7 +209,17 @@ export function ProblemsFooter({
   const part = useParts("problemsFooter");
   const headingId = useId();
   const bodyId = useId();
-  const { selected, open, setOpen, report, resolved } = problems;
+  const {
+    diagnoses,
+    selected,
+    inspected,
+    next,
+    open,
+    setOpen,
+    report,
+    resolved,
+  } = problems;
+  const select = problems.select;
   // One text, shown and copied. Building it once keeps Technical details and
   // the clipboard from ever disagreeing about what was reported.
   const reportText = useMemo(
@@ -266,11 +315,15 @@ export function ProblemsFooter({
       ? { minBlockSize: space }
       : undefined;
   const explanation = selected && diagnosisExplanation(m, selected);
-  const engineSource = selected && diagnosisEngineSource(m, selected);
+  const engineSources = selected ? diagnosisEngineSources(m, selected) : [];
   const action =
     onAction && selected?.kind === "document"
       ? problemAction(m, selected.problem)
       : null;
+  // Several problems are chosen between rather than read at once, and the
+  // choice names the object each one is about, so it stands in for the line
+  // the explanation would otherwise lead with.
+  const several = diagnoses.length > 1;
   return (
     <section
       ref={area}
@@ -282,10 +335,17 @@ export function ProblemsFooter({
         <p id={headingId} {...part("problems-heading")}>
           {m.workbench_problems_heading()}
         </p>
-        {explanation === null ? (
+        {/* What the checks found, never what the document holds: a parser that
+            stops at its first error leaves the rest undiscovered. */}
+        {diagnoses.length === 0 ? (
           <p {...part("problems-text")}>{m.workbench_problems_none()}</p>
         ) : (
-          !open && <p {...part("problems-text")}>{explanation.condition}</p>
+          <p {...part("problems-count")}>
+            {m.workbench_problems_count({ count: diagnoses.length })}
+          </p>
+        )}
+        {!open && explanation !== null && (
+          <p {...part("problems-text")}>{explanation.condition}</p>
         )}
         <button
           type="button"
@@ -299,15 +359,34 @@ export function ProblemsFooter({
       </div>
       {open && selected && explanation && (
         <div id={bodyId} {...part("problems-body")}>
-          <p {...part("problems-object")}>{explanation.object}</p>
+          {several ? (
+            <div {...part("problems-select")}>
+              <WorkbenchSelect
+                aria-label={m.workbench_problems_selected()}
+                value={selected.id}
+                onInput={(event) => select(event.currentTarget.value)}
+              >
+                {diagnoses.map((diagnosis) => (
+                  <WorkbenchOption key={diagnosis.id} value={diagnosis.id}>
+                    {diagnosisLabel(m, diagnosis)}
+                  </WorkbenchOption>
+                ))}
+              </WorkbenchSelect>
+            </div>
+          ) : (
+            <p {...part("problems-object")}>{explanation.object}</p>
+          )}
           <p {...part("problems-text")}>{explanation.condition}</p>
           <p {...part("problems-recovery")}>{explanation.suggestion}</p>
           {/* Where the engine said it happened and where the reader repairs it
               are different places, so they are read as separate lines rather
-              than folded into one claim. */}
-          {engineSource !== null && (
-            <p {...part("problems-location")}>{engineSource}</p>
-          )}
+              than folded into one claim. Grouped occurrences each keep the
+              place they were reported from. */}
+          {engineSources.map((sentence) => (
+            <p key={sentence} {...part("problems-location")}>
+              {sentence}
+            </p>
+          ))}
           {!diagnosisLocated(selected) && (
             <p {...part("problems-location")}>
               {m.workbench_problems_location_unknown()}
@@ -337,12 +416,34 @@ export function ProblemsFooter({
       )}
       {open &&
         selected === null &&
-        reportText !== null && (
+        (reportText !== null || (next !== null && inspected !== null)) && (
           // The repair succeeded, and the failure the reader was reading is
           // still here to report. It is the last one inspected, not a history.
           <div id={bodyId} {...part("problems-body")}>
-            {reporting(reportText, null)}
+            {next !== null &&
+              inspected !== null && (
+                // Others were found, so this says which one went rather than
+                // presenting the whole preview as successful.
+                <>
+                  <p {...part("problems-object")}>
+                    {diagnosisLabel(m, inspected)}
+                  </p>
+                  <p {...part("problems-text")}>
+                    {m.workbench_problems_resolved()}
+                  </p>
+                </>
+              )}
+            {reportText !== null && reporting(reportText, null)}
             <div {...part("problems-controls")}>
+              {next !== null && (
+                <button
+                  type="button"
+                  onClick={() => select(next.id)}
+                  {...part("problems-next")}
+                >
+                  {m.workbench_problems_next()}
+                </button>
+              )}
               {reportControls(reportText)}
             </div>
           </div>

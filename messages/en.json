@@ -1517,6 +1517,19 @@
   "workbench_problem_show": "Show problem",
   "workbench_problems_collapse": "Collapse",
   "workbench_problems_none": "No problems found in this preview",
+  "workbench_problems_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "1 problem found",
+        "countPlural=*": "{count} problems found"
+      }
+    }
+  ],
+  "workbench_problems_selected": "Selected problem",
+  "workbench_problems_next": "Next problem",
+  "workbench_problems_resolved": "This problem is no longer found. Other problems remain.",
   "workbench_problems_technical": "Technical details",
   "workbench_problems_evidence_none": "No engine message is available for this problem.",
   "workbench_problems_copy": "Copy error report",

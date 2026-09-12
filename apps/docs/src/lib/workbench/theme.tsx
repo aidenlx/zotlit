@@ -426,12 +426,20 @@ export const WEB_THEME: WorkbenchTheme = {
       "problems-summary":
         "flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1",
       "problems-heading": "font-semibold",
+      // A value that changes as problems are repaired, so its digits hold
+      // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-count":
+        "shrink-0 text-fd-muted-foreground tabular-nums whitespace-nowrap",
       "problems-text": "min-w-0 text-pretty",
       "problems-toggle": cn(
         buttonVariants({ variant: "outline", size: "xs" }),
         "ms-auto shrink-0",
       ),
       "problems-body": "flex min-w-0 flex-col gap-1",
+      // The chooser leads the explanation where the object line otherwise
+      // would, at its own width rather than stretched across the column.
+      "problems-select": "min-w-0 max-w-full self-start",
+      "problems-next": "cursor-pointer underline underline-offset-2",
       "problems-object": "font-semibold [overflow-wrap:anywhere]",
       "problems-recovery": "text-pretty text-fd-muted-foreground",
       // A reported location names the engine's own template, which is one

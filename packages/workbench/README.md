@@ -167,11 +167,17 @@ host unpacks them into files with `dropBundledPartials`.
 diagnosis (ADR 0056). `workbenchDiagnoses(problems, diagnostics)` folds the
 parser's problems and the renderer's diagnostics into one list of
 `WorkbenchDiagnosis`, each with an identity built from its code, the object it
-names, and where it is repaired — never from its message text.
+names, and where it is repaired — never from its message text. Occurrences
+that share an identity become one problem with several `occurrences`, and
+`diagnosisEngineSources` writes out the place each was reported from; equal
+words about two objects, or at two repair targets, stay two problems.
 `useWorkbenchProblems` holds the reader's selection and their open-or-collapsed
 choice: automatic checks leave that choice alone, while `select` — what a
-source marker and the preview's Show problem call — and a failed explicit Run
-open the explanation. `diagnosisExplanation` writes the affected object, a
+source marker, the area's own selector, and the preview's Show problem call —
+and a failed explicit Run open the explanation. The area counts the problems
+found, names each one in its selector with `diagnosisLabel`, and reports a
+selected problem a repair resolved as resolved, offering `next` rather than
+moving the reader to it. `diagnosisExplanation` writes the affected object, a
 plain condition, and a text suggestion; repairs stay the reader's own edit.
 A preview publishes what its render found to the editor beside it rather than
 explaining it beside its own empty result.
@@ -262,6 +268,10 @@ only on its own evidence, so a name the source never spells leaves `callSite`
 absent and the host says the location is unverified rather than sending the
 reader to a guessed line. `templateCalls` in `@zotlit/workbench/document` is
 the scan behind it, and reads the reserved names `partialCalls` drops.
+`renderFailureCause(error)` reads the same evidence as the cause alone — the
+template the engine could not resolve, or the place it stopped in the one it
+named — so a render path that tries one document part after another reports
+one fault once without comparing either failure's wording.
 
 ## Bridge
 
