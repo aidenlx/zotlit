@@ -111,7 +111,8 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
       #range: { from: number; to: number } | null = null;
       #pending: {
         range: { from: number; to: number };
-        timer: ReturnType<typeof setTimeout>;
+        timer: number;
+        win: Window;
       } | null = null;
       constructor(readonly view: EditorView) {
         view.contentDOM.addEventListener("mouseout", this.#handoff, true);
@@ -129,10 +130,10 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
       }
 
       move(event: MouseEvent, element = event.target) {
-        const target =
-          element instanceof HTMLElement
-            ? element.closest<HTMLElement>(".cm-line span")
-            : null;
+        const node = element as Node | null;
+        const target = node?.instanceOf(HTMLElement)
+          ? node.closest<HTMLElement>(".cm-line span")
+          : null;
         if (!target || !this.view.contentDOM.contains(target)) {
           this.#target = null;
           this.#cancelSwap();
@@ -169,9 +170,11 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
             return;
           this.#cancelSwap();
           const range = { from: hint.from, to: hint.to };
+          const win = this.view.dom.win;
           this.#pending = {
             range,
-            timer: setTimeout(() => {
+            win,
+            timer: win.setTimeout(() => {
               this.#pending = null;
               this.#range = range;
               popover.render(option);
@@ -197,7 +200,7 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
 
       #cancelSwap() {
         if (!this.#pending) return;
-        clearTimeout(this.#pending.timer);
+        this.#pending.win.clearTimeout(this.#pending.timer);
         this.#pending = null;
       }
 
@@ -211,9 +214,10 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
       }
 
       leave(event: MouseEvent) {
+        const relatedTarget = event.relatedTarget as Node | null;
         if (
-          event.relatedTarget instanceof Node &&
-          this.#popover?.hoverEl.contains(event.relatedTarget)
+          relatedTarget?.instanceOf(Node) &&
+          this.#popover?.hoverEl.contains(relatedTarget)
         )
           return;
         this.close();

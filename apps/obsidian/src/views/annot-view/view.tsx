@@ -571,7 +571,7 @@ export class AnnotationView extends ItemView {
       const el = this.contentEl.querySelector(
         `.zt-annot-card[data-id="${id}"]`,
       );
-      if (el instanceof HTMLElement) {
+      if (el?.instanceOf(HTMLElement)) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }

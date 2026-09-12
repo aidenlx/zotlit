@@ -92,6 +92,13 @@ if (typeof Window !== "undefined") {
 
 if (typeof Node !== "undefined") {
   const proto = Node.prototype;
+  proto.instanceOf ??= function (type) {
+    const localType = this.win?.[type.name];
+    return (
+      (typeof localType === "function" && this instanceof localType) ||
+      this instanceof type
+    );
+  };
   if (!Object.getOwnPropertyDescriptor(proto, "doc")) {
     Object.defineProperty(proto, "doc", {
       configurable: true,
