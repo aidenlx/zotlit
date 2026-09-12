@@ -13,7 +13,7 @@ import { m } from "@/paraglide/messages.js";
 
 Use Obsidian's own graph and local graph to see which notes rest on which works.
 
-ZotLit draws an edge from each note to the works it cites. The edge ends on the Literature Note for that work, or on a **Cited Work Node** when your vault has no Literature Note for it yet. A Cited Work Node is labeled with the citation key you typed.
+ZotLit draws an edge from each note to the works it cites. The edge ends on the Literature Note for that work, or on a **Cited Work Node** when your vault has no Literature Note for it yet.
 
 Everything native keeps working: search, color groups, depth, incoming and outgoing links, arrows, and the local graph following the active note. Depth walks citation edges too, so depth 2 from a Literature Note reaches the notes that share its sources.
 
@@ -27,23 +27,38 @@ Turning <UiLabel name={m.settings_citation_graph_name()} /> off removes added ci
 
 ## Control what the graph draws
 
-ZotLit adds five rows to the graph controls panel. Open the panel with the settings icon in the top-right corner of any graph.
+ZotLit adds six rows to the graph controls panel. Open the panel with the settings icon in the top-right corner of any graph.
 
 | Section | Row                                                              | Default | What it does                                                                                   |
 | ------- | ---------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
 | Filters | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | On      | Draws an edge for each `[@doe2024]` citation.                                                  |
 | Filters | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | On      | Draws an edge for each unaliased link to a Literature Note.                                    |
 | Filters | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | Off     | Hides every node except Literature Notes, Cited Work Nodes, and the notes that cite them.      |
+| Display | <UiLabel name={m.graph_option_author_title_labels_name()} />     | Off     | Shows authors, year, and short title on Literature Notes and Cited Work Nodes.                 |
 | Display | <UiLabel name={m.graph_option_color_citation_links_name()} />    | Off     | Draws citation edges in their own color, including existing wikilinks classified as citations. |
 | Display | <UiLabel name={m.graph_option_citation_popover_name()} />        | Off     | Enables citation hover for Literature Notes and Cited Work Nodes.                              |
 
 The <UiLabel name={m.graph_option_wikilink_citations_name()} /> row is there only while <UiLabel name={m.settings_citation_wikilink_citations_name()} /> is on under <SettingsPath page={m.settings_page_citations()} />. With that setting off, a `[[wikilink]]` is not a citation and keeps its native meaning.
 
-Each global or local graph tab saves its own options. Global graph bookmarks restore the options captured for that view. A separately opened ordinary graph starts with citation link colors and citation popovers off. **Restore default settings** returns all five rows to the defaults above along with every native option.
+Each global or local graph tab saves its own options. Global graph bookmarks restore the options captured for that view. A separately opened ordinary graph starts with author and title labels, citation link colors, and citation popovers off. **Restore default settings** returns all six rows to the defaults above along with every native option.
 
 With Obsidian's **Bookmarks** core plugin enabled, use **Bookmark** in the global graph's pane menu.
 
 Obsidian's **Existing files only** hides Cited Work Nodes, because a cited work with no Literature Note is not a file in your vault.
+
+### Read authors and titles on nodes
+
+Turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> in **Display** to identify works by author and title. Literature Notes and Cited Work Nodes use the same label format. Node colors show which works have Literature Notes.
+
+The first line shows the authors and year, such as `Smith et al. 2020`. The dimmer second line shows Zotero's short title, or the full title when no short title exists. Long lines end with an ellipsis.
+
+Zoom out to read the authors and years; zoom in to bring the titles into view. Titles fade in after the first line, following Obsidian's **Text fade threshold**. Hovering a node shows its second line at any zoom, even with <UiLabel name={m.graph_option_citation_popover_name()} /> off.
+
+If a work has no creators, its title moves to the first line and its year appears below. A missing year leaves the authors alone; a missing title leaves one line.
+
+If ZotLit cannot read the work, a Literature Note keeps its file name. A Cited Work Node with a missing or ambiguous citation key keeps that key.
+
+The graph's search box matches your files, not these displayed labels. An author name shown on a node only matches if your files already contain it. ZotLit does not add label text to your notes.
 
 ### Node and edge colors
 
@@ -104,7 +119,7 @@ A **Citation Graph** is the native graph with ZotLit's preset applied, so it ope
 
     - <UiLabel name={m.graph_option_pandoc_citations_name()} /> on, and <UiLabel name={m.graph_option_wikilink_citations_name()} /> on where that row exists.
     - <UiLabel name={m.graph_option_citation_connected_only_name()} /> on, so the graph keeps your Literature Notes and citation structure.
-    - <UiLabel name={m.graph_option_color_citation_links_name()} /> and <UiLabel name={m.graph_option_citation_popover_name()} /> on.
+    - <UiLabel name={m.graph_option_author_title_labels_name()} />, <UiLabel name={m.graph_option_color_citation_links_name()} />, and <UiLabel name={m.graph_option_citation_popover_name()} /> on.
     - **Tags**, **Attachments**, and **Orphans** off, **Arrows** on, and **Existing files only** off so Cited Work Nodes stay visible.
     - One literature notes group, unless a group already uses its query.
 
@@ -114,6 +129,8 @@ A **Citation Graph** is the native graph with ZotLit's preset applied, so it ope
 </Steps>
 
 The preset applies to the graph tab opened by the command. Separately opened ordinary graphs keep their own defaults. Bookmark a graph to restore its selected options later. Running the command again restores the literature notes group if you removed it.
+
+Graphs saved or bookmarked before author and title labels were added keep their previous labels. Run a Citation Graph command again to apply the current preset, or turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> in that graph.
 
 <Callout type="info">
   A local Citation Graph does not hide orphans. Obsidian's local graph panel has
