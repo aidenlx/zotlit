@@ -98,13 +98,13 @@ export function registerTemplateWorkbenchView(
   };
   plugin.addCommand({
     id: "customize-profile",
-    name: m.template_workbench_customize(),
+    name: m.template_workbench_open_layout(),
     checkCallback(checking) {
       const target = plugin.app.workspace.getActiveFile();
       if (!isProfile(target)) return false;
       if (!checking)
         void runTemplateWorkbenchAction("customize", () =>
-          customizeTarget(target),
+          customizeTarget(target, { destination: "native" }),
         );
       return true;
     },
@@ -128,6 +128,7 @@ export function registerTemplateWorkbenchView(
     name: m.template_workbench_open(),
     checkCallback(checking) {
       const active = plugin.app.workspace.getActiveFile();
+      const leaf = activeLeafFor(plugin.app, active);
       // A plain document opens without any Profile flow, on the route the
       // file menu and the Markdown header action already take.
       if (isPlainDocument(active)) {
@@ -135,6 +136,7 @@ export function registerTemplateWorkbenchView(
           void runTemplateWorkbenchAction("open-editor", () =>
             openTemplateWorkbench(plugin.app, active, {
               explainUnsupported: false,
+              ...(leaf ? { leaf } : {}),
             }),
           );
         return true;
@@ -145,10 +147,10 @@ export function registerTemplateWorkbenchView(
         const itemIndexedKey =
           active &&
           itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
-        void runTemplateWorkbenchAction("customize", () =>
-          customizeTarget(target, {
+        void runTemplateWorkbenchAction("open-editor", () =>
+          openNativeProfile(plugin.app, target, {
             ...(itemIndexedKey ? { itemIndexedKey } : {}),
-            destination: "native",
+            ...(leaf ? { leaf } : {}),
           }),
         );
       }
@@ -177,6 +179,7 @@ export function registerTemplateWorkbenchView(
     plugin.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFile)) return;
       if (isPlainDocument(file)) {
+        const leaf = activeLeafFor(plugin.app, file);
         menu.addItem((item) =>
           item
             .setSection("zotlit")
@@ -187,6 +190,7 @@ export function registerTemplateWorkbenchView(
                 void runTemplateWorkbenchAction("open-editor", () =>
                   openTemplateWorkbench(plugin.app, file, {
                     explainUnsupported: false,
+                    ...(leaf ? { leaf } : {}),
                   }),
                 ),
             ),
@@ -203,12 +207,15 @@ export function registerTemplateWorkbenchView(
         menu.addItem((item) =>
           item
             .setSection("zotlit")
-            .setTitle(m.template_workbench_customize())
+            .setTitle(m.template_workbench_open_layout())
             .setIcon("pencil")
             .onClick(
               () =>
                 void runTemplateWorkbenchAction("customize", () =>
-                  customizeTarget(target, options),
+                  customizeTarget(target, {
+                    ...options,
+                    destination: "native",
+                  }),
                 ),
             ),
         );
@@ -233,12 +240,15 @@ export function registerTemplateWorkbenchView(
           .setSection("zotlit")
           .setTitle(m.template_workbench_open())
           .setIcon("file-pen-line")
-          .onClick(
-            () =>
-              void runTemplateWorkbenchAction("customize", () =>
-                customizeTarget(target, { ...options, destination: "native" }),
-              ),
-          ),
+          .onClick(() => {
+            const leaf = activeLeafFor(plugin.app, file);
+            void runTemplateWorkbenchAction("open-editor", () =>
+              openNativeProfile(plugin.app, target, {
+                ...options,
+                ...(leaf ? { leaf } : {}),
+              }),
+            );
+          }),
       );
     }),
   );
@@ -267,11 +277,10 @@ export function registerTemplateWorkbenchView(
             const file = view.file;
             if (!file) return;
             void runTemplateWorkbenchAction("open-editor", () =>
-              isPlainDocument(file)
-                ? openTemplateWorkbench(plugin.app, file, {
-                    explainUnsupported: false,
-                  })
-                : customizeTarget(file, { destination: "native" }),
+              openTemplateWorkbench(plugin.app, file, {
+                leaf: view.leaf,
+                ...(isPlainDocument(file) ? { explainUnsupported: false } : {}),
+              }),
             );
           }),
         );
@@ -287,11 +296,22 @@ export function registerTemplateWorkbenchView(
   plugin.app.workspace.onLayoutReady(refreshActions);
 }
 
+function activeLeafFor(
+  app: App,
+  file: TFile | null,
+): WorkspaceLeaf | undefined {
+  const leaf = app.workspace.activeLeaf;
+  return leaf?.view instanceof MarkdownView && leaf.view.file === file
+    ? leaf
+    : undefined;
+}
+
 /** Open a Profile file or the built-in Default draft in the native editor. */
 export async function openNativeProfile(
   app: App,
   target: TFile | Pick<ProfileService, "defaultDocumentPath" | "getSource">,
   options: {
+    leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
     explainUnsupported?: boolean;
     customize?: boolean;
@@ -327,6 +347,7 @@ export async function openNativeProfile(
   }
   const leaf =
     workbench?.leaf ??
+    options.leaf ??
     app.workspace
       .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
       .find(

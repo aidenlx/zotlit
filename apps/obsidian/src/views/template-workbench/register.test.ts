@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
-import { TFile } from "obsidian";
+import { MarkdownView, TFile } from "obsidian";
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -291,8 +291,12 @@ Annotation`);
       "customize-profile",
       "open-template-workbench-view",
     ]);
+    expect(commands.map(({ name }) => name)).toEqual([
+      m.template_workbench_open_layout(),
+      m.template_workbench_open(),
+    ]);
     expect(fileMenu().items.map(({ title }) => title)).toEqual([
-      m.template_workbench_customize(),
+      m.template_workbench_open_layout(),
       m.template_workbench_open(),
     ]);
   });
@@ -314,11 +318,7 @@ Annotation`);
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     expect(setViewState).not.toHaveBeenCalled();
   });
-  it.each([
-    "customize-profile",
-    "open-template-workbench-view",
-    "open-profile-web-workbench",
-  ])(
+  it.each(["customize-profile", "open-profile-web-workbench"])(
     "routes a registered Profile through the shared flow from %s",
     async (id) => {
       setMockPlatform({ isDesktopApp: true });
@@ -335,9 +335,7 @@ Annotation`);
           profileId: "default",
           ...(id === "open-profile-web-workbench"
             ? { destination: "web" }
-            : id === "open-template-workbench-view"
-              ? { destination: "native" }
-              : {}),
+            : { destination: "native" }),
         }),
       );
       expect(read).not.toHaveBeenCalled();
@@ -395,7 +393,7 @@ Annotation`);
     ]);
     expect(deps.customize).not.toHaveBeenCalled();
   });
-  it("routes the file menu's native editor action through the shared flow", async () => {
+  it("routes Open template workbench through the shared flow", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { file, deps, plugin, fileMenu } = setup();
     deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
@@ -403,7 +401,7 @@ Annotation`);
     registerTemplateWorkbenchView(plugin, deps);
 
     fileMenu()
-      .items.find((item) => item.title === m.template_workbench_open())!
+      .items.find((item) => item.title === m.template_workbench_open_layout())!
       .click();
 
     await vi.waitFor(() =>
@@ -413,9 +411,64 @@ Annotation`);
       }),
     );
   });
+  it("switches the active Markdown view to the Template Workbench view", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { app, file, leaf, deps, plugin, commands, setViewState } = setup();
+    const markdownView = Object.assign(new MarkdownView(leaf), { file, leaf });
+    Object.assign(leaf, { view: markdownView });
+    app.workspace.activeLeaf = leaf;
+    deps.profile = {
+      ...deps.profile,
+      profiles: [{ id: "paper", path: file.path }],
+    } as unknown as typeof deps.profile;
+    deps.customize = vi.fn(async () => {});
+    registerTemplateWorkbenchView(plugin, deps);
+
+    const command = commands.find(
+      (entry) => entry.id === "open-template-workbench-view",
+    )!;
+    expect(command.checkCallback?.(false)).toBe(true);
+
+    await vi.waitFor(() =>
+      expect(setViewState).toHaveBeenCalledWith({
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+        state: { file: file.path },
+        active: true,
+      }),
+    );
+    expect(deps.customize).not.toHaveBeenCalled();
+    expect(openWorkbenchLayout).not.toHaveBeenCalled();
+  });
+  it("switches the file menu's active Markdown view to the Template Workbench view", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { app, file, leaf, deps, plugin, fileMenu, setViewState } = setup();
+    const markdownView = Object.assign(new MarkdownView(leaf), { file, leaf });
+    Object.assign(leaf, { view: markdownView });
+    app.workspace.activeLeaf = leaf;
+    deps.profile = {
+      ...deps.profile,
+      profiles: [{ id: "paper", path: file.path }],
+    } as unknown as typeof deps.profile;
+    deps.customize = vi.fn(async () => {});
+    registerTemplateWorkbenchView(plugin, deps);
+
+    fileMenu()
+      .items.find((item) => item.title === m.template_workbench_open())!
+      .click();
+
+    await vi.waitFor(() =>
+      expect(setViewState).toHaveBeenCalledWith({
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+        state: { file: file.path },
+        active: true,
+      }),
+    );
+    expect(deps.customize).not.toHaveBeenCalled();
+    expect(openWorkbenchLayout).not.toHaveBeenCalled();
+  });
   it("opens the current Literature Note's resolved Default with that paper selected", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { app, file, deps, plugin, commands } = setup();
+    const { app, file, deps, plugin, commands, setViewState } = setup();
     deps.customize = vi.fn(async () => {});
     file.path = "Literature/Figures.md";
     file.basename = "Figures";
@@ -435,12 +488,17 @@ Annotation`);
     )!;
     expect(command.checkCallback?.(false)).toBe(true);
     await vi.waitFor(() =>
-      expect(deps.customize).toHaveBeenCalledWith({
-        profileId: "default",
-        destination: "native",
-        item: { key: "PAPER234", title: null },
+      expect(setViewState).toHaveBeenCalledWith({
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+        state: {
+          defaultDraft: true,
+          file: null,
+          itemIndexedKey: "PAPER234",
+        },
+        active: true,
       }),
     );
+    expect(deps.customize).not.toHaveBeenCalled();
   });
   it.each([
     "language: eta",
