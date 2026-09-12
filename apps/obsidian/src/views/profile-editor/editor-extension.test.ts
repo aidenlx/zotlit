@@ -20,6 +20,7 @@ afterEach(() => {
   view?.destroy();
   view = null;
   Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
+  Reflect.deleteProperty(navigator, "clipboard");
 });
 
 function mount(doc: string, language: Extension) {
@@ -169,5 +170,33 @@ describe("code panes", () => {
     view.destroy();
     view = null;
     expect(host.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("copies in a popout without moving focus through a fallback textarea", () => {
+    const host = migrationHost();
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    view = new EditorView({
+      state: EditorState.create({ doc: "alpha beta", extensions: [codePane] }),
+      parent: document.body,
+    });
+    frame.contentDocument!.body.append(view.dom);
+    host.move(frame.contentWindow!);
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    view.focus();
+
+    const copy = new Event("copy", { bubbles: true, cancelable: true });
+    view.contentDOM.dispatchEvent(copy);
+
+    expect(copy.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledWith("alpha");
+    expect(frame.contentDocument!.activeElement).toBe(view.contentDOM);
+    expect(frame.contentDocument!.querySelector("textarea")).toBeNull();
+    frame.remove();
   });
 });
