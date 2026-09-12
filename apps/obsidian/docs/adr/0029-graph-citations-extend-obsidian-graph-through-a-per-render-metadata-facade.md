@@ -17,7 +17,7 @@ The facade lives only inside one render call on one engine instance. Nothing els
 ## Consequences
 
 - Every touched surface is undocumented Obsidian runtime behaviour verified against 1.13.4; the wrapper must guard each access, degrade to a message when the Graph core plugin is unavailable, and be re-verified when the minimum app version moves.
-- The render wrapper depends on the engine reading its app reference once at the top of render; the edge tint proxy depends on the link sprite lifecycle. These two are the re-verification points.
+- The render wrapper depends on the engine reading its app reference once at the top of render; the edge tint proxy depends on the link sprite lifecycle. The Work Label wrapper also depends on the node text sprite lifecycle: `initGraphics` builds text lazily, `clearGraphics` destroys it, and render assigns its style on font changes. Also verify the renderer's `fTextShowMult` text-fade term: native opacity is `clamp(log2(scale) + 1 - fTextShowMult, 0, 1)`, and the title fades over the following octave. An absent or nonfinite fade term logs a warning and uses zero. Verify `getHighlightNode()` and the visible container's `updateTransform` hook, which updates title alpha before child transforms. These are the re-verification points.
 - Each graph view owns its selected options. Citation Graph commands apply their preset to the target view; separately opened ordinary graphs start from ordinary defaults. View restoration preserves each graph’s options; native bookmarks capture and restore global graph options. This requires isolation from Obsidian's shared global graph options.
 
 ## Native defaults and explicit presentation choices

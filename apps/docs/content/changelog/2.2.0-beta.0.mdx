@@ -15,11 +15,19 @@ import { m } from "@/paraglide/messages.js";
 
 Obsidian's graph view now draws your citations ([discussion #965](https://github.com/aidenlx/zotlit/discussions/965)). Each note gains an edge to every work it cites, so Literature Notes stop floating unconnected and two notes that cite the same paper meet at that paper's node.
 
-A work you cite but have no Literature Note for still appears, as a dimmed Cited Work Node labeled with the citation key. Select it to create its Literature Note from your template, right-click it to open the item in Zotero or copy its key, and hover it to read the formatted entry. Once the note exists, a key that matches one Zotero item trades its dimmed node for the note node, with the same edges. A key that matches several items stays ambiguous, so its Cited Work Node remains.
+A work you cite but have no Literature Note for still appears, as a dimmed Cited Work Node. Select it to create its Literature Note from your template, right-click it to open the item in Zotero or copy its key, and hover it to read the formatted entry. Once the note exists, a key that matches one Zotero item trades its dimmed node for the note node, with the same edges. A key that matches several items stays ambiguous, so its Cited Work Node remains.
+
+Turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> in **Display** to read authors and years above each work's short title. Literature Notes and Cited Work Nodes use the same labels. Zooming in brings titles into view; hovering shows the second line at any zoom.
+
+Missing or ambiguous citation keys keep their keys. If ZotLit cannot read a work, its Literature Note keeps its file name.
+
+The graph search still matches your files, not the displayed labels. See [reading authors and titles on nodes](/docs/how-to/explore-citations-in-graph#read-authors-and-titles-on-nodes).
+
+Both Citation Graph commands turn these labels on. Graphs saved or bookmarked earlier keep their previous labels until you run a Citation Graph command again or turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> for that graph.
 
 Literature Notes, Cited Work Nodes, and citation edges each take their own color, which follows your theme and dark mode. Your own color groups still win, and a one-press <UiLabel name={m.graph_citations_add_literature_notes_group()} /> button in the graph's Groups section colors every Literature Note without writing a search query.
 
-Four new rows in the graph controls panel decide what each graph draws: <UiLabel name={m.graph_option_pandoc_citations_name()} />, <UiLabel name={m.graph_option_wikilink_citations_name()} />, <UiLabel name={m.graph_option_citation_connected_only_name()} />, and <UiLabel name={m.graph_option_color_citation_links_name()} />. They persist and reset like the native rows.
+Six new rows in the graph controls panel decide what each graph draws: <UiLabel name={m.graph_option_pandoc_citations_name()} />, <UiLabel name={m.graph_option_wikilink_citations_name()} />, <UiLabel name={m.graph_option_citation_connected_only_name()} />, <UiLabel name={m.graph_option_author_title_labels_name()} />, <UiLabel name={m.graph_option_color_citation_links_name()} />, and <UiLabel name={m.graph_option_citation_popover_name()} />. They persist and reset like the native rows.
 
 Two commands, <Command inline name={m.command_open_citation_graph_name()} /> and <Command inline name={m.command_open_local_citation_graph_name()} />, open the graph set for reading as a research map: citations on, every node except your Literature Notes, cited works, and the notes that cite them hidden, arrows on, and the literature notes group added. A global graph keeps one set of options for the whole vault, so the first command saves that arrangement as your graph settings; **Restore default settings** returns the graph to Obsidian's defaults.
 

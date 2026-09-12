@@ -4,7 +4,11 @@ import type { GraphColor, GraphOptions, WorkspaceLeaf } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
-import { CITATION_POPOVER, COLOR_CITATION_LINKS } from "./display";
+import {
+  AUTHOR_TITLE_LABELS,
+  CITATION_POPOVER,
+  COLOR_CITATION_LINKS,
+} from "./display";
 import {
   CITATION_CONNECTED_ONLY,
   PANDOC_CITATIONS,
@@ -52,6 +56,7 @@ function citationGraphPreset(
     [CITATION_CONNECTED_ONLY]: true,
     [COLOR_CITATION_LINKS]: true,
     [CITATION_POPOVER]: true,
+    [AUTHOR_TITLE_LABELS]: true,
     showTags: false,
     showAttachments: false,
     hideUnresolved: false,

@@ -712,15 +712,23 @@ describe("CitationIndex resolution", () => {
     });
   });
 
-  it("emits nothing when a rebuild finds identical rows", async () => {
-    const { index, db } = await makeHarness({}, { notes: false });
+  it("refreshes metadata consumers after a database refresh with identical citation keys", async () => {
+    await using harness = await createCitationIndexHarness(
+      {},
+      { notes: false },
+    );
+    const { index, db } = harness;
+    const resolution = index.resolveCitekey("doe2024");
     let notified = 0;
     index.on("resolution-changed", () => notified++);
 
+    // Author and title changes leave the bulk citation-key rows identical.
     db.changed();
+    await index.whenResolved();
     await yieldToMain();
 
-    expect(notified).toBe(0);
+    expect(notified).toBe(1);
+    expect(index.resolveCitekey("doe2024")).toEqual(resolution);
   });
 
   it("reads every local library and rebuilds when Library Scope changes", async () => {
@@ -1788,7 +1796,7 @@ describe("CitationIndex ambiguous citation keys", () => {
     expect(index.citekeyOf(GROUP_KEY)).toBe("doe2024");
   });
 
-  it("emits one change for a candidate order change and none for an equal refresh", async () => {
+  it("emits once for each successful refresh, including an equal refresh", async () => {
     const { index, citekeys, db } = await makeHarness(
       {},
       { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
@@ -1799,14 +1807,14 @@ describe("CitationIndex ambiguous citation keys", () => {
     db.changed();
     await index.whenResolved();
     await yieldToMain();
-    expect(notified).toBe(0);
+    expect(notified).toBe(1);
 
     citekeys.rows = [sameLibraryTwin, myLibraryRow];
     db.changed();
     await index.whenResolved();
     await yieldToMain();
 
-    expect(notified).toBe(1);
+    expect(notified).toBe(2);
     expect(index.resolveCitekey("doe2024")).toMatchObject({
       kind: "ambiguous",
       candidates: [{ indexedKey: KEY_B }, { indexedKey: KEY_A }],
