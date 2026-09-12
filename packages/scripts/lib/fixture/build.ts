@@ -1,5 +1,6 @@
 // Materializes the Fixture described by `spec.ts`.
 
+import { readFileSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -7,6 +8,10 @@ import type { SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
 import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import {
+  DEFAULT_CITATION_BRANCHES,
+  formatPlainTemplateDocument,
+} from "@zotlit/templates/facade";
 
 import { FIXTURE_PLUGIN_ID } from "./layout.ts";
 import type { FixtureLayout } from "./layout.ts";
@@ -20,6 +25,7 @@ import {
   ANNOTATIONS,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
+  CITATION_DOCUMENT_EDIT,
   COLLECTIONS,
   createStressItems,
   DEFAULT_SCOPE_CASE,
@@ -34,6 +40,7 @@ import {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  SHARED_PARTIAL_DOCUMENTS,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
@@ -44,7 +51,9 @@ import type {
   FixtureCreator,
   FixtureItem,
   FixtureLegacyTemplate,
+  FixtureLegacyTemplateOrigin,
   FixtureNote,
+  FixtureTemplateEdit,
   FixtureVaultCase,
   PersistedLibraryScope,
 } from "./spec.ts";
@@ -62,6 +71,7 @@ export {
   findScopeCase,
   findVaultCase,
   FIXTURE_ITEM_TYPES,
+  FIXTURE_PARTIAL_NAME,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -73,6 +83,7 @@ export {
   SCOPE_CASES,
   UNAVAILABLE_GROUP_IDS,
   UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
@@ -832,8 +843,6 @@ function writePrefs(
 /** ZotLit's settings version, so the vault loads without a migration pass. */
 const SETTINGS_VERSION = 10;
 
-const LEGACY_TEMPLATE_LANGUAGE = "liquid";
-
 /** ZotLit's right-sidebar view types, as `registerView` declares them. */
 const ZOTLIT_SIDEBAR_VIEW_TYPES = [
   "zotero-annotation-view",
@@ -944,6 +953,16 @@ async function writeVault(
         document.source,
       );
     }
+    for (const partial of SHARED_PARTIAL_DOCUMENTS) {
+      await writeFile(
+        join(layout.vaultDir, "templates", `zotlit-partial.${partial.name}.md`),
+        formatPlainTemplateDocument(partial.source, partial.language),
+      );
+    }
+    await writeFile(
+      join(layout.vaultDir, "templates", "zotlit-citation.md"),
+      formatPlainTemplateDocument(fixtureCitationSource(), "liquid"),
+    );
   }
 
   // After the bundle copy: a Paired Run passes a Development Vault's plugin
@@ -1049,7 +1068,7 @@ async function writeVaultNotes(
   }
 }
 
-/** Eject the Upgrader vault's legacy slot files, each with its visible edit applied. */
+/** Eject the Upgrader vault's Legacy Template Files, each with its visible edit applied. */
 async function writeLegacyTemplates(layout: FixtureLayout): Promise<void> {
   for (const template of UPGRADER_LEGACY_TEMPLATES) {
     await writeFile(
@@ -1059,35 +1078,89 @@ async function writeLegacyTemplates(layout: FixtureLayout): Promise<void> {
   }
 }
 
-/** Vault path of one legacy slot file, in ZotLit's `zotlit-<name>.<language>.md` form. */
+/** Vault path of one Legacy Template File, in ZotLit's `zotlit-<name>.<language>.md` form. */
 export function legacyTemplateFilename(
   template: FixtureLegacyTemplate,
 ): string {
-  return `zotlit-${template.name}.${LEGACY_TEMPLATE_LANGUAGE}.md`;
+  return `zotlit-${template.name}.${template.language}.md`;
 }
 
 /**
- * The shipped Liquid default for one slot with the Spec's edit applied.
+ * The shipped default one Legacy Template File starts from, with the Spec's
+ * edit applied.
  * @throws when the default no longer holds the text the edit expects, so a
  *   drifted default fails the build rather than ejecting an unedited file.
  */
 export async function legacyTemplateSource(
   template: FixtureLegacyTemplate,
 ): Promise<string> {
-  const source = await readFile(
+  const origin = "from" in template ? template.from : template.name;
+  return applyTemplateEdit(
+    await shippedDefaultSource(origin, template.language),
+    template,
+    `the default ${origin} template`,
+  );
+}
+
+/** The Citation Variant each 2.1.x citation slot rendered. */
+const CITATION_SLOT_VARIANTS: Partial<
+  Record<FixtureLegacyTemplateOrigin, "main" | "alt">
+> = { cite: "main", cite2: "alt" };
+
+/**
+ * The shipped default text of one Literature Note slot or 2.1.x citation
+ * branch. A slot's default is a file under `@zotlit/templates/defaults`; a
+ * citation branch is the one-line source the 2.1.x slot rendered with no
+ * vault file, which the fold still falls back to.
+ */
+async function shippedDefaultSource(
+  origin: FixtureLegacyTemplateOrigin,
+  language: "liquid" | "eta",
+): Promise<string> {
+  const variant = CITATION_SLOT_VARIANTS[origin];
+  if (variant) return `${DEFAULT_CITATION_BRANCHES[language][variant]}\n`;
+  return await readFile(
     new URL(
-      import.meta.resolve(
-        `@zotlit/templates/defaults/${template.name}.${LEGACY_TEMPLATE_LANGUAGE}`,
-      ),
+      import.meta.resolve(`@zotlit/templates/defaults/${origin}.${language}`),
     ),
     "utf-8",
   );
-  if (!source.includes(template.find)) {
+}
+
+/**
+ * The Citation Template the Fixture Vault holds: the shipped default with the
+ * Spec's visible edit. Every reader of the vault's citation text answers from
+ * here, so the mock Local Bridge offers what the file on disk holds.
+ * @throws when the shipped default no longer holds the text the edit expects.
+ */
+export function fixtureCitationSource(): string {
+  return applyTemplateEdit(
+    readFileSync(
+      new URL(
+        import.meta.resolve("@zotlit/templates/defaults/citation.liquid"),
+      ),
+      "utf-8",
+    ),
+    CITATION_DOCUMENT_EDIT,
+    "the default citation template",
+  );
+}
+
+/**
+ * One Fixture edit applied to the shipped default it names.
+ * @throws when the default drifted away from the text the edit expects.
+ */
+function applyTemplateEdit(
+  source: string,
+  edit: FixtureTemplateEdit,
+  subject: string,
+): string {
+  if (!source.includes(edit.find)) {
     throw new Error(
-      `the default ${template.name} template no longer contains ${JSON.stringify(template.find)}; update UPGRADER_LEGACY_TEMPLATES`,
+      `${subject} no longer contains ${JSON.stringify(edit.find)}; update the Fixture Spec`,
     );
   }
-  return source.replace(template.find, template.replace);
+  return source.replace(edit.find, edit.replace);
 }
 
 function vaultSettings(

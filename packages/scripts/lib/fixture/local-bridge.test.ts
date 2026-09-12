@@ -16,7 +16,7 @@ import {
   localBridgeOrigin,
 } from "@zotlit/workbench/bridge";
 
-import { buildFixture } from "./build.ts";
+import { buildFixture, FIXTURE_PARTIAL_NAME } from "./build.ts";
 import { getFixtureLayout } from "./layout.ts";
 import { startMockLocalBridge } from "./local-bridge-server.ts";
 import { createMockLocalBridge } from "./local-bridge.ts";
@@ -24,9 +24,10 @@ import { createMockLocalBridge } from "./local-bridge.ts";
 import { getWorkspaceRoot } from "#package-roots";
 
 const ORIGIN = "https://zotlit.aidenlx.site";
-/** The built-in Citation Template, as `@zotlit/templates` ships it. */
-const BUILT_IN_CITATION_SOURCE = `{% if zt.variant == "alt" %}
-  {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+/** The Citation Template the Fixture Vault holds: the shipped default with the
+ *  Spec's visible edit on the alternate branch. */
+const FIXTURE_CITATION_SOURCE = `{% if zt.variant == "alt" %}
+  cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
 {% else %}
   {{ zt.citations | pandoc_cite }}
 {% endif %}
@@ -215,7 +216,11 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const dependencies = await client.readTemplateDependencies({
       source: profile.source,
     });
-    expect(dependencies.templates).toHaveLength(0);
+    // The Fixture Books Profile calls the vault's own Shared Partial, which
+    // the bundle resolves from the template folder.
+    expect(dependencies.templates).toEqual([
+      expect.objectContaining({ name: FIXTURE_PARTIAL_NAME }),
+    ]);
     expect(dependencies.diagnostics).toEqual([]);
     await expect(client.listCitationStyles()).resolves.toContainEqual({
       id: "http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
@@ -537,10 +542,11 @@ frontmatter:\n`,
       client.readTemplateDependencies({ source: withDependencies }),
     ).resolves.toEqual({
       templates: [
+        expect.objectContaining({ name: FIXTURE_PARTIAL_NAME }),
         {
           name: "citation",
           language: "liquid",
-          source: BUILT_IN_CITATION_SOURCE,
+          source: FIXTURE_CITATION_SOURCE,
         },
         {
           name: "summary",
@@ -550,10 +556,14 @@ frontmatter:\n`,
       ],
       diagnostics: [],
     });
-    // The saved file still calls nothing, which is what the draft replaced.
+    // The saved file calls the vault's Shared Partial and nothing else, which
+    // is what the draft added to.
     await expect(
       client.readTemplateDependencies({ source: profile.source }),
-    ).resolves.toEqual({ templates: [], diagnostics: [] });
+    ).resolves.toEqual({
+      templates: [expect.objectContaining({ name: FIXTURE_PARTIAL_NAME })],
+      diagnostics: [],
+    });
 
     const missingDependency = withDependencies.replace(
       "{% render 'summary' %}",
@@ -578,10 +588,11 @@ frontmatter:\n`,
       client.readTemplateDependencies({ source: unsupportedDependency }),
     ).resolves.toMatchObject({
       templates: [
+        expect.objectContaining({ name: FIXTURE_PARTIAL_NAME }),
         {
           name: "citation",
           language: "liquid",
-          source: BUILT_IN_CITATION_SOURCE,
+          source: FIXTURE_CITATION_SOURCE,
         },
       ],
       diagnostics: [

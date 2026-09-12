@@ -51,6 +51,7 @@ The configured Fixture keeps these source documents in `profile-examples/`, outs
 | `profile-import-replacement-v1.md` | First version of a Profile import example. |
 | `profile-import-replacement-v2.md` | Second version of the same Profile. It has the same ID and a later version, for replacement checks. |
 | `profile-import-unavailable-style.md` | Profile import example that declares an unavailable citation style. |
+| `profile-import-partials.md` | Profile import example that bundles two Shared Partials. `book-details` is the name the vault already holds under different text, so import asks keep or replace. `reading-log` is new, so import writes it. |
 
 Each build writes a minimal saved layout. The first open shows the file explorer and search on the left. The right sidebar shows the Annotations, References, and Cited by tabs, then the Obsidian backlinks and outgoing links tabs. The ZotLit tabs are in this layout only when the build installs the plugin bundle. Obsidian writes its own layout to `workspace.json` while a session runs, so a rebuild is necessary to restore this preset.
 
@@ -177,9 +178,25 @@ A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the s
 
 | Vault Case | Saved state |
 | --- | --- |
-| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. |
+| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
 | `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
-| `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected legacy slot files with visible edits, and an edited Managed Frontmatter list. |
+| `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list. |
+
+The Configured vault's template folder carries the two Template Documents the Template Workbench opens beside a Profile:
+
+| File | Content |
+| --- | --- |
+| `zotlit-citation.md` | The shipped Citation Template with one visible edit: the alternate branch inserts `cf. ` before the citation, so Shift+Enter and Enter read apart. |
+| `zotlit-partial.book-details.md` | The Fixture's Shared Partial. The Books Profile note body calls it with `{% render "book-details" with zt as zt %}`. Delete the file, then create a Literature Note for a book: the create refuses and names the partial, and writes nothing. |
+
+The Upgrader vault's template folder carries the 2.1.x shapes the one-pass conversion folds:
+
+| File | Converts to |
+| --- | --- |
+| `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md` | The default Profile document. |
+| `zotlit-cite.liquid.md` | The main branch of `zotlit-citation.md`. |
+| `zotlit-cite2.eta.md` | Nothing. The pair is mixed-language, so the fold takes the Liquid side, the alternate branch keeps the built-in text, and this file stays in the vault and is named in the conversion notice. |
+| `zotlit-annotation-callout.liquid.md` | `zotlit-partial.annotation-callout.md`. |
 
 Build the complete Fixture directly in a Vault Case:
 

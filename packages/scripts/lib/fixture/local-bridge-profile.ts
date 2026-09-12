@@ -1,10 +1,8 @@
 // Atomic Fixture Profile persistence and bounded browser dependency export.
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { gte } from "semver";
 import * as v from "valibot";
 
@@ -24,21 +22,22 @@ import type {
 } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
+import { fixtureCitationSource } from "./build.ts";
 import type { FixtureLayout } from "./layout.ts";
-import { LITERATURE_NOTE_PROFILES } from "./spec.ts";
+import { LITERATURE_NOTE_PROFILES, SHARED_PARTIAL_DOCUMENTS } from "./spec.ts";
 
 const FIXTURE_PLUGIN_VERSION = "2.1.1";
-/** The Citation Template every vault holds, which the bundle and the Save both offer. */
-const BUILT_IN_CITATION_TEMPLATE: LiteratureNoteTemplatePartial = {
-  name: "citation",
-  language: "liquid",
-  source: readFileSync(
-    fileURLToPath(
-      import.meta.resolve("@zotlit/templates/defaults/citation.liquid"),
-    ),
-    "utf8",
-  ),
-};
+
+/**
+ * Every template a Profile in this vault may call: the Citation Template the
+ * Fixture Vault holds, and its Shared Partials. The plugin's own bridge
+ * resolves calls against the template folder; the mock resolves them against
+ * the Fixture Spec, which is what writes that folder.
+ */
+const AVAILABLE_TEMPLATES: readonly LiteratureNoteTemplatePartial[] = [
+  { name: "citation", language: "liquid", source: fixtureCitationSource() },
+  ...SHARED_PARTIAL_DOCUMENTS,
+];
 
 export type SelectedFixtureProfile = "books" | "default";
 
@@ -271,9 +270,7 @@ function expectedRevisionConflict(
 
 function dependencyBundle(source: string): TemplateDependenciesResponse {
   try {
-    const bundledSource = exportLiteratureNotePack(source, [
-      BUILT_IN_CITATION_TEMPLATE,
-    ]);
+    const bundledSource = exportLiteratureNotePack(source, AVAILABLE_TEMPLATES);
     const document = new TemplateFacade().parseLiteratureNoteTemplate(
       bundledSource,
     );
@@ -338,7 +335,7 @@ function validateProfileSource(
     // The partials this Profile calls, resolved the way the dependency bundle
     // resolves them: a call no vault can answer refuses the Save here rather
     // than leaving behind a Profile the next render cannot run.
-    exportLiteratureNotePack(source, [BUILT_IN_CITATION_TEMPLATE]);
+    exportLiteratureNotePack(source, AVAILABLE_TEMPLATES);
   } catch {
     return { state: "refused", reason: "invalid-source" };
   }
