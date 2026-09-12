@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import type { Rect } from "@codemirror/view";
 import type { HoverParent } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  eta,
   liquidTemplate,
   templateHighlighting,
 } from "@zotlit/workbench/language";
@@ -27,18 +29,36 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function mount(parent: HoverParent, doc = "{{ zt.title }}") {
+/** One character wide, on one line, so an offset alone gives a box. */
+const CHAR = 8;
+const LINE = { top: 10, bottom: 30 };
+
+/** happy-dom lays nothing out, so the editor's coordinates come from here. */
+function layout(view: EditorView) {
+  vi.spyOn(view, "coordsAtPos").mockImplementation((position) => ({
+    left: position * CHAR,
+    right: position * CHAR,
+    top: LINE.top,
+    bottom: LINE.bottom,
+  }));
+}
+
+function mount(parent: HoverParent, doc = "{{ zt.title }}", language?: "eta") {
   const view = new EditorView({
     state: EditorState.create({
       doc,
       extensions: [
-        liquidTemplate,
+        language === "eta" ? eta : liquidTemplate,
         templateHighlighting,
-        templateHover(() => config, parent),
+        templateHover(
+          () => (language ? { ...config, language } : config),
+          parent,
+        ),
       ],
     }),
     parent: document.body,
   });
+  layout(view);
   return Object.assign(view, {
     [Symbol.dispose]() {
       view.destroy();
@@ -47,27 +67,43 @@ function mount(parent: HoverParent, doc = "{{ zt.title }}") {
 }
 
 /**
- * Moves the pointer onto the first span carrying `hook`. happy-dom lays
- * nothing out, so the pointer resolves to the span's start, the way a pointer
- * at its left edge would.
+ * Moves the pointer onto the first span carrying `hook`, onto an element, or
+ * onto a document offset — which is how a plain tag body is reached, because
+ * it carries no span. The pointer rests on the offset the editor resolves,
+ * the way a pointer at the token's left edge would.
  */
-async function hover(editor: EditorView, hook: string | Element) {
+async function hover(editor: EditorView, hook: string | Element | number) {
   const token =
-    typeof hook === "string"
-      ? editor.contentDOM.querySelector(`.${hook}`)!
-      : hook;
-  vi.spyOn(editor, "posAtCoords").mockReturnValue(editor.posAtDOM(token));
+    typeof hook === "number"
+      ? editor.contentDOM.querySelector(".cm-line")!
+      : typeof hook === "string"
+        ? editor.contentDOM.querySelector(`.${hook}`)!
+        : hook;
+  const position = typeof hook === "number" ? hook : editor.posAtDOM(token);
+  vi.spyOn(editor, "posAtCoords").mockReturnValue(position);
+  // The pointer has already reached the new token when the old one reports
+  // mouseout, so every event of the visit carries the same coordinates.
+  const box = editor.coordsAtPos(position, 1)!;
+  const at = { clientX: box.left, clientY: box.top + 1 };
   await act(async () => {
     if (pointer !== token) {
       pointer?.dispatchEvent(
-        new MouseEvent("mouseout", { bubbles: true, relatedTarget: token }),
+        new MouseEvent("mouseout", {
+          bubbles: true,
+          relatedTarget: token,
+          ...at,
+        }),
       );
       token.dispatchEvent(
-        new MouseEvent("mouseover", { bubbles: true, relatedTarget: pointer }),
+        new MouseEvent("mouseover", {
+          bubbles: true,
+          relatedTarget: pointer,
+          ...at,
+        }),
       );
       pointer = token;
     }
-    token.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    token.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, ...at }));
   });
 }
 
@@ -100,13 +136,17 @@ describe("template hover", () => {
     const property = editor.contentDOM.querySelector(
       `.${themeHook.templateProperty}`,
     )!;
-    vi.spyOn(variable, "getClientRects").mockReturnValue([
-      new DOMRect(100, 10, 20, 20),
-    ] as unknown as DOMRectList);
-    vi.spyOn(property, "getClientRects").mockReturnValue([
-      new DOMRect(140, 50, 20, 20),
-      new DOMRect(0, 70, 30, 20),
-    ] as unknown as DOMRectList);
+    // `{{ zt.collections }}`: `zt` at 3-5 on one box, `collections` at 6-17
+    // wrapped over two.
+    const boxes: Record<number, Rect> = {
+      3: { left: 100, right: 116, top: 10, bottom: 30 },
+      5: { left: 116, right: 116, top: 10, bottom: 30 },
+      6: { left: 140, right: 160, top: 50, bottom: 70 },
+      17: { left: 0, right: 30, top: 70, bottom: 90 },
+    };
+    vi.spyOn(editor, "coordsAtPos").mockImplementation(
+      (position) => boxes[position] ?? null,
+    );
     await hover(editor, variable);
     vi.advanceTimersByTime(300);
     const popover = parent.hoverPopover!;
@@ -402,6 +442,41 @@ describe("template hover", () => {
     vi.advanceTimersByTime(300);
     expect(parent.hoverPopover).not.toBeNull();
     editor.dispatch({ changes: { from: 0, insert: "x" } });
+    expect(parent.hoverPopover).toBeNull();
+  });
+
+  it("opens over a plain Eta tag body, which carries no token span", async () => {
+    vi.useFakeTimers();
+    const parent: HoverParent = { hoverPopover: null };
+    using editor = mount(parent, "<%= zt.title %>", "eta");
+    expect(
+      editor.contentDOM.querySelector(`.${themeHook.templateProperty}`),
+    ).toBeNull();
+    // `title` runs from 7 to 12; Eta styles the delimiters alone.
+    await hover(editor, 7);
+    vi.advanceTimersByTime(300);
+    expect(
+      parent.hoverPopover?.hoverEl.querySelector("strong")?.textContent,
+    ).toBe("zt.title");
+  });
+
+  it("shows nothing where the pointer rests beside the token an offset resolves", async () => {
+    vi.useFakeTimers();
+    const parent: HoverParent = { hoverPopover: null };
+    using editor = mount(parent);
+    const line = editor.contentDOM.querySelector(".cm-line")!;
+    // `title` runs from 6 to 11, so its boxes end well before x=500.
+    vi.spyOn(editor, "posAtCoords").mockReturnValue(6);
+    await act(async () => {
+      line.dispatchEvent(
+        new MouseEvent("mousemove", {
+          bubbles: true,
+          clientX: 500,
+          clientY: LINE.top + 1,
+        }),
+      );
+    });
+    vi.advanceTimersByTime(300);
     expect(parent.hoverPopover).toBeNull();
   });
 

@@ -5,7 +5,7 @@
 // pointer has rested on the next token for the hover delay, then swaps; its
 // native target moves at once so the off-token grace keeps working.
 import { ViewPlugin } from "@codemirror/view";
-import type { EditorView, ViewUpdate } from "@codemirror/view";
+import type { EditorView, Rect, ViewUpdate } from "@codemirror/view";
 import type { HoverParent, Point } from "obsidian";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
@@ -25,13 +25,19 @@ const WAIT_TIME = 300;
 
 class TemplateHoverPopover extends SingletonHoverPopover {
   #root: Root | null;
-  constructor(parent: HoverParent, token: HTMLElement, option: Suggestion) {
+  readonly #box: () => Rect | null;
+  constructor(
+    parent: HoverParent,
+    token: HTMLElement,
+    card: { option: Suggestion; box: () => Rect | null },
+  ) {
     super(parent, token, WAIT_TIME);
+    this.#box = card.box;
     const mount = this.hoverEl.createDiv({
       cls: ["zt-root", themeHook.templateHover],
     });
     this.#root = createRoot(mount);
-    this.#root.render(<HoverFacts option={option} />);
+    this.#root.render(<HoverFacts option={card.option} />);
     // The card takes its place again as the content settles.
     this.watchResize(mount);
     this.register(() => {
@@ -49,13 +55,14 @@ class TemplateHoverPopover extends SingletonHoverPopover {
 
   /**
    * Obsidian anchors a popover to the union of its target's boxes, which for
-   * a token that wraps is the whole line. The card anchors to the token's
-   * first box instead, read live on every placement.
+   * a token that wraps is the whole line, and a plain Eta tag body gives it
+   * the line outright. The card anchors to the resolved token's own first box,
+   * read live from the editor on every placement.
    */
   override position(): void {
-    const box = this.targetEl?.getClientRects()[0];
+    const box = this.#box();
     this.staticPos = box
-      ? ({ x: box.left, y: box.top + box.height / 2 } satisfies Point)
+      ? ({ x: box.left, y: (box.top + box.bottom) / 2 } satisfies Point)
       : null;
     super.position();
     if (!box) return;
@@ -131,27 +138,39 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
 
       move(event: MouseEvent, element = event.target) {
         const node = element as Node | null;
+        // A styled token carries its own element, which a plain Eta tag body
+        // has none of. The line stands in for it, and the resolved range owns
+        // the hit test the element used to supply.
         const target = node?.instanceOf(HTMLElement)
-          ? node.closest<HTMLElement>(".cm-line span")
+          ? node.closest<HTMLElement>(".cm-line span, .cm-line")
           : null;
         if (!target || !this.view.contentDOM.contains(target)) {
           this.#target = null;
           this.#cancelSwap();
           return;
         }
-        if (target === this.#target) return;
-        this.#target = target;
         const position = this.view.posAtCoords({
           x: event.clientX,
           y: event.clientY,
         });
+        // Offsets alone answer a move inside the token already resolved, which
+        // is most of them; the resolver runs on the moves that leave it.
+        if (
+          target === this.#target &&
+          position !== null &&
+          this.#range !== null &&
+          position >= this.#range.from &&
+          position <= this.#range.to
+        )
+          return;
+        this.#target = target;
         const config = position === null ? null : read(position);
         const hint =
           config && position !== null
             ? hoverHint(this.view.state.doc.toString(), position, config)
             : null;
         const option = hint?.options[0];
-        if (!hint || !option) {
+        if (!hint || !option || !this.#over(hint, event)) {
           this.#cancelSwap();
           return;
         }
@@ -187,7 +206,10 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
           popover.render(option);
           return;
         }
-        const opened = new TemplateHoverPopover(parent, target, option);
+        const opened = new TemplateHoverPopover(parent, target, {
+          option,
+          box: () => this.#box(),
+        });
         this.#popover = opened;
         opened.register(() => {
           if (this.#popover !== opened) return;
@@ -196,6 +218,27 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
           this.#range = null;
           this.#cancelSwap();
         });
+      }
+
+      /** The token's first box, which is where the card anchors. */
+      #box(): Rect | null {
+        return this.#range === null
+          ? null
+          : this.view.coordsAtPos(this.#range.from, 1);
+      }
+
+      /** The pointer rests on the token itself, not merely on its line. */
+      #over(range: { from: number; to: number }, event: MouseEvent): boolean {
+        const start = this.view.coordsAtPos(range.from, 1);
+        const end = this.view.coordsAtPos(range.to, -1);
+        return (
+          !!start &&
+          !!end &&
+          event.clientX >= Math.min(start.left, end.left) &&
+          event.clientX <= Math.max(start.right, end.right) &&
+          event.clientY >= start.top &&
+          event.clientY <= end.bottom
+        );
       }
 
       #cancelSwap() {
