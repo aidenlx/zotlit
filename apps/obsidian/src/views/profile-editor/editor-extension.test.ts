@@ -106,12 +106,12 @@ describe("template token hooks", () => {
     expect(plain.textContent).toBe("Plain ");
   });
 
-  it("names Eta delimiters and the JavaScript inside them", () => {
+  it("names Eta delimiters and keeps tag bodies plain", () => {
     const editor = mount("<%= it.title.toUpperCase() %>", eta);
     expect(texts(editor, themeHook.templateDelimiter)).toEqual(["<%=", "%>"]);
-    expect(texts(editor, themeHook.templateVariable)).toEqual(["it"]);
-    expect(texts(editor, themeHook.templateProperty)).toEqual(["title"]);
-    expect(texts(editor, themeHook.templateFilter)).toEqual(["toUpperCase"]);
+    expect(texts(editor, themeHook.templateVariable)).toEqual([]);
+    expect(texts(editor, themeHook.templateProperty)).toEqual([]);
+    expect(texts(editor, themeHook.templateFilter)).toEqual([]);
   });
 
   it("names JSON keys and values in a rule", () => {

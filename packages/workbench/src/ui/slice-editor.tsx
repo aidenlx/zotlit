@@ -6,10 +6,10 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { SuggestionSource } from "#/language/index";
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useMemo, useRef } from "react";
 
 import { completionFields } from "./completion-fields";
 import { useDocumentRevision } from "./editor";
@@ -22,9 +22,11 @@ import { useParts, useEditorExtension } from "./theme";
 import { workbenchSlice, jsonLayout, jsonPosition } from "#/document/index";
 import {
   liquidTemplate,
+  etaLanguage,
+  etaBody,
+  liquidBody,
   templatePairing,
-  profileLanguage,
-  embeddedLiquid,
+  embeddedTemplates,
   jsonRule,
   embeddedJsonE,
 } from "#/language/index";
@@ -95,6 +97,7 @@ export function SliceEditor({
 }: SliceEditorProps) {
   useDocumentRevision(controller);
   const readOnly = controller.readOnly;
+  const engine = controller.templateLanguage;
   const m = useWorkbenchMessages();
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
@@ -102,6 +105,22 @@ export function SliceEditor({
   const nameId = useId();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
+  const syntaxSlot = useRef(new Compartment());
+  const syntax = useMemo(
+    () =>
+      language === "json-e"
+        ? jsonRule
+        : slice === "advanced" || language === "expression"
+          ? []
+          : engine === "eta"
+            ? slice === "filename"
+              ? etaLanguage
+              : etaBody
+            : slice === "filename"
+              ? liquidTemplate
+              : liquidBody,
+    [engine, language, slice],
+  );
   // The view outlives every render, so it reads the current callbacks through
   // a ref instead of being rebuilt whenever the host passes new ones.
   const report = useRef({
@@ -110,6 +129,7 @@ export function SliceEditor({
     suggest,
     adapter,
     editorExtension,
+    syntax,
     m,
   });
   report.current = {
@@ -118,6 +138,7 @@ export function SliceEditor({
     suggest,
     adapter,
     editorExtension,
+    syntax,
     m,
   };
 
@@ -169,26 +190,25 @@ export function SliceEditor({
         extensions: [
           EditorState.readOnly.of(readOnly),
           workbenchSlice(controller, slice, language === "json-e"),
-          language === "json-e"
-            ? jsonRule
-            : slice === "advanced"
-              ? profileLanguage
-              : language === "expression"
-                ? []
-                : liquidTemplate,
+          syntaxSlot.current.of(report.current.syntax),
           ...(language === "expression"
             ? [
-                embeddedLiquid((source) => [
+                embeddedTemplates((source) => [
                   { from: 0, to: source.length, expression: true },
                 ]),
               ]
             : []),
           ...(slice === "advanced"
             ? [
-                embeddedLiquid(() =>
-                  controller.templateRegions.filter(
-                    (region) => region.expression || region.root === "filename",
-                  ),
+                embeddedTemplates(
+                  () =>
+                    controller.templateRegions
+                      .filter((region) => region.language !== "json-e")
+                      .map((region) => ({
+                        ...region,
+                        body: !region.expression && region.root !== "filename",
+                      })),
+                  () => controller.sliceRange("note").from,
                 ),
               ]
             : []),
@@ -197,7 +217,10 @@ export function SliceEditor({
             const config = read(position);
             return config?.language === "json-e" ? null : config;
           }),
-          report.current.adapter?.editorPopups?.(read, host.current!) ?? [],
+          report.current.adapter?.editorPopups?.((position) => {
+            const config = read(position);
+            return config?.language === "eta" ? null : config;
+          }, host.current!) ?? [],
           ...(language === "json-e" || slice === "advanced"
             ? [
                 embeddedJsonE((source) =>
@@ -263,6 +286,12 @@ export function SliceEditor({
       view.destroy();
     };
   }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
+
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: syntaxSlot.current.reconfigure(syntax),
+    });
+  }, [syntax]);
 
   useEffect(() => {
     const view = editor.current;

@@ -3,11 +3,14 @@ import { liquidTagLanguage } from "@codemirror/lang-liquid";
 import { LanguageSupport, syntaxTree } from "@codemirror/language";
 import type { Range } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
-import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
+import type { ViewUpdate } from "@codemirror/view";
+import type { Tree } from "@lezer/common";
+import { parseMixed } from "@lezer/common";
 import { regex } from "arkregex";
 
 import { templateToken } from "./highlight";
 import { liquidRanges } from "./liquid-ranges";
+import { markdownParser } from "./markdown";
 export { liquidRanges, STRUCTURAL_TAGS } from "./liquid-ranges";
 export type { LiquidRange } from "./liquid-ranges";
 
@@ -20,11 +23,15 @@ const TAG_NAME = regex("^\\s*(?<name>[\\w#]+)");
  * `{% endbq %}` — read as plain text, so the scanner colors their
  * delimiters and name the way the parser colors the tags it knows.
  */
-function refusedTags(view: EditorView): DecorationSet {
-  const source = view.state.doc.toString();
-  const tree = syntaxTree(view.state);
+export function refusedLiquidMarks(
+  source: string,
+  tree: Tree,
+): Range<Decoration>[] {
   const marks: Range<Decoration>[] = [];
   for (const range of liquidRanges(source)) {
+    let owner = tree.resolve(range.from, 1);
+    while (owner.parent && !owner.type.isTop) owner = owner.parent;
+    if (owner.name !== "Template") continue;
     // A tag the parser read has syntax nodes for both delimiters. A refused
     // closer can still have an error node for its opening delimiter.
     const parsedOpen = tree.resolveInner(range.from, 1).name;
@@ -49,18 +56,27 @@ function refusedTags(view: EditorView): DecorationSet {
     if (range.closed && !parserReadClose)
       marks.push(delimiter.range(close, range.to));
   }
-  return Decoration.set(marks, true);
+  return marks;
 }
 
 const refusedTagHighlight = ViewPlugin.define(
   (view) => ({
-    decorations: refusedTags(view),
+    decorations: Decoration.set(
+      refusedLiquidMarks(view.state.doc.toString(), syntaxTree(view.state)),
+      true,
+    ),
     update(update: ViewUpdate) {
       if (
         update.docChanged ||
         syntaxTree(update.state) !== syntaxTree(update.startState)
       )
-        this.decorations = refusedTags(update.view);
+        this.decorations = Decoration.set(
+          refusedLiquidMarks(
+            update.state.doc.toString(),
+            syntaxTree(update.state),
+          ),
+          true,
+        );
     },
   }),
   { decorations: (plugin) => plugin.decorations },
@@ -70,3 +86,19 @@ const refusedTagHighlight = ViewPlugin.define(
 export const liquidTemplate = new LanguageSupport(liquidTagLanguage, [
   refusedTagHighlight,
 ]);
+
+/** Liquid owns template syntax, with Markdown parsed across the host text. */
+export const liquidBody = new LanguageSupport(
+  liquidTagLanguage.configure({
+    wrap: parseMixed((node) =>
+      node.type.isTop
+        ? {
+            parser: markdownParser,
+            overlay: (child) =>
+              child.name === "Text" || child.name === "RawText",
+          }
+        : null,
+    ),
+  }),
+  [refusedTagHighlight],
+);

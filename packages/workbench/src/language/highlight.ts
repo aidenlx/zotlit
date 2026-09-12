@@ -2,7 +2,10 @@
 // are ZotLit's public theme hooks: a host colors them, and a theme or CSS
 // snippet can restyle them by class.
 import { syntaxHighlighting } from "@codemirror/language";
+import type { NodeType } from "@lezer/common";
 import { tagHighlighter, tags } from "@lezer/highlight";
+
+import { markdownTop } from "./markdown";
 
 /** The theme hook for each kind of template token. */
 export const templateToken = {
@@ -40,4 +43,29 @@ export const templateHighlighter = tagHighlighter([
   { tag: tags.invalid, class: templateToken.invalid },
 ]);
 
-export const templateHighlighting = syntaxHighlighting(templateHighlighter);
+/** Document styling around template expressions. */
+export const documentToken = {
+  frontmatter: "zt-template-frontmatter",
+  markdownMarker: "zt-template-markdown-marker",
+  markdownListMarker: "zt-template-markdown-list-marker",
+} as const;
+
+export const templateHighlighters = [
+  { ...templateHighlighter, scope: (node: NodeType) => node !== markdownTop },
+  {
+    ...tagHighlighter([
+      {
+        tag: tags.special(tags.punctuation),
+        class: documentToken.markdownMarker,
+      },
+      {
+        tag: tags.special(tags.separator),
+        class: `${documentToken.markdownMarker} ${documentToken.markdownListMarker}`,
+      },
+    ]),
+    scope: (node: NodeType) => node === markdownTop,
+  },
+];
+export const templateHighlighting = templateHighlighters.map((highlighter) =>
+  syntaxHighlighting(highlighter),
+);
