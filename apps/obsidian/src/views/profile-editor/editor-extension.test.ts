@@ -88,6 +88,13 @@ describe("template token hooks", () => {
     expect(texts(editor, themeHook.templateKeyword)).toEqual(["bq", "endbq"]);
   });
 
+  it("keeps an incomplete Liquid output on the parser's token path", () => {
+    const editor = mount("{{ zt", liquidTemplate);
+    expect(texts(editor, themeHook.templateDelimiter)).toEqual(["{{"]);
+    expect(texts(editor, themeHook.templateVariable)).toEqual(["zt"]);
+    expect(texts(editor, themeHook.templateKeyword)).toEqual([]);
+  });
+
   it("marks a Liquid comment and leaves the prose between tags bare", () => {
     const editor = mount(
       "Plain {% comment %}x{% endcomment %}",

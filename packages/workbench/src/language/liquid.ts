@@ -1,5 +1,5 @@
 // Liquid editor language and the tag-range scanner that bounds suggestions.
-import { liquidLanguage } from "@codemirror/lang-liquid";
+import { liquidTagLanguage } from "@codemirror/lang-liquid";
 import { LanguageSupport, syntaxTree } from "@codemirror/language";
 import type { Range } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
@@ -25,14 +25,19 @@ function refusedTags(view: EditorView): DecorationSet {
   const tree = syntaxTree(view.state);
   const marks: Range<Decoration>[] = [];
   for (const range of liquidRanges(source)) {
-    // A tag the parser read starts with its own delimiter node.
-    if (range.line || tree.resolveInner(range.from, 1).name.startsWith("{"))
+    // A tag the parser read has syntax nodes for both delimiters. A refused
+    // closer can still have an error node for its opening delimiter.
+    const parsedOpen = tree.resolveInner(range.from, 1).name;
+    const parsedClose = tree.resolveInner(range.to, -1).name;
+    const parserReadOpen = parsedOpen.startsWith("{");
+    const parserReadClose = parsedClose.endsWith("}");
+    if (range.line || (parserReadOpen && (parserReadClose || !range.closed)))
       continue;
     const open = range.from + (source[range.from + 2] === "-" ? 3 : 2);
     const close = range.closed
       ? range.to - (source[range.to - 3] === "-" ? 3 : 2)
       : range.to;
-    marks.push(delimiter.range(range.from, open));
+    if (!parserReadOpen) marks.push(delimiter.range(range.from, open));
     const name = TAG_NAME.exec(source.slice(open, close));
     if (name)
       marks.push(
@@ -41,7 +46,8 @@ function refusedTags(view: EditorView): DecorationSet {
           open + name[0].length,
         ),
       );
-    if (range.closed) marks.push(delimiter.range(close, range.to));
+    if (range.closed && !parserReadClose)
+      marks.push(delimiter.range(close, range.to));
   }
   return Decoration.set(marks, true);
 }
@@ -61,6 +67,6 @@ const refusedTagHighlight = ViewPlugin.define(
 );
 
 /** Liquid over plain text: the prose between tags carries no syntax of its own. */
-export const liquidTemplate = new LanguageSupport(liquidLanguage, [
+export const liquidTemplate = new LanguageSupport(liquidTagLanguage, [
   refusedTagHighlight,
 ]);
