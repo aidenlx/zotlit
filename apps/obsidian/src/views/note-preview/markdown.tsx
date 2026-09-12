@@ -63,6 +63,9 @@ export function NativeMarkdown({
     const pusher = element.createDiv({ cls: "markdown-preview-pusher" });
     const target = element.createDiv();
     target.dataset["zotlitDraft"] = "";
+    // Keep the target away from Obsidian's last-section rule, as the native
+    // Reading view does with its footer after the rendered blocks.
+    const footer = element.createDiv({ cls: "mod-footer mod-ui" });
     const lifecycle = new Component();
     let disposed = false;
     lifecycle.load();
@@ -158,6 +161,7 @@ export function NativeMarkdown({
       lifecycle.unload();
       pusher.remove();
       target.remove();
+      footer.remove();
     };
   }, [app, markdown, result, marks, showMarkdown, onRendered]);
   const present = properties.filter(({ missing }) => !missing);
@@ -180,7 +184,7 @@ export function NativeMarkdown({
   return (
     <div
       className={cn(
-        "markdown-preview-view markdown-rendered show-properties zt-note-preview-sheet",
+        "markdown-preview-view markdown-rendered show-properties zt-note-preview-sheet zt-native-markdown",
         app.vault.getConfig("readableLineLength") && "is-readable-line-width",
       )}
     >
