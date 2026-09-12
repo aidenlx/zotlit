@@ -689,6 +689,8 @@
   "graph_option_wikilink_citations_desc": "Draw an edge from each note to the literature notes it links to.",
   "graph_option_citation_connected_only_name": "Citation-connected only",
   "graph_option_citation_connected_only_desc": "Hide every node except literature notes, cited works, and the notes that cite them.",
+  "graph_option_author_title_labels_name": "Author and title labels",
+  "graph_option_author_title_labels_desc": "Show authors, year, and short title on literature notes and cited works.",
   "graph_option_citation_popover_name": "Citation popover",
   "graph_option_citation_popover_desc": "Show citation details when hovering over a literature note or cited work in this graph.",
   "graph_option_color_citation_links_name": "Color citation links",

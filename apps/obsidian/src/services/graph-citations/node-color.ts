@@ -141,14 +141,19 @@ export function stampNodeColors(
  */
 export function installNodeColors(
   renderer: GraphLeafMembers["renderer"],
-  installation: { readonly additions: GraphCitationAdditions },
+  installation: {
+    readonly additions: GraphCitationAdditions;
+    handedOff?(data: GraphData): void;
+  },
   colors: GraphNodeColors,
 ): Disposable {
   return disposable(
     around(renderer, {
       setData: (setData) => (data) => {
         stampNodeColors(data, installation.additions, colors.current());
-        return setData.call(renderer, data);
+        const result = setData.call(renderer, data);
+        installation.handedOff?.(data);
+        return result;
       },
     }),
   );

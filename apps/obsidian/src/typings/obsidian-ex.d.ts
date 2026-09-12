@@ -249,6 +249,8 @@ declare module "obsidian" {
    * Obsidian 1.13.7 and 1.14.0, the hover members against 1.14.1.
    */
   interface GraphRenderer {
+    /** Lazy graphics nodes, verified against Obsidian 1.14.1. */
+    nodes?: GraphDrawnNode[];
     onNodeClick?: GraphNodeCallback;
     /**
      * The right-click callback, bound beside {@link onNodeClick} in the same
@@ -312,6 +314,34 @@ declare module "obsidian" {
   /** One node as the renderer draws it; the renderer holds one per node id. */
   interface GraphDrawnNode {
     id: string;
+    initGraphics?(): boolean;
+    clearGraphics?(): void;
+    getTextStyle?(): GraphTextStyle;
+    text?: GraphTextDisplay | null;
+  }
+  interface GraphTextStyle {
+    fontFamily: string | string[];
+    fontSize: number;
+    fontWeight?: string;
+    fill: number | string;
+    wordWrap?: boolean;
+    align?: string;
+  }
+  interface GraphTextDisplay {
+    x: number;
+    y: number;
+    alpha: number;
+    visible: boolean;
+    zIndex: number;
+    eventMode: string;
+    scale: { x: number; y: number; set(x: number, y?: number): void };
+    parent: GraphTextContainer | null;
+    destroy(options?: object): void;
+    style?: GraphTextStyle;
+  }
+  interface GraphTextContainer extends GraphTextDisplay {
+    addChild(child: GraphTextDisplay): unknown;
+    removeChild(child: GraphTextDisplay): unknown;
   }
   /** The sprite one edge's line is drawn as. */
   interface GraphLinkSprite {
