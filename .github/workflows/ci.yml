@@ -83,6 +83,5 @@ jobs:
       # Vitest's `github-actions` reporter emits ::error for inline test
       # annotations; `default` provides console output. Reporters are passed
       # via turbo passthrough.
-      # Each package owns a Vitest pool; bound both layers to avoid CPU contention.
       - name: Test
-        run: pnpm turbo run test --concurrency=2 -- --maxWorkers=2 --reporter=default --reporter=github-actions
+        run: pnpm turbo run test -- --reporter=default --reporter=github-actions

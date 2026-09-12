@@ -1,11 +1,12 @@
-import { configureSync, getConsoleSink } from "@logtape/logtape";
+import "@mock/dom-parser";
+import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { App, TFile } from "obsidian";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with { type: "json" };
@@ -70,8 +71,7 @@ const ETA_PARTIAL: LiteratureNoteTemplatePartial = {
 
 let captured: LogRecord[] = [];
 
-beforeEach(() => {
-  captured = [];
+beforeAll(() => {
   configureSync({
     reset: true,
     sinks: {
@@ -86,15 +86,11 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  configureSync({
-    reset: true,
-    sinks: { console: getConsoleSink() },
-    loggers: [
-      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
-    ],
-  });
+beforeEach(() => {
+  captured = [];
 });
+
+afterAll(() => resetSync());
 
 /** Every field every captured record carries, as one string to search. */
 function loggedText(): string {

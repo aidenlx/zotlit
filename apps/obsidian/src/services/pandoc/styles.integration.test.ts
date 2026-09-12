@@ -1,5 +1,5 @@
+import "@mock/dom-parser";
 // The Resolved CSL Style as citeproc reads it: what an installed style actually renders.
-
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";

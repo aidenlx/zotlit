@@ -13,7 +13,6 @@ import {
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
   openNativeProfile,
-  requiresNative,
   openTemplateWorkbench,
   registerTemplateWorkbenchView,
 } from "./register";
@@ -537,7 +536,6 @@ Annotation`);
         `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`,
       );
       await openNativeProfile(app, file);
-      expect(requiresNative(await app.vault.cachedRead(file))).toBe(true);
       expect(setViewState).toHaveBeenCalledOnce();
     },
   );

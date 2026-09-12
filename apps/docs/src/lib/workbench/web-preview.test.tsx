@@ -225,7 +225,7 @@ describe("preview scheduling", () => {
   });
 
   it("passes create and update inputs while preserving the synthesized note's outside text", async () => {
-    using page = open();
+    await using page = await open();
     editNote(page.host, "My own introduction\n");
     await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(renderInThread.mock.lastCall![0].mode).toBe("create");
@@ -237,8 +237,10 @@ describe("preview scheduling", () => {
     expect(result.creationBody).toContain("My own introduction");
     expect(result.creationBody).toContain("%%zt-managed%%");
     expect(result.fold.length).toBeGreaterThan(0);
-    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
-      "My own introduction",
-    );
+    await page.waitFor(() => {
+      expect(
+        page.host.querySelector('[role="document"]')?.textContent,
+      ).toContain("My own introduction");
+    });
   });
 });

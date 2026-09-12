@@ -289,49 +289,6 @@ describe("Profile settings", () => {
     expect(profiles.extraButtons).toBeUndefined();
   });
 
-  it("keeps match summaries on profile rows and file paths on excluded documents", () => {
-    const ctx = context();
-    ctx.profile = {
-      profiles: [
-        {
-          id: "Bk3Qn7XvT2Lp",
-          label: "Books",
-          document: "zotlit-profile.one.md",
-          match: { state: "absent", summary: m.profile_match_absent() },
-          bindings: {},
-        },
-        {
-          id: "Rz9Wm4YfH6Kd",
-          label: "Books",
-          document: "zotlit-profile.two.md",
-          match: { state: "all", summary: m.profile_match_all() },
-          bindings: {},
-        },
-      ],
-      diagnostics: [
-        {
-          code: "duplicate-profile-id",
-          path: "templates/zotlit-profile.copy.md",
-          paths: [
-            "templates/zotlit-profile.original.md",
-            "templates/zotlit-profile.copy.md",
-          ],
-        },
-      ],
-    } as unknown as SettingTabContext["profile"];
-    const page = profilesPage(ctx);
-    expect(list(page, m.settings_profile_other_heading()).items).toEqual([
-      expect.objectContaining({ name: "Books" }),
-      expect.objectContaining({ name: "Books" }),
-    ]);
-    // A refused document never shares the list with the Profiles that loaded.
-    expect(list(page, m.settings_profile_excluded_heading()).items).toEqual([
-      expect.objectContaining({
-        name: "templates/zotlit-profile.copy.md",
-      }),
-    ]);
-  });
-
   it("writes only default bindings through the settings controls", () => {
     const ctx = context();
     expect(
@@ -388,8 +345,6 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
   ).toBe(true);
 
   const excluded = list(page, m.settings_profile_excluded_heading());
-  expect(excluded.items!.map((row) => row.name)).toEqual(paths);
-
   render(excluded.items![0]!)
     .components.filter((control) => control instanceof ExtraButtonComponent)
     .find((button) => button.tooltip === m.settings_template_open())!

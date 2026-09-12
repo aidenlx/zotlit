@@ -39,13 +39,16 @@ export { renderInThread };
 export const KEY = "zotlit.workbench.draft.standalone";
 export const PORT = 23_120;
 export const BRIDGE_ORIGIN = `http://127.0.0.1:${PORT}`;
-export function launch(code = "fixture-code", port = PORT): OpenPage {
+export async function launch(
+  code = "fixture-code",
+  port = PORT,
+): Promise<OpenPage> {
   window.location.hash = connectFragment(code, port);
   return open();
 }
 
-/** Quiet time after the last change, plus room for the write to land. */
-export const SETTLE_MS = 700;
+/** Virtual time covering the render debounce and draft autosave. */
+const SETTLE_MS = 700;
 
 /** The width this environment opens on, which every test starts from. */
 export const DEFAULT_WIDTH = window.innerWidth;
@@ -73,6 +76,7 @@ export const FIXTURE_CSL_STYLE =
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   installStorage("localStorage");
   installStorage("sessionStorage");
@@ -91,6 +95,7 @@ beforeEach(() => {
 // page at another width hands the next one back the width it opened on.
 afterEach(() => {
   resize(DEFAULT_WIDTH);
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -111,7 +116,7 @@ export function emptied(
   return { from, to: from + line.length, insert: `${line.split(":")[0]}:` };
 }
 
-export interface OpenPage extends Disposable {
+export interface OpenPage extends AsyncDisposable {
   host: HTMLElement;
   /** Presses the button carrying `label`. */
   press: (label: string) => void;
@@ -124,17 +129,26 @@ export interface OpenPage extends Disposable {
 }
 
 /** The page mounted for real, so its own effects run. */
-export function open({ strict = false }: { strict?: boolean } = {}): OpenPage {
-  const host = document.createElement("div");
+export async function open({
+  strict = false,
+}: { strict?: boolean } = {}): Promise<OpenPage> {
+  await using resources = new AsyncDisposableStack();
+  const host = resources.adopt(document.createElement("div"), (element) => {
+    element.remove();
+  });
   document.body.appendChild(host);
   const root = createRoot(host);
+  resources.defer(() => act(async () => root.unmount()));
   const content = (
     <>
       <Workbench />
       <Toaster />
     </>
   );
-  act(() => root.render(strict ? <StrictMode>{content}</StrictMode> : content));
+  await act(async () => {
+    root.render(strict ? <StrictMode>{content}</StrictMode> : content);
+  });
+  const lifetime = resources.move();
   return {
     host,
     press: (label) => press(host, label),
@@ -157,17 +171,26 @@ export function open({ strict = false }: { strict?: boolean } = {}): OpenPage {
     },
     async settle() {
       await act(async () => {});
-      await act(() => new Promise((resolve) => setTimeout(resolve, SETTLE_MS)));
+      await act(() => vi.advanceTimersByTimeAsync(SETTLE_MS));
     },
     async waitFor(assertion) {
-      await vi.waitFor(async () => {
-        await act(async () => {});
-        assertion();
-      });
+      // Vitest's waitFor advances fake timers outside act. Own the virtual
+      // clock here so debounce callbacks and their React updates settle together.
+      for (let elapsed = 0; elapsed <= 1_000; elapsed += 50) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(elapsed === 0 ? 0 : 50);
+          await vi.dynamicImportSettled();
+        });
+        try {
+          assertion();
+          return;
+        } catch (error) {
+          if (elapsed === 1_000) throw error;
+        }
+      }
     },
-    [Symbol.dispose]() {
-      act(() => root.unmount());
-      host.remove();
+    async [Symbol.asyncDispose]() {
+      await lifetime.disposeAsync();
     },
   };
 }

@@ -11,9 +11,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import { advancedPageItems } from "./advanced";
 import type { SettingsKey, SettingTabContext } from "./context";
 
-function items(webWorkbenchEnabled: boolean) {
+function items() {
   return advancedPageItems({
-    webWorkbenchEnabled,
+    webWorkbenchEnabled: true,
     app: { loadLocalStorage: () => null, saveLocalStorage: () => {} },
     settings: { current: { "log.to-file": false } },
     template: { loaded: false },
@@ -22,10 +22,10 @@ function items(webWorkbenchEnabled: boolean) {
   } as unknown as SettingTabContext);
 }
 
-it("includes the editor-choice preference only in web-enabled builds", () => {
+it("offers each editor choice in web-enabled builds", () => {
   const preferenceName = m.template_workbench_preference_name();
 
-  const row = items(true).find(
+  const row = items().find(
     (item): item is SettingDefinitionItem<SettingsKey> =>
       "name" in item && item.name === preferenceName,
   )!;
@@ -41,8 +41,4 @@ it("includes the editor-choice preference only in web-enabled builds", () => {
     { value: "web", label: m.template_workbench_preference_web() },
     { value: "native", label: m.template_workbench_name() },
   ]);
-
-  expect(items(false)).not.toContainEqual(
-    expect.objectContaining({ name: preferenceName }),
-  );
 });

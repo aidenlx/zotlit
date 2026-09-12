@@ -16,10 +16,22 @@ import { themeHook } from "@/lib/theme-hooks";
 import { CODE_PANE_CLASS, codePane } from "./editor-extension";
 
 let view: EditorView | null = null;
+const onWindowMigrated = Object.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "onWindowMigrated",
+);
 afterEach(() => {
   view?.destroy();
   view = null;
-  Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
+  if (onWindowMigrated) {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      "onWindowMigrated",
+      onWindowMigrated,
+    );
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
+  }
   Reflect.deleteProperty(navigator, "clipboard");
 });
 

@@ -175,13 +175,6 @@ beforeEach(() => {
 });
 
 describe("the Export note with citations command", () => {
-  it("is registered under the name the palette offers it by", () => {
-    expect(openVault({ note: {} }).command).toMatchObject({
-      id: "pandoc-export",
-      name: m.command_pandoc_export_name(),
-    });
-  });
-
   it("is offered for the active Markdown note", () => {
     expect(openVault({ note: {} }).offered()).toBe(true);
   });

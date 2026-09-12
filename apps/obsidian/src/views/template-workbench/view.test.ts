@@ -1,3 +1,4 @@
+import { forceParsing } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
 import type {
@@ -151,6 +152,12 @@ describe("TemplateWorkbenchView", () => {
     );
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    await act(() => {
+      expect(forceParsing(editor, editor.state.doc.length, 1_000)).toBe(true);
+    });
     const tokens = (hook: string) =>
       [...view.contentEl.querySelectorAll(`.${hook}`)].map(
         (node) => node.textContent,

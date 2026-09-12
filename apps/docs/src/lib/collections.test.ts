@@ -123,6 +123,8 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
     pagePath,
     "---\ntitle: Updated\n---\n# Changed\n\nSecond body\n",
   );
+  // Vite has registered its watched paths; deliver the fixture change explicitly.
+  server.watcher.emit("change", pagePath);
   await expect
     .poll(async () => (await load()).docs.getPage("index.mdx")?.title, {
       timeout: 5000,
@@ -130,18 +132,21 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
     .toBe("Updated");
   const added = join(root, "content/docs/added.mdx");
   await writeFile(added, "---\ntitle: Added\n---\nAdded body\n");
+  server.watcher.emit("add", added);
   await expect
     .poll(async () => (await load()).docs.getPage("added.mdx")?.title, {
       timeout: 5000,
     })
     .toBe("Added");
   await rm(added);
+  server.watcher.emit("unlink", added);
   await expect
     .poll(async () => (await load()).docs.getPage("added.mdx"), {
       timeout: 5000,
     })
     .toBeUndefined();
   await writeFile(modulePath, declarations.replace("**/[^_]*.mdx", "**/*.mdx"));
+  server.watcher.emit("change", modulePath);
   await expect
     .poll(async () => (await load()).docs.getPage("_partial.mdx")?.title, {
       timeout: 5000,
@@ -151,6 +156,7 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
     optionsPath,
     options.replace("Original description", "Updated description"),
   );
+  server.watcher.emit("change", optionsPath);
   await expect
     .poll(async () => (await load()).docs.getPage("index.mdx")?.description, {
       timeout: 5000,
@@ -164,6 +170,7 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
     }] }
   };`,
   );
+  server.watcher.emit("change", join(root, "source.config.ts"));
   await expect
     .poll(
       async () => {

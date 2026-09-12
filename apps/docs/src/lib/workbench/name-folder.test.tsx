@@ -3,13 +3,17 @@
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { NameFolderPane } from "@zotlit/workbench/ui";
 
 import { WebTestHost } from "./test-host";
+
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
+afterEach(() => vi.unstubAllGlobals());
+
 const OWN_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
   "id: default",
   `id: reading
@@ -17,18 +21,16 @@ folder: papers
 importColoredHighlights: false`,
 ).replace("name: Default", "name: Reading notes");
 
-interface OpenPane extends Disposable {
-  controller: WorkbenchDocumentController;
-  host: HTMLElement;
-}
-
-/** The tab mounted for real, so the editor and the confirmation both run. */
-function openPane(source: string): OpenPane {
-  const controller = new WorkbenchDocumentController(source);
-  const host = document.createElement("div");
+it("offers Filename Root fields while typing in the note name", async () => {
+  await using cleanup = new AsyncDisposableStack();
+  const controller = new WorkbenchDocumentController(OWN_PROFILE);
+  const host = cleanup.adopt(document.createElement("div"), (element) => {
+    element.remove();
+  });
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() => {
+  cleanup.defer(() => act(async () => root.unmount()));
+  await act(async () => {
     root.render(
       <WebTestHost>
         <NameFolderPane
@@ -39,20 +41,8 @@ function openPane(source: string): OpenPane {
       </WebTestHost>,
     );
   });
-  return {
-    controller,
-    host,
-    [Symbol.dispose]() {
-      act(() => root.unmount());
-      host.remove();
-    },
-  };
-}
-
-it("offers Filename Root fields while typing in the note name", async () => {
-  using tab = openPane(OWN_PROFILE);
   const view = EditorView.findFromDOM(
-    tab.host.querySelector<HTMLElement>(".cm-editor")!,
+    host.querySelector<HTMLElement>(".cm-editor")!,
   )!;
   await act(async () => {
     view.focus();

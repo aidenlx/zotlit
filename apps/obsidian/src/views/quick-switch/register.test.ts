@@ -1,10 +1,17 @@
 import type { Command, Plugin } from "obsidian";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { registerQuickSwitch } from "./register";
 import type { QuickSwitchDeps } from "./register";
 
-it("registers the Quick Switch command with Profile switching owned by the note actions", () => {
+const opened = vi.hoisted(() => vi.fn());
+vi.mock("./modal", () => ({
+  QuickSwitchModal: class {
+    open = opened;
+  },
+}));
+
+it("opens Quick Switch from its command", () => {
   const commands: Command[] = [];
   registerQuickSwitch(
     {
@@ -15,5 +22,8 @@ it("registers the Quick Switch command with Profile switching owned by the note 
     } as Pick<Plugin, "addCommand">,
     {} as QuickSwitchDeps,
   );
-  expect(commands.map(({ id }) => id)).toEqual(["note-quick-switcher"]);
+
+  commands[0]!.callback!();
+
+  expect(opened).toHaveBeenCalledOnce();
 });
