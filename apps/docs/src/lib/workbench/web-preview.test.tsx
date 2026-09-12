@@ -237,8 +237,10 @@ describe("preview scheduling", () => {
     expect(result.creationBody).toContain("My own introduction");
     expect(result.creationBody).toContain("%%zt-managed%%");
     expect(result.fold.length).toBeGreaterThan(0);
-    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
-      "My own introduction",
-    );
+    await page.waitFor(() => {
+      expect(
+        page.host.querySelector('[role="document"]')?.textContent,
+      ).toContain("My own introduction");
+    });
   });
 });
