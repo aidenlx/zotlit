@@ -295,6 +295,7 @@ class FakeRenderer {
     ...NODE_POSITIONS,
   };
   scale = 2;
+  fTextShowMult: number | undefined = 0;
   panX = 4;
   panY = 6;
   nodes: FakeLabelNode[] = [];
@@ -3052,6 +3053,7 @@ describe("GraphCitations Citation Graph preset", () => {
 
 /** Native text/container lifecycle sufficient to exercise lazy node graphics. */
 class FakeLabelContainer implements GraphTextContainer {
+  updateTransform(): void {}
   x = 0;
   y = 0;
   alpha = 1;
@@ -3222,7 +3224,24 @@ describe("Graph Work Labels", () => {
       "Graph study",
     ]);
     expect(doe.text).not.toBe(pine.text);
-    expect(labelLines(doe)[1]!.alpha).toBe(0.65);
+    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+    const labelContainer = doe.text as FakeLabelContainer;
+    const titleY = labelLines(doe)[1]!.y;
+    engine.renderer.scale = 0.25;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0);
+    expect(labelLines(doe)[1]!.y).toBe(titleY);
+    engine.renderer.highlightNode = doe;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+    engine.renderer.highlightNode = null;
+    engine.renderer.scale = 2;
+    engine.renderer.fTextShowMult = 0.5;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0.3);
+    engine.renderer.fTextShowMult = undefined;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
     expect(labelLines(doe)[0]!.anchor.y).toBe(0);
     expect(labelLines(doe)[0]!.style.wordWrap).toBe(false);
     engine.render();

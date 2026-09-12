@@ -12,6 +12,7 @@ import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 
 import type { GraphLeafMembers } from "./install";
+import { workLabelTitleAlpha } from "./work-label-zoom";
 
 const logger = getLogger("graph-citations");
 const LABEL_WIDTH = 240;
@@ -51,6 +52,7 @@ interface HeldNode {
 export class WorkLabelGraphics implements Disposable {
   readonly #members;
   readonly #held = new Map<GraphDrawnNode, HeldNode>();
+  #warnedFade = false;
 
   constructor(members: GraphLeafMembers) {
     this.#members = members;
@@ -114,7 +116,15 @@ export class WorkLabelGraphics implements Disposable {
     if (!native || native === held.container) return;
     let container: GraphTextContainer | null = null;
     try {
-      const win = this.#members.renderer.containerEl.ownerDocument.defaultView;
+      const { renderer } = this.#members;
+      if (
+        typeof renderer.getHighlightNode !== "function" ||
+        typeof renderer.scale !== "number" ||
+        !Number.isFinite(renderer.scale) ||
+        renderer.scale <= 0
+      )
+        throw new Error("Work Label zoom members unavailable");
+      const win = renderer.containerEl.ownerDocument.defaultView;
       const pixi = (win as unknown as { PIXI?: GraphPixi } | null)?.PIXI;
       if (
         !pixi ||
@@ -132,6 +142,21 @@ export class WorkLabelGraphics implements Disposable {
       container = makeLabel(pixi, {
         style: node.getTextStyle!(),
         label: held.label,
+        titleAlpha: () => {
+          const fade = renderer.fTextShowMult;
+          if (!Number.isFinite(fade) && !this.#warnedFade) {
+            this.#warnedFade = true;
+            logger.warn("Graph text fade term unavailable; using zero", {
+              member: "fTextShowMult",
+              value: fade,
+            });
+          }
+          return workLabelTitleAlpha(
+            renderer.scale!,
+            fade,
+            renderer.getHighlightNode!() === node,
+          );
+        },
         failedStyle: (error) => {
           logger.warn(
             "Graph Work Label style refresh failed; restoring native text",
@@ -211,10 +236,12 @@ function makeLabel(
     style,
     label,
     failedStyle,
+    titleAlpha,
   }: {
     style: GraphTextStyle;
     label: WorkLabel;
     failedStyle: (error: unknown) => void;
+    titleAlpha: () => number;
   },
 ): GraphTextContainer {
   using rollback = new DisposableStack();
@@ -225,6 +252,7 @@ function makeLabel(
   );
   if (
     typeof container.addChild !== "function" ||
+    typeof container.updateTransform !== "function" ||
     typeof container.scale?.set !== "function"
   )
     throw new Error("Work Label container members unavailable");
@@ -242,7 +270,13 @@ function makeLabel(
     line.resolution = 2;
     line.eventMode = "none";
   }
-  second.alpha = 0.65;
+  second.alpha = titleAlpha();
+  const updateTransform = container.updateTransform.bind(container);
+  container.updateTransform = () => {
+    // PIXI visits visible children only; update alpha before child transforms.
+    second.alpha = titleAlpha();
+    updateTransform();
+  };
   const applyStyle = (next: GraphTextStyle): void => {
     if (
       !Number.isFinite(next.fontSize) ||
