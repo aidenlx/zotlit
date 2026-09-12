@@ -1359,6 +1359,52 @@ language: liquid
     expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
   });
 
+  it("returns the reader to the place in the source the reading left", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
+    );
+
+    // Where the reader was editing, which every pane reports as it moves.
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    await act(async () => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 4 } });
+    });
+    const left = view.insertTarget!;
+    // The pane reports master offsets, so the caret's own slice places it.
+    const caret = view.controller.sliceRange(left.slice).from + 4;
+    expect(left.range).toMatchObject({ from: caret, to: caret });
+
+    const area = view.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    const press = (label: string) =>
+      act(async () =>
+        [...area.querySelectorAll("button")]
+          .find((button) => button.textContent === label)!
+          .click(),
+      );
+    await press(m.workbench_problem_show());
+    await press(m.workbench_problems_expand());
+    expect(area.dataset.state).toBe("full");
+
+    await press(m.workbench_problems_return());
+    // The area gives the editor back whole, and the caret is where it was.
+    expect(area.dataset.state).toBe("compact");
+    expect(view.store.getState().presentation.reveal).toMatchObject({
+      from: caret,
+      to: caret,
+      slice: left.slice,
+    });
+    expect(editor.state.selection.main.head).toBe(4);
+  });
+
   it("keeps a Profile document on its six tabs, titled by its name", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = openKind("templates/zotlit-profile.paper.md", SOURCE);

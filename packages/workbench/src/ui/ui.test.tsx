@@ -27,11 +27,13 @@ afterEach(cleanup);
 function Problems({
   diagnoses,
   onOpen,
+  onReturn,
   onAction,
   open,
 }: {
   diagnoses: readonly WorkbenchDiagnosis[];
   onOpen: (diagnosis: WorkbenchDiagnosis) => void;
+  onReturn?: () => void;
   onAction?: (problem: WorkbenchProblem) => void;
   open?: boolean;
 }): ReactNode {
@@ -45,7 +47,12 @@ function Problems({
     if (open === true) setOpen(true);
   }, [open, setOpen]);
   return (
-    <ProblemsFooter problems={problems} onOpen={onOpen} onAction={onAction} />
+    <ProblemsFooter
+      problems={problems}
+      onOpen={onOpen}
+      onReturn={onReturn}
+      onAction={onAction}
+    />
   );
 }
 
@@ -362,6 +369,14 @@ describe("the edit toolbar", () => {
   });
 });
 
+/** The controls that decide how much editor a reading takes, which every
+    open area carries whatever problem it explains. */
+const SPACE_CONTROLS = new Set([
+  m.workbench_problems_expand(),
+  m.workbench_problems_collapse(),
+  m.workbench_problems_return(),
+]);
+
 describe("the Problems area", () => {
   it("starts compact, then explains the selected problem in full", () => {
     const controller = new WorkbenchDocumentController(
@@ -442,7 +457,7 @@ describe("the Problems area", () => {
       screen
         .getAllByRole("button")
         .map((button) => button.textContent)
-        .filter((label) => label !== m.workbench_problems_collapse()),
+        .filter((label) => !SPACE_CONTROLS.has(label ?? "")),
     ).toEqual([
       m.workbench_problems_where_advanced(),
       m.workbench_problem_bundled_partial_unpack(),
@@ -484,7 +499,7 @@ describe("the Problems area", () => {
       screen
         .getAllByRole("button")
         .map((button) => button.textContent)
-        .filter((label) => label !== m.workbench_problems_collapse()),
+        .filter((label) => !SPACE_CONTROLS.has(label ?? "")),
     ).toEqual([
       m.workbench_problems_where_entry(),
       m.workbench_annotation_label(),
@@ -647,6 +662,63 @@ describe("the Problems area", () => {
     );
     expect(area.textContent).toContain("Later");
     expect(area.textContent).not.toContain(m.workbench_problems_resolved());
+  });
+
+  it("hands the editor over on Expand and takes the reader back to the source", () => {
+    let returned = 0;
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses(
+          [],
+          [{ code: "render-error", message: "Unclosed tag" }],
+        )}
+        onOpen={() => {}}
+        onReturn={() => (returned += 1)}
+        open
+      />,
+    );
+    const { ui } = mounted;
+    render(ui);
+    const area = screen.getByRole("region", {
+      name: m.workbench_problems_heading(),
+    });
+    expect(area.dataset.state).toBe("open");
+
+    // What scrolls is the explanation; every control that navigates or reports
+    // is under it, where a long explanation cannot carry them out of reach.
+    const scroll = area.querySelector("[data-part=problems-scroll]");
+    const controls = area.querySelector("[data-part=problems-controls]");
+    expect(scroll?.contains(controls ?? null)).toBe(false);
+    expect(scroll?.querySelector("details")).not.toBeNull();
+    for (const label of [
+      m.workbench_problems_where_advanced(),
+      m.workbench_problems_return(),
+      m.workbench_problems_community(),
+    ])
+      expect(
+        controls?.contains(screen.getByText(label)),
+        `${label} is under the scroll`,
+      ).toBe(true);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_expand() }),
+    );
+    expect(area.dataset.state).toBe("full");
+    // Nothing left to expand into, so the control that asked for it goes.
+    expect(
+      screen.queryByRole("button", { name: m.workbench_problems_expand() }),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_return() }),
+    );
+    expect(returned).toBe(1);
+    expect(area.dataset.state).toBe("compact");
+    // The next reading starts from the split, not from the space the last took.
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problem_show() }),
+    );
+    expect(area.dataset.state).toBe("open");
   });
 
   it("keeps an open area after a check finds nothing, and gives its space back on Collapse", () => {

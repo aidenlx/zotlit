@@ -247,8 +247,11 @@ export interface WorkbenchParts {
     | "problems-heading"
     | "problems-count"
     | "problems-text"
+    | "problems-space"
+    | "problems-expand"
     | "problems-toggle"
     | "problems-body"
+    | "problems-scroll"
     | "problems-select"
     | "problems-next"
     | "problems-object"
@@ -263,6 +266,7 @@ export interface WorkbenchParts {
     | "problems-action"
     | "problems-copy"
     | "problems-community"
+    | "problems-return"
     | "problems-open";
 }
 

@@ -16,11 +16,25 @@
 // problem reaches the reader through the same report: the scheduler stamps a
 // render failure with its attempt, and this area stamps a parser problem with
 // the check that found it.
+//
+// Source and explanation share the editor while both fit, and Expand hands the
+// whole editor over on request. The area states which of the three sizes it is
+// in and the hosts size it from CSS, so a pane too short or too narrow for the
+// split reaches the same full-editor reading without this tree measuring
+// anything. The explanation scrolls inside the area; the controls sit under
+// that scroll, where a long explanation and an open disclosure leave every one
+// of them where the reader last saw it.
 
 import type { WorkbenchProblem } from "#/document/controller";
 import type { RenderReport, WorkbenchReportContext } from "#/render/report";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
@@ -57,6 +71,12 @@ export interface WorkbenchProblemsState {
   /** The reader's own open-or-collapsed choice, which checks never change. */
   readonly open: boolean;
   /**
+   * Whether the reader asked for the whole editor to read in. A pane with no
+   * room for the split reaches the same reading from CSS, so this says what was
+   * asked for rather than what the pane ended up giving.
+   */
+  readonly expanded: boolean;
+  /**
    * The selected problem's captured report, or the last one read once that
    * problem is resolved. Bounded to what is being inspected: one repair does
    * not build a history, and a later problem brings its own report.
@@ -72,7 +92,9 @@ export interface WorkbenchProblemsState {
   readonly next: WorkbenchDiagnosis | null;
   /** Reads one problem in full, which a source marker and Show problem do. */
   readonly select: (id: string) => void;
+  /** Opens or reclaims the area; reclaiming it also gives back the editor. */
   readonly setOpen: (open: boolean) => void;
+  readonly setExpanded: (expanded: boolean) => void;
 }
 
 /**
@@ -104,6 +126,14 @@ export function useWorkbenchProblems({
 }): WorkbenchProblemsState {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  // Reclaiming the area hands the editor back whole, so the next Show problem
+  // starts from the split rather than from the space the last reading took.
+  // One identity for the life of the hook: a host subscribes with this.
+  const openArea = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setExpanded(false);
+  }, []);
   // Selection keys on the problem's identity rather than its place in the
   // list, so a check that finds the same problem keeps the reader's place.
   // An open area holds the problem being read from the moment it is read: its
@@ -176,6 +206,7 @@ export function useWorkbenchProblems({
     selected,
     inspected: selected ?? reading.current,
     open,
+    expanded,
     report: current ?? (selected === null ? inspected : null),
     resolved: current === null,
     // Offered rather than taken: a check that resolves the selected problem
@@ -185,19 +216,27 @@ export function useWorkbenchProblems({
       setSelectedId(id);
       setOpen(true);
     },
-    setOpen,
+    setOpen: openArea,
+    setExpanded,
   };
 }
 
 export function ProblemsFooter({
   problems,
   onOpen,
+  onReturn,
   onAction,
 }: {
   /** The area's state, from `useWorkbenchProblems`. */
   problems: WorkbenchProblemsState;
   /** Opens the pane the selected problem is repaired in. */
   onOpen: (diagnosis: WorkbenchDiagnosis) => void;
+  /**
+   * Puts the reader back where they were editing, which the area asks for once
+   * it has reclaimed its space. A host that supplies none leaves the source
+   * where the reading left it.
+   */
+  onReturn?: () => void;
   /**
    * Performs the repair a document problem carries its own button for. A host
    * that supplies none leaves the reader with the pane button alone.
@@ -215,11 +254,18 @@ export function ProblemsFooter({
     inspected,
     next,
     open,
+    expanded,
     setOpen,
+    setExpanded,
     report,
     resolved,
   } = problems;
   const select = problems.select;
+  /** Reading is over: the source takes its space back and the caret with it. */
+  function returnToTemplate(): void {
+    setOpen(false);
+    onReturn?.();
+  }
   // One text, shown and copied. Building it once keeps Technical details and
   // the clipboard from ever disagreeing about what was reported.
   const reportText = useMemo(
@@ -296,24 +342,21 @@ export function ProblemsFooter({
       </>
     );
   }
-  // The space an open explanation used, so a check that finds nothing leaves
-  // the source the reader is editing exactly where it stands. Collapsing is
-  // what gives that space back.
-  const area = useRef<HTMLElement | null>(null);
-  const [space, setSpace] = useState<number | null>(null);
-  const reading = open && selected !== null;
-  useEffect(() => {
-    if (!open) setSpace(null);
-    else if (reading)
-      setSpace(area.current?.getBoundingClientRect().height ?? null);
-  }, [open, reading, selected?.id]);
+  /** Leaves the reader the template again, from wherever the reading got to. */
+  function returnControl() {
+    return (
+      <button
+        type="button"
+        onClick={returnToTemplate}
+        {...part("problems-return")}
+      >
+        {m.workbench_problems_return()}
+      </button>
+    );
+  }
   // Nothing found and nothing open: the area gives its space back to the
   // source rather than reporting its own emptiness.
   if (selected === null && !open) return null;
-  const held: CSSProperties | undefined =
-    open && selected === null && space !== null
-      ? { minBlockSize: space }
-      : undefined;
   const explanation = selected && diagnosisExplanation(m, selected);
   const engineSources = selected ? diagnosisEngineSources(m, selected) : [];
   const action =
@@ -326,10 +369,11 @@ export function ProblemsFooter({
   const several = diagnoses.length > 1;
   return (
     <section
-      ref={area}
-      style={held}
       aria-labelledby={headingId}
-      {...part("problems", open ? "open" : "compact")}
+      // Three sizes, stated rather than measured: the summary alone, the split
+      // with the source, and the whole editor. A pane with no room for the
+      // split reads "open" and the host's container rules give it the editor.
+      {...part("problems", open ? (expanded ? "full" : "open") : "compact")}
     >
       <div {...part("problems-summary")}>
         <p id={headingId} {...part("problems-heading")}>
@@ -347,52 +391,71 @@ export function ProblemsFooter({
         {!open && explanation !== null && (
           <p {...part("problems-text")}>{explanation.condition}</p>
         )}
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={open ? bodyId : undefined}
-          onClick={() => setOpen(!open)}
-          {...part("problems-toggle")}
-        >
-          {open ? m.workbench_problems_collapse() : m.workbench_problem_show()}
-        </button>
+        {/* How much of the editor this reading takes, on the trailing edge and
+            together: one grows the area, the other gives it all back. */}
+        <div {...part("problems-space")}>
+          {open && !expanded && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              {...part("problems-expand")}
+            >
+              {m.workbench_problems_expand()}
+            </button>
+          )}
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={open ? bodyId : undefined}
+            onClick={() => setOpen(!open)}
+            {...part("problems-toggle")}
+          >
+            {open
+              ? m.workbench_problems_collapse()
+              : m.workbench_problem_show()}
+          </button>
+        </div>
       </div>
       {open && selected && explanation && (
         <div id={bodyId} {...part("problems-body")}>
-          {several ? (
-            <div {...part("problems-select")}>
-              <WorkbenchSelect
-                aria-label={m.workbench_problems_selected()}
-                value={selected.id}
-                onInput={(event) => select(event.currentTarget.value)}
-              >
-                {diagnoses.map((diagnosis) => (
-                  <WorkbenchOption key={diagnosis.id} value={diagnosis.id}>
-                    {diagnosisLabel(m, diagnosis)}
-                  </WorkbenchOption>
-                ))}
-              </WorkbenchSelect>
-            </div>
-          ) : (
-            <p {...part("problems-object")}>{explanation.object}</p>
-          )}
-          <p {...part("problems-text")}>{explanation.condition}</p>
-          <p {...part("problems-recovery")}>{explanation.suggestion}</p>
-          {/* Where the engine said it happened and where the reader repairs it
-              are different places, so they are read as separate lines rather
-              than folded into one claim. Grouped occurrences each keep the
-              place they were reported from. */}
-          {engineSources.map((sentence) => (
-            <p key={sentence} {...part("problems-location")}>
-              {sentence}
-            </p>
-          ))}
-          {!diagnosisLocated(selected) && (
-            <p {...part("problems-location")}>
-              {m.workbench_problems_location_unknown()}
-            </p>
-          )}
-          {reporting(reportText, explanation.evidence ?? null)}
+          {/* The explanation is what scrolls. A reader with no pointer scrolls
+              it from here, and the controls below stay where they were. */}
+          <div tabIndex={0} {...part("problems-scroll")}>
+            {several ? (
+              <div {...part("problems-select")}>
+                <WorkbenchSelect
+                  aria-label={m.workbench_problems_selected()}
+                  value={selected.id}
+                  onInput={(event) => select(event.currentTarget.value)}
+                >
+                  {diagnoses.map((diagnosis) => (
+                    <WorkbenchOption key={diagnosis.id} value={diagnosis.id}>
+                      {diagnosisLabel(m, diagnosis)}
+                    </WorkbenchOption>
+                  ))}
+                </WorkbenchSelect>
+              </div>
+            ) : (
+              <p {...part("problems-object")}>{explanation.object}</p>
+            )}
+            <p {...part("problems-text")}>{explanation.condition}</p>
+            <p {...part("problems-recovery")}>{explanation.suggestion}</p>
+            {/* Where the engine said it happened and where the reader repairs
+                it are different places, so they are read as separate lines
+                rather than folded into one claim. Grouped occurrences each keep
+                the place they were reported from. */}
+            {engineSources.map((sentence) => (
+              <p key={sentence} {...part("problems-location")}>
+                {sentence}
+              </p>
+            ))}
+            {!diagnosisLocated(selected) && (
+              <p {...part("problems-location")}>
+                {m.workbench_problems_location_unknown()}
+              </p>
+            )}
+            {reporting(reportText, explanation.evidence ?? null)}
+          </div>
           <div {...part("problems-controls")}>
             <button
               type="button"
@@ -401,6 +464,7 @@ export function ProblemsFooter({
             >
               {diagnosisWhere(m, selected)}
             </button>
+            {returnControl()}
             {action !== null && selected.kind === "document" && (
               <button
                 type="button"
@@ -420,20 +484,22 @@ export function ProblemsFooter({
           // The repair succeeded, and the failure the reader was reading is
           // still here to report. It is the last one inspected, not a history.
           <div id={bodyId} {...part("problems-body")}>
-            {next !== null &&
-              inspected !== null && (
-                // Others were found, so this says which one went rather than
-                // presenting the whole preview as successful.
-                <>
-                  <p {...part("problems-object")}>
-                    {diagnosisLabel(m, inspected)}
-                  </p>
-                  <p {...part("problems-text")}>
-                    {m.workbench_problems_resolved()}
-                  </p>
-                </>
-              )}
-            {reportText !== null && reporting(reportText, null)}
+            <div tabIndex={0} {...part("problems-scroll")}>
+              {next !== null &&
+                inspected !== null && (
+                  // Others were found, so this says which one went rather than
+                  // presenting the whole preview as successful.
+                  <>
+                    <p {...part("problems-object")}>
+                      {diagnosisLabel(m, inspected)}
+                    </p>
+                    <p {...part("problems-text")}>
+                      {m.workbench_problems_resolved()}
+                    </p>
+                  </>
+                )}
+              {reportText !== null && reporting(reportText, null)}
+            </div>
             <div {...part("problems-controls")}>
               {next !== null && (
                 <button
@@ -444,6 +510,7 @@ export function ProblemsFooter({
                   {m.workbench_problems_next()}
                 </button>
               )}
+              {returnControl()}
               {reportControls(reportText)}
             </div>
           </div>

@@ -190,6 +190,14 @@ failed, leaving the text to select by hand. `diagnosisReport` reads the report
 one diagnosis carries; `useWorkbenchProblems` keeps the last one read, so an
 open area whose problems are all resolved still offers Copy last error report.
 
+The area states how much editor it is taking — `compact`, `open`, or `full` —
+and the hosts size each from CSS, so a pane too short or too narrow for the
+split reaches the same full-editor reading with no measurement here. `Expand`
+asks for the whole editor; `Return to template` gives the space back and calls
+the host's `onReturn`, which puts the caret back where the reader left it. The
+explanation scrolls inside the area and the controls sit under that scroll, so
+a long explanation and an open disclosure leave every one of them in place.
+
 `usePartialBoxes(controller, slice, host)` draws the Partial Placeholder over
 every Shared Partial call in one pane: the editor extension to pass that pane
 and the boxes to render beside it. The host answers the names the last render

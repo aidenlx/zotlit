@@ -37,6 +37,18 @@ status: accepted
 > One sentence over both causes was the wrong-cause failure the design guide
 > names.
 
+> Amended 2026-09-13: an open Problems area takes a settled share of the
+> editor pane rather than the height of whatever it explains. Holding a
+> measured height after a repair was the same intent written in JavaScript; a
+> share the pane resolves in CSS holds through every content change, the
+> reader's move between problems included, and leaves the source exactly where
+> it stands. Expand and a pane with no room left for the split both give the
+> explanation the whole pane, and the source keeps a flexible height so it
+> gives that height up and comes back with it. Return to template is the
+> reading's exit rather than a step back through the sizes: it reclaims the
+> area and puts the caret back where the reader left it, which is the same
+> answer in a pane that had room for the split and one that never did.
+
 > Amended 2026-09-13: the selected problem is held from the moment the area is
 > open, whether the reader chose it or read whichever came first, and it is
 > let go once a check finds nothing at all. A compact area follows the first

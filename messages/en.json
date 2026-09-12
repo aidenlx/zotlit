@@ -1515,7 +1515,9 @@
   "workbench_preview_unavailable": "Preview unavailable.",
   "workbench_problems_heading": "Problems",
   "workbench_problem_show": "Show problem",
+  "workbench_problems_expand": "Expand",
   "workbench_problems_collapse": "Collapse",
+  "workbench_problems_return": "Return to template",
   "workbench_problems_none": "No problems found in this preview",
   "workbench_problems_count": [
     {

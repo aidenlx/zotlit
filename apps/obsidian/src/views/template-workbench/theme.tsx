@@ -467,9 +467,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
+      "problems-return": templateWorkbenchButton,
       "problems-action": templateWorkbenchButton,
+      // How much editor each of its three sizes takes is a container rule in
+      // `style.css`, where an unlayered `button` rule can be outranked.
       problems:
-        "zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal",
+        "zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal",
       "problems-summary":
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
@@ -478,11 +481,24 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-count":
         "zt:shrink-0 zt:text-muted-foreground zt:tabular-nums zt:whitespace-nowrap",
       "problems-text": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
-      "problems-toggle": cn(
-        templateWorkbenchButton,
-        "zt:ms-auto zt:shrink-0 zt:px-1.5 zt:py-1",
+      // Each control is capped at the row, so a long translated label wraps
+      // inside its own box instead of running past the pane.
+      "problems-space":
+        "zt:ms-auto zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
+      "problems-expand": cn(templateWorkbenchButton, "zt:px-1.5 zt:py-1"),
+      "problems-toggle": cn(templateWorkbenchButton, "zt:px-1.5 zt:py-1"),
+      "problems-body":
+        "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-1",
+      // The explanation, and only the explanation, scrolls. It takes whatever
+      // the area has left, so the controls keep one place along its bottom
+      // edge whichever problem is read and however long its explanation runs.
+      // A reader with no pointer scrolls it from the keyboard, and Obsidian
+      // clears the outline every focus ring would otherwise draw, so the ring
+      // is drawn inside.
+      "problems-scroll": cn(
+        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain",
+        "zt:focus-visible:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)]",
       ),
-      "problems-body": "zt:flex zt:min-w-0 zt:flex-col zt:gap-1",
       // The chooser leads the explanation where the object line otherwise
       // would, at its own width rather than stretched across the column.
       "problems-select": "zt:min-w-0 zt:max-w-full zt:self-start",
@@ -503,8 +519,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-report":
         "zt:mt-1 zt:max-h-56 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-2 zt:font-mono zt:whitespace-pre zt:select-text",
       "problems-copy-failed": "zt:mt-1 zt:text-pretty zt:text-(--text-error)",
+      // Under the scroll, never inside it: every one of these stays put while
+      // a long explanation and an open disclosure move past above them.
       "problems-controls":
-        "zt:mt-2 zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2",
+        "zt:mt-2 zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
       "problems-copy": templateWorkbenchButton,
       // Help, not an action: it reads as the link it is, aligned with the
       // buttons it shares the row with.

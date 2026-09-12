@@ -535,6 +535,26 @@ export function Workbench() {
     );
   }
 
+  /**
+   * Reads one problem the result named. The explanation belongs to the editor,
+   * so a narrow screen showing the result switches to it rather than leaving
+   * the reader on a control whose answer is in the other view.
+   */
+  function showProblem(id: string) {
+    setView("edit");
+    problems.select(id);
+  }
+
+  /**
+   * Hands the reader the template back where they left it. Every pane reports
+   * its selection as the reader moves through it, so returning is revealing
+   * that place again — with the caret and the focus that go with it.
+   */
+  function returnToTemplate() {
+    setView("edit");
+    setReveal({ ...caret });
+  }
+
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
     if (diagnosis.kind === "document") {
@@ -1028,152 +1048,157 @@ export function Workbench() {
               onClick={() => setSheet(true)}
             />
           </EditToolbar>
-          {advanced && (
-            <>
-              <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <h2 className="text-xs font-semibold">
-                    {m.workbench_advanced_heading()}
-                  </h2>
-                  <WorkbenchHelp title={m.workbench_advanced_heading()}>
-                    {m.workbench_advanced_lede()}
-                  </WorkbenchHelp>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setAdvanced(false)}
-                >
-                  <ArrowLeft aria-hidden />
-                  {m.workbench_back_basic()}
-                </Button>
-              </div>
+          {/* Everything the reader edits, as one region. A reading that takes
+              the whole pane leaves it no height, and it shows nothing rather
+              than spilling its tabs and source over the explanation. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {advanced && (
               <>
-                <AnnotationSectionBar
-                  controller={controller}
-                  onGo={setReveal}
-                />
-                <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
-                  <SliceEditor
-                    controller={controller}
-                    slice="advanced"
-                    label={m.workbench_advanced_heading()}
-                    extensions={annotationHeaderMark}
-                    reveal={reveal}
-                    suggest={suggest}
-                    onSelection={trackSelection}
-                  />
+                <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h2 className="text-xs font-semibold">
+                      {m.workbench_advanced_heading()}
+                    </h2>
+                    <WorkbenchHelp title={m.workbench_advanced_heading()}>
+                      {m.workbench_advanced_lede()}
+                    </WorkbenchHelp>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setAdvanced(false)}
+                  >
+                    <ArrowLeft aria-hidden />
+                    {m.workbench_back_basic()}
+                  </Button>
                 </div>
-              </>
-            </>
-          )}
-          <div
-            hidden={advanced}
-            className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
-          >
-            <div className="mb-2 flex shrink-0 items-center gap-1">
-              <TabBar onTabChange={openTab} />
-              <WorkbenchHelp title={tabLabel(m, tab)}>
-                {tabLede(m, tab)}
-              </WorkbenchHelp>
-            </div>
-            <TabPanel tab="note" keepMounted description={!advanced}>
-              <h2 className="sr-only">{m.workbench_tab_note()}</h2>
-              <NotePane
-                controller={controller}
-                reveal={!advanced && tab === "note" ? reveal : null}
-                suggest={suggest}
-                preview={annotationResult?.annotation ?? null}
-                annotationSelector={
-                  <AnnotationSampleBar
-                    id="workbench-inline-annotation-sample"
-                    current={itemAnnotations}
-                    example={selectedAnnotation}
-                    onSelect={setAnnotationChoice}
+                <>
+                  <AnnotationSectionBar
+                    controller={controller}
+                    onGo={setReveal}
                   />
-                }
-                formatProblem={
-                  formatProblem ? diagnosticText(m, formatProblem) : null
-                }
-                onSelection={(selection) => {
-                  noteCaret.current = selection;
-                  if (!advanced && tab === "note") trackSelection(selection);
-                }}
-                onOpenAnnotation={openAnnotation}
-              />
-              {controller.noteRegions.annotationCalls.length === 0 && (
-                <AnnotationPointer onInsert={insertAnnotations} />
-              )}
-            </TabPanel>
-            {!advanced && tab !== "note" && (
-              <TabPanel tab={tab}>
-                <h2 className="sr-only">{tabLabel(m, tab)}</h2>
-                {tab === "name" || tab === "profile" ? (
-                  <>
-                    <NameFolderPane
-                      section={tab}
-                      onOpenSource={() => setAdvanced(true)}
+                  <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+                    <SliceEditor
                       controller={controller}
-                      manifest={shownManifest}
-                      filename={result?.filename ?? null}
-                      citationStyles={citationStyles}
-                      focus={focusField}
-                      suggest={suggest}
-                      {...(connection.state === "connected"
-                        ? { defaults: connection.profileDefaults }
-                        : {})}
+                      slice="advanced"
+                      label={m.workbench_advanced_heading()}
+                      extensions={annotationHeaderMark}
                       reveal={reveal}
+                      suggest={suggest}
                       onSelection={trackSelection}
                     />
-                  </>
-                ) : tab === "match" ? (
-                  <MatchPane
-                    controller={controller}
-                    facts={snapshotMatchFacts(sample)}
-                    vocabularyRevision={sample.revision}
-                  />
-                ) : tab === "annotation" ? (
-                  <AnnotationPane
-                    controller={controller}
-                    reveal={reveal}
-                    suggest={suggest}
-                    problem={
-                      formatProblem ? diagnosticText(m, formatProblem) : null
-                    }
-                    onSelection={trackSelection}
-                  />
-                ) : tab === "properties" ? (
-                  <>
-                    {entries === null ? (
-                      <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
-                        {m.workbench_properties_source_only()}
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          className="mt-2"
-                          onClick={() => setAdvanced(true)}
-                        >
-                          {m.workbench_open_source()}
-                        </Button>
-                      </p>
-                    ) : (
-                      <PropertiesPane
-                        suggest={suggest}
+                  </div>
+                </>
+              </>
+            )}
+            <div
+              hidden={advanced}
+              className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
+            >
+              <div className="mb-2 flex shrink-0 items-center gap-1">
+                <TabBar onTabChange={openTab} />
+                <WorkbenchHelp title={tabLabel(m, tab)}>
+                  {tabLede(m, tab)}
+                </WorkbenchHelp>
+              </div>
+              <TabPanel tab="note" keepMounted description={!advanced}>
+                <h2 className="sr-only">{m.workbench_tab_note()}</h2>
+                <NotePane
+                  controller={controller}
+                  reveal={!advanced && tab === "note" ? reveal : null}
+                  suggest={suggest}
+                  preview={annotationResult?.annotation ?? null}
+                  annotationSelector={
+                    <AnnotationSampleBar
+                      id="workbench-inline-annotation-sample"
+                      current={itemAnnotations}
+                      example={selectedAnnotation}
+                      onSelect={setAnnotationChoice}
+                    />
+                  }
+                  formatProblem={
+                    formatProblem ? diagnosticText(m, formatProblem) : null
+                  }
+                  onSelection={(selection) => {
+                    noteCaret.current = selection;
+                    if (!advanced && tab === "note") trackSelection(selection);
+                  }}
+                  onOpenAnnotation={openAnnotation}
+                />
+                {controller.noteRegions.annotationCalls.length === 0 && (
+                  <AnnotationPointer onInsert={insertAnnotations} />
+                )}
+              </TabPanel>
+              {!advanced && tab !== "note" && (
+                <TabPanel tab={tab}>
+                  <h2 className="sr-only">{tabLabel(m, tab)}</h2>
+                  {tab === "name" || tab === "profile" ? (
+                    <>
+                      <NameFolderPane
+                        section={tab}
+                        onOpenSource={() => setAdvanced(true)}
                         controller={controller}
-                        entries={entries}
-                        properties={result?.properties ?? []}
-                        fold={result?.fold ?? []}
-                        diagnostics={rowProblems}
-                        selected={row}
-                        onSelect={setOpenRow}
+                        manifest={shownManifest}
+                        filename={result?.filename ?? null}
+                        citationStyles={citationStyles}
+                        focus={focusField}
+                        suggest={suggest}
+                        {...(connection.state === "connected"
+                          ? { defaults: connection.profileDefaults }
+                          : {})}
                         reveal={reveal}
                         onSelection={trackSelection}
                       />
-                    )}
-                  </>
-                ) : null}
-              </TabPanel>
-            )}
+                    </>
+                  ) : tab === "match" ? (
+                    <MatchPane
+                      controller={controller}
+                      facts={snapshotMatchFacts(sample)}
+                      vocabularyRevision={sample.revision}
+                    />
+                  ) : tab === "annotation" ? (
+                    <AnnotationPane
+                      controller={controller}
+                      reveal={reveal}
+                      suggest={suggest}
+                      problem={
+                        formatProblem ? diagnosticText(m, formatProblem) : null
+                      }
+                      onSelection={trackSelection}
+                    />
+                  ) : tab === "properties" ? (
+                    <>
+                      {entries === null ? (
+                        <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
+                          {m.workbench_properties_source_only()}
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            className="mt-2"
+                            onClick={() => setAdvanced(true)}
+                          >
+                            {m.workbench_open_source()}
+                          </Button>
+                        </p>
+                      ) : (
+                        <PropertiesPane
+                          suggest={suggest}
+                          controller={controller}
+                          entries={entries}
+                          properties={result?.properties ?? []}
+                          fold={result?.fold ?? []}
+                          diagnostics={rowProblems}
+                          selected={row}
+                          onSelect={setOpenRow}
+                          reveal={reveal}
+                          onSelection={trackSelection}
+                        />
+                      )}
+                    </>
+                  ) : null}
+                </TabPanel>
+              )}
+            </div>
           </div>
           <Dialog open={sheet} onOpenChange={setSheet}>
             <DialogContent
@@ -1219,7 +1244,7 @@ export function Workbench() {
           resources={resources}
           hold={unparsed ? "invalid" : !renderable || resourcesStale}
           mode={showAnnotation ? "annotation" : "note"}
-          onShowProblem={problems.select}
+          onShowProblem={showProblem}
           publishProblems={setPreviewProblems}
           reportContext={() =>
             reportContext(showAnnotation ? "annotation" : "note")
@@ -1238,7 +1263,13 @@ export function Workbench() {
           }
         />
       }
-      footer={<ProblemsFooter problems={problems} onOpen={openDiagnosis} />}
+      problems={
+        <ProblemsFooter
+          problems={problems}
+          onOpen={openDiagnosis}
+          onReturn={returnToTemplate}
+        />
+      }
     >
       {filePicker}
       {replacementDialog}

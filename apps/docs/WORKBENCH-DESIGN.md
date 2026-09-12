@@ -93,8 +93,9 @@ for what to check or change. A location the engine reported inside another
 template reads as its own quiet line, apart from the control that navigates, so
 a reported location is never mistaken for a repair target. Keep technical
 evidence behind a collapsed disclosure. Group **Copy error report** and **Ask the community** beside it,
-within reach when the explanation scrolls. ADR 0056 owns the behavior,
-report contents, and state transitions.
+within reach when the explanation scrolls. The explanation is what scrolls;
+the controls that navigate and report keep one place along the area's bottom
+edge. ADR 0056 owns the behavior, report contents, and state transitions.
 
 Keep feedback steady while the reader types. Inline notices use the shared
 accent-bar treatment and a trailing action. Make waiting, rendering, and
@@ -131,6 +132,13 @@ that, fields open in the **Add a field** sheet. Below 780 px, switch between
 editor and result views. These folds protect useful source width. A short,
 narrow viewport scrolls the page while preserving several lines of editor
 space.
+
+Source and Problems share the editor pane. An open Problems area takes a
+settled share of that pane, so a repair that empties the explanation leaves
+the source where it stands. **Expand** hands the explanation the whole pane,
+and a pane with no room left for the split reaches the same reading on its
+own. **Return to template** gives the space back and returns the reader to
+the source they left.
 
 Use logical direction properties. Keep Help, sheets, menus, and source markers
 reachable by keyboard, with visible focus and returned focus after overlays

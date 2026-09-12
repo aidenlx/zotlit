@@ -2112,6 +2112,17 @@ function EditorContent({
     const range = controller.sliceRange(slice);
     openProblem({ slice, ...(range ? { range } : {}) });
   }
+  /**
+   * Hands the reader the template back where they left it. The selection each
+   * pane reports as the reader moves through it is that place, so returning is
+   * revealing it again — with the caret and the focus that go with it.
+   */
+  function returnToTemplate(): void {
+    const target = view.insertTarget;
+    setReveal(
+      target ? { ...target.range, slice: target.slice } : { from: 0, to: 0 },
+    );
+  }
   const revealHandler = useRef(openProblem);
   revealHandler.current = openProblem;
   useEffect(
@@ -2122,7 +2133,10 @@ function EditorContent({
     (slice: WorkbenchInsertTarget["slice"]) => (range: WorkbenchSliceRange) =>
       onSelection({ slice, range });
   return (
-    <div className="zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
+    // The pane the source and the Problems area share. It measures itself, so
+    // whether a reading fits beside the source is the pane's own question
+    // rather than the window's.
+    <div className="zt:@container-[size]/workbench-editor zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
       {/* A Citation Template renders an example set, not the note of an Item,
           so its selection is the preview pane's own. */}
       {kind === "profile" && <EditorHeader view={view} />}
@@ -2361,6 +2375,7 @@ function EditorContent({
       <ProblemsFooter
         problems={problems}
         onOpen={openDiagnosis}
+        onReturn={returnToTemplate}
         onAction={() => void view.unpackBundledPartials()}
       />
     </div>
