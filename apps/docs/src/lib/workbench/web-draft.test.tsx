@@ -19,9 +19,9 @@ import {
 } from "./page-test-host";
 
 describe("the kept draft on the next visit", () => {
-  it("holds the last visit's work back until the prompt is accepted", () => {
+  it("holds the last visit's work back until the prompt is accepted", async () => {
     keep(KEPT, SAMPLE_ITEMS[1]!);
-    using page = open();
+    await using page = await open();
 
     // The prompt stands over the document a fresh visit opens on.
     expect(page.host.textContent).toContain(m.workbench_restore_heading());
@@ -37,9 +37,9 @@ describe("the kept draft on the next visit", () => {
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
   });
 
-  it("drops the record when the reader starts clean", () => {
+  it("drops the record when the reader starts clean", async () => {
     keep(KEPT, SAMPLE_ITEMS[1]!);
-    using page = open();
+    await using page = await open();
 
     page.press(m.workbench_restore_decline());
 
@@ -50,7 +50,7 @@ describe("the kept draft on the next visit", () => {
 
   it("keeps what the reader changes before answering the prompt", async () => {
     keep(KEPT, SAMPLE_ITEMS[1]!);
-    using page = open();
+    await using page = await open();
 
     await page.show(SAMPLE_ITEMS[2]!.item.key);
 
@@ -66,7 +66,7 @@ describe("the kept draft on the next visit", () => {
 
   it("offers nothing an untouched visit left, and clears what it found", async () => {
     localStorage.setItem(KEY, "kept before the snapshot contract moved on");
-    using page = open();
+    await using page = await open();
 
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
     await page.settle();
@@ -78,7 +78,7 @@ describe("the kept draft on the next visit", () => {
 describe("a profile the web workbench refuses", () => {
   it("shows the handoff, and hands the refused source to no render", async () => {
     keep(ETA, SAMPLE_ITEMS[0]!);
-    using page = open();
+    await using page = await open();
 
     page.press(m.workbench_restore_accept());
 
@@ -93,7 +93,7 @@ describe("a profile the web workbench refuses", () => {
 
 describe("the document's way in and out", () => {
   it("opens an imported profile and hands its bytes back", async () => {
-    using page = open();
+    await using page = await open();
     const blobs: Blob[] = [];
     const names: string[] = [];
     vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {

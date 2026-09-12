@@ -271,10 +271,10 @@ describe("NoteIndex", () => {
     );
 
     let settled = false;
+    await service.ready;
     const gate = service.whenIndexed().then(() => {
       settled = true;
     });
-    await new Promise((resolve) => setTimeout(resolve));
     expect(settled).toBe(false);
 
     startup({ metadataCache, workspace });

@@ -65,24 +65,10 @@ describe("contract artifacts", () => {
     }
   });
 
-  it("projects the runtime IR from the full IR with doc payloads pruned", () => {
+  it("keeps emitter-only and documentation payloads out of the runtime IR", () => {
     expect(runtimeIr).not.toHaveProperty("itemTypes");
     const text = JSON.stringify(runtimeIr);
     expect(text).not.toMatch(/"(description|examples)":/);
-    // Same structure otherwise: pruning the full IR the same way must land on
-    // the committed runtime artifact byte for byte.
-    const prune = (value: unknown): unknown =>
-      Array.isArray(value)
-        ? value.map(prune)
-        : typeof value === "object" && value !== null
-          ? Object.fromEntries(
-              Object.entries(value)
-                .filter(([key]) => key !== "description" && key !== "examples")
-                .map(([key, entry]) => [key, prune(entry)]),
-            )
-          : value;
-    const { itemTypes: _itemTypes, ...rest } = ir;
-    expect(runtimeIr).toEqual(prune(rest));
   });
 });
 

@@ -1392,16 +1392,20 @@ describe("message data", () => {
     const catalog = JSON.parse(
       await readFile(join(workspaceRoot, "messages/en.json"), "utf8"),
     ) as Record<string, unknown>;
-    const docsIds = Object.keys(catalog).filter((id) => id.startsWith("docs_"));
-    expect(docsIds.length).toBeGreaterThan(0);
+    expect(Object.keys(catalog).some((id) => id.startsWith("docs_"))).toBe(
+      true,
+    );
     for (const fileName of await readdir(outputDirectory)) {
       const artifact = await readFile(join(outputDirectory, fileName), "utf8");
-      for (const id of docsIds) {
-        expect(
-          artifact,
-          `${fileName} includes docs message ${id}`,
-        ).not.toContain(id);
-      }
+      const includesDocsMessage = fileName.endsWith(".json")
+        ? Object.keys(
+            (JSON.parse(artifact) as { messages?: Record<string, unknown> })
+              .messages ?? {},
+          ).some((id) => id.startsWith("docs_"))
+        : artifact
+            .split("\n")
+            .some((line) => line.startsWith("export const docs_"));
+      expect(includesDocsMessage, fileName).toBe(false);
     }
   });
 });

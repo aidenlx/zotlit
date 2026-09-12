@@ -16,8 +16,8 @@ import {
 } from "./page-test-host";
 
 describe("the narrow layout", () => {
-  it("carries the result on a tab of its own", () => {
-    using page = open();
+  it("carries the result on a tab of its own", async () => {
+    await using page = await open();
 
     // The pane opens the page; the result is the one tap beside it.
     expect(chosenView(page.host)).toBe(m.workbench_view_editor());
@@ -28,7 +28,7 @@ describe("the narrow layout", () => {
   });
 
   it("inserts from the field sheet where the column would, then closes", async () => {
-    using page = open();
+    await using page = await open();
     // The list waits for the same Temporal the render does.
     await page.settle();
 
@@ -48,8 +48,8 @@ describe("the narrow layout", () => {
     expect(JSON.parse(localStorage.getItem(KEY)!).source).toContain(snippet);
   });
 
-  it("carries the reader back to the pane when Advanced opens", () => {
-    using page = open();
+  it("carries the reader back to the pane when Advanced opens", async () => {
+    await using page = await open();
 
     page.press(m.workbench_view_result());
     page.press(m.workbench_advanced());
@@ -60,8 +60,8 @@ describe("the narrow layout", () => {
     expect(page.host.textContent).toContain(m.workbench_advanced_heading());
   });
 
-  it("returns to the editor when Basic is selected", () => {
-    using page = open();
+  it("returns to the editor when Basic is selected", async () => {
+    await using page = await open();
 
     page.press(m.workbench_advanced());
     page.press(m.workbench_view_result());
@@ -72,7 +72,7 @@ describe("the narrow layout", () => {
   });
 
   it("returns the keyboard to the button the field sheet was opened from", async () => {
-    using page = open();
+    await using page = await open();
 
     page.press(m.workbench_add_field());
     press(openSheet(page.host), m.workbench_fields_close());
@@ -83,8 +83,8 @@ describe("the narrow layout", () => {
     await page.waitFor(() => expect(document.activeElement).toBe(button));
   });
 
-  it("leaves the field sheet on Escape", () => {
-    using page = open();
+  it("leaves the field sheet on Escape", async () => {
+    await using page = await open();
 
     page.press(m.workbench_add_field());
     expect(openSheet(page.host)).not.toBeNull();
@@ -98,9 +98,9 @@ describe("the narrow layout", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("returns a widened window to the pane", () => {
+  it("returns a widened window to the pane", async () => {
     resize(375);
-    using page = open();
+    await using page = await open();
 
     page.press(m.workbench_view_result());
     expect(chosenView(page.host)).toBe(m.workbench_view_result());

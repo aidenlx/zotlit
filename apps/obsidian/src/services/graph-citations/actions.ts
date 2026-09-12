@@ -67,7 +67,7 @@ async function openCitationGraph(
  * split, grouped to the pane it was opened from so the graph follows that
  * pane's file.
  */
-async function openLocalCitationGraph(
+export async function openLocalCitationGraph(
   deps: GraphCitationsActionDeps,
   file: TFile,
 ): Promise<void> {

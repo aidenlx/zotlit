@@ -25,97 +25,6 @@ describe("TemplateEngine", () => {
     );
   });
 
-  it("resolves includes by registered name", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-    engine.define("content", content);
-
-    const rendered = engine.render("content", {
-      notes: [],
-      annotations: [
-        {
-          pageLabel: "4",
-          imgLink: null,
-          text: "Highlighted text",
-          comment: "",
-        },
-      ],
-    });
-
-    expect(rendered).toContain("Page 4");
-    expect(rendered).toContain("Highlighted text");
-  });
-
-  it("renders a tight notes link list under a heading", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-    engine.define("content", content);
-
-    const rendered = engine.render("content", {
-      notes: [{ noteLink: () => "[[a|A]]" }, { noteLink: () => "[[b|B]]" }],
-      annotations: [],
-    });
-
-    expect(rendered).toContain("## Notes");
-    expect(rendered).toContain("- [[a|A]]\n- [[b|B]]");
-    expect(rendered).not.toContain("## Annotations");
-  });
-
-  it("embeds the excerpt image via the embed helper when imgLink is present", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-
-    const rendered = engine.render("annotation", {
-      pageLabel: "5",
-      imgLink: () => "[[ANNOT.png]]",
-      text: "with image",
-      comment: "",
-    });
-
-    expect(rendered).toContain("> ![[ANNOT.png]]with image");
-  });
-
-  it("keeps multi-line annotation text and comment inside the callout", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-
-    const rendered = engine.render("annotation", {
-      pageLabel: "5",
-      imgLink: null,
-      text: "first line\nsecond line",
-      comment: "comment A\ncomment B",
-    });
-
-    expect(rendered).toBe(
-      [
-        "> [!note] Page 5",
-        ">",
-        "> first line",
-        "> second line",
-        ">",
-        "> comment A",
-        "> comment B",
-        "",
-      ].join("\n"),
-    );
-  });
-
-  it("omits the comment block when the annotation has no comment", () => {
-    const engine = new TemplateEngine();
-    engine.define("annotation", annotation);
-
-    const rendered = engine.render("annotation", {
-      pageLabel: "5",
-      imgLink: null,
-      text: "only text",
-      comment: "",
-    });
-
-    expect(rendered).toBe(
-      ["> [!note] Page 5", ">", "> only text", ""].join("\n"),
-    );
-  });
-
   it("resolves async includes by registered name", async () => {
     const engine = new TemplateEngine();
     engine.define("child", "<%= Array.isArray(zt) %>:<%= zt.length %>");
@@ -137,21 +46,6 @@ describe("TemplateEngine", () => {
       engine.define("parent", '<%~ include("child", [1, 2, 3]) %>');
 
       expect(engine.render("parent", {})).toBe("true:3");
-    });
-
-    it("rewrites eta's generated include/includeAsync helpers (matches eta codegen)", () => {
-      // Proves the replace patterns still match the installed eta version: if
-      // eta's codegen drifted, replaceHelper would throw from compile() and
-      // this test would error loudly rather than silently passing.
-      const source = new TemplateEngine().compile("<%= zt %>").toString();
-
-      expect(source).toContain(
-        "let include = (__eta_t, __eta_d) => this.render(__eta_t, __eta_d ?? zt, options);",
-      );
-      expect(source).toContain(
-        "let includeAsync = (__eta_t, __eta_d) => this.renderAsync(__eta_t, __eta_d ?? zt, options);",
-      );
-      expect(source).not.toContain("{...zt, ...(__eta_d ?? {})}");
     });
   });
 

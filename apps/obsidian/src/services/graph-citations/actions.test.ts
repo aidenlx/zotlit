@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { addGraphCitationsActions, citationGraphReadiness } from "./actions";
+import {
+  addGraphCitationsActions,
+  citationGraphReadiness,
+  openLocalCitationGraph,
+} from "./actions";
 import type { GraphCitationsActionDeps } from "./actions";
 import { installDisplayRows } from "./display";
 import { applyCitationGraphPreset } from "./preset";
@@ -38,11 +42,6 @@ interface FixtureOptions {
   started?: boolean;
   /** The vault-wide "Show citations in graph view" setting. */
   featureEnabled?: boolean;
-}
-
-/** Lets every pending promise chain a command started settle. */
-function flush(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function setup(options: FixtureOptions = {}) {
@@ -83,6 +82,7 @@ function setup(options: FixtureOptions = {}) {
   // Awaited by the readiness check alone in some cases, so it never counts as
   // an unhandled rejection.
   ready.catch(() => {});
+  const presetApplied = Promise.withResolvers<void>();
   const deps: GraphCitationsActionDeps = {
     app,
     graphCitations: {
@@ -90,6 +90,7 @@ function setup(options: FixtureOptions = {}) {
       enabled: options.featureEnabled ?? true,
       applyPreset: vi.fn((leaf: WorkspaceLeaf) => {
         preset.push({ leaf, showing: leafStates.get(leaf)?.state?.type });
+        presetApplied.resolve();
       }),
     },
   };
@@ -101,14 +102,17 @@ function setup(options: FixtureOptions = {}) {
     plugin,
     opened,
     preset,
+    commandSettled: presetApplied.resolve,
     mostRecent,
     command,
     /** Performs one command, then lets what it started settle. */
     async run(id: string): Promise<void> {
       const { callback, checkCallback } = command(id);
       if (callback) await callback();
-      else checkCallback!(false);
-      await flush();
+      else {
+        const ran = checkCallback!(false);
+        if (ran) await presetApplied.promise;
+      }
     },
   };
 }
@@ -206,6 +210,7 @@ describe("addGraphCitationsActions", () => {
           wikilinkCitations: false,
           color: { a: 1, rgb: 0xe8622c },
         });
+        fixture.commandSettled();
       };
 
       await fixture.run(id);
@@ -250,7 +255,7 @@ describe("addGraphCitationsActions", () => {
     const fixture = setup({ graphEnabled: false, activeFile: DRAFT });
 
     await fixture.run("open-citation-graph");
-    await fixture.run("open-local-citation-graph");
+    await openLocalCitationGraph(fixture.deps, DRAFT);
 
     expect(fixture.opened).toEqual([]);
     expect(fixture.preset).toEqual([]);
@@ -260,7 +265,7 @@ describe("addGraphCitationsActions", () => {
     const fixture = setup({ started: false, activeFile: DRAFT });
 
     await fixture.run("open-citation-graph");
-    await fixture.run("open-local-citation-graph");
+    await openLocalCitationGraph(fixture.deps, DRAFT);
 
     expect(fixture.opened).toEqual([]);
     expect(fixture.preset).toEqual([]);
@@ -270,7 +275,7 @@ describe("addGraphCitationsActions", () => {
     const fixture = setup({ featureEnabled: false, activeFile: DRAFT });
 
     await fixture.run("open-citation-graph");
-    await fixture.run("open-local-citation-graph");
+    await openLocalCitationGraph(fixture.deps, DRAFT);
 
     // A preset graph with no citations drawn is a graph with the reader's own
     // options taken away for nothing, so neither command opens a leaf at all.

@@ -36,7 +36,7 @@ import type { BridgeRequest } from "./page-test-host";
 
 describe("a draft the parser refuses", () => {
   it("keeps the last good result, and opens the pane the problem names", async () => {
-    using page = open();
+    await using page = await open();
     await page.settle();
     const rendersOfGoodSource = rendered().length;
     expect(rendersOfGoodSource).toBeGreaterThan(0);
@@ -65,7 +65,7 @@ describe("a draft the parser refuses", () => {
   });
 
   it("opens Profile for a field that tab writes", async () => {
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
     act(() => {
@@ -88,7 +88,7 @@ describe("a draft the parser refuses", () => {
 
 describe("the paper a profile is written for", () => {
   it("searches paper details in a dialog and restores focus without changing a dismissed choice", async () => {
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_choose_item());
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     const input = dialog.querySelector<HTMLInputElement>('[role="combobox"]')!;
@@ -123,7 +123,7 @@ describe("the paper a profile is written for", () => {
   });
 
   it("shows paper details and switches samples through the picker", async () => {
-    using page = open();
+    await using page = await open();
     act(() =>
       page.host.querySelector<HTMLElement>("#workbench-sample")!.click(),
     );
@@ -150,7 +150,7 @@ describe("the paper a profile is written for", () => {
 
   it("opens on the bundled sample item its sample item type names", async () => {
     const book = SAMPLE_ITEMS.find(({ item }) => item.itemType === "book")!;
-    using page = open();
+    await using page = await open();
 
     importFile(page.host, withSampleItemType("book"));
 
@@ -160,7 +160,7 @@ describe("the paper a profile is written for", () => {
   });
 
   it("names a type no bundled sample carries, and keeps the paper on screen", async () => {
-    using page = open();
+    await using page = await open();
 
     importFile(page.host, withSampleItemType("webpage"));
 
@@ -175,7 +175,7 @@ describe("the paper a profile is written for", () => {
 
 describe("the field list", () => {
   it("searches the complete Zotero tree without opening the foot first", async () => {
-    using page = open();
+    await using page = await open();
     const search = page.host.querySelector<HTMLInputElement>(
       `input[aria-label="${m.workbench_fields_search_note()}"]`,
     )!;
@@ -200,8 +200,8 @@ describe("the field list", () => {
 });
 
 describe("the result column", () => {
-  it("offers the update-only managed region beside the note", () => {
-    using page = open();
+  it("offers the update-only managed region beside the note", async () => {
+    await using page = await open();
 
     expect(page.host.textContent).toContain(m.workbench_result_heading());
     const select = [...page.host.querySelectorAll("select")].find((select) =>
@@ -227,7 +227,7 @@ describe("the result column", () => {
 
 describe("the simplified editing flow", () => {
   it("keeps an edited draft until the reader confirms opening another file", async () => {
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
     act(() =>
@@ -262,7 +262,7 @@ describe("the simplified editing flow", () => {
   });
 
   it("can undo an unsupported edit and replace it through the save guard", async () => {
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_advanced());
     const editLanguage = () => {
       const view = sourceView(page.host);
@@ -298,7 +298,7 @@ describe("the simplified editing flow", () => {
   it("downloads an imported file without saving over the connected profile", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
-    using page = launch();
+    await using page = await launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -336,7 +336,7 @@ describe("the simplified editing flow", () => {
   });
 
   it("opens a new property and inserts a field in value syntax", async () => {
-    using page = open();
+    await using page = await open();
     await page.settle();
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
@@ -378,7 +378,7 @@ describe("the simplified editing flow", () => {
   });
 
   it("announces the current autocomplete choice after an arrow key", async () => {
-    using page = open();
+    await using page = await open();
     await page.settle();
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
@@ -429,7 +429,7 @@ describe("the annotation box", () => {
       ),
       SAMPLE_ITEMS[1]!,
     );
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_restore_accept());
     page.press(m.workbench_tab_annotation());
     await chooseAnnotation(page, "Compare these findings");
@@ -454,7 +454,7 @@ describe("the annotation box", () => {
   });
 
   it("offers section repair after deleting it from Source", async () => {
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_advanced());
     const source = sourceView(page.host);
     const from = source.state.doc
@@ -506,7 +506,7 @@ describe("the annotation box", () => {
     });
     let loaded = snapshot([first, second], "initial");
     vi.stubGlobal("fetch", bridgeFetch([], { item: () => loaded }));
-    using page = launch();
+    await using page = await launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -555,7 +555,7 @@ describe("the annotation box", () => {
 
   it("keeps a built-in choice across paper changes and restores it with the browser draft", async () => {
     {
-      using page = open();
+      await using page = await open();
       page.press(m.workbench_tab_annotation());
       await chooseAnnotation(
         page,
@@ -575,7 +575,7 @@ describe("the annotation box", () => {
         DEFAULT_PROFILE_SOURCE,
       );
     }
-    using restored = open();
+    await using restored = await open();
     restored.press(m.workbench_restore_accept());
     restored.press(m.workbench_tab_annotation());
     await restored.settle();
@@ -589,7 +589,7 @@ describe("the annotation box", () => {
   });
 
   it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_tab_annotation());
     await page.settle();
     await page.waitFor(() =>
@@ -685,7 +685,7 @@ describe("the annotation box", () => {
 
   it("gives a note without the call its loop, and the section it needs, in one press", async () => {
     keep(SILENT, SAMPLE_ITEMS[1]!);
-    using page = open();
+    await using page = await open();
     page.press(m.workbench_restore_accept());
     expect(page.host.textContent).toContain(m.workbench_annotation_insert());
     const note = EditorView.findFromDOM(

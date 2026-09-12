@@ -1,6 +1,15 @@
 import { configure, reset } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 // `@/prefs` pulls in `@/lib/l10n`, which constructs a `Localization` at module
 // scope. Hoisted so the stub exists before the import graph is evaluated.
@@ -134,10 +143,7 @@ let records: LogRecord[];
 const recordsAt = (level: LogRecord["level"]) =>
   records.filter((record) => record.level === level);
 
-beforeEach(async () => {
-  applicationBlur.callback = undefined;
-  applicationBlur.disposed = false;
-  applicationBlur.registered = false;
+beforeAll(async () => {
   records = [];
   await configure({
     sinks: {
@@ -150,14 +156,22 @@ beforeEach(async () => {
       { category: ["logtape", "meta"], lowestLevel: "error", sinks: [] },
     ],
   });
+});
+
+afterAll(() => reset());
+
+beforeEach(() => {
+  applicationBlur.callback = undefined;
+  applicationBlur.disposed = false;
+  applicationBlur.registered = false;
+  records = [];
   vi.useFakeTimers();
   stubZotero("wal");
 });
 
-afterEach(async () => {
+afterEach(() => {
   vi.useRealTimers();
   delete (globalThis as { Zotero?: unknown }).Zotero;
-  await reset();
 });
 
 describe("registerFreshness", () => {

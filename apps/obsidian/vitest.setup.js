@@ -9,15 +9,6 @@ globalThis.window ??= globalThis;
 // out as the main window itself.
 globalThis.activeWindow ??= globalThis;
 
-// Obsidian's renderer also supplies `DOMParser`, which source code reads XML
-// and HTML with. The `node` test environment has none, so a test that runs
-// such code borrows happy-dom's — the same parser the `happy-dom` environment
-// installs, here without taking that whole environment on.
-if (typeof globalThis.DOMParser === "undefined") {
-  const { Window } = await import("happy-dom");
-  globalThis.DOMParser = new Window().DOMParser;
-}
-
 // Obsidian patches every window (main and popout alike, each patched by its
 // own copy of this same runtime script) with a `createEl()`/`createDiv()`/
 // `createSpan()`/`createFragment()` global family and a `Node.prototype`
@@ -161,6 +152,8 @@ if (typeof Element !== "undefined") {
 }
 
 if (typeof HTMLElement !== "undefined") {
+  // Test windows stay in one realm; migration tests supply their own event source.
+  HTMLElement.prototype.onWindowMigrated ??= () => () => {};
   HTMLElement.prototype.toggle ??= function (visible) {
     this.style.display = visible ? "" : "none";
   };

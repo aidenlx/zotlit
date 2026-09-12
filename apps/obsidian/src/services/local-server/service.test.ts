@@ -23,25 +23,6 @@ const companionHeaders = {
   [SOURCE_ID_HEADER]: SOURCE_ID,
 };
 
-/** A port nothing holds, so the listener binds without racing a fixed one. */
-async function freePort(): Promise<number> {
-  await using probe = createServer();
-  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-  const { port } = probe.address() as AddressInfo;
-  return port;
-}
-
-/** Hold a port for the duration of a test, the way a second vault would. */
-async function holdPort(port: number): Promise<AsyncDisposable> {
-  await using stack = new AsyncDisposableStack();
-  const holder = stack.use(createServer());
-  await new Promise<void>((resolve, reject) => {
-    holder.once("error", reject);
-    holder.listen(port, "127.0.0.1", resolve);
-  });
-  return stack.move();
-}
-
 interface SettingsStub {
   service: SettingsService;
   /** Push a settings change the way the settings tab's toggles do. */
@@ -107,14 +88,14 @@ async function whenClosed(service: LocalServerService): Promise<void> {
 it("serves without taking over the window's Request and Response", async () => {
   const nativeRequest = globalThis.Request;
   const nativeResponse = globalThis.Response;
-  const port = await freePort();
   const settings = makeSettings({
     "server.enabled": true,
-    "server.port": port,
+    "server.port": 0,
   });
 
   await using service = new LocalServerService(makeDeps(settings.service));
-  await whenListening(service);
+  const port = await whenListening(service);
+  expect(port).toBeGreaterThan(0);
 
   // The globals are the window's own, and WebAssembly streaming brand-checks
   // the native `Response`: a swapped-in class breaks the Pandoc engine.
@@ -130,16 +111,15 @@ it("serves without taking over the window's Request and Response", async () => {
 });
 
 it("keeps the listener up for the Workbench while Live updates is off", async () => {
-  const port = await freePort();
   const settings = makeSettings({
     "server.enabled": true,
     "server.live-update": false,
     "server.workbench": true,
-    "server.port": port,
+    "server.port": 0,
   });
 
   await using service = new LocalServerService(makeDeps(settings.service));
-  await whenListening(service);
+  const port = await whenListening(service);
 
   expect(service.effectivePort).toBe(port);
   // The port is open, and Live Update alone refuses.
@@ -161,8 +141,17 @@ it("keeps the listener up for the Workbench while Live updates is off", async ()
 });
 
 it("binds the next free port when the configured one is taken", async () => {
-  const port = await freePort();
-  await using _holder = await holdPort(port);
+  await using holders = new AsyncDisposableStack();
+  let port: number;
+  // Keep every candidate in the ten-port search inside the TCP port range.
+  do {
+    const holder = holders.use(createServer());
+    await new Promise<void>((resolve, reject) => {
+      holder.once("error", reject);
+      holder.listen(0, "127.0.0.1", resolve);
+    });
+    port = (holder.address() as AddressInfo).port;
+  } while (port > 65535 - 9);
   const settings = makeSettings({
     "server.enabled": true,
     "server.port": port,
@@ -185,7 +174,7 @@ it("binds the next free port when the configured one is taken", async () => {
 it("unloads cleanly when no port in the range can bind", async () => {
   const settings = makeSettings({
     "server.enabled": true,
-    "server.port": await freePort(),
+    "server.port": 0,
     // An address this machine does not own, so every bind in the range fails.
     "server.hostname": "203.0.113.1",
   });
@@ -201,14 +190,13 @@ it("unloads cleanly when no port in the range can bind", async () => {
 });
 
 it("closes and reopens the listener as the server toggle changes", async () => {
-  const port = await freePort();
   const settings = makeSettings({
     "server.enabled": true,
-    "server.port": port,
+    "server.port": 0,
   });
 
   await using service = new LocalServerService(makeDeps(settings.service));
-  await whenListening(service);
+  const port = await whenListening(service);
 
   settings.update({ "server.enabled": false });
   await whenClosed(service);
@@ -220,19 +208,18 @@ it("closes and reopens the listener as the server toggle changes", async () => {
   ).rejects.toThrow();
 
   settings.update({ "server.enabled": true });
-  await whenListening(service);
-  expect(service.effectivePort).toBe(port);
-  const res = await fetch(`http://127.0.0.1:${port}/literature-notes`, {
+  const reopenedPort = await whenListening(service);
+  expect(reopenedPort).toBeGreaterThan(0);
+  const res = await fetch(`http://127.0.0.1:${reopenedPort}/literature-notes`, {
     headers: companionHeaders,
   });
   expect(res.status).toBe(200);
 });
 
 it("answers a mounted route group beside the Live Update routes", async () => {
-  const port = await freePort();
   const settings = makeSettings({
     "server.enabled": true,
-    "server.port": port,
+    "server.port": 0,
   });
 
   await using service = new LocalServerService(makeDeps(settings.service));
@@ -242,7 +229,7 @@ it("answers a mounted route group beside the Live Update routes", async () => {
     "/v1",
     new Hono().get("/ping", (c) => c.text("pong")),
   );
-  await whenListening(service);
+  const port = await whenListening(service);
 
   const mounted = await fetch(`http://127.0.0.1:${port}/v1/ping`);
   expect(mounted.status).toBe(200);

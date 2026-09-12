@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { m } from "@/paraglide/messages.js";
 
 import { WorkbenchSkeleton } from "./frame";
+
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
+afterEach(() => vi.unstubAllGlobals());
 
 describe("WorkbenchSkeleton", () => {
   it("paints the page chrome inert before the editor bundle arrives", () => {

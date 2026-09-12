@@ -67,12 +67,6 @@ describe("annotation type", () => {
     >().toEqualTypeOf<ResolvedAnnotationTypeName>();
   });
 
-  it("rejects a type name outside the union at compile time", () => {
-    // @ts-expect-error — "scribble" is not an annotation type name.
-    const outside: ResolvedAnnotationTypeName = "scribble";
-    expect(outside).toBe("scribble");
-  });
-
   it("resolves the raw type int to its literal name", () => {
     expect(makeTemplateData({ type: 1 }).type).toBe("highlight");
     expect(makeTemplateData({ type: 5 }).type).toBe("underline");

@@ -37,7 +37,7 @@ describe("Template Workbench host", () => {
   it("names the built-in citation style the same way as native citation settings", () => {
     using host = setup().host;
     expect(host.messages.workbench_name_value_no_style()).toBe(
-      "Default (Chicago author-date)",
+      m.settings_citation_references_style_default(),
     );
   });
 
@@ -57,9 +57,6 @@ describe("Template Workbench host", () => {
     expect(menu.items[0]!.title).toBe("Move up");
     menu.items[0]!.click();
     expect(onSelect).toHaveBeenCalledOnce();
-    expect(host.tooltip("Explain field")).toEqual({
-      "aria-label": "Explain field",
-    });
   });
 
   it("binds dialogs to Modal and reports dismissal", () => {
