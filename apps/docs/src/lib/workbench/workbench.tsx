@@ -502,7 +502,23 @@ export function Workbench() {
       goToProblem(diagnosis.problem);
       return;
     }
-    const { part, position } = diagnosis.diagnostic;
+    const { part, position, callSite } = diagnosis.diagnostic;
+    // A verified call outranks the part the engine reported the failure under:
+    // a failure inside a called template is repaired where it was called.
+    if (callSite) {
+      // The pane whose own region holds the call; Advanced holds whatever no
+      // editing pane covers.
+      const slice =
+        (["note", "annotation", "filename"] as const).find((id) => {
+          const region = controller.sliceRange(id);
+          return region.from <= callSite.from && callSite.from < region.to;
+        }) ?? "advanced";
+      setView("edit");
+      setAdvanced(slice === "advanced");
+      if (slice !== "advanced") setTab(slice === "filename" ? "name" : slice);
+      setReveal({ ...callSite });
+      return;
+    }
     if (position !== undefined) {
       goToEntry(position);
       return;

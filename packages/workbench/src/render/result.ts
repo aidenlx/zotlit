@@ -13,6 +13,7 @@ import type { RenderRequest } from "./request";
  * English this package would otherwise author.
  */
 export type RenderDiagnosticCode =
+  | "citation-data-mismatch"
   | "citation-style-error"
   | "contract-version-mismatch"
   | "invalid-profile"
@@ -23,6 +24,27 @@ export type RenderDiagnosticCode =
   | "property-javascript"
   | "render-error"
   | "unsupported-dependency";
+
+/**
+ * Where the template engine itself said a failure happened. `template` is the
+ * name the engine renders that source under, and a `line` counts lines of that
+ * template's own source — never of whichever document the reader has open.
+ */
+export interface RenderEngineLocation {
+  readonly template: string;
+  /** 1-based, in the named template's own source. */
+  readonly line?: number;
+  /** 1-based, in that line. */
+  readonly column?: number;
+}
+
+/** The Template Document whose own call reached the failing template. */
+export interface RenderCaller {
+  /** Its vault path, when the failure named one. */
+  readonly document?: string;
+  /** The name the engine renders it under, when the failure named one. */
+  readonly template?: string;
+}
 
 export interface RenderDiagnostic {
   readonly code: RenderDiagnosticCode;
@@ -42,6 +64,20 @@ export interface RenderDiagnostic {
    * which is what sends the reader to Advanced instead.
    */
   readonly position?: number;
+  /**
+   * What the engine reported, kept apart from {@link RenderDiagnostic.callSite}
+   * because the two are different places: a failure inside a called template is
+   * reported there and repaired at the call.
+   */
+  readonly engine?: RenderEngineLocation;
+  readonly caller?: RenderCaller;
+  /**
+   * The call in the source this render read that reached the failing template,
+   * which is the one place the reader repairs it. Set only when that source
+   * actually holds such a call; absent means the location is unknown, and a
+   * host says so rather than sending the reader to a guessed line.
+   */
+  readonly callSite?: { readonly from: number; readonly to: number };
 }
 
 export interface RenderedProperty {

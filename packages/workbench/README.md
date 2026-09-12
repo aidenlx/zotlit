@@ -228,6 +228,16 @@ each code in the reader's own language. `message` carries the wording this
 package did not author: the template engine's failure text, the Local Bridge's
 own, and the document parser's.
 
+`renderFailureDiagnostic(error, caller)` reads one thrown render failure
+against the source that render read and keeps its three answers apart:
+`engine` is where the engine itself said it happened, `caller` the document a
+failure named as holding the call, and `callSite` the call in that source which
+reached the failing template — the one verified repair location. Each is set
+only on its own evidence, so a name the source never spells leaves `callSite`
+absent and the host says the location is unverified rather than sending the
+reader to a guessed line. `templateCalls` in `@zotlit/workbench/document` is
+the scan behind it, and reads the reserved names `partialCalls` drops.
+
 ## Bridge
 
 `@zotlit/workbench/bridge` holds the wire schemas and the browser client. The

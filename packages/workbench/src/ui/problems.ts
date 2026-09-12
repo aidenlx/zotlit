@@ -145,6 +145,11 @@ export function diagnosticText(
       return m.workbench_diagnostic_missing_partial({
         name: String(params.name),
       });
+    case "citation-data-mismatch":
+      // The engine refused the Citation Template's own input, and the source
+      // holds the call that handed it over: the caller's data, not the called
+      // template, is what went wrong.
+      return m.workbench_diagnostic_citation_data_mismatch();
     case "unsupported-dependency":
       // The renderer names the dependency it refused and leaves the words
       // here; a Local Bridge that reports its own bundle failure sends the
@@ -243,7 +248,15 @@ export type WorkbenchDiagnosis =
  */
 function diagnosticSubject(diagnostic: RenderDiagnostic): string {
   const params = diagnostic.params ?? {};
-  return String(params.name ?? params.key ?? params.styleId ?? "");
+  return String(
+    params.name ??
+      params.key ??
+      params.styleId ??
+      // A failure the engine attributed to a template names that template,
+      // which is the only object an unclassified one carries.
+      diagnostic.engine?.template ??
+      "",
+  );
 }
 
 /**
@@ -264,9 +277,13 @@ export function documentDiagnosis(
 export function renderDiagnosis(
   diagnostic: RenderDiagnostic,
 ): WorkbenchDiagnosis {
-  const { code, part, position } = diagnostic;
+  const { code, part, position, callSite } = diagnostic;
+  // The verified call joins the identity, so one code naming one object in two
+  // places stays two problems. An unverified location adds nothing, which is
+  // what leaves an unclassified failure grouping with nothing.
+  const repair = callSite ? `@${callSite.from}` : "";
   return {
-    id: `render:${code}:${diagnosticSubject(diagnostic)}:${part ?? ""}:${position ?? ""}`,
+    id: `render:${code}:${diagnosticSubject(diagnostic)}:${part ?? ""}:${position ?? ""}${repair}`,
     kind: "render",
     diagnostic,
   };
@@ -333,6 +350,8 @@ function diagnosticObject(
   switch (diagnostic.code) {
     case "missing-partial":
       return m.workbench_problems_object_partial({ name: String(params.name) });
+    case "citation-data-mismatch":
+      return m.workbench_problems_object_citation();
     case "property-error":
     case "property-append-conflict":
       return m.workbench_problems_object_property({ key: String(params.key) });
@@ -369,6 +388,8 @@ function diagnosticSuggestion(
   switch (diagnostic.code) {
     case "missing-partial":
       return m.workbench_diagnostic_missing_partial_suggestion();
+    case "citation-data-mismatch":
+      return m.workbench_diagnostic_citation_data_suggestion();
     case "property-error":
       return m.workbench_diagnostic_property_error_suggestion();
     case "property-javascript":
@@ -423,10 +444,34 @@ export function diagnosisWhere(
   diagnosis: WorkbenchDiagnosis,
 ): string {
   if (diagnosis.kind === "document") return problemWhere(m, diagnosis.problem);
-  const { part, position } = diagnosis.diagnostic;
+  const { part, position, callSite } = diagnosis.diagnostic;
+  // A verified call is where the reader repairs it, whichever template the
+  // engine reported the failure inside.
+  if (callSite) return m.workbench_problems_where_call();
   if (position !== undefined) return m.workbench_problems_where_entry();
   if (part === "annotation") return m.workbench_annotation_edit_format();
   return m.workbench_problems_where_advanced();
+}
+
+/**
+ * What the engine itself reported, as its own sentence. It names the template
+ * the engine failed inside, which a call may have reached from elsewhere, so it
+ * is read apart from the suggestion and from the navigation control. Null when
+ * the failure named no template.
+ */
+export function diagnosisEngineSource(
+  m: WorkbenchMessages,
+  diagnosis: WorkbenchDiagnosis,
+): string | null {
+  if (diagnosis.kind === "document") return null;
+  const { engine } = diagnosis.diagnostic;
+  if (!engine) return null;
+  return engine.line === undefined
+    ? m.workbench_problems_engine_source({ template: engine.template })
+    : m.workbench_problems_engine_source_line({
+        template: engine.template,
+        line: engine.line,
+      });
 }
 
 /**
@@ -437,6 +482,7 @@ export function diagnosisWhere(
 export function diagnosisLocated(diagnosis: WorkbenchDiagnosis): boolean {
   return diagnosis.kind === "document"
     ? diagnosis.problem.range !== undefined
-    : diagnosis.diagnostic.position !== undefined ||
+    : diagnosis.diagnostic.callSite !== undefined ||
+        diagnosis.diagnostic.position !== undefined ||
         diagnosis.diagnostic.part === "annotation";
 }

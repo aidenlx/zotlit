@@ -11,6 +11,7 @@ import type { CSSProperties } from "react";
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchDiagnosis } from "./problems";
 import {
+  diagnosisEngineSource,
   diagnosisExplanation,
   diagnosisLocated,
   diagnosisWhere,
@@ -110,6 +111,7 @@ export function ProblemsFooter({
       ? { minBlockSize: space }
       : undefined;
   const explanation = selected && diagnosisExplanation(m, selected);
+  const engineSource = selected && diagnosisEngineSource(m, selected);
   const action =
     onAction && selected?.kind === "document"
       ? problemAction(m, selected.problem)
@@ -145,6 +147,12 @@ export function ProblemsFooter({
           <p {...part("problems-object")}>{explanation.object}</p>
           <p {...part("problems-text")}>{explanation.condition}</p>
           <p {...part("problems-recovery")}>{explanation.suggestion}</p>
+          {/* Where the engine said it happened and where the reader repairs it
+              are different places, so they are read as separate lines rather
+              than folded into one claim. */}
+          {engineSource !== null && (
+            <p {...part("problems-location")}>{engineSource}</p>
+          )}
           {!diagnosisLocated(selected) && (
             <p {...part("problems-location")}>
               {m.workbench_problems_location_unknown()}

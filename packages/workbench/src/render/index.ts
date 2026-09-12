@@ -72,11 +72,16 @@ export {
 } from "./result";
 export type {
   TemplateRenderResult,
+  RenderCaller,
   RenderDiagnostic,
+  RenderDiagnosticCode,
   RenderedProperty,
   RenderedRange,
+  RenderEngineLocation,
   RenderIdentity,
 } from "./result";
+export { renderFailureDiagnostic } from "./attribution";
+export type { RenderCallerSource } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
 export { SAMPLE_ANNOTATIONS } from "./sample-annotations";

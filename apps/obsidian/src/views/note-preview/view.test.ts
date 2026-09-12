@@ -238,6 +238,47 @@ function previewButton(view: Preview, label: string): void {
   button.click();
 }
 
+/** The editor's Problems area, which owns the detailed explanation. */
+function problemsArea(view: Editor): HTMLElement {
+  const area = view.contentEl.querySelector<HTMLElement>(
+    '[data-part="problems"]',
+  );
+  if (!area) throw new Error("The Problems area is not open");
+  return area;
+}
+
+/** Presses the Problems area's own button whose text is `label`. */
+function problemsButton(view: Editor, label: string): void {
+  const button = Array.from(problemsArea(view).querySelectorAll("button")).find(
+    (element) => element.textContent === label,
+  );
+  if (!button) throw new Error(`Missing Problems action: ${label}`);
+  button.click();
+}
+
+/**
+ * An editor showing `source` with a preview open on it, both settled. The
+ * editor's own content element is in the document, so the Problems area the
+ * assertions read is the one a reader sees.
+ */
+async function failing(
+  test: Awaited<ReturnType<typeof setup>>,
+  source: string,
+): Promise<Preview> {
+  await act(async () =>
+    test.editor.store
+      .getState()
+      .setItem({ id: "MAIN2345", title: "Better figures" }),
+  );
+  document.body.append(test.editor.contentEl);
+  await act(async () => test.editor.open());
+  const preview = await test.open();
+  await advance();
+  await act(async () => test.editor.setViewData(source, false));
+  await advance();
+  return preview;
+}
+
 async function run(view: Preview) {
   const button = Array.from(view.contentEl.querySelectorAll("button")).find(
     (element) => element.textContent === m.workbench_preview_run(),
@@ -937,6 +978,161 @@ Annotation`,
     expect(area.textContent).not.toContain(
       m.workbench_diagnostic_missing_partial_suggestion(),
     );
+  });
+
+  it("sends the reader to the call that named the missing partial", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const call = `{% render "book-details" %}`;
+    const source = PROFILE_SOURCE.replace("Personal space.", call);
+    // Hand-derived: the call stands where the personal paragraph stood.
+    const at = {
+      from: source.indexOf(call),
+      to: source.indexOf(call) + call.length,
+    };
+    const preview = await failing(test, source);
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    // Nothing was read inside a partial that does not exist, so the engine
+    // reported no location of its own.
+    expect(area.textContent).not.toContain(
+      m.workbench_problems_engine_source({ template: "book-details" }),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_problems_location_unknown(),
+    );
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_call()),
+    );
+    expect(test.editor.store.getState().presentation.reveal).toEqual(at);
+    // Diagnosis navigates and explains; it writes nothing.
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+  });
+
+  it("blames the call, not the citation text the engine failed inside", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const call = `{% render "citation" %}`;
+    const source = PROFILE_SOURCE.replace("Personal space.", call);
+    const at = {
+      from: source.indexOf(call),
+      to: source.indexOf(call) + call.length,
+    };
+    const preview = await failing(test, source);
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(m.workbench_problems_object_citation());
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_citation_data_mismatch(),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_citation_data_suggestion(),
+    );
+    // Hand-derived: the built-in citation text pipes `zt.citations` through
+    // `pandoc_cite` on its fourth line, and that location stays the engine's
+    // own rather than becoming a line of the note being edited.
+    expect(area.textContent).toContain(
+      m.workbench_problems_engine_source_line({
+        template: "citation",
+        line: 4,
+      }),
+    );
+    expect(area.textContent).toContain("pandoc_cite requires a Citation Item");
+    // The annotation root's rendered citation is no field of a note root, so
+    // it is never proposed as the replacement here.
+    expect(area.textContent).not.toContain("zt.citation");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_call()),
+    );
+    expect(test.editor.store.getState().presentation.reveal).toEqual(at);
+  });
+
+  it("opens the property row a failed managed field came from", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace("expr: zt.title", "expr: zt.title | bogus_filter"),
+    );
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_problems_object_property({ key: "title" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_property_error_suggestion(),
+    );
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_entry()),
+    );
+    // The first Managed Frontmatter entry is the row that produced it.
+    expect(test.editor.store.getState().presentation.selected).toBe(1);
+  });
+
+  it("keeps an unclassified engine failure honest about what it knows", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace(
+        "Personal space.",
+        "{{ zt.title | bogus_filter }}",
+      ),
+    );
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+    // The engine's own words survive, and its own location is reported as its
+    // own — no call in this source names the template it blamed.
+    expect(area.textContent).toContain("undefined filter: bogus_filter");
+    expect(area.textContent).toContain(m.workbench_problems_location_unknown());
+    expect(
+      Array.from(problemsArea(test.editor).querySelectorAll("button")).map(
+        (button) => button.textContent,
+      ),
+    ).not.toContain(m.workbench_problems_where_call());
+  });
+
+  it("explains the failure that brought the reader from a refused note operation", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const source = PROFILE_SOURCE.replace(
+      "Personal space.",
+      `{% render "book-details" %}`,
+    );
+    // The route in carries the refusal's own code and the partial it named.
+    await act(async () =>
+      test.editor.explainArrival({
+        code: "missing-partial",
+        subject: "book-details",
+      }),
+    );
+    await failing(test, source);
+
+    expect(problemsArea(test.editor).textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    // One arrival opens one explanation; a later check leaves it alone.
+    expect(test.editor.arrival).toBeNull();
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+    expect(test.fixture.writes.process).not.toHaveBeenCalled();
   });
 
   it("takes a closed preview's findings back out of the editor", async () => {

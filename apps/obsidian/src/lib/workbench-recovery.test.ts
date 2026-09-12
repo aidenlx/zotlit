@@ -45,9 +45,11 @@ describe("missingPartialNotice", () => {
     );
 
     (button as ButtonComponent).click();
+    // The route carries the refusal itself, so the Workbench explains this
+    // failure rather than whichever problem its own check happens to select.
     expect(trigger).toHaveBeenCalledExactlyOnceWith(
       "zotlit:open-template-workbench",
-      undefined,
+      { problem: { code: "missing-partial", subject: "venue-line" } },
     );
   });
 
@@ -67,7 +69,10 @@ describe("missingPartialNotice", () => {
 
     expect(trigger).toHaveBeenCalledExactlyOnceWith(
       "zotlit:open-template-workbench",
-      "templates/zotlit-profile.reading.md",
+      {
+        document: "templates/zotlit-profile.reading.md",
+        problem: { code: "missing-partial", subject: "venue-line" },
+      },
     );
   });
 

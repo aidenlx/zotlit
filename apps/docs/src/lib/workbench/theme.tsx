@@ -433,7 +433,10 @@ export const WEB_THEME: WorkbenchTheme = {
       "problems-body": "flex min-w-0 flex-col gap-1",
       "problems-object": "font-semibold [overflow-wrap:anywhere]",
       "problems-recovery": "text-pretty text-fd-muted-foreground",
-      "problems-location": "text-fd-muted-foreground",
+      // A reported location names the engine's own template, which is one
+      // unbroken machine-written token in a pane the reader can narrow.
+      "problems-location":
+        "text-pretty text-fd-muted-foreground [overflow-wrap:anywhere]",
       "problems-details": "mt-2 min-w-0",
       "problems-details-label": "cursor-pointer text-fd-muted-foreground",
       "problems-evidence":

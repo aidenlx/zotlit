@@ -89,8 +89,10 @@ Keep source markers short. The preview names the effect on its result and
 offers **Show problem**, leading to the same explanation.
 
 Lead with the affected object, a plain explanation, and a short text suggestion
-for what to check or change. Keep technical evidence behind a collapsed
-disclosure. Group **Copy error report** and **Ask the community** beside it,
+for what to check or change. A location the engine reported inside another
+template reads as its own quiet line, apart from the control that navigates, so
+a reported location is never mistaken for a repair target. Keep technical
+evidence behind a collapsed disclosure. Group **Copy error report** and **Ask the community** beside it,
 within reach when the explanation scrolls. ADR 0056 owns the behavior,
 report contents, and state transitions.
 

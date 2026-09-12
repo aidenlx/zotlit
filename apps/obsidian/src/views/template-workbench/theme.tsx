@@ -480,7 +480,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-body": "zt:flex zt:min-w-0 zt:flex-col zt:gap-1",
       "problems-object": "zt:font-semibold zt:[overflow-wrap:anywhere]",
       "problems-recovery": "zt:text-pretty zt:text-muted-foreground",
-      "problems-location": "zt:text-muted-foreground",
+      // A reported location names the engine's own template, which is one
+      // unbroken machine-written token in a pane the reader can narrow.
+      "problems-location":
+        "zt:text-pretty zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
       "problems-details": "zt:mt-2 zt:min-w-0",
       "problems-details-label": "zt:cursor-pointer zt:text-muted-foreground",
       "problems-evidence":

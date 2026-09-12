@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { diagnosticText, problemAction, problemText } from "./problems";
+import {
+  diagnosisEngineSource,
+  diagnosisExplanation,
+  diagnosisLocated,
+  diagnosisWhere,
+  diagnosticText,
+  problemAction,
+  problemText,
+  renderDiagnosis,
+} from "./problems";
 import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -167,5 +176,87 @@ describe("diagnosticText", () => {
         part: "render",
       }),
     ).toBe("Unexpected tag");
+  });
+});
+
+describe("attribution", () => {
+  /** A Note calling Citation text with the note's own data: the engine fails
+   *  inside the Citation Template, and the call in the note is the repair. */
+  const callerData = renderDiagnosis({
+    code: "citation-data-mismatch",
+    message:
+      "pandoc_cite requires a Citation Item array, file:citation, line:4, col:3",
+    part: "render",
+    engine: { template: "citation", line: 4, column: 3 },
+    callSite: { from: 395, to: 418 },
+  });
+
+  it("reads the engine's own location apart from the call it sends the reader to", () => {
+    expect(diagnosisEngineSource(m, callerData)).toBe(
+      m.workbench_problems_engine_source_line({
+        template: "citation",
+        line: 4,
+      }),
+    );
+    expect(diagnosisWhere(m, callerData)).toBe(
+      m.workbench_problems_where_call(),
+    );
+    expect(diagnosisLocated(callerData)).toBe(true);
+  });
+
+  it("explains the caller's data rather than the template the engine named", () => {
+    expect(diagnosisExplanation(m, callerData)).toEqual({
+      object: m.workbench_problems_object_citation(),
+      condition: m.workbench_diagnostic_citation_data_mismatch(),
+      suggestion: m.workbench_diagnostic_citation_data_suggestion(),
+      evidence:
+        "pandoc_cite requires a Citation Item array, file:citation, line:4, col:3",
+    });
+  });
+
+  it("leaves an unclassified failure without a repair location and says so", () => {
+    const unknown = renderDiagnosis({
+      code: "render-error",
+      message: "undefined filter: bogus_filter, file:paper:body, line:5, col:1",
+      part: "render",
+      engine: { template: "paper:body", line: 5, column: 1 },
+    });
+
+    expect(diagnosisLocated(unknown)).toBe(false);
+    expect(diagnosisWhere(m, unknown)).toBe(
+      m.workbench_problems_where_advanced(),
+    );
+    // The engine's claim survives; it is not promoted into a repair location.
+    expect(diagnosisEngineSource(m, unknown)).toBe(
+      m.workbench_problems_engine_source_line({
+        template: "paper:body",
+        line: 5,
+      }),
+    );
+    expect(diagnosisExplanation(m, unknown).suggestion).toBe(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+  });
+
+  it("keeps one code naming one partial at two calls as two problems", () => {
+    const at = (from: number) =>
+      renderDiagnosis({
+        code: "missing-partial",
+        params: { name: "book-details" },
+        part: "render",
+        callSite: { from, to: from + 27 },
+      }).id;
+
+    expect(at(395)).not.toBe(at(512));
+    expect(at(395)).toBe(at(395));
+  });
+
+  it("says no verified location for a failure the engine reported nowhere", () => {
+    expect(
+      diagnosisEngineSource(
+        m,
+        renderDiagnosis({ code: "render-error", message: "boom" }),
+      ),
+    ).toBeNull();
   });
 });

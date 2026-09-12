@@ -6,6 +6,7 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
@@ -162,16 +163,17 @@ export function registerTemplateWorkbenchView(
   // Default Profile stands in when the refusal named no document — a legacy
   // slot render, or a draft compiled from source rather than from a file.
   plugin.registerEvent(
-    plugin.app.workspace.on("zotlit:open-template-workbench", (document) => {
+    plugin.app.workspace.on("zotlit:open-template-workbench", (request) => {
+      const { document, problem } = request;
       const file = document ? plugin.app.vault.getFileByPath(document) : null;
+      const options = {
+        explainUnsupported: false,
+        ...(problem ? { problem } : {}),
+      };
       void runTemplateWorkbenchAction("open-workbench", () =>
         file
-          ? openTemplateWorkbench(plugin.app, file, {
-              explainUnsupported: false,
-            })
-          : openNativeProfile(plugin.app, deps.profile, {
-              explainUnsupported: false,
-            }),
+          ? openTemplateWorkbench(plugin.app, file, options)
+          : openNativeProfile(plugin.app, deps.profile, options),
       );
     }),
   );
@@ -320,6 +322,8 @@ export async function openNativeProfile(
     itemIndexedKey?: string;
     explainUnsupported?: boolean;
     customize?: boolean;
+    /** The failure that brought the reader here, explained on arrival. */
+    problem?: ArrivingProblem;
   } = {},
 ): Promise<void> {
   const file =
@@ -372,8 +376,10 @@ export async function openNativeProfile(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
-  if (options.customize && leaf.view instanceof TemplateWorkbenchView)
-    await leaf.view.customizeDefault();
+  if (leaf.view instanceof TemplateWorkbenchView) {
+    if (options.problem) leaf.view.explainArrival(options.problem);
+    if (options.customize) await leaf.view.customizeDefault();
+  }
 }
 
 export function requiresNative(source: string): boolean {
@@ -398,6 +404,8 @@ export async function openTemplateWorkbench(
     explainUnsupported?: boolean;
     customize?: boolean;
     defaultProfile?: boolean;
+    /** The failure that brought the reader here, explained on arrival. */
+    problem?: ArrivingProblem;
   } = {},
 ): Promise<void> {
   if (
@@ -435,6 +443,8 @@ export async function openTemplateWorkbench(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
-  if (options.customize && leaf.view instanceof TemplateWorkbenchView)
-    await openWorkbenchLayout(app, leaf.view);
+  if (leaf.view instanceof TemplateWorkbenchView) {
+    if (options.problem) leaf.view.explainArrival(options.problem);
+    if (options.customize) await openWorkbenchLayout(app, leaf.view);
+  }
 }

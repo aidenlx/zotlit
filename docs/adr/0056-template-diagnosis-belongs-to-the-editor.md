@@ -4,6 +4,16 @@ status: accepted
 
 # Template diagnosis belongs to the editor
 
+> Amended 2026-09-13: a repair location is verified by one rule — the source
+> this render read holds a call naming the template the engine blamed, or the
+> partial it could not resolve. That call is the repair target and outranks the
+> part the failure was reported under, because a failure inside a called
+> template is repaired where it was called. A template the engine never
+> resolved gets no reported location at all, since nothing was read there, and
+> a caller is recorded only when the failure names a document path rather than
+> a placeholder reference. Everything else leaves the repair location absent
+> and says so.
+
 > Amended 2026-09-13: the Problems area keeps one host repair control, Unpack
 > partials for the `bundled-partial` document problem. That control is the only
 > route to unpacking a shared Profile's carried partials, and it repairs the

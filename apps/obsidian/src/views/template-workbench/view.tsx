@@ -101,6 +101,7 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -235,6 +236,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #previewProblemList: readonly RenderDiagnostic[] = [];
   readonly #previewProblemListeners = new Set<() => void>();
   readonly #showProblemListeners = new Set<(id: string | null) => void>();
+  /**
+   * The failure a refused note operation asked this editor to explain, held
+   * until its own check finds the same problem. A recorded message is not the
+   * diagnosis — the check that runs here is — so the arrival waits for it.
+   */
+  #arrival: ArrivingProblem | null = null;
   get matchDatabase() {
     return this.#deps.db;
   }
@@ -620,6 +627,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return () => {
       this.#showProblemListeners.delete(listener);
     };
+  }
+  /** Records the failure that brought the reader here, and opens Problems. */
+  explainArrival(arrival: ArrivingProblem): void {
+    this.#arrival = arrival;
+    this.showProblem(null, false);
+  }
+  /** The held arrival, taken so one arrival opens one explanation. */
+  takeArrival(): ArrivingProblem | null {
+    const held = this.#arrival;
+    this.#arrival = null;
+    return held;
+  }
+  get arrival(): ArrivingProblem | null {
+    return this.#arrival;
   }
   revealSlice(slice: "advanced" | "annotation" | `entry:${number}`): void {
     const range = this.#controller.sliceRange(slice);
@@ -1957,6 +1978,27 @@ function EditorContent({
       ),
     [view, selectProblem, openProblems],
   );
+  // A refused note operation brought the reader here: the first check that
+  // finds that failure again opens its explanation. Nothing is explained from
+  // the recorded message alone, so a repair made meanwhile leaves the area
+  // open on whatever this editor actually found.
+  const detected = diagnoses.map(({ id }) => id).join("\n");
+  useEffect(() => {
+    const arrival = view.arrival;
+    if (!arrival) return;
+    openProblems(true);
+    const match = diagnoses.find(
+      (diagnosis) =>
+        diagnosis.kind === "render" &&
+        diagnosis.diagnostic.code === arrival.code &&
+        (arrival.subject === undefined ||
+          String(diagnosis.diagnostic.params?.name ?? "") === arrival.subject),
+    );
+    if (!match) return;
+    view.takeArrival();
+    selectProblem(match.id);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed on the problems found, not on a fresh list each draw
+  }, [view, detected, selectProblem, openProblems]);
   const state = view.store.getState();
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
@@ -2003,13 +2045,31 @@ function EditorContent({
         : null,
     );
   }
+  /**
+   * The pane whose own region holds `from`, which is where a verified call is
+   * repaired. Advanced holds whatever no editing pane covers.
+   */
+  function sliceHolding(from: number): WorkbenchProblem["slice"] {
+    if (kind !== "profile") return "source";
+    for (const slice of ["note", "annotation", "filename"] as const) {
+      const region = controller.sliceRange(slice);
+      if (region.from <= from && from < region.to) return slice;
+    }
+    return "advanced";
+  }
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
     if (diagnosis.kind === "document") {
       openProblem(diagnosis.problem);
       return;
     }
-    const { part, position } = diagnosis.diagnostic;
+    const { part, position, callSite } = diagnosis.diagnostic;
+    // A verified call outranks the part the engine reported the failure under:
+    // a failure inside a called template is repaired where it was called.
+    if (callSite) {
+      openProblem({ slice: sliceHolding(callSite.from), range: callSite });
+      return;
+    }
     const slice: WorkbenchProblem["slice"] =
       position === undefined
         ? part === "annotation"
