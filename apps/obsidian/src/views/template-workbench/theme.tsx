@@ -54,12 +54,39 @@ export const selectionControl = tv({
         "zt-workbench-trigger zt:max-w-full zt:min-w-0 zt:gap-1.5 zt:text-start zt:leading-normal zt:[&_svg]:shrink-0",
         captionIcon,
       ),
-      /** A choice that carries a hint under its label reads as two stacked lines. */
-      option:
-        "zt-workbench-option zt:min-w-0 zt:flex-col zt:gap-0.5 zt:text-start zt:leading-tight",
+      /** A choice fills one row of the list that owns the corners around it. */
+      option: "zt-workbench-option zt:min-w-0 zt:[--clickable-icon-radius:0px]",
     },
   },
 });
+/**
+ * A control that hands its own box to the content inside it. `.clickable-icon`
+ * and `button` are styled unlayered, so their padding, centering, wrapping and
+ * weight outrank every `zt:` utility; a full-width child turns the centering
+ * into a no-op and takes those declarations back for Tailwind.
+ */
+const controlContent = "zt:flex zt:w-full zt:min-w-0 zt:whitespace-normal";
+/**
+ * The empty state's own way into the library, which wears Obsidian's native
+ * button surface so it stays legible on the light pane background the flat
+ * `clickable-icon` controls disappear into.
+ */
+export const selectionSearch = "zt:w-full";
+/** Its label sits beside the icon on one line, the height Obsidian gives it. */
+export const selectionSearchContent = cn(
+  controlContent,
+  "zt:items-center zt:gap-2 zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:1.5] zt:[&_svg]:shrink-0",
+);
+/** Choices read as one boxed list, so the group itself carries the structure. */
+export const selectionList =
+  "zt:flex zt:min-w-0 zt:flex-col zt:overflow-hidden zt:rounded-md zt:border zt:border-border";
+/** A choice names itself on the first line and its hint on the second. */
+export const selectionOptionContent = cn(
+  controlContent,
+  "zt:flex-col zt:gap-0.5 zt:px-1.5 zt:py-1 zt:text-start zt:leading-snug zt:font-normal",
+);
+/** A choice's own name, which the hint beneath it is subordinate to. */
+export const selectionOptionLabel = "zt:font-medium zt:text-foreground";
 /**
  * A control row that names the selected data beside the control that changes it.
  * `placement` decides which part hides outside a sidebar: the whole row, or only the trigger.
@@ -85,10 +112,10 @@ export const selectionBar = tv({
   },
 });
 /** A group of selection choices: its heading, then its options. */
-export const selectionGroup = "zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5";
+export const selectionGroup = "zt:flex zt:min-w-0 zt:flex-col";
 /** A group heading names the source the options beneath it come from. */
 export const selectionGroupHeading =
-  "zt:mb-1.5 zt:px-1.5 zt:text-xs zt:font-semibold zt:leading-normal zt:text-muted-foreground";
+  "zt:mb-1.5 zt:px-0.5 zt:text-xs zt:font-semibold zt:leading-normal zt:text-muted-foreground";
 const row = "zt:flex zt:items-center zt:gap-2";
 const stack = "zt:flex zt:min-w-0 zt:flex-col zt:gap-3";
 const field = "zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5";

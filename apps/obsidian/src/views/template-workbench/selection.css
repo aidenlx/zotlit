@@ -17,7 +17,6 @@ body:not(.show-view-header):not(.is-phone) .zt-workbench-sidebar-control {
    `height: auto`, inset, radius, hover and the focus ring. These are the few
    declarations Obsidian's own rules still win, and no `zt:` utility can set
    them from `@layer utilities`. */
-.zt-root button.zt-workbench-option,
 .zt-root button.zt-workbench-trigger {
   /* button { white-space: nowrap } */
   white-space: normal;
@@ -28,10 +27,13 @@ body:not(.show-view-header):not(.is-phone) .zt-workbench-sidebar-control {
   /* .clickable-icon { justify-content: center } */
   justify-content: flex-start;
 }
-/* A choice names itself on the first line and its hint on the second. */
-.zt-root button.zt-workbench-option {
-  /* .clickable-icon { align-items: center } */
-  align-items: flex-start;
-  /* .clickable-icon { color: var(--icon-color) } */
-  color: var(--text-normal);
+/* `button { border: 0 }` outranks a `zt:` divide utility, so the rules between
+   the rows of a boxed list are declared here. */
+.zt-root button.zt-workbench-option + button.zt-workbench-option {
+  border-top: var(--border-width) solid var(--background-modifier-border);
+}
+/* That list clips its rows to its own corners, which would swallow the outer
+   ring `.clickable-icon:focus-visible` draws, so the row keeps its ring inside. */
+.zt-root button.zt-workbench-option:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--background-modifier-border-focus);
 }
