@@ -68,6 +68,8 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [comments](policies/comments.md) — JSDoc conventions, module-level comments
 - [function-parameters](policies/function-parameters.md) — max 3 positional, options object for the rest
 - [tautological tests](policies/tautological-tests.md) — assert against hand-derived expectations, not mirrored implementation
+- [test timing](policies/test-timing.md) — completion signals, clocks, polling, and external events
+- [test isolation](policies/test-isolation.md) — fixture state, lifetime, setup cost, and order dependence
 - [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase
