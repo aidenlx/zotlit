@@ -271,11 +271,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   beforeAll(async () => {
     // The dev build generates this facade; unreachable runs never load it.
     m = await import("@obsidian-messages");
-    // `create` reuses whatever plugin bundle already sits in the target
-    // vault's own plugin folder (the same way it reuses the per-worktree dev
-    // vault's bundle, which `build:dev`'s Vite plugin copies there directly).
-    // A fresh e2e vault has no such folder yet, so seed it from
-    // `apps/obsidian/dist-dev` ourselves before `create` looks for it.
+    // `create` seeds the target vault from `apps/obsidian/dist-dev`, and falls
+    // back to the vault's own plugin folder only when the worktree holds no
+    // dev build. Copy the bundle in first, so a run without a dev build still
+    // starts from this bundle rather than from nothing.
     const pluginBundleDir = join(workspaceRoot, "apps", "obsidian", "dist-dev");
     const e2ePluginDir = join(e2eVaultPath, ".obsidian", "plugins", "zotlit");
     await mkdir(e2ePluginDir, { recursive: true });

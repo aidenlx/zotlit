@@ -195,7 +195,7 @@ Name a Vault Case on a Paired Run:
 pnpm fixture open --vault-case upgrader
 ```
 
-Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. The first open seeds the case vault with the bundle from `apps/obsidian/dist-dev`. The `select` command changes only the Scope Case; rebuild to change the Vault Case.
+Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. Every open seeds the case vault with the bundle from `apps/obsidian/dist-dev`, so a new dev build always reaches the vault. The `select` command changes only the Scope Case; rebuild to change the Vault Case.
 
 `pnpm fixture dev --vault-case <id>` sets `ZT_VAULT_CASE` for the Obsidian watcher, so the Vite build copies each bundle into that case's vault and hot reload reaches it. Set `ZT_VAULT_CASE` yourself to point `dev:vault` or a plain `obsidian-vault.ts open` at a case vault:
 
