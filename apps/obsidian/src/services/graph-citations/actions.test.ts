@@ -1,11 +1,22 @@
+// @vitest-environment happy-dom
 import { createMockPlugin, Keymap } from "@mock/obsidian";
-import type { App, Command, TFile, ViewState, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  Command,
+  GraphOptions,
+  TFile,
+  ViewState,
+  WorkspaceLeaf,
+} from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
 import { addGraphCitationsActions, citationGraphReadiness } from "./actions";
 import type { GraphCitationsActionDeps } from "./actions";
+import { installDisplayRows } from "./display";
+import { applyCitationGraphPreset } from "./preset";
+import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 
 /** Every command id, in registration order. */
 const ALL_COMMAND_IDS = ["open-citation-graph", "open-local-citation-graph"];
@@ -158,6 +169,64 @@ describe("addGraphCitationsActions", () => {
       { leaf: expect.anything(), showing: "localgraph" },
     ]);
   });
+
+  it.each(ALL_COMMAND_IDS)(
+    "%s enables author and title labels through set-options",
+    async (id) => {
+      const fixture = setup({ activeFile: DRAFT });
+      const displayOptions = new FakeControlSection();
+      const colorGroupOptions = new FakeColorGroupSection();
+      const engine = {
+        options: {
+          centerStrength: 0.42,
+          textFadeMultiplier: -0.5,
+        } as GraphOptions,
+        displayOptions,
+        colorGroupOptions,
+        render: vi.fn(),
+        onOptionsChange: vi.fn(),
+        setOptions: vi.fn((options: GraphOptions) => {
+          displayOptions.setOptions(options);
+          if (Array.isArray(options.colorGroups))
+            colorGroupOptions.setColorQueries(options.colorGroups);
+        }),
+      };
+      using _rows = installDisplayRows(engine, { saved: null });
+      expect(engine.options["zotlit-author-title-labels"]).toBe(false);
+      fixture.deps.graphCitations.applyPreset = (leaf) => {
+        Object.assign(leaf, {
+          view: {
+            getViewType: () =>
+              id === "open-citation-graph" ? "graph" : "localgraph",
+            dataEngine: engine,
+            engine,
+          },
+        });
+        applyCitationGraphPreset(leaf, {
+          wikilinkCitations: false,
+          color: { a: 1, rgb: 0xe8622c },
+        });
+      };
+
+      await fixture.run(id);
+
+      expect(engine.options["zotlit-author-title-labels"]).toBe(true);
+      expect(engine.setOptions).toHaveBeenCalledWith(
+        expect.objectContaining({
+          "zotlit-author-title-labels": true,
+        }),
+      );
+      expect(engine.options.centerStrength).toBe(0.42);
+      expect(engine.options.textFadeMultiplier).toBe(-0.5);
+      const firstOptions = structuredClone(engine.options);
+      const firstRenders = engine.render.mock.calls.length;
+
+      await fixture.run(id);
+
+      expect(engine.options).toEqual(firstOptions);
+      expect(engine.render).toHaveBeenCalledTimes(firstRenders);
+    },
+  );
 
   it("leaves the local command out of the palette while no note is active", async () => {
     const fixture = setup({ activeFile: null });

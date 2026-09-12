@@ -2883,6 +2883,7 @@ function presetFixture(
 
 /** What the preset leaves a graph's options at, beside the native keys. */
 const PRESET_ROWS = {
+  "zotlit-author-title-labels": true,
   "zotlit-pandoc-citations": true,
   "zotlit-citation-connected-only": true,
   "zotlit-color-citation-links": true,
@@ -2890,6 +2891,30 @@ const PRESET_ROWS = {
 };
 
 describe("GraphCitations Citation Graph preset", () => {
+  it("keeps a saved citation graph's labels off until the command preset runs", async () => {
+    const fixture = presetFixture({
+      savedGlobal: {
+        "zotlit-pandoc-citations": true,
+        "zotlit-citation-popover": true,
+      },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+
+    expect(fixture.engine.getOptions()).toMatchObject({
+      "zotlit-pandoc-citations": true,
+      "zotlit-citation-popover": true,
+      "zotlit-author-title-labels": false,
+    });
+
+    fixture.apply();
+
+    expect(fixture.engine.getOptions()["zotlit-author-title-labels"]).toBe(
+      true,
+    );
+  });
+
   it("presets the global graph, and adds the literature notes group", async () => {
     const fixture = presetFixture();
     await using service = fixture.service;
@@ -2944,10 +2969,12 @@ describe("GraphCitations Citation Graph preset", () => {
     await service.ready;
     fixture.layoutReady();
     fixture.engine.options.centerStrength = 0.42;
+    fixture.engine.options.textFadeMultiplier = -0.5;
 
     fixture.apply();
 
     expect(fixture.engine.options.centerStrength).toBe(0.42);
+    expect(fixture.engine.options.textFadeMultiplier).toBe(-0.5);
   });
 
   it("leaves the local graph's orphans alone, which its panel has no row for", async () => {
@@ -2990,9 +3017,11 @@ describe("GraphCitations Citation Graph preset", () => {
     await service.ready;
     fixture.layoutReady();
     fixture.apply();
+    const firstOptions = structuredClone(fixture.engine.options);
 
     fixture.apply();
 
+    expect(fixture.engine.options).toEqual(firstOptions);
     expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
       { query: '["zotero-key"]', color: DEFAULT_COLOR },
     ]);
