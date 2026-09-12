@@ -470,6 +470,8 @@ export function buildServices(
     })
     .use({
       graphCitations: ({
+        db,
+        libraryScope,
         citationIndex,
         noteIndex,
         citekeyEditor,
@@ -478,6 +480,8 @@ export function buildServices(
       }) =>
         new GraphCitations({
           app: plugin.app,
+          db,
+          libraryScope,
           citationIndex,
           noteIndex,
           citekeyEditor,

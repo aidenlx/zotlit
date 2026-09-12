@@ -4,19 +4,31 @@ import { around } from "monkey-around";
 import type {
   App,
   GraphOptions,
+  GraphData,
   GraphRenderer,
   GraphView,
   View,
   WorkspaceLeaf,
 } from "obsidian";
 
+import {
+  getItemsByKey,
+  resolveIndexedKeyLibrary,
+  isChildItemFields,
+} from "@zotlit/db";
+
 import { disposable, registerEvent } from "@/lib/disposables";
+import { workLabel } from "@/lib/item-summary";
+import type { WorkLabel } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import type { CitationSyntax } from "@/services/citation-index/scan";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NavigationPane } from "@/services/citekey-navigation";
+import type { DatabaseService } from "@/services/database/service";
+import type { LibraryScopeService } from "@/services/library-scope/service";
+import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
@@ -25,7 +37,11 @@ import type { SettingsService } from "@/services/settings/service";
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
 import { wrapNodeClick } from "./click";
-import { colorCitationLinks, installDisplayRows } from "./display";
+import {
+  AUTHOR_TITLE_LABELS,
+  colorCitationLinks,
+  installDisplayRows,
+} from "./display";
 import { renderWithFacade } from "./facade";
 import { graphCitationFilters, installFilterRows } from "./filters";
 import { installGroupsButton } from "./groups";
@@ -42,8 +58,10 @@ import { GraphNodeColors, installNodeColors } from "./node-color";
 import { applyCitationGraphPreset } from "./preset";
 import { wrapNodeRightClick } from "./right-click";
 import type { NodeRightClickDeps } from "./right-click";
+import { rowFlag } from "./rows";
 import { deferredLeafOptions, savedLeafOptions } from "./saved-options";
 import { installGraphViewCreation, installGraphViewState } from "./view-state";
+import { WorkLabelGraphics, refreshWorkLabels } from "./work-labels";
 
 const logger = getLogger("graph-citations");
 
@@ -64,6 +82,8 @@ const CITATION_INDEX_EVENTS = [
 
 export interface GraphCitationsDeps {
   app: App;
+  db: Pick<DatabaseService, "state" | "client">;
+  libraryScope: Pick<LibraryScopeService, "current">;
   citationIndex: Pick<
     CitationIndex,
     "ready" | "citationsByPath" | "resolveCitekey" | "citekeyOf" | "on"
@@ -87,6 +107,9 @@ interface GraphInstallation {
   rows: Disposable;
   /** What the last facaded render drew; the click wrap answers node ids from it. */
   additions: GraphCitationAdditions;
+  drawn: GraphData["nodes"];
+  labels: Map<string, WorkLabel>;
+  graphics: WorkLabelGraphics;
 }
 
 /**
@@ -111,6 +134,9 @@ function releasedOnDispose(view: View, callback: () => void): Disposable {
  */
 export class GraphCitations extends Service<void> {
   readonly #app;
+  readonly #db;
+  readonly #libraryScope;
+  #labels = new Map<string, WorkLabel | null>();
   readonly #citationIndex;
   readonly #noteIndex;
   readonly #citekeyEditor;
@@ -144,6 +170,7 @@ export class GraphCitations extends Service<void> {
   /** Whether the vault-wide setting admits wikilink citations. */
   #wikilinkCitations = false;
   #stopped = false;
+  #renderPending = false;
   #renderTimer: ReturnType<typeof setTimeout> | null = null;
 
   ready: Promise<void>;
@@ -151,6 +178,8 @@ export class GraphCitations extends Service<void> {
   constructor(deps: GraphCitationsDeps) {
     super();
     this.#app = deps.app;
+    this.#db = deps.db;
+    this.#libraryScope = deps.libraryScope;
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
     this.#citekeyEditor = deps.citekeyEditor;
@@ -206,9 +235,11 @@ export class GraphCitations extends Service<void> {
       ),
     );
     for (const event of CITATION_INDEX_EVENTS) {
-      stack.defer(this.#citationIndex.on(event, () => this.#requestRender()));
+      stack.defer(
+        this.#citationIndex.on(event, () => this.#invalidateLabels()),
+      );
     }
-    stack.defer(this.#noteIndex.on("changed", () => this.#requestRender()));
+    stack.defer(this.#noteIndex.on("changed", () => this.#invalidateLabels()));
     stack.defer(
       this.#settings.subscribe((settings) => {
         if (settings) this.#applySettings(settings);
@@ -317,6 +348,9 @@ export class GraphCitations extends Service<void> {
       restores: new DisposableStack(),
       rows: this.#filterRows(engine, saved),
       additions: NO_ADDITIONS,
+      drawn: {},
+      labels: new Map(),
+      graphics: new WorkLabelGraphics(members),
     };
     const { restores } = installation;
     restores.use(installGraphViewState(view, engine));
@@ -331,7 +365,34 @@ export class GraphCitations extends Service<void> {
     restores.defer(() => installation.rows[Symbol.dispose]());
     restores.use(installGroupsButton(engine, this.#nodeColors));
     restores.use(installDisplayRows(engine, { saved }));
-    restores.use(installNodeColors(renderer, installation, this.#nodeColors));
+    restores.use(installation.graphics);
+    restores.use(
+      installNodeColors(
+        renderer,
+        {
+          get additions() {
+            return installation.additions;
+          },
+          handedOff: (data) => {
+            const enabled = rowFlag(engine, AUTHOR_TITLE_LABELS, false);
+            const drawn = enabled ? data.nodes : {};
+            const previous = installation.drawn;
+            installation.drawn = drawn;
+            installation.graphics.update(
+              enabled ? installation.labels : new Map(),
+            );
+            if (
+              Object.keys(previous).length !== Object.keys(drawn).length ||
+              Object.keys(drawn).some(
+                (id) => previous[id]?.type !== drawn[id]?.type,
+              )
+            )
+              this.#requestRender(false);
+          },
+        },
+        this.#nodeColors,
+      ),
+    );
     restores.use(
       installLinkColors(members, installation, {
         color: this.#linkColor,
@@ -368,6 +429,9 @@ export class GraphCitations extends Service<void> {
   #uninstall(installation: GraphInstallation): void {
     installation.restores.dispose();
     this.#installations.delete(installation.members.renderer);
+    installation.drawn = {};
+    installation.labels.clear();
+    this.#fillLabels();
   }
 
   #filterRows(
@@ -409,15 +473,91 @@ export class GraphCitations extends Service<void> {
   }
 
   /** Coalesces a burst of index events into one re-render of every installed leaf. */
-  #requestRender(): void {
+  #requestRender(withRender = true): void {
     if (this.#stopped || !this.#enabled) return;
+    this.#renderPending ||= withRender;
     if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
     this.#renderTimer = setTimeout(() => {
       this.#renderTimer = null;
-      for (const { installation } of this.#installed()) {
-        this.#render(installation.members);
-      }
+      const render = this.#renderPending;
+      this.#renderPending = false;
+      const installed = this.#installed();
+      if (render)
+        for (const { installation } of installed)
+          this.#render(installation.members);
+      this.#fillLabels();
+      for (const { installation } of installed)
+        installation.graphics.update(installation.labels);
     }, RENDER_SETTLE_MS);
+  }
+
+  #invalidateLabels(): void {
+    this.#labels.clear();
+    this.#requestRender();
+  }
+
+  /** Runs in the render debounce, outside the synchronous hand-off and frame. */
+  #fillLabels(): void {
+    const needed = new Set<string>();
+    const pending = this.#installed().map(({ installation }) => {
+      const keys = new Map<string, string>();
+      for (const [id, node] of Object.entries(installation.drawn)) {
+        if (node.type === "tag" || node.type === "attachment") continue;
+        let key = installation.additions.literatureNotes.has(id)
+          ? (itemKeyFromFrontmatter(this.#app.metadataCache.getCache(id)) ??
+            undefined)
+          : undefined;
+        const citekey = installation.additions.citedWorkNodes.get(id);
+        if (citekey !== undefined) {
+          const resolution = this.#citationIndex.resolveCitekey(citekey);
+          key =
+            resolution?.kind === "unique"
+              ? resolution.item.indexedKey
+              : undefined;
+        }
+        if (key) {
+          keys.set(id, key);
+          needed.add(key);
+        }
+      }
+      return { installation, keys };
+    });
+    this.#labels = refreshWorkLabels(this.#labels, needed, (key) =>
+      this.#readLabel(key),
+    );
+    for (const { installation, keys } of pending) {
+      installation.labels.clear();
+      for (const [id, key] of keys) {
+        const label = this.#labels.get(key);
+        if (label) installation.labels.set(id, label);
+      }
+    }
+  }
+
+  #readLabel(key: string): WorkLabel | null {
+    try {
+      if (this.#db.state !== "ready") return null;
+      const selector = resolveIndexedKeyLibrary(this.#db.client, key);
+      if (
+        !selector ||
+        !this.#libraryScope.current?.available.some(
+          (library) => library.libraryID === selector.libraryID,
+        )
+      )
+        return null;
+      const item = getItemsByKey(this.#db.client, selector.libraryID, [
+        selector.key,
+      ])[0];
+      return item && !isChildItemFields(item.fields)
+        ? workLabel(item, item.fields)
+        : null;
+    } catch (error) {
+      logger.warn("Graph Work Label metadata unavailable; left native", {
+        indexedKey: key,
+        error,
+      });
+      return null;
+    }
   }
 
   #render({ engine, viewType }: GraphLeafMembers): void {
