@@ -29,8 +29,6 @@ export type {
   WorkbenchDialogHandle,
   WorkbenchDialogRequest,
   WorkbenchHost,
-  WorkbenchHoverCardHandle,
-  WorkbenchHoverCardRequest,
   WorkbenchInsertTarget,
   WorkbenchInputSuggestionsRequest,
   WorkbenchLibrary,

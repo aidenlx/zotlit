@@ -365,28 +365,6 @@ export function createProfileEditorHost(
       return modal.choose().finally(() => open.delete(close));
     },
     tooltip: tooltipAttrs,
-    hoverCard({ anchor, content }) {
-      const element = document.body.createDiv({ cls: "popover zt-root" });
-      const root = createRoot(element);
-      const bounds =
-        anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : anchor;
-      element.style.position = "fixed";
-      element.style.left = `${bounds.left}px`;
-      element.style.top = `${bounds.bottom}px`;
-      root.render(
-        wrap(
-          <WorkbenchMessagesProvider messages={workbenchM}>
-            {content}
-          </WorkbenchMessagesProvider>,
-        ),
-      );
-      return {
-        close: track(() => {
-          root.unmount();
-          element.remove();
-        }),
-      };
-    },
     notice: (text) => {
       new BaseNotice(text);
     },
