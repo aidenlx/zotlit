@@ -176,8 +176,13 @@ export function registerTemplateWorkbenchView(
     }),
   );
   plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file) => {
+    // `origin` holds the source and, on a pane menu, the leaf that raised it.
+    plugin.app.workspace.on("file-menu", (menu, file, ...origin) => {
       if (!(file instanceof TFile)) return;
+      // The Workbench view's own pane menu raises this event too. Inside the
+      // view these entries repeat the routes it already offers, so the file
+      // menu keeps them for the surfaces that stand outside the Workbench.
+      if (origin[1]?.view instanceof TemplateWorkbenchView) return;
       if (isPlainDocument(file)) {
         const leaf = activeLeafFor(plugin.app, file);
         menu.addItem((item) =>

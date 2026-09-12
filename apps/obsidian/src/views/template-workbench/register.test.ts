@@ -31,6 +31,12 @@ afterEach(() => {
   vi.mocked(findWorkbenchLayout).mockReset().mockResolvedValue(null);
 });
 
+type FileMenuHandler = (
+  menu: Menu,
+  file: TFile,
+  ...origin: [source: string, leaf?: WorkspaceLeaf]
+) => void;
+
 function setup() {
   const file = new TFile();
   file.path = "templates/zotlit-profile.paper.md";
@@ -42,13 +48,13 @@ function setup() {
     setViewState,
     getContainer: () => ({ focus: focusWindow }),
   } as unknown as WorkspaceLeaf;
-  const fileMenuHandlers: ((menu: Menu, file: TFile) => void)[] = [];
+  const fileMenuHandlers: FileMenuHandler[] = [];
   const workspace = {
     getActiveFile: () => file,
     getLeavesOfType: () => [],
     getLeaf: () => leaf,
     revealLeaf: vi.fn(),
-    on: vi.fn((event: string, handler: (menu: Menu, file: TFile) => void) => {
+    on: vi.fn((event: string, handler: FileMenuHandler) => {
       if (event === "file-menu") fileMenuHandlers.push(handler);
     }),
     onLayoutReady: vi.fn(),
@@ -94,9 +100,10 @@ function setup() {
     plugin,
     deps,
     commands,
-    fileMenu: () => {
+    fileMenu: (menuLeaf?: WorkspaceLeaf) => {
       const menu = new Menu();
-      for (const handler of fileMenuHandlers) handler(menu, file);
+      for (const handler of fileMenuHandlers)
+        handler(menu, file, "more-options", menuLeaf);
       return menu;
     },
     registerView,
@@ -297,6 +304,25 @@ Annotation`);
     ]);
     expect(fileMenu().items.map(({ title }) => title)).toEqual([
       m.template_workbench_open_layout(),
+      m.template_workbench_open(),
+    ]);
+  });
+
+  it("leaves the Workbench pane menu to the view's own entries", () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { deps, plugin, fileMenu, file, leaf } = setup();
+    registerTemplateWorkbenchView(plugin, deps);
+    const view = Object.assign(Object.create(TemplateWorkbenchView.prototype), {
+      file,
+      leaf,
+    }) as TemplateWorkbenchView;
+    Object.assign(leaf, { view });
+
+    expect(fileMenu(leaf).items).toEqual([]);
+    // Every surface outside the view still offers the routes into it.
+    expect(fileMenu().items.map(({ title }) => title)).toEqual([
+      m.template_workbench_open_layout(),
+      m.template_workbench_web_open(),
       m.template_workbench_open(),
     ]);
   });
