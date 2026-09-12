@@ -23,10 +23,7 @@ import {
   completionSuggestion,
   templateCompletion,
 } from "@zotlit/workbench/language";
-import type {
-  SuggestionSource,
-  TemplateCompletionPresentation,
-} from "@zotlit/workbench/language";
+import type { TemplateCompletionPresentation } from "@zotlit/workbench/language";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
@@ -300,13 +297,6 @@ export function createTemplateWorkbenchHost(
     },
     editorPopups(read, parent) {
       const placement = new Compartment();
-      // Completion and hover both read a token tree an Eta document has none
-      // of, so they stay off there. Extract to partial reads the region alone
-      // and stands in either language.
-      const suggest: SuggestionSource = (position) => {
-        const config = read(position);
-        return config?.language === "eta" ? null : config;
-      };
       return [
         placement.of(tooltips({ parent: parent.ownerDocument.body })),
         ViewPlugin.define((view) => ({
@@ -318,8 +308,8 @@ export function createTemplateWorkbenchHost(
             });
           }),
         })),
-        templateCompletion(suggest, nativeCompletion),
-        templateHover(suggest, hoverParent),
+        templateCompletion(read, nativeCompletion),
+        templateHover(read, hoverParent),
         extractPartial ? extractPartialMenu(read, extractPartial) : [],
       ];
     },
