@@ -129,10 +129,22 @@
    ul, headings, hr) renders clean and Tailwind owns the box-model. Kept in
    `@layer base` on purpose: `utilities` outranks it (spacing/border utilities
    still apply) and Obsidian's unlayered styles outrank it (native <select> /
-   <button> keep their look). Never touches Obsidian's own DOM, which has no
-   `.zt-root`. The nested @import is inlined + scoped by Tailwind at build time. */
+   <button> keep their look). Native renderer output uses the rollback boundary
+   below. The nested @import is inlined + scoped by Tailwind at build time. */
 @layer base {
   .zt-root {
     @import "tailwindcss/preflight.css";
+  }
+
+  /* MarkdownRenderer output keeps Obsidian's native browser defaults. The
+     surrounding view remains a preflighted plugin surface, and utilities on
+     managed ranges remain active from the higher utilities layer. */
+  .zt-root .zt-native-markdown,
+  .zt-root .zt-native-markdown *,
+  .zt-root .zt-native-markdown::before,
+  .zt-root .zt-native-markdown::after,
+  .zt-root .zt-native-markdown *::before,
+  .zt-root .zt-native-markdown *::after {
+    all: revert-layer;
   }
 }
