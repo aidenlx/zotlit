@@ -31,6 +31,11 @@ import {
   selectionGroup,
   selectionGroupHeading,
   selectionHint,
+  selectionList,
+  selectionOptionContent,
+  selectionOptionLabel,
+  selectionSearch,
+  selectionSearchContent,
 } from "./theme";
 
 type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
@@ -51,7 +56,6 @@ export type WorkbenchSelectionEvent = WorkbenchSelection & {
   editor: WorkspaceLeaf | null;
 };
 
-const selectionTrigger = selectionControl({ kind: "trigger" });
 const selectionOption = selectionControl({ kind: "option" });
 
 /** Native association scopes user choices; receivers never echo a selection. */
@@ -296,8 +300,41 @@ function SelectionGroup({
       <p id={headingId} className={selectionGroupHeading}>
         {label}
       </p>
-      {children}
+      <div className={selectionList}>{children}</div>
     </div>
+  );
+}
+
+/** The one control that leaves the examples behind for the user's own library. */
+function SelectionSearch({
+  label,
+  onSearch,
+}: {
+  label: string;
+  onSearch: () => void;
+}) {
+  return (
+    <button className={selectionSearch} onClick={onSearch}>
+      <span className={selectionSearchContent}>
+        <Icon name="search" />
+        <span className="zt:min-w-0 zt:truncate">{label}</span>
+      </span>
+    </button>
+  );
+}
+
+/** A choice in a boxed list; its content owns the box the row hands over. */
+function SelectionOption({
+  onSelect,
+  children,
+}: {
+  onSelect: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button className={selectionOption} onClick={onSelect}>
+      <span className={selectionOptionContent}>{children}</span>
+    </button>
   );
 }
 
@@ -321,34 +358,30 @@ export function ItemSelectionList({
     };
   }, [lookup]);
   return (
-    <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-3 zt:p-3">
-      <p className={selectionHint}>{m.workbench_choose_preview_data()}</p>
-      <button className={selectionTrigger} onClick={onSearch}>
-        <Icon name="search" />
-        <span>{m.workbench_search_zotero()}</span>
-      </button>
+    <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
+      <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">
+        <p className={selectionHint}>{m.workbench_choose_preview_data()}</p>
+        <SelectionSearch
+          label={m.workbench_search_zotero()}
+          onSearch={onSearch}
+        />
+      </div>
       <SelectionGroup label={m.workbench_sample_examples()}>
         {SAMPLE_ITEM_CHOICES.map((item) => (
-          <button
-            key={item.id}
-            className={selectionOption}
-            onClick={() => onSelect(item)}
-          >
-            <span>{sampleTypeLabel(item.id)}</span>
+          <SelectionOption key={item.id} onSelect={() => onSelect(item)}>
+            <span className={selectionOptionLabel}>
+              {sampleTypeLabel(item.id)}
+            </span>
             {item.title && <span className={selectionHint}>{item.title}</span>}
-          </button>
+          </SelectionOption>
         ))}
       </SelectionGroup>
       {recent.length > 0 && (
         <SelectionGroup label={m.workbench_recently_updated()}>
           {recent.map((item) => (
-            <button
-              key={item.id}
-              className={selectionOption}
-              onClick={() => onSelect(item)}
-            >
-              {item.title}
-            </button>
+            <SelectionOption key={item.id} onSelect={() => onSelect(item)}>
+              <span className={selectionOptionLabel}>{item.title}</span>
+            </SelectionOption>
           ))}
         </SelectionGroup>
       )}
@@ -366,12 +399,16 @@ export function AnnotationSelectionList({
   onSearch: () => void;
 }) {
   return (
-    <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-3 zt:p-3">
-      <p className={selectionHint}>{m.workbench_fields_choose_annotation()}</p>
-      <button className={selectionTrigger} onClick={onSearch}>
-        <Icon name="search" />
-        <span>{m.workbench_choose_annotation()}</span>
-      </button>
+    <div className="zt-workbench-options zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
+      <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-2">
+        <p className={selectionHint}>
+          {m.workbench_fields_choose_annotation()}
+        </p>
+        <SelectionSearch
+          label={m.workbench_choose_annotation()}
+          onSearch={onSearch}
+        />
+      </div>
       {[
         {
           label: m.workbench_annotation_from_item(),
@@ -383,13 +420,14 @@ export function AnnotationSelectionList({
         .map(({ label, values }) => (
           <SelectionGroup key={label} label={label}>
             {values.map((example) => (
-              <button
+              <SelectionOption
                 key={example.id}
-                className={selectionOption}
-                onClick={() => onSelect(example.id)}
+                onSelect={() => onSelect(example.id)}
               >
-                {annotationOption(workbenchM, example).label}
-              </button>
+                <span className={selectionOptionLabel}>
+                  {annotationOption(workbenchM, example).label}
+                </span>
+              </SelectionOption>
             ))}
           </SelectionGroup>
         ))}
