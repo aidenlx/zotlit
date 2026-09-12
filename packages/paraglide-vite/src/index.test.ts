@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -122,6 +123,68 @@ test("keeps compiler output caches separate for two plugin instances", async () 
   expect(
     await readFile(join(second, "generated/messages/en.js"), "utf8"),
   ).toContain("Other application");
+});
+
+test("finishes pending compilation before Vite closes", async () => {
+  const root = await fixture("cache-demo-");
+  const entered = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  let holdReads = false;
+  const server = await createServer({
+    root,
+    configFile: false,
+    server: { middlewareMode: true, ws: false, watch: null },
+    plugins: [
+      paraglideVitePlugin({
+        project: join(root, "project.inlang"),
+        outdir: join(root, "generated"),
+        strategy: ["baseLocale"],
+        fs: {
+          ...fs,
+          promises: {
+            ...fs.promises,
+            readFile: new Proxy(fs.promises.readFile, {
+              async apply(
+                target,
+                receiver,
+                args: Parameters<typeof fs.promises.readFile>,
+              ) {
+                if (holdReads) {
+                  entered.resolve();
+                  await resume.promise;
+                }
+                return Reflect.apply(target, receiver, args);
+              },
+            }),
+          },
+        },
+      }),
+      {
+        name: "resume-compilation-on-close",
+        closeBundle: () => resume.resolve(),
+      },
+    ],
+  });
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => server.close());
+  await writeFile(
+    join(root, "en.json"),
+    JSON.stringify({ greeting: "Final greeting" }),
+  );
+  holdReads = true;
+  const change = server.environments.client.pluginContainer.watchChange(
+    join(root, "en.json"),
+    { event: "update" },
+  );
+  cleanup.defer(() => change);
+  cleanup.defer(() => resume.resolve());
+  await entered.promise;
+  await server.close();
+  expect(
+    await readFile(join(root, "generated/messages/en.js"), "utf8"),
+  ).toContain("Final greeting");
+  await rm(root, { recursive: true, force: true });
+  await change;
 });
 
 test("preserves unchanged outputs across starts and repairs removed output files", async () => {
