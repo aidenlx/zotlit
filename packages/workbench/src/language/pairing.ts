@@ -26,13 +26,57 @@ export function templatePairing(read: PairingSource = () => ({})): Extension {
         const config = read(from);
         if (
           !config ||
-          from !== to ||
           text.length !== 1 ||
           view.state.selection.ranges.length !== 1 ||
           view.state.readOnly ||
           view.compositionStarted
         )
           return false;
+        if (from !== to) {
+          if (
+            config.language !== "eta" ||
+            config.mode === "expression" ||
+            pairingContext(view.state.doc.toString(), from, config) !== "text"
+          )
+            return false;
+          const selected = view.state.sliceDoc(from, to);
+          const angle = view.state
+            .field(pairingState)
+            .find(
+              (pair) =>
+                pair.from === from - 1 &&
+                pair.open === "<" &&
+                pair.closeFrom === to &&
+                pair.close === ">",
+            );
+          if (text !== "<" && !(text === "%" && angle)) return false;
+          const start = angle && text === "%" ? from - 1 : from;
+          const open = text === "<" ? "<" : "<% ";
+          const close = text === "<" ? ">" : " %>";
+          view.dispatch({
+            changes: {
+              from: start,
+              to: text === "%" ? to + 1 : to,
+              insert: open + selected + close,
+            },
+            selection: EditorSelection.range(
+              start + open.length,
+              start + open.length + selected.length,
+            ),
+            effects: addPair.of({
+              from: start,
+              open: open.trimEnd(),
+              closeFrom:
+                start + open.length + selected.length + (text === "%" ? 1 : 0),
+              close: close.trimStart(),
+              ...(text === "%"
+                ? { padding: start + open.length + selected.length }
+                : {}),
+            }),
+            userEvent: "input.type",
+          });
+          return true;
+        }
         const pair = view.state
           .field(pairingState)
           .find(

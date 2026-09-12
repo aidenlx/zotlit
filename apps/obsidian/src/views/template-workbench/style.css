@@ -94,6 +94,9 @@
   --zt-template-punctuation: var(--text-muted);
   --zt-template-comment: var(--text-faint);
   --zt-template-invalid: var(--text-error);
+  --zt-template-frontmatter: var(--text-muted);
+  --zt-template-markdown-marker: var(--text-faint);
+  --zt-template-markdown-list-marker: var(--list-marker-color);
 }
 .zt-template-delimiter {
   color: var(--zt-template-delimiter);
@@ -128,6 +131,15 @@
 }
 .zt-template-invalid {
   color: var(--zt-template-invalid);
+}
+.zt-template-frontmatter {
+  color: var(--zt-template-frontmatter);
+}
+.zt-template-markdown-marker {
+  color: var(--zt-template-markdown-marker);
+}
+.zt-template-markdown-list-marker {
+  color: var(--zt-template-markdown-list-marker);
 }
 /* Keep labels, signatures, and descriptions on a shared leading edge. */
 .cm-tooltip.cm-tooltip-autocomplete.zt-template-completion {

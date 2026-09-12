@@ -70,7 +70,6 @@ export function fakeHost(): FakeHost {
       return Promise.resolve(request.selected ?? null);
     },
     tooltip: (text) => ({ "aria-description": text }),
-    hoverCard: () => ({ close() {} }),
     notice: (text) => void host.calls.notices.push(text),
     // Every render is held open, so a test decides when a result lands and
     // what the reader had time to change before it did.

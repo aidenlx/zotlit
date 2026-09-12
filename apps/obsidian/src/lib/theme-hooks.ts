@@ -11,6 +11,9 @@ export const themeHook = {
   entrySerial: "zt-entry-serial",
   /** A template editor pane; the `--zt-template-*` colors are set here. */
   templateEditor: "zt-template-editor",
+  templateFrontmatter: "zt-template-frontmatter",
+  templateMarkdownListMarker: "zt-template-markdown-list-marker",
+  templateMarkdownMarker: "zt-template-markdown-marker",
   templateDelimiter: "zt-template-delimiter",
   templateKeyword: "zt-template-keyword",
   templateVariable: "zt-template-variable",

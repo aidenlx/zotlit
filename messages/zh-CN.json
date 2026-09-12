@@ -1,4 +1,6 @@
 {
+  "graph_option_author_title_labels_name": "作者和标题标签",
+  "graph_option_author_title_labels_desc": "在文献笔记和被引文献上显示作者、年份和短标题。",
   "workbench_choose_item": "选择条目",
   "workbench_refresh_item": "重新加载预览数据",
   "workbench_choose_preview_item": "选择用于预览的条目",

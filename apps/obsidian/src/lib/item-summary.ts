@@ -37,6 +37,34 @@ export function itemSummary(
   return { title, subtitle, formatted };
 }
 
+export interface WorkLabel {
+  byline: string;
+  title: string;
+}
+
+export type WorkLabelFields = Pick<SummaryItemFields, "title" | "date"> & {
+  readonly shortTitle?: string | null;
+};
+
+export function workLabel(
+  item: Pick<SummaryItem, "creators" | "primaryCreatorType"> | null | undefined,
+  fields: WorkLabelFields = {},
+): WorkLabel | null {
+  if (!item) return null;
+  const creators = creatorSummary(item);
+  const year = parseItemDate(fields.date ?? null)?.year ?? null;
+  const title = fields.shortTitle?.trim() || fields.title?.trim() || "";
+  if (!creators) {
+    return title
+      ? { byline: title, title: year === null ? "" : `${year}` }
+      : null;
+  }
+  return {
+    byline: year === null ? creators : `${creators} ${year}`,
+    title,
+  };
+}
+
 export function creatorSummary(
   item: Pick<SummaryItem, "creators" | "primaryCreatorType">,
 ): string {

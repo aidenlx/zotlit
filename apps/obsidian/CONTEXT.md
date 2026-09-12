@@ -346,8 +346,12 @@ The citation edges and Cited Work Nodes ZotLit adds to Obsidian's own graph view
 _Avoid_: citation graph (the preset-opened graph, see Citation Graph), graph overlay (names the mechanism, not the feature)
 
 **Cited Work Node** _(Obsidian)_:
-A node ZotLit places in Obsidian's graph for a work cited in the vault that has no Literature Note yet, or whose Citation Key is missing or ambiguous. Labelled by its Citation Key. Obsidian's "Existing files only" toggle hides it, and clicking it creates the Literature Note.
+A node ZotLit places in Obsidian's graph for a work cited in the vault that has no Literature Note yet, or whose Citation Key is missing or ambiguous. Labelled by its Work Label, or by its Citation Key where the key is missing or ambiguous. Obsidian's "Existing files only" toggle hides it, and clicking it creates the Literature Note.
 _Avoid_: ghost node, virtual node, unresolved node (Obsidian's term for a link to a missing note)
+
+**Work Label** _(Obsidian)_:
+The two-line text ZotLit draws under a Literature Note or Cited Work Node in Obsidian's graph: an Author Summary with the year, and the work's short title beneath it. It names the work a node stands for, so both node kinds read alike and colour alone carries whether a note exists.
+_Avoid_: node label (Obsidian's own node text), caption, node title
 
 **Literature Notes Group** _(Obsidian)_:
 An ordinary graph color group that matches Literature Notes, added by a Citation Graph command or the graph’s group shortcut. Its initial color is ZotLit orange; the graph’s native group controls own its color, order, and removal.

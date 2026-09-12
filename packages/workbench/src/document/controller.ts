@@ -257,6 +257,13 @@ export class WorkbenchDocumentController {
     this.#context = context;
   }
 
+  #language: "liquid" | "eta" = "liquid";
+
+  /** The last valid engine remains available while the author repairs a draft. */
+  get templateLanguage(): "liquid" | "eta" {
+    return this.#language;
+  }
+
   /** The parsed document, or null while the draft does not parse. */
   get document(): LiteratureNoteTemplateDocument | null {
     return this.#document;
@@ -371,7 +378,7 @@ export class WorkbenchDocumentController {
   get templateRegions(): readonly (WorkbenchSliceRange & {
     root: "note" | "annotation" | "filename" | "citation";
     expression: boolean;
-    language?: "json-e";
+    language?: "liquid" | "eta" | "json-e";
   })[] {
     if (this.#kind !== "profile") {
       return [
@@ -383,14 +390,30 @@ export class WorkbenchDocumentController {
       ];
     }
     const annotation = this.annotationSection?.source;
-    const filename = this.filenameSlice;
+    const filename =
+      this.filenameSlice ?? manifestNodeRange(this.source, ["filename"]);
+    const language = this.templateLanguage;
     return [
       ...(annotation
-        ? [{ ...annotation, root: "annotation" as const, expression: false }]
+        ? [
+            {
+              ...annotation,
+              root: "annotation" as const,
+              expression: false,
+              language,
+            },
+          ]
         : []),
-      { ...this.sliceRange("note"), root: "note", expression: false },
+      { ...this.sliceRange("note"), root: "note", expression: false, language },
       ...(filename
-        ? [{ ...filename, root: "filename" as const, expression: false }]
+        ? [
+            {
+              ...filename,
+              root: "filename" as const,
+              expression: false,
+              language,
+            },
+          ]
         : []),
       ...(this.managedEntries ?? [])
         .filter(
@@ -847,6 +870,7 @@ export class WorkbenchDocumentController {
     try {
       const document = parseLiteratureNoteTemplate(source);
       this.#document = document;
+      this.#language = document.manifest.language;
       this.#ranges.set("note", {
         from: document.bodyStart,
         to: document.annotationSection.headerStart,

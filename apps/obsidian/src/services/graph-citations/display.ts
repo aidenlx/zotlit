@@ -12,6 +12,9 @@ export const COLOR_CITATION_LINKS = "zotlit-color-citation-links";
 /** Ordinary graphs use native link colors until explicitly changed. */
 const DEFAULT = false;
 
+/** The per-view opt-in to author and title labels. */
+export const AUTHOR_TITLE_LABELS = "zotlit-author-title-labels";
+
 /** The per-view opt-in to citation details on hover. */
 export const CITATION_POPOVER = "zotlit-citation-popover";
 
@@ -52,6 +55,14 @@ export function installDisplayRows(
       key: CITATION_POPOVER,
       name: m.graph_option_citation_popover_name(),
       tooltip: m.graph_option_citation_popover_desc(),
+      defaultValue: false,
+    }),
+  );
+  rows.use(
+    installToggleRow(target, {
+      key: AUTHOR_TITLE_LABELS,
+      name: m.graph_option_author_title_labels_name(),
+      tooltip: m.graph_option_author_title_labels_desc(),
       defaultValue: false,
     }),
   );

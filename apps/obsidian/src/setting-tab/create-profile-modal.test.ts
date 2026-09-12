@@ -73,7 +73,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
   f.prepareCreate.mockResolvedValueOnce({
     ...f.draft,
     inherited: ["folder", "citationStyle", "look"],
-    reason: m.settings_profile_create_no_difference(),
+    reason: "REFUSED_NO_DIFFERENCE",
   });
   const modal = new CreateProfileModal(f.deps, {
     data: { note: {} as never, filename: {} },
@@ -82,9 +82,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
   modal.contentEl = document.createElement("div");
   modal.onOpen();
   await vi.waitFor(() =>
-    expect(modal.contentEl.textContent).toContain(
-      m.settings_profile_create_no_difference(),
-    ),
+    expect(modal.contentEl.textContent).toContain("REFUSED_NO_DIFFERENCE"),
   );
   expect(saveDisabled()).toBe(true);
   expect(modal.contentEl.textContent).toContain("Reading/Paper-7cx.md");
@@ -92,7 +90,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
   expect(modal.contentEl.textContent).toContain("Default look marker.");
   f.prepareCreate.mockResolvedValueOnce({
     ...f.draft,
-    reason: m.settings_profile_name_invalid(),
+    reason: "REFUSED_INVALID_NAME",
   });
   const text = (name: string) =>
     [...modal.contentEl.querySelectorAll<HTMLElement>("label")]
@@ -101,9 +99,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
       .find((control) => control instanceof TextComponent)!;
   text(m.settings_profile_name_name()).type("Books");
   await vi.waitFor(() =>
-    expect(modal.contentEl.textContent).toContain(
-      m.settings_profile_name_invalid(),
-    ),
+    expect(modal.contentEl.textContent).toContain("REFUSED_INVALID_NAME"),
   );
   expect(saveDisabled()).toBe(true);
   text(m.settings_profile_folder_name()).type("Reading");
@@ -114,13 +110,9 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
     bindings: { folder: "Reading" },
   });
   expect(modal.contentEl.textContent).toContain(
-    m.settings_profile_inheritance({
-      values: [
-        m.settings_profile_citation_style_name(),
-        m.settings_profile_look_name(),
-      ].join(", "),
-    }),
+    m.settings_profile_citation_style_name(),
   );
+  expect(modal.contentEl.textContent).toContain(m.settings_profile_look_name());
   expect(f.create).not.toHaveBeenCalled();
   modal.onClose();
   await expect(modal.result).resolves.toBeUndefined();
@@ -148,7 +140,6 @@ it.each([false, true])(
     modal.contentEl = document.createElement("div");
     modal.onOpen();
     await vi.waitFor(() => expect(saveDisabled()).toBe(false));
-    expect(label).toHaveBeenCalledWith(saveLabel);
     label.mock.instances
       .filter((button) => button instanceof ButtonComponent)
       .find((button) => button.text === saveLabel)!

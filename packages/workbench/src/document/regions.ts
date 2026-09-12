@@ -82,6 +82,11 @@ const PARTIAL_CALL_TAGS: readonly string[] = ["render", "include"];
 /** The Eta helper that renders a Shared Partial by name. */
 const ETA_PARTIAL_CALL = "include";
 
+/** Everything an Eta Shared Partial call spells before its name. */
+const ETA_CALL_OPEN = new RegExp(
+  `^\\s*${RegExp.escape(ETA_PARTIAL_CALL)}\\s*\\(\\s*$`,
+);
+
 /**
  * The names a call may spell that no Shared Partial can be given: every
  * Legacy Template File slot — the Annotation Section's own name among them —
@@ -224,7 +229,7 @@ function etaPartialCalls(body: string): PartialRenderSite[] {
         code.some(({ from, to }) => from <= tag.from && tag.from < to)
       )
         return false;
-      const named = etaIncludeCall(body, tag.getChild("Script"));
+      const named = etaIncludeCall(body, tag.getChild("TagContent"));
       if (named) sites.push({ ...named, call: { from: tag.from, to: tag.to } });
       return false;
     },
@@ -233,36 +238,60 @@ function etaPartialCalls(body: string): PartialRenderSite[] {
 }
 
 /**
- * The partial one Eta tag's script names, and what the call passes after it,
+ * The partial one Eta tag's content names, and what the call passes after it,
  * or null when the tag holds anything but a single `include("name", …)` call.
+ * The grammar tokenizes a tag's quoted strings and block comments, so the name
+ * and the paren that closes the call are read off the tag's own nodes: a name
+ * held in a variable, a member call such as `it.include(…)`, and a tag doing
+ * anything besides the one call are all left as source, the way the Liquid
+ * scan leaves their tag equivalents.
  */
 function etaIncludeCall(
   body: string,
-  script: SyntaxNode | null,
+  content: SyntaxNode | null,
 ): Omit<PartialRenderSite, "call"> | null {
-  const statement = script?.firstChild;
-  if (!statement || statement.name !== "ExpressionStatement") return null;
-  if (statement.nextSibling) return null;
-  const call = statement.firstChild;
-  if (!call || call.name !== "CallExpression") return null;
-  const callee = call.firstChild;
-  if (
-    !callee ||
-    callee.name !== "VariableName" ||
-    body.slice(callee.from, callee.to) !== ETA_PARTIAL_CALL
-  )
+  if (!content) return null;
+  const strings = content.getChildren("String");
+  const quoted = strings[0];
+  if (!quoted || !ETA_CALL_OPEN.test(body.slice(content.from, quoted.from)))
     return null;
-  const args = call.getChild("ArgList");
-  const first = args?.firstChild?.nextSibling;
-  if (!args || !first || first.name !== "String") return null;
-  const name = body.slice(first.from + 1, first.to - 1);
+  const close = etaCallClose(body, { from: quoted.to, to: content.to }, [
+    ...strings,
+    ...content.getChildren("BlockComment"),
+  ]);
+  if (close === null || body.slice(close + 1, content.to).trim().length > 0)
+    return null;
+  const name = body.slice(quoted.from + 1, quoted.to - 1);
   if (name.length === 0 || RESERVED_CALL_NAMES.includes(name)) return null;
-  const rest = body.slice(first.to, args.to - 1).trim();
+  const rest = body.slice(quoted.to, close).trim();
   return {
     name,
-    nameRange: { from: first.from + 1, to: first.to - 1 },
+    nameRange: { from: quoted.from + 1, to: quoted.to - 1 },
     arguments: rest.startsWith(",") ? rest.slice(1).trim() : rest,
   };
+}
+
+/**
+ * The offset of the paren that closes a call already open at `range.from`, or
+ * null when the tag leaves it open. A paren a string or a block comment holds
+ * is that token's own, so `shielded` spans are stepped over whole.
+ */
+function etaCallClose(
+  body: string,
+  range: WorkbenchSliceRange,
+  shielded: readonly SyntaxNode[],
+): number | null {
+  let depth = 1;
+  for (let at = range.from; at < range.to; at++) {
+    const token = shielded.find(({ from, to }) => from <= at && at < to);
+    if (token) {
+      at = token.to - 1;
+      continue;
+    }
+    if (body[at] === "(") depth++;
+    else if (body[at] === ")" && --depth === 0) return at;
+  }
+  return null;
 }
 
 /** What a tag passes after the partial name, without the tag's own closer. */

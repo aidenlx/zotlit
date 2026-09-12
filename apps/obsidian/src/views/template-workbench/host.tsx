@@ -23,7 +23,10 @@ import {
   completionSuggestion,
   templateCompletion,
 } from "@zotlit/workbench/language";
-import type { TemplateCompletionPresentation } from "@zotlit/workbench/language";
+import type {
+  SuggestionSource,
+  TemplateCompletionPresentation,
+} from "@zotlit/workbench/language";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
@@ -37,6 +40,7 @@ import { Toggle } from "@/components/obsidian/toggle";
 import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
+import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 import {
@@ -286,7 +290,7 @@ export function createTemplateWorkbenchHost(
     },
     ...rest,
     messages: {
-      ...m,
+      ...workbenchM,
       workbench_name_value_no_style: citationStyleLabel,
     },
     getLocale: () => runtime.getLocale(),
@@ -296,6 +300,13 @@ export function createTemplateWorkbenchHost(
     },
     editorPopups(read, parent) {
       const placement = new Compartment();
+      // Completion and hover both read a token tree an Eta document has none
+      // of, so they stay off there. Extract to partial reads the region alone
+      // and stands in either language.
+      const suggest: SuggestionSource = (position) => {
+        const config = read(position);
+        return config?.language === "eta" ? null : config;
+      };
       return [
         placement.of(tooltips({ parent: parent.ownerDocument.body })),
         ViewPlugin.define((view) => ({
@@ -307,8 +318,8 @@ export function createTemplateWorkbenchHost(
             });
           }),
         })),
-        templateCompletion(read, nativeCompletion),
-        templateHover(read, hoverParent),
+        templateCompletion(suggest, nativeCompletion),
+        templateHover(suggest, hoverParent),
         extractPartial ? extractPartialMenu(read, extractPartial) : [],
       ];
     },
@@ -341,7 +352,7 @@ export function createTemplateWorkbenchHost(
       const modal = new EditorDialog(app, {
         ...request,
         content: wrap(
-          <WorkbenchMessagesProvider messages={m}>
+          <WorkbenchMessagesProvider messages={workbenchM}>
             {request.content}
           </WorkbenchMessagesProvider>,
         ),
@@ -377,28 +388,6 @@ export function createTemplateWorkbenchHost(
       return modal.choose().finally(() => open.delete(close));
     },
     tooltip: tooltipAttrs,
-    hoverCard({ anchor, content }) {
-      const element = document.body.createDiv({ cls: "popover zt-root" });
-      const root = createRoot(element);
-      const bounds =
-        anchor instanceof HTMLElement ? anchor.getBoundingClientRect() : anchor;
-      element.style.position = "fixed";
-      element.style.left = `${bounds.left}px`;
-      element.style.top = `${bounds.bottom}px`;
-      root.render(
-        wrap(
-          <WorkbenchMessagesProvider messages={m}>
-            {content}
-          </WorkbenchMessagesProvider>,
-        ),
-      );
-      return {
-        close: track(() => {
-          root.unmount();
-          element.remove();
-        }),
-      };
-    },
     notice: (text) => {
       new BaseNotice(text);
     },

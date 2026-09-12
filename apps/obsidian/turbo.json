@@ -28,7 +28,8 @@
         "ANALYZE",
         "DOCS_SITE_URL",
         "I18N_DEV_SERVER",
-        "WEB_WORKBENCH_ENABLED"
+        "WEB_WORKBENCH_ENABLED",
+        "ZT_VAULT_CASE"
       ],
       "outputs": ["$TURBO_EXTENDS$", "bundle-stats.html"],
       "inputs": [
@@ -42,7 +43,8 @@
         "ANALYZE",
         "DOCS_SITE_URL",
         "I18N_DEV_SERVER",
-        "WEB_WORKBENCH_ENABLED"
+        "WEB_WORKBENCH_ENABLED",
+        "ZT_VAULT_CASE"
       ]
     },
     "typecheck": {

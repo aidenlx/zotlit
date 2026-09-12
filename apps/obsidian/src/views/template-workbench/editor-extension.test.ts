@@ -20,6 +20,7 @@ afterEach(() => {
   view?.destroy();
   view = null;
   Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
+  Reflect.deleteProperty(navigator, "clipboard");
 });
 
 function mount(doc: string, language: Extension) {
@@ -88,6 +89,13 @@ describe("template token hooks", () => {
     expect(texts(editor, themeHook.templateKeyword)).toEqual(["bq", "endbq"]);
   });
 
+  it("keeps an incomplete Liquid output on the parser's token path", () => {
+    const editor = mount("{{ zt", liquidTemplate);
+    expect(texts(editor, themeHook.templateDelimiter)).toEqual(["{{"]);
+    expect(texts(editor, themeHook.templateVariable)).toEqual(["zt"]);
+    expect(texts(editor, themeHook.templateKeyword)).toEqual([]);
+  });
+
   it("marks a Liquid comment and leaves the prose between tags bare", () => {
     const editor = mount(
       "Plain {% comment %}x{% endcomment %}",
@@ -99,12 +107,12 @@ describe("template token hooks", () => {
     expect(plain.textContent).toBe("Plain ");
   });
 
-  it("names Eta delimiters and the JavaScript inside them", () => {
+  it("names Eta delimiters and keeps tag bodies plain", () => {
     const editor = mount("<%= it.title.toUpperCase() %>", eta);
     expect(texts(editor, themeHook.templateDelimiter)).toEqual(["<%=", "%>"]);
-    expect(texts(editor, themeHook.templateVariable)).toEqual(["it"]);
-    expect(texts(editor, themeHook.templateProperty)).toEqual(["title"]);
-    expect(texts(editor, themeHook.templateFilter)).toEqual(["toUpperCase"]);
+    expect(texts(editor, themeHook.templateVariable)).toEqual([]);
+    expect(texts(editor, themeHook.templateProperty)).toEqual([]);
+    expect(texts(editor, themeHook.templateFilter)).toEqual([]);
   });
 
   it("names JSON keys and values in a rule", () => {
@@ -162,5 +170,33 @@ describe("code panes", () => {
     view.destroy();
     view = null;
     expect(host.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("copies in a popout without moving focus through a fallback textarea", () => {
+    const host = migrationHost();
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    view = new EditorView({
+      state: EditorState.create({ doc: "alpha beta", extensions: [codePane] }),
+      parent: document.body,
+    });
+    frame.contentDocument!.body.append(view.dom);
+    host.move(frame.contentWindow!);
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    view.focus();
+
+    const copy = new Event("copy", { bubbles: true, cancelable: true });
+    view.contentDOM.dispatchEvent(copy);
+
+    expect(copy.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledWith("alpha");
+    expect(frame.contentDocument!.activeElement).toBe(view.contentDOM);
+    expect(frame.contentDocument!.querySelector("textarea")).toBeNull();
+    frame.remove();
   });
 });

@@ -14,13 +14,11 @@
     "build:dev": {
       "dependsOn": ["^build"],
       "outputs": ["dist-dev/**"],
-      "outputLogs": "errors-only",
-      "passThroughEnv": ["ZT_VAULT_CASE"]
+      "outputLogs": "errors-only"
     },
     "dev": {
       "cache": false,
-      "persistent": true,
-      "passThroughEnv": ["ZT_VAULT_CASE"]
+      "persistent": true
     },
     "typecheck": {
       "dependsOn": ["^build", "transit"]
@@ -38,7 +36,7 @@
         "@zotlit/zotero#build:dev"
       ],
       "cache": false,
-      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP"]
+      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP", "ZT_VAULT_CASE"]
     },
     "e2e": {
       "dependsOn": [
