@@ -68,6 +68,8 @@ The open and sync operations rebuild the Fixture Vault before they copy it. A no
 packages/scripts/scripts/obsidian-vault.ts open --purge
 ```
 
+A purge deletes the Development Vault folder and the plugin's vault-scoped local storage, which Obsidian keeps outside that folder. Run `pnpm fixture --help` for the state each purge clears.
+
 Vault creation needs Obsidian 1.13.4 or later. Enable **Settings → General → Advanced → Command line interface**, and keep one Obsidian vault window open to host the registration calls.
 
 Verify the registered cross-platform command in a new terminal:

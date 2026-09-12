@@ -341,10 +341,21 @@ async function create(
   await linkFixture(id);
 }
 
-/** Release Windows file handles while the generated Fixture is replaced. */
-async function suspendLoadedPlugin(abs: string): Promise<AsyncDisposableStack> {
+/**
+ * Unload the plugin while the generated Fixture is replaced. Windows needs this
+ * on every sync, to release its file handles. A purge needs it on every
+ * platform, so the loaded plugin writes none of its vault-scoped local storage
+ * back after the purge clears it.
+ */
+async function suspendLoadedPlugin(
+  abs: string,
+  { always = false }: { always?: boolean } = {},
+): Promise<AsyncDisposableStack> {
   await using suspension = new AsyncDisposableStack();
-  if (process.platform !== "win32" || !(await isObsidianRunning())) {
+  if (
+    (!always && process.platform !== "win32") ||
+    !(await isObsidianRunning())
+  ) {
     return suspension.move();
   }
 
@@ -395,14 +406,16 @@ async function sync(
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
-  await resolveHost();
+  const host = await resolveHost();
 
   await access(abs).catch(() => {
     throw new Error(`no vault at ${abs}. Run 'create' first.`);
   });
 
   {
-    await using _pluginSuspension = await suspendLoadedPlugin(abs);
+    await using _pluginSuspension = await suspendLoadedPlugin(abs, {
+      always: purge,
+    });
     // Build before a purge so the generated seed captures the current dev bundle.
     await rebuildFixtureVault(abs, {
       scopeCase,
@@ -414,7 +427,14 @@ async function sync(
     // `--purge` deletes the folder first, so renamed or removed Fixture files
     // drop out too, not just the ones the Fixture Vault still has.
     if (purge) {
+      // Every ZotLit key goes with the folder, so a purged vault holds no
+      // Device Overrides, consent, or view state. Obsidian's own keys stay,
+      // including the trust marker that keeps Restricted Mode off.
+      const registered = findVaultId(await vaultList(host), abs);
       await purgeVault(abs);
+      if (registered) {
+        await clearVaultLocalStorage(registered, host, { keyPrefix: pluginId });
+      }
       await mkdir(abs, { recursive: true });
     }
 
@@ -650,6 +670,31 @@ async function removeOffline(abs: string): Promise<string | undefined> {
   return id;
 }
 
+/**
+ * Delete vault-scoped local storage through a live window. Obsidian keeps these
+ * keys in the shared `app://obsidian.md` origin as `<vaultId>-<key>`, outside
+ * the vault folder, so they outlive a folder purge and an unregister alike. A
+ * `keyPrefix` narrows the sweep to one owner's keys; the empty default takes
+ * every key the vault holds.
+ */
+async function clearVaultLocalStorage(
+  vaultId: string,
+  host: string,
+  { keyPrefix = "" }: { keyPrefix?: string } = {},
+): Promise<void> {
+  const prefix = `${vaultId}-${keyPrefix}`;
+  const cleared = await obEval(
+    `(function(){var p=${JSON.stringify(prefix)};` +
+      `Object.keys(localStorage).filter(function(k){return k.indexOf(p)===0})` +
+      `.forEach(function(k){localStorage.removeItem(k)});` +
+      `return 'ok'})()`,
+    host,
+  );
+  if (cleared !== "ok") {
+    throw new Error(`could not clear local storage for vault ${vaultId}`);
+  }
+}
+
 async function removeOnline(abs: string): Promise<string | undefined> {
   let host = await resolveRemovalHost();
   const id = findVaultId(await vaultList(host), abs);
@@ -665,11 +710,11 @@ async function removeOnline(abs: string): Promise<string | undefined> {
     }
 
     // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
-    // so a surviving window clears the keys that `vault-remove` leaves behind.
+    // so a surviving window clears what `vault-remove` leaves behind.
+    await clearVaultLocalStorage(id, host).catch(() => undefined);
     await obEval(
       `(function(){var id=${JSON.stringify(id)};` +
-        `Object.keys(localStorage).filter(function(k){return k.indexOf(id+'-')===0||k==='enable-plugin-'+id})` +
-        `.forEach(function(k){localStorage.removeItem(k)});` +
+        `localStorage.removeItem('enable-plugin-'+id);` +
         `['cache','webview','backup','sync'].forEach(function(n){indexedDB.deleteDatabase(id+'-'+n)});` +
         `return 'ok'})()`,
       host,
@@ -750,7 +795,7 @@ const vaultPathPosition = {
 
 const syncPurgeOption = {
   describe:
-    "delete the Development Vault folder before restoring the complete generated seed",
+    "delete the Development Vault folder and the plugin's vault-scoped local storage before restoring the complete generated seed",
   type: "boolean",
   default: false,
 } as const;

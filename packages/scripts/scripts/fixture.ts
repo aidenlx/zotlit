@@ -70,7 +70,8 @@ function pairedRunBuilder(y: Argv) {
       default: process.env[DEV_VAULT_CASE_ENV],
     })
     .option("purge", {
-      describe: "restore the exact generated Development Vault seed",
+      describe:
+        "restore the exact generated Development Vault seed, and clear the plugin's vault-scoped local storage",
       type: "boolean",
       default: false,
     });
