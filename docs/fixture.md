@@ -178,7 +178,7 @@ A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the s
 
 | Vault Case | Saved state |
 | --- | --- |
-| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
+| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. It also seeds the graph's citation cases. The Fixture writes a Literature Note for My Library Items only, so `cited-work-node-test.md` cites three works without one — one key the `partial` Scope Case keeps, two it drops — and a fourth key that two Items hold, which stays ambiguous. `citation-only-test.md` carries its citation as its only link, and the `rougierTenSimpleRules2014` Literature Note cites a second Literature Note. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
 | `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
 | `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list. |
 
@@ -394,4 +394,4 @@ Discard the complete generated tree:
 pnpm fixture discard
 ```
 
-To change semantic content, edit `packages/scripts/lib/fixture/spec.ts` and rebuild. The generator tests in `packages/scripts/lib/fixture/build.test.ts` guard the Fixture Spec properties.
+To change semantic content, edit `packages/scripts/lib/fixture/spec.ts` and rebuild. The generator tests in `packages/scripts/lib/fixture/build.test.ts` guard the Fixture Spec properties. A build stops when a Citation Key listed in the Spec's `SEEDED_CITATION_KEYS` resolves differently from its declaration, so declare the new resolution with the Item edit, and list a key there as you seed a page that cites it.
