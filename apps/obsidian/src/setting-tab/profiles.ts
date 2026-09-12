@@ -85,9 +85,8 @@ const bindingKeys = {
 
 /**
  * The main-page rows of the default Profile: its Literature Note bindings and
- * document actions, the vault's Shared Partials, then the Imported Note
- * bindings as their own group. No heading names the default Profile here —
- * that happens on the Profiles page.
+ * document actions, then the Imported Note bindings as their own group. No
+ * heading names the default Profile here — that happens on the Profiles page.
  */
 export function literatureNoteItems(
   ctx: SettingTabContext,
@@ -104,7 +103,6 @@ export function literatureNoteItems(
     },
     referencesStyleDefinition(ctx),
     defaultDocumentItem(ctx),
-    ...partialItems(ctx),
     {
       type: "group",
       heading: m.settings_imported_notes_heading(),
@@ -147,8 +145,9 @@ export function literatureNoteItems(
 
 /**
  * The "Literature note profiles" page: the default Profile as a row of its own,
- * then the Profile documents as a list, then the documents ZotLit refused to
- * load. Editing a Profile means editing its document.
+ * then the Profile documents as a list, then the Partials every Profile shares,
+ * then the documents ZotLit refused to load. Editing a Profile means editing
+ * its document.
  */
 export function profilesPage(
   ctx: SettingTabContext,
@@ -160,6 +159,7 @@ export function profilesPage(
     items: [
       defaultProfileItem(ctx),
       profilesList(ctx),
+      ...partialItems(ctx),
       ...excludedDocumentItems(ctx),
     ],
   };

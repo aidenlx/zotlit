@@ -101,10 +101,13 @@ function unrecognizedFileItems(
 }
 
 /**
- * The Literature note page's Partials list, mirroring the Profile list: an Add
+ * The Profiles page's Partials list, mirroring the Profile list: an Add
  * partial row on the header, one row per partial with Open and a menu holding
  * Delete, and one row per partial file whose name another Template already
  * answers to. Rename stays an Obsidian file operation.
+ *
+ * A vault shares a partial between Profiles, so it belongs beside them rather
+ * than on the main page, which is the default Profile alone.
  *
  * Structural, for the reason {@link citationTextItems} gives.
  */

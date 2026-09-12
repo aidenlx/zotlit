@@ -94,7 +94,7 @@ A profile document sets its language on the <UiLabel name={m.workbench_tab_name_
 
 - For a profile: select <UiLabel name={m.settings_template_customize()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />.
 - For the citation text: run <Command inline name={m.command_customize_citation_text_name()} />, or select <UiLabel name={m.template_workbench_open_citation()} /> from the pane menu, or select <UiLabel name={m.settings_citation_text_open()} /> on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} />.
-- For a partial: select <UiLabel name={m.settings_partial_open()} /> on its row under <UiLabel name={m.settings_partials_heading()} /> at <SettingsPath />.
+- For a partial: select <UiLabel name={m.settings_partial_open()} /> on its row at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />.
 
 To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. ZotLit opens the profile with the note's paper selected for the preview.
 

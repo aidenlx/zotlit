@@ -426,7 +426,7 @@
   "settings_note_add_setup_desc": "为部分文献笔记使用不同的文件夹或引文样式。",
   "settings_profile_new_label": "新配置方案",
   "settings_page_profiles": "文献笔记配置方案",
-  "settings_page_profiles_desc": "为每个配置方案设置文献笔记和从 Zotero 导入的笔记。",
+  "settings_page_profiles_desc": "为部分笔记指定不同的模板、文件夹或引注样式，并在它们之间共享模板文本。",
   "settings_profile_default_name": "默认",
   "settings_profile_default_desc": "设置其他配置方案继承的值。",
   "settings_profile_heading": "配置方案",

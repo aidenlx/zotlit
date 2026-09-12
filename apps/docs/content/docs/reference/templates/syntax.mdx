@@ -502,7 +502,7 @@ The legal values are `liquid` and `eta`. A document with no manifest is Liquid. 
 
 A partial name is one or more letters, digits, and hyphens. The <UiLabel name={m.settings_partial_add()} /> prompt trims what you type, turns each run of spaces into a hyphen, and lowercases the result, so `Journal line` becomes `journal-line`. Names are compared without case, so two files cannot claim one name in different casings.
 
-Five names are reserved, because another ZotLit template already answers to each: `filename`, `note`, `annotation`, `content`, and `citation`. A partial file that takes one registers nothing and is reported at <SettingsPath />. See [Partials](/docs/reference/settings#partials).
+Five names are reserved, because another ZotLit template already answers to each: `filename`, `note`, `annotation`, `content`, and `citation`. A partial file that takes one registers nothing and is reported at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />. See [Partials](/docs/reference/settings#partials).
 
 ## See also
 
