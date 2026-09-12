@@ -85,9 +85,8 @@ describe("preview scheduling", () => {
             sampleBar={null}
             annotationChoice=""
             onAnnotationChoice={() => {}}
-            openAnnotation={() => {}}
-            goToEntry={() => {}}
-            openSource={() => {}}
+            onShowProblem={() => {}}
+            publishProblems={() => {}}
           />
         </WebTestHost>
       );

@@ -4,6 +4,14 @@ status: accepted
 
 # Template diagnosis belongs to the editor
 
+> Amended 2026-09-13: the Problems area keeps one host repair control, Unpack
+> partials for the `bundled-partial` document problem. That control is the only
+> route to unpacking a shared Profile's carried partials, and it repairs the
+> document the reader already has open rather than creating a template the
+> reader has not asked for. Every render diagnosis keeps text suggestions
+> alone. Remove the control here once an ordinary editor or settings workflow
+> offers unpacking.
+
 The citation-template walkthrough showed a missing partial's name,
 explanation, and two recovery actions squeezed into one source-line widget.
 The preview repeated the failure. Researchers need room to read an

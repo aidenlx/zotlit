@@ -44,6 +44,13 @@ export interface RenderSchedulerInput {
   readonly hold?: boolean;
 }
 
+/**
+ * How an attempt started. Run and the quiet time after an edit reach the same
+ * entry point, so the result names which one asked for it: a deliberate
+ * failure deserves an explanation at once, a failure while typing does not.
+ */
+export type RenderTrigger = "explicit" | "automatic";
+
 export interface RenderSchedulerState<
   R extends TemplateRenderResult = TemplateRenderResult,
 > {
@@ -54,6 +61,14 @@ export interface RenderSchedulerState<
   readonly stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while the shown result is current. */
   readonly staleReason: "hold" | "demand" | "live" | null;
+  /** How the attempt behind `result` started; `null` while none has landed. */
+  readonly trigger: RenderTrigger | null;
+  /**
+   * Counts the results this scheduler has published. Two attempts over the
+   * same bytes are still two attempts, which is what tells a reader's second
+   * deliberate failure from the first.
+   */
+  readonly attempt: number;
 }
 
 export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
@@ -108,6 +123,8 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     busy: false,
     stale: false,
     staleReason: staleReasonFor(initial, false),
+    trigger: null,
+    attempt: 0,
   };
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
@@ -119,7 +136,11 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
   cleanup.defer(() => listeners.clear());
   cleanup.defer(abandon);
 
-  function publish(next: { result?: R | null; busy?: boolean }): void {
+  function publish(next: {
+    result?: R | null;
+    busy?: boolean;
+    trigger?: RenderTrigger;
+  }): void {
     if (closed) return;
     const result = next.result === undefined ? state.result : next.result;
     const busy = next.busy ?? state.busy;
@@ -145,7 +166,9 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       input,
       result !== null && !identityMismatch,
     );
+    const landed = next.trigger !== undefined;
     if (
+      !landed &&
       result === state.result &&
       busy === state.busy &&
       stale === state.stale &&
@@ -153,7 +176,14 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     ) {
       return;
     }
-    state = { result, busy, stale, staleReason };
+    state = {
+      result,
+      busy,
+      stale,
+      staleReason,
+      trigger: next.trigger ?? state.trigger,
+      attempt: landed ? state.attempt + 1 : state.attempt,
+    };
     for (const listener of listeners) listener();
   }
 
@@ -184,7 +214,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     pending = undefined;
   }
 
-  function start(request: RenderRequest): void {
+  function start(request: RenderRequest, trigger: RenderTrigger): void {
     // The stamp doubles as this start's token: whatever replaces it leaves the
     // render it belonged to answering into a scheduler that has moved on.
     const identity = renderIdentity(request);
@@ -195,7 +225,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       (result) => {
         if (current !== identity) return;
         current = undefined;
-        publish({ result, busy: false });
+        publish({ result, busy: false, trigger });
       },
       // A template that throws stops this render, not the host around it.
       (error: unknown) => {
@@ -210,6 +240,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
             }),
           ),
           busy: false,
+          trigger,
         });
       },
     );
@@ -222,7 +253,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     abandon();
     const request = nextRequest();
     if (request !== null && input.live) {
-      pending = setTimeout(() => start(request), debounceMs);
+      pending = setTimeout(() => start(request, "automatic"), debounceMs);
     }
     publish({ busy: false });
   }
@@ -270,7 +301,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       const request = nextRequest();
       if (request === null) return;
       abandon();
-      start(request);
+      start(request, "explicit");
     },
     pause,
     fail(diagnostic) {
@@ -293,6 +324,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
           ),
         ),
         busy: false,
+        trigger: "automatic",
       });
     },
     [Symbol.dispose]() {

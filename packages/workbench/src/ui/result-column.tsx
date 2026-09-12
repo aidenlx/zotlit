@@ -1,6 +1,6 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
-import type { TemplateRenderResult } from "#/render/result";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
@@ -95,9 +95,11 @@ export interface ResultBodyProps {
   showMarkdown: boolean;
   showManaged: boolean;
   sourceAvailable?: boolean;
-  openAnnotation: () => void;
-  goToEntry: (position: number) => void;
-  openSource: () => void;
+  /**
+   * Reads the failure behind this preview in the editor's Problems area. A
+   * preview with no editor to reach leaves it out, and Show problem is absent.
+   */
+  onShowProblem?: (diagnostic: RenderDiagnostic) => void;
   /** Runs a render now; on demand, this is how the stale-behind notice offers Run. */
   onRun?: () => void;
   busy?: boolean;
@@ -112,9 +114,7 @@ export function ResultBody({
   showMarkdown,
   showManaged,
   sourceAvailable = true,
-  openAnnotation,
-  goToEntry,
-  openSource,
+  onShowProblem,
   onRun,
   busy,
 }: ResultBodyProps) {
@@ -133,6 +133,19 @@ export function ResultBody({
     : result?.diagnostics.find(
         ({ part }) => part !== "annotation" || result.creationBody === null,
       );
+  // What this mode shows. A render that failed produced nothing at all, which
+  // is not the same as a template that produced an empty result, so the
+  // failure reads as a failure rather than as empty content.
+  const output = showPartial
+    ? result?.partial
+    : showCitation
+      ? result?.citation
+      : showAnnotation
+        ? annotationResult?.annotation
+        : showManaged
+          ? result?.managedRegion
+          : result?.creationBody;
+  const failed = previewProblem !== undefined && (output ?? null) === null;
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
   // "Rendering…" is honest only while a render is on its way: on demand the
   // notice below says Run starts one, and a hold shows its own problem.
@@ -164,7 +177,7 @@ export function ResultBody({
       <ResultRegion emphasis={false}>
         {result ? (
           <Suspense fallback={pending}>
-            {showNote && (
+            {showNote && !failed && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
@@ -175,45 +188,24 @@ export function ResultBody({
               </header>
             )}
             {previewProblem && (
-              <p {...part("problem")}>
+              <p role="status" {...part("problem")}>
                 <strong {...part("problem-heading")}>
                   {m.workbench_preview_problem()}
                 </strong>{" "}
                 {diagnosticText(m, previewProblem)}{" "}
-                {previewProblem.part === "annotation" && (
+                {onShowProblem && (
                   <button
                     type="button"
                     disabled={!sourceAvailable}
-                    onClick={openAnnotation}
+                    onClick={() => onShowProblem(previewProblem)}
                     {...part("problem-open")}
                   >
-                    {m.workbench_annotation_edit_format()}
-                  </button>
-                )}
-                {previewProblem.part !== "annotation" &&
-                  previewProblem.position === undefined && (
-                    <button
-                      type="button"
-                      disabled={!sourceAvailable}
-                      onClick={openSource}
-                      {...part("problem-open")}
-                    >
-                      {m.workbench_problems_where_advanced()}
-                    </button>
-                  )}
-                {previewProblem.position !== undefined && (
-                  <button
-                    type="button"
-                    disabled={!sourceAvailable}
-                    onClick={() => goToEntry(previewProblem.position!)}
-                    {...part("problem-open")}
-                  >
-                    {m.workbench_problems_where_entry()}
+                    {m.workbench_problem_show()}
                   </button>
                 )}
               </p>
             )}
-            {showCitation || showPartial ? (
+            {failed ? null : showCitation || showPartial ? (
               <Markdown
                 markdown={
                   (showPartial ? result.partial : result.citation) ?? ""
@@ -280,9 +272,7 @@ export function ResultColumn({
   showManaged,
   onShowManaged,
   sourceAvailable = true,
-  openAnnotation,
-  goToEntry,
-  openSource,
+  onShowProblem,
   onRun,
   busy,
   help,
@@ -338,9 +328,7 @@ export function ResultColumn({
         showMarkdown={showMarkdown}
         showManaged={showManaged}
         sourceAvailable={sourceAvailable}
-        openAnnotation={openAnnotation}
-        goToEntry={goToEntry}
-        openSource={openSource}
+        onShowProblem={onShowProblem}
         onRun={onRun}
         busy={busy}
       />

@@ -1,8 +1,14 @@
+import type { WorkbenchProblem } from "#/document/controller";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EditToolbar } from "./edit-toolbar";
-import { ProblemsFooter } from "./problems-footer";
+import type { WorkbenchDiagnosis } from "./problems";
+import { workbenchDiagnoses } from "./problems";
+import { ProblemsFooter, useWorkbenchProblems } from "./problems-footer";
+import type { RenderTrigger } from "./scheduler";
 import { createWorkbenchStore } from "./store";
 import { TabBar, TabPanel } from "./tab-bar";
 import { mount, renderWithMessages as render } from "./test-host";
@@ -12,6 +18,35 @@ import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 
 afterEach(cleanup);
+
+/**
+ * The Problems area with its own state, as a host composes it. `open` reads
+ * the area the way a reader who asked for the explanation sees it.
+ */
+function Problems({
+  diagnoses,
+  onOpen,
+  onAction,
+  open,
+}: {
+  diagnoses: readonly WorkbenchDiagnosis[];
+  onOpen: (diagnosis: WorkbenchDiagnosis) => void;
+  onAction?: (problem: WorkbenchProblem) => void;
+  open?: boolean;
+}): ReactNode {
+  const problems = useWorkbenchProblems({
+    diagnoses,
+    trigger: "automatic",
+    attempt: 1,
+  });
+  const { setOpen } = problems;
+  useEffect(() => {
+    if (open === true) setOpen(true);
+  }, [open, setOpen]);
+  return (
+    <ProblemsFooter problems={problems} onOpen={onOpen} onAction={onAction} />
+  );
+}
 
 function tabs(): HTMLElement[] {
   return screen.getAllByRole("tab");
@@ -326,35 +361,54 @@ describe("the edit toolbar", () => {
   });
 });
 
-describe("the Problems footer", () => {
-  it("names the problem, the recovery, and the pane it is repaired in", () => {
+describe("the Problems area", () => {
+  it("starts compact, then explains the selected problem in full", () => {
     const controller = new WorkbenchDocumentController(
       DEFAULT_PROFILE_SOURCE.replace("language: liquid", "language: eta"),
     );
     const opened: string[] = [];
     using mounted = mount(
-      <ProblemsFooter
-        problem={controller.problems[0]!}
-        onOpen={(problem) => opened.push(problem.code)}
+      <Problems
+        diagnoses={workbenchDiagnoses(controller.problems, [])}
+        onOpen={(diagnosis) =>
+          opened.push(
+            diagnosis.kind === "document"
+              ? diagnosis.problem.code
+              : diagnosis.diagnostic.code,
+          )
+        }
       />,
     );
     const { ui } = mounted;
     render(ui);
 
-    const footer = screen.getByRole("region", {
+    const area = screen.getByRole("region", {
       name: m.workbench_problems_heading(),
     });
-    expect(footer.className).toBe("part-problems");
-    expect(footer.textContent).toContain(
+    expect(area.className).toBe("part-problems");
+    expect(area.textContent).toContain(
       m.workbench_problem_unsupported_language(),
     );
-    expect(footer.textContent).toContain(
+    expect(area.textContent).not.toContain(
       m.workbench_problem_unsupported_recovery(),
     );
-    const open = screen.getByRole("button", {
-      name: m.workbench_problems_where_advanced(),
-    });
-    fireEvent.click(open);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problem_show() }),
+    );
+    expect(area.textContent).toContain(m.workbench_advanced());
+    expect(area.textContent).toContain(
+      m.workbench_problem_unsupported_recovery(),
+    );
+    expect(
+      screen.getByText(m.workbench_problems_technical()).closest("details")
+        ?.open,
+    ).toBe(false);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: m.workbench_problems_where_advanced(),
+      }),
+    );
     expect(opened).toEqual(["unsupported-language"]);
   });
 
@@ -367,50 +421,203 @@ describe("the Problems footer", () => {
     const unpacked: string[] = [];
     using mounted = mount(
       <>
-        <ProblemsFooter
-          problem={problem}
+        <Problems
+          diagnoses={workbenchDiagnoses([problem], [])}
           onOpen={() => {}}
           onAction={(target) => unpacked.push(target.code)}
+          open
         />
-        <ProblemsFooter problem={problem} onOpen={() => {}} />
+        <Problems
+          diagnoses={workbenchDiagnoses([problem], [])}
+          onOpen={() => {}}
+          open
+        />
       </>,
     );
     const { ui } = mounted;
     render(ui);
 
-    const buttons = screen.getAllByRole("button");
-    expect(buttons.map((button) => button.textContent)).toEqual([
+    expect(
+      screen
+        .getAllByRole("button")
+        .map((button) => button.textContent)
+        .filter((label) => label !== m.workbench_problems_collapse()),
+    ).toEqual([
+      m.workbench_problems_where_advanced(),
       m.workbench_problem_bundled_partial_unpack(),
       m.workbench_problems_where_advanced(),
-      m.workbench_problems_where_advanced(),
     ]);
-    fireEvent.click(buttons[0]!);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: m.workbench_problem_bundled_partial_unpack(),
+      }),
+    );
     expect(unpacked).toEqual(["bundled-partial"]);
   });
 
   it("points a row problem at its entry and a section problem at the Annotation tab", () => {
     using mounted = mount(
       <>
-        <ProblemsFooter
-          problem={{ code: "invalid-document", slice: "entry:2" }}
+        <Problems
+          diagnoses={workbenchDiagnoses(
+            [{ code: "invalid-document", slice: "entry:2" }],
+            [],
+          )}
           onOpen={() => {}}
+          open
         />
-        <ProblemsFooter
-          problem={{ code: "missing-annotation-section", slice: "note" }}
+        <Problems
+          diagnoses={workbenchDiagnoses(
+            [{ code: "missing-annotation-section", slice: "note" }],
+            [],
+          )}
           onOpen={() => {}}
+          open
         />
-        <ProblemsFooter problem={null} onOpen={() => {}} />
+        <Problems diagnoses={[]} onOpen={() => {}} />
       </>,
     );
     const { ui } = mounted;
     render(ui);
     expect(
-      screen.getAllByRole("button").map((button) => button.textContent),
+      screen
+        .getAllByRole("button")
+        .map((button) => button.textContent)
+        .filter((label) => label !== m.workbench_problems_collapse()),
     ).toEqual([
       m.workbench_problems_where_entry(),
       m.workbench_annotation_label(),
     ]);
     expect(screen.getAllByRole("region")).toHaveLength(2);
+  });
+
+  it("explains a render failure with its evidence, and says when no location was reported", () => {
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses(
+          [],
+          [
+            {
+              code: "render-error",
+              message: "Unclosed tag on line 3",
+              part: "render",
+            },
+          ],
+        )}
+        onOpen={() => {}}
+        open
+      />,
+    );
+    const { ui } = mounted;
+    render(ui);
+    const area = screen.getByRole("region", {
+      name: m.workbench_problems_heading(),
+    });
+    expect(area.textContent).toContain("Unclosed tag on line 3");
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+    expect(area.textContent).toContain(m.workbench_problems_location_unknown());
+  });
+
+  it("keeps an open area after a check finds nothing, and gives its space back on Collapse", () => {
+    function Harness(): ReactNode {
+      const [failing, setFailing] = useState(true);
+      const problems = useWorkbenchProblems({
+        diagnoses: failing
+          ? workbenchDiagnoses([], [{ code: "render-error", message: "Late" }])
+          : [],
+        trigger: "automatic",
+        attempt: 1,
+      });
+      const { setOpen } = problems;
+      useEffect(() => {
+        setOpen(true);
+      }, [setOpen]);
+      return (
+        <>
+          <button type="button" onClick={() => setFailing(false)}>
+            repair
+          </button>
+          <ProblemsFooter problems={problems} onOpen={() => {}} />
+        </>
+      );
+    }
+    using mounted = mount(<Harness />);
+    const { ui } = mounted;
+    render(ui);
+    expect(screen.getAllByText("Late")).toHaveLength(2);
+
+    fireEvent.click(screen.getByText("repair"));
+    expect(screen.getByText(m.workbench_problems_none())).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_collapse() }),
+    );
+    expect(
+      screen.queryByRole("region", { name: m.workbench_problems_heading() }),
+    ).toBeNull();
+  });
+
+  it("keeps the reader's choice through an automatic check and opens on a failed Run", () => {
+    const diagnoses = workbenchDiagnoses(
+      [],
+      [{ code: "render-error", message: "Unclosed tag", part: "render" }],
+    );
+    function Harness(): ReactNode {
+      const [attempt, setAttempt] = useState({
+        trigger: "automatic" as RenderTrigger,
+        count: 1,
+      });
+      const problems = useWorkbenchProblems({
+        diagnoses,
+        trigger: attempt.trigger,
+        attempt: attempt.count,
+      });
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              setAttempt(({ count }) => ({
+                trigger: "automatic",
+                count: count + 1,
+              }))
+            }
+          >
+            check
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setAttempt(({ count }) => ({
+                trigger: "explicit",
+                count: count + 1,
+              }))
+            }
+          >
+            run
+          </button>
+          <ProblemsFooter problems={problems} onOpen={() => {}} />
+        </>
+      );
+    }
+    using mounted = mount(<Harness />);
+    const { ui } = mounted;
+    render(ui);
+    const shown = () =>
+      screen.queryByText(m.workbench_diagnostic_render_error_suggestion()) !==
+      null;
+    expect(shown()).toBe(false);
+    fireEvent.click(screen.getByText("check"));
+    expect(shown()).toBe(false);
+    fireEvent.click(screen.getByText("run"));
+    expect(shown()).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_collapse() }),
+    );
+    fireEvent.click(screen.getByText("check"));
+    expect(shown()).toBe(false);
   });
 });
 

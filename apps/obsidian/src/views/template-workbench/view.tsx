@@ -50,8 +50,10 @@ import type {
   CitationExampleId,
   PartialChoice,
   PartialContext,
+  RenderDiagnostic,
 } from "@zotlit/workbench/render";
 import { fieldSnippet } from "@zotlit/workbench/ui";
+import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
   diagnosticText,
@@ -64,6 +66,8 @@ import {
   PropertiesPane,
   ProblemsFooter,
   problemText,
+  useWorkbenchProblems,
+  workbenchDiagnoses,
   SliceEditor,
   usePartialBoxes,
   TabBar,
@@ -219,6 +223,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
+  /**
+   * What each linked preview's last applicable render found, by preview. The
+   * editor owns the Problems area, so a Note Preview that renders a failure
+   * hands it here rather than explaining it beside its own empty result. A
+   * preview that closes or succeeds publishes an empty list, so nothing a
+   * superseded or closed context found stays visible.
+   */
+  readonly #previewProblems = new Map<string, readonly RenderDiagnostic[]>();
+  /** The flattened list, rebuilt only on publish so readers can compare it. */
+  #previewProblemList: readonly RenderDiagnostic[] = [];
+  readonly #previewProblemListeners = new Set<() => void>();
+  readonly #showProblemListeners = new Set<(id: string | null) => void>();
   get matchDatabase() {
     return this.#deps.db;
   }
@@ -554,6 +570,55 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#revealListeners.add(listener);
     return () => {
       this.#revealListeners.delete(listener);
+    };
+  }
+  /**
+   * What every linked preview has found, as one list. Read through
+   * `subscribePreviewProblems`, which changes whenever a preview publishes.
+   */
+  get previewProblems(): readonly RenderDiagnostic[] {
+    return this.#previewProblemList;
+  }
+  publishPreviewProblems(
+    preview: string,
+    diagnostics: readonly RenderDiagnostic[],
+  ): void {
+    if (diagnostics.length === 0) {
+      if (!this.#previewProblems.delete(preview)) return;
+    } else {
+      const held = this.#previewProblems.get(preview);
+      if (
+        held?.length === diagnostics.length &&
+        held.every((entry, index) => entry === diagnostics[index])
+      ) {
+        return;
+      }
+      this.#previewProblems.set(preview, diagnostics);
+    }
+    this.#previewProblemList = [...this.#previewProblems.values()].flat();
+    for (const listener of this.#previewProblemListeners) listener();
+  }
+  subscribePreviewProblems(listener: () => void): () => void {
+    this.#previewProblemListeners.add(listener);
+    return () => {
+      this.#previewProblemListeners.delete(listener);
+    };
+  }
+  /**
+   * Reads one problem in the Problems area, which is what a preview's Show
+   * problem and a failed deliberate Run ask for. A null id opens the area on
+   * whatever it already has selected.
+   */
+  showProblem(id: string | null, reveal = true): void {
+    for (const listener of this.#showProblemListeners) listener(id);
+    // A deliberate request brings this editor forward; a failed automatic or
+    // Run attempt leaves the reader's pane where they put it.
+    if (reveal) void this.app.workspace.revealLeaf(this.leaf);
+  }
+  subscribeShowProblem(listener: (id: string | null) => void): () => void {
+    this.#showProblemListeners.add(listener);
+    return () => {
+      this.#showProblemListeners.delete(listener);
     };
   }
   revealSlice(slice: "advanced" | "annotation" | `entry:${number}`): void {
@@ -1371,8 +1436,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return this.#defaultDraft;
   }
   /**
-   * Every Shared Partial the vault registers, which Pick another chooses from.
-   * Read during render, so it answers empty until the folder scan has run.
+   * Every Shared Partial the vault registers. Read during render, so it
+   * answers empty until the folder scan has run.
    */
   get partialNames(): readonly string[] {
     const templates = this.#deps.templates;
@@ -1781,7 +1846,8 @@ function EditorContent({
   const controller = view.controller;
   const host = useWorkbenchHost();
   useDocumentRevision(controller);
-  const { result } = useRenderState();
+  const { result, trigger, attempt } = useRenderState();
+  const previewProblems = usePreviewProblems(view);
   const formatProblem = result?.diagnostics.find(
     ({ part }) => part === "annotation",
   );
@@ -1844,12 +1910,20 @@ function EditorContent({
     const preview = view.preview;
     if (!preview) return undefined;
     return {
-      names: view.partialNames,
       missing: missingPartials,
       revision: templateRevision,
       dataRevision,
       onEdit: (name) => view.openPartial(name),
-      onCreate: (name) => void view.createPartial(name),
+      onShowProblem: (name) => {
+        const found = diagnoses.find(
+          (diagnosis) =>
+            diagnosis.kind === "render" &&
+            diagnosis.diagnostic.code === "missing-partial" &&
+            String(diagnosis.diagnostic.params?.name) === name,
+        );
+        if (found) problems.select(found.id);
+        else problems.setOpen(true);
+      },
       onRender: (name) => preview.renderPartial(name, partialContext),
     };
   };
@@ -1862,11 +1936,27 @@ function EditorContent({
           kind === "citation" ? "citation" : controller.partialContext,
         ),
   );
-  const firstProblem = controller.problems[0] ?? null;
-  const problem =
-    firstProblem?.slice === "details" && manifest.current === null
-      ? { ...firstProblem, slice: "advanced" as const }
-      : firstProblem;
+  // A manifest the parser never read has no field pane to open, so its
+  // problems are repaired in the source the reader can still see.
+  const documentProblems = controller.problems.map((entry) =>
+    entry.slice === "details" && manifest.current === null
+      ? { ...entry, slice: "advanced" as const }
+      : entry,
+  );
+  const diagnoses = workbenchDiagnoses(documentProblems, [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+  ]);
+  const problems = useWorkbenchProblems({ diagnoses, trigger, attempt });
+  const selectProblem = problems.select;
+  const openProblems = problems.setOpen;
+  useEffect(
+    () =>
+      view.subscribeShowProblem((id) =>
+        id === null ? openProblems(true) : selectProblem(id),
+      ),
+    [view, selectProblem, openProblems],
+  );
   const state = view.store.getState();
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
@@ -1912,6 +2002,24 @@ function EditorContent({
         ? { field: problem.params.field }
         : null,
     );
+  }
+  /** The pane one selected problem is repaired in, whichever kind it is. */
+  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
+    if (diagnosis.kind === "document") {
+      openProblem(diagnosis.problem);
+      return;
+    }
+    const { part, position } = diagnosis.diagnostic;
+    const slice: WorkbenchProblem["slice"] =
+      position === undefined
+        ? part === "annotation"
+          ? "annotation"
+          : kind === "profile"
+            ? "advanced"
+            : "source"
+        : `entry:${position}`;
+    const range = controller.sliceRange(slice);
+    openProblem({ slice, ...(range ? { range } : {}) });
   }
   const revealHandler = useRef(openProblem);
   revealHandler.current = openProblem;
@@ -2160,11 +2268,27 @@ function EditorContent({
         )}
       </div>
       <ProblemsFooter
-        problem={problem}
-        onOpen={openProblem}
+        problems={problems}
+        onOpen={openDiagnosis}
         onAction={() => void view.unpackBundledPartials()}
       />
     </div>
+  );
+}
+
+/**
+ * What every linked preview has found, so the editor's Problems area explains
+ * a Note render failure the reader saw in another pane.
+ */
+function usePreviewProblems(
+  view: TemplateWorkbenchView,
+): readonly RenderDiagnostic[] {
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => view.subscribePreviewProblems(listener),
+      [view],
+    ),
+    useCallback(() => view.previewProblems, [view]),
   );
 }
 

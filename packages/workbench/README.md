@@ -145,23 +145,39 @@ reads as a `render-error` diagnostic. An optional `mapResult` gives successful
 and failed results the host's own result shape. The host calls `setInput` with the
 paper, the annotation example, its own bundle, and `hold` where nothing may
 render yet. Its state — `result`, `busy`, `stale` — is what every result surface
-paints. Outside the editor provider the tree paints inert, which the web's
-skeleton relies on. The components so far: `TabBar` and
-`TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a host's own
-controls as children), and `ProblemsFooter` with `problemText`,
+paints. Its `trigger` says whether Run or the quiet time after an edit asked
+for the shown result, and `attempt` counts the results it has published, so two
+attempts over the same bytes stay distinct. Outside the editor provider the
+tree paints inert, which the web's skeleton relies on. The components so far:
+`TabBar` and `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a
+host's own controls as children), and `ProblemsFooter` with `problemText`,
 `problemAction`, and `diagnosticText`, the words for every core code. A host
 that passes `onAction` gets the button `problemAction` names for the codes a
 host can repair on the reader's word; a Profile edited beside a vault reports
 `bundled-partial` for the partials its manifest still carries, and the vault
 host unpacks them into files with `dropBundledPartials`.
 
+`ProblemsFooter` is the editor's Problems area, and the editor owns detailed
+diagnosis (ADR 0056). `workbenchDiagnoses(problems, diagnostics)` folds the
+parser's problems and the renderer's diagnostics into one list of
+`WorkbenchDiagnosis`, each with an identity built from its code, the object it
+names, and where it is repaired — never from its message text.
+`useWorkbenchProblems` holds the reader's selection and their open-or-collapsed
+choice: automatic checks leave that choice alone, while `select` — what a
+source marker and the preview's Show problem call — and a failed explicit Run
+open the explanation. `diagnosisExplanation` writes the affected object, a
+plain condition, and a text suggestion; repairs stay the reader's own edit.
+A preview publishes what its render found to the editor beside it rather than
+explaining it beside its own empty result.
+
 `usePartialBoxes(controller, slice, host)` draws the Partial Placeholder over
 every Shared Partial call in one pane: the editor extension to pass that pane
-and the boxes to render beside it. The host answers the names the vault
-registers, the names the last render could not resolve, opening a partial,
-creating one, and rendering one for the caller that pane's slice supplies —
-a missing partial is the engine's own render failure, never a scan, so the
-box's Create and Pick another appear only for a name a render reported.
+and the boxes to render beside it. The host answers the names the last render
+could not resolve, opening a partial, reading one's problem, and rendering one
+for the caller that pane's slice supplies — a missing partial is the engine's
+own render failure, never a scan, so the box's short Missing marker appears
+only for a name a render reported, and selects that problem in the editor's
+Problems area.
 
 The host supplies `messages` and `getLocale` through `WorkbenchHostProvider`.
 The web passes its Paraglide facade; Obsidian passes its Language Pack facade.

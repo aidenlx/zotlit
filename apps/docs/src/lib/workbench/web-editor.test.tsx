@@ -55,10 +55,11 @@ describe("a draft the parser refuses", () => {
     await page.settle();
 
     // Nothing renders a draft the parser refuses, so the sheet keeps the last
-    // good result while the Problems strip carries the repair.
+    // good result while the Problems area carries the repair.
     expect(rendered()).toHaveLength(rendersOfGoodSource);
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
 
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_problems_where_note());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
@@ -77,6 +78,7 @@ describe("a draft the parser refuses", () => {
     await page.settle();
 
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_problems_where_details());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_profile());
@@ -448,8 +450,9 @@ describe("the annotation box", () => {
       page.host.querySelector<HTMLElement>(
         '[role="region"][data-part="region"]',
       )!,
-      m.workbench_annotation_edit_format(),
+      m.workbench_problem_show(),
     );
+    page.press(m.workbench_annotation_edit_format());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
   });
 
@@ -463,6 +466,7 @@ describe("the annotation box", () => {
     act(() =>
       source.dispatch({ changes: { from, to: source.state.doc.length } }),
     );
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_annotation_label());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
     page.press(m.workbench_section_repair());

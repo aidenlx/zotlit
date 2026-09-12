@@ -184,8 +184,7 @@ export interface WorkbenchParts {
     | "partial-box"
     | "partial-name"
     | "partial-arguments"
-    | "partial-problem"
-    | "partial-action";
+    | "partial-problem";
   previewControls:
     | "controls"
     | "label"
@@ -242,9 +241,18 @@ export interface WorkbenchParts {
     | "redo";
   problemsFooter:
     | "problems"
+    | "problems-summary"
     | "problems-heading"
     | "problems-text"
+    | "problems-toggle"
+    | "problems-body"
+    | "problems-object"
     | "problems-recovery"
+    | "problems-location"
+    | "problems-details"
+    | "problems-details-label"
+    | "problems-evidence"
+    | "problems-controls"
     | "problems-action"
     | "problems-open";
 }

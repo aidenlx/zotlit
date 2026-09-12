@@ -35,6 +35,7 @@ import type {
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import type { RenderDiagnostic } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
@@ -52,6 +53,8 @@ import {
   diagnosticText,
   fieldSnippet,
   problemText,
+  useWorkbenchProblems,
+  workbenchDiagnoses,
   AnnotationPane,
   AnnotationPointer,
   AnnotationSampleBar,
@@ -65,6 +68,7 @@ import {
 import type {
   WorkbenchTab,
   EntryDiagnostic,
+  WorkbenchDiagnosis,
   WorkbenchEditorInstance,
   WorkbenchHost,
   WorkbenchStore,
@@ -151,7 +155,13 @@ export function Workbench() {
       title: sample.item.title,
     });
   }, [store, sample]);
-  const { result } = useRenderState(scheduler);
+  const { result, trigger, attempt } = useRenderState(scheduler);
+  // What the result pane's own render found. The editor owns the Problems
+  // area, so the preview hands its findings up rather than explaining them
+  // beside its own empty result.
+  const [previewProblems, setPreviewProblems] = useState<
+    readonly RenderDiagnostic[]
+  >([]);
   const [revision, setRevision] = useState(0);
   const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
   const { current: itemAnnotations, example: selectedAnnotation } = useMemo(
@@ -374,7 +384,11 @@ export function Workbench() {
     [shownManifest, resources],
   );
 
-  const problem = controller.problems[0];
+  const diagnoses = workbenchDiagnoses(controller.problems, [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+  ]);
+  const problems = useWorkbenchProblems({ diagnoses, trigger, attempt });
   // Null while the manifest's list is one the rows cannot edit, which is what
   // sends the reader to Advanced with the source intact.
   const entries = controller.managedEntries;
@@ -480,6 +494,25 @@ export function Workbench() {
         ? { field: problem.params.field }
         : null,
     );
+  }
+
+  /** The pane one selected problem is repaired in, whichever kind it is. */
+  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
+    if (diagnosis.kind === "document") {
+      goToProblem(diagnosis.problem);
+      return;
+    }
+    const { part, position } = diagnosis.diagnostic;
+    if (position !== undefined) {
+      goToEntry(position);
+      return;
+    }
+    if (part === "annotation") {
+      openAnnotation();
+      return;
+    }
+    setView("edit");
+    setAdvanced(true);
   }
 
   function openAnnotation() {
@@ -1131,9 +1164,8 @@ export function Workbench() {
           resources={resources}
           hold={!renderable || resourcesStale}
           mode={showAnnotation ? "annotation" : "note"}
-          openAnnotation={openAnnotation}
-          goToEntry={goToEntry}
-          openSource={() => setAdvanced(true)}
+          onShowProblem={problems.select}
+          publishProblems={setPreviewProblems}
           sampleBar={
             <SampleBar
               sample={sample}
@@ -1148,7 +1180,7 @@ export function Workbench() {
           }
         />
       }
-      footer={<ProblemsFooter problem={problem ?? null} onOpen={goToProblem} />}
+      footer={<ProblemsFooter problems={problems} onOpen={openDiagnosis} />}
     >
       {filePicker}
       {replacementDialog}

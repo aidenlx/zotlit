@@ -95,6 +95,9 @@ class Preview extends NotePreviewView {
   }
 }
 class Editor extends TemplateWorkbenchView {
+  open() {
+    return this.onOpen();
+  }
   close() {
     return this.onClose();
   }
@@ -133,6 +136,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
         if (event.name === name) event.callback(...args);
     },
     onLayoutReady: (callback: () => void) => callback(),
+    revealLeaf: vi.fn(async () => {}),
     iterateAllLeaves: vi.fn(),
     requestSaveLayout: vi.fn(),
     setActiveLeaf: vi.fn(),
@@ -150,6 +154,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
       client: lease.client,
     },
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
+    templates: fixture.deps.templates,
     nativePreview: fixture.deps,
   } as unknown as TemplateWorkbenchDeps);
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
@@ -223,6 +228,15 @@ async function pick(view: Preview, title: string) {
 }
 const advance = (ms = 300) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+/** Presses the preview's own button whose text is `label`. */
+function previewButton(view: Preview, label: string): void {
+  const button = Array.from(view.contentEl.querySelectorAll("button")).find(
+    (element) => element.textContent === label,
+  );
+  if (!button) throw new Error(`Missing preview action: ${label}`);
+  button.click();
+}
 
 async function run(view: Preview) {
   const button = Array.from(view.contentEl.querySelectorAll("button")).find(
@@ -858,6 +872,106 @@ Annotation`,
     expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
   });
 
+  it("explains a failed note render in the editor and clears it after a repair", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+
+    // The preview names the failure rather than presenting an empty note.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_problem(),
+    );
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_diagnostic_missing_partial({ name: "book-details" }),
+    );
+    // Automatic checks stay compact: the suggestion waits to be asked for.
+    expect(test.editor.contentEl.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = test.editor.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    expect(area.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("Personal space.", "Repaired output."),
+        false,
+      ),
+    );
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Repaired output.");
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_preview_problem(),
+    );
+    // An area the reader opened keeps its space; the repaired failure is gone.
+    expect(area.isConnected).toBe(true);
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+  });
+
+  it("takes a closed preview's findings back out of the editor", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    expect(test.editor.contentEl.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+
+    await act(async () => preview.close());
+    expect(test.editor.contentEl.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+  });
+
   it("keeps the last output visible while invalid source is repaired", async () => {
     await using test = await setup();
     vi.useFakeTimers();
@@ -913,7 +1027,7 @@ Annotation`,
     );
     await advance();
     const source = [...preview.contentEl.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_problems_where_advanced(),
+      (button) => button.textContent === m.workbench_problem_show(),
     );
     expect(source?.disabled).toBe(true);
   });
@@ -932,7 +1046,7 @@ Annotation`,
       PROFILE_SOURCE,
     );
     const chooseItem = vi.fn();
-    const revealSlice = vi.fn();
+    const showProblem = vi.fn();
     const earlierPeer = {
       leaf: {} as WorkspaceLeaf,
       file: otherFile,
@@ -946,7 +1060,8 @@ Annotation`,
       getViewData: () =>
         PROFILE_SOURCE.replace("Personal space.", "Books output."),
       chooseItem,
-      revealSlice,
+      showProblem,
+      publishPreviewProblems: vi.fn(),
     } as unknown as TemplateWorkbenchView;
     preview.leaf.pinned = true;
     await act(async () => {
@@ -962,11 +1077,11 @@ Annotation`,
     );
     await advance();
     const source = [...preview.contentEl.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_problems_where_advanced(),
+      (button) => button.textContent === m.workbench_problem_show(),
     )!;
     expect(source.disabled).toBe(true);
     await act(async () => source.click());
-    expect(revealSlice).not.toHaveBeenCalled();
+    expect(showProblem).not.toHaveBeenCalled();
     expect(chooseItem).not.toHaveBeenCalled();
     preview.leaf.pinned = false;
     await act(async () => {

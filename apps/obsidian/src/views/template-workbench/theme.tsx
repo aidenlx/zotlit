@@ -347,9 +347,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "partial-name": "zt:min-w-0 zt:whitespace-normal",
       "partial-arguments":
         "zt:min-w-0 zt:truncate zt:font-normal zt:opacity-75",
-      "partial-problem":
-        "zt:min-w-0 zt:whitespace-normal zt:text-(--text-error)",
-      "partial-action": cn(
+      // The box's own missing state carries the error color; a bare button
+      // takes its text color from Obsidian's unlayered rule regardless.
+      "partial-problem": cn(
         templateWorkbenchButton,
         "zt:shrink-0 zt:rounded-sm zt:px-1.5 zt:py-0.5 zt:underline",
       ),
@@ -467,10 +467,26 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
       "problems-action": templateWorkbenchButton,
-      problems: "zt:shrink-0 zt:p-3 zt:border-t zt:border-border zt:text-xs",
+      problems:
+        "zt:flex zt:shrink-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal",
+      "problems-summary":
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
-      "problems-text": "zt:text-muted-foreground",
-      "problems-recovery": "zt:text-muted-foreground",
+      "problems-text": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
+      "problems-toggle": cn(
+        templateWorkbenchButton,
+        "zt:ms-auto zt:shrink-0 zt:px-1.5 zt:py-1",
+      ),
+      "problems-body": "zt:flex zt:min-w-0 zt:flex-col zt:gap-1",
+      "problems-object": "zt:font-semibold zt:[overflow-wrap:anywhere]",
+      "problems-recovery": "zt:text-pretty zt:text-muted-foreground",
+      "problems-location": "zt:text-muted-foreground",
+      "problems-details": "zt:mt-2 zt:min-w-0",
+      "problems-details-label": "zt:cursor-pointer zt:text-muted-foreground",
+      "problems-evidence":
+        "zt:mt-1 zt:max-h-40 zt:overflow-auto zt:font-mono zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere]",
+      "problems-controls":
+        "zt:mt-2 zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2",
     },
   },
 };

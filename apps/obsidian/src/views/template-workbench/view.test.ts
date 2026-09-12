@@ -1319,6 +1319,46 @@ language: liquid
     expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
   });
 
+  it("explains a document problem with no preview companion, and keeps the source in place", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () =>
+      view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
+    );
+
+    const area = view.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    // An automatic check stays compact until the reader asks for the rest.
+    expect(area.textContent).toContain(
+      m.workbench_problem_missing_annotation_section(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_missing_annotation_section_recovery(),
+    );
+
+    const show = [...area.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problem_show(),
+    )!;
+    await act(async () => show.click());
+    expect(area.textContent).toContain(m.workbench_annotation_label());
+    expect(area.textContent).toContain(
+      m.workbench_problem_missing_annotation_section_recovery(),
+    );
+    expect(area.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
+
+    const collapse = [...area.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_collapse(),
+    )!;
+    await act(async () => collapse.click());
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_missing_annotation_section_recovery(),
+    );
+    expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
+  });
+
   it("keeps a Profile document on its six tabs, titled by its name", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = openKind("templates/zotlit-profile.paper.md", SOURCE);

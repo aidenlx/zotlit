@@ -421,11 +421,26 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     problemsFooter: {
       problems:
-        "flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+        "flex shrink-0 flex-col gap-2 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+      "problems-summary":
+        "flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1",
       "problems-heading": "font-semibold",
       "problems-text": "min-w-0 text-pretty",
-      "problems-recovery": "text-fd-muted-foreground",
+      "problems-toggle": cn(
+        buttonVariants({ variant: "outline", size: "xs" }),
+        "ms-auto shrink-0",
+      ),
+      "problems-body": "flex min-w-0 flex-col gap-1",
+      "problems-object": "font-semibold [overflow-wrap:anywhere]",
+      "problems-recovery": "text-pretty text-fd-muted-foreground",
+      "problems-location": "text-fd-muted-foreground",
+      "problems-details": "mt-2 min-w-0",
+      "problems-details-label": "cursor-pointer text-fd-muted-foreground",
+      "problems-evidence":
+        "mt-1 max-h-40 overflow-auto font-mono whitespace-pre-wrap [overflow-wrap:anywhere]",
+      "problems-controls": "mt-2 flex min-w-0 flex-wrap items-center gap-2",
       "problems-open": "cursor-pointer underline underline-offset-2",
+      "problems-action": "cursor-pointer underline underline-offset-2",
     },
   },
   icon(name) {

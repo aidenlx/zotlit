@@ -287,6 +287,39 @@ it("shows a rejected render as a diagnostic carrying the engine's message", asyn
   expect(output().dataset["stale"]).toBe("false");
 });
 
+it("names the attempt behind each result and counts the attempts apart", async () => {
+  using mounted = open();
+  const { host, scheduler } = mounted;
+  expect(scheduler.getState()).toMatchObject({ trigger: null, attempt: 0 });
+
+  await advance(300);
+  await act(async () => host.renders[0]!.answer({ creationBody: "Typed" }));
+  expect(scheduler.getState()).toMatchObject({
+    trigger: "automatic",
+    attempt: 1,
+  });
+
+  act(() => scheduler.run());
+  await act(async () =>
+    host.renders[1]!.reject(new Error("Unclosed tag on line 3")),
+  );
+  expect(scheduler.getState()).toMatchObject({
+    trigger: "explicit",
+    attempt: 2,
+  });
+
+  // The same source twice is two attempts, so a second deliberate failure
+  // reads as its own.
+  act(() => scheduler.run());
+  await act(async () =>
+    host.renders[2]!.reject(new Error("Unclosed tag on line 3")),
+  );
+  expect(scheduler.getState()).toMatchObject({
+    trigger: "explicit",
+    attempt: 3,
+  });
+});
+
 it("holds rendering on the host's word while the last result stands", async () => {
   using mounted = open();
   const { host, controller, scheduler } = mounted;
@@ -360,9 +393,6 @@ function IndependentPreview({
         onShowMarkdown={(value) => store.setState({ showMarkdown: value })}
         showManaged={showManaged}
         onShowManaged={(value) => store.setState({ showManaged: value })}
-        openAnnotation={() => {}}
-        goToEntry={() => {}}
-        openSource={() => {}}
       />
     </>
   );
