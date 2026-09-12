@@ -489,8 +489,18 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-details-label": "zt:cursor-pointer zt:text-muted-foreground",
       "problems-evidence":
         "zt:mt-1 zt:max-h-40 zt:overflow-auto zt:font-mono zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere]",
+      // Its own surface, so the engine's own words read as the block they are.
+      // It scrolls in both directions rather than wrapping: a caret excerpt
+      // only points at the right column while its lines stay intact.
+      "problems-report":
+        "zt:mt-1 zt:max-h-56 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-2 zt:font-mono zt:whitespace-pre zt:select-text",
+      "problems-copy-failed": "zt:mt-1 zt:text-pretty zt:text-(--text-error)",
       "problems-controls":
         "zt:mt-2 zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2",
+      "problems-copy": templateWorkbenchButton,
+      // Help, not an action: it reads as the link it is, aligned with the
+      // buttons it shares the row with.
+      "problems-community": "zt:self-center zt:underline zt:underline-offset-2",
     },
   },
 };

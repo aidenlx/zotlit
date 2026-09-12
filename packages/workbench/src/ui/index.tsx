@@ -45,6 +45,7 @@ export type {
 export {
   diagnosisEngineSource,
   diagnosisExplanation,
+  diagnosisReport,
   diagnosisWhere,
   diagnosticText,
   documentDiagnosis,
@@ -63,7 +64,10 @@ export {
   problemWhere,
   useWorkbenchProblems,
 } from "./problems-footer";
-export type { WorkbenchProblemsState } from "./problems-footer";
+export type {
+  WorkbenchProblemCapture,
+  WorkbenchProblemsState,
+} from "./problems-footer";
 export { createRenderScheduler } from "./scheduler";
 export type {
   RenderScheduler,

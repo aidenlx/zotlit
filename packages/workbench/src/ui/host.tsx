@@ -176,6 +176,18 @@ export interface WorkbenchHost {
   /** The attributes that give an in-page element a tooltip reading `text`. */
   tooltip(text: string): HTMLAttributes<HTMLElement>;
   notice(text: string): void;
+  /**
+   * Puts `text` on the system clipboard, rejecting where the host cannot.
+   * Each host has its own clipboard, and a host that supplies none leaves the
+   * Problems area's Copy error report out.
+   */
+  copy?(text: string): Promise<void>;
+  /**
+   * The community page this build belongs to, which Ask the community opens.
+   * The destination is the configured site's, so each host names its own; a
+   * host that names none leaves the link out.
+   */
+  readonly communityUrl?: string;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
   render: (request: RenderRequest) => Promise<TemplateRenderResult>;
   /** The host reading view for a rendered note or annotation. */

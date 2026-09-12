@@ -87,6 +87,7 @@ describe("preview scheduling", () => {
             onAnnotationChoice={() => {}}
             onShowProblem={() => {}}
             publishProblems={() => {}}
+            reportContext={() => ({ document: "standalone" })}
           />
         </WebTestHost>
       );

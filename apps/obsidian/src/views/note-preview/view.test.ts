@@ -107,6 +107,8 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   document.body.replaceChildren();
+  if ("clipboard" in navigator)
+    delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
 const NO_PROFILES: PreviewViewDeps["profile"] = {
@@ -277,6 +279,21 @@ async function failing(
   await act(async () => test.editor.setViewData(source, false));
   await advance();
   return preview;
+}
+
+/**
+ * The clipboard the host copies through, as a list of what reached it. This
+ * runtime supplies none, so the test defines one and takes it away after.
+ */
+function stubClipboard(): string[] {
+  const writes: string[] = [];
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: (text: string) => (writes.push(text), Promise.resolve()),
+    },
+  });
+  return writes;
 }
 
 async function run(view: Preview) {
@@ -1060,8 +1077,11 @@ Annotation`,
     );
     expect(area.textContent).toContain("pandoc_cite requires a Citation Item");
     // The annotation root's rendered citation is no field of a note root, so
-    // it is never proposed as the replacement here.
-    expect(area.textContent).not.toContain("zt.citation");
+    // it is never proposed as the replacement here. The engine's own excerpt
+    // under Technical details quotes the failing line as the engine wrote it.
+    expect(
+      area.querySelector('[data-part="problems-recovery"]')?.textContent,
+    ).not.toContain("zt.citation");
 
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_where_call()),
@@ -1194,6 +1214,176 @@ Annotation`,
       m.workbench_preview_unavailable(),
     );
     expect(preview.contentEl.textContent).not.toContain("Personal space.");
+  });
+
+  it("copies the engine evidence from the failed attempt, and keeps it through a repair", async () => {
+    const copied = stubClipboard();
+    // The fixture's own manifest carries a value the rows cannot parse, which
+    // would keep a document problem selected after the repair. This reader's
+    // template has only the failure under test.
+    const source = PROFILE_SOURCE.replace(
+      "value: [review]",
+      'value: ["review"]',
+    );
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      source.replace(
+        "Personal space.",
+        `{% render "book-details" with zt as zt %}`,
+      ),
+    );
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+
+    const area = problemsArea(test.editor);
+    const report = () =>
+      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+        .textContent!;
+    // Technical details shows the report; it is still collapsed, and copying
+    // does not wait for the reader to open it.
+    const details = area.querySelector("details")!;
+    expect(details.open).toBe(false);
+    // The engine's own account of the missing partial, as it was thrown. The
+    // partial name reaches the report as the location the engine named.
+    expect(report()).toContain(
+      [
+        "Engine message:",
+        'Template "book-details" not found',
+        "",
+        "Problem code: missing-partial",
+        "Engine name: MissingTemplateError",
+        "Reported location: book-details",
+      ].join("\n"),
+    );
+    // Nothing has established where the failure belongs, and the report says
+    // so rather than leaving the reader a blank to read as "none".
+    expect(report()).toContain("Engine location: unavailable");
+    expect(report()).toContain("Trigger: automatic");
+    expect(report()).toContain("Template document: templates/paper.md");
+    expect(report()).toContain("Template language: liquid");
+    expect(report()).toContain("Rendering root: note");
+    expect(report()).toContain("Selection: item=MAIN2345");
+    expect(report()).toContain("Host version: Obsidian 1.0.0-test");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied).toEqual([report()]);
+    const inspected = copied[0]!;
+
+    // A later edit fails differently, and that failure brings its own report
+    // rather than rewriting the one already captured.
+    await act(async () =>
+      test.editor.setViewData(
+        source.replace(
+          "Personal space.",
+          `{% render "figure-caption" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    expect(report()).toContain('Template "figure-caption" not found');
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    const second = copied[1]!;
+    expect(second).not.toBe(inspected);
+    expect(second).toContain("Reported location: figure-caption");
+
+    // Choosing another paper re-renders and reports that attempt's own paper.
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "BOOK2345", title: "Reading between the lines" }),
+    );
+    await advance();
+
+    // The repair succeeds. The area keeps the failure the reader was reading,
+    // and copying it again produces the same text it produced before.
+    await act(async () =>
+      test.editor.setViewData(
+        source.replace("Personal space.", "Repaired output."),
+        false,
+      ),
+    );
+    await advance();
+    expect(area.textContent).toContain(m.workbench_problems_none());
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy_last()),
+    );
+    expect(copied.at(-1)).toBe(copied.at(-2));
+    expect(copied.at(-1)).toContain("Reported location: figure-caption");
+  });
+
+  it("reports a document problem the parser found, with no engine behind it", async () => {
+    const copied = stubClipboard();
+    await using test = await setup();
+    vi.useFakeTimers();
+    // The fixture's own manifest carries a list value the rows cannot read,
+    // which is a validation problem with no render behind it at all.
+    await failing(test, PROFILE_SOURCE);
+
+    const area = problemsArea(test.editor);
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problem_show()),
+    );
+    const report = () =>
+      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+        .textContent!;
+    // Hand-derived: the value the parser refused is the second entry's, and
+    // it stands where the fixture spells it.
+    const at = PROFILE_SOURCE.indexOf("[review]");
+    expect(report()).toContain(
+      [
+        "Engine message:",
+        m.workbench_problem_invalid_manifest_field({
+          field: "frontmatter.1.value",
+        }),
+        "",
+        "Problem code: invalid-manifest",
+        "Engine name: unavailable",
+        `Reported location: offset ${at}-${at + "[review]".length}`,
+        "Engine location: unavailable",
+        "Calling template: unavailable",
+        "Repair target: unavailable",
+        "Document section: entry:2",
+      ].join("\n"),
+    );
+    // No error was ever thrown, and no render ever ran for this one.
+    expect(report()).toContain("Stack: unavailable");
+    expect(report()).toContain("Attempt: unavailable");
+    expect(report()).toContain("Snapshot revision: unavailable");
+    // The attempt's own context is captured whole, the same as a render's.
+    expect(report()).toContain("Trigger: automatic");
+    expect(report()).toContain("Template document: templates/paper.md");
+    expect(report()).toContain("Template language: liquid");
+    expect(report()).toContain("Rendering root: note");
+    expect(report()).toContain("Selection: item=MAIN2345");
+    expect(report()).toContain("Host version: Obsidian 1.0.0-test");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    const inspected = report();
+    expect(copied).toEqual([inspected]);
+
+    // Editing elsewhere leaves the manifest's problem standing, and the report
+    // still describes the check that found it rather than the source now open.
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("Personal space.", "Edited."),
+        false,
+      ),
+    );
+    await advance();
+    expect(report()).toBe(inspected);
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied).toEqual([inspected, inspected]);
   });
 
   it("takes a closed preview's findings back out of the editor", async () => {

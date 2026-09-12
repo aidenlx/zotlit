@@ -35,7 +35,10 @@ import type {
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import type { RenderDiagnostic } from "@zotlit/workbench/render";
+import type {
+  RenderDiagnostic,
+  WorkbenchReportContext,
+} from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
@@ -138,10 +141,19 @@ export function Workbench() {
   });
   const [store] = useState(createWorkbenchStore);
   const [editor, setEditor] = useState<WorkbenchEditorInstance | null>(null);
+  // What names this page in a copied error report, read once per failed
+  // attempt. It is kept current here rather than captured at creation, so a
+  // report describes the draft and paper the failing attempt actually ran on.
+  const named = useRef<() => WorkbenchReportContext>(() => ({}));
   // Resource ownership follows the host; a replacement document attaches below.
   const acquireEditor = useEffectEvent(
     (ownerHost: WorkbenchHost, ownerStore: WorkbenchStore) =>
-      createWorkbenchEditor({ host: ownerHost, store: ownerStore, controller }),
+      createWorkbenchEditor({
+        host: ownerHost,
+        store: ownerStore,
+        controller,
+        reportContext: () => named.current(),
+      }),
   );
   useEffect(() => {
     const owner = acquireEditor(host, store);
@@ -239,6 +251,17 @@ export function Workbench() {
     annotationSelection: previewAnnotationChoice,
     saveTarget,
   });
+  /** The document, language, and paper behind whatever attempt fails next. */
+  const reportContext = useCallback(
+    (root: string): WorkbenchReportContext => ({
+      document: drafts.location.reference,
+      language: controller.language,
+      root,
+      selection: sample.item.indexedKey,
+    }),
+    [drafts.location.reference, controller, sample],
+  );
+  named.current = () => reportContext("note");
 
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
   function openSelectedProfile({
@@ -390,7 +413,21 @@ export function Workbench() {
     ...(result?.diagnostics ?? []),
     ...previewProblems,
   ]);
-  const problems = useWorkbenchProblems({ diagnoses, trigger, attempt });
+  const problems = useWorkbenchProblems({
+    diagnoses,
+    trigger,
+    attempt,
+    // A parser problem never reached a render, so the area captures its report
+    // itself, naming this Workbench the way a failed render's report does.
+    capture: {
+      messages: m,
+      source: controller.source,
+      context: () =>
+        reportContext(
+          !advanced && tab === "annotation" ? "annotation" : "note",
+        ),
+    },
+  });
   // Null while the manifest's list is one the rows cannot edit, which is what
   // sends the reader to Advanced with the source intact.
   const entries = controller.managedEntries;
@@ -1184,6 +1221,9 @@ export function Workbench() {
           mode={showAnnotation ? "annotation" : "note"}
           onShowProblem={problems.select}
           publishProblems={setPreviewProblems}
+          reportContext={() =>
+            reportContext(showAnnotation ? "annotation" : "note")
+          }
           sampleBar={
             <SampleBar
               sample={sample}

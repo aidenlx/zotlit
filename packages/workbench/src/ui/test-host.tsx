@@ -39,12 +39,16 @@ export interface FakeHost extends WorkbenchHost {
     suggesters: WorkbenchSuggesterRequest[];
     notices: string[];
     confirms: string[];
+    /** Every text handed to the clipboard, in order. */
+    copies: string[];
   };
   /** Every render asked for, in order, none of them answered yet. */
   readonly renders: PendingRender[];
   readonly preferences: Map<string, string>;
   /** What the next `confirm` resolves. */
   confirmAnswer: boolean;
+  /** Whether `copy` rejects, which stands for a clipboard the host refused. */
+  copyFails: boolean;
 }
 
 export function fakeHost(): FakeHost {
@@ -55,10 +59,11 @@ export function fakeHost(): FakeHost {
   const host: FakeHost = {
     messages: m,
     getLocale: () => "en",
-    calls: { menus: [], suggesters: [], notices: [], confirms: [] },
+    calls: { menus: [], suggesters: [], notices: [], confirms: [], copies: [] },
     renders,
     preferences,
     confirmAnswer: true,
+    copyFails: false,
     menu: (request) => void host.calls.menus.push(request),
     dialog: () => ({ close() {} }),
     confirm: (request) => {
@@ -71,6 +76,13 @@ export function fakeHost(): FakeHost {
     },
     tooltip: (text) => ({ "aria-description": text }),
     notice: (text) => void host.calls.notices.push(text),
+    copy: (text) => {
+      host.calls.copies.push(text);
+      return host.copyFails
+        ? Promise.reject(new Error("Clipboard denied"))
+        : Promise.resolve();
+    },
+    communityUrl: "https://example.invalid/community",
     // Every render is held open, so a test decides when a result lands and
     // what the reader had time to change before it did.
     render: (request) =>

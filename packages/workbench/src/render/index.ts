@@ -26,6 +26,7 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
+import { engineEvidence } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
@@ -64,6 +65,18 @@ export type {
   PartialContext,
   PartialPreviewSelection,
 } from "./partial-preview";
+export {
+  captureProblemReport,
+  captureRenderReport,
+  engineEvidence,
+  formatRenderReport,
+  REPORT_UNAVAILABLE,
+} from "./report";
+export type {
+  EngineEvidence,
+  RenderReport,
+  WorkbenchReportContext,
+} from "./report";
 export {
   emptyRender,
   failedRender,
@@ -117,6 +130,7 @@ export function renderProfile(
     return failedRender(identity, {
       code: "invalid-profile",
       message: errorMessage(error),
+      evidence: engineEvidence(error),
       part: "profile",
     });
   }
@@ -198,6 +212,7 @@ export function renderProfile(
       formatFailure = {
         code: "render-error",
         message: errorMessage(error),
+        evidence: engineEvidence(error),
         part: "annotation",
       };
     }
@@ -262,6 +277,7 @@ export function renderProfile(
     const failure = failedRender(identity, {
       code: "render-error",
       message: errorMessage(error),
+      evidence: engineEvidence(error),
       part: isAnnotationError(error) ? "annotation" : "render",
     });
     // Direct format renders use a profile-qualified name; note calls use the
@@ -440,6 +456,7 @@ function evaluateFrontmatter(
     ...errors.map(({ key, position, error }) => ({
       code: "property-error" as const,
       message: errorMessage(error),
+      evidence: engineEvidence(error),
       params: { key },
       part: "properties" as const,
       position,

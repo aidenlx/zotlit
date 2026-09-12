@@ -11,6 +11,7 @@ import type {
   PartialContext,
   PartialPreviewSelection,
 } from "./partial-preview";
+import type { EngineEvidence, RenderReport } from "./report";
 import type { AnnotationExample } from "./sample-annotations";
 
 /**
@@ -84,6 +85,18 @@ export interface RenderDiagnostic {
    * host says so rather than sending the reader to a guessed line.
    */
   readonly callSite?: { readonly from: number; readonly to: number };
+  /**
+   * What the engine said before this diagnostic reduced it to `message`,
+   * captured at the boundary that catches the error. Absent where the failure
+   * was composed rather than thrown.
+   */
+  readonly evidence?: EngineEvidence;
+  /**
+   * The failed attempt this diagnostic came from, frozen when that attempt
+   * landed. The Problems area inspects and copies it, so later edits,
+   * selection changes, and other previews leave it as it was captured.
+   */
+  readonly report?: RenderReport;
 }
 
 export interface RenderedProperty {

@@ -1,6 +1,7 @@
 // A view-owned scheduler consumes values and rejects work for superseded inputs.
 import type { CitationPreviewSelection } from "#/render/citation-examples";
 import type { PartialPreviewSelection } from "#/render/partial-preview";
+import type { WorkbenchReportContext } from "#/render/report";
 import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -12,6 +13,7 @@ import type { ItemSnapshot } from "#/snapshot/index";
 
 import type { PreviewMode } from "./store";
 
+import { captureRenderReport, engineEvidence } from "#/render/report";
 import {
   failedRender,
   renderFailed,
@@ -92,6 +94,12 @@ export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
    */
   readonly failed: (result: TemplateRenderResult) => R;
   readonly input: RenderSchedulerInput;
+  /**
+   * What names this Workbench in the report a failed attempt is copied as,
+   * read once per landed result. A scheduler with none reports those fields
+   * unavailable.
+   */
+  readonly reportContext?: () => WorkbenchReportContext;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
 }
@@ -133,6 +141,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
   render,
   failed,
   input: initial,
+  reportContext,
   debounceMs = 300,
 }: RenderSchedulerOptions<R>): RenderScheduler<R> {
   let input = initial;
@@ -181,13 +190,53 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     );
   }
 
+  /**
+   * Pairs each of a landed result's diagnostics with the attempt behind it,
+   * once. From here on the report describes that attempt: a later edit,
+   * selection, or preview has no way back into it.
+   */
+  function stamp(result: R, trigger: RenderTrigger, sequence: number): R {
+    if (result.diagnostics.every(({ report }) => report !== undefined)) {
+      return result;
+    }
+    const capturedAt = Temporal.Now.instant().toString();
+    const context = reportContext?.() ?? {};
+    return {
+      ...result,
+      diagnostics: result.diagnostics.map((diagnostic) =>
+        diagnostic.report === undefined
+          ? {
+              ...diagnostic,
+              report: captureRenderReport({
+                diagnostic,
+                identity: result,
+                trigger,
+                sequence,
+                capturedAt,
+                context,
+              }),
+            }
+          : diagnostic,
+      ),
+    };
+  }
+
   function publish(next: {
     result?: R | null;
     busy?: boolean;
     trigger?: RenderTrigger;
   }): void {
     if (closed) return;
-    const result = next.result === undefined ? state.result : next.result;
+    const { trigger } = next;
+    const landed = trigger !== undefined;
+    const attempt = landed ? state.attempt + 1 : state.attempt;
+    const published = next.result === undefined ? state.result : next.result;
+    // Stamped before anything else reads it, so the result the reader keeps
+    // comparing against carries the same report the shown one does.
+    const result =
+      trigger !== undefined && published !== null
+        ? stamp(published, trigger, attempt)
+        : published;
     const busy = next.busy ?? state.busy;
     if (result !== null && !renderFailed(result)) produced = result;
     // Only a failure sends the reader back to working output, and only where
@@ -206,7 +255,6 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       input,
       result !== null && !identityMismatch,
     );
-    const landed = next.trigger !== undefined;
     if (
       !landed &&
       result === state.result &&
@@ -223,8 +271,8 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       busy,
       stale,
       staleReason,
-      trigger: next.trigger ?? state.trigger,
-      attempt: landed ? state.attempt + 1 : state.attempt,
+      trigger: trigger ?? state.trigger,
+      attempt,
     };
     for (const listener of listeners) listener();
   }
@@ -278,6 +326,10 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
             failedRender(identity, {
               code: "render-error",
               message: error instanceof Error ? error.message : String(error),
+              // Taken here, where the engine's error is still whole: the
+              // message alone loses the name, the chain, and the excerpt a
+              // reader needs to report the failure.
+              evidence: engineEvidence(error),
               part: "render",
             }),
           ),

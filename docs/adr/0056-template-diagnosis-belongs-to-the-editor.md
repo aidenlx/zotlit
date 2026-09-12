@@ -14,6 +14,12 @@ status: accepted
 > a placeholder reference. Everything else leaves the repair location absent
 > and says so.
 
+> Amended 2026-09-13: the report's own labels and its `unavailable` marker are
+> English, whatever language the explanation above them is read in. A report is
+> written to be pasted into an issue or the community, where one format keeps
+> reports comparable and the engine's own words are untranslated anyway. The
+> explanation, the disclosure label, and the reporting controls stay localized.
+
 > Amended 2026-09-13: the Problems area keeps one host repair control, Unpack
 > partials for the `bundled-partial` document problem. That control is the only
 > route to unpacking a shared Profile's carried partials, and it repairs the

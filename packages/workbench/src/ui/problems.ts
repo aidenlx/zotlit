@@ -4,6 +4,7 @@
 // hosts, so a reader outside English reads their own language.
 
 import type { WorkbenchProblem, WorkbenchSliceId } from "#/document/controller";
+import type { RenderReport } from "#/render/report";
 import type { RenderDiagnostic } from "#/render/result";
 
 import type { WorkbenchMessages } from "./generated/messages";
@@ -472,6 +473,19 @@ export function diagnosisEngineSource(
         template: engine.template,
         line: engine.line,
       });
+}
+
+/**
+ * The failed attempt behind a render diagnosis, as the scheduler captured it
+ * with the result. A document problem is re-read from the current source on
+ * every check, so the Problems area captures its report instead.
+ */
+export function diagnosisReport(
+  diagnosis: WorkbenchDiagnosis,
+): RenderReport | null {
+  return diagnosis.kind === "render"
+    ? (diagnosis.diagnostic.report ?? null)
+    : null;
 }
 
 /**

@@ -1,6 +1,6 @@
 import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
-import { ItemView, setIcon } from "obsidian";
+import { apiVersion, ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { useEffect, useRef } from "react";
@@ -21,6 +21,7 @@ import type {
   PartialChoice,
   PartialContext,
   RenderDiagnostic,
+  WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
   citationExampleLabel,
@@ -440,6 +441,7 @@ export class NotePreviewView extends ItemView {
         },
         render: (request) => renderNativeTemplate(deps, request),
         failed: nativeResult,
+        reportContext: () => this.#reportContext(),
       }),
     );
     const session = resources.use(
@@ -952,6 +954,20 @@ export class NotePreviewView extends ItemView {
       this.#problemHost.publishPreviewProblems(this.#problemKey, []);
     this.#problemHost = editor;
     editor?.publishPreviewProblems(this.#problemKey, diagnostics);
+  }
+  /**
+   * What names this preview in a copied error report. The linked editor
+   * answers for the document it holds; a preview reading restored source
+   * names what it can and leaves the rest unavailable.
+   */
+  #reportContext(): WorkbenchReportContext {
+    const root = this.#session?.state.getState().context?.root ?? "note";
+    return (
+      this.#sourceEditor()?.reportContext(root) ?? {
+        root,
+        hostVersion: `Obsidian ${apiVersion}`,
+      }
+    );
   }
   #sourceEditor(): TemplateWorkbenchView | null {
     return this.#editor &&

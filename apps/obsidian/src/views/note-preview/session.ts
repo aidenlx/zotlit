@@ -13,6 +13,7 @@ import type { ManagedEntrySource } from "@zotlit/workbench/document";
 import {
   CITATION_EXAMPLE_ITEM,
   DEFAULT_CITATION_EXAMPLE,
+  engineEvidence,
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import type {
@@ -379,6 +380,7 @@ export class NativePreviewSession implements Disposable {
       this.#scheduler.fail({
         code: "render-error",
         message: error instanceof Error ? error.message : String(error),
+        evidence: engineEvidence(error),
       });
     }
   }

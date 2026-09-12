@@ -18,6 +18,7 @@ import { restoreTemplateData } from "@zotlit/workbench/render";
 import {
   citationExampleData,
   emptyRender,
+  engineEvidence,
   failedRender,
   renderFailureDiagnostic,
   renderIdentity,
@@ -472,6 +473,7 @@ export async function renderNativeProfile(
           position: error.position,
           params: { key: error.key },
           message: errorText(error.error),
+          evidence: engineEvidence(error.error),
         });
     manifest.frontmatter?.forEach((entry, index) => {
       if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
@@ -663,7 +665,14 @@ function renderFault(
   part: RenderDiagnostic["part"],
   caller: RenderCallerSource,
 ): RenderDiagnostic {
-  return { ...renderFailureDiagnostic(error, caller), part };
+  // The engine's own account is taken here, where the error is still whole:
+  // below this line the failure is a code and a message, and a reader who
+  // copies the report would otherwise get neither the stack nor the excerpt.
+  return {
+    ...renderFailureDiagnostic(error, caller),
+    evidence: engineEvidence(error),
+    part,
+  };
 }
 
 /**

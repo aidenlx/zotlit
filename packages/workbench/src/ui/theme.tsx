@@ -254,8 +254,12 @@ export interface WorkbenchParts {
     | "problems-details"
     | "problems-details-label"
     | "problems-evidence"
+    | "problems-report"
+    | "problems-copy-failed"
     | "problems-controls"
     | "problems-action"
+    | "problems-copy"
+    | "problems-community"
     | "problems-open";
 }
 

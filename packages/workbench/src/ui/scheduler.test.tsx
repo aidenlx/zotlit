@@ -20,7 +20,12 @@ import { mount, fakeHost } from "./test-host";
 import type { Mounted } from "./test-host";
 import { m } from "./test-messages";
 
-import { SAMPLE_ANNOTATIONS, SAMPLE_ITEMS } from "#/render/index";
+import {
+  formatRenderReport,
+  SAMPLE_ANNOTATIONS,
+  SAMPLE_ITEMS,
+  templateSourceRevision,
+} from "#/render/index";
 
 const PAPER = SAMPLE_ITEMS[0]!;
 const OTHER_PAPER = SAMPLE_ITEMS[1]!;
@@ -622,4 +627,82 @@ it("mounts independent Previews without an editor and keeps choices and late res
     right.renders[1]!.answer({ creationBody: "Surviving output" }),
   );
   expect(screen.getByRole("document").textContent).toBe("Surviving output");
+});
+
+it("reports the attempt a failure came from, not the draft the reader moved on to", async () => {
+  const host = fakeHost();
+  using scheduler = createRenderScheduler({
+    input: {
+      source: "Draft one",
+      snapshot: PAPER,
+      mode: "create",
+      live: true,
+    },
+    render: host.render,
+    failed: (result) => result,
+    reportContext: () => ({
+      document: "templates/paper.md",
+      language: "liquid",
+      root: "note",
+    }),
+  });
+  await advance(300);
+  // The reader edits while the first render is still out, so that attempt is
+  // abandoned: its late failure reports nothing and shows nothing.
+  act(() => scheduler.setInput({ source: "Draft two" }));
+  await advance(300);
+  await act(async () =>
+    host.renders[0]!.reject(new Error("Abandoned failure")),
+  );
+  expect(scheduler.getState().result).toBeNull();
+
+  const context = "1| {{ zt.title\n         ^";
+  await act(async () =>
+    host.renders[1]!.reject(
+      Object.assign(new Error("Unclosed tag"), { context }),
+    ),
+  );
+  const captured = scheduler.getState().result!.diagnostics[0]!.report!;
+  expect(captured.trigger).toBe("automatic");
+  expect(captured.identity.sourceRevision).toBe(
+    templateSourceRevision("Draft two"),
+  );
+  const text = formatRenderReport(captured);
+  expect(text).toContain(`Source excerpt:\n${context}`);
+  expect(text).toContain("Template document: templates/paper.md");
+  expect(text).toContain("Attempt: 1");
+
+  // Editing on does not reach back into what was already captured.
+  act(() => scheduler.setInput({ source: "Draft three" }));
+  expect(
+    formatRenderReport(scheduler.getState().result!.diagnostics[0]!.report!),
+  ).toBe(text);
+
+  // Another preview keeps its own context, so one failure never names the
+  // document or paper a different Workbench was showing.
+  const otherHost = fakeHost();
+  using other = createRenderScheduler({
+    input: {
+      source: "Draft one",
+      snapshot: OTHER_PAPER,
+      mode: "create",
+      live: true,
+    },
+    render: otherHost.render,
+    failed: (result) => result,
+    reportContext: () => ({
+      document: "templates/citation.md",
+      root: "citation",
+    }),
+  });
+  await advance(300);
+  await act(async () =>
+    otherHost.renders[0]!.reject(new Error("Another failure")),
+  );
+  const elsewhere = formatRenderReport(
+    other.getState().result!.diagnostics[0]!.report!,
+  );
+  expect(elsewhere).toContain("Template document: templates/citation.md");
+  expect(elsewhere).toContain("Rendering root: citation");
+  expect(text).toContain("Template document: templates/paper.md");
 });

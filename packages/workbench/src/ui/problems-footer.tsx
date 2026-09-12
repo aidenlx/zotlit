@@ -1,24 +1,39 @@
 // The editor's Problems area: one detected problem, led by the object it is
 // about, and the disclosure the reader controls. Automatic checks leave that
 // choice alone; Show problem, a source marker, and a failed explicit Run open
-// it. Its controls navigate and disclose — every repair is the reader's own
-// edit, described in the suggestion.
+// it. Its controls navigate, disclose, and report — every repair is the
+// reader's own edit, described in the suggestion.
+//
+// Technical details shows the report text, and Copy error report copies that
+// same text. The report was captured with its attempt, so it keeps describing
+// that failure after the reader edits the source, chooses another Item, or
+// repairs the template; a resolved area still offers the last one. A document
+// problem reaches the reader through the same report: the scheduler stamps a
+// render failure with its attempt, and this area stamps a parser problem with
+// the check that found it.
 
 import type { WorkbenchProblem } from "#/document/controller";
-import { useEffect, useId, useRef, useState } from "react";
+import type { RenderReport, WorkbenchReportContext } from "#/render/report";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
+import type { WorkbenchMessages } from "./generated/messages";
+import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import type { WorkbenchDiagnosis } from "./problems";
 import {
   diagnosisEngineSource,
   diagnosisExplanation,
   diagnosisLocated,
+  diagnosisReport,
   diagnosisWhere,
   problemAction,
+  problemText,
 } from "./problems";
 import type { RenderTrigger } from "./scheduler";
 import { useParts } from "./theme";
+
+import { captureProblemReport, formatRenderReport } from "#/render/report";
 
 export { problemWhere } from "./problems";
 
@@ -29,21 +44,45 @@ export interface WorkbenchProblemsState {
   readonly selected: WorkbenchDiagnosis | null;
   /** The reader's own open-or-collapsed choice, which checks never change. */
   readonly open: boolean;
+  /**
+   * The selected problem's captured report, or the last one read once every
+   * problem is resolved. Bounded to what is being inspected: one repair does
+   * not build a history, and a later problem brings its own report.
+   */
+  readonly report: RenderReport | null;
+  /** Whether `report` describes a failure this check no longer finds. */
+  readonly resolved: boolean;
   /** Reads one problem in full, which a source marker and Show problem do. */
   readonly select: (id: string) => void;
   readonly setOpen: (open: boolean) => void;
+}
+
+/**
+ * What a document problem's own report is captured from. The parser reads
+ * those problems out of the current source on every check, so the attempt
+ * behind one is the check that found it: its own wording, the source it was
+ * read from, and what names this Workbench. A host that supplies none leaves
+ * its document problems without a report.
+ */
+export interface WorkbenchProblemCapture {
+  readonly messages: WorkbenchMessages;
+  /** The document text the checks read. */
+  readonly source: string;
+  readonly context: () => WorkbenchReportContext;
 }
 
 export function useWorkbenchProblems({
   diagnoses,
   trigger,
   attempt,
+  capture,
 }: {
   readonly diagnoses: readonly WorkbenchDiagnosis[];
   /** How the attempt behind the newest result started. */
   readonly trigger: RenderTrigger | null;
   /** Counts published results, so one deliberate failure opens the area once. */
   readonly attempt: number;
+  readonly capture?: WorkbenchProblemCapture;
 }): WorkbenchProblemsState {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -60,10 +99,49 @@ export function useWorkbenchProblems({
     // automatic one during typing leaves the area as they left it.
     if (trigger === "explicit" && failed) setOpen(true);
   }, [attempt, trigger, failed]);
+  // A document problem is found again by every check, so its report is taken
+  // the first time that problem is seen and held while it lasts: a later edit,
+  // another Item, or another check leaves the captured one as it stands. A
+  // problem the checks stop finding takes its report with it, which is what
+  // keeps this inspection bounded rather than a failure history.
+  const documentReports = useRef(new Map<string, RenderReport>());
+  const held = new Map<string, RenderReport>();
+  for (const diagnosis of diagnoses) {
+    if (diagnosis.kind !== "document" || capture === undefined) continue;
+    const kept = documentReports.current.get(diagnosis.id);
+    held.set(
+      diagnosis.id,
+      kept ??
+        captureProblemReport({
+          problem: diagnosis.problem,
+          message: problemText(capture.messages, diagnosis.problem).message,
+          source: capture.source,
+          capturedAt: Temporal.Now.instant().toString(),
+          context: capture.context(),
+        }),
+    );
+  }
+  documentReports.current = held;
+  // The report the reader is looking at survives the repair that resolves it,
+  // so a successful check still leaves the failure they wanted to report. It
+  // resurfaces only once nothing is selected: another problem's explanation
+  // shows that problem's own evidence, never the last engine failure.
+  const current =
+    selected === null
+      ? null
+      : (diagnosisReport(selected) ??
+        documentReports.current.get(selected.id) ??
+        null);
+  const [inspected, setInspected] = useState<RenderReport | null>(null);
+  useEffect(() => {
+    if (current !== null) setInspected(current);
+  }, [current]);
   return {
     diagnoses,
     selected,
     open,
+    report: current ?? (selected === null ? inspected : null),
+    resolved: current === null,
     select(id) {
       setSelectedId(id);
       setOpen(true);
@@ -88,10 +166,87 @@ export function ProblemsFooter({
   onAction?: (problem: WorkbenchProblem) => void;
 }) {
   const m = useWorkbenchMessages();
+  const host = useOptionalHost();
   const part = useParts("problemsFooter");
   const headingId = useId();
   const bodyId = useId();
-  const { selected, open, setOpen } = problems;
+  const { selected, open, setOpen, report, resolved } = problems;
+  // One text, shown and copied. Building it once keeps Technical details and
+  // the clipboard from ever disagreeing about what was reported.
+  const reportText = useMemo(
+    () => (report === null ? null : formatRenderReport(report)),
+    [report],
+  );
+  const details = useRef<HTMLDetailsElement | null>(null);
+  const [copyFailed, setCopyFailed] = useState(false);
+  // A different report is a different copy: the previous failure notice goes.
+  useEffect(() => setCopyFailed(false), [reportText]);
+  const copyable = host?.copy !== undefined;
+  function copyReport(text: string): void {
+    if (host?.copy === undefined) return;
+    setCopyFailed(false);
+    void host.copy(text).then(
+      () => host.notice(m.workbench_problems_copy_done()),
+      () => {
+        // A denied clipboard leaves the reader the report itself: the
+        // disclosure opens so the text is there to select and copy by hand.
+        setCopyFailed(true);
+        if (details.current) details.current.open = true;
+      },
+    );
+  }
+  /** Technical details, Copy error report, and Ask the community, as one block. */
+  function reporting(text: string | null, evidence: string | null) {
+    return (
+      <>
+        <details ref={details} {...part("problems-details")}>
+          <summary {...part("problems-details-label")}>
+            {m.workbench_problems_technical()}
+          </summary>
+          {text === null ? (
+            <p {...part("problems-evidence")}>
+              {evidence ?? m.workbench_problems_evidence_none()}
+            </p>
+          ) : (
+            <pre {...part("problems-report")}>{text}</pre>
+          )}
+        </details>
+        {copyFailed && (
+          <p role="alert" {...part("problems-copy-failed")}>
+            {m.workbench_problems_copy_failed()}
+          </p>
+        )}
+      </>
+    );
+  }
+  /** The reporting controls, which stay reachable while the details collapse. */
+  function reportControls(text: string | null) {
+    return (
+      <>
+        {text !== null && copyable && (
+          <button
+            type="button"
+            onClick={() => copyReport(text)}
+            {...part("problems-copy")}
+          >
+            {resolved
+              ? m.workbench_problems_copy_last()
+              : m.workbench_problems_copy()}
+          </button>
+        )}
+        {host?.communityUrl !== undefined && (
+          <a
+            href={host.communityUrl}
+            target="_blank"
+            rel="noreferrer"
+            {...part("problems-community")}
+          >
+            {m.workbench_problems_community()}
+          </a>
+        )}
+      </>
+    );
+  }
   // The space an open explanation used, so a check that finds nothing leaves
   // the source the reader is editing exactly where it stands. Collapsing is
   // what gives that space back.
@@ -158,14 +313,7 @@ export function ProblemsFooter({
               {m.workbench_problems_location_unknown()}
             </p>
           )}
-          <details {...part("problems-details")}>
-            <summary {...part("problems-details-label")}>
-              {m.workbench_problems_technical()}
-            </summary>
-            <p {...part("problems-evidence")}>
-              {explanation.evidence ?? m.workbench_problems_evidence_none()}
-            </p>
-          </details>
+          {reporting(reportText, explanation.evidence ?? null)}
           <div {...part("problems-controls")}>
             <button
               type="button"
@@ -183,9 +331,22 @@ export function ProblemsFooter({
                 {action}
               </button>
             )}
+            {reportControls(reportText)}
           </div>
         </div>
       )}
+      {open &&
+        selected === null &&
+        reportText !== null && (
+          // The repair succeeded, and the failure the reader was reading is
+          // still here to report. It is the last one inspected, not a history.
+          <div id={bodyId} {...part("problems-body")}>
+            {reporting(reportText, null)}
+            <div {...part("problems-controls")}>
+              {reportControls(reportText)}
+            </div>
+          </div>
+        )}
     </section>
   );
 }

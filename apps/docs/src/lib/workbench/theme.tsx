@@ -442,9 +442,17 @@ export const WEB_THEME: WorkbenchTheme = {
       "problems-details-label": "cursor-pointer text-fd-muted-foreground",
       "problems-evidence":
         "mt-1 max-h-40 overflow-auto font-mono whitespace-pre-wrap [overflow-wrap:anywhere]",
+      // Its own surface, so the engine's own words read as the block they are.
+      // It scrolls in both directions rather than wrapping: a caret excerpt
+      // only points at the right column while its lines stay intact.
+      "problems-report":
+        "mt-1 max-h-56 overflow-auto rounded-md border border-fd-border bg-fd-muted/60 p-2 font-mono whitespace-pre select-text",
+      "problems-copy-failed": "mt-1 text-pretty text-destructive",
       "problems-controls": "mt-2 flex min-w-0 flex-wrap items-center gap-2",
       "problems-open": "cursor-pointer underline underline-offset-2",
       "problems-action": "cursor-pointer underline underline-offset-2",
+      "problems-copy": "cursor-pointer underline underline-offset-2",
+      "problems-community": "underline underline-offset-2",
     },
   },
   icon(name) {

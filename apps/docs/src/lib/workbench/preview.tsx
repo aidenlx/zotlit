@@ -7,6 +7,7 @@ import { createStore } from "zustand/vanilla";
 import type {
   RenderDiagnostic,
   RenderResources,
+  WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import {
   AnnotationSampleBar,
@@ -51,6 +52,7 @@ export function WebPreview({
   onAnnotationChoice,
   onShowProblem,
   publishProblems,
+  reportContext,
 }: {
   source: string;
   sample: SampleItem;
@@ -64,6 +66,8 @@ export function WebPreview({
   onShowProblem: (id: string) => void;
   /** Hands what this render found to the editor that explains it. */
   publishProblems: (diagnostics: readonly RenderDiagnostic[]) => void;
+  /** What names this preview in the report a failed attempt is copied as. */
+  reportContext: () => WorkbenchReportContext;
 }) {
   const host = useWorkbenchHost();
   const [store] = useState(() =>
@@ -97,11 +101,14 @@ export function WebPreview({
     onAnnotationChoice,
   ]);
   const [scheduler, setScheduler] = useState<RenderScheduler | null>(null);
+  const named = useRef(reportContext);
+  named.current = reportContext;
   useEffect(() => {
     const owner = createRenderScheduler({
       input: { source: "", snapshot: null, mode: "create", live: true },
       render: (request) => host.render(request),
       failed: (result) => result,
+      reportContext: () => named.current(),
     });
     setScheduler(owner);
     return () => owner[Symbol.dispose]();

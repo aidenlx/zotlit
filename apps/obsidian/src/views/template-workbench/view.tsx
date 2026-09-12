@@ -1,6 +1,6 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { EditorView } from "@codemirror/view";
-import { Scope, TextFileView } from "obsidian";
+import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
   Menu,
   TFile,
@@ -51,6 +51,7 @@ import type {
   PartialChoice,
   PartialContext,
   RenderDiagnostic,
+  WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import { fieldSnippet } from "@zotlit/workbench/ui";
 import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
@@ -318,6 +319,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#editor = createWorkbenchEditor({
       host: this.#host,
       controller: this.#controller,
+      reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
     });
     this.store = this.#editor.store;
@@ -443,6 +445,24 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The Template Document this view holds, which picks its tabs and its root. */
   get documentKind(): WorkbenchDocumentKind {
     return templateDocumentKind(this.file, this.#templateFolder);
+  }
+  /**
+   * What names this Workbench in a copied error report. Read once per failed
+   * attempt, so the report keeps the document, root, and Item that attempt
+   * ran against however the reader moves on afterwards.
+   */
+  reportContext(root: TemplateRoot): WorkbenchReportContext {
+    const path = this.file?.path;
+    const item = this.store.getState().item;
+    const version = this.#deps.pluginVersion;
+    return {
+      ...(path === undefined ? {} : { document: path }),
+      language: this.#controller.language,
+      root,
+      ...(item ? { selection: item.id } : {}),
+      ...(version === undefined ? {} : { zotlitVersion: version }),
+      hostVersion: `Obsidian ${apiVersion}`,
+    };
   }
   /** The folder a filename has to sit in to name a Template Document. */
   get #templateFolder(): string {
@@ -1968,7 +1988,18 @@ function EditorContent({
     ...(result?.diagnostics ?? []),
     ...previewProblems,
   ]);
-  const problems = useWorkbenchProblems({ diagnoses, trigger, attempt });
+  const problems = useWorkbenchProblems({
+    diagnoses,
+    trigger,
+    attempt,
+    // A parser problem never reached a render, so the area captures its report
+    // itself, naming this Workbench the way a failed render's report does.
+    capture: {
+      messages: workbenchM,
+      source: controller.source,
+      context: () => view.reportContext(view.store.getState().root),
+    },
+  });
   const selectProblem = problems.select;
   const openProblems = problems.setOpen;
   useEffect(

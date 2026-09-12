@@ -10,6 +10,7 @@ import type { TemplateLanguage } from "@zotlit/templates/constants";
 import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
 import { PandocCitationError } from "@zotlit/templates/pandoc-citation";
 
+import { errorChain } from "./report";
 import type {
   RenderCaller,
   RenderDiagnostic,
@@ -45,7 +46,7 @@ export function renderFailureDiagnostic(
   error: unknown,
   caller: RenderCallerSource,
 ): Omit<RenderDiagnostic, "part"> {
-  const chain = chainOf(error);
+  const chain = errorChain(error);
   const engine = engineLocation(chain);
   const named = chain.find(
     (link): link is MissingTemplateError =>
@@ -166,26 +167,4 @@ function callSite(
   return templateCalls(source, { from: 0, to: source.length }, language).find(
     ({ name }) => name === template,
   )?.call;
-}
-
-/**
- * Every `Error` reachable from `error`, breadth-first. Three link kinds carry a
- * template failure out of the engines: `cause`, which eta sets because it wraps
- * rather than subclasses; `originalError`, which liquidjs defines on its render
- * errors; and an `errors` array, which `AggregateError` and liquidjs's batched
- * errors carry.
- */
-function chainOf(error: unknown): readonly Error[] {
-  const found: Error[] = [];
-  const queue = [error];
-  const seen = new Set<unknown>();
-  while (queue.length > 0) {
-    const link = queue.shift();
-    if (link === null || typeof link !== "object" || seen.has(link)) continue;
-    seen.add(link);
-    if (link instanceof Error) found.push(link);
-    const { cause, originalError, errors } = link as Record<string, unknown>;
-    queue.push(cause, originalError, ...(Array.isArray(errors) ? errors : []));
-  }
-  return found;
 }

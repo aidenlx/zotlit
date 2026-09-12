@@ -1,4 +1,5 @@
 import type { WorkbenchProblem } from "#/document/controller";
+import type { RenderDiagnostic } from "#/render/result";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -618,6 +619,207 @@ describe("the Problems area", () => {
     );
     fireEvent.click(screen.getByText("check"));
     expect(shown()).toBe(false);
+  });
+});
+
+/**
+ * One failed attempt, written out by hand: a multiline engine message, the
+ * chain behind it, a caret excerpt whose columns only mean anything intact,
+ * and a stack. The area has to show and copy exactly this and nothing else.
+ */
+const CAPTURED: RenderDiagnostic = {
+  code: "missing-partial",
+  params: { name: "book-details" },
+  part: "render",
+  evidence: {
+    message: 'Template "book-details" not found\n  while rendering note',
+    name: "MissingTemplateError",
+    stack:
+      'MissingTemplateError: Template "book-details" not found\n    at renderByName',
+    causes: ["Could not find template: book-details"],
+    context: '1| {% render "book-details" %}\n            ^^^^^^^^^^^^^',
+    reportedLocation: "book-details:1",
+  },
+  report: {
+    code: "missing-partial",
+    evidence: {
+      message: 'Template "book-details" not found\n  while rendering note',
+      name: "MissingTemplateError",
+      stack:
+        'MissingTemplateError: Template "book-details" not found\n    at renderByName',
+      causes: ["Could not find template: book-details"],
+      context: '1| {% render "book-details" %}\n            ^^^^^^^^^^^^^',
+      reportedLocation: "book-details:1",
+    },
+    section: "render",
+    capturedAt: "2026-09-13T10:00:00Z",
+    trigger: "automatic",
+    sequence: 3,
+    identity: {
+      previewMode: "create",
+      sourceRevision: "1a2b3c4d",
+      snapshotRevision: "r7",
+      annotationId: "ANNO2345",
+      annotationRevision: "r2",
+    },
+    context: {
+      document: "templates/paper.md",
+      language: "liquid",
+      root: "note",
+      selection: "MAIN2345",
+      zotlitVersion: "2.1.0",
+      hostVersion: "Obsidian 1.9.0",
+    },
+  },
+};
+
+/** The whole report, derived by hand from the attempt above. */
+const CAPTURED_TEXT = [
+  "ZotLit template error report",
+  "",
+  "Engine message:",
+  'Template "book-details" not found',
+  "  while rendering note",
+  "",
+  "Problem code: missing-partial",
+  "Engine name: MissingTemplateError",
+  "Reported location: book-details:1",
+  "Engine location: unavailable",
+  "Calling template: unavailable",
+  "Repair target: unavailable",
+  "Document section: render",
+  "",
+  "Cause:",
+  "Could not find template: book-details",
+  "",
+  "Source excerpt:",
+  '1| {% render "book-details" %}',
+  "            ^^^^^^^^^^^^^",
+  "",
+  "Stack:",
+  'MissingTemplateError: Template "book-details" not found',
+  "    at renderByName",
+  "",
+  "Captured at: 2026-09-13T10:00:00Z",
+  "Trigger: automatic",
+  "Attempt: 3",
+  "Template document: templates/paper.md",
+  "Template language: liquid",
+  "Rendering root: note",
+  "Render options: mode=create",
+  "Selection: item=MAIN2345, annotation=ANNO2345@r2",
+  "Source revision: 1a2b3c4d",
+  "Snapshot revision: r7",
+  "ZotLit version: 2.1.0",
+  "Host version: Obsidian 1.9.0",
+  "Engine version: unavailable",
+].join("\n");
+
+function reportBlock(): HTMLElement {
+  return screen
+    .getByRole("region", {
+      name: m.workbench_problems_heading(),
+    })
+    .querySelector<HTMLElement>('[data-part="problems-report"]')!;
+}
+
+describe("the error report", () => {
+  it("shows the text it copies, and marks what the attempt could not supply", () => {
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses([], [CAPTURED])}
+        onOpen={() => {}}
+        open
+      />,
+    );
+    const { ui, host } = mounted;
+    render(ui);
+
+    expect(reportBlock().textContent).toBe(CAPTURED_TEXT);
+    // Nothing establishes where the failure belongs yet, and the report says
+    // so rather than leaving three blanks a reader would read as "none".
+    expect(reportBlock().textContent).toContain("Engine location: unavailable");
+    expect(
+      screen.getByText(m.workbench_problems_technical()).closest("details")
+        ?.open,
+    ).toBe(false);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_copy() }),
+    );
+    expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
+    expect(
+      screen.getByRole("link", { name: m.workbench_problems_community() }),
+    ).toHaveProperty("href", "https://example.invalid/community");
+  });
+
+  it("leaves the report readable when the clipboard refuses it", async () => {
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses([], [CAPTURED])}
+        onOpen={() => {}}
+        open
+      />,
+    );
+    const { ui, host } = mounted;
+    host.copyFails = true;
+    render(ui);
+
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: m.workbench_problems_copy() }),
+      ),
+    );
+    expect(screen.getByRole("alert").textContent).toBe(
+      m.workbench_problems_copy_failed(),
+    );
+    // The disclosure opens itself, so the text the clipboard refused is there
+    // to select and copy by hand.
+    expect(
+      screen.getByText(m.workbench_problems_technical()).closest("details")
+        ?.open,
+    ).toBe(true);
+    expect(reportBlock().textContent).toBe(CAPTURED_TEXT);
+    expect(host.calls.notices).toEqual([]);
+  });
+
+  it("keeps the inspected report after the repair that resolves it", async () => {
+    function Harness(): ReactNode {
+      const [failing, setFailing] = useState(true);
+      const problems = useWorkbenchProblems({
+        diagnoses: failing ? workbenchDiagnoses([], [CAPTURED]) : [],
+        trigger: "automatic",
+        attempt: 1,
+      });
+      const { setOpen } = problems;
+      useEffect(() => {
+        setOpen(true);
+      }, [setOpen]);
+      return (
+        <>
+          <button type="button" onClick={() => setFailing(false)}>
+            repair
+          </button>
+          <ProblemsFooter problems={problems} onOpen={() => {}} />
+        </>
+      );
+    }
+    using mounted = mount(<Harness />);
+    const { ui, host } = mounted;
+    render(ui);
+    expect(
+      screen.getByRole("button", { name: m.workbench_problems_copy() }),
+    ).toBeDefined();
+
+    await act(async () => fireEvent.click(screen.getByText("repair")));
+    expect(screen.getByText(m.workbench_problems_none())).toBeDefined();
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: m.workbench_problems_copy_last() }),
+      ),
+    );
+    // The repair changed the document, not the failure that was reported.
+    expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
   });
 });
 

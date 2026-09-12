@@ -176,6 +176,14 @@ plain condition, and a text suggestion; repairs stay the reader's own edit.
 A preview publishes what its render found to the editor beside it rather than
 explaining it beside its own empty result.
 
+Technical details shows the failed attempt's report, and Copy error report
+copies that same text through the host's `copy`; Ask the community links to the
+host's `communityUrl` beside it, and both stay reachable while the disclosure
+is collapsed. A clipboard that refuses opens the disclosure and says the copy
+failed, leaving the text to select by hand. `diagnosisReport` reads the report
+one diagnosis carries; `useWorkbenchProblems` keeps the last one read, so an
+open area whose problems are all resolved still offers Copy last error report.
+
 `usePartialBoxes(controller, slice, host)` draws the Partial Placeholder over
 every Shared Partial call in one pane: the editor extension to pass that pane
 and the boxes to render beside it. The host answers the names the last render
@@ -201,6 +209,17 @@ the `ui-react` and `ui-preact` Vitest projects, the second with React aliased to
 `preact/compat` and Testing Library to its Preact build.
 
 ## Render
+
+`engineEvidence(error)` takes the engine's own account — message, name, stack,
+the chain behind it, a caret excerpt, and the location the engine named — at
+the boundary that catches a failure, before a diagnostic reduces it to one
+message. The scheduler pairs it with that attempt through `captureRenderReport`
+and hands the result's diagnostics a `report`; `formatRenderReport` is the one
+serializer, so displayed and copied text are the same string. Its labels and
+its `unavailable` marker stay English: a report travels to an issue or the
+community, where one format keeps reports comparable. A scheduler's
+`reportContext` names the Template Document, language, rendering root, Item,
+and versions that only its host knows.
 
 `@zotlit/workbench/render` renders a Profile against an Item Snapshot; the
 Render Scheduler that decides when lives in `@zotlit/workbench/ui`:
