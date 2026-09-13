@@ -12,6 +12,7 @@ import {
   MissingTemplateError,
   TemplateError,
 } from "@zotlit/templates/facade";
+import { ParseError, TokenizationError } from "@zotlit/templates/liquid";
 
 import { errorChain } from "./report";
 import type {
@@ -26,6 +27,8 @@ import { templateCalls } from "#/document/regions";
 export interface RenderCallerSource {
   readonly source: string;
   readonly language: TemplateLanguage;
+  /** The Profile whose section templates this source owns. */
+  readonly profileId?: string;
 }
 
 /**
@@ -46,7 +49,10 @@ export function renderFailureDiagnostic(
   caller: RenderCallerSource,
 ): Omit<RenderDiagnostic, "part"> {
   const chain = errorChain(error);
-  const engine = engineLocation(chain);
+  const syntax = chain.find(
+    (link) => link instanceof ParseError || link instanceof TokenizationError,
+  );
+  const engine = engineLocation(syntax ? [syntax] : chain);
   const named = chain.find(
     (link): link is MissingTemplateError =>
       link instanceof MissingTemplateError,
@@ -57,10 +63,18 @@ export function renderFailureDiagnostic(
     ? callSites(caller, named.templateName)[0]
     : verifiedCallSite(caller, engine?.template);
   const from = callerOf(chain);
+  const located =
+    syntax ??
+    chain.find((link) => liquidToken(link)?.file === engine?.template);
+  const sourceSite =
+    named || located === undefined
+      ? undefined
+      : errorSourceSite(located, caller);
   const attribution = {
     ...(engine ? { engine } : {}),
     ...(from ? { caller: from } : {}),
     ...(site ? { callSite: site } : {}),
+    ...(sourceSite === undefined ? {} : { sourceSite }),
   };
   if (named)
     return {
@@ -68,6 +82,18 @@ export function renderFailureDiagnostic(
       params: { name: named.templateName },
       ...attribution,
     };
+  if (syntax) {
+    return {
+      code: "liquid-syntax-error",
+      ...(syntax instanceof ParseError &&
+      "name" in syntax.token &&
+      syntax.token.name === "for"
+        ? { params: { tag: "for" } }
+        : {}),
+      message: errorText(error),
+      ...attribution,
+    };
+  }
   return {
     code:
       engine?.template === "citation" &&
@@ -77,6 +103,30 @@ export function renderFailureDiagnostic(
         : "render-error",
     message: errorText(error),
     ...attribution,
+  };
+}
+
+/** Map an unchanged section's token to the unique source the Profile owns. */
+function errorSourceSite(
+  error: Error,
+  caller: RenderCallerSource,
+): RenderDiagnostic["sourceSite"] {
+  const token = liquidToken(error);
+  if (!token || caller.language !== "liquid" || caller.profileId === undefined)
+    return undefined;
+  const names = ["body", "managed", "annotation", "filename"].map(
+    (part) => `${caller.profileId}:${part}`,
+  );
+  if (token.file !== "annotation" && !names.includes(token.file))
+    return undefined;
+  const offset = caller.source.indexOf(token.input);
+  if (offset < 0 || caller.source.indexOf(token.input, offset + 1) !== -1)
+    return undefined;
+  return {
+    from: offset + token.begin,
+    to: offset + token.end,
+    source: token.input,
+    offset,
   };
 }
 
@@ -160,14 +210,15 @@ function callerOf(chain: readonly Error[]): RenderCaller | undefined {
 /** The token liquidjs raised on, when `error` is one of its render errors. */
 function liquidToken(
   error: Error,
-): { file: string; input: string; begin: number } | undefined {
+): { file: string; input: string; begin: number; end: number } | undefined {
   const token = (error as { token?: unknown }).token;
   if (token === null || typeof token !== "object") return undefined;
-  const { file, input, begin } = token as Record<string, unknown>;
+  const { file, input, begin, end } = token as Record<string, unknown>;
   return typeof file === "string" &&
     typeof input === "string" &&
-    typeof begin === "number"
-    ? { file, input, begin }
+    typeof begin === "number" &&
+    typeof end === "number"
+    ? { file, input, begin, end }
     : undefined;
 }
 

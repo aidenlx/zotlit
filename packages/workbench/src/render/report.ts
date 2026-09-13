@@ -294,7 +294,9 @@ export function captureRenderReport({
   const section = reportSection(diagnostic);
   const engineLocation = reportEngineLocation(diagnostic.engine);
   const caller = reportCaller(diagnostic.caller);
-  const repairTarget = reportRepairTarget(diagnostic.callSite);
+  const repairTarget = reportRepairTarget(
+    diagnostic.sourceSite ?? diagnostic.callSite,
+  );
   return {
     code: diagnostic.code,
     ...(diagnostic.evidence === undefined

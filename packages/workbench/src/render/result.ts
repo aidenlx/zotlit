@@ -24,6 +24,7 @@ export type RenderDiagnosticCode =
   | "citation-style-error"
   | "contract-version-mismatch"
   | "invalid-profile"
+  | "liquid-syntax-error"
   | "missing-dependency"
   | "missing-partial"
   | "property-append-conflict"
@@ -87,6 +88,13 @@ export interface RenderDiagnostic {
   readonly callSite?: { readonly from: number; readonly to: number };
   /** Stable text for the verified call, independent of its source offset. */
   readonly callIdentity?: string;
+  /** A Liquid token verified in this document, with the source used to locate it. */
+  readonly sourceSite?: {
+    readonly from: number;
+    readonly to: number;
+    readonly source: string;
+    readonly offset: number;
+  };
   /**
    * What the engine said before this diagnostic reduced it to `message`,
    * captured at the boundary that catches the error. Absent where the failure

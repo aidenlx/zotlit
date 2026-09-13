@@ -30,6 +30,29 @@ import type { NativeRenderResult } from "./render";
 const BODY_RENDERS = "__zotlitPreviewBodyRenders";
 
 describe("native Profile rendering", () => {
+  it("locates and groups malformed Liquid syntax in the managed note", async () => {
+    await using fixture = await createRenderFixture();
+    const tag = "{% for annotation i zt.annotations %}";
+    const source = PROFILE_SOURCE.replace(
+      "{% for annotation in zt.annotations %}",
+      tag,
+    );
+    const result = await renderNativeProfile(fixture.deps, {
+      source,
+      snapshot: fixture.snapshot,
+    });
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "liquid-syntax-error",
+        sourceSite: expect.objectContaining({
+          from: source.indexOf(tag),
+          to: source.indexOf(tag) + tag.length,
+        }),
+        evidence: expect.objectContaining({ name: "ParseError" }),
+      }),
+    ]);
+  });
+
   it("attributes a failed render_annotation call to the Annotation section", async () => {
     await using fixture = await createRenderFixture();
     const source = PROFILE_SOURCE.replace(
@@ -42,7 +65,7 @@ describe("native Profile rendering", () => {
     });
     expect(result.diagnostics).toEqual([
       expect.objectContaining({
-        code: "render-error",
+        code: "liquid-syntax-error",
         part: "annotation",
         engine: expect.objectContaining({ template: "annotation" }),
       }),

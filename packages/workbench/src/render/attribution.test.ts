@@ -5,6 +5,31 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 import { renderFailureDiagnostic } from "./attribution";
 
 describe("render failure attribution", () => {
+  it.each([
+    "{% for annotation i zt.annotations %}{% endfor %}",
+    "{% if true %}",
+    "{{ zt.title",
+    "{% unknown_tag %}",
+  ])("identifies Liquid syntax errors: %s", (source) => {
+    const facade = new TemplateFacade();
+    expect.assertions(2);
+    try {
+      facade.define("note", source, "liquid");
+      facade.render("note", {});
+    } catch (error) {
+      const diagnostic = renderFailureDiagnostic(error, {
+        source,
+        language: "liquid",
+      });
+      expect(diagnostic.code).toBe("liquid-syntax-error");
+      expect(diagnostic.engine).toEqual({
+        template: "note",
+        line: 1,
+        column: 1,
+      });
+    }
+  });
+
   it.each([false, true])(
     "locates repeated partial calls only when the partial is missing (resolved: %s)",
     (resolved) => {

@@ -24,6 +24,43 @@ const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
 );
 
 describe("Sample Items", () => {
+  it("locates a runtime error's traced expression for highlighting", () => {
+    const expression = '{{ "bad" | pandoc_cite }}';
+    const source = DEFAULT_PROFILE_SOURCE.replace("## Annotations", expression);
+    const result = renderProfile(source, SAMPLE_ITEMS[1]!);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: "render-error",
+      sourceSite: {
+        from: source.indexOf(expression),
+        to: source.indexOf(expression) + expression.length,
+      },
+    });
+  });
+
+  it("reports malformed Liquid syntax at the Profile source token", () => {
+    const tag = "{% for annotation i zt.annotations %}";
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{% for annotation in zt.annotations %}",
+      tag,
+    );
+    expect(source).not.toBe(DEFAULT_PROFILE_SOURCE);
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!);
+    const failure = result.diagnostics.find(
+      ({ code }) => code === "liquid-syntax-error",
+    );
+    expect(failure).toMatchObject({
+      code: "liquid-syntax-error",
+      engine: { template: "default:managed" },
+      sourceSite: {
+        from: source.indexOf(tag),
+        to: source.indexOf(tag) + tag.length,
+      },
+      evidence: { name: "ParseError" },
+    });
+    expect(failure?.evidence?.context).toContain(tag);
+    expect(failure?.evidence?.causes).toContain(`illegal tag: ${tag}`);
+  });
+
   it("renders a selected annotation with its own parent while the note keeps its paper", () => {
     const source = SAMPLE_WITH_CITATION;
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
@@ -213,8 +250,8 @@ describe("Sample Items", () => {
     expect(result.creationBody).toBeNull();
     expect(result.annotation).toBeNull();
     expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
-      ["render-error", "annotation"],
-      ["render-error", "annotation"],
+      ["liquid-syntax-error", "annotation"],
+      ["liquid-syntax-error", "annotation"],
     ]);
     expect(
       result.diagnostics.every(({ message }) =>

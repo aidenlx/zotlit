@@ -8,7 +8,6 @@ import type {
   NoteTemplateContext,
 } from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
-import type { TemplateLanguage } from "@zotlit/templates/constants";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
@@ -711,25 +710,24 @@ function callerSource(
   deps: NativeRenderDeps,
   source: string,
 ): RenderCallerSource {
-  return { source, language: draftLanguage(deps, source) };
-}
-
-function draftLanguage(
-  deps: NativeRenderDeps,
-  source: string,
-): TemplateLanguage {
   try {
-    return (
-      deps.templates.prepareLiteratureNoteTemplateSource(source).manifest
-        .language ?? "liquid"
-    );
+    const { manifest } =
+      deps.templates.prepareLiteratureNoteTemplateSource(source);
+    return {
+      source,
+      language: manifest.language ?? "liquid",
+      profileId: manifest.id,
+    };
   } catch {
-    // Not a Profile document: a Citation Template and a Shared Partial declare
-    // their language in a plain manifest of their own.
+    // Plain templates declare their language independently of a Profile.
   }
   try {
-    return parsePlainTemplateDocument(source).manifest.language ?? "liquid";
+    return {
+      source,
+      language:
+        parsePlainTemplateDocument(source).manifest.language ?? "liquid",
+    };
   } catch {
-    return "liquid";
+    return { source, language: "liquid" };
   }
 }

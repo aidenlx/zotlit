@@ -1,9 +1,42 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_PROFILE_SOURCE, renderProfile, SAMPLE_ITEMS } from "./index";
 import { currentCallSite } from "./locate";
 import type { RenderDiagnostic } from "./result";
 
 describe("current repair call", () => {
+  it("locates an unchanged failed section after edits and rejects changed or repeated source", () => {
+    const tag = "{% for annotation i zt.annotations %}";
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{% for annotation in zt.annotations %}",
+      tag,
+    );
+    const failure = renderProfile(source, SAMPLE_ITEMS[0]!).diagnostics[0]!;
+    const moved = source.replace(
+      "# {{ zt.title }}",
+      "Extra line\n# {{ zt.title }}",
+    );
+    expect(moved).not.toBe(source);
+    expect(
+      currentCallSite(failure, { source: moved, language: "liquid" }),
+    ).toEqual({
+      from: moved.indexOf(tag),
+      to: moved.indexOf(tag) + tag.length,
+    });
+    expect(
+      currentCallSite(failure, {
+        source: DEFAULT_PROFILE_SOURCE,
+        language: "liquid",
+      }),
+    ).toBeUndefined();
+    expect(
+      currentCallSite(failure, {
+        source: source + failure.sourceSite!.source,
+        language: "liquid",
+      }),
+    ).toBeUndefined();
+  });
+
   const diagnostic: RenderDiagnostic = {
     code: "missing-partial",
     params: { name: "details" },

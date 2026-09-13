@@ -155,6 +155,8 @@ export function diagnosticText(
         ? `${conflict} ${diagnostic.message}`
         : conflict;
     }
+    case "liquid-syntax-error":
+      return m.workbench_diagnostic_liquid_syntax_error();
     case "render-error":
       // The engine refused and named nothing this package classifies. Its own
       // words are evidence, which the explanation keeps under Technical
@@ -272,6 +274,10 @@ function problemSubject(problem: WorkbenchProblem): string {
 }
 
 function repairTarget(diagnostic: RenderDiagnostic): string | undefined {
+  if (diagnostic.sourceSite !== undefined) {
+    const { source, from, to, offset } = diagnostic.sourceSite;
+    return `source:${source.slice(from - offset, to - offset)}`;
+  }
   if (
     diagnostic.code === "missing-partial" &&
     diagnostic.params?.name !== undefined
@@ -322,7 +328,7 @@ export function renderDiagnosis(
   // the reported source location and captured cause as well as the repair
   // target. Failures with incomplete evidence keep their own occurrence.
   const cause =
-    code === "render-error"
+    code === "render-error" || code === "liquid-syntax-error"
       ? engine?.line !== undefined && evidence !== undefined
         ? [
             engine.template,
@@ -479,6 +485,10 @@ function diagnosticSuggestion(
   diagnostic: RenderDiagnostic,
 ): string {
   switch (diagnostic.code) {
+    case "liquid-syntax-error":
+      return diagnostic.params?.tag === "for"
+        ? m.workbench_diagnostic_liquid_for_suggestion()
+        : m.workbench_diagnostic_liquid_syntax_error_suggestion();
     case "missing-partial":
       return m.workbench_diagnostic_missing_partial_suggestion();
     case "citation-data-mismatch":
@@ -537,7 +547,8 @@ export function diagnosisWhere(
   diagnosis: WorkbenchDiagnosis,
 ): string {
   if (diagnosis.kind === "document") return problemWhere(m, diagnosis.problem);
-  const { part, position, callSite } = diagnosis.diagnostic;
+  const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
+  if (sourceSite) return m.workbench_problems_highlight_error();
   // A verified call is where the reader repairs it, whichever template the
   // engine reported the failure inside.
   if (callSite) return m.workbench_problems_where_call();
@@ -605,7 +616,8 @@ export function diagnosisReport(
 export function diagnosisLocated(diagnosis: WorkbenchDiagnosis): boolean {
   return diagnosis.kind === "document"
     ? diagnosis.problem.range !== undefined
-    : diagnosis.diagnostic.callSite !== undefined ||
+    : diagnosis.diagnostic.sourceSite !== undefined ||
+        diagnosis.diagnostic.callSite !== undefined ||
         diagnosis.diagnostic.position !== undefined ||
         diagnosis.diagnostic.part === "annotation";
 }

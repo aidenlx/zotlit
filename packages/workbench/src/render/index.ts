@@ -167,6 +167,7 @@ export function renderProfile(
   // repair it at, rather than leaving the web with the engine's bare words.
   const caller: RenderCallerSource = {
     source,
+    profileId: document.manifest.id,
     language: document.manifest.language ?? "liquid",
   };
   let preview: string | null = null;

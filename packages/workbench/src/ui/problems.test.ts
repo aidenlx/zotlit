@@ -22,6 +22,8 @@ import { m } from "./test-messages";
 import { WorkbenchDocumentController } from "#/document/controller";
 import {
   DEFAULT_PROFILE_SOURCE,
+  captureRenderReport,
+  formatRenderReport,
   engineEvidence,
   renderProfile,
   renderFailureDiagnostic,
@@ -29,6 +31,40 @@ import {
 } from "#/render/index";
 
 describe("problemText", () => {
+  it("explains Liquid syntax and exposes its verified source and report", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{% for annotation in zt.annotations %}",
+      "{% for annotation i zt.annotations %}",
+    );
+    const failure = renderProfile(source, SAMPLE_ITEMS[0]!).diagnostics[0]!;
+    const diagnosis = renderDiagnosis(failure);
+    expect(diagnosisExplanation(m, diagnosis)).toMatchObject({
+      condition: m.workbench_diagnostic_liquid_syntax_error(),
+      suggestion: m.workbench_diagnostic_liquid_for_suggestion(),
+    });
+    expect(diagnosisWhere(m, diagnosis)).toBe(
+      m.workbench_problems_highlight_error(),
+    );
+    expect(diagnosisLocated(diagnosis)).toBe(true);
+    const report = captureRenderReport({
+      diagnostic: failure,
+      identity: { sourceRevision: "failed-source", snapshotRevision: "sample" },
+      trigger: "explicit",
+      sequence: 1,
+      capturedAt: "2026-09-13T08:00:00Z",
+      context: { language: "liquid", document: "Profile.md" },
+    });
+    expect(report.repairTarget).toBe(
+      `offset ${failure.sourceSite!.from}-${failure.sourceSite!.to}`,
+    );
+    const text = formatRenderReport(report);
+    expect(text).toContain("liquid-syntax-error");
+    expect(text).toContain(
+      "illegal tag: {% for annotation i zt.annotations %}",
+    );
+    expect(text).toContain(failure.evidence!.stack);
+  });
+
   it("writes the web host's own codes in the reader's catalog", () => {
     const controller = new WorkbenchDocumentController(
       DEFAULT_PROFILE_SOURCE.replace("language: liquid", "language: eta"),

@@ -2224,10 +2224,10 @@ function EditorContent({
       openProblem(diagnosis.problem);
       return;
     }
-    const { part, position, callSite } = diagnosis.diagnostic;
+    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
     // A verified call outranks the part the engine reported the failure under:
     // a failure inside a called template is repaired where it was called.
-    if (callSite) {
+    if (callSite || sourceSite) {
       const current = currentCallSite(diagnosis.diagnostic, controller);
       if (current === undefined) {
         new BaseNotice(m.workbench_problems_location_unknown());
