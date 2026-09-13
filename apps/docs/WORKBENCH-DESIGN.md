@@ -85,8 +85,9 @@ distinct wording and a relevant next action. Name the Note name result
 
 Give detailed diagnosis a stable reading surface in the editor's Problems
 area, with room for source and explanation while both remain readable.
-Show verified source errors as persistent CodeMirror lint underlines and gutter
-markers. Keep their hover hints short, with a condition and a next step. Error
+Show verified source errors as persistent CodeMirror lint underlines. A red dot in a narrow left gutter
+opens the line’s diagnosis in Problems. Keep the explanation in that panel
+and reserve the source width for editing. Error
 icons and semantic error colors distinguish failures from ordinary hints. The preview names the effect on its result and
 offers **Show problem**, leading to the same explanation.
 

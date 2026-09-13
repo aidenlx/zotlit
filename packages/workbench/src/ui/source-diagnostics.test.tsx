@@ -1,9 +1,10 @@
 import { forEachDiagnostic } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, fireEvent } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { workbenchDiagnoses } from "./problems";
+import { ProblemsFooter, useWorkbenchProblems } from "./problems-footer";
 import { SliceEditor } from "./slice-editor";
 import { WorkbenchDiagnosticsProvider } from "./source-diagnostics";
 import { renderWithMessages as render } from "./test-host";
@@ -48,4 +49,65 @@ it("shows a verified error without a reveal and clears it after repair", () => {
   act(() => mounted.rerender(pane([])));
   expect(mounted.container.querySelector(".cm-lintRange-error")).toBeNull();
   expect(editor.contentDOM.getAttribute("aria-invalid")).toBe("false");
+});
+
+it("opens Problems from the red dot and leaves underlined text editable", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const source = controller.sliceText("note");
+  const offset = controller.sliceRange("note").from;
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "render-error",
+        message: "First failure",
+        sourceSite: { source, offset, from: offset + 2, to: offset + 4 },
+      },
+      {
+        code: "render-error",
+        message: "Second failure",
+        sourceSite: {
+          source,
+          offset,
+          from: offset + source.indexOf("[Zotero]"),
+          to: offset + source.indexOf("[Zotero]") + 8,
+        },
+      },
+    ],
+  );
+  function Workbench() {
+    const problems = useWorkbenchProblems({
+      diagnoses,
+      trigger: null,
+      attempt: 1,
+    });
+    return (
+      <WorkbenchDiagnosticsProvider
+        value={diagnoses}
+        onReveal={problems.select}
+      >
+        <SliceEditor controller={controller} slice="note" label="Note" />
+        <ProblemsFooter problems={problems} onOpen={() => {}} />
+      </WorkbenchDiagnosticsProvider>
+    );
+  }
+  const mounted = render(<Workbench />);
+
+  const marks = mounted.container.querySelectorAll(".cm-lintRange-error");
+  expect(marks.length).toBe(2);
+  fireEvent.click(marks[1]!);
+  expect(
+    mounted.queryByRole("button", { name: "Return to template" }),
+  ).toBeNull();
+  const dots = mounted.container.querySelectorAll(".cm-problem-button");
+  expect(dots.length).toBe(2);
+  expect(dots[1]!.getAttribute("aria-label")).toBe("Show problem");
+  fireEvent.click(dots[1]!);
+  expect(
+    mounted.container.querySelector('[data-part="problems-text"]')?.textContent,
+  ).toBe("Second failure");
+  expect(mounted.queryByText("First failure")).toBeNull();
+  expect(
+    mounted.getByRole("button", { name: "Return to template" }),
+  ).toBeTruthy();
 });

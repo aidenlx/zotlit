@@ -6,7 +6,7 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { SuggestionSource } from "#/language/index";
-import { lintGutter, setDiagnostics } from "@codemirror/lint";
+import { linter, setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
@@ -18,7 +18,12 @@ import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { partialSuggestions } from "./partial-suggestions";
-import { sourceDiagnostics, useSourceDiagnoses } from "./source-diagnostics";
+import {
+  sourceDiagnostics,
+  sourceProblemGutter,
+  useSourceDiagnoses,
+  useRevealSourceDiagnosis,
+} from "./source-diagnostics";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
@@ -100,6 +105,7 @@ export function SliceEditor({
 }: SliceEditorProps) {
   const revision = useDocumentRevision(controller);
   const diagnoses = useSourceDiagnoses();
+  const revealDiagnosis = useRevealSourceDiagnosis();
   const readOnly = controller.readOnly;
   const engine = controller.templateLanguage;
   const m = useWorkbenchMessages();
@@ -129,6 +135,7 @@ export function SliceEditor({
   // a ref instead of being rebuilt whenever the host passes new ones.
   const report = useRef({
     onSelection,
+    revealDiagnosis,
     onFocus,
     suggest,
     adapter,
@@ -138,6 +145,7 @@ export function SliceEditor({
   });
   report.current = {
     onSelection,
+    revealDiagnosis,
     onFocus,
     suggest,
     adapter,
@@ -253,7 +261,13 @@ export function SliceEditor({
               ]
             : []),
           EditorView.lineWrapping,
-          lintGutter(),
+          linter(null, { tooltipFilter: () => [] }),
+          // CodeMirror still mounts an empty filtered tooltip.
+          EditorView.theme({ ".cm-tooltip-lint": { display: "none" } }),
+          sourceProblemGutter(
+            (id) => report.current.revealDiagnosis?.(id),
+            () => report.current.m.workbench_problem_show(),
+          ),
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
           ...(slice === "advanced" ? [lineNumbers()] : []),

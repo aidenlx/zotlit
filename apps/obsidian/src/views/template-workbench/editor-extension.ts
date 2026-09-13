@@ -18,6 +18,7 @@ const popoutCopy = EditorView.domEventHandlers({
 
 export const codePane: Extension = [
   EditorView.theme({
+    ".cm-problem-button": { color: "var(--text-error)" },
     ".cm-lintRange-error": {
       backgroundImage: "none",
       textDecoration: "underline wavy var(--text-error)",

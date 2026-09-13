@@ -2528,7 +2528,10 @@ function EditorContent({
     </div>
   );
   return (
-    <WorkbenchDiagnosticsProvider value={selectedDiagnoses}>
+    <WorkbenchDiagnosticsProvider
+      value={selectedDiagnoses}
+      onReveal={selectProblem}
+    >
       {content}
     </WorkbenchDiagnosticsProvider>
   );

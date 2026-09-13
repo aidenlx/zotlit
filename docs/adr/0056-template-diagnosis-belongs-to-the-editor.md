@@ -151,8 +151,9 @@ state offers Next problem so the reader controls the change of explanation.
 Source and Problems share the editor. A draggable, keyboard-accessible divider
 sets the open area’s share and retains it through checks and reopening. One
 ghost chevron opens the area or closes it and restores source focus. Verified
-source ranges carry persistent CodeMirror lint markers, independent of the
-explanation’s disclosure state.
+source ranges carry persistent CodeMirror lint underlines, independent of the
+explanation’s disclosure state. A red dot in a narrow left gutter opens the line’s diagnosis in
+Problems; that panel owns the explanation.
 Reporting controls stay outside the scrolling explanation, and long labels
 wrap to keep them reachable.
 

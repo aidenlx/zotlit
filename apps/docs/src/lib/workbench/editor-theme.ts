@@ -6,6 +6,7 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 export const editorTheme = [
   templateHighlighting,
   EditorView.theme({
+    ".cm-problem-button": { color: "var(--color-destructive)" },
     ".cm-lintRange-error": {
       backgroundImage: "none",
       textDecoration: "underline wavy var(--color-destructive)",

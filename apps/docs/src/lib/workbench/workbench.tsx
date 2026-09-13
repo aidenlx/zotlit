@@ -1311,7 +1311,10 @@ export function Workbench() {
   return (
     <WorkbenchThemeProvider theme={WEB_THEME}>
       <WorkbenchHostProvider host={host}>
-        <WorkbenchDiagnosticsProvider value={problems.diagnoses}>
+        <WorkbenchDiagnosticsProvider
+          value={problems.diagnoses}
+          onReveal={showProblem}
+        >
           {page}
         </WorkbenchDiagnosticsProvider>
       </WorkbenchHostProvider>
