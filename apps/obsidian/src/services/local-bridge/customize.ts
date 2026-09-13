@@ -46,6 +46,8 @@ export function workbenchEnabled(
 /** What an entry action asks Customize to open. */
 export interface CustomizeRequest {
   readonly profileId: ProfileSelector;
+  /** The note explicitly launching this session; preview selection is independent. */
+  readonly originatingNote?: TFile;
   readonly destination?: Exclude<ProfileCustomization, "ask">;
   /**
    * The paper to show. Leave it out and the flow takes the active Literature

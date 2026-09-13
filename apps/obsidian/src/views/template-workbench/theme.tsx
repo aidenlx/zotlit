@@ -12,6 +12,7 @@ import { codePane } from "./editor-extension";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
+  help: "circle-help",
   confirm: "check",
   add: "plus",
   remove: "trash-2",
@@ -43,6 +44,17 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
 /** Text actions share the Match tab's outlined native control surface. */
 export const templateWorkbenchButton =
   "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start zt:text-muted-foreground";
+/** Shared-template scope and its originating-note action form one compact notice. */
+export const originatingNoteNotice = {
+  root: "zt:mx-3 zt:mb-2 zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-4 zt:gap-y-2 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal",
+  guidance: "zt:min-w-[14rem] zt:flex-1 zt:space-y-0.5",
+  scope: "zt:font-medium zt:text-foreground",
+  behavior: "zt:text-muted-foreground",
+  action:
+    "zt:ms-auto zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:justify-end zt:gap-2",
+  note: "zt:min-w-0 zt:max-w-full zt:font-medium zt:text-foreground zt:[overflow-wrap:anywhere]",
+  button: cn(templateWorkbenchButton, "zt:shrink-0"),
+} as const;
 /** Icons beside 12 px regular text carry the same optical weight. */
 const captionIcon = "zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]";
 /** Every choose control shares the flat `clickable-icon` surface; `kind` sets its shape. */
@@ -468,6 +480,12 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:cursor-(--cursor-clickable) zt:items-center zt:gap-2 zt:font-medium",
     },
     annotation: {
+      "help-bar": "zt:mb-3 zt:shrink-0 zt:leading-normal",
+      "help-button": cn("clickable-icon", captionIcon),
+      "help-lede": hint,
+      "help-toggle": "zt:ms-1 zt:inline-block zt:align-baseline",
+      help: "zt:mb-3 zt:flex zt:max-h-40 zt:shrink-0 zt:flex-col zt:gap-1 zt:overflow-auto zt:text-xs zt:leading-normal zt:text-muted-foreground zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
+
       "sample-bar": row,
       problem: "zt:mb-2 zt:text-xs zt:text-(--text-error)",
       pane: stack,

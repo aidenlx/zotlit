@@ -155,6 +155,11 @@ export interface WorkbenchParts {
     | "primary-action"
     | "secondary-action";
   annotation:
+    | "help-bar"
+    | "help-button"
+    | "help-lede"
+    | "help-toggle"
+    | "help"
     | "sample-bar"
     | "problem"
     | "pane"
@@ -281,6 +286,7 @@ export type WorkbenchClassMap = {
 /** The icons the tree asks for, named by role so each host picks the glyph. */
 export type WorkbenchIcon =
   | "copy"
+  | "help"
   | "confirm"
   | "add"
   | "remove"

@@ -348,6 +348,8 @@ export interface NoteFeature {
       indexedKey: string;
       scope?: UpdateScope;
       profile?: ProfileSelector;
+      /** Recheck a caller-owned editing session at each note write boundary. */
+      beforeWrite?: () => void;
     },
   ): Promise<UpdateResult>;
   /** Re-stamp after consent; the next update renders with the target Profile. */
@@ -964,6 +966,7 @@ async function updateNote(
     indexedKey: string;
     scope?: UpdateScope;
     profile?: ProfileSelector;
+    beforeWrite?: () => void;
   },
 ): Promise<UpdateResult> {
   const { indexedKey, scope = "full" } = options;
@@ -1018,6 +1021,7 @@ async function updateNote(
     scope,
     profile,
     document,
+    beforeWrite: options.beforeWrite,
   });
 }
 
@@ -1344,6 +1348,7 @@ async function applyManagedUpdate(
     scope: UpdateScope;
     profile: ResolvedProfile;
     document: ResolvedLiteratureNoteTemplate | undefined;
+    beforeWrite?: () => void;
   },
 ): Promise<UpdateResult> {
   const {
@@ -1354,6 +1359,7 @@ async function applyManagedUpdate(
     scope,
     profile,
     document,
+    beforeWrite,
   } = input;
   const prepared = prepareFrontmatter({
     context,
@@ -1370,10 +1376,17 @@ async function applyManagedUpdate(
             context,
             itemKey,
             document,
+            beforeWrite,
           })
-        : await replaceManagedBody(ctx, file, { context, itemKey })
+        : await replaceManagedBody(ctx, file, { context, itemKey, beforeWrite })
       : NO_BODY_UPDATE;
-  await commitFrontmatter(ctx, file, { context, itemKey, profile, prepared });
+  await commitFrontmatter(ctx, file, {
+    context,
+    itemKey,
+    profile,
+    prepared,
+    beforeWrite,
+  });
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
 
@@ -1393,6 +1406,7 @@ async function replaceDocumentManagedBody(
     context: NoteTemplateContext;
     itemKey: string;
     document: ResolvedLiteratureNoteTemplate;
+    beforeWrite?: () => void;
   },
 ): Promise<UpdateResult> {
   const { context, itemKey, document } = input;
@@ -1403,6 +1417,7 @@ async function replaceDocumentManagedBody(
     context,
     itemKey,
     renderRegion: () => document.renderForUpdate(context)!,
+    beforeWrite: input.beforeWrite,
   });
 }
 
@@ -1416,12 +1431,14 @@ async function replaceManagedBody(
     context: NoteTemplateContext;
     itemKey: string;
     renderRegion?: () => string;
+    beforeWrite?: () => void;
   },
 ): Promise<UpdateResult> {
   const { context, itemKey, renderRegion } = input;
   let replaced = false;
   let duplicateCount = 0;
   await ctx.app.vault.process(file, (content) => {
+    input.beforeWrite?.();
     // replaceManagedRegion only invokes the provider when a region exists,
     // so rendering `content` — and the attachment imports its lazy imgLink
     // closures queue as a side effect — is skipped when there is no region.
@@ -1674,9 +1691,11 @@ async function commitFrontmatter(
     itemKey: string;
     profile: ResolvedProfile;
     prepared: PreparedManagedFrontmatter;
+    beforeWrite?: () => void;
   },
 ): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
+    input.beforeWrite?.();
     applyComposedFrontmatter(ctx, fm, input);
   });
 }

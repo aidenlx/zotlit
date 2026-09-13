@@ -2008,7 +2008,11 @@ interface UpdateHarness {
   frontmatter: () => Record<string, unknown>;
   /** The `content`-template render stub; assert it stays unqueued when no region exists. */
   renderContent: ReturnType<typeof vi.fn>;
-  processMock: ReturnType<typeof vi.fn>;
+  processMock: ReturnType<
+    typeof vi.fn<
+      (file: TFile, update: (content: string) => string) => Promise<string>
+    >
+  >;
   frontmatterMock: ReturnType<typeof vi.fn>;
 }
 
@@ -2131,6 +2135,75 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 }
 
 describe("updateNote", () => {
+  it.each(["full", "metadata"] as const)(
+    "preserves a replacement file when the session changes during %s preparation",
+    async (scope) => {
+      const replacementBody = `${formatManagedRegion("REPLACEMENT NOTE")}\nReplacement personal writing`;
+      const harness = makeUpdateHarness({
+        content: replacementBody,
+        frontmatter: { title: "Replacement" },
+      });
+      stubIndexedKeyUpdate(updateContext());
+      const original = makeFile("Literature/Original.md");
+      let currentFile = original;
+      const preparation = Promise.withResolvers<void>();
+      const started = Promise.withResolvers<void>();
+      harness.deps.noteIndex.whenIndexed = () => {
+        started.resolve();
+        return preparation.promise;
+      };
+      const unavailable = new Error("Originating note changed");
+      const updating = createNoteFeature(harness.deps).updateNote(original, {
+        indexedKey: "ABC12345",
+        scope,
+        beforeWrite: () => {
+          if (currentFile !== original) throw unavailable;
+        },
+      });
+      const refused = expect(updating).rejects.toBe(unavailable);
+      await started.promise;
+      currentFile = makeFile(original.path);
+      preparation.resolve();
+      await refused;
+      expect(harness.content()).toBe(replacementBody);
+      expect(harness.frontmatter()).toEqual({ title: "Replacement" });
+    },
+  );
+
+  it("checks the session again before a separate frontmatter write", async () => {
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("BODY"),
+      frontmatter: { title: "Personal title" },
+    });
+    stubIndexedKeyUpdate(updateContext());
+    const bodyWritten = Promise.withResolvers<void>();
+    const continueUpdate = Promise.withResolvers<void>();
+    const originalProcess = harness.processMock.getMockImplementation()!;
+    harness.processMock.mockImplementationOnce(async (file, transform) => {
+      const result = await originalProcess(file, transform);
+      bodyWritten.resolve();
+      await continueUpdate.promise;
+      return result;
+    });
+    let available = true;
+    const unavailable = new Error("Originating note changed");
+    const updating = createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Original.md"),
+      {
+        indexedKey: "ABC12345",
+        beforeWrite: () => {
+          if (!available) throw unavailable;
+        },
+      },
+    );
+    const refused = expect(updating).rejects.toBe(unavailable);
+    await bodyWritten.promise;
+    available = false;
+    continueUpdate.resolve();
+    await refused;
+    expect(harness.frontmatter()).toEqual({ title: "Personal title" });
+  });
+
   it("gates a stamped added Profile while legacy conversion is pending", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const harness = makeUpdateHarness({
