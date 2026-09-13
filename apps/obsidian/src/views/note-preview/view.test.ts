@@ -1407,6 +1407,9 @@ Annotation`,
       ),
     );
     await advance();
+    // The retained note is re-rendered under the failed attempt, so its
+    // citations are presented on the round after the result lands.
+    await act(async () => {});
 
     expect(preview.contentEl.textContent).toContain(
       m.workbench_preview_retained(),

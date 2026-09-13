@@ -255,13 +255,14 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
         : published;
     const busy = next.busy ?? state.busy;
     // A Property failure makes the note surface unsuccessful even when the
-    // renderer returned its partial body; independent surfaces still land.
+    // renderer returned its partial body; independent surfaces still land. The
+    // note name is one of them: it renders apart from the note, so a failing
+    // rule leaves the name this attempt produced.
     const resultForRetention =
       result !== null &&
       result.diagnostics.some(({ code }) => code === "property-error")
         ? ({
             ...result,
-            filename: null,
             properties: [],
             fold: [],
             frontmatterBlock: null,

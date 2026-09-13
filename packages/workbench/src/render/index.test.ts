@@ -371,6 +371,37 @@ describe("Sample Items", () => {
     expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
   });
 
+  it("names the note name as the part that failed and leaves the rest on screen", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}",
+      "{% for tag i zt.tags %}{{ tag }}{% endfor %}",
+    );
+    expect(source).not.toBe(DEFAULT_PROFILE_SOURCE);
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!);
+
+    expect(result.filename).toBeNull();
+    expect(result.creationBody).toContain(
+      "# Why Most Published Research Findings Are False",
+    );
+    expect(result.managedRegion).not.toBeNull();
+    expect(result.properties.map(({ key }) => key)).toContain("title");
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["liquid-syntax-error", "filename"],
+    ]);
+  });
+
+  it("keeps the note name when the note itself cannot render", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "{% render 'missing-note' %}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!);
+
+    expect(result.creationBody).toBeNull();
+    expect(result.filename).toBe(SAMPLE_ITEMS[0]!.roots.filename.citationKey);
+    expect(result.diagnostics.map(({ part }) => part)).toEqual(["render"]);
+  });
+
   it("keeps a selected example available when the note has a separate error", () => {
     const source = DEFAULT_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",
