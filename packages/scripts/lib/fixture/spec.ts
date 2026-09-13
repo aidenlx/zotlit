@@ -1319,6 +1319,7 @@ author: ZotLit
 description: A visibly distinct book layout for the End-to-end Run
 contract: ${CONTRACT_VERSION}
 filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
+match: 'itemType == "book"'
 frontmatter:
   - key: fixture-title
     expr: zt.title

@@ -31,7 +31,7 @@ const nonEmptyTemplateSource = v.pipe(
 const partialSchema = v.strictObject({
   name: nonEmptyString,
   language: v.picklist(["liquid", "eta"]),
-  source: nonEmptyTemplateSource,
+  source: v.string(),
 });
 
 const partialsSchema = v.pipe(

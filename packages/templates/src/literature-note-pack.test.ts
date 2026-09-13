@@ -95,6 +95,17 @@ describe("Literature Note Pack export", () => {
     ]);
   });
 
+  it("bundles a reachable empty partial", () => {
+    const source = exportLiteratureNotePack(
+      `${DOCUMENT}\n--- zotlit:annotation ---\n{{ zt.text }}`,
+      [{ name: "summary", language: "liquid", source: "" }],
+    );
+
+    expect(parseLiteratureNoteTemplate(source).manifest.partials).toEqual([
+      { name: "summary", language: "liquid", source: "" },
+    ]);
+  });
+
   it.each([
     { language: "liquid", source: "{% render_annotation zt.annotations[0] %}" },
     {

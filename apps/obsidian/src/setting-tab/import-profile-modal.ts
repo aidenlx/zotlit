@@ -323,7 +323,7 @@ export class ImportProfileModal extends Modal {
       cls: NOTE_CLASS,
       text: m.profile_import_none_changed(),
     });
-    this.#partials(controls);
+    this.#partials(controls, () => void update());
     const error = note(controls, { status: true });
     const panel = previewPanel(preview, {
       path: m.settings_profile_preview_path(),
@@ -356,7 +356,9 @@ export class ImportProfileModal extends Modal {
           this.#deps.noteFeature.prepareProfileNote({
             profile: plan.profile,
             document: this.#deps.template.prepareLiteratureNoteTemplateSource(
-              plan.source,
+              plan.previewSource({
+                replacePartials: [...this.#replacePartials],
+              }),
             ),
             ...this.#data,
           }),
@@ -404,7 +406,7 @@ export class ImportProfileModal extends Modal {
    * is kept unless the reader says to replace it, so no file of theirs goes
    * without their word.
    */
-  #partials(container: HTMLElement): void {
+  #partials(container: HTMLElement, onChange?: () => void): void {
     const plan = this.#plan.partials;
     if (plan.length === 0) return;
     const group = container.createDiv({ cls: "zt:flex zt:flex-col zt:gap-2" });
@@ -457,6 +459,7 @@ export class ImportProfileModal extends Modal {
         .onChange((value) => {
           if (value) this.#replacePartials.add(name);
           else this.#replacePartials.delete(name);
+          onChange?.();
         });
     }
   }

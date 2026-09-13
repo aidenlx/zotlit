@@ -338,6 +338,27 @@ it("checks the partials the profile calls, and drops one the reader clears", asy
   modal.onClose();
 });
 
+it("shares after missing-partial recovery creates an empty document", async () => {
+  await using f = await profileServiceFixture({
+    "templates/zotlit-profile.books.md": source,
+    "templates/zotlit-partial.summary.md": "",
+  });
+
+  const plan = await f.profile.prepareShare(id);
+  const shared = new TemplateFacade().parseLiteratureNoteTemplate(
+    plan.render({
+      version: "1.2.3",
+      author: "",
+      description: "",
+      partials: ["summary"],
+    }),
+  );
+
+  expect(shared.manifest.partials).toEqual([
+    { name: "summary", language: "liquid", source: "" },
+  ]);
+});
+
 it("opens for a profile whose call no document answers, and names it", async () => {
   // Story 43 leaves this behind: the reader renamed the partial file and the
   // call in the profile still spells the old name.
