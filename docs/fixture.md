@@ -295,7 +295,7 @@ obsidian vault=<id> eval code='globalThis.fixtureTrashRestore?.()'
 
 #### Preserve frontmatter and Default membership
 
-1. Start `upgrader-frontmatter-only`. Check that conversion review is unnecessary. Use the existing **Customize** route for Default and inspect the resulting Profile.
+1. Start `upgrader-frontmatter-only`. Check that conversion review is unnecessary. In ZotLit settings, find **Templates and properties** and select **Edit profile**. Inspect the resulting Default Profile.
 2. Confirm that its Managed Frontmatter includes `year` with the expression `zt.date.year`. Render a Literature Note for an Item with a date and check the resulting year.
 3. Record the frontmatter of an existing unstamped Literature Note and Imported Note. Add another Profile, then check that both notes still belong to Default and their Profile stamps remain absent.
 
