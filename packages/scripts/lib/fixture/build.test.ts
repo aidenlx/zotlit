@@ -38,10 +38,12 @@ import type { IndexedItem } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
+import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 
 import {
   ANNOTATIONS,
   ATTACHMENTS,
+  brokenBooksProfileSource,
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
@@ -53,8 +55,15 @@ import {
   legacyTemplateSource,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
+  LITERATURE_NOTE_DOCUMENTS,
+  LITERATURE_NOTE_PROFILES,
   NOTES,
+  PRESERVATION_NOTE_HANDWRITTEN_PROSE,
+  PRESERVATION_NOTE_ITEM_KEY,
+  PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
   SCOPE_CASES,
+  SCRATCH_DRAFT_RELATIVE_PATH,
+  scratchDraftSource,
   SEEDED_CITATION_KEYS,
   seededCitationKeyDrift,
   selectScopeCase,
@@ -62,8 +71,10 @@ import {
   UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
   VAULT_CASES,
+  YAML_REPAIR_PROFILE_EDIT,
 } from "./build.ts";
 import type { FixtureLayout, PersistedLibraryScope } from "./build.ts";
+import { renderGuide } from "./guide.ts";
 import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
@@ -1849,11 +1860,20 @@ describe("a Vault Case", () => {
     return caseLayout;
   }
 
-  it("names the configured, fresh, and upgrader cases", () => {
+  it("names every base and Workbench Vault Case", () => {
     expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
       "configured",
       "fresh",
       "upgrader",
+      "workbench-spread",
+      "workbench-yaml-repair",
+      "workbench-partial-edit",
+      "workbench-citation-variants",
+      "workbench-update-preservation",
+      "workbench-external-edit",
+      "workbench-scratch-draft",
+      "workbench-default-no-note",
+      "workbench-error-recovery",
     ]);
   });
 
@@ -2005,5 +2025,240 @@ describe("a Vault Case", () => {
         replace: "",
       }),
     ).rejects.toThrow("update the Fixture Spec");
+  });
+});
+
+describe("a Workbench Vault Case", () => {
+  async function buildWorkbenchCase(
+    vaultCase: string,
+    scopeCase?: string,
+  ): Promise<FixtureLayout> {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+    // A stale bundle folder stands in for a Development Vault's plugin folder,
+    // whose data.json holds whatever ZotLit last saved there.
+    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
+    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
+    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
+    await writeFile(
+      join(bundleDir, "data.json"),
+      JSON.stringify({ __VERSION__: 10, stale: true }),
+    );
+    await buildFixture(caseLayout, {
+      vaultCase,
+      ...(scopeCase === undefined ? {} : { scopeCase }),
+      pluginBundleDir: bundleDir,
+    });
+    return caseLayout;
+  }
+
+  function booksProfilePath(caseLayout: FixtureLayout): string {
+    return join(
+      caseLayout.vaultDir,
+      "templates",
+      LITERATURE_NOTE_PROFILES[0]!.document,
+    );
+  }
+
+  const configuredTaskCases = [
+    "workbench-spread",
+    "workbench-partial-edit",
+    "workbench-citation-variants",
+    "workbench-external-edit",
+  ] as const;
+
+  it("seeds the configured base unchanged for the task-only Workbench cases", async () => {
+    for (const vaultCase of configuredTaskCases) {
+      const caseLayout = await buildWorkbenchCase(vaultCase);
+      const profile = await readFile(booksProfilePath(caseLayout), "utf-8");
+      const citation = await readFile(
+        join(caseLayout.vaultDir, "templates", "zotlit-citation.md"),
+        "utf-8",
+      );
+      const partial = await readFile(
+        join(
+          caseLayout.vaultDir,
+          "templates",
+          `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+        ),
+        "utf-8",
+      );
+      const settings = JSON.parse(
+        await readFile(caseLayout.pluginDataPath, "utf-8"),
+      ) as Record<string, unknown>;
+
+      // The Books Profile is valid and unstamped by any Workbench variation.
+      expect(profile).toBe(LITERATURE_NOTE_DOCUMENTS[0]!.source);
+      expect(() => parseLiteratureNoteTemplate(profile)).not.toThrow();
+      // The Citation Template keeps its visibly distinct main and alt branches.
+      expect(citation).toContain("{{ zt.citations | pandoc_cite }}");
+      expect(citation).toContain(
+        'cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+      );
+      // The Shared Partial and a current settings file are present.
+      expect(partial).toContain("[!info] Book details");
+      expect(settings.__VERSION__).toBe(10);
+    }
+  });
+
+  it("seeds the deliberate YAML error and keeps the body and Annotation Section", async () => {
+    const caseLayout = await buildWorkbenchCase("workbench-yaml-repair");
+    const broken = await readFile(booksProfilePath(caseLayout), "utf-8");
+
+    expect(broken).toBe(brokenBooksProfileSource());
+    expect(broken).toContain(YAML_REPAIR_PROFILE_EDIT.replace);
+    expect(broken).not.toContain(YAML_REPAIR_PROFILE_EDIT.find);
+    // The one error is in the manifest; everything after the delimiter survives.
+    expect(broken).toContain("# Book profile: {{ zt.title }}");
+    expect(broken).toContain("--- zotlit:annotation ---");
+    expect(broken).toContain(
+      `{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}`,
+    );
+    // The valid source parses; the seeded broken source does not.
+    expect(() =>
+      parseLiteratureNoteTemplate(LITERATURE_NOTE_DOCUMENTS[0]!.source),
+    ).not.toThrow();
+    expect(() => parseLiteratureNoteTemplate(broken)).toThrow(
+      "Invalid Literature Note Template manifest",
+    );
+    // Unrelated seeded files stay valid and unchanged.
+    await expect(
+      readFile(
+        join(
+          caseLayout.vaultDir,
+          "templates",
+          `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+        ),
+        "utf-8",
+      ),
+    ).resolves.toContain("[!info] Book details");
+  });
+
+  it("enriches the stamped Books note with prose and an unmanaged sentinel", async () => {
+    const caseLayout = await buildWorkbenchCase(
+      "workbench-update-preservation",
+    );
+    const item = ITEMS.find(({ key }) => key === PRESERVATION_NOTE_ITEM_KEY)!;
+    const note = await readFile(
+      join(
+        caseLayout.vaultDir,
+        "books",
+        `${item.literatureNoteName ?? item.key}.md`,
+      ),
+      "utf-8",
+    );
+
+    for (const [key, value] of Object.entries(
+      PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
+    )) {
+      expect(note).toContain(`${key}: ${value}`);
+    }
+    for (const line of PRESERVATION_NOTE_HANDWRITTEN_PROSE) {
+      expect(note).toContain(line);
+    }
+    // The prose sits outside the Managed Region, after its closing marker.
+    expect(note.indexOf("%%/zt-managed%%")).toBeLessThan(
+      note.indexOf(PRESERVATION_NOTE_HANDWRITTEN_PROSE[0]!),
+    );
+    // Only the targeted note changed; the Profile document stays valid.
+    const profile = await readFile(booksProfilePath(caseLayout), "utf-8");
+    expect(() => parseLiteratureNoteTemplate(profile)).not.toThrow();
+  });
+
+  it("seeds a complete valid scratch draft outside the template folder", async () => {
+    const caseLayout = await buildWorkbenchCase("workbench-scratch-draft");
+    const draftPath = join(caseLayout.vaultDir, SCRATCH_DRAFT_RELATIVE_PATH);
+    const draft = await readFile(draftPath, "utf-8");
+    const installed = await readFile(booksProfilePath(caseLayout), "utf-8");
+
+    expect(draft).toBe(scratchDraftSource());
+    expect(() => parseLiteratureNoteTemplate(draft)).not.toThrow();
+    expect(draft).toContain("# Draft Book profile: {{ zt.title }}");
+    expect(draft).toContain("id: V1StGXR8Z5jd");
+    // The installed Profile is untouched by the draft's distinct body.
+    expect(installed).toContain("# Book profile: {{ zt.title }}");
+    expect(installed).not.toContain("# Draft Book profile");
+  });
+
+  it("keeps the default no-note Workbench case as empty as a fresh vault", async () => {
+    const caseLayout = await buildWorkbenchCase("workbench-default-no-note");
+
+    expect(await readdir(caseLayout.vaultDir)).toEqual([
+      ".obsidian",
+      "attachments",
+    ]);
+    await expect(stat(caseLayout.pluginDataPath)).rejects.toThrow("ENOENT");
+    await expect(
+      readdir(join(caseLayout.vaultDir, "templates")),
+    ).rejects.toThrow("ENOENT");
+  });
+
+  it("refuses a default no-note Workbench case with a saved Library Scope", async () => {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-default-scope-")),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+
+    await expect(
+      buildFixture(caseLayout, {
+        vaultCase: "workbench-default-no-note",
+        scopeCase: "partial",
+      }),
+    ).rejects.toThrow('cannot save the "partial" Scope Case');
+  });
+
+  it("removes the book-details partial while the Books caller stays intact", async () => {
+    const caseLayout = await buildWorkbenchCase("workbench-error-recovery");
+
+    await expect(
+      readFile(
+        join(
+          caseLayout.vaultDir,
+          "templates",
+          `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+        ),
+        "utf-8",
+      ),
+    ).rejects.toThrow("ENOENT");
+    const profile = await readFile(booksProfilePath(caseLayout), "utf-8");
+    expect(profile).toContain(
+      `{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}`,
+    );
+    expect(() => parseLiteratureNoteTemplate(profile)).not.toThrow();
+  });
+
+  it("restores the exact seed after mutating, adding, and removing files", async () => {
+    const caseLayout = await buildWorkbenchCase("workbench-scratch-draft");
+    const draftPath = join(caseLayout.vaultDir, SCRATCH_DRAFT_RELATIVE_PATH);
+    const citationPath = join(
+      caseLayout.vaultDir,
+      "templates",
+      "zotlit-citation.md",
+    );
+
+    await writeFile(draftPath, "# tampered draft\n");
+    await writeFile(join(caseLayout.vaultDir, "extra.md"), "# extra\n");
+    await rm(citationPath, { force: true });
+
+    await buildFixture(caseLayout, {
+      vaultCase: "workbench-scratch-draft",
+    });
+
+    expect(await readFile(draftPath, "utf-8")).toBe(scratchDraftSource());
+    await expect(
+      readFile(join(caseLayout.vaultDir, "extra.md"), "utf-8"),
+    ).rejects.toThrow("ENOENT");
+    await expect(readFile(citationPath, "utf-8")).resolves.toContain(
+      "{{ zt.citations | pandoc_cite }}",
+    );
+  });
+
+  it("lists every Workbench case in the generated CLI reference", () => {
+    const guide = renderGuide();
+    for (const vaultCase of VAULT_CASES) {
+      expect(guide).toContain(vaultCase.id);
+    }
   });
 });
