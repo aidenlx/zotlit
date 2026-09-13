@@ -36,6 +36,11 @@ import {
 import { loadCitationData, loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
+  createInspectHandler,
+  inspectFlags,
+  TEMPLATE_INSPECT_COMMAND,
+} from "./inspect";
+import {
   CITATION_EXAMPLE_NAMES,
   CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
@@ -265,22 +270,34 @@ export function registerTemplateWorkbench(
   plugin: Plugin,
   deps: TemplateWorkbenchRegistrationDeps,
 ): void {
+  const getIdentity = async () => {
+    await Promise.all([deps.zoteroPref.ready, deps.profile.ready]);
+    return {
+      vault: {
+        name: deps.app.vault.getName(),
+        path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
+      },
+      source: {
+        id: deps.zoteroPref.sourceId,
+        databasePath: deps.zoteroPref.databasePath,
+      },
+    };
+  };
+  plugin.registerCliHandler(
+    TEMPLATE_INSPECT_COMMAND,
+    "Inspect a Template Document and verify saved source freshness",
+    inspectFlags,
+    createInspectHandler({
+      app: deps.app,
+      profile: deps.profile,
+      templates: deps.templates,
+      folder: () => deps.settings.current!["template.folder"],
+      identity: getIdentity,
+    }),
+  );
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: plugin.manifest.version,
-    getIdentity: async () => {
-      await Promise.all([deps.zoteroPref.ready, deps.profile.ready]);
-      return {
-        vault: {
-          name: deps.app.vault.getName(),
-          // Desktop-only plugin: the adapter is always a FileSystemAdapter.
-          path: (deps.app.vault.adapter as FileSystemAdapter).getBasePath(),
-        },
-        source: {
-          id: deps.zoteroPref.sourceId,
-          databasePath: deps.zoteroPref.databasePath,
-        },
-      };
-    },
+    getIdentity,
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
     loadCitation: (selector, variant) =>
       loadCitationData(deps, selector, variant),

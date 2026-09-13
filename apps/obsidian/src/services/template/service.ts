@@ -186,6 +186,7 @@ export interface LiteratureNoteTemplateStatus {
           readonly code: LiteratureNoteTemplateErrorCode | "unknown";
           readonly message: string;
           readonly recovery: string;
+          readonly cause?: unknown;
         };
       };
 }
@@ -441,6 +442,8 @@ export class TemplateService extends Service<void> {
   });
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
   readonly #compileErrors = new Map<string, CompileError>();
+  /** Exact bytes observed by reconciliation, including sources that fail parsing. */
+  readonly #loadedDocumentSources = new Map<string, string>();
   /** Name → the winner {@link #reconcileName} last resolved it to, with the
    *  JavaScript Templates gate already applied. Read by
    *  {@link getTemplateFileStatuses}, so status reports the winner the
@@ -501,6 +504,10 @@ export class TemplateService extends Service<void> {
 
   get compileErrors(): ReadonlyMap<string, CompileError> {
     return this.#compileErrors;
+  }
+
+  getLoadedDocumentSource(path: string): string | undefined {
+    return this.#loadedDocumentSources.get(path);
   }
 
   /** Name → vault path of a shadowed `.eta.md` file whose Liquid edition currently wins. */
@@ -799,11 +806,13 @@ export class TemplateService extends Service<void> {
                   code: error.code,
                   message: error.message,
                   recovery: error.recovery,
+                  cause: error.cause,
                 }
               : {
                   code: "unknown",
                   message: error.message,
                   recovery: "Correct the document, then inspect it again.",
+                  cause: error.cause,
                 },
         },
       };
@@ -1853,6 +1862,7 @@ export class TemplateService extends Service<void> {
       this.#compileErrors.clear();
       this.#literatureNoteDocuments.clear();
       this.#literatureNoteDocumentErrors.clear();
+      this.#loadedDocumentSources.clear();
 
       const root =
         folder === ""
@@ -2082,18 +2092,22 @@ export class TemplateService extends Service<void> {
     if (!file) {
       this.#literatureNoteDocuments.delete(reference);
       this.#literatureNoteDocumentErrors.delete(reference);
+      this.#loadedDocumentSources.delete(path);
       return;
     }
 
+    let source: string | undefined;
     try {
-      const source = await this.#app.vault.cachedRead(file);
+      source = await this.#app.vault.cachedRead(file);
       if (generation !== this.#folderGeneration) return;
+      this.#loadedDocumentSources.set(path, source);
       const document = this.#facade.parseLiteratureNoteTemplate(source);
       this.#literatureNoteDocuments.set(reference, { path, document });
       this.#literatureNoteDocumentErrors.delete(reference);
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       const failure = Error.isError(error) ? error : new Error(String(error));
+      if (source === undefined) this.#loadedDocumentSources.delete(path);
       this.#literatureNoteDocuments.delete(reference);
       this.#literatureNoteDocumentErrors.set(reference, failure);
       logger.warn("Failed to reconcile Literature Note Template document", {
@@ -2127,14 +2141,25 @@ export class TemplateService extends Service<void> {
           path,
         });
         this.#reservedPartialFiles.set(name, path);
+        try {
+          const source = await this.#app.vault.cachedRead(file);
+          if (generation !== this.#folderGeneration) return;
+          this.#loadedDocumentSources.set(path, source);
+        } catch (error) {
+          if (generation !== this.#folderGeneration) return;
+          this.#loadedDocumentSources.delete(path);
+          logger.warn("Failed to read reserved partial file", { error, path });
+        }
       } else {
         this.#reservedPartialFiles.delete(name);
+        this.#loadedDocumentSources.delete(path);
       }
       return;
     }
 
     if (!file) {
       this.#partialNames.delete(name);
+      this.#loadedDocumentSources.delete(path);
       this.#removePartial(name);
       return;
     }
@@ -2146,11 +2171,14 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       logger.warn("Failed to read partial file", { error, path });
+      this.#loadedDocumentSources.delete(path);
       this.#removePartial(name);
+      this.#compileErrors.set(name, { message: errorMessage(error) });
       return;
     }
     if (generation !== this.#folderGeneration) return;
 
+    this.#loadedDocumentSources.set(path, source);
     let parsed;
     try {
       parsed = parsePlainTemplateDocument(source);
@@ -2202,6 +2230,7 @@ export class TemplateService extends Service<void> {
     const file = this.#app.vault.getFileByPath(path);
     if (!file) {
       this.#useBuiltInCitation();
+      this.#loadedDocumentSources.delete(path);
       return;
     }
 
@@ -2211,11 +2240,14 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       logger.warn("Failed to read the Citation Template", { error, path });
+      this.#loadedDocumentSources.delete(path);
       this.#useBuiltInCitation();
+      this.#compileErrors.set(name, { message: errorMessage(error) });
       return;
     }
     if (generation !== this.#folderGeneration) return;
 
+    this.#loadedDocumentSources.set(path, source);
     let parsed;
     try {
       parsed = parsePlainTemplateDocument(source);
