@@ -36,6 +36,9 @@ function makeHarness(options?: {
       trashed: number;
     } | null,
     "template.folder": "templates",
+    "note.frontmatter-fields": defaults["note.frontmatter-fields"],
+    "template.auto-trim-leading": defaults["template.auto-trim-leading"],
+    "template.auto-trim-trailing": defaults["template.auto-trim-trailing"],
   };
   const legacyPaths = documentsOnly
     ? (options.legacyDocuments?.partials ?? []).map(({ path }) => path)
@@ -70,7 +73,9 @@ function makeHarness(options?: {
     flush: vi.fn(async () => {}),
   };
   const template = {
+    javascriptTemplatesEnabled: false,
     refresh: vi.fn(async () => {}),
+    waitUntilSettled: async () => "settled" as const,
     ready: Promise.resolve(),
     getLegacyLiteratureNoteTemplateFiles: vi.fn(() =>
       documentsOnly
@@ -111,6 +116,8 @@ function makeHarness(options?: {
       vault: {
         getFileByPath: (path: string) => files.get(path) ?? null,
         create,
+        cachedRead: async (file: { path: string }) => file.path,
+        getMarkdownFiles: () => [...files.values()],
       },
       fileManager: { trashFile },
       workspace: {
@@ -516,9 +523,9 @@ async function makeVaultHarness(
     settings,
     template,
     vault,
-    storedSettings: () => structuredClone(plugin.data),
     plugin,
     trashFile,
+    storedSettings: () => structuredClone(plugin.data),
     [Symbol.asyncDispose]: () => owned[Symbol.asyncDispose](),
   };
 }
@@ -771,55 +778,6 @@ describe("the one-shot conversion aborts before any write", () => {
   });
 });
 
-describe("layout-ready legacy conversion detection", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it("discovers layout-ready originals and preserves postponement across delayed inventory on restart", async () => {
-    const original = {
-      "templates/zotlit-note.liquid.md":
-        '# Late inventory {{ zt.title }}\n{% render "content" with zt as zt %}',
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-    };
-    let storedSettings: unknown;
-    {
-      await using first = await makeVaultHarness({});
-      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
-        false,
-      );
-      // Obsidian populates its initial inventory without create events.
-      for (const [path, source] of Object.entries(original))
-        first.vault.addFile(path, source);
-      await first.layoutReady();
-      expect(first.openPrompt).toHaveBeenCalledOnce();
-      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
-        true,
-      );
-      expect(Object.fromEntries(first.vault.contents)).toEqual(original);
-      storedSettings = first.storedSettings();
-    }
-    await using resumed = await makeVaultHarness({}, { storedSettings });
-    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
-      true,
-    );
-    for (const [path, source] of Object.entries(original))
-      resumed.vault.addFile(path, source);
-    await resumed.layoutReady();
-    expect(resumed.openPrompt).not.toHaveBeenCalled();
-    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
-      true,
-    );
-    expect(
-      resumed.template.render(
-        "cite",
-        citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
-      ),
-    ).toBe("<[@smith2024]>\n");
-    expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
-  });
-
-});
-
 describe("accepted conversion cleanup recovery", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
@@ -933,4 +891,255 @@ describe("accepted conversion cleanup recovery", () => {
       "note.template-conversion-result": { pendingCleanup: [], trashed: 3 },
     });
   });
+});
+
+describe("conversion review with real templates", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("discovers layout-ready originals and preserves postponement across delayed inventory on restart", async () => {
+    const original = {
+      "templates/zotlit-note.liquid.md":
+        '# Late inventory {{ zt.title }}\n{% render "content" with zt as zt %}',
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+    };
+    let storedSettings: unknown;
+    {
+      await using first = await makeVaultHarness({});
+      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
+        false,
+      );
+      // Obsidian populates its initial inventory without create events.
+      for (const [path, source] of Object.entries(original))
+        first.vault.addFile(path, source);
+      await first.layoutReady();
+      expect(first.openPrompt).toHaveBeenCalledOnce();
+      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
+        true,
+      );
+      expect(Object.fromEntries(first.vault.contents)).toEqual(original);
+      storedSettings = first.storedSettings();
+    }
+    await using resumed = await makeVaultHarness({}, { storedSettings });
+    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
+      true,
+    );
+    for (const [path, source] of Object.entries(original))
+      resumed.vault.addFile(path, source);
+    await resumed.layoutReady();
+    expect(resumed.openPrompt).not.toHaveBeenCalled();
+    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
+      true,
+    );
+    expect(
+      resumed.template.render(
+        "cite",
+        citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
+      ),
+    ).toBe("<[@smith2024]>\n");
+    expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
+  });
+
+  it("invites once and preserves deferred legacy rendering after settings restart", async () => {
+    const original = { "templates/zotlit-cite.liquid.md": CITE_LIQUID };
+    let storedSettings: unknown;
+    {
+      await using first = await makeVaultHarness(original);
+      await first.layoutReady();
+      expect(first.openPrompt).toHaveBeenCalledOnce();
+      storedSettings = first.storedSettings();
+    }
+    await using resumed = await makeVaultHarness(original, { storedSettings });
+    await resumed.layoutReady();
+    expect(resumed.openPrompt).not.toHaveBeenCalled();
+    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
+      true,
+    );
+    expect(
+      resumed.template.render(
+        "cite",
+        citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
+      ),
+    ).toBe("<[@smith2024]>\n");
+    expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
+  });
+
+  it("preserves active sources during review and activates usable documents on acceptance", async () => {
+    const original = {
+      "templates/zotlit-note.liquid.md":
+        '# {{ zt.title }}\n{% render "content" with zt as zt %}',
+      "templates/zotlit-content.liquid.md": "Body\n",
+      "templates/zotlit-filename.liquid.md": "{{ zt.citationKey }}",
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+      "templates/zotlit-authors.liquid.md": AUTHORS_LIQUID,
+    };
+    await using harness = await makeVaultHarness(original);
+    const before = structuredClone(harness.settings.current);
+    const review = await harness.service.prepare();
+    expect(review.preparation).toMatchObject({ outcome: "prepared" });
+    expect(review.selected).toEqual({
+      item: "Paper",
+      annotation: null,
+      citation: ["smith2024"],
+    });
+    expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
+    expect(harness.settings.current).toEqual(before);
+    expect(review.inputs.map(({ destination }) => destination)).toEqual([
+      "templates/zotlit-profile.default.md",
+      "templates/zotlit-profile.default.md",
+      "templates/zotlit-profile.default.md",
+      "templates/zotlit-citation.md",
+      "templates/zotlit-partial.authors.md",
+    ]);
+    expect(await harness.service.activate(review)).toMatchObject({
+      outcome: "converted",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(
+      harness.template.renderCitation([{ citationKey: "smith2024" }], "main"),
+    ).toBe("<[@smith2024]>");
+    expect(
+      harness.vault.contents.get("templates/zotlit-profile.default.md"),
+    ).toContain("# {{ zt.title }}");
+    expect(harness.vault.contents.has("templates/zotlit-note.liquid.md")).toBe(
+      false,
+    );
+  });
+
+  it("includes files created immediately before preparation after reconciliation", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+    });
+    harness.vault.createFile(
+      "templates/zotlit-cite2.liquid.md",
+      "New alternate source",
+    );
+    const preparing = harness.service.prepare();
+    await vi.advanceTimersByTimeAsync(500);
+    const review = await preparing;
+    expect(review.preparation.outcome).toBe("prepared");
+    expect(review.inputs.map(({ path }) => path)).toEqual([
+      "templates/zotlit-cite.liquid.md",
+      "templates/zotlit-cite2.liquid.md",
+    ]);
+  });
+
+  it("refuses activation when a previously absent legacy file is created before reconciliation", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+    });
+    const review = await harness.service.prepare();
+    harness.vault.createFile(
+      "templates/zotlit-cite2.liquid.md",
+      "New alternate source",
+    );
+    expect(await harness.service.activate(review)).toMatchObject({
+      outcome: "refused",
+      diagnostic: { code: "originals-changed" },
+    });
+    expect(harness.vault.contents.has("templates/zotlit-citation.md")).toBe(
+      false,
+    );
+    expect(harness.vault.contents.get("templates/zotlit-cite2.liquid.md")).toBe(
+      "New alternate source",
+    );
+  });
+
+  it("identifies the retained side of a mixed citation pair before acceptance", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+      "templates/zotlit-cite2.eta.md": "Retained Eta source",
+    });
+    const review = await harness.service.prepare();
+    expect(review.preparation.outcome).toBe("prepared");
+    expect(review.kept).toEqual(["templates/zotlit-cite2.eta.md"]);
+    expect(
+      review.inputs.find(({ path }) => path.endsWith("cite2.eta.md"))
+        ?.destination,
+    ).toBeNull();
+    expect(harness.vault.contents.get("templates/zotlit-cite2.eta.md")).toBe(
+      "Retained Eta source",
+    );
+  });
+
+  it("retains source evidence when synthesis refuses an unsupported layout", async () => {
+    const original = {
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+      "templates/zotlit-cite2.liquid.md":
+        '{% render "cite" with zt as zt %}!\n',
+    };
+    await using harness = await makeVaultHarness(original);
+    const review = await harness.service.prepare();
+    expect(review.preparation).toMatchObject({
+      outcome: "refused",
+      diagnostic: { code: "unsupported-legacy-template" },
+    });
+    expect(
+      review.inputs.find(({ path }) => path.endsWith("cite2.liquid.md"))
+        ?.source,
+    ).toBe('{% render "cite" with zt as zt %}!\n');
+    expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
+  });
+
+  it("reports failed field evaluation with the original field and sources", async () => {
+    const original = {
+      "templates/zotlit-note.liquid.md": '{% render "content" with zt as zt %}',
+      "templates/zotlit-content.liquid.md": "Research body",
+      "templates/zotlit-filename.liquid.md": "{{ zt.citationKey }}",
+    };
+    await using harness = await makeVaultHarness(original);
+    harness.settings.update({
+      "note.frontmatter-fields": [
+        {
+          key: "research-field",
+          language: "liquid",
+          expr: "1 +",
+          merge: "replace",
+        },
+      ],
+    });
+    const review = await harness.service.prepare();
+    expect(review.preparation).toMatchObject({
+      outcome: "refused",
+      diagnostic: {
+        code: "legacy-frontmatter-evaluation",
+        fields: ["research-field"],
+      },
+    });
+    expect(review.fields).toEqual([
+      {
+        key: "research-field",
+        language: "liquid",
+        expr: "1 +",
+        merge: "replace",
+      },
+    ]);
+    expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
+  });
+
+  it.each(["source", "fields"] as const)(
+    "requires a new review after original %s changes",
+    async (change) => {
+      await using harness = await makeVaultHarness({
+        "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+      });
+      const review = await harness.service.prepare();
+      if (change === "source")
+        harness.vault.modifyFile(
+          "templates/zotlit-cite.liquid.md",
+          "Changed original",
+        );
+      else harness.settings.update({ "note.frontmatter-fields": [] });
+      expect(await harness.service.activate(review)).toMatchObject({
+        outcome: "refused",
+        diagnostic: { code: "originals-changed" },
+      });
+      expect(harness.vault.contents.has("templates/zotlit-citation.md")).toBe(
+        false,
+      );
+      expect(
+        harness.vault.contents.has("templates/zotlit-cite.liquid.md"),
+      ).toBe(true);
+    },
+  );
 });

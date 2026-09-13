@@ -22,7 +22,13 @@ import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { templateFileFromPath } from "./defaults";
+import {
+  citationPath,
+  partialPath,
+  templateFileFromPath,
+  classifyTemplateFolderFile,
+  inTemplateFolder,
+} from "./defaults";
 import type {
   ConvertedLegacyProfileDocument,
   ConvertedLegacyTemplateDocuments,
@@ -42,6 +48,9 @@ interface MigrationSettings {
         | "note.template-conversion-pending"
         | "note.template-conversion-result"
         | "template.folder"
+        | "note.frontmatter-fields"
+        | "template.auto-trim-leading"
+        | "template.auto-trim-trailing"
       >
     >
   >;
@@ -50,7 +59,11 @@ interface MigrationSettings {
 }
 
 interface MigrationTemplateService {
+  readonly javascriptTemplatesEnabled: boolean;
   refresh(): Promise<void>;
+  waitUntilSettled(
+    timeoutMs: number,
+  ): Promise<"settled" | "timeout" | "init-failed">;
   ready: Promise<void>;
   getLegacyLiteratureNoteTemplateFiles(): readonly string[];
   convertLegacyLiteratureNoteTemplates(data: {
@@ -65,7 +78,10 @@ interface MigrationTemplateService {
 }
 
 interface MigrationApp {
-  vault: Pick<Vault, "getFileByPath" | "create">;
+  vault: Pick<
+    Vault,
+    "getFileByPath" | "create" | "cachedRead" | "getMarkdownFiles"
+  >;
   fileManager: Pick<FileManager, "trashFile">;
   workspace: Pick<Workspace, "onLayoutReady">;
 }
@@ -82,6 +98,8 @@ export interface LiteratureNoteTemplateMigrationOptions {
 
 /** One real Zotero item, in every shape a conversion verifies against. */
 export interface MigrationVerificationData {
+  readonly itemKey?: string;
+  readonly annotationKey?: string;
   readonly note: object;
   readonly filename: object;
   readonly annotation: object | null;
@@ -139,6 +157,7 @@ export async function loadLiteratureNoteTemplateMigrationData(
     const citation = citationVerificationRefs(lease.client, itemID);
     if (!options.annotation) {
       return {
+        itemKey: indexedKey,
         note: note.data,
         filename: filename.data,
         annotation: null,
@@ -160,6 +179,8 @@ export async function loadLiteratureNoteTemplateMigrationData(
     );
     if (annotation.kind !== "data") continue;
     return {
+      itemKey: indexedKey,
+      annotationKey,
       note: note.data,
       filename: filename.data,
       annotation: annotation.data,
@@ -221,7 +242,8 @@ export type LiteratureNoteTemplateMigrationDiagnostic =
         | "no-verification-item"
         | "no-verification-annotation"
         | "converted-document-exists"
-        | "no-legacy-templates";
+        | "no-legacy-templates"
+        | "originals-changed";
       message: string;
       hint: string;
     };
@@ -244,6 +266,42 @@ export type LiteratureNoteTemplateMigrationResult =
       diagnostic: LiteratureNoteTemplateMigrationDiagnostic;
     };
 
+/** The inactive review retains the original inputs even when synthesis refuses. */
+export interface LiteratureNoteTemplateConversionReview {
+  readonly inputs: readonly {
+    readonly kind: "profile" | "citation" | "partial";
+    readonly path: string;
+    readonly source: string;
+    readonly destination: string | null;
+  }[];
+  readonly kept: readonly string[];
+  readonly fields: Settings["note.frontmatter-fields"];
+  readonly annotation: boolean;
+  readonly selected: {
+    readonly item: string;
+    readonly annotation: string | null;
+    readonly citation: readonly string[];
+  } | null;
+  readonly preparation:
+    | {
+        readonly outcome: "prepared";
+        readonly documents: readonly {
+          readonly path: string;
+          readonly source: string;
+        }[];
+      }
+    | Extract<LiteratureNoteTemplateMigrationResult, { outcome: "refused" }>;
+}
+
+interface PreparedConversion {
+  review: LiteratureNoteTemplateConversionReview;
+  baseline: string;
+  documents: { path: string; source: string }[];
+  legacyFiles: string[];
+  kept: readonly string[];
+  profilePath: string | null;
+}
+
 /** Owns the user-consented, one-shot transition from slot files to one document. */
 export class LiteratureNoteTemplateMigrationService extends Service<void> {
   readonly #app;
@@ -252,6 +310,8 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   readonly #loadVerificationData;
   readonly #openPrompt;
   #stopped = false;
+  #prepared: PreparedConversion | undefined;
+  #selected: LiteratureNoteTemplateConversionReview["selected"] = null;
 
   ready: Promise<void>;
 
@@ -269,6 +329,155 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     await this.ready;
     const settings = this.#settings.current ?? (await this.#settings.loaded);
     if (settings["note.template-conversion-result"]) return this.retryCleanup();
+    const review = await this.prepare();
+    if (review.preparation.outcome === "refused") return review.preparation;
+    return this.activate(review);
+  }
+
+  /** Inspect and verify the candidate without changing active files or settings. */
+  async prepare(): Promise<LiteratureNoteTemplateConversionReview> {
+    await this.ready;
+    this.#prepared = undefined;
+    this.#selected = null;
+    const settled = await this.#template.waitUntilSettled(5000);
+    const inputs = await this.#captureInputs();
+    const settings = await this.#settings.loaded;
+    const fields = structuredClone(settings["note.frontmatter-fields"]);
+    const baseline = await this.#baseline(inputs);
+    const annotation = inputs.some(
+      ({ path }) => templateFileFromPath(path)?.name === "annotation",
+    );
+    let prepared =
+      settled === "settled"
+        ? await this.#prepareDocuments()
+        : refused(
+            "originals-changed",
+            "The template registry is still refreshing",
+            "Review conversion again after the template files finish loading.",
+          );
+    if (baseline !== (await this.#baseline(await this.#captureInputs()))) {
+      logger.debug("Invalidated conversion review", {
+        phase: "preparation",
+        reason: "originals-changed",
+      });
+      prepared = refused(
+        "originals-changed",
+        "The original template configuration changed",
+        "Review conversion again before activating it.",
+      );
+    }
+    const review: LiteratureNoteTemplateConversionReview = {
+      inputs,
+      kept: inputs
+        .filter(({ destination }) => destination === null)
+        .map(({ path }) => path),
+      fields,
+      annotation,
+      selected: this.#selected,
+      preparation:
+        prepared.outcome === "refused"
+          ? prepared
+          : { outcome: "prepared", documents: prepared.documents },
+    };
+    if (prepared.outcome === "prepared")
+      this.#prepared = { ...prepared, review, baseline };
+    logger.debug("Prepared conversion review", {
+      outcome: prepared.outcome,
+      inputs: inputs.length,
+      diagnostic:
+        prepared.outcome === "refused" ? prepared.diagnostic.code : null,
+    });
+    return review;
+  }
+
+  async #baseline(
+    inputs: LiteratureNoteTemplateConversionReview["inputs"],
+  ): Promise<string> {
+    const settings = await this.#settings.loaded;
+    const inventory = await Promise.all(
+      this.#app.vault
+        .getMarkdownFiles()
+        .filter(({ path }) => {
+          if (!inTemplateFolder(path, settings["template.folder"]))
+            return false;
+          const kind = classifyTemplateFolderFile(path)?.kind;
+          return (
+            kind === "legacy-slot" ||
+            kind === "legacy-citation" ||
+            kind === "legacy-partial"
+          );
+        })
+        .toSorted((a, b) => a.path.localeCompare(b.path))
+        .map(async (file) => ({
+          path: file.path,
+          source: await this.#app.vault.cachedRead(file),
+        })),
+    );
+    return JSON.stringify({
+      inventory,
+      inputs,
+      folder: settings["template.folder"],
+      fields: settings["note.frontmatter-fields"],
+      profile: settings["note.default-profile"],
+      leading: settings["template.auto-trim-leading"],
+      trailing: settings["template.auto-trim-trailing"],
+      javascript: this.#template.javascriptTemplatesEnabled,
+    });
+  }
+
+  async #captureInputs(): Promise<
+    LiteratureNoteTemplateConversionReview["inputs"]
+  > {
+    const settings = await this.#settings.loaded;
+    const folder = settings["template.folder"];
+    const legacy = this.#template.getLegacyTemplateDocuments();
+    const citationLanguage = legacy.citation.every(
+      ({ language }) => language === "eta",
+    )
+      ? "eta"
+      : "liquid";
+    const sources = [
+      ...this.#template.getLegacyLiteratureNoteTemplateFiles().map((path) => ({
+        kind: "profile" as const,
+        path,
+        destination: join(folder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+      })),
+      ...legacy.citation.flatMap((file) =>
+        [file.path, ...file.shadowed].map((path) => ({
+          kind: "citation" as const,
+          path,
+          destination:
+            file.language === citationLanguage ? citationPath(folder) : null,
+        })),
+      ),
+      ...legacy.partials.flatMap((file) =>
+        [file.path, ...file.shadowed].map((path) => ({
+          kind: "partial" as const,
+          path,
+          destination: partialPath(folder, file.name),
+        })),
+      ),
+    ];
+    return Promise.all(
+      sources.map(async (input) => {
+        const file = this.#app.vault.getFileByPath(input.path);
+        return {
+          ...input,
+          source: file ? await this.#app.vault.cachedRead(file) : "",
+        };
+      }),
+    );
+  }
+
+  async #prepareDocuments(): Promise<
+    | ({ outcome: "prepared" } & Pick<
+        PreparedConversion,
+        "documents" | "legacyFiles" | "kept" | "profilePath"
+      >)
+    | Extract<LiteratureNoteTemplateMigrationResult, { outcome: "refused" }>
+  > {
+    await this.ready;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
     const slotFiles = this.#template.getLegacyLiteratureNoteTemplateFiles();
     const legacy = this.#template.getLegacyTemplateDocuments();
     if (
@@ -293,6 +502,25 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     const data = await this.#loadVerificationData({
       annotation: foldsAnnotation,
     });
+    this.#selected = data
+      ? {
+          item: [
+            data.itemKey,
+            verificationLabel(data.note, ["indexedKey", "title"]),
+          ]
+            .filter(Boolean)
+            .join(": "),
+          annotation: data.annotation
+            ? [
+                data.annotationKey,
+                verificationLabel(data.annotation, ["indexedKey", "text"]),
+              ]
+                .filter(Boolean)
+                .join(": ")
+            : null,
+          citation: data.citation.map(({ citationKey }) => citationKey ?? "—"),
+        }
+      : null;
     if (!data || (legacy.citation.length > 0 && data.citation.length === 0)) {
       return refused(
         "no-verification-item",
@@ -337,12 +565,46 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       throw error;
     }
 
-    return this.activateDocuments({
-      documents,
-      legacyFiles,
-      kept,
-      profilePath,
-    });
+    const occupied = documents.find(({ path }) =>
+      this.#app.vault.getFileByPath(path),
+    );
+    if (occupied) {
+      return refused(
+        "converted-document-exists",
+        `Converted document already exists at ${occupied.path}`,
+        "Rename or remove that document, then retry conversion.",
+      );
+    }
+    return { outcome: "prepared", documents, legacyFiles, kept, profilePath };
+  }
+
+  /** Activate only the exact review held by this service, while its originals still match. */
+  async activate(
+    review: LiteratureNoteTemplateConversionReview,
+  ): Promise<LiteratureNoteTemplateMigrationResult> {
+    await this.ready;
+    const prepared = this.#prepared;
+    const inputs = await this.#captureInputs();
+    if (
+      !prepared ||
+      prepared.review !== review ||
+      prepared.baseline !== (await this.#baseline(inputs))
+    ) {
+      logger.debug("Invalidated conversion review", {
+        phase: "activation",
+        reason:
+          !prepared || prepared.review !== review
+            ? "review-not-current"
+            : "originals-changed",
+      });
+      return refused(
+        "originals-changed",
+        "The original template configuration changed",
+        "Review conversion again before activating it.",
+      );
+    }
+    this.#prepared = undefined;
+    return this.activateDocuments(prepared);
   }
 
   /** Commit the accepted document set before disposing of original sources. */
@@ -576,6 +838,14 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   }
 }
 
+function verificationLabel(data: object, keys: readonly string[]): string {
+  const values = keys.flatMap((key) => {
+    const value: unknown = Reflect.get(data, key);
+    return typeof value === "string" && value.length > 0 ? [value] : [];
+  });
+  return values.join(": ") || "—";
+}
+
 function refused(
   code: Extract<
     LiteratureNoteTemplateMigrationDiagnostic["code"],
@@ -583,17 +853,18 @@ function refused(
     | "no-verification-annotation"
     | "converted-document-exists"
     | "no-legacy-templates"
+    | "originals-changed"
   >,
   message: string,
   hint: string,
-): LiteratureNoteTemplateMigrationResult {
+): Extract<LiteratureNoteTemplateMigrationResult, { outcome: "refused" }> {
   return { outcome: "refused", diagnostic: { code, message, hint } };
 }
 
 /** Carry a failed verification out as the refusal the prompt reports. */
 function refusedByConversion(
   error: LegacyTemplateConversionError,
-): LiteratureNoteTemplateMigrationResult {
+): Extract<LiteratureNoteTemplateMigrationResult, { outcome: "refused" }> {
   const detail = {
     difference: error.difference,
     message: error.message,

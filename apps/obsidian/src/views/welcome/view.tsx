@@ -9,6 +9,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { DatabaseService } from "@/services/database/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
+import { TemplateConversionReviewModal } from "@/services/template/conversion-review";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -35,7 +36,7 @@ export interface WelcomeViewDeps {
   setupActions: SetupActions;
   templateMigration: Pick<
     LiteratureNoteTemplateMigrationService,
-    "convert" | "retryCleanup"
+    "prepare" | "activate" | "retryCleanup"
   >;
   release: Pick<ReleaseService, "hasV1Templates">;
 }
@@ -122,8 +123,12 @@ export class WelcomeView extends ItemView {
         new BaseNotice(templateMigrationNotice(result));
       },
       convertLiteratureNoteTemplates: async () => {
-        const result = await this.#deps.templateMigration.convert();
-        new BaseNotice(templateMigrationNotice(result));
+        new TemplateConversionReviewModal(this.app, {
+          migration: this.#deps.templateMigration,
+          completed: (result) => {
+            new BaseNotice(templateMigrationNotice(result));
+          },
+        }).open();
       },
       openExternal: (url) => window.open(url),
       ...this.#deps.setupActions,
@@ -232,6 +237,8 @@ function templateMigrationNotice(
       return m.notice_literature_note_template_conversion_no_annotation();
     case "converted-document-exists":
       return m.notice_literature_note_template_conversion_exists();
+    case "originals-changed":
+      return m.conversion_review_originals_changed();
     case "no-legacy-templates":
       return m.notice_literature_note_template_conversion_none();
   }
