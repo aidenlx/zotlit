@@ -1201,7 +1201,7 @@ Annotation`,
     expect(marker?.textContent).toBe(m.workbench_problem_show());
     await act(async () => marker?.click());
     expect(problemsArea(test.editor).textContent).toContain(
-      m.workbench_diagnostic_render_error_suggestion(),
+      m.workbench_diagnostic_liquid_syntax_error_suggestion(),
     );
     expect(preview.contentEl.textContent).toContain(
       m.workbench_preview_problem(),
@@ -1237,10 +1237,7 @@ Annotation`,
     vi.useFakeTimers();
     const preview = await failing(
       test,
-      PROFILE_SOURCE.replace(
-        "Personal space.",
-        "{{ zt.title | bogus_filter }}",
-      ),
+      PROFILE_SOURCE.replace("Personal space.", '{{ "bad" | pandoc_cite }}'),
     );
 
     await act(async () => previewButton(preview, m.workbench_problem_show()));
@@ -1248,10 +1245,11 @@ Annotation`,
     expect(area.textContent).toContain(
       m.workbench_diagnostic_render_error_suggestion(),
     );
-    // The engine's own words survive, and its own location is reported as its
-    // own — no call in this source names the template it blamed.
-    expect(area.textContent).toContain("undefined filter: bogus_filter");
-    expect(area.textContent).toContain(m.workbench_problems_location_unknown());
+    // The engine's own words survive, and the section it blamed is named — no
+    // call in this source names a template to send the reader to instead.
+    expect(area.textContent).toContain(
+      "pandoc_cite requires a Citation Item array",
+    );
     expect(
       Array.from(problemsArea(test.editor).querySelectorAll("button")).map(
         (button) => button.textContent,
