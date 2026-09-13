@@ -150,6 +150,11 @@ export type PreparedProfileImport = {
    * the reader answers by naming it in `import`'s `replacePartials`.
    */
   partials: readonly LiteratureNotePartialUnpack[];
+  /** Render the Profile with the same partial choice the import will apply. */
+  previewSource(options?: {
+    /** The conflicting partials the reader chose to replace. */
+    replacePartials?: readonly string[];
+  }): string;
   /** The match choice can change while the target snapshot stays fixed. */
   import(options?: {
     includeMatch?: ProfileImportOptions["includeMatch"];
@@ -849,6 +854,18 @@ export class ProfileService extends Service {
         document,
         entry,
       }),
+      previewSource: ({ replacePartials = [] } = {}) => {
+        const replace = new Set(replacePartials);
+        return withoutBundledPartials(
+          content,
+          partials.flatMap(({ name, verdict }) =>
+            verdict === "unchanged" ||
+            (verdict === "conflict" && !replace.has(name))
+              ? [name]
+              : [],
+          ),
+        );
+      },
       import: ({
         includeMatch: approvedMatch = includeMatch,
         replacePartials,

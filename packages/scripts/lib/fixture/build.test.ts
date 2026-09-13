@@ -1368,7 +1368,7 @@ describe("the generated Obsidian vault", () => {
         expect.stringContaining(
           "Fixture sample for testing Profile import with an unavailable citation style.",
         ),
-        expect.stringContaining("id: ImportPart1"),
+        expect.stringContaining("id: ImportPart01"),
         expect.stringContaining(
           "Fixture sample for testing Profile import with bundled Shared Partials.",
         ),
@@ -1445,6 +1445,7 @@ describe("the generated Obsidian vault", () => {
       "books-duplicateWithin2020.md",
     ]);
     expect(stamped).toContain("zotlit-profile: Books (V1StGXR8Z5jd)");
+    expect(stamped).toContain("%%zt-managed%%");
     expect(unstamped).not.toContain("zotlit-profile:");
   });
 
@@ -1722,6 +1723,7 @@ describe("the generated Obsidian vault", () => {
     );
     expect(source).toContain("id: V1StGXR8Z5jd");
     expect(source).toContain("name: Books");
+    expect(source).toContain(`match: 'itemType == "book"'`);
     expect(source).toContain("folder: books");
     expect(source).toContain(
       "citationStyle: http://www.zotero.org/styles/chinese-gb7714-1987-numeric",

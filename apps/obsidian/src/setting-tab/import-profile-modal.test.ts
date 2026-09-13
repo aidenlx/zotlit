@@ -107,6 +107,7 @@ function fixture(
         "citation.references-style": "missing-style",
       },
     },
+    previewSource: () => "Shared source",
     import: save,
   } as unknown as PreparedProfileImport;
   const prepareImport = vi.fn<ImportProfileDeps["profile"]["prepareImport"]>(
@@ -215,12 +216,44 @@ it("keeps a partial the reader leaves alone and replaces the one they approve", 
   const toggle = replaceToggle(f.modal.contentEl, "authors");
   expect(toggle.getValue()).toBe(false);
   toggle.toggle(true);
+  await vi.waitFor(() =>
+    expect(buttons.disabled(m.profile_import_confirm())).toBe(false),
+  );
   buttons.click(m.profile_import_confirm());
   await expect(f.modal.result).resolves.toMatchObject({ id });
   expect(f.save).toHaveBeenCalledWith({
     includeMatch: true,
     replacePartials: ["authors"],
   });
+});
+
+it("previews a conflicting partial with the reader's keep-or-replace choice", async () => {
+  const f = fixture();
+  Object.assign(f.plan, {
+    previewSource: ({ replacePartials = [] }: { replacePartials?: string[] }) =>
+      replacePartials.includes("authors")
+        ? "Bundled authors preview"
+        : "Local authors preview",
+  });
+  Object.assign(f.deps.template, {
+    prepareLiteratureNoteTemplateSource: (source: string) => ({ source }),
+  });
+  Object.assign(f.deps.noteFeature, {
+    prepareProfileNote: ({ document }: { document: { source: string } }) => ({
+      path: "Reading/Paper.md",
+      properties: {},
+      body: document.source,
+    }),
+  });
+
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Local authors preview"),
+  );
+  replaceToggle(f.modal.contentEl, "authors").toggle(true);
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Bundled authors preview"),
+  );
 });
 
 it("shows only Replace and Cancel for a held ID, naming version and separate note counts", async () => {

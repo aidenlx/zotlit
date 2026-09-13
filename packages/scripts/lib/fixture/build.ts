@@ -1240,6 +1240,20 @@ function literatureNote(
     "---",
     `# ${item.title}`,
     "",
+    ...(profile === undefined
+      ? []
+      : [
+          "%%zt-managed%%",
+          "## Book details",
+          "",
+          `Citation key: ${item.citationKey ?? ""}`,
+          "",
+          "> [!info] Book details",
+          `> Type: ${item.itemType}`,
+          `> Citation key: ${item.citationKey ?? item.key}`,
+          "%%/zt-managed%%",
+          "",
+        ]),
     ...(item.literatureNoteCitations === undefined
       ? []
       : [

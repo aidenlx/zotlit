@@ -314,6 +314,35 @@ describe("ProfileService", () => {
     ).toBeUndefined();
   });
 
+  it("prepares a kept partial from the reader's file and a replacement from the bundle", async () => {
+    await using f = await harness({
+      "templates/zotlit-partial.authors.md": "Mine",
+    });
+    const source = document(
+      BOOKS,
+      [
+        "partials:",
+        "  - name: summary",
+        "    language: liquid",
+        "    source: Their summary",
+        "  - name: authors",
+        "    language: liquid",
+        "    source: Their authors",
+      ].join("\n"),
+    ).replace("Managed", '{% render "summary" %} {% render "authors" %}');
+    const plan = await f.profile.prepareImport(source);
+    expect(
+      parseLiteratureNoteTemplate(plan.previewSource()).manifest.partials?.map(
+        ({ name }) => name,
+      ),
+    ).toEqual(["summary"]);
+    expect(
+      parseLiteratureNoteTemplate(
+        plan.previewSource({ replacePartials: ["authors"] }),
+      ).manifest.partials?.map(({ name }) => name),
+    ).toEqual(["summary", "authors"]);
+  });
+
   it("renders a kept partial from the reader's own file, and the rest from the bundle", async () => {
     await using f = await harness({
       "templates/zotlit-partial.authors.md": "Mine",
