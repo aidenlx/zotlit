@@ -1,3 +1,4 @@
+import type { RenderDiagnostic } from "#/render/result";
 import { describe, expect, it } from "vitest";
 
 import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
@@ -229,7 +230,7 @@ describe("attribution", () => {
     });
   });
 
-  it("leaves a missing partial's location unknown when several calls name it", () => {
+  it("locates a missing partial at the first call when several calls name it", () => {
     const source =
       '{% if false %}{% render "venue-line" %}{% endif %}\n{% render "venue-line" %}';
     const failure = renderFailureDiagnostic(
@@ -237,7 +238,7 @@ describe("attribution", () => {
       { source, language: "liquid" },
     );
 
-    expect(failure.callSite).toBeUndefined();
+    expect(failure.callSite).toEqual({ from: 14, to: 39 });
     expect(
       renderFailureDiagnostic(new MissingTemplateError("venue-line"), {
         source: '{% render "venue-line" %}',
@@ -341,6 +342,61 @@ describe("attribution", () => {
     ).not.toBe(at(395));
   });
 
+  it.each([false, true])(
+    "keeps a named failure selected when its engine location moves (call: %s)",
+    (withCall) => {
+      const failure = (line: number): RenderDiagnostic => ({
+        code: "render-error",
+        part: "render",
+        message: `Failure at line ${line}`,
+        engine: { template: "citation", line, column: 1 },
+        ...(withCall
+          ? { callSite: { from: line * 10, to: line * 10 + 8 } }
+          : {}),
+      });
+      expect(renderDiagnosis(failure(2)).id).toBe(
+        renderDiagnosis(failure(3)).id,
+      );
+      expect(
+        renderDiagnosis({ ...failure(2), part: "annotation" }).id,
+      ).not.toBe(renderDiagnosis(failure(2)).id);
+    },
+  );
+
+  it("selects the second unattributed occurrence by its direct diagnosis id", () => {
+    const first: RenderDiagnostic = {
+      code: "render-error",
+      message: "Failure",
+    };
+    const second: RenderDiagnostic = { ...first };
+    const selectedId = renderDiagnosis(second).id;
+    const diagnoses = workbenchDiagnoses([], [first, second]);
+    const selected = diagnoses.find(({ id }) => id === selectedId);
+    expect(selected?.kind === "render" && selected.diagnostic).toBe(second);
+    expect(selected?.occurrences).toHaveLength(1);
+    expect(renderDiagnosis(first).id).not.toBe(renderDiagnosis(second).id);
+  });
+
+  it("keeps a named missing partial selected without a verified source location", () => {
+    const failure = (): RenderDiagnostic => ({
+      ...renderFailureDiagnostic(new MissingTemplateError("venue-line"), {
+        source: '{% render "summary" %}',
+        language: "liquid",
+      }),
+      part: "render",
+    });
+    const first = failure();
+    const recurrence = failure();
+    expect(first.engine).toBeUndefined();
+    expect(first.callSite).toBeUndefined();
+    expect(renderDiagnosis(recurrence).id).toBe(renderDiagnosis(first).id);
+    expect(
+      workbenchDiagnoses([], [first, recurrence]).map(
+        ({ occurrences }) => occurrences,
+      ),
+    ).toEqual([[first, recurrence]]);
+  });
+
   it("gives each unattributed failure a problem of its own", () => {
     const failure = (message: string) =>
       ({ code: "render-error", message, part: "render" }) as const;
@@ -388,23 +444,6 @@ describe("attribution", () => {
 
     expect(
       workbenchDiagnoses([], [failure(2, 20), failure(8, 60)]),
-    ).toHaveLength(2);
-    expect(
-      workbenchDiagnoses(
-        [],
-        [
-          {
-            code: "missing-partial",
-            params: { name: "book-details" },
-            part: "render",
-          },
-          {
-            code: "missing-partial",
-            params: { name: "book-details" },
-            part: "render",
-          },
-        ],
-      ),
     ).toHaveLength(2);
   });
 

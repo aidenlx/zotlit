@@ -7,8 +7,11 @@
 // document the reader has open.
 
 import type { TemplateLanguage } from "@zotlit/templates/constants";
-import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
-import { PandocCitationError } from "@zotlit/templates/pandoc-citation";
+import {
+  CitationInputError,
+  MissingTemplateError,
+  TemplateError,
+} from "@zotlit/templates/facade";
 
 import { errorChain } from "./report";
 import type {
@@ -18,9 +21,6 @@ import type {
 } from "./result";
 
 import { templateCalls } from "#/document/regions";
-
-/** The name the Citation Template renders under, which its callers spell. */
-const CITATION_TEMPLATE = "citation";
 
 /** The source one render read, which a repair location is an offset into. */
 export interface RenderCallerSource {
@@ -34,10 +34,9 @@ export interface RenderCallerSource {
  *
  * A call to a Shared Partial the vault holds no document for is the engine's
  * own missing-partial report, which the Partial Placeholder, the Problems
- * area, and a refused Literature Note all read by code. A single verified call
- * to the Citation Template plus its structural refusal is evidence that the
- * caller supplied the data; a filter applied inside that template is not. Every
- * other failure carries the engine's own words.
+ * area, and a refused Literature Note all read by code. Citation input mismatch
+ * requires runtime provenance of a direct read from the entry root and a
+ * verified caller. Every other failure carries the engine's own words.
  *
  * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
  * @see docs/adr/0056-template-diagnosis-belongs-to-the-editor.md
@@ -55,7 +54,7 @@ export function renderFailureDiagnostic(
   // The partial the engine could not resolve is the one to repair the call to;
   // every other failure is repaired where the template it names was called.
   const site = named
-    ? verifiedCallSite(caller, named.templateName)
+    ? callSites(caller, named.templateName)[0]
     : verifiedCallSite(caller, engine?.template);
   const from = callerOf(chain);
   const attribution = {
@@ -71,7 +70,9 @@ export function renderFailureDiagnostic(
     };
   return {
     code:
-      engine?.template === CITATION_TEMPLATE && refusedCitationData(chain, site)
+      engine?.template === "citation" &&
+      site !== undefined &&
+      chain.some((link) => link instanceof CitationInputError)
         ? "citation-data-mismatch"
         : "render-error",
     message: errorText(error),
@@ -81,25 +82,6 @@ export function renderFailureDiagnostic(
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Whether a verified caller passed invalid input to the Citation Template —
- * the Pandoc Citation formatter reporting that what it was handed is no
- * Citation Item array. The structural refusal names the mismatch by class;
- * the refusal alone does not.
- */
-function refusedCitationData(
-  chain: readonly Error[],
-  site: RenderDiagnostic["callSite"],
-): boolean {
-  return (
-    site !== undefined &&
-    chain.some(
-      (link) =>
-        link instanceof PandocCitationError && link.code === "invalid-input",
-    )
-  );
 }
 
 /**
@@ -208,8 +190,8 @@ function callSites(
  * call that reached it. A source spelling that name twice reached it from one
  * of them and nothing here says which, so the repair location stays absent
  * rather than sending the reader to whichever call comes first — which may be
- * one this render never took. A missing template follows the same rule: more
- * than one call still leaves the repair location unknown.
+ * one this render never took. Missing templates use the first call instead:
+ * every call naming the missing document needs the same repair.
  */
 function verifiedCallSite(
   caller: RenderCallerSource,

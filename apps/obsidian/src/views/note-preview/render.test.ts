@@ -28,6 +28,25 @@ import {
 const BODY_RENDERS = "__zotlitPreviewBodyRenders";
 
 describe("native Profile rendering", () => {
+  it("attributes a failed render_annotation call to the Annotation section", async () => {
+    await using fixture = await createRenderFixture();
+    const source = PROFILE_SOURCE.replace(
+      "{% render 'annotation' with annotation as zt %}",
+      "{% render_annotation annotation %}",
+    ).replace("{{ zt.text }}", "{{ zt.text | missing_filter }}");
+    const result = await renderNativeProfile(fixture.deps, {
+      source,
+      snapshot: fixture.snapshot,
+    });
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "render-error",
+        part: "annotation",
+        engine: expect.objectContaining({ template: "annotation" }),
+      }),
+    ]);
+  });
+
   it.each(SAMPLE_ITEM_CHOICES)(
     "renders $id with installed templates and no database",
     async ({ id, title }) => {

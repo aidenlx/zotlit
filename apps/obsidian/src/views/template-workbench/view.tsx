@@ -33,7 +33,6 @@ import {
   externalEdit,
   WorkbenchDocumentController,
   entryPosition,
-  templateCalls,
 } from "@zotlit/workbench/document";
 import type {
   WorkbenchDocumentKind,
@@ -43,6 +42,7 @@ import type {
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   DEFAULT_PARTIAL_CONTEXT,
+  currentCallSite,
   failedRender,
   isPartialContext,
   renderIdentity,
@@ -1917,7 +1917,7 @@ function EditorContent({
   const host = useWorkbenchHost();
   const resultPart = useParts("resultColumn");
   useDocumentRevision(controller);
-  const { result, trigger, attempt } = useRenderState();
+  const { result, trigger, attempt, busy, stale } = useRenderState();
   const previewProblems = usePreviewProblems(view);
   const formatProblem = [
     ...(result?.diagnostics ?? []),
@@ -2019,6 +2019,7 @@ function EditorContent({
       : entry,
   );
   const [arrival, setArrival] = useState<ArrivingProblem | null>(null);
+  const arrivalAttempt = useRef(0);
   const pendingArrival = view.arrival;
   const arrivalDiagnostic = arrival?.diagnostic;
   const diagnoses = workbenchDiagnoses(documentProblems, [
@@ -2069,10 +2070,11 @@ function EditorContent({
   // own check finds no matching failure.
   useEffect(() => {
     if (!pendingArrival) return;
+    arrivalAttempt.current = attempt;
     setArrival(pendingArrival);
     view.takeArrival();
     openProblems(true);
-  }, [view, pendingArrival, openProblems]);
+  }, [view, pendingArrival, openProblems, attempt]);
   const arrivalSelection = useRef<ArrivingProblem | null>(null);
   const detected = diagnoses.map(({ id }) => id).join("\n");
   useEffect(() => {
@@ -2088,6 +2090,74 @@ function EditorContent({
     arrivalSelection.current = arrival;
     selectProblem(match.id);
   }, [arrival, detected, diagnoses, selectProblem]);
+  useEffect(() => {
+    if (
+      !arrival ||
+      attempt <= arrivalAttempt.current ||
+      busy ||
+      stale ||
+      !result ||
+      documentProblems.length > 0
+    )
+      return;
+    const { report, part } = arrival.diagnostic;
+    const annotationCheck =
+      kind === "profile" &&
+      (part === "annotation" || report?.context.root === "annotation");
+    const output = annotationCheck
+      ? result.annotation
+      : kind === "profile"
+        ? result.creationBody
+        : kind === "citation"
+          ? result.citation
+          : result.partial;
+    if (output === null) return;
+    if (
+      result.diagnostics.some((diagnostic) =>
+        annotationCheck
+          ? diagnostic.part === "annotation"
+          : diagnostic.part !== "annotation",
+      )
+    )
+      return;
+    const context = view.reportContext(
+      kind === "profile"
+        ? "note"
+        : kind === "citation"
+          ? "citation"
+          : view.partialContext,
+    );
+    if (
+      (report?.context.document !== undefined &&
+        report.context.document !== context.document) ||
+      (report?.context.selection !== undefined &&
+        report.context.selection !== context.selection) ||
+      (report?.context.root !== undefined &&
+        report.context.root !== context.root &&
+        !(
+          report.context.root === "annotation" && result.annotation !== null
+        )) ||
+      (report?.context.selection === undefined &&
+        report?.identity.snapshotRevision &&
+        report.identity.snapshotRevision !== result.snapshotRevision) ||
+      (report?.identity.annotationId !== undefined &&
+        report.identity.annotationId !== result.annotationId) ||
+      (annotationCheck && result.annotation === null)
+    )
+      return;
+    // The Problems area already holds the inspected report. A fresh applicable
+    // success clears its active failure while that report remains available.
+    setArrival(null);
+  }, [
+    arrival,
+    attempt,
+    busy,
+    stale,
+    result,
+    documentProblems.length,
+    view,
+    kind,
+  ]);
   const state = view.store.getState();
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
@@ -2146,22 +2216,6 @@ function EditorContent({
     }
     return "advanced";
   }
-  /** Re-finds a retained call in the current source before moving the caret. */
-  function currentCallSite(
-    diagnostic: RenderDiagnostic,
-  ): { from: number; to: number } | undefined {
-    const target =
-      diagnostic.code === "missing-partial"
-        ? diagnostic.params?.name
-        : diagnostic.engine?.template;
-    if (target === undefined) return undefined;
-    const calls = templateCalls(
-      controller.source,
-      { from: 0, to: controller.source.length },
-      controller.language,
-    ).filter(({ name }) => name === String(target));
-    return calls.length === 1 ? calls[0]!.call : undefined;
-  }
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
     if (diagnosis.kind === "document") {
@@ -2172,7 +2226,7 @@ function EditorContent({
     // A verified call outranks the part the engine reported the failure under:
     // a failure inside a called template is repaired where it was called.
     if (callSite) {
-      const current = currentCallSite(diagnosis.diagnostic);
+      const current = currentCallSite(diagnosis.diagnostic, controller);
       if (current === undefined) {
         new BaseNotice(m.workbench_problems_location_unknown());
         return;

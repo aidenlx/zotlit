@@ -207,22 +207,9 @@ export function useWorkbenchProblems({
         documentReports.current.get(selected.id) ??
         null);
   const [inspected, setInspected] = useState<RenderReport | null>(null);
-  const [inspectionRevision, setInspectionRevision] = useState(0);
-  const inspectedSelection = useRef<{
-    readonly id: string;
-    readonly revision: number;
-  } | null>(null);
   useEffect(() => {
-    if (selected === null || current === null) return;
-    const kept = inspectedSelection.current;
-    if (kept?.id === selected.id && kept.revision === inspectionRevision)
-      return;
-    inspectedSelection.current = {
-      id: selected.id,
-      revision: inspectionRevision,
-    };
-    setInspected(current);
-  }, [current, inspectionRevision, selected]);
+    if (current !== null) setInspected(current);
+  }, [current]);
   // The problem the reader is reading, kept past the repair that resolves it
   // so the area can still name what the resolved explanation was about. A
   // cache of what this render already computed, not state of its own.
@@ -241,7 +228,6 @@ export function useWorkbenchProblems({
     next: selected === null ? first : null,
     select(id) {
       setSelectedId(id);
-      setInspectionRevision((revision) => revision + 1);
       setOpen(true);
     },
     setOpen: openArea,
@@ -276,7 +262,7 @@ export function usePublishedProblems({
   /** Counts published results, so one deliberate failure opens the area once. */
   readonly attempt: number;
   readonly publish: (diagnostics: readonly RenderDiagnostic[]) => void;
-  readonly showProblem: (id: string) => void;
+  readonly showProblem: (id: string, occurrence?: RenderDiagnostic) => void;
 }): void {
   const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
   const publishing = useRef(publish);
@@ -293,7 +279,7 @@ export function usePublishedProblems({
     opened.current = attempt;
     const first = diagnostics[0];
     if (trigger === "explicit" && first)
-      open.current(renderDiagnosis(first).id);
+      open.current(renderDiagnosis(first).id, first);
   }, [attempt, trigger, diagnostics]);
 }
 

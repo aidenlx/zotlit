@@ -131,6 +131,8 @@ export interface WorkbenchPersistence {
 
 export interface WorkbenchMarkdownProps {
   readonly markdown: string;
+  /** Identifies the output even when two surfaces contain the same text. */
+  readonly surface: "note" | "annotation" | "citation" | "partial";
   readonly properties: readonly RenderedProperty[];
   /** The note's YAML block as the render wrote it, printed above `markdown` in the Markdown view. */
   readonly frontmatterBlock?: string | null;

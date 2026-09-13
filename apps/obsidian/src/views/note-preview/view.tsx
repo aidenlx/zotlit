@@ -1208,7 +1208,7 @@ function PreviewContent({
     trigger,
     attempt,
     publish: publishProblems,
-    showProblem: (id) => showProblem(id, false),
+    showProblem: (id, occurrence) => showProblem(id, false, occurrence),
   });
   const mode = context ? resultMode(context) : "note";
   const partialContext = partialContextOf(context);

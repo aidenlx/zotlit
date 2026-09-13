@@ -81,6 +81,8 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
 }
 export interface NativeRenderResult extends TemplateRenderResult {
   readonly sourcePath: string;
+  /** A retained Annotation can come from a different note path than the body. */
+  readonly annotationSourcePath?: string;
   readonly citations: readonly PreviewCitation[];
   readonly annotationCitations: readonly PreviewCitation[];
 }
@@ -673,7 +675,7 @@ function renderFault(
   return {
     ...diagnostic,
     evidence,
-    part,
+    part: diagnostic.engine?.template === "annotation" ? "annotation" : part,
   };
 }
 

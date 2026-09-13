@@ -35,6 +35,37 @@ import {
 import type { BridgeRequest } from "./page-test-host";
 
 describe("a draft the parser refuses", () => {
+  it("re-finds a failed call after source moves before the next render", async () => {
+    const call = "{% render 'missing-details' %}";
+    await using page = await open();
+    await page.settle();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const note = view.state.doc.toString().indexOf("# {{ zt.title }}");
+    act(() =>
+      view.dispatch({
+        changes: { from: note, insert: `${call}\n` },
+        userEvent: "input.type",
+      }),
+    );
+    await page.settle();
+    const from = view.state.doc.toString().indexOf(call);
+    act(() =>
+      view.dispatch({
+        changes: { from, insert: "Heading\n" },
+        userEvent: "input.type",
+      }),
+    );
+    page.press(m.workbench_problem_show());
+    page.press(m.workbench_problems_where_call());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
+    const target = [...page.host.querySelectorAll<HTMLElement>(".cm-editor")]
+      .map((element) => EditorView.findFromDOM(element)!)
+      .find((editor) => editor.state.doc.toString().includes(call))!;
+    const selected = target.state.selection.main;
+    expect(target.state.sliceDoc(selected.from, selected.to)).toBe(call);
+  });
+
   it("keeps the last good result, and opens the pane the problem names", async () => {
     await using page = await open();
     await page.settle();

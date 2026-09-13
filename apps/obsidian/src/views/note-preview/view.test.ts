@@ -1565,54 +1565,66 @@ Annotation`,
     );
   });
 
-  it("selects and copies the occurrence requested by a second Preview", async () => {
-    const copied = stubClipboard();
-    const source = PROFILE_SOURCE.replace(
-      "value: [review]",
-      'value: ["review"]',
-    );
-    const broken = source.replace(
-      "Personal space.",
-      '{% render "book-details" %}',
-    );
-    await using test = await setup();
-    vi.useFakeTimers();
-    await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "MAIN2345", title: "Better figures" }),
-    );
-    document.body.append(test.editor.contentEl);
-    await act(async () => test.editor.open());
-    const first = await test.open();
-    await advance();
-    first.leaf.pinned = true;
-    await act(async () =>
-      test.editor.store
-        .getState()
-        .setItem({ id: "sample:book", title: "Thinking, fast and slow" }),
-    );
-    const second = await test.open();
-    await advance();
-    await act(async () => test.editor.setViewData(broken, false));
-    await advance();
+  it.each(["Show problem", "Run"])(
+    "selects and copies the occurrence requested by a second Preview through %s",
+    async (action) => {
+      const copied = stubClipboard();
+      const source = PROFILE_SOURCE.replace(
+        "value: [review]",
+        'value: ["review"]',
+      );
+      const broken = source.replace(
+        "Personal space.",
+        '{% render "book-details" %}',
+      );
+      await using test = await setup();
+      vi.useFakeTimers();
+      await act(async () =>
+        test.editor.store
+          .getState()
+          .setItem({ id: "MAIN2345", title: "Better figures" }),
+      );
+      document.body.append(test.editor.contentEl);
+      await act(async () => test.editor.open());
+      const first = await test.open();
+      await advance();
+      first.leaf.pinned = true;
+      await act(async () =>
+        test.editor.store
+          .getState()
+          .setItem({ id: "sample:book", title: "Thinking, fast and slow" }),
+      );
+      const second = await test.open();
+      await advance();
+      await act(async () => test.editor.setViewData(broken, false));
+      await advance();
 
-    await act(async () => previewButton(first, m.workbench_problem_show()));
-    const area = problemsArea(test.editor);
-    const report = () =>
-      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
-        .textContent!;
-    expect(reportFields(report())["Selection"]).toContain("item=MAIN2345");
+      await act(async () => previewButton(first, m.workbench_problem_show()));
+      const area = problemsArea(test.editor);
+      const report = () =>
+        area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+          .textContent!;
+      expect(reportFields(report())["Selection"]).toContain("item=MAIN2345");
 
-    await act(async () => previewButton(second, m.workbench_problem_show()));
-    expect(reportFields(report())["Selection"]).toContain("item=sample:book");
-    await act(async () =>
-      problemsButton(test.editor, m.workbench_problems_copy()),
-    );
-    expect(reportFields(copied.at(-1)!)["Selection"]).toContain(
-      "item=sample:book",
-    );
-  });
+      if (action === "Run") {
+        await pick(second, m.workbench_preview_auto_refresh());
+        await act(async () => test.editor.setViewData(`${broken}\n`, false));
+        await run(second);
+      } else
+        await act(async () =>
+          previewButton(second, m.workbench_problem_show()),
+        );
+      expect(reportFields(report())["Selection"]).toContain("item=sample:book");
+      if (action === "Run")
+        expect(reportFields(report())["Trigger"]).toBe("explicit");
+      await act(async () =>
+        problemsButton(test.editor, m.workbench_problems_copy()),
+      );
+      expect(reportFields(copied.at(-1)!)["Selection"]).toContain(
+        "item=sample:book",
+      );
+    },
+  );
 
   it("reports a document problem the parser found, with no engine behind it", async () => {
     const copied = stubClipboard();

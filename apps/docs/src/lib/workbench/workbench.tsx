@@ -34,7 +34,11 @@ import type {
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
-import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import {
+  currentCallSite,
+  DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ITEMS,
+} from "@zotlit/workbench/render";
 import type {
   RenderDiagnostic,
   WorkbenchReportContext,
@@ -573,17 +577,25 @@ export function Workbench() {
     // A verified call outranks the part the engine reported the failure under:
     // a failure inside a called template is repaired where it was called.
     if (callSite) {
+      const current = currentCallSite(diagnosis.diagnostic, controller);
+      if (current === undefined) {
+        toast.add({
+          title: m.workbench_problems_location_unknown(),
+          type: "info",
+        });
+        return;
+      }
       // The pane whose own region holds the call; Advanced holds whatever no
       // editing pane covers.
       const slice =
         (["note", "annotation", "filename"] as const).find((id) => {
           const region = controller.sliceRange(id);
-          return region.from <= callSite.from && callSite.from < region.to;
+          return region.from <= current.from && current.from < region.to;
         }) ?? "advanced";
       setView("edit");
       setAdvanced(slice === "advanced");
       if (slice !== "advanced") setTab(slice === "filename" ? "name" : slice);
-      setReveal({ ...callSite });
+      setReveal({ ...current });
       return;
     }
     if (position !== undefined) {

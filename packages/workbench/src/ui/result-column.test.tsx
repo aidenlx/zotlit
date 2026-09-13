@@ -46,10 +46,17 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
     ...overrides,
   };
   const mounted = mount(<ResultColumn {...props} />);
-  mounted.host.markdown = ({ markdown, properties, showMarkdown, marks }) => (
+  mounted.host.markdown = ({
+    markdown,
+    surface,
+    properties,
+    showMarkdown,
+    marks,
+  }) => (
     <div
       data-testid="markdown"
       data-source={showMarkdown}
+      data-surface={surface}
       data-marks={JSON.stringify(marks)}
     >
       {markdown}
@@ -59,6 +66,25 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
   render(mounted.ui);
   return Object.assign(mounted, { props });
 }
+
+it.each(["note", "annotation"] as const)(
+  "identifies the %s surface when note and Annotation text match",
+  (mode) => {
+    const identical = {
+      ...result,
+      creationBody: "Shared text",
+      annotation: "Shared text",
+    };
+    using _mounted = column({
+      mode,
+      result: identical,
+      annotationResult: identical,
+    });
+    expect(screen.getByTestId("markdown").getAttribute("data-surface")).toBe(
+      mode,
+    );
+  },
+);
 
 it("passes the complete note and folded properties to the host renderer", () => {
   using mounted = column({ stale: true, staleReason: "hold" });

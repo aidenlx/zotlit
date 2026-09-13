@@ -5,6 +5,7 @@ import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
 import { HiddenName, useWorkbenchHost, useTooltip } from "./host";
+import type { WorkbenchMarkdownProps } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
@@ -83,7 +84,7 @@ export function ResultRegion({
 }
 
 /** Which of the four outputs a preview shows, which picks its heading and body. */
-export type ResultMode = "note" | "annotation" | "citation" | "partial";
+export type ResultMode = WorkbenchMarkdownProps["surface"];
 
 export interface ResultBodyProps {
   result: TemplateRenderResult | null;
@@ -263,6 +264,7 @@ export function ResultBody({
               {(failed && kept === null) ||
               shown === null ? null : showCitation || showPartial ? (
                 <Markdown
+                  surface={showPartial ? "partial" : "citation"}
                   markdown={
                     (showPartial ? shown.partial : shown.citation) ?? ""
                   }
@@ -272,6 +274,7 @@ export function ResultBody({
               ) : showAnnotation ? (
                 annotationShown ? (
                   <Markdown
+                    surface="annotation"
                     markdown={annotationShown.annotation ?? ""}
                     properties={[]}
                     showMarkdown={showMarkdown}
@@ -284,6 +287,7 @@ export function ResultBody({
                   <p {...part("empty")}>{m.workbench_result_managed_none()}</p>
                 ) : (
                   <Markdown
+                    surface="note"
                     markdown={shown.managedRegion}
                     properties={[]}
                     showMarkdown={showMarkdown}
@@ -291,6 +295,7 @@ export function ResultBody({
                 )
               ) : (
                 <Markdown
+                  surface="note"
                   markdown={shown.creationBody ?? ""}
                   // The sheet is the note, so its list is the fold every
                   // entry merged into, not each entry's own contribution.

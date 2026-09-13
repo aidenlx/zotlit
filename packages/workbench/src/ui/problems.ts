@@ -292,31 +292,6 @@ function repairTarget(diagnostic: RenderDiagnostic): string | undefined {
   return undefined;
 }
 
-function engineIdentity(diagnostic: RenderDiagnostic): string {
-  if (diagnostic.code !== "render-error") return "";
-  const engine = diagnostic.engine;
-  return engine === undefined
-    ? ""
-    : `${engine.template}:${engine.line ?? ""}:${engine.column ?? ""}`;
-}
-
-function diagnosticContent(diagnostic: RenderDiagnostic): string {
-  return JSON.stringify({
-    code: diagnostic.code,
-    message: diagnostic.message,
-    params: diagnostic.params,
-    part: diagnostic.part,
-    position: diagnostic.position,
-    engine: diagnostic.engine,
-    caller: diagnostic.caller,
-    evidence: diagnostic.evidence,
-  });
-}
-
-function unattributedIdentity(diagnostic: RenderDiagnostic): string {
-  return `unattributed:${diagnosticContent(diagnostic)}`;
-}
-
 function unattributedOccurrenceIdentity(diagnostic: RenderDiagnostic): string {
   const kept = unattributedOccurrenceIds.get(diagnostic);
   if (kept !== undefined) return kept;
@@ -346,11 +321,10 @@ export function renderDiagnosis(
 ): WorkbenchDiagnosis {
   const { code, part, position } = diagnostic;
   const subject = diagnosticSubject(diagnostic);
-  const target = repairTarget(diagnostic);
   const identity =
-    target === undefined
-      ? unattributedIdentity(diagnostic)
-      : `${code}:${subject}:${part ?? ""}:${position ?? ""}:${engineIdentity(diagnostic)}${
+    subject === ""
+      ? unattributedOccurrenceIdentity(diagnostic)
+      : `${code}:${subject}:${part ?? ""}:${position ?? ""}${
           callIdentity(diagnostic) === undefined
             ? ""
             : `:call:${callIdentity(diagnostic)}`
@@ -406,30 +380,20 @@ export function workbenchDiagnoses(
     ...problems.map(documentDiagnosis),
     ...diagnostics.map(renderDiagnosis),
   ];
-  const grouped = new Map<string, WorkbenchDiagnosis>();
-  for (const diagnosis of found) {
-    const verifiedKey = diagnosisGroupKey(diagnosis);
-    let key = verifiedKey ?? diagnosis.id;
-    let current = diagnosis;
-    if (verifiedKey === undefined && grouped.has(key)) {
-      if (diagnosis.kind === "render") {
-        key = `${key}:${unattributedOccurrenceIdentity(diagnosis.diagnostic)}`;
-        current = { ...diagnosis, id: key };
-      }
-    }
-    const kept = grouped.get(key);
-    if (kept === undefined) {
-      grouped.set(key, current);
-      continue;
-    }
-    // The first occurrence stays the one the explanation is written from; the
-    // later ones add only the places this problem was found.
-    grouped.set(key, {
-      ...kept,
-      occurrences: [...kept.occurrences, ...current.occurrences],
-    } as WorkbenchDiagnosis);
-  }
-  return [...grouped.values()];
+  return [
+    ...Map.groupBy(
+      found,
+      (diagnosis) => diagnosisGroupKey(diagnosis) ?? diagnosis.id,
+    ).values(),
+  ].map(
+    (occurrences) =>
+      ({
+        ...occurrences[0]!,
+        occurrences: occurrences.flatMap<RenderDiagnostic | WorkbenchProblem>(
+          (diagnosis) => diagnosis.occurrences,
+        ),
+      }) as WorkbenchDiagnosis,
+  );
 }
 
 /** Select one grouped render occurrence while retaining the problem identity. */

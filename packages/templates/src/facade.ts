@@ -12,6 +12,9 @@ import type {
   ValueToken,
 } from "liquidjs";
 
+import { withCitationInputProvenance } from "./citation-input";
+export { CitationInputError } from "./citation-input";
+
 import type {
   AutoTrim,
   FrontmatterField,
@@ -253,7 +256,11 @@ export class TemplateFacade {
     } else {
       // Parsed with `name` as the filepath, so every later parse/render
       // error liquidjs throws for this template is labeled `file:<name>`.
-      const tpls = this.#liquid.parse(source, name);
+      const parsed = this.#liquid.parse(source, name);
+      const tpls =
+        name === "citation"
+          ? withCitationInputProvenance(parsed, this.#liquid)
+          : parsed;
       this.#registry.set(name, { ...this.#registry.get(name), liquid: tpls });
     }
   }
@@ -711,7 +718,11 @@ export class TemplateFacade {
     { source, language }: TemplateSourceOverride,
   ): string {
     if (language === "liquid") {
-      const templates = this.#liquid.parse(source, name);
+      const parsed = this.#liquid.parse(source, name);
+      const templates =
+        name === "citation"
+          ? withCitationInputProvenance(parsed, this.#liquid)
+          : parsed;
       const out = this.#liquid.renderSync(templates, { zt: data }) as string;
       return this.#transform(name, out);
     }

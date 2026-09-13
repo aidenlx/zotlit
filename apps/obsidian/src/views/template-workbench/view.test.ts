@@ -16,6 +16,13 @@ import {
   formatPlainTemplateDocument,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
+import {
+  captureRenderReport,
+  emptyRender,
+  formatRenderReport,
+  renderIdentity,
+  SAMPLE_ITEMS,
+} from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { renderNativeTemplate } from "@/views/note-preview/render";
@@ -140,6 +147,196 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
 }
 
 describe("TemplateWorkbenchView", () => {
+  it.each([false, true])(
+    "clears an arrival after a fresh matching success and retains its report (unrelated preview: %s)",
+    async (unrelatedPreview) => {
+      await using cleanup = new AsyncDisposableStack();
+      const copy = vi
+        .spyOn(navigator.clipboard, "writeText")
+        .mockResolvedValue();
+      cleanup.defer(() => copy.mockRestore());
+      const { view } = setup({
+        render: async (request) => ({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "Repaired note",
+        }),
+      });
+      const file = new TFile();
+      file.path = "templates/paper.md";
+      view.file = file;
+      cleanup.defer(() => act(async () => view.close()));
+      await act(async () => view.open());
+      await act(async () =>
+        view.scheduler.setInput({
+          snapshot: SAMPLE_ITEMS[0]!,
+          live: false,
+          hold: false,
+        }),
+      );
+      const run = async () => {
+        const attempt = view.scheduler.getState().attempt;
+        await act(async () => {
+          view.scheduler.run();
+          await vi.waitFor(() =>
+            expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+          );
+        });
+      };
+      await run();
+      const diagnostic = {
+        code: "missing-partial" as const,
+        params: { name: "venue-line" },
+        part: "render" as const,
+      };
+      const report = captureRenderReport({
+        diagnostic,
+        identity: {
+          sourceRevision: "",
+          snapshotRevision: SAMPLE_ITEMS[0]!.revision,
+        },
+        trigger: "explicit",
+        sequence: 0,
+        capturedAt: "2026-09-13T00:00:00Z",
+        context: { document: file.path },
+      });
+      await act(async () =>
+        view.explainArrival({ diagnostic: { ...diagnostic, report } }),
+      );
+      expect(view.contentEl.textContent).toContain(
+        m.workbench_problems_object_partial({ name: "venue-line" }),
+      );
+      // A result from before arrival does not prove a repair.
+      expect(view.contentEl.textContent).not.toContain(
+        m.workbench_problems_none(),
+      );
+      await act(async () =>
+        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[1]! }),
+      );
+      await run();
+      expect(view.contentEl.textContent).toContain(
+        m.workbench_problems_object_partial({ name: "venue-line" }),
+      );
+      await act(async () =>
+        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! }),
+      );
+      if (unrelatedPreview) {
+        await act(async () =>
+          view.publishPreviewProblems("pinned-B", [
+            {
+              code: "missing-partial",
+              part: "render",
+              params: { name: "other-partial" },
+            },
+          ]),
+        );
+      }
+      await run();
+      expect(view.contentEl.textContent).toContain(
+        unrelatedPreview
+          ? m.workbench_problems_resolved()
+          : m.workbench_problems_none(),
+      );
+      expect(view.contentEl.textContent).toContain(
+        m.workbench_problems_copy_last(),
+      );
+      const copyLast = [...view.contentEl.querySelectorAll("button")].find(
+        (button) => button.textContent === m.workbench_problems_copy_last(),
+      )!;
+      await act(async () => copyLast.click());
+      expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
+    },
+  );
+
+  it("clears a repaired Annotation arrival while a Property failure remains", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      render: async (request) => ({
+        ...emptyRender(renderIdentity(request)),
+        annotation: "Repaired annotation",
+        diagnostics: [
+          {
+            code: "property-error",
+            part: "properties",
+            params: { key: "title" },
+            position: 1,
+          },
+        ],
+      }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => {
+      view.scheduler.setInput({
+        snapshot: SAMPLE_ITEMS[0]!,
+        live: false,
+        hold: false,
+      });
+      view.explainArrival({
+        diagnostic: {
+          code: "render-error",
+          part: "annotation",
+          message: "Old format failure",
+        },
+      });
+    });
+    const attempt = view.scheduler.getState().attempt;
+    await act(async () => {
+      view.scheduler.run();
+      await vi.waitFor(() =>
+        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_resolved(),
+    );
+    const next = [...view.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_next(),
+    )!;
+    await act(async () => next.click());
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_property({ key: "title" }),
+    );
+  });
+
+  it("keeps a Note arrival when its render_annotation call still prevents note output", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      render: async (request) => ({
+        ...emptyRender(renderIdentity(request)),
+        diagnostics: [{ code: "render-error", part: "annotation" }],
+      }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => {
+      view.scheduler.setInput({
+        snapshot: SAMPLE_ITEMS[0]!,
+        live: false,
+        hold: false,
+      });
+      view.explainArrival({
+        diagnostic: {
+          code: "missing-partial",
+          part: "render",
+          params: { name: "venue-line" },
+        },
+      });
+    });
+    const attempt = view.scheduler.getState().attempt;
+    await act(async () => {
+      view.scheduler.run();
+      await vi.waitFor(() =>
+        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(view.contentEl.textContent).not.toContain(
+      m.workbench_problems_resolved(),
+    );
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+  });
+
   it("shows only Markdown marker hints alongside Liquid tokens", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();

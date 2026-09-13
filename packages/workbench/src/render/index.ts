@@ -97,6 +97,7 @@ export type {
   RenderIdentity,
 } from "./result";
 export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
+export { currentCallSite } from "./locate";
 export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";

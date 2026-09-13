@@ -301,6 +301,7 @@ function PartialPreview({
           fallback={<p {...part("pending")}>{m.workbench_result_pending()}</p>}
         >
           <Markdown
+            surface="partial"
             markdown={state.text}
             properties={[]}
             showMarkdown={false}

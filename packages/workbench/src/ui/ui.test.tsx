@@ -7,7 +7,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { EditToolbar } from "./edit-toolbar";
 import type { WorkbenchDiagnosis } from "./problems";
 import { workbenchDiagnoses } from "./problems";
-import { ProblemsFooter, useWorkbenchProblems } from "./problems-footer";
+import {
+  ProblemsFooter,
+  usePublishedProblems,
+  useWorkbenchProblems,
+} from "./problems-footer";
 import type { RenderTrigger } from "./scheduler";
 import { createWorkbenchStore } from "./store";
 import { TabBar, TabPanel } from "./tab-bar";
@@ -16,6 +20,7 @@ import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
+import { failedRender } from "#/render/result";
 
 afterEach(cleanup);
 
@@ -586,6 +591,7 @@ describe("the Problems area", () => {
   });
 
   it("holds the selected problem through a check and offers Next problem once it goes", () => {
+    const first: RenderDiagnostic = { code: "render-error", message: "First" };
     const remaining = {
       code: "render-error",
       message: "Later",
@@ -596,9 +602,7 @@ describe("the Problems area", () => {
       const problems = useWorkbenchProblems({
         diagnoses: workbenchDiagnoses(
           [],
-          repaired
-            ? [remaining]
-            : [{ code: "render-error", message: "First" }, remaining],
+          repaired ? [remaining] : [first, remaining],
         ),
         trigger: "automatic",
         attempt: 1,
@@ -838,12 +842,11 @@ describe("the Problems area", () => {
 
   it("keeps an open area after a check finds nothing, and gives its space back on Collapse", () => {
     let editor: HTMLButtonElement | null = null;
+    const failure: RenderDiagnostic = { code: "render-error", message: "Late" };
     function Harness(): ReactNode {
       const [failing, setFailing] = useState(true);
       const problems = useWorkbenchProblems({
-        diagnoses: failing
-          ? workbenchDiagnoses([], [{ code: "render-error", message: "Late" }])
-          : [],
+        diagnoses: failing ? workbenchDiagnoses([], [failure]) : [],
         trigger: "automatic",
         attempt: 1,
       });
@@ -1156,7 +1159,7 @@ describe("the error report", () => {
     expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
   });
 
-  it("keeps the inspected attempt through an automatic recurrence", async () => {
+  it("keeps the displayed and copied attempt after an automatic recurrence is repaired", async () => {
     const first: RenderDiagnostic = {
       ...CAPTURED,
       callSite: { from: 4, to: 16 },
@@ -1211,14 +1214,67 @@ describe("the error report", () => {
     expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
 
     fireEvent.click(screen.getByText("automatic check"));
-    expect(reportBlock().textContent).toContain("Attempt 2 evidence");
+    const laterText = CAPTURED_TEXT.replace(
+      'Template "book-details" not found\n  while rendering note',
+      "Attempt 2 evidence",
+    ).replace("Attempt: 3", "Attempt: 4");
+    expect(reportBlock().textContent).toBe(laterText);
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_copy() }),
+    );
+    expect(host.calls.copies).toEqual([CAPTURED_TEXT, laterText]);
     fireEvent.click(screen.getByText("repair"));
     await act(async () =>
       fireEvent.click(
         screen.getByRole("button", { name: m.workbench_problems_copy_last() }),
       ),
     );
-    expect(host.calls.copies).toEqual([CAPTURED_TEXT, CAPTURED_TEXT]);
+    expect(host.calls.copies).toEqual([CAPTURED_TEXT, laterText, laterText]);
+  });
+
+  it("opens the originating occurrence when a linked preview fails an explicit Run", () => {
+    const first: RenderDiagnostic = {
+      ...CAPTURED,
+      callSite: { from: 4, to: 16 },
+    };
+    const second: RenderDiagnostic = {
+      ...first,
+      report: {
+        ...CAPTURED.report!,
+        context: { ...CAPTURED.report!.context, selection: "SECOND23" },
+      },
+    };
+    const diagnoses = workbenchDiagnoses([], [first, second]);
+    expect(diagnoses).toHaveLength(1);
+    const showProblem = vi.fn();
+    const publish = vi.fn();
+    const result = failedRender(
+      { sourceRevision: "1a2b3c4d", snapshotRevision: "r7" },
+      second,
+    );
+    function Preview(): ReactNode {
+      const [attempt, setAttempt] = useState(0);
+      usePublishedProblems({
+        result,
+        trigger: "explicit",
+        attempt,
+        publish,
+        showProblem,
+      });
+      return (
+        <button type="button" onClick={() => setAttempt(attempt + 1)}>
+          Run second preview
+        </button>
+      );
+    }
+    using mounted = mount(<Preview />);
+    render(mounted.ui);
+    expect(showProblem).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Run second preview" }));
+    expect(showProblem).toHaveBeenCalledExactlyOnceWith(
+      diagnoses[0]!.id,
+      second,
+    );
   });
 
   it("does not capture a validation report before Temporal is available", () => {
@@ -1242,12 +1298,8 @@ describe("the error report", () => {
         });
         return <ProblemsFooter problems={problems} onOpen={() => {}} />;
       }
-      const mounted = mount(<Harness />);
-      try {
-        expect(() => render(mounted.ui)).not.toThrow();
-      } finally {
-        mounted[Symbol.dispose]();
-      }
+      using mounted = mount(<Harness />);
+      expect(() => render(mounted.ui)).not.toThrow();
     } finally {
       globalThis.Temporal = present;
     }
