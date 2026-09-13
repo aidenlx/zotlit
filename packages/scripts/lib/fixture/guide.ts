@@ -217,6 +217,8 @@ Conversion repair cases use the same v2.1 settings and unstamped notes:
     Replaces ${UPGRADER_LAYOUT_REPAIR.find}
     with ${UPGRADER_LAYOUT_REPAIR.replace} in the note source.
     Restore that insertion in the Conversion Copy.
+    The annotation source also calls ${UPGRADER_LAYOUT_REPAIR.annotationCall}
+    so annotation rendering checks whether a partial repair is active.
   upgrader-frontmatter-only
     Keeps the edited field list and writes no Legacy Template Files.
     Check Customize preserves the fields without a conversion invitation.

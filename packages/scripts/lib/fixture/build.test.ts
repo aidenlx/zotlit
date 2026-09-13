@@ -2026,6 +2026,32 @@ describe("a Vault Case", () => {
     expect(await readdir(join(vault.vaultDir, "templates"))).not.toContain(
       "zotlit-profile.default.md",
     );
+    facade.define(
+      "annotation",
+      await readFile(
+        join(vault.vaultDir, "templates", "zotlit-annotation.liquid.md"),
+        "utf-8",
+      ),
+      "liquid",
+    );
+    facade.define(
+      "annotation-callout",
+      await readFile(
+        join(
+          vault.vaultDir,
+          "templates",
+          "zotlit-annotation-callout.liquid.md",
+        ),
+        "utf-8",
+      ),
+      "liquid",
+    );
+    const rendered = facade.render("annotation", {
+      pageLabel: "5",
+      text: "Fixture annotation",
+    });
+    expect(rendered).toContain("[!quote] Page 5");
+    expect(rendered).toContain("[!tip] Page 5");
   });
 
   it("seeds legacy frontmatter without legacy template files or Profile stamps", async () => {

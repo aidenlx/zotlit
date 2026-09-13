@@ -1588,7 +1588,7 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
     id: "upgrader-layout-error",
     upgrade: "layout-error",
     summary:
-      "The v2.1 upgrade with the content insertion removed from the note template. Repair the copied source before a Profile can be synthesized.",
+      "The v2.1 upgrade with the content insertion removed from the note template. Its annotation source calls the legacy partial so active and repaired partial output can be compared.",
   },
   {
     id: "upgrader-frontmatter-only",
@@ -1658,7 +1658,8 @@ export const UPGRADER_FIELD_REPAIR = {
 export const UPGRADER_LAYOUT_REPAIR = {
   find: '{% render "content" with zt as zt %}',
   replace: "<!-- Restore the content insertion in the Conversion Copy. -->",
-} satisfies FixtureTemplateEdit;
+  annotationCall: '{% render "annotation-callout" with zt as zt %}',
+} satisfies FixtureTemplateEdit & { annotationCall: string };
 
 /**
  * Legacy Template Files the Upgrader vault ejects into its template folder:

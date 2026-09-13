@@ -1091,6 +1091,12 @@ async function writeLegacyTemplates(
         "the legacy note template",
       );
     }
+    if (
+      vaultCase.upgrade === "layout-error" &&
+      template.name === "annotation"
+    ) {
+      source += `\n${UPGRADER_LAYOUT_REPAIR.annotationCall}\n`;
+    }
     await writeFile(
       join(layout.vaultDir, "templates", legacyTemplateFilename(template)),
       source,
