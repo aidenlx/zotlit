@@ -1933,6 +1933,10 @@ function EditorContent({
   // choice rather than on a render while the reader has made none.
   const annotation = useSelectedAnnotation(view);
   const advanced = useWorkbenchStore((state) => state.advanced);
+  const [sourceVisited, setSourceVisited] = useState(advanced);
+  useEffect(() => {
+    if (advanced && !sourceVisited) setSourceVisited(true);
+  }, [advanced, sourceVisited]);
   const tab = useWorkbenchStore((state) => state.tab);
   const [mountedTabs, setMountedTabs] = useState<
     ReadonlySet<WorkbenchViewState["tab"]>
@@ -2352,17 +2356,24 @@ function EditorContent({
             />
             {sourceBoxes.boxes}
           </TabPanel>
-        ) : advanced ? (
-          <SliceEditor
-            controller={controller}
-            slice="advanced"
-            label={m.workbench_advanced()}
-            reveal={reveal}
-            onSelection={selection("advanced")}
-          />
         ) : (
           <>
-            <TabPanel tab="note" keepMounted={mountedTabs.has("note")}>
+            {(advanced || sourceVisited) && (
+              <div data-workbench-mode="source" hidden={!advanced}>
+                <SliceEditor
+                  controller={controller}
+                  slice="advanced"
+                  label={m.workbench_advanced()}
+                  reveal={advanced ? reveal : null}
+                  onSelection={selection("advanced")}
+                />
+              </div>
+            )}
+            <TabPanel
+              tab="note"
+              keepMounted={mountedTabs.has("note")}
+              modeActive={!advanced}
+            >
               <NotePane
                 controller={controller}
                 preview={result?.annotation ?? null}
@@ -2384,7 +2395,7 @@ function EditorContent({
                   state.setRoot("annotation");
                 }}
                 partials={partialsFor("note")}
-                reveal={reveal}
+                reveal={advanced ? null : reveal}
                 onSelection={(range) => {
                   selection("note")(range);
                 }}
@@ -2402,7 +2413,7 @@ function EditorContent({
                 />
               )}
             </TabPanel>
-            <TabPanel tab="properties">
+            <TabPanel tab="properties" modeActive={!advanced}>
               {controller.managedEntries === null ? (
                 <p>
                   {m.template_workbench_properties_advanced()}{" "}
@@ -2450,14 +2461,14 @@ function EditorContent({
                     state.setAdvanced(true);
                     setReveal(range);
                   }}
-                  reveal={reveal}
+                  reveal={advanced ? null : reveal}
                   onSelection={selection(
                     selected === null ? "advanced" : `entry:${selected}`,
                   )}
                 />
               )}
             </TabPanel>
-            <TabPanel tab="match">
+            <TabPanel tab="match" modeActive={!advanced}>
               <NativeMatchPane
                 onChooseItem={() => void view.chooseItem()}
                 controller={controller}
@@ -2467,6 +2478,7 @@ function EditorContent({
             <TabPanel
               tab="annotation"
               keepMounted={mountedTabs.has("annotation")}
+              modeActive={!advanced}
             >
               {formatProblem && (
                 <button
@@ -2488,11 +2500,11 @@ function EditorContent({
                     : null
                 }
                 partials={partialsFor("annotation")}
-                reveal={reveal}
+                reveal={advanced ? null : reveal}
                 onSelection={selection("annotation")}
               />
             </TabPanel>
-            <TabPanel tab="name">
+            <TabPanel tab="name" modeActive={!advanced}>
               <NameFolderPane
                 onChooseItem={() => void view.chooseItem()}
                 onRetry={() => view.preview?.refresh()}
@@ -2503,11 +2515,11 @@ function EditorContent({
                 focus={fieldFocus}
                 filename={result?.filename ?? null}
                 onOpenSource={() => state.setAdvanced(true)}
-                reveal={reveal}
+                reveal={advanced ? null : reveal}
                 onSelection={selection("filename")}
               />
             </TabPanel>
-            <TabPanel tab="profile">
+            <TabPanel tab="profile" modeActive={!advanced}>
               <NameFolderPane
                 section="profile"
                 controller={controller}

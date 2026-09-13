@@ -382,8 +382,9 @@ describe("TemplateWorkbenchView", () => {
       const tokens = (hook: string) =>
         [
           ...(
-            view.contentEl.querySelector('[role="tabpanel"]:not([hidden])') ??
-            view.contentEl
+            view.contentEl.querySelector(
+              '[data-workbench-mode="source"]:not([hidden]), [role="tabpanel"]:not([hidden])',
+            ) ?? view.contentEl
           ).querySelectorAll(`.${hook}`),
         ].map((node) => node.textContent);
       for (const tab of ["annotation", "name"] as const) {
@@ -423,6 +424,39 @@ describe("TemplateWorkbenchView", () => {
       note,
       annotation,
     ]);
+  });
+
+  it("retains visited Basic editors when switching through Source", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
+    await act(async () => view.store.getState().setTab("annotation"));
+    const annotation =
+      view.contentEl.querySelectorAll<HTMLElement>(".cm-editor")[1]!;
+
+    await act(async () => view.store.getState().setAdvanced(true));
+    const source = view.contentEl.querySelector<HTMLElement>(
+      '[data-workbench-mode="source"] .cm-editor',
+    )!;
+    const sourcePanel = source.closest<HTMLElement>("[data-workbench-mode]")!;
+    const annotationPanel =
+      annotation.closest<HTMLElement>('[role="tabpanel"]')!;
+    expect(sourcePanel.hidden).toBe(false);
+    expect(annotationPanel.hidden).toBe(true);
+    await act(async () => view.store.getState().setAdvanced(false));
+
+    expect(view.contentEl.contains(note)).toBe(true);
+    expect(view.contentEl.contains(annotation)).toBe(true);
+    expect(view.contentEl.contains(source)).toBe(true);
+    expect(sourcePanel.hidden).toBe(true);
+    expect(annotationPanel.hidden).toBe(false);
+
+    await act(async () => view.store.getState().setAdvanced(true));
+    expect(
+      view.contentEl.querySelector('[data-workbench-mode="source"] .cm-editor'),
+    ).toBe(source);
   });
 
   it("keeps Eta wrapping and undo when switching to Advanced", async () => {
@@ -1640,15 +1674,11 @@ language: liquid
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");
     expect(view.store.getState().advanced).toBe(true);
-    const editor = [
-      ...view.contentEl.querySelectorAll<HTMLElement>(".cm-editor"),
-    ]
-      .map((element) => EditorView.findFromDOM(element)!)
-      .find(
-        (candidate) =>
-          candidate.state.doc.toString() ===
-          view.controller.sliceText("advanced"),
-      )!;
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector<HTMLElement>(
+        '[data-workbench-mode="source"] .cm-editor',
+      )!,
+    )!;
     expect(editor.contentDOM).toBe(document.activeElement);
   });
 
