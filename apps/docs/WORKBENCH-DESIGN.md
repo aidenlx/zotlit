@@ -42,6 +42,19 @@ can check the destination. Source, publishing metadata, and Match remain availab
 in their usual tabs. For a new Item, the manual Profile picker shows the resulting
 note path before creation. Selecting a Profile applies its membership to that note.
 
+## Shared template and note updates
+
+When Customize starts from a Literature Note, identify the shared template
+document before editing and explain that other notes can use it. Keep the
+originating note's name beside **Update this note**. This target stays the same
+when the reader changes the preview item or focuses another window.
+
+Keep the three outcomes distinct: edits save the template automatically;
+the preview renders the edit; **Update this note** applies the saved template
+to the named note. Report the affected note on success. Give save failures
+and unavailable-note failures their own explanation. Settings-launched editing
+keeps its existing save and preview behavior.
+
 ## Composition and hierarchy
 
 ### Editing leads

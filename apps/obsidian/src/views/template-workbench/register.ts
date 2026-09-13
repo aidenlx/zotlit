@@ -320,6 +320,7 @@ export async function openNativeProfile(
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
+    originatingNote?: TFile;
     explainUnsupported?: boolean;
     customize?: boolean;
     /** The failure that brought the reader here, explained on arrival. */
@@ -379,6 +380,7 @@ export async function openNativeProfile(
   if (leaf.view instanceof TemplateWorkbenchView) {
     if (options.problem) leaf.view.explainArrival(options.problem);
     if (options.customize) await leaf.view.customizeDefault();
+    leaf.view.setOriginatingNote(options.originatingNote ?? null);
   }
 }
 
@@ -400,6 +402,7 @@ export async function openTemplateWorkbench(
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
+    originatingNote?: TFile;
     tab?: "match" | "name";
     explainUnsupported?: boolean;
     customize?: boolean;
@@ -446,5 +449,6 @@ export async function openTemplateWorkbench(
   if (leaf.view instanceof TemplateWorkbenchView) {
     if (options.problem) leaf.view.explainArrival(options.problem);
     if (options.customize) await openWorkbenchLayout(app, leaf.view);
+    leaf.view.setOriginatingNote(options.originatingNote ?? null);
   }
 }

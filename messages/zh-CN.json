@@ -1,4 +1,12 @@
 {
+  "template_workbench_shared_template": "共享模板：{name}。其他笔记也可以使用此模板。",
+  "template_workbench_auto_save_scope": "编辑会自动保存并刷新预览。选择“更新此笔记”，将已保存的模板应用到此笔记。",
+  "template_workbench_update_this_note": "更新此笔记",
+  "template_workbench_update_unavailable": "原笔记 {name} 不可用或已更改，请从该笔记重新打开“自定义”。",
+  "template_workbench_update_save_failed": "无法保存模板编辑，笔记未更新。",
+  "template_workbench_update_not_ready": "已保存的模板尚未准备就绪，请重试更新笔记。",
+  "template_workbench_note_update_result": "{name}：{result}",
+  "template_workbench_updated_note": "已更新 {name}。",
   "graph_option_author_title_labels_name": "作者和标题标签",
   "graph_option_author_title_labels_desc": "在文献笔记和被引文献上显示作者、年份和短标题。",
   "workbench_choose_item": "选择条目",

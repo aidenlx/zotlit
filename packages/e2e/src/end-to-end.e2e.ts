@@ -242,28 +242,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   }
 
-  async function quickSwitchCreate(item: { title: string }) {
+  async function quickSwitchCreate(
+    item: { title: string },
+    targetVaultId = vaultId,
+  ) {
     expect(
       await obEvalUntil(
-        vaultId,
+        targetVaultId,
         "app.commands.executeCommandById('zotlit:note-quick-switcher')",
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
-        vaultId,
+        targetVaultId,
         "String(!!document.querySelector('.prompt input'))",
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
-      vaultId,
+      targetVaultId,
       `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
-    await selectSuggestion(vaultId, item.title);
+    await selectSuggestion(targetVaultId, item.title);
     await obEval(
-      vaultId,
+      targetVaultId,
       "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
   }
@@ -321,6 +324,144 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
+    const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
+    const freshPath = join(workspaceRoot, "tmp", "e2e-first-note-vault");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await runVaultScript(["remove", freshPath, "--purge"]);
+    });
+    const created = await runVaultScript([
+      "open",
+      freshPath,
+      "--vault-case",
+      "fresh",
+    ]);
+    const freshId = created.stdout.trim().split("\n")[0]!.trim();
+    expect(
+      await obEval(
+        freshId,
+        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+      ),
+    ).toBe("0");
+    await quickSwitchCreate(annotatedItem, freshId);
+    expect(
+      await obEvalUntil(
+        freshId,
+        "String(!!app.workspace.getActiveFile()&&app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('RUGIER24').length===1)",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const note = await indexedNote(freshId, annotatedItem.itemID);
+    expect(note.path).not.toBeNull();
+    const personal = "\nMy own research question stays here.\n";
+    await obEval(
+      freshId,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});await app.vault.append(file,${JSON.stringify(personal)});await app.workspace.getLeaf(false).openFile(file);return true;})()`,
+    );
+    const before = await readFile(join(freshPath, note.path!), "utf-8");
+    expect(before).toContain("[!note]");
+    expect(before.split("[!note]").length - 1).toBe(7);
+    expect(
+      await obEval(
+        freshId,
+        "app.commands.executeCommandById('zotlit:customize-note-template')",
+      ),
+    ).toBe("true");
+    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})?.view`;
+    expect(
+      await obEvalUntil(freshId, `String(!!(${editor})?.file)`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    const templatePath = await obEval(freshId, `(${editor}).file.path`);
+    expect(
+      await obEval(
+        freshId,
+        `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(m.template_workbench_shared_template({ name: "zotlit-profile.default" }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
+      ),
+    ).toBe("true");
+    expect(
+      await obEval(
+        freshId,
+        `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('[role=tab]')).find(tab=>tab.textContent.trim()===${JSON.stringify(m.workbench_tab_annotation())}).click();return true;})()`,
+      ),
+    ).toBe("true");
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};return String(Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    // CodeMirror's mounted view receives the same transaction as typed text.
+    expect(
+      await obEval(
+        freshId,
+        `(function(){const view=${editor};const content=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));const cm=content.cmTile.root.view;const from=cm.state.doc.toString().indexOf('[!note]');cm.dispatch({changes:{from,to:from+7,insert:'[!quote]'},userEvent:'input.type'});return true;})()`,
+      ),
+    ).toBe("true");
+    expect(
+      await waitFor(async () =>
+        (await readFile(join(freshPath, templatePath), "utf-8")).includes(
+          "[!quote]",
+        ),
+      ),
+    ).toBe(true);
+    // The linked Preview belongs to the editor's native window, which can differ from the CLI window.
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};return String(!!view.contentEl.ownerDocument.querySelector('.callout[data-callout="quote"]'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(await readFile(join(freshPath, note.path!), "utf-8")).toBe(before);
+    const other = await createFixtureNote(freshId, createTargetItem.itemID);
+    expect(other.outcome).toBe("created");
+    if (other.outcome !== "created")
+      throw new Error("Second note was not created");
+    const otherBefore = await readFile(join(freshPath, other.path), "utf-8");
+    await obEval(
+      freshId,
+      `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(other.path)}));app.workspace.rootSplit.focus();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())});view.leaf.getContainer().focus();button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      freshId,
+      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())}).click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(freshId, `String(!(${editor}).updatingNote)`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    expect(
+      await waitFor(
+        async () =>
+          (await readFile(join(freshPath, note.path!), "utf-8")).split(
+            "[!quote]",
+          ).length -
+            1 ===
+          7,
+      ),
+    ).toBe(true);
+    const after = await readFile(join(freshPath, note.path!), "utf-8");
+    expect(noteBody(after).replace(managedRegion(after), "")).toBe(
+      noteBody(before).replace(managedRegion(before), ""),
+    );
+    expect(after).toContain(personal);
+    expect(await readFile(join(freshPath, other.path), "utf-8")).toBe(
+      otherBefore,
+    );
+  }, 180000);
 
   it("keeps one Literature Note when create runs twice for one Item", async () => {
     const noteName =
