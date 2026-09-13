@@ -468,13 +468,11 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "zt:flex zt:cursor-(--cursor-clickable) zt:items-center zt:gap-2 zt:font-medium",
     },
     annotation: {
-      "help-bar":
-        "zt:mb-3 zt:flex zt:shrink-0 zt:flex-wrap zt:items-center zt:justify-between zt:gap-x-3 zt:gap-y-1",
-      "help-button":
-        "clickable-icon zt:shrink-0 zt:text-xs zt:text-muted-foreground",
+      "help-bar": "zt:mb-3 zt:shrink-0 zt:leading-normal",
+      "help-button": "clickable-icon zt:text-xs zt:text-muted-foreground",
       "help-lede": hint,
-      help: "zt:mb-2 zt:max-h-40 zt:shrink-0 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-3 zt:text-xs zt:leading-normal zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
-      "help-steps": "zt:list-decimal zt:space-y-2 zt:ps-4",
+      "help-toggle": "zt:ms-1 zt:inline-block zt:align-baseline",
+      help: "zt:mb-3 zt:flex zt:max-h-40 zt:shrink-0 zt:flex-col zt:gap-1 zt:overflow-auto zt:text-xs zt:leading-normal zt:text-muted-foreground zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
 
       "sample-bar": row,
       problem: "zt:mb-2 zt:text-xs zt:text-(--text-error)",

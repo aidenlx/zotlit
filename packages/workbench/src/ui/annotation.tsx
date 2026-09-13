@@ -185,19 +185,21 @@ export function AnnotationPane({
           {problem}
         </p>
       )}
-      <div {...part("help-bar")}>
-        <p {...part("help-lede")}>{m.workbench_annotation_lede()}</p>
-        <button
-          ref={helpButton}
-          type="button"
-          {...part("help-button")}
-          aria-expanded={helpOpen}
-          aria-controls={helpId}
-          onClick={() => setHelpOpen(!helpOpen)}
-        >
-          {m.workbench_help()}
-        </button>
-      </div>
+      <p {...part("help-bar")}>
+        <span {...part("help-lede")}>{m.workbench_annotation_lede()}</span>{" "}
+        <span {...part("help-toggle")}>
+          <button
+            ref={helpButton}
+            type="button"
+            {...part("help-button")}
+            aria-expanded={helpOpen}
+            aria-controls={helpId}
+            onClick={() => setHelpOpen(!helpOpen)}
+          >
+            {m.workbench_help()}
+          </button>
+        </span>
+      </p>
       {helpOpen && (
         <section
           id={helpId}
@@ -210,16 +212,14 @@ export function AnnotationPane({
             closeHelp();
           }}
         >
-          <ol {...part("help-steps")}>
-            <li>
-              {m.workbench_annotation_help_edit({
-                before: "[!note]",
-                after: "[!quote]",
-              })}
-            </li>
-            <li>{m.workbench_annotation_help_preview()}</li>
-            <li>{finishHelp ?? m.workbench_annotation_help_finish_web()}</li>
-          </ol>
+          <p>
+            {m.workbench_annotation_help_edit({
+              before: "[!note]",
+              after: "[!quote]",
+            })}{" "}
+            {m.workbench_annotation_help_preview()}
+          </p>
+          <p>{finishHelp ?? m.workbench_annotation_help_finish_web()}</p>
         </section>
       )}
       <div {...part("pane")}>
