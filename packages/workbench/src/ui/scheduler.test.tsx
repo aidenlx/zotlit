@@ -67,10 +67,15 @@ function Preview({ live = true }: { live?: boolean }) {
         data-busy={String(busy)}
         data-stale={String(stale)}
         data-stale-reason={String(staleReason)}
+        data-filename={result?.filename ?? ""}
       >
         {result?.creationBody ?? ""}
       </div>
-      <div data-testid="retained" data-annotation={retained?.annotation ?? ""}>
+      <div
+        data-testid="retained"
+        data-annotation={retained?.annotation ?? ""}
+        data-filename={retained?.filename ?? ""}
+      >
         {retained?.creationBody ?? ""}
       </div>
       <div data-testid="diagnostics">
@@ -358,6 +363,56 @@ it("keeps the last successful preview while a failure is repaired", async () => 
   await act(async () => host.renders[3]!.answer({ creationBody: "Repaired" }));
   expect(output().textContent).toBe("Repaired");
   expect(retained().textContent).toBe("");
+});
+
+it("keeps the note name the newest attempt produced, whatever else failed", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  await advance(300);
+  await act(async () =>
+    host.renders[0]!.answer({ filename: "Old.md", creationBody: "Working" }),
+  );
+
+  // The note body failed on its own; the note name this attempt produced is
+  // newer than the one kept beside that body, and replaces it.
+  act(() => void controller.setManifestKey("name", "Broken body"));
+  await advance(300);
+  await act(async () =>
+    host.renders[1]!.answer({
+      filename: "New.md",
+      diagnostics: [{ code: "render-error", part: "render" }],
+    }),
+  );
+  expect(output().dataset["filename"]).toBe("New.md");
+  expect(retained().textContent).toBe("Working");
+  expect(retained().dataset["filename"]).toBe("New.md");
+});
+
+it("stands the last note name that worked while the Filename Template fails", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  await advance(300);
+  // A failing rule leaves the note name alone: it renders apart from the note.
+  await act(async () =>
+    host.renders[0]!.answer({
+      filename: "Working.md",
+      diagnostics: [
+        { code: "property-error", part: "properties", position: 1 },
+      ],
+    }),
+  );
+  expect(retained().dataset["filename"]).toBe("Working.md");
+
+  act(() => void controller.setManifestKey("filename", "{% broken %}"));
+  await advance(300);
+  await act(async () =>
+    host.renders[1]!.answer({
+      creationBody: "Working",
+      diagnostics: [{ code: "liquid-syntax-error", part: "filename" }],
+    }),
+  );
+  expect(output().dataset["filename"]).toBe("");
+  expect(retained().dataset["filename"]).toBe("Working.md");
 });
 
 it("takes retained output back once another annotation example is chosen", async () => {

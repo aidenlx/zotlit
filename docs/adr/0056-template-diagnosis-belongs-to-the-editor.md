@@ -4,6 +4,17 @@ status: accepted
 
 # Template diagnosis belongs to the editor
 
+> Amended 2026-09-14: the note name is a preview surface of its own. Both
+> renderers produce it first, in its own guarded step ahead of the note body,
+> so a mistake in the Filename Template leaves the body, the Managed
+> Frontmatter results, and the Managed Region on screen, and a mistake
+> anywhere else leaves the last note name that worked standing. The render
+> diagnostic's part names it, and that part outranks the captured rendering
+> root when the explanation names the object: the part is evidence from the
+> renderer, while the root only records which data the reader had open. A
+> surface that produced nothing and a diagnostic naming it is what a preview
+> reads as this surface's failure, in place of one diagnostic code.
+
 > Amended 2026-09-13: a repair location is verified by one rule — the source
 > this render read holds a call naming the template the engine blamed, or the
 > partial it could not resolve. That call is the repair target and outranks the

@@ -179,6 +179,8 @@ export function renderProfile(
   let preview: string | null = null;
   let annotationCitation: string | null = null;
   let formatFailure: RenderDiagnostic | null = null;
+  let filename: string | null = null;
+  let filenameFailure: RenderDiagnostic | null = null;
 
   try {
     for (const partial of supported) {
@@ -195,6 +197,22 @@ export function renderProfile(
       snapshot.roots.filename,
       snapshot.descriptors.filename,
     );
+    // The note name is rendered on its own first, so a mistake in the Filename
+    // Template is named as the note name's and leaves every other output on
+    // screen. A mistake anywhere else leaves the name this attempt produced.
+    try {
+      // A preview assumes a free filename; the vault resolves collisions on save.
+      filename = replaceSuffixMarkers(
+        facade.renderLiteratureNoteTemplateFilename(document, filenameData),
+        () => "",
+      );
+    } catch (error) {
+      filenameFailure = {
+        ...withCallIdentity(renderFailureDiagnostic(error, caller), caller),
+        evidence: engineEvidence(error),
+        part: "filename",
+      };
+    }
     const annotations = snapshot.roots.annotations.map((annotation, index) => {
       const descriptors = snapshot.descriptors.annotations[index];
       if (!descriptors) {
@@ -206,8 +224,8 @@ export function renderProfile(
         defined.has(CITATION_TEMPLATE),
       );
     });
-    // The format is rendered on its own first, so a failure inside it is named
-    // as the format's and a host can show it where the format is edited. The
+    // The format is rendered on its own, ahead of the note, so a failure inside
+    // it is named as the format's and a host can show it where it is edited. The
     // note goes on rendering: one that never calls the format keeps its
     // preview, and one that does retains its own occurrence of the fault.
     try {
@@ -252,11 +270,7 @@ export function renderProfile(
         : createdBody;
     return {
       ...identity,
-      // A preview assumes a free filename; the vault resolves collisions on save.
-      filename: replaceSuffixMarkers(
-        facade.renderLiteratureNoteTemplateFilename(document, filenameData),
-        () => "",
-      ),
+      filename,
       properties: frontmatter.properties,
       fold: frontmatter.fold,
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
@@ -286,6 +300,7 @@ export function renderProfile(
       ),
       diagnostics: [
         ...resourceDiagnostics,
+        ...(filenameFailure ? [filenameFailure] : []),
         ...(formatFailure ? [formatFailure] : []),
         ...frontmatter.diagnostics,
       ],
@@ -298,10 +313,12 @@ export function renderProfile(
     });
     return {
       ...failure,
+      filename,
       annotation: preview,
       annotationCitation,
       diagnostics: [
         ...resourceDiagnostics,
+        ...(filenameFailure ? [filenameFailure] : []),
         ...(formatFailure ? [formatFailure] : []),
         ...failure.diagnostics,
       ],
