@@ -29,6 +29,19 @@ The editing and result panes carry this loop. Keep optional explanation behind
 a visible Help control beside the task. A message says what happened and what
 the reader can do next, in terms of the template and its result.
 
+## Create a second destination
+
+Settings **Add profile** collects **Name** and **Literature Note folder** together.
+Explain that the new Profile starts with the current Default template's appearance
+and that existing notes keep their folders. Show validation beside the fields;
+keep creation disabled until the existing Profile rules accept the values.
+Cancel leaves the vault unchanged.
+
+After creation, open **Name and folder** in the native Workbench so the researcher
+can check the destination. Source, publishing metadata, and Match remain available
+in their usual tabs. For a new Item, the manual Profile picker shows the resulting
+note path before creation. Selecting a Profile applies its membership to that note.
+
 ## Composition and hierarchy
 
 ### Editing leads
