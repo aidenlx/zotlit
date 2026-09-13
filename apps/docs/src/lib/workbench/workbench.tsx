@@ -608,11 +608,14 @@ export function Workbench() {
       return;
     }
     // The note name is repaired in its own tab, whether or not the failure
-    // named a place inside it.
+    // named a place inside it. The pane takes the caret with the reveal, so
+    // the reader goes on typing where the Problems area left them.
     if (part === "filename") {
       setView("edit");
       setAdvanced(false);
       setTab("name");
+      const slice = controller.sliceRange("filename");
+      setReveal({ from: slice.from, to: slice.from });
       return;
     }
     setView("edit");

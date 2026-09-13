@@ -235,6 +235,19 @@ async function pick(view: Preview, title: string) {
 const advance = (ms = 300) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
+/**
+ * Waits for the preview's Markdown to finish rendering. Each block marks
+ * itself pending while its own render runs and clears the mark once it has
+ * presented its citations, so the mark's absence is the completion signal.
+ */
+async function rendered(view: Preview): Promise<void> {
+  for (let round = 0; round < 20; round++) {
+    if (!view.contentEl.querySelector("[data-zotlit-preview-pending]")) return;
+    await act(async () => {});
+  }
+  throw new Error("The preview never finished rendering its Markdown.");
+}
+
 /** Presses the preview's own button whose text is `label`. */
 function previewButton(view: Preview, label: string): void {
   const button = Array.from(view.contentEl.querySelectorAll("button")).find(
@@ -1433,9 +1446,9 @@ Annotation`,
       ),
     );
     await advance();
-    // The retained note is re-rendered under the failed attempt, so its
-    // citations are presented on the round after the result lands.
-    await act(async () => {});
+    // The retained note is re-rendered under the failed attempt, so the
+    // assertions wait for that render rather than for the result alone.
+    await rendered(preview);
 
     expect(preview.contentEl.textContent).toContain(
       m.workbench_preview_retained(),
