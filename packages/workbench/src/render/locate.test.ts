@@ -2,7 +2,7 @@ import { regex } from "arkregex";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_PROFILE_SOURCE, renderProfile, SAMPLE_ITEMS } from "./index";
-import { currentCallSite, currentEntrySite } from "./locate";
+import { currentCallSite, currentSliceSite } from "./locate";
 import type { RenderDiagnostic } from "./result";
 
 describe("current repair call", () => {
@@ -137,28 +137,28 @@ describe("current entry site", () => {
   it("marks the argument of the one operator a rule stopped inside", () => {
     const { diagnostic, expression } = entryFailure(ENTRIES.evalRule);
 
-    const site = currentEntrySite(diagnostic, expression)!;
+    const site = currentSliceSite(diagnostic, expression)!;
     expect(expression.slice(site.from, site.to)).toBe('"zt.nowhere.deep"');
   });
 
   it("marks the produced key a spread failed on, not the whole rule", () => {
     const { diagnostic, expression } = entryFailure(ENTRIES.spreadRule);
 
-    const site = currentEntrySite(diagnostic, expression)!;
+    const site = currentSliceSite(diagnostic, expression)!;
     expect(expression.slice(site.from, site.to)).toBe('"zt.nowhere.deep"');
   });
 
   it("marks the key itself where JSON-e knows no operator by that name", () => {
     const { diagnostic, expression } = entryFailure(ENTRIES.unknownOperator);
 
-    const site = currentEntrySite(diagnostic, expression)!;
+    const site = currentSliceSite(diagnostic, expression)!;
     expect(expression.slice(site.from, site.to)).toBe('"$evl"');
   });
 
   it("marks the token a Liquid expression stopped on", () => {
     const { diagnostic, expression } = entryFailure(ENTRIES.liquidExpression);
 
-    const site = currentEntrySite(diagnostic, expression)!;
+    const site = currentSliceSite(diagnostic, expression)!;
     // liquidjs stops on the filter name it wanted a pipe before.
     expect(expression.slice(site.from, site.to)).toBe("title");
   });
@@ -166,7 +166,7 @@ describe("current entry site", () => {
   it("leaves an expression edited since the attempt unmarked", () => {
     const { diagnostic } = entryFailure(ENTRIES.liquidExpression);
 
-    expect(currentEntrySite(diagnostic, '"zt.title"')).toBeUndefined();
+    expect(currentSliceSite(diagnostic, '"zt.title"')).toBeUndefined();
   });
 
   it("keeps the whole rule where an operator is missing a clause", () => {
@@ -174,7 +174,7 @@ describe("current entry site", () => {
       ENTRIES.operatorMissingClause,
     );
 
-    const site = currentEntrySite(diagnostic, expression)!;
+    const site = currentSliceSite(diagnostic, expression)!;
     expect(expression.slice(site.from, site.to)).toBe('{"$let": {}}');
   });
 
@@ -183,22 +183,22 @@ describe("current entry site", () => {
 
     // The reported path names `in`, which the author also wrote as a sibling
     // of the operator: marking it would underline text that did not fail.
-    expect(diagnostic.entrySite).toBeUndefined();
-    expect(currentEntrySite(diagnostic, expression)).toBeUndefined();
+    expect(diagnostic.sliceSite).toBeUndefined();
+    expect(currentSliceSite(diagnostic, expression)).toBeUndefined();
   });
 
   it("drops the mark once the expression it read has been repaired", () => {
     const { diagnostic, expression } = entryFailure(ENTRIES.evalRule);
 
-    expect(currentEntrySite(diagnostic, expression)).toBeDefined();
+    expect(currentSliceSite(diagnostic, expression)).toBeDefined();
     expect(
-      currentEntrySite(diagnostic, expression.replace("nowhere.deep", "title")),
+      currentSliceSite(diagnostic, expression.replace("nowhere.deep", "title")),
     ).toBeUndefined();
   });
 
   it("marks nothing where the failure named no place", () => {
     expect(
-      currentEntrySite({ code: "property-error" }, '{"$eval": "zt.title"}'),
+      currentSliceSite({ code: "property-error" }, '{"$eval": "zt.title"}'),
     ).toBeUndefined();
   });
 });

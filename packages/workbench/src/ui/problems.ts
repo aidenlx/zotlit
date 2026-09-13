@@ -631,7 +631,7 @@ export function diagnosisLocated(diagnosis: WorkbenchDiagnosis): boolean {
     ? diagnosis.problem.range !== undefined
     : diagnosis.diagnostic.sourceSite !== undefined ||
         diagnosis.diagnostic.callSite !== undefined ||
-        diagnosis.diagnostic.entrySite !== undefined ||
+        diagnosis.diagnostic.sliceSite !== undefined ||
         diagnosis.diagnostic.position !== undefined ||
         diagnosis.diagnostic.part === "annotation";
 }

@@ -37,7 +37,7 @@ import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
 import type {
-  EntrySite,
+  SliceSite,
   TemplateRenderResult,
   RenderDiagnostic,
   RenderedProperty,
@@ -93,7 +93,7 @@ export {
   renderIdentity,
 } from "./result";
 export type {
-  EntrySite,
+  SliceSite,
   TemplateRenderResult,
   RenderCaller,
   RenderDiagnostic,
@@ -104,7 +104,7 @@ export type {
   RenderIdentity,
 } from "./result";
 export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
-export { currentCallSite, currentEntrySite } from "./locate";
+export { currentCallSite, currentSliceSite } from "./locate";
 export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
@@ -539,7 +539,7 @@ export function propertyErrorDiagnostic(
     params: { key, detail: engineClause(error) },
     part: "properties",
     position,
-    ...(site === undefined ? {} : { entrySite: site }),
+    ...(site === undefined ? {} : { sliceSite: site }),
   };
 }
 
@@ -562,7 +562,7 @@ function engineClause(error: unknown): string {
 function entrySite(
   error: unknown,
   authored: ManagedFrontmatterEntry | undefined,
-): EntrySite | undefined {
+): SliceSite | undefined {
   const chain = errorChain(error);
   // An empty path is the whole authored value, which is the place a rule of
   // one operator fails at: JSON-e names the node it walked to, and for such a

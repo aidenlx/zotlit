@@ -16,7 +16,7 @@ import { diagnosisExplanation } from "./problems";
 import type { WorkbenchDiagnosis } from "./problems";
 
 import { entryPosition, jsonPosition } from "#/document/index";
-import { currentCallSite, currentEntrySite } from "#/render/locate";
+import { currentCallSite, currentSliceSite } from "#/render/locate";
 
 const Findings = createContext<readonly WorkbenchDiagnosis[]>([]);
 const Reveal = createContext<((id: string) => void) | undefined>(undefined);
@@ -72,7 +72,7 @@ export function sourceDiagnostics({
         : diagnosis.occurrences.map((diagnostic) =>
             position !== null && diagnostic.position === position
               ? inEntry(
-                  currentEntrySite(diagnostic, controller.sliceText(slice)),
+                  currentSliceSite(diagnostic, controller.sliceText(slice)),
                 )
               : currentCallSite(diagnostic, controller),
           );
