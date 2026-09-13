@@ -3,7 +3,6 @@ import { Component, MarkdownRenderer } from "obsidian";
 import type { App } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 
-import { MARKER_START, MARKER_END } from "@zotlit/templates/obsidian";
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
 import { PropertyList } from "@zotlit/workbench/ui";
 
@@ -79,20 +78,10 @@ export function NativeMarkdown({
         lifecycle,
       );
       if (disposed) return;
-      const start = markdown.indexOf(MARKER_START);
-      const end = markdown.indexOf(MARKER_END, start);
-      const ranges = [
-        ...(start >= 0 && end >= start
-          ? [
-              {
-                from: start + MARKER_START.length,
-                to: end,
-                className: "zt:border-l-2 zt:border-accent-foreground zt:ps-2",
-              },
-            ]
-          : []),
-        ...marks.map((range) => ({ ...range, className: "zt:bg-accent" })),
-      ];
+      const ranges = marks.map((range) => ({
+        ...range,
+        className: "zt:bg-accent",
+      }));
       // Native rendering keeps all source bytes. Prefix renders locate the
       // visible range without inserting tokens into headings or callouts.
       const text = visibleText(target);

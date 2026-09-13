@@ -53,7 +53,7 @@ it("keeps native Markdown outside the plugin preflight and preserves its footer 
   expect(draft?.nextElementSibling?.className).toBe("mod-footer mod-ui");
 });
 
-it("keeps original Markdown, marks its managed text, and unloads children when replaced or closed", async () => {
+it("keeps managed Markdown free of extra borders and unloads children when replaced or closed", async () => {
   const unloaded = vi.fn();
   const calls: string[] = [];
   class RenderChild extends Component {
@@ -92,10 +92,14 @@ it("keeps original Markdown, marks its managed text, and unloads children when r
     );
   });
   await vi.waitFor(() =>
-    expect(
-      container.querySelectorAll("p")[1]?.classList.contains("zt:border-l-2"),
-    ).toBe(true),
+    expect(container.textContent).toBe("OutsideManaged textAfter"),
   );
+  await vi.waitFor(() =>
+    expect(container.querySelector("[data-zotlit-preview-pending]")).toBeNull(),
+  );
+  expect(
+    [...container.querySelectorAll("p")].map((element) => element.className),
+  ).toEqual(["", "", ""]);
   expect(calls[0]).toBe(source);
   expect(container.textContent).toBe("OutsideManaged textAfter");
   expect(container.querySelector("p")?.className).toBe("");
