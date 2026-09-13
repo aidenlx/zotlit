@@ -1678,6 +1678,29 @@ Annotation`,
     expect(copied).toEqual([inspected, inspected]);
   });
 
+  it("keeps the YAML parser message and caret in a validation report", async () => {
+    const copied = stubClipboard();
+    await using test = await setup();
+    vi.useFakeTimers();
+    const source = PROFILE_SOURCE.replace("id: paper", "id: [");
+    await failing(test, source);
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problem_show()),
+    );
+    const area = problemsArea(test.editor);
+    const report = () =>
+      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+        .textContent!;
+    expect(report()).toContain("Flow sequence in block collection");
+    expect(report()).toContain("\n^\n");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied).toEqual([report()]);
+  });
+
   it("works through two problems one at a time, keeping each one's report", async () => {
     const copied = stubClipboard();
     await using test = await setup();

@@ -171,21 +171,28 @@ export function useWorkbenchProblems({
   // another Item, or another check leaves the captured one as it stands. A
   // problem the checks stop finding takes its report with it, which is what
   // keeps this inspection bounded rather than a failure history.
+  // The web host's existing ensureTemporal effect causes a later render after
+  // installing its polyfill, so an early invalid draft remains uncaptured here.
   const documentReports = useRef(new Map<string, RenderReport>());
   const held = new Map<string, RenderReport>();
+  const temporal = globalThis.Temporal;
   for (const diagnosis of diagnoses) {
     if (diagnosis.kind !== "document" || capture === undefined) continue;
     const kept = documentReports.current.get(diagnosis.id);
+    if (kept !== undefined) {
+      held.set(diagnosis.id, kept);
+      continue;
+    }
+    if (temporal === undefined) continue;
     held.set(
       diagnosis.id,
-      kept ??
-        captureProblemReport({
-          problem: diagnosis.problem,
-          message: problemText(capture.messages, diagnosis.problem).message,
-          source: capture.source,
-          capturedAt: Temporal.Now.instant().toString(),
-          context: capture.context(),
-        }),
+      captureProblemReport({
+        problem: diagnosis.problem,
+        message: problemText(capture.messages, diagnosis.problem).message,
+        source: capture.source,
+        capturedAt: temporal.Now.instant().toString(),
+        context: capture.context(),
+      }),
     );
   }
   documentReports.current = held;
@@ -200,9 +207,22 @@ export function useWorkbenchProblems({
         documentReports.current.get(selected.id) ??
         null);
   const [inspected, setInspected] = useState<RenderReport | null>(null);
+  const [inspectionRevision, setInspectionRevision] = useState(0);
+  const inspectedSelection = useRef<{
+    readonly id: string;
+    readonly revision: number;
+  } | null>(null);
   useEffect(() => {
-    if (current !== null) setInspected(current);
-  }, [current]);
+    if (selected === null || current === null) return;
+    const kept = inspectedSelection.current;
+    if (kept?.id === selected.id && kept.revision === inspectionRevision)
+      return;
+    inspectedSelection.current = {
+      id: selected.id,
+      revision: inspectionRevision,
+    };
+    setInspected(current);
+  }, [current, inspectionRevision, selected]);
   // The problem the reader is reading, kept past the repair that resolves it
   // so the area can still name what the resolved explanation was about. A
   // cache of what this render already computed, not state of its own.
@@ -221,6 +241,7 @@ export function useWorkbenchProblems({
     next: selected === null ? first : null,
     select(id) {
       setSelectedId(id);
+      setInspectionRevision((revision) => revision + 1);
       setOpen(true);
     },
     setOpen: openArea,

@@ -30,9 +30,9 @@ export const REPORT_UNAVAILABLE = "unavailable";
  * subclasses and liquidjs links its cause non-enumerably, so the chain behind
  * the thrown error carries detail the outermost message alone does not.
  *
- * A document problem has no engine behind it: the parser's own condition takes
- * the message, the text it named takes the reported location, and the fields
- * only a thrown error can fill stay absent.
+ * A document problem has no render engine behind it, but a parser exception can
+ * still supply its own message and cause chain; fields it cannot fill stay
+ * absent.
  */
 export interface EngineEvidence {
   /** The outermost error's message, exactly as the engine wrote it. */
@@ -314,10 +314,11 @@ export function captureRenderReport({
 
 /**
  * The report one document problem carries. The parser found it in the source
- * this Workbench holds rather than in a render, so what a thrown error would
- * have filled — name, stack, causes, excerpt, engine location, caller, repair
- * target, attempt number — is left absent and reported as unavailable. Every
- * value is read once, at capture, the same as a render report's.
+ * this Workbench holds rather than in a render. When the parser supplied an
+ * exception, its message and chain are captured; fields it cannot fill — name,
+ * excerpt, engine location, caller, repair target, attempt number — are absent
+ * and reported as unavailable. Every value is read once, at capture, the same
+ * as a render report's.
  */
 export function captureProblemReport({
   problem,
@@ -335,13 +336,18 @@ export function captureProblemReport({
   readonly context: WorkbenchReportContext;
 }): RenderReport {
   const { range } = problem;
+  const evidence =
+    problem.error === undefined ? { message } : engineEvidence(problem.error);
+  const reportedLocation =
+    range === undefined ? undefined : `offset ${range.from}-${range.to}`;
   return {
     code: problem.code,
     evidence: {
-      message,
-      ...(range === undefined
-        ? {}
-        : { reportedLocation: `offset ${range.from}-${range.to}` }),
+      ...evidence,
+      ...(evidence.reportedLocation === undefined &&
+      reportedLocation !== undefined
+        ? { reportedLocation }
+        : {}),
     },
     section: problem.slice,
     capturedAt,

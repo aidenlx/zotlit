@@ -1155,6 +1155,103 @@ describe("the error report", () => {
     // The repair changed the document, not the failure that was reported.
     expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
   });
+
+  it("keeps the inspected attempt through an automatic recurrence", async () => {
+    const first: RenderDiagnostic = {
+      ...CAPTURED,
+      callSite: { from: 4, to: 16 },
+    };
+    const later: RenderDiagnostic = {
+      ...first,
+      evidence: {
+        ...CAPTURED.evidence,
+        message: "Attempt 2 evidence",
+      },
+      report: {
+        ...CAPTURED.report!,
+        sequence: 4,
+        evidence: {
+          ...CAPTURED.report!.evidence!,
+          message: "Attempt 2 evidence",
+        },
+      },
+    };
+    function Harness(): ReactNode {
+      const [state, setState] = useState<"first" | "later" | "fixed">("first");
+      const problems = useWorkbenchProblems({
+        diagnoses: workbenchDiagnoses(
+          [],
+          state === "fixed" ? [] : [state === "first" ? first : later],
+        ),
+        trigger: "automatic",
+        attempt: state === "first" ? 1 : state === "later" ? 2 : 3,
+      });
+      return (
+        <>
+          <button type="button" onClick={() => setState("later")}>
+            automatic check
+          </button>
+          <button type="button" onClick={() => setState("fixed")}>
+            repair
+          </button>
+          <ProblemsFooter problems={problems} onOpen={() => {}} />
+        </>
+      );
+    }
+    using mounted = mount(<Harness />);
+    const { ui, host } = mounted;
+    render(ui);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problem_show() }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_copy() }),
+    );
+    expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
+
+    fireEvent.click(screen.getByText("automatic check"));
+    expect(reportBlock().textContent).toContain("Attempt 2 evidence");
+    fireEvent.click(screen.getByText("repair"));
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: m.workbench_problems_copy_last() }),
+      ),
+    );
+    expect(host.calls.copies).toEqual([CAPTURED_TEXT, CAPTURED_TEXT]);
+  });
+
+  it("does not capture a validation report before Temporal is available", () => {
+    const present = globalThis.Temporal;
+    Reflect.deleteProperty(globalThis, "Temporal");
+    try {
+      const controller = new WorkbenchDocumentController(
+        "---\nlanguage: [\n---\ntext",
+        { kind: "citation" },
+      );
+      function Harness(): ReactNode {
+        const problems = useWorkbenchProblems({
+          diagnoses: workbenchDiagnoses(controller.problems, []),
+          trigger: null,
+          attempt: 0,
+          capture: {
+            messages: m,
+            source: controller.source,
+            context: () => ({}),
+          },
+        });
+        return <ProblemsFooter problems={problems} onOpen={() => {}} />;
+      }
+      const mounted = mount(<Harness />);
+      try {
+        expect(() => render(mounted.ui)).not.toThrow();
+      } finally {
+        mounted[Symbol.dispose]();
+      }
+    } finally {
+      globalThis.Temporal = present;
+    }
+  });
 });
 
 describe("the view store", () => {
