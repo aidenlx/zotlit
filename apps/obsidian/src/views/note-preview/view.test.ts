@@ -341,6 +341,36 @@ async function run(view: Preview) {
   await advance(0);
 }
 
+function refusedArrival(name: string) {
+  const evidence = {
+    message: `Template "${name}" not found during the refused operation`,
+    name: "MissingTemplateError",
+  } as const;
+  return {
+    diagnostic: {
+      code: "missing-partial" as const,
+      params: { name },
+      part: "render" as const,
+      evidence,
+      report: {
+        code: "missing-partial",
+        evidence,
+        capturedAt: "2026-09-13T00:00:00Z",
+        trigger: "explicit" as const,
+        identity: {
+          sourceRevision: "refused-source",
+          snapshotRevision: "refused-snapshot",
+        },
+        context: {
+          document: "templates/paper.md",
+          root: "note",
+          selection: "REFUSED2345",
+        },
+      },
+    },
+  } as const;
+}
+
 describe("independent native Note Preview", () => {
   it.each([null, "ABCD2345"])(
     "chooses an Item in a standalone restored Preview from %s and preserves cancellation",
@@ -1082,6 +1112,30 @@ Annotation`,
     expect(test.fixture.writes.modify).not.toHaveBeenCalled();
   });
 
+  it("relocates a retained call target after text is inserted above it", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const call = `{% render "book-details" %}`;
+    const source = PROFILE_SOURCE.replace("Personal space.", call);
+    const preview = await failing(test, source);
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const inserted = source.replace(call, `Inserted text.\n${call}`);
+    await act(async () => test.editor.setViewData(inserted, false));
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_call()),
+    );
+    const at = inserted.indexOf(call);
+    expect(test.editor.store.getState().presentation.reveal).toEqual({
+      from: at,
+      to: at + call.length,
+    });
+    expect(test.editor.controller.source.slice(at, at + call.length)).toBe(
+      call,
+    );
+  });
+
   it("blames the call, not the citation text the engine failed inside", async () => {
     await using test = await setup();
     vi.useFakeTimers();
@@ -1183,12 +1237,9 @@ Annotation`,
       "Personal space.",
       `{% render "book-details" %}`,
     );
-    // The route in carries the refusal's own code and the partial it named.
+    // The route carries the refusal's own diagnostic and report.
     await act(async () =>
-      test.editor.explainArrival({
-        code: "missing-partial",
-        subject: "book-details",
-      }),
+      test.editor.explainArrival(refusedArrival("book-details")),
     );
     await failing(test, source);
 
@@ -1197,6 +1248,47 @@ Annotation`,
     );
     // One arrival opens one explanation; a later check leaves it alone.
     expect(test.editor.arrival).toBeNull();
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+    expect(test.fixture.writes.process).not.toHaveBeenCalled();
+  });
+
+  it("keeps a refused arrival's explanation when its own check finds nothing", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+
+    await act(async () =>
+      test.editor.explainArrival(refusedArrival("book-details")),
+    );
+
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    expect(test.editor.arrival).toBeNull();
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_collapse()),
+    );
+    expect(area.querySelector('[data-part="problems-body"]')).toBeNull();
+    expect(
+      area.querySelector('[data-part="problems-toggle"]')?.textContent,
+    ).toBe(m.workbench_problem_show());
+
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("Personal space.", "No refused call here."),
+        false,
+      ),
+    );
+    expect(
+      area.querySelector('[data-part="problems-toggle"]')?.textContent,
+    ).toBe(m.workbench_problem_show());
     expect(test.fixture.writes.create).not.toHaveBeenCalled();
     expect(test.fixture.writes.modify).not.toHaveBeenCalled();
     expect(test.fixture.writes.process).not.toHaveBeenCalled();

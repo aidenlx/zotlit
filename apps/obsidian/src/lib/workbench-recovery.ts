@@ -3,7 +3,12 @@
 import type { App } from "obsidian";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
-import type { RenderDiagnosticCode } from "@zotlit/workbench/render";
+import {
+  captureRenderReport,
+  engineEvidence,
+  renderFailureDiagnostic,
+} from "@zotlit/workbench/render";
+import type { RenderDiagnostic } from "@zotlit/workbench/render";
 
 import { MissingPartialError } from "@/services/template/errors";
 
@@ -15,15 +20,12 @@ const logger = getLogger("workbench-recovery");
 
 /**
  * The failure a refused note operation asks the Workbench to explain: the
- * diagnostic code the render reported and the object it named. The Workbench
- * explains it once its own check finds the same problem, so the reader reads
- * an explanation of a failure that is still there rather than a recorded
- * message about one that may already be repaired.
+ * diagnostic the refused render reported, including the report already
+ * captured at the refusal boundary. The Workbench can explain it even when a
+ * later check does not reproduce the failure.
  */
 export interface ArrivingProblem {
-  readonly code: RenderDiagnosticCode;
-  /** The object the failure named — the partial a call could not resolve. */
-  readonly subject?: string;
+  readonly diagnostic: RenderDiagnostic;
 }
 
 /** What brought the reader to the Template Workbench, and what to explain. */
@@ -47,7 +49,7 @@ function requestTemplateWorkbench(
 ): void {
   logger.debug("Requested the Template Workbench from a refused operation", {
     document: request.document ?? null,
-    problem: request.problem?.code ?? null,
+    problem: request.problem?.diagnostic.code ?? null,
   });
   app.workspace.trigger("zotlit:open-template-workbench", request);
 }
@@ -75,10 +77,23 @@ export function missingPartialNotice(
     error instanceof MissingPartialError ? error.documentPath : undefined;
   // The Workbench opens the explanation for this very failure, so the reader
   // reads what refused rather than hunting for it among the editor's checks.
-  const problem = {
-    code: "missing-partial",
-    subject: error.templateName,
-  } as const;
+  const classified = {
+    ...renderFailureDiagnostic(error, { source: "", language: "liquid" }),
+    evidence: engineEvidence(error),
+    part: "render" as const,
+  };
+  const captured = captureRenderReport({
+    diagnostic: classified,
+    identity: { sourceRevision: "", snapshotRevision: "" },
+    trigger: "explicit",
+    sequence: 0,
+    capturedAt: Temporal.Now.instant().toString(),
+    context: document === undefined ? {} : { document },
+  });
+  const { sequence: _sequence, ...report } = captured;
+  const problem: ArrivingProblem = {
+    diagnostic: { ...classified, report },
+  };
   return BaseNotice.render((renderer) => {
     renderer.setTitle(message).addAction((button) => {
       button.setButtonText(m.template_workbench_open_layout()).onClick(() =>

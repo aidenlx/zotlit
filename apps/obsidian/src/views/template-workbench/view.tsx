@@ -33,6 +33,7 @@ import {
   externalEdit,
   WorkbenchDocumentController,
   entryPosition,
+  templateCalls,
 } from "@zotlit/workbench/document";
 import type {
   WorkbenchDocumentKind,
@@ -238,9 +239,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #previewProblemListeners = new Set<() => void>();
   readonly #showProblemListeners = new Set<(id: string | null) => void>();
   /**
-   * The failure a refused note operation asked this editor to explain, held
-   * until its own check finds the same problem. A recorded message is not the
-   * diagnosis — the check that runs here is — so the arrival waits for it.
+   * The captured failure a refused note operation asked this editor to explain.
+   * Its report remains available even when this editor's own check differs.
    */
   #arrival: ArrivingProblem | null = null;
   get matchDatabase() {
@@ -654,12 +654,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#showProblemListeners.delete(listener);
     };
   }
-  /** Records the failure that brought the reader here, and opens Problems. */
+  /** Records the captured failure that brought the reader here, and opens Problems. */
   explainArrival(arrival: ArrivingProblem): void {
     this.#arrival = arrival;
     this.showProblem(null, false);
   }
-  /** The held arrival, taken so one arrival opens one explanation. */
+  /** Takes one arrival so it opens one explanation. */
   takeArrival(): ArrivingProblem | null {
     const held = this.#arrival;
     this.#arrival = null;
@@ -2002,9 +2002,13 @@ function EditorContent({
       ? { ...entry, slice: "advanced" as const }
       : entry,
   );
+  const [arrival, setArrival] = useState<ArrivingProblem | null>(null);
+  const pendingArrival = view.arrival;
+  const arrivalDiagnostic = arrival?.diagnostic;
   const diagnoses = workbenchDiagnoses(documentProblems, [
     ...(result?.diagnostics ?? []),
     ...previewProblems,
+    ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
   ]);
   const problems = useWorkbenchProblems({
     diagnoses,
@@ -2027,27 +2031,30 @@ function EditorContent({
       ),
     [view, selectProblem, openProblems],
   );
-  // A refused note operation brought the reader here: the first check that
-  // finds that failure again opens its explanation. Nothing is explained from
-  // the recorded message alone, so a repair made meanwhile leaves the area
-  // open on whatever this editor actually found.
+  // A refused note operation brings its own captured diagnosis here. Consume
+  // the arrival once, then keep its report available even when this editor's
+  // own check finds no matching failure.
+  useEffect(() => {
+    if (!pendingArrival) return;
+    setArrival(pendingArrival);
+    view.takeArrival();
+    openProblems(true);
+  }, [view, pendingArrival, openProblems]);
+  const arrivalSelection = useRef<ArrivingProblem | null>(null);
   const detected = diagnoses.map(({ id }) => id).join("\n");
   useEffect(() => {
-    const arrival = view.arrival;
-    if (!arrival) return;
-    openProblems(true);
+    if (!arrival || arrivalSelection.current === arrival) return;
     const match = diagnoses.find(
       (diagnosis) =>
         diagnosis.kind === "render" &&
-        diagnosis.diagnostic.code === arrival.code &&
-        (arrival.subject === undefined ||
-          String(diagnosis.diagnostic.params?.name ?? "") === arrival.subject),
+        diagnosis.diagnostic.code === arrival.diagnostic.code &&
+        String(diagnosis.diagnostic.params?.name ?? "") ===
+          String(arrival.diagnostic.params?.name ?? ""),
     );
     if (!match) return;
-    view.takeArrival();
+    arrivalSelection.current = arrival;
     selectProblem(match.id);
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed on the problems found, not on a fresh list each draw
-  }, [view, detected, selectProblem, openProblems]);
+  }, [arrival, detected, diagnoses, selectProblem]);
   const state = view.store.getState();
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
@@ -2106,6 +2113,22 @@ function EditorContent({
     }
     return "advanced";
   }
+  /** Re-finds a retained call in the current source before moving the caret. */
+  function currentCallSite(
+    diagnostic: RenderDiagnostic,
+  ): { from: number; to: number } | undefined {
+    const target =
+      diagnostic.code === "missing-partial"
+        ? diagnostic.params?.name
+        : diagnostic.engine?.template;
+    if (target === undefined) return undefined;
+    const calls = templateCalls(
+      controller.source,
+      { from: 0, to: controller.source.length },
+      controller.language,
+    ).filter(({ name }) => name === String(target));
+    return calls.length === 1 ? calls[0]!.call : undefined;
+  }
   /** The pane one selected problem is repaired in, whichever kind it is. */
   function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
     if (diagnosis.kind === "document") {
@@ -2116,7 +2139,12 @@ function EditorContent({
     // A verified call outranks the part the engine reported the failure under:
     // a failure inside a called template is repaired where it was called.
     if (callSite) {
-      openProblem({ slice: sliceHolding(callSite.from), range: callSite });
+      const current = currentCallSite(diagnosis.diagnostic);
+      if (current === undefined) {
+        new BaseNotice(m.workbench_problems_location_unknown());
+        return;
+      }
+      openProblem({ slice: sliceHolding(current.from), range: current });
       return;
     }
     const slice: WorkbenchProblem["slice"] =

@@ -34,10 +34,10 @@ export interface RenderCallerSource {
  *
  * A call to a Shared Partial the vault holds no document for is the engine's
  * own missing-partial report, which the Partial Placeholder, the Problems
- * area, and a refused Literature Note all read by code. The engine refusing
- * the Citation Template's own data is the caller passing it the data it
- * renders with, which is repaired at the call rather than in the Citation
- * Template. Every other failure carries the engine's own words.
+ * area, and a refused Literature Note all read by code. A single verified call
+ * to the Citation Template plus its structural refusal is evidence that the
+ * caller supplied the data; a filter applied inside that template is not. Every
+ * other failure carries the engine's own words.
  *
  * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
  * @see docs/adr/0056-template-diagnosis-belongs-to-the-editor.md
@@ -55,7 +55,7 @@ export function renderFailureDiagnostic(
   // The partial the engine could not resolve is the one to repair the call to;
   // every other failure is repaired where the template it names was called.
   const site = named
-    ? callSites(caller, named.templateName)[0]
+    ? verifiedCallSite(caller, named.templateName)
     : verifiedCallSite(caller, engine?.template);
   const from = callerOf(chain);
   const attribution = {
@@ -71,7 +71,7 @@ export function renderFailureDiagnostic(
     };
   return {
     code:
-      engine?.template === CITATION_TEMPLATE && refusedCitationData(chain)
+      engine?.template === CITATION_TEMPLATE && refusedCitationData(chain, site)
         ? "citation-data-mismatch"
         : "render-error",
     message: errorText(error),
@@ -84,15 +84,21 @@ function errorText(error: unknown): string {
 }
 
 /**
- * Whether the engine refused the Citation Template's own input — the Pandoc
- * Citation formatter reporting that what it was handed is no Citation Item
- * array. That refusal is structural, so it names the mismatch by class rather
- * than by reading the engine's English.
+ * Whether a verified caller passed invalid input to the Citation Template —
+ * the Pandoc Citation formatter reporting that what it was handed is no
+ * Citation Item array. The structural refusal names the mismatch by class;
+ * the refusal alone does not.
  */
-function refusedCitationData(chain: readonly Error[]): boolean {
-  return chain.some(
-    (link) =>
-      link instanceof PandocCitationError && link.code === "invalid-input",
+function refusedCitationData(
+  chain: readonly Error[],
+  site: RenderDiagnostic["callSite"],
+): boolean {
+  return (
+    site !== undefined &&
+    chain.some(
+      (link) =>
+        link instanceof PandocCitationError && link.code === "invalid-input",
+    )
   );
 }
 
@@ -202,9 +208,8 @@ function callSites(
  * call that reached it. A source spelling that name twice reached it from one
  * of them and nothing here says which, so the repair location stays absent
  * rather than sending the reader to whichever call comes first — which may be
- * one this render never took. A template the engine could not resolve at all
- * is the other case: every call naming it is broken by the same missing
- * document, so the first one is as good a repair target as any.
+ * one this render never took. A missing template follows the same rule: more
+ * than one call still leaves the repair location unknown.
  */
 function verifiedCallSite(
   caller: RenderCallerSource,

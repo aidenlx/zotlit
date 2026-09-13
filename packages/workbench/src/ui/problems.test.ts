@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
+import { PandocCitationError } from "@zotlit/templates/pandoc-citation";
+
 import {
   diagnosisForOccurrence,
   diagnosisEngineSources,
@@ -18,7 +21,9 @@ import { m } from "./test-messages";
 import { WorkbenchDocumentController } from "#/document/controller";
 import {
   DEFAULT_PROFILE_SOURCE,
+  engineEvidence,
   renderProfile,
+  renderFailureDiagnostic,
   SAMPLE_ITEMS,
 } from "#/render/index";
 
@@ -221,6 +226,54 @@ describe("attribution", () => {
       suggestion: m.workbench_diagnostic_citation_data_suggestion(),
       evidence:
         "pandoc_cite requires a Citation Item array, file:citation, line:4, col:3",
+    });
+  });
+
+  it("leaves a missing partial's location unknown when several calls name it", () => {
+    const source =
+      '{% if false %}{% render "venue-line" %}{% endif %}\n{% render "venue-line" %}';
+    const failure = renderFailureDiagnostic(
+      new MissingTemplateError("venue-line"),
+      { source, language: "liquid" },
+    );
+
+    expect(failure.callSite).toBeUndefined();
+    expect(
+      renderFailureDiagnostic(new MissingTemplateError("venue-line"), {
+        source: '{% render "venue-line" %}',
+        language: "liquid",
+      }).callSite,
+    ).toEqual({ from: 0, to: '{% render "venue-line" %}'.length });
+  });
+
+  it("keeps a Citation Template filter failure unclassified", () => {
+    const error = new TemplateError(
+      "pandoc_cite requires a Citation Item array",
+      "citation",
+      {
+        cause: new PandocCitationError(
+          "invalid-input",
+          "pandoc_cite requires a Citation Item array",
+          { property: "items" },
+        ),
+      },
+    );
+    const diagnostic = renderFailureDiagnostic(error, {
+      source: '{{ "bad" | pandoc_cite }}',
+      language: "liquid",
+    });
+    const found = renderDiagnosis({
+      ...diagnostic,
+      evidence: engineEvidence(error),
+      part: "render",
+    });
+
+    expect(diagnostic.code).toBe("render-error");
+    expect(diagnosisExplanation(m, found)).toEqual({
+      object: m.workbench_problems_object_profile(),
+      condition: m.workbench_diagnostic_render_error(),
+      suggestion: m.workbench_diagnostic_render_error_suggestion(),
+      evidence: "pandoc_cite requires a Citation Item array",
     });
   });
 
