@@ -5,8 +5,7 @@
   "type": "module",
   "imports": {
     "#content-config": "./content.config.ts",
-    "#paraglide/messages.js": "./src/paraglide/messages.js",
-    "#zotlit-release.json": "./zotlit-release.json"
+    "#paraglide/messages.js": "./src/paraglide/messages.js"
   },
   "scripts": {
     "dev": "vite dev --port 3000",

@@ -35,12 +35,7 @@ import { useMemo, useRef, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
-import type {
-  DocsPageTreeItem,
-  DocsSidebarBadge,
-} from "@/lib/docs-availability";
 import { mergeRefs } from "@/lib/merge-refs";
-import * as m from "@/paraglide/messages.js";
 
 const itemVariants = cva(
   "relative flex flex-row items-center gap-2 rounded-lg p-2 text-start text-fd-muted-foreground wrap-anywhere [&_svg]:size-4 [&_svg]:shrink-0",
@@ -388,9 +383,6 @@ function SidebarItem({
 
 function SidebarPageItem({ item }: { item: PageTree.Item }) {
   const pathname = usePathname();
-  // Derived on the server, where the Docs Release Line lives — see the
-  // `/docs` route shell.
-  const availability = (item as DocsPageTreeItem).docsAvailability;
 
   return (
     <SidebarItem
@@ -400,30 +392,7 @@ function SidebarPageItem({ item }: { item: PageTree.Item }) {
       icon={item.icon}
     >
       <span className="min-w-0 flex-1">{item.name}</span>
-      {availability && <AvailabilityBadge status={availability} />}
     </SidebarItem>
-  );
-}
-
-function AvailabilityBadge({ status }: { status: DocsSidebarBadge }) {
-  return (
-    <span
-      aria-label={
-        {
-          new: m.docs_badge_new_label(),
-          updated: m.docs_badge_updated_label(),
-        }[status]
-      }
-      data-availability={status}
-      className={cn(
-        "ms-auto inline-flex h-4 shrink-0 items-center rounded-full px-1.5 font-mono text-[0.6rem] leading-none font-semibold tracking-[0.12em] uppercase",
-        status === "new" && "bg-fd-primary text-fd-primary-foreground",
-        status === "updated" &&
-          "bg-fd-primary/8 text-fd-primary ring-1 ring-fd-primary/30 ring-inset",
-      )}
-    >
-      {status === "new" ? m.docs_badge_new() : m.docs_badge_updated()}
-    </span>
   );
 }
 

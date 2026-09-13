@@ -20,10 +20,6 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import * as m from "@/paraglide/messages.js";
 
-import {
-  getDocsAvailability,
-  renderAvailabilityMarkdown,
-} from "./docs-availability";
 import type { MarkdownPage } from "./markdown-routes";
 import {
   blog,
@@ -74,24 +70,16 @@ async function renderBody(page: EditionPage) {
   return renderToMarkdown(<Body components={mdxComponents} />);
 }
 
-/** Title line, page URL, an optional preamble, then the rendered Markdown body. */
-async function renderPage(heading: string, page: EditionPage, preamble = "") {
+/** Title line, page URL, then the rendered Markdown body. */
+async function renderPage(heading: string, page: EditionPage) {
   return `# ${heading} (${page.url})
 
-${preamble}${await renderBody(page)}`;
+${await renderBody(page)}`;
 }
 
-/**
- * A docs page's edition, led by its `_Available since ZotLit …._` line. The
- * preamble is empty for a page with no Introduced Release yet — see ADR 0002.
- */
+/** A docs page's edition. */
 function renderDocsPage(page: (typeof source)["$inferPage"]) {
-  const availability = getDocsAvailability(page.data.introduced);
-  const preamble = availability
-    ? `${renderAvailabilityMarkdown(availability, changelog.getPage([availability.introduced])?.url)}\n\n`
-    : "";
-
-  return renderPage(page.data.title, page, preamble);
+  return renderPage(page.data.title, page);
 }
 
 /** Markdown listing under `heading`, each page linked to its `.md` edition. */
