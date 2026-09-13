@@ -31,6 +31,19 @@ export type RenderJsonEFrontmatterValueOptions = FrontmatterTarget & {
 export class ManagedFrontmatterError extends Error {
   readonly key: string | undefined;
   readonly recovery: string;
+  /**
+   * The place inside the authored value the engine stopped at, as the keys and
+   * indexes it walked to reach it. JSON-e reports that path on every error it
+   * raises itself, so an editor can mark the expression that failed rather
+   * than the whole entry. Absent where the failure named no place — a refused
+   * output value, or a crash inside the engine's own parser.
+   *
+   * A path is a claim about this attempt's own value and nothing more. JSON-e
+   * leaves its own operator keys out of it, so a path that walks past one
+   * names a place the author never wrote there; a reader of this decides what
+   * the path is worth against the value it came from.
+   */
+  readonly path: readonly (string | number)[] | undefined;
 
   constructor(
     { key, position }: FrontmatterTarget,
@@ -45,6 +58,41 @@ export class ManagedFrontmatterError extends Error {
     this.name = "ManagedFrontmatterError";
     this.key = key;
     this.recovery = `Correct the value for Managed Frontmatter ${target}.`;
+    this.path = templatePath(options.cause);
+  }
+}
+
+/**
+ * The authored value's own path to `cause`, read from the location JSON-e
+ * attaches while it unwinds. The render wraps the value in an envelope, so the
+ * envelope's own key is dropped and what remains reads against the value the
+ * author wrote. Every other error reports no location and stays unplaced.
+ */
+function templatePath(
+  cause: unknown,
+): readonly (string | number)[] | undefined {
+  if (cause === null || typeof cause !== "object") return undefined;
+  const { location } = cause as { location?: unknown };
+  if (!Array.isArray(location) || location.length === 0) return undefined;
+  const segments = location.map(readSegment);
+  if (segments[0] !== ENVELOPE_KEY) return undefined;
+  return segments.slice(1).every((segment) => segment !== undefined)
+    ? (segments.slice(1) as (string | number)[])
+    : undefined;
+}
+
+/** One JSON-e location segment — `.key`, `[0]`, or `["quoted key"]`. */
+function readSegment(segment: unknown): string | number | undefined {
+  if (typeof segment !== "string") return undefined;
+  if (segment.startsWith(".")) return segment.slice(1);
+  if (!segment.startsWith("[") || !segment.endsWith("]")) return undefined;
+  const inner = segment.slice(1, -1);
+  if (/^\d+$/.test(inner)) return Number(inner);
+  try {
+    const key: unknown = JSON.parse(inner);
+    return typeof key === "string" ? key : undefined;
+  } catch {
+    return undefined;
   }
 }
 

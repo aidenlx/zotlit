@@ -9,7 +9,7 @@ import { SliceEditor } from "./slice-editor";
 import { WorkbenchDiagnosticsProvider } from "./source-diagnostics";
 import { renderWithMessages as render } from "./test-host";
 
-import { WorkbenchDocumentController } from "#/document/controller";
+import { entrySlice, WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 
 afterEach(cleanup);
@@ -154,4 +154,75 @@ it("leaves the Advanced pane its line numbers when nothing is wrong", () => {
   );
   expect(mounted.container.querySelector(".cm-lineNumbers")).not.toBeNull();
   expect(mounted.container.querySelector(".cm-problem-gutter")).toBeNull();
+});
+
+it("underlines the expression a property rule failed on, in the row's own editor", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  // The fourth row is the built-in JSON-e rule `{"$eval":"zt.citationKey"}`.
+  const slice = entrySlice(4);
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "property-error",
+        params: { key: "citekey", detail: 'object has no property "nope"' },
+        part: "properties",
+        position: 4,
+        entrySite: {
+          kind: "path",
+          path: [],
+          source: '{"$eval":"zt.citationKey"}',
+        },
+      },
+    ],
+  );
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={diagnoses}>
+      <SliceEditor
+        controller={controller}
+        slice={slice}
+        label="Value"
+        language="json-e"
+      />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const marked: string[] = [];
+  forEachDiagnostic(editor.state, (_diagnostic, start, end) => {
+    marked.push(editor.state.sliceDoc(start, end));
+  });
+  expect(marked).toEqual(['"zt.citationKey"']);
+  expect(mounted.container.querySelector(".cm-lintRange-error")).not.toBeNull();
+});
+
+it("leaves a property failure unmarked in another row's editor", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "property-error",
+        params: { key: "citekey" },
+        part: "properties",
+        position: 4,
+        entrySite: {
+          kind: "path",
+          path: [],
+          source: '{"$eval":"zt.citationKey"}',
+        },
+      },
+    ],
+  );
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={diagnoses}>
+      <SliceEditor
+        controller={controller}
+        slice={entrySlice(1)}
+        label="Value"
+      />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  expect(mounted.container.querySelector(".cm-lintRange-error")).toBeNull();
 });

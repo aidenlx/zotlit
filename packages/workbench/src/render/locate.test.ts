@@ -1,7 +1,8 @@
+import { regex } from "arkregex";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_PROFILE_SOURCE, renderProfile, SAMPLE_ITEMS } from "./index";
-import { currentCallSite } from "./locate";
+import { currentCallSite, currentEntrySite } from "./locate";
 import type { RenderDiagnostic } from "./result";
 
 describe("current repair call", () => {
@@ -84,6 +85,120 @@ describe("current repair call", () => {
         { code: "missing-partial", params: { name: "details" } },
         { source: call, language: "liquid" },
       ),
+    ).toBeUndefined();
+  });
+});
+
+/** One authored row per way an entry expression can fail. */
+const ENTRIES = {
+  evalRule: `  - key: broken
+    value: {"$eval": "zt.nowhere.deep"}
+    merge: replace`,
+  spreadRule: `  - value: {"title": "kept", "kind": {"$eval": "zt.nowhere.deep"}}
+    merge: replace`,
+  unknownOperator: `  - key: broken
+    value: {"$evl": "zt.title"}
+    merge: replace`,
+  liquidExpression: `  - key: broken
+    expr: "zt.]title"
+    merge: replace`,
+  // An operator missing the clauses it needs fails on what the rule does not
+  // say, so no part of what it does say is the fault.
+  operatorMissingClause: `  - key: broken
+    value: {"$let": {}}
+    merge: replace`,
+  // JSON-e renders an operator's own branches itself and leaves the operator
+  // out of the location it reports, so this failure inside `in` is reported at
+  // a path that also names the sibling `in` the author wrote beside it.
+  operatorBranch: `  - key: broken
+    value: {"$let": {"in": {"$eval": "zt.nowhere.deep"}}, "in": "safe"}
+    merge: replace`,
+};
+
+/** The failure one appended row raises, beside the expression its row edits. */
+function entryFailure(rows: string): {
+  diagnostic: RenderDiagnostic;
+  expression: string;
+} {
+  const source = DEFAULT_PROFILE_SOURCE.replace(
+    "---\n# {{ zt.title }}",
+    `${rows}\n---\n# {{ zt.title }}`,
+  );
+  const diagnostic = renderProfile(source, SAMPLE_ITEMS[0]!).diagnostics.find(
+    ({ code }) => code === "property-error",
+  )!;
+  // The row's editor holds the expression alone, which every offset counts from.
+  const expression = regex("(?:value|expr): (?<held>.*)").exec(rows)!.groups
+    .held;
+  return { diagnostic, expression };
+}
+
+describe("current entry site", () => {
+  it("marks the argument of the one operator a rule stopped inside", () => {
+    const { diagnostic, expression } = entryFailure(ENTRIES.evalRule);
+
+    const site = currentEntrySite(diagnostic, expression)!;
+    expect(expression.slice(site.from, site.to)).toBe('"zt.nowhere.deep"');
+  });
+
+  it("marks the produced key a spread failed on, not the whole rule", () => {
+    const { diagnostic, expression } = entryFailure(ENTRIES.spreadRule);
+
+    const site = currentEntrySite(diagnostic, expression)!;
+    expect(expression.slice(site.from, site.to)).toBe('"zt.nowhere.deep"');
+  });
+
+  it("marks the key itself where JSON-e knows no operator by that name", () => {
+    const { diagnostic, expression } = entryFailure(ENTRIES.unknownOperator);
+
+    const site = currentEntrySite(diagnostic, expression)!;
+    expect(expression.slice(site.from, site.to)).toBe('"$evl"');
+  });
+
+  it("marks the token a Liquid expression stopped on", () => {
+    const { diagnostic, expression } = entryFailure(ENTRIES.liquidExpression);
+
+    const site = currentEntrySite(diagnostic, expression)!;
+    // liquidjs stops on the filter name it wanted a pipe before.
+    expect(expression.slice(site.from, site.to)).toBe("title");
+  });
+
+  it("leaves an expression edited since the attempt unmarked", () => {
+    const { diagnostic } = entryFailure(ENTRIES.liquidExpression);
+
+    expect(currentEntrySite(diagnostic, '"zt.title"')).toBeUndefined();
+  });
+
+  it("keeps the whole rule where an operator is missing a clause", () => {
+    const { diagnostic, expression } = entryFailure(
+      ENTRIES.operatorMissingClause,
+    );
+
+    const site = currentEntrySite(diagnostic, expression)!;
+    expect(expression.slice(site.from, site.to)).toBe('{"$let": {}}');
+  });
+
+  it("marks nothing where JSON-e reported a path through an operator", () => {
+    const { diagnostic, expression } = entryFailure(ENTRIES.operatorBranch);
+
+    // The reported path names `in`, which the author also wrote as a sibling
+    // of the operator: marking it would underline text that did not fail.
+    expect(diagnostic.entrySite).toBeUndefined();
+    expect(currentEntrySite(diagnostic, expression)).toBeUndefined();
+  });
+
+  it("drops the mark once the expression it read has been repaired", () => {
+    const { diagnostic, expression } = entryFailure(ENTRIES.evalRule);
+
+    expect(currentEntrySite(diagnostic, expression)).toBeDefined();
+    expect(
+      currentEntrySite(diagnostic, expression.replace("nowhere.deep", "title")),
+    ).toBeUndefined();
+  });
+
+  it("marks nothing where the failure named no place", () => {
+    expect(
+      currentEntrySite({ code: "property-error" }, '{"$eval": "zt.title"}'),
     ).toBeUndefined();
   });
 });

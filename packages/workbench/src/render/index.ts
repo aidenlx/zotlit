@@ -18,7 +18,11 @@ import type { AnnotationTemplateContext, TemplateAnnotation } from "@zotlit/db";
 import { inlineCitation, replaceSuffixMarkers } from "@zotlit/templates";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
-import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
+import {
+  evalManagedFrontmatterEntries,
+  FrontmatterJsonEError,
+} from "@zotlit/templates/frontmatter";
+import type { ManagedFrontmatterEvaluationError } from "@zotlit/templates/frontmatter";
 import {
   FRONTMATTER_ABSENT,
   mergeManagedFrontmatterEntries,
@@ -28,11 +32,12 @@ import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import { renderFailureDiagnostic } from "./attribution";
 import type { RenderCallerSource } from "./attribution";
-import { engineEvidence } from "./report";
+import { engineEvidence, errorChain } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
 import type {
+  EntrySite,
   TemplateRenderResult,
   RenderDiagnostic,
   RenderedProperty,
@@ -88,6 +93,7 @@ export {
   renderIdentity,
 } from "./result";
 export type {
+  EntrySite,
   TemplateRenderResult,
   RenderCaller,
   RenderDiagnostic,
@@ -98,7 +104,7 @@ export type {
   RenderIdentity,
 } from "./result";
 export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
-export { currentCallSite } from "./locate";
+export { currentCallSite, currentEntrySite } from "./locate";
 export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
@@ -470,14 +476,9 @@ function evaluateFrontmatter(
           ]
         : [],
     ),
-    ...errors.map(({ key, position, error }) => ({
-      code: "property-error" as const,
-      message: errorMessage(error),
-      evidence: engineEvidence(error),
-      params: { key },
-      part: "properties" as const,
-      position,
-    })),
+    ...errors.map((error) =>
+      propertyErrorDiagnostic(error, authored[error.position - 1]),
+    ),
     ...conflicts,
   ].toSorted(byPosition);
   return { properties, fold, diagnostics };
@@ -516,6 +517,105 @@ function rendered({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * What one failed Managed Frontmatter entry reads as, wherever it ran. Both
+ * hosts evaluate the same entries through the same engines, so both name the
+ * fault the same way and place it in the same row; this is where that answer
+ * is written, once.
+ */
+export function propertyErrorDiagnostic(
+  { key, position, error }: ManagedFrontmatterEvaluationError,
+  authored: ManagedFrontmatterEntry | undefined,
+): RenderDiagnostic & { readonly position: number } {
+  const site = entrySite(error, authored);
+  return {
+    code: "property-error",
+    message: errorMessage(error),
+    evidence: engineEvidence(error),
+    // The engine's own last word, which the row reads on its own: the wrapper
+    // around it names the entry the row already names.
+    params: { key, detail: engineClause(error) },
+    part: "properties",
+    position,
+    ...(site === undefined ? {} : { entrySite: site }),
+  };
+}
+
+/**
+ * What the engine itself said, taken from the innermost link of the chain.
+ * Everything wrapped around it repeats the entry the row already names, so a
+ * row that carries this reads one sentence about one fault.
+ */
+function engineClause(error: unknown): string {
+  return errorMessage(errorChain(error).at(-1) ?? error);
+}
+
+/**
+ * Where one entry failure points inside the entry's own expression, with what
+ * the attempt read there. JSON-e names the keys and indexes it walked; Liquid
+ * names the span of expression text it tokenized. Either way the text travels
+ * with the place, so a host marks it only against an expression that still
+ * spells the same thing.
+ */
+function entrySite(
+  error: unknown,
+  authored: ManagedFrontmatterEntry | undefined,
+): EntrySite | undefined {
+  const chain = errorChain(error);
+  // An empty path is the whole authored value, which is the place a rule of
+  // one operator fails at: JSON-e names the node it walked to, and for such a
+  // rule that node is the expression itself.
+  const path = chain.find(
+    (link): link is FrontmatterJsonEError =>
+      link instanceof FrontmatterJsonEError && link.path !== undefined,
+  )?.path;
+  if (path !== undefined && authored !== undefined && "value" in authored) {
+    const source = authoredAt(authored.value, path);
+    if (source !== undefined) return { kind: "path", path, source };
+  }
+  for (const link of chain) {
+    const token = (link as { token?: unknown }).token;
+    if (token === null || typeof token !== "object") continue;
+    const { input, begin, end } = token as Record<string, unknown>;
+    if (
+      typeof input === "string" &&
+      typeof begin === "number" &&
+      typeof end === "number" &&
+      begin < end
+    ) {
+      return { kind: "span", from: begin, to: end, source: input };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * What the author wrote at `path`, as the value a later mark is checked
+ * against. Undefined where the path does not describe the authored value at
+ * all: JSON-e leaves its own operator keys out of the locations it reports, so
+ * a path that steps through an operator names a place the author never wrote
+ * there, and a sibling that happens to sit at that name is not the fault.
+ */
+function authoredAt(
+  value: unknown,
+  path: readonly (string | number)[],
+): string | undefined {
+  let node = value;
+  for (const segment of path) {
+    if (node === null || typeof node !== "object") return undefined;
+    if (!Array.isArray(node) && Object.keys(node).some(isOperatorKey))
+      return undefined;
+    node = (node as Record<string | number, unknown>)[segment];
+    if (node === undefined) return undefined;
+  }
+  return JSON.stringify(node);
+}
+
+/** A key JSON-e reads as an operator rather than as a name to produce. */
+function isOperatorKey(key: string): boolean {
+  return key.startsWith("$") && !key.startsWith("$$");
 }
 
 /** Liquid retains the source token when a note call fails inside the format. */

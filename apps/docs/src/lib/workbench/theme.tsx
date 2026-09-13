@@ -251,7 +251,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "row-name":
         "col-start-1 row-start-1 flex min-h-7 min-w-0 items-center gap-2 pe-2",
       key: "min-w-0 flex-1 font-mono text-sm font-medium break-words",
-      label: "text-xs font-medium",
+      label: "text-xs font-medium data-[state=problem]:text-destructive",
       "row-actions":
         "z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start",
       edit: cn(
@@ -274,11 +274,11 @@ export const WEB_THEME: WorkbenchTheme = {
       "confirm-actions": "flex flex-wrap gap-2",
       "text-input": cn(nameInput, "bg-fd-background"),
       expression:
-        "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background",
+        "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background data-[state=problem]:border-destructive",
       diagnostics:
-        "flex flex-col gap-1 border-s-2 border-fd-foreground ps-3 text-xs leading-normal",
+        "flex flex-col gap-1 border-s-2 border-s-destructive ps-3 text-xs leading-normal text-pretty text-destructive",
       summary:
-        "col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground data-[state=closed]:line-clamp-2",
+        "col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground data-[state=closed]:line-clamp-2 data-[state=problem]:line-clamp-2 data-[state=problem]:text-destructive",
       "row-action": buttonVariants({ variant: "ghost", size: "icon-xs" }),
       "primary-action": buttonVariants({ variant: "outline", size: "xs" }),
       "secondary-action": buttonVariants({ variant: "ghost", size: "xs" }),

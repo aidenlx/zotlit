@@ -114,9 +114,11 @@ export function diagnosticText(
     case "citation-style-error":
       return diagnostic.message ?? citationStyleText(m, params);
     case "property-error":
+      // The engine's own last word, which the renderer separated from the
+      // wrapper naming the entry: the line already names the property once.
       return m.workbench_diagnostic_property_error({
         key: String(params.key),
-        message: diagnostic.message ?? "",
+        message: String(params.detail ?? diagnostic.message ?? ""),
       });
     case "property-javascript":
       return params.key === undefined
@@ -629,6 +631,7 @@ export function diagnosisLocated(diagnosis: WorkbenchDiagnosis): boolean {
     ? diagnosis.problem.range !== undefined
     : diagnosis.diagnostic.sourceSite !== undefined ||
         diagnosis.diagnostic.callSite !== undefined ||
+        diagnosis.diagnostic.entrySite !== undefined ||
         diagnosis.diagnostic.position !== undefined ||
         diagnosis.diagnostic.part === "annotation";
 }
