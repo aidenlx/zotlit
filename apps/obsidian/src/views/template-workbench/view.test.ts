@@ -680,6 +680,55 @@ describe("TemplateWorkbenchView", () => {
     ).toBe(source);
   });
 
+  it("retains the Name and Properties editors across tab switches", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const source = `---
+id: paper
+name: Paper
+version: 1.0.0
+contract: 2
+language: liquid
+filename: paper
+frontmatter:
+  - key: title
+    expr: zt.title
+    merge: replace
+---
+A stable note.
+--- zotlit:annotation ---
+An annotation.
+`;
+    const { view } = setup();
+    view.setViewData(source, true);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    const filename = () =>
+      view.contentEl.querySelector<HTMLElement>(
+        '[data-part="filename-editor"] .cm-editor',
+      )!;
+    await act(async () => view.store.getState().setTab("name"));
+    const name = filename();
+    expect(name).not.toBeNull();
+    await act(async () => view.store.getState().setTab("note"));
+    await act(async () => view.store.getState().setTab("name"));
+    expect(filename()).toBe(name);
+
+    const expression = () =>
+      view.contentEl.querySelector<HTMLElement>(
+        '[data-part="expression"] .cm-editor',
+      )!;
+    await act(async () => view.store.getState().setTab("properties"));
+    await act(async () =>
+      view.setPresentation({ selected: 1, reveal: null, fieldFocus: null }),
+    );
+    const expr = expression();
+    expect(expr).not.toBeNull();
+    await act(async () => view.store.getState().setTab("note"));
+    await act(async () => view.store.getState().setTab("properties"));
+    expect(expression()).toBe(expr);
+  });
+
   it("keeps Eta wrapping and undo when switching to Advanced", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
@@ -1326,7 +1375,9 @@ describe("TemplateWorkbenchView", () => {
         await view.open();
       });
       const editor = EditorView.findFromDOM(
-        view.contentEl.querySelector(".cm-editor")!,
+        view.contentEl.querySelector(
+          '[role="tabpanel"]:not([hidden]) .cm-editor',
+        )!,
       )!;
       await act(() => {
         editor.focus();

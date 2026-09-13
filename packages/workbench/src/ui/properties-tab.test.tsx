@@ -245,6 +245,27 @@ Annotation`;
   expect(opened).toBe("zt.title");
 });
 
+it("keeps a row's editor alive across collapse and re-expand", () => {
+  const { container } = setup();
+  const edit = () =>
+    [
+      ...container.querySelectorAll<HTMLElement>('[data-part="row"]'),
+    ][0]!.querySelector('[data-part="edit"]')!;
+  fireEvent.click(edit());
+  const editor = container.querySelector('[data-part="expression"] .cm-editor');
+  expect(editor).not.toBeNull();
+  fireEvent.click(edit());
+  // The form folds away but keeps its editor in the page.
+  expect(container.querySelector('[data-part="form"]')).toHaveProperty(
+    "hidden",
+    true,
+  );
+  fireEvent.click(edit());
+  expect(container.querySelector('[data-part="expression"] .cm-editor')).toBe(
+    editor,
+  );
+});
+
 it("keeps read-only rows openable and disables property changes", () => {
   const { controller, press } = setup();
   act(() => controller.setReadOnly(true));

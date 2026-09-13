@@ -67,7 +67,7 @@ describe("the tab bar", () => {
     using mounted = mount(
       <>
         <TabBar />
-        <TabPanel tab="note" keepMounted description={false}>
+        <TabPanel tab="note" description={false}>
           note body
         </TabPanel>
         <TabPanel tab="properties" description={false}>
@@ -163,7 +163,10 @@ describe("the tab bar", () => {
     expect(store.getState().tab).toBe("annotation");
     act(() => store.getState().setTab("match"));
     expect(store.getState().tab).toBe("note");
-    expect(screen.queryByText("match rules")).toBeNull();
+    // A visited pane stays in the page, hidden, rather than leaving.
+    expect(
+      screen.getByText("match rules").closest("[role=tabpanel]"),
+    ).toHaveProperty("hidden", true);
     act(() =>
       mounted.controller.dispatch({
         changes: {

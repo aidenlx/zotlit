@@ -2103,14 +2103,6 @@ function EditorContent({
   useEffect(() => {
     if (advanced && !sourceVisited) setSourceVisited(true);
   }, [advanced, sourceVisited]);
-  const tab = useWorkbenchStore((state) => state.tab);
-  const [mountedTabs, setMountedTabs] = useState<
-    ReadonlySet<WorkbenchViewState["tab"]>
-  >(() => new Set([tab]));
-  useEffect(() => {
-    if (mountedTabs.has(tab)) return;
-    setMountedTabs(new Set([...mountedTabs, tab]));
-  }, [mountedTabs, tab]);
   const kind = controller.kind;
   const languageCaption =
     controller.plainDocument?.manifest.language === "eta"
@@ -2570,11 +2562,7 @@ function EditorContent({
                 />
               </div>
             )}
-            <TabPanel
-              tab="note"
-              keepMounted={mountedTabs.has("note")}
-              modeActive={!advanced}
-            >
+            <TabPanel tab="note" modeActive={!advanced}>
               <NotePane
                 controller={controller}
                 preview={result?.annotation ?? null}
@@ -2676,11 +2664,7 @@ function EditorContent({
                 db={view.matchDatabase}
               />
             </TabPanel>
-            <TabPanel
-              tab="annotation"
-              keepMounted={mountedTabs.has("annotation")}
-              modeActive={!advanced}
-            >
+            <TabPanel tab="annotation" modeActive={!advanced}>
               {formatProblem && (
                 <button
                   type="button"
