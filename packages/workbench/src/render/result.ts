@@ -46,6 +46,27 @@ export interface RenderEngineLocation {
   readonly column?: number;
 }
 
+/**
+ * The failing place inside one Managed Frontmatter entry, named the way the
+ * engine that ran it names places: a JSON-e rule reports the keys and indexes
+ * it walked, and a Liquid expression reports a span of the text it tokenized.
+ * Both carry what the attempt read there, so a host marks a place only where
+ * the expression it shows now still spells the same thing.
+ */
+export type EntrySite =
+  | {
+      readonly kind: "path";
+      readonly path: readonly (string | number)[];
+      /** The authored value at that path, as the attempt serialized it. */
+      readonly source: string;
+    }
+  | {
+      readonly kind: "span";
+      readonly from: number;
+      readonly to: number;
+      readonly source: string;
+    };
+
 /** The Template Document whose own call reached the failing template. */
 export interface RenderCaller {
   /** Its vault path, when the failure named one. */
@@ -95,6 +116,13 @@ export interface RenderDiagnostic {
     readonly source: string;
     readonly offset: number;
   };
+  /**
+   * Where inside {@link RenderDiagnostic.position}'s entry the engine stopped,
+   * in the entry's own terms rather than the document's. Only the open source
+   * knows where that entry sits, so a host resolves this against the text it
+   * shows and leaves it unmarked where the text no longer holds it.
+   */
+  readonly entrySite?: EntrySite;
   /**
    * What the engine said before this diagnostic reduced it to `message`,
    * captured at the boundary that catches the error. Absent where the failure

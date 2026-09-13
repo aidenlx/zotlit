@@ -411,9 +411,10 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
         "clickable-icon zt:min-w-0 zt:flex-1 zt:flex-wrap zt:justify-start zt:gap-x-3 zt:gap-y-1 zt:text-start",
       "row-name": "zt:flex zt:min-w-0 zt:items-center zt:gap-2",
       key: "zt:font-medium zt:text-foreground zt:[overflow-wrap:anywhere]",
-      label: "zt:text-xs zt:font-medium",
+      label:
+        "zt:text-xs zt:font-medium zt:data-[state=problem]:text-(--text-error)",
       summary:
-        "zt:min-w-0 zt:max-w-full zt:truncate zt:text-xs zt:text-muted-foreground",
+        "zt:min-w-0 zt:max-w-full zt:truncate zt:text-xs zt:text-muted-foreground zt:data-[state=problem]:text-(--text-error)",
       "row-actions":
         "zt:ms-auto zt:flex zt:shrink-0 zt:items-center zt:gap-0.5",
       edit: "clickable-icon",
@@ -431,11 +432,13 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "primary-action": templateWorkbenchButton,
       "secondary-action": templateWorkbenchButton,
       confirm: cn(stack, "zt:rounded-md zt:bg-card zt:p-3"),
-      diagnostics: "zt:text-xs zt:text-error",
+      diagnostics:
+        "zt:text-xs zt:leading-normal zt:text-pretty zt:text-(--text-error)",
       hint,
       expression: cn(
         editorBox,
         "zt:flex zt:min-h-28 zt:min-w-0 zt:flex-1 zt:flex-col",
+        "zt:data-[state=problem]:border-(--text-error)",
       ),
     },
     nameFolder: {

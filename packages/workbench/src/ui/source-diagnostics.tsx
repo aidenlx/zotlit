@@ -15,8 +15,8 @@ import type { WorkbenchMessages } from "./generated/messages";
 import { diagnosisExplanation } from "./problems";
 import type { WorkbenchDiagnosis } from "./problems";
 
-import { jsonPosition } from "#/document/index";
-import { currentCallSite } from "#/render/locate";
+import { entryPosition, jsonPosition } from "#/document/index";
+import { currentCallSite, currentEntrySite } from "#/render/locate";
 
 const Findings = createContext<readonly WorkbenchDiagnosis[]>([]);
 const Reveal = createContext<((id: string) => void) | undefined>(undefined);
@@ -59,13 +59,22 @@ export function sourceDiagnostics({
   json: boolean;
 }): SourceDiagnostic[] {
   const bounds = controller.sliceRange(slice);
+  // The row this pane edits, when it edits one. A property failure names the
+  // place inside that row's own expression, which no other pane can place.
+  const position = entryPosition(slice);
+  const inEntry = (site: { from: number; to: number } | undefined) =>
+    site && { from: bounds.from + site.from, to: bounds.from + site.to };
   return diagnoses.flatMap((diagnosis) => {
     const explanation = diagnosisExplanation(messages, diagnosis);
     const ranges =
       diagnosis.kind === "document"
         ? diagnosis.occurrences.map((problem) => problem.range)
         : diagnosis.occurrences.map((diagnostic) =>
-            currentCallSite(diagnostic, controller),
+            position !== null && diagnostic.position === position
+              ? inEntry(
+                  currentEntrySite(diagnostic, controller.sliceText(slice)),
+                )
+              : currentCallSite(diagnostic, controller),
           );
     return ranges.flatMap((range): SourceDiagnostic[] => {
       if (!range || range.from < bounds.from || range.to > bounds.to) return [];
@@ -77,10 +86,15 @@ export function sourceDiagnostics({
               offset - bounds.from,
             )
           : offset - bounds.from;
+      const from = local(range.from);
+      const to = local(range.to);
       return [
         {
-          from: local(range.from),
-          to: local(range.to),
+          from,
+          // A laid-out pane holds whitespace the stored text never had, and
+          // the mapping through it lands past the marked text. A pane that
+          // shows the stored text carries the range the failure verified.
+          to: json ? trimmedEnd(source, from, to) : to,
           severity: "error",
           diagnosisId: diagnosis.id,
           message: `${explanation.condition}\n${explanation.suggestion}`,
@@ -88,6 +102,13 @@ export function sourceDiagnostics({
       ];
     });
   });
+}
+
+/** Where a mark ends once the whitespace after the marked text is left out. */
+function trimmedEnd(source: string, from: number, to: number): number {
+  let end = to;
+  while (end > from + 1 && /\s/.test(source[end - 1] ?? "")) end -= 1;
+  return end;
 }
 
 /**

@@ -220,7 +220,12 @@ describe("Note Preview fidelity against the real create path", () => {
         code: "property-error",
         part: "properties",
         position: 1,
-        params: { key: "title" },
+        // The row names the property; the detail is the engine's own words,
+        // which is what the row reads beside the expression that failed.
+        params: {
+          key: "title",
+          detail: "Cannot read properties of undefined (reading 'deep')",
+        },
       }),
     );
     expect(preview.creationBody).toContain("# Better figures");

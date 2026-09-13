@@ -19,6 +19,7 @@ import {
   emptyRender,
   engineEvidence,
   failedRender,
+  propertyErrorDiagnostic,
   renderFailureDiagnostic,
   renderIdentity,
   retainOutputs,
@@ -490,14 +491,14 @@ export async function renderNativeProfile(
       }
     if (composed.outcome === "refused")
       for (const error of composed.evaluation.errors)
-        diagnostics.push({
-          code: "property-error",
-          part: "properties",
-          position: error.position,
-          params: { key: error.key },
-          message: errorText(error.error),
-          evidence: engineEvidence(error.error),
-        });
+        // The same answer the web renderer reads, so a row underlines the text
+        // that failed and reads the engine's own words in either host.
+        diagnostics.push(
+          propertyErrorDiagnostic(
+            error,
+            manifest.frontmatter?.[error.position - 1],
+          ),
+        );
     manifest.frontmatter?.forEach((entry, index) => {
       if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
         diagnostics.push({
@@ -671,10 +672,6 @@ export async function renderNativeProfile(
       annotationCitations: [],
     };
   }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

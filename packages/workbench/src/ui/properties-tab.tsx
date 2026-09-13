@@ -196,12 +196,20 @@ export function PropertiesPane({
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
           const open = selected === entry.position;
-          const summary = exampleMessage
-            ? controller.source.slice(
-                entry.expression.from,
-                entry.expression.to,
-              )
-            : summarize(m, { entry, produced: fields, fold });
+          // A folded row reads what went wrong instead of the value it failed
+          // to produce, which is the one place that says so while it is shut.
+          // The open row shows it beside the expression it belongs to instead,
+          // so the reader is told once either way.
+          const failure =
+            !open && raised.length > 0 ? raised[0]!.message : null;
+          const summary =
+            failure ??
+            (exampleMessage
+              ? controller.source.slice(
+                  entry.expression.from,
+                  entry.expression.to,
+                )
+              : summarize(m, { entry, produced: fields, fold }));
           return (
             <li key={entry.position} {...part("row")}>
               <div {...part("row-header")}>
@@ -217,17 +225,24 @@ export function PropertiesPane({
                       {entry.key ?? m.workbench_properties_spread()}
                     </span>
                     {raised.length > 0 && (
-                      <span {...part("label")}>
+                      <span {...part("label", "problem")}>
                         {m.workbench_properties_row_problem()}
                       </span>
                     )}
                   </span>
                   {summary && (
                     <span
-                      {...part("summary", open ? "open" : "closed")}
+                      {...part(
+                        "summary",
+                        failure ? "problem" : open ? "open" : "closed",
+                      )}
                       {...tooltip(summary)}
                     >
-                      {exampleMessage ? <code>{summary}</code> : summary}
+                      {exampleMessage && !failure ? (
+                        <code>{summary}</code>
+                      ) : (
+                        summary
+                      )}
                     </span>
                   )}
                 </button>
@@ -546,7 +561,9 @@ function EntryForm({
               {...part("text-input")}
             />
           ) : (
-            <div {...part("expression")}>
+            <div
+              {...part("expression", diagnostics.length > 0 ? "problem" : "ok")}
+            >
               <SliceEditor
                 controller={controller}
                 slice={entrySlice(entry.position)}
