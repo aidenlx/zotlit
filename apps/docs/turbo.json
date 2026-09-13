@@ -2,21 +2,41 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
+    "dev": {
+      "dependsOn": ["^build"]
+    },
     "build": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:messages"],
       // The agent-skill archives are read from the repo-root `skills/` tree at
       // build time (src/lib/agent-skills.ts), so those files are build inputs.
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/skills/**"],
-      "outputs": ["dist/**", ".tanstack/**", ".source/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/skills/**",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "outputs": ["dist/**", ".tanstack/**"],
       // The Cloudflare Web Analytics token is read at build time, so builds
       // with different values are distinct; `CLOUDFLARE_ENV` likewise
       // separates beta and production outputs.
       "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV", "GITHUB_SHA"]
     },
-    // The `.source/` collection index, which the typecheck reads. `vite build`
-    // regenerates it too, so a lint or typecheck run needs only this task.
-    "codegen": {
-      "outputs": [".source/**"],
+    "generate:messages": {
+      "dependsOn": ["@zotlit/paraglide-vite#build"],
+      "inputs": [
+        "paraglide.config.ts",
+        "scripts/generate-messages.ts",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "outputs": ["src/paraglide/**"],
       "outputLogs": "errors-only"
+    },
+    "typecheck": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:messages", "cf-typegen:check"]
+    },
+    "lint": {
+      "dependsOn": ["generate:messages"]
     },
     "cf-typegen:check": {
       "inputs": ["wrangler.jsonc", "worker-configuration.d.ts"],
@@ -27,9 +47,8 @@
       "outputs": ["content/docs/reference/templates/data.mdx"],
       "outputLogs": "errors-only"
     },
-    // `src/http.test.ts` fetches the built Worker, so the build runs first.
     "test": {
-      "dependsOn": ["^build", "transit", "build"]
+      "dependsOn": ["^build", "transit", "generate:messages"]
     }
   }
 }

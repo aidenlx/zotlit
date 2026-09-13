@@ -4,6 +4,7 @@ import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FIELD_CITATION_STYLE } from "@/lib/constants";
 import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
@@ -14,10 +15,15 @@ import type { DocumentCitations } from "@/services/citation-text/present";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { defaults } from "@/services/settings/schema";
 
 import { ReferencesView } from "./view";
 
-type RenderedBibliography = BibliographyRenderOutcome;
+type RenderedBibliography = Extract<
+  BibliographyRenderOutcome,
+  { kind: "held" }
+>;
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
@@ -113,6 +119,14 @@ function renderedOutcome(): RenderedBibliography {
   };
 }
 
+function failedHeldOutcome(): RenderedBibliography {
+  const outcome = renderedOutcome();
+  return {
+    ...outcome,
+    record: { ...outcome.record, status: "failed" },
+  };
+}
+
 /** What a style that writes no Entry Marker renders, which leaves the gutter free. */
 function unmarkedOutcome(): RenderedBibliography {
   const value: BibliographyRenderResult = {
@@ -160,6 +174,8 @@ let citekeyResolution: CitationKeyResolution;
 let heldCitations: DocumentCitations | null;
 let onInvalidated: (() => void) | undefined;
 let onActiveLeafChange: (() => void) | undefined;
+let onMetadataChanged: (() => void) | undefined;
+let frontmatter: Record<string, unknown> | undefined;
 
 function markdownFile(basename: string): TFile {
   const file = new TFile();
@@ -209,6 +225,7 @@ beforeEach(async () => {
   renders = [];
   scans = [];
   heldCitations = null;
+  frontmatter = undefined;
   citekeyResolution = "fresh";
   activeFile = markdownFile("tidal");
   otherFile = markdownFile("estuary");
@@ -221,13 +238,22 @@ beforeEach(async () => {
       },
     },
     metadataCache: {
-      on: () => ({}) as EventRef,
+      on: (event: string, callback: () => void) => {
+        if (event === "changed") onMetadataChanged = callback;
+        return {} as EventRef;
+      },
       // No note here declares a style of its own, so every list is rendered
       // under the vault Citation Presentation.
-      getFileCache: () => null,
+      getFileCache: () => (frontmatter ? { frontmatter } : null),
     },
   } as unknown as App;
 
+  const profileReady = Promise.withResolvers<void>();
+  const profile = {
+    ...profileReader(defaults, app.metadataCache),
+    loaded: false,
+    ready: profileReady.promise,
+  };
   view = new TestReferencesView(
     {} as WorkspaceLeaf,
     {
@@ -288,13 +314,21 @@ beforeEach(async () => {
           return () => undefined;
         },
       },
+      profile,
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
     } as unknown as ConstructorParameters<typeof TestReferencesView>[1],
   );
 
   document.body.append(view.contentEl);
-  await act(() => view!.open());
+  await act(async () => {
+    const opening = view!.open();
+    await Promise.resolve();
+    expect(scans).toHaveLength(0);
+    profile.loaded = true;
+    profileReady.resolve();
+    await opening;
+  });
   await finishScan();
 });
 
@@ -306,6 +340,7 @@ afterEach(async () => {
   onCitedByInvalidated = undefined;
   onInvalidated = undefined;
   onActiveLeafChange = undefined;
+  onMetadataChanged = undefined;
   document.body.replaceChildren();
 });
 
@@ -348,6 +383,30 @@ describe("ReferencesView copy readiness", () => {
     await finishRender();
 
     expect(copyAction().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps held entries visible when their replacement fails", async () => {
+    await finishRender();
+
+    await act(() => onDbChanged?.());
+    await finishRender(failedHeldOutcome());
+
+    expect(view!.contentEl.textContent).toContain("Rivers, A. (2020).");
+    expect(view!.contentEl.textContent).toContain(
+      m.references_format_failed_title(),
+    );
+    expect(copyAction().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("clears entries when the document selects another style", async () => {
+    await finishRender();
+    frontmatter = { [FIELD_CITATION_STYLE]: "new-style" };
+
+    await act(() => onMetadataChanged?.());
+    await finishScan();
+
+    expect(view!.contentEl.textContent).not.toContain("Rivers, A. (2020).");
+    expect(copyAction().hasAttribute("disabled")).toBe(true);
   });
 
   it("takes copy back the moment the pane follows another note", async () => {

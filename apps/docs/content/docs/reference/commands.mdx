@@ -5,9 +5,12 @@ introduced: "2.0.0"
 updated: "2.1.0"
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 This reference lists every ZotLit command, its entry points, and its availability.
 
@@ -18,7 +21,7 @@ This reference lists every ZotLit command, its entry points, and its availabilit
 
 ## Database
 
-<Command>ZotLit: Refresh Zotero database</Command>
+<Command name={m.command_refresh_db_name()} />
 
 Reloads the Zotero database from disk. Use this after making changes in Zotero when automatic watching is disabled.
 
@@ -28,33 +31,33 @@ Reloads the Zotero database from disk. Use this after making changes in Zotero w
 
 ## Library-wide update
 
-<Command>ZotLit: Create or update all literature notes</Command>
+<Command name={m.command_update_all_notes_name()} />
 
 Creates or updates a literature note for every item in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-item update from Zotero.
 
-| Entry point     | Details                                                                              |
-| --------------- | ------------------------------------------------------------------------------------ |
-| Command palette | Always available                                                                     |
-| Zotero          | Right-click a library or collection > **ZotLit > Create or Update Literature Notes** |
+| Entry point     | Details                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                              |
+| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> |
 
 The Zotero entry scopes the batch to the row you right-click: a library covers every item in it, a collection covers that collection and its subcollections. That target is exact, so it runs whether or not the row is in your library scope.
 
 ## Library-wide note import
 
-<Command>ZotLit: Import all child and standalone notes</Command>
+<Command name={m.command_import_all_notes_name()} />
 
 Imports all child notes attached to regular items and all standalone notes in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-note import from Zotero.
 
-| Entry point     | Details                                                                              |
-| --------------- | ------------------------------------------------------------------------------------ |
-| Command palette | Always available                                                                     |
-| Zotero          | Right-click a library or collection > **ZotLit > Import Child and Standalone Notes** |
+| Entry point     | Details                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                                    |
+| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> |
 
 The Zotero entry scopes the import to the row you right-click, subcollections included. That target is exact, so it runs whether or not the row is in your library scope.
 
 ## Literature note quick switcher
 
-<Command>ZotLit: Open literature note quick switcher</Command>
+<Command name={m.command_open_lit_note_name()} />
 
 Opens a modal to search every library in your [library scope](/docs/reference/settings#library-scope) and jump to (or create) the corresponding literature note.
 
@@ -64,53 +67,53 @@ Opens a modal to search every library in your [library scope](/docs/reference/se
 
 ## Citations
 
-<Command>ZotLit: Insert Markdown citation</Command>
+<Command name={m.command_insert_citation_name()} />
 
 Opens a modal to search every library in your [library scope](/docs/reference/settings#library-scope) and insert a Markdown citation at the cursor.
 
-Insertion remains available independently of **Pandoc citations**, **Wikilink citations**, **Show formatted citations**, and **Open citations as links**.
+Insertion remains available independently of <UiLabel name={m.settings_citation_pandoc_citations_name()} />, <UiLabel name={m.settings_citation_wikilink_citations_name()} />, <UiLabel name={m.settings_citation_show_formatted_name()} />, and <UiLabel name={m.settings_citation_open_as_links_name()} />.
 
-| Entry point      | Details                                                                                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Command palette  | Active when an editor is open                                                                                                                            |
-| Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under **Settings > ZotLit > Citations**. |
+| Entry point      | Details                                                                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette  | Active when an editor is open                                                                                                                                              |
+| Editor suggester | Triggered by typing `[@` in the editor, or `@` at a word boundary when **`@` trigger** is on. Both settings are under <SettingsPath page={m.settings_page_citations()} />. |
 
 ### Citation navigation
 
 The following commands open the recognized Pandoc citation under the cursor. They have no default hotkeys.
 
-| Entry point     | Details                                                                                                                |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Command palette | Active while **Pandoc citations** and **Open citations as links** are on, with the cursor on a recognized citation key |
-| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                                               |
+| Entry point     | Details                                                                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Command palette | Active while <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> are on, with the cursor on a recognized citation key |
+| Hotkey          | None by default; assign one under **Settings > Hotkeys**                                                                                                                                         |
 
-<Command>ZotLit: Open citation key under cursor</Command>
+<Command name={m.command_open_citekey_name()} />
 
 Opens or creates the Literature Note in the current tab.
 
-<Command>ZotLit: Open citation key under cursor in new tab</Command>
+<Command name={m.command_open_citekey_new_tab_name()} />
 
 Opens or creates the Literature Note in a new tab.
 
-<Command>ZotLit: Open citation key under cursor to the right</Command>
+<Command name={m.command_open_citekey_right_name()} />
 
 Opens or creates the Literature Note in a split to the right.
 
-<Command>ZotLit: Open citation key under cursor in new window</Command>
+<Command name={m.command_open_citekey_window_name()} />
 
 Opens or creates the Literature Note in a new window.
 
 ### References and export
 
-<Command>ZotLit: Open references</Command>
+<Command name={m.command_open_references_view_name()} />
 
-Opens the References Sidebar for the active note.
+Opens the <UiLabel name={m.references_view_name()} /> Sidebar for the active note.
 
 | Entry point     | Details          |
 | --------------- | ---------------- |
 | Command palette | Always available |
 
-<Command>ZotLit: Set citation presentation</Command>
+<Command name={m.command_set_citation_presentation_name()} />
 
 Opens a modal that sets the citation and references style and the document language of the active Markdown note. Confirming writes the `zotlit-csl` and `lang` properties of that note together. Choosing the vault style or the language reset removes the matching property.
 
@@ -119,9 +122,9 @@ Opens a modal that sets the citation and references style and the document langu
 | Command palette | Active on a Markdown note            |
 | More options    | The note's **More options** menu (⋮) |
 
-<Command>ZotLit: Export note with citations</Command>
+<Command name={m.command_pandoc_export_name()} />
 
-Opens the built-in export modal for the active Markdown note. The command requires the Pandoc engine when you run it.
+Opens the built-in export modal for the active Markdown note. The command requires the <UiLabel name={m.settings_citation_engine_name()} /> when you run it.
 
 The export uses its own citation membership. Citation source, presentation, and navigation settings do not change exported content.
 
@@ -129,11 +132,43 @@ The export uses its own citation membership. Citation source, presentation, and 
 | --------------- | ------------------------- |
 | Command palette | Active on a Markdown note |
 
+### Citation text
+
+<Command name={m.command_customize_citation_text_name()} />
+
+Opens the citation text in the Template Workbench View. When the vault holds no citation document, the command creates `zotlit-citation.md` from the built-in citation text first.
+
+| Entry point             | Details                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette         | Always available                                                                                                                                                                   |
+| Settings                | The <UiLabel name={m.settings_citation_text_open()} /> button on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} /> |
+| Template Workbench View | The pane menu's <UiLabel name={m.template_workbench_open_citation()} /> item                                                                                                       |
+
+## Graph view
+
+<Command name={m.command_open_citation_graph_name()} />
+
+Opens Obsidian's graph view with the Citation Graph preset applied, where Obsidian's own **Open graph view** opens it: the tab you are in, or the new tab, split, or window a modifier-held invocation asks for. See [Explore citations in the graph view](/docs/how-to/explore-citations-in-graph) for what the preset sets.
+
+| Entry point     | Details                                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Active while <UiLabel name={m.settings_citation_graph_name()} /> is on and Obsidian's Graph view core plugin is enabled |
+
+<Command name={m.command_open_local_citation_graph_name()} />
+
+Opens a local Citation Graph for the active note in a vertical split, grouped to the pane it was opened from so the graph follows that pane's file.
+
+| Entry point     | Details                                              |
+| --------------- | ---------------------------------------------------- |
+| Command palette | Active on a note, while the same conditions as above |
+
+Neither command has a default hotkey. Where a Citation Graph cannot be opened, the command shows a notice naming the one thing to put right: the Graph view core plugin, the <UiLabel name={m.settings_citation_graph_name()} /> setting, or Citation Graph availability.
+
 ## Literature note actions
 
 The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section.
 
-<Command>ZotLit: Update literature note</Command>
+<Command name={m.command_update_note_name()} />
 
 Re-renders the full literature note (frontmatter and managed body region) from the current Zotero data.
 
@@ -142,7 +177,7 @@ Re-renders the full literature note (frontmatter and managed body region) from t
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Update literature note metadata</Command>
+<Command name={m.command_update_note_metadata_name()} />
 
 Re-renders only the frontmatter of the literature note from the current Zotero data. Body content is unchanged.
 
@@ -151,7 +186,7 @@ Re-renders only the frontmatter of the literature note from the current Zotero d
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Overwrite literature note</Command>
+<Command name={m.command_overwrite_note_name()} />
 
 Destructively replaces the entire literature note with a fresh render. A confirmation modal appears before proceeding.
 
@@ -160,7 +195,7 @@ Destructively replaces the entire literature note with a fresh render. A confirm
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Import child notes from Zotero</Command>
+<Command name={m.command_import_child_notes_name()} />
 
 Imports the Zotero notes attached to the current item into the vault.
 
@@ -169,18 +204,18 @@ Imports the Zotero notes attached to the current item into the vault.
 | Command palette | Active on a literature note |
 | File menu       | yes                         |
 
-<Command>ZotLit: Copy item key</Command>
+<Command name={m.command_copy_item_key_name()} />
 
 Copies the note's Zotero key to the clipboard.
 
-| Entry point     | Details                                     |
-| --------------- | ------------------------------------------- |
-| Command palette | Active on a literature note                 |
-| File menu       | Label: **Copy item key**. Single file only. |
+| Entry point     | Details                                                                     |
+| --------------- | --------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                 |
+| File menu       | Label: <UiLabel name={m.command_copy_item_key_name()} />. Single file only. |
 
 ## Imported note actions
 
-<Command>ZotLit: Update imported note from Zotero</Command>
+<Command name={m.command_reimport_note_name()} />
 
 Re-imports a Zotero note that was previously imported. A confirmation modal appears before overwriting.
 
@@ -191,29 +226,29 @@ Re-imports a Zotero note that was previously imported. A confirmation modal appe
 
 ## Annotations
 
-<Command>ZotLit: Open Zotero annotations</Command>
+<Command name={m.command_open_annot_view_name()} />
 
 Opens the annotation view in the right sidebar, showing annotations from the Zotero reader.
 
-| Entry point     | Details                                  |
-| --------------- | ---------------------------------------- |
-| Command palette | Always available                         |
-| Ribbon          | yes (tooltip: "Open Zotero annotations") |
+| Entry point     | Details                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| Command palette | Always available                                                     |
+| Ribbon          | yes (tooltip: "<UiLabel name={m.command_open_annot_view_name()} />") |
 
 ## Template data explorer
 
-<Command>ZotLit: Open template data explorer</Command>
+<Command name={m.command_open_template_data_explorer_name()} />
 
 Opens the template data explorer, showing the full data object available to templates for the current item.
 
-| Entry point     | Details                                                                    |
-| --------------- | -------------------------------------------------------------------------- |
-| Command palette | Always available                                                           |
-| File menu       | Label: **Explore template data**. Appears on files that carry an item key. |
+| Entry point     | Details                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                            |
+| File menu       | Label: <UiLabel name={m.template_data_explorer_menu_explore()} />. Appears on files that carry an item key. |
 
 ## Onboarding & release
 
-<Command>ZotLit: Open welcome view</Command>
+<Command name={m.command_open_welcome_name()} />
 
 Opens the ZotLit Welcome View for guided setup and v1-to-v2 migration.
 
@@ -222,54 +257,57 @@ Opens the ZotLit Welcome View for guided setup and v1-to-v2 migration.
 | Command palette | Always available                                    |
 | Automatic       | Opens on first launch, and after a v1-to-v2 upgrade |
 
-<Command>ZotLit: Open release notes</Command>
+<Command name={m.command_open_release_note_name()} />
 
 Opens the release notes for the installed ZotLit version.
 
-| Entry point     | Details                                                            |
-| --------------- | ------------------------------------------------------------------ |
-| Command palette | Always available                                                   |
-| Settings        | The **What's new** button (View release notes) in the settings tab |
-| Update notice   | The action button on the "update available" notice                 |
+| Entry point     | Details                                                                                                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                                              |
+| Settings        | The <UiLabel name={m.settings_resources_whats_new_button()} /> button in the <UiLabel name={m.settings_resources_whats_new_name({ version: "…" })} /> row of the settings tab |
+| Update notice   | The action button on the "update available" notice                                                                                                                            |
 
 ## Entry-point summary
 
-| Command                                      | Palette | Ribbon | File menu |         Editor         |
-| -------------------------------------------- | :-----: | :----: | :-------: | :--------------------: |
-| Refresh Zotero database                      |   yes   |   no   |    no     |           no           |
-| Create or update all literature notes        |   yes   |   no   |    no     |           no           |
-| Import all child and standalone notes        |   yes   |   no   |    no     |           no           |
-| Open literature note quick switcher          |   yes   |   no   |    no     |           no           |
-| Insert Markdown citation                     |   yes   |   no   |    no     |  `[@` / `@` suggester  |
-| Open citation key under cursor               |   yes   |   no   |    no     | Cursor on citation key |
-| Open citation key under cursor in new tab    |   yes   |   no   |    no     | Cursor on citation key |
-| Open citation key under cursor to the right  |   yes   |   no   |    no     | Cursor on citation key |
-| Open citation key under cursor in new window |   yes   |   no   |    no     | Cursor on citation key |
-| Open references                              |   yes   |   no   |    no     |           no           |
-| Set citation presentation                    |   yes   |   no   |    yes    |  Active Markdown note  |
-| Export note with citations                   |   yes   |   no   |    no     |  Active Markdown note  |
-| Update literature note                       |   yes   |   no   |    yes    |           no           |
-| Update literature note metadata              |   yes   |   no   |    yes    |           no           |
-| Overwrite literature note                    |   yes   |   no   |    yes    |           no           |
-| Import child notes from Zotero               |   yes   |   no   |    yes    |           no           |
-| Copy item key                                |   yes   |   no   |    yes    |           no           |
-| Update imported note from Zotero             |   yes   |   no   |    yes    |           no           |
-| Open Zotero annotations                      |   yes   |  yes   |    no     |           no           |
-| Open template data explorer                  |   yes   |   no   |    yes    |           no           |
-| Open welcome view                            |   yes   |   no   |    no     |           no           |
-| Open release notes                           |   yes   |   no   |    no     |           no           |
+| Command                                                         | Palette | Ribbon | File menu |         Editor         |
+| --------------------------------------------------------------- | :-----: | :----: | :-------: | :--------------------: |
+| <UiLabel name={m.command_refresh_db_name()} />                  |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_update_all_notes_name()} />            |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_import_all_notes_name()} />            |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_open_lit_note_name()} />               |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_insert_citation_name()} />             |   yes   |   no   |    no     |  `[@` / `@` suggester  |
+| <UiLabel name={m.command_open_citekey_name()} />                |   yes   |   no   |    no     | Cursor on citation key |
+| <UiLabel name={m.command_open_citekey_new_tab_name()} />        |   yes   |   no   |    no     | Cursor on citation key |
+| <UiLabel name={m.command_open_citekey_right_name()} />          |   yes   |   no   |    no     | Cursor on citation key |
+| <UiLabel name={m.command_open_citekey_window_name()} />         |   yes   |   no   |    no     | Cursor on citation key |
+| <UiLabel name={m.command_open_references_view_name()} />        |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_set_citation_presentation_name()} />   |   yes   |   no   |    yes    |  Active Markdown note  |
+| <UiLabel name={m.command_open_citation_graph_name()} />         |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_open_local_citation_graph_name()} />   |   yes   |   no   |    no     |      Active note       |
+| <UiLabel name={m.command_pandoc_export_name()} />               |   yes   |   no   |    no     |  Active Markdown note  |
+| <UiLabel name={m.command_customize_citation_text_name()} />     |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_update_note_name()} />                 |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_update_note_metadata_name()} />        |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_overwrite_note_name()} />              |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_import_child_notes_name()} />          |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_copy_item_key_name()} />               |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_reimport_note_name()} />               |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_open_annot_view_name()} />             |   yes   |  yes   |    no     |           no           |
+| <UiLabel name={m.command_open_template_data_explorer_name()} /> |   yes   |   no   |    yes    |           no           |
+| <UiLabel name={m.command_open_welcome_name()} />                |   yes   |   no   |    no     |           no           |
+| <UiLabel name={m.command_open_release_note_name()} />           |   yes   |   no   |    no     |           no           |
 
 ## Template Workbench CLI
 
-The Template Workbench registers additional commands through the Obsidian CLI for agent use. These commands are not in the command palette. They cover template inspection, rendering, and managed frontmatter configuration. See [Template Workbench](/docs/concepts/template-workbench) for an overview, and run `obsidian zotlit:template-guide` for the command reference.
+The Template Workbench CLI registers additional commands through the Obsidian CLI for agent use. These commands are not in the command palette. They cover template inspection, rendering, and managed frontmatter configuration. See [Template Workbench CLI](/docs/concepts/template-workbench) for the concept overview. Run `obsidian zotlit:template-guide` for the command reference.
 
 ## See also
 
 <Cards>
   <Card
-    title="Template Workbench"
-    description="How the skill, CLI, and safety boundaries fit together."
-    href="/docs/concepts/template-workbench"
+    title="Install the ZotLit skill"
+    description="Install the agent workflow that uses the Template Workbench."
+    href="/docs/install-skill"
   />
   <Card
     title="Settings"

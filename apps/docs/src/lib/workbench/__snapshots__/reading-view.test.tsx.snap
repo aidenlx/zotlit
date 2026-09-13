@@ -1,0 +1,838 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`inert marks > produces the tree a package swap has to keep producing 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Findings",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Read ",
+        },
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "the paper",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-wikilink",
+            ],
+            "data-target": "Ioannidis 2005",
+            "data-zt": "wikilink",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": " and ",
+        },
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Reading list#Queue",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-wikilink",
+            ],
+            "data-target": "Reading list#Queue",
+            "data-zt": "wikilink",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": ", filed under ",
+        },
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "#method/replication",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-tag",
+            ],
+            "data-target": "method/replication",
+            "data-zt": "tag",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": ".",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/IANNP5A2",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": " and ",
+        },
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "https://example.com/paper",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "https://example.com/paper",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": ".",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "properties": {
+            "className": [
+              "zt-embed",
+            ],
+            "data-embed": "image",
+            "data-target": "figure-1.png",
+            "data-zt": "embed",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "properties": {
+            "className": [
+              "zt-embed",
+            ],
+            "data-embed": "note",
+            "data-target": "Bicycle sharing notes",
+            "data-zt": "embed",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "properties": {
+            "className": [
+              "zt-embed",
+            ],
+            "data-embed": "pdf",
+            "data-target": "appendix.pdf",
+            "data-zt": "embed",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [],
+          "properties": {
+            "className": [
+              "zt-embed",
+            ],
+            "data-embed": "image",
+            "data-target": "https://example.com/figure.png",
+            "data-zt": "embed",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Page 1",
+                },
+              ],
+              "properties": {
+                "className": [
+                  "callout-title-text",
+                ],
+              },
+              "tagName": "div",
+              "type": "element",
+            },
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [],
+                      "properties": {
+                        "d": "m6 9 6 6 6-6",
+                      },
+                      "tagName": "path",
+                      "type": "element",
+                    },
+                  ],
+                  "properties": {
+                    "fill": "none",
+                    "height": "1em",
+                    "stroke": "currentColor",
+                    "strokeLineCap": "round",
+                    "strokeLineJoin": "round",
+                    "strokeWidth": "2",
+                    "viewBox": "0 0 24 24",
+                    "width": "1em",
+                    "xmlns": "http://www.w3.org/2000/svg",
+                  },
+                  "tagName": "svg",
+                  "type": "element",
+                },
+              ],
+              "properties": {
+                "ariaHidden": "true",
+                "className": [
+                  "callout-fold-icon",
+                ],
+              },
+              "tagName": "div",
+              "type": "element",
+            },
+          ],
+          "properties": {
+            "className": [
+              "callout-title",
+            ],
+          },
+          "tagName": "summary",
+          "type": "element",
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "A reproducible interface makes its inputs inspectable.",
+                },
+              ],
+              "properties": {},
+              "tagName": "p",
+              "type": "element",
+            },
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Nested",
+                        },
+                      ],
+                      "properties": {
+                        "className": [
+                          "callout-title-text",
+                        ],
+                      },
+                      "tagName": "div",
+                      "type": "element",
+                    },
+                    {
+                      "children": [
+                        {
+                          "children": [
+                            {
+                              "children": [],
+                              "properties": {
+                                "d": "m6 9 6 6 6-6",
+                              },
+                              "tagName": "path",
+                              "type": "element",
+                            },
+                          ],
+                          "properties": {
+                            "fill": "none",
+                            "height": "1em",
+                            "stroke": "currentColor",
+                            "strokeLineCap": "round",
+                            "strokeLineJoin": "round",
+                            "strokeWidth": "2",
+                            "viewBox": "0 0 24 24",
+                            "width": "1em",
+                            "xmlns": "http://www.w3.org/2000/svg",
+                          },
+                          "tagName": "svg",
+                          "type": "element",
+                        },
+                      ],
+                      "properties": {
+                        "ariaHidden": "true",
+                        "className": [
+                          "callout-fold-icon",
+                        ],
+                      },
+                      "tagName": "div",
+                      "type": "element",
+                    },
+                  ],
+                  "properties": {
+                    "className": [
+                      "callout-title",
+                    ],
+                  },
+                  "tagName": "summary",
+                  "type": "element",
+                },
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "Keep the manifest small.",
+                        },
+                      ],
+                      "properties": {},
+                      "tagName": "p",
+                      "type": "element",
+                    },
+                  ],
+                  "properties": {
+                    "className": [
+                      "callout-content",
+                    ],
+                  },
+                  "tagName": "div",
+                  "type": "element",
+                },
+              ],
+              "properties": {
+                "className": [
+                  "callout",
+                ],
+                "data-callout": "tip",
+                "data-collapsible": "true",
+                "open": "open",
+              },
+              "tagName": "details",
+              "type": "element",
+            },
+          ],
+          "properties": {
+            "className": [
+              "callout-content",
+            ],
+          },
+          "tagName": "div",
+          "type": "element",
+        },
+      ],
+      "properties": {
+        "className": [
+          "callout",
+        ],
+        "data-callout": "note",
+        "data-collapsible": "true",
+      },
+      "tagName": "details",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "
+",
+        },
+        {
+          "children": [
+            {
+              "children": [],
+              "properties": {
+                "checked": false,
+                "className": [
+                  "checkbox-toggle",
+                ],
+                "disabled": false,
+                "type": "checkbox",
+              },
+              "tagName": "input",
+              "type": "element",
+            },
+            {
+              "type": "text",
+              "value": " ",
+            },
+            {
+              "type": "text",
+              "value": "Re-run the analysis",
+            },
+          ],
+          "properties": {
+            "className": [
+              "task-list-item",
+            ],
+            "dataTask": " ",
+          },
+          "tagName": "li",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": "
+",
+        },
+        {
+          "children": [
+            {
+              "children": [],
+              "properties": {
+                "checked": true,
+                "className": [
+                  "checkbox-toggle",
+                ],
+                "disabled": false,
+                "type": "checkbox",
+              },
+              "tagName": "input",
+              "type": "element",
+            },
+            {
+              "type": "text",
+              "value": " ",
+            },
+            {
+              "type": "text",
+              "value": "Export the annotations",
+            },
+          ],
+          "properties": {
+            "className": [
+              "task-list-item",
+              "is-checked",
+            ],
+            "dataTask": "x",
+          },
+          "tagName": "li",
+          "type": "element",
+        },
+        {
+          "type": "text",
+          "value": "
+",
+        },
+      ],
+      "properties": {
+        "className": [
+          "contains-task-list",
+        ],
+      },
+      "tagName": "ul",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for book 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Thinking, fast and slow",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/NW2CPDTC",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for conferencePaper 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Designing reproducible research interfaces",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/CNPF226A",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Annotations",
+        },
+      ],
+      "properties": {},
+      "tagName": "h2",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Page 1",
+                },
+              ],
+              "properties": {
+                "className": [
+                  "callout-title-text",
+                ],
+              },
+              "tagName": "div",
+              "type": "element",
+            },
+          ],
+          "properties": {
+            "className": [
+              "callout-title",
+            ],
+          },
+          "tagName": "div",
+          "type": "element",
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "A reproducible interface makes its inputs and outputs inspectable.",
+                },
+              ],
+              "properties": {},
+              "tagName": "p",
+              "type": "element",
+            },
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Reviewed Fixture text; it contains no personal library data.",
+                },
+              ],
+              "properties": {},
+              "tagName": "p",
+              "type": "element",
+            },
+          ],
+          "properties": {
+            "className": [
+              "callout-content",
+            ],
+          },
+          "tagName": "div",
+          "type": "element",
+        },
+      ],
+      "properties": {
+        "className": [
+          "callout",
+        ],
+        "data-callout": "note",
+        "data-collapsible": "false",
+      },
+      "tagName": "div",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for journalArticle 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Why Most Published Research Findings Are False",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/IANNP5A2",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;
+
+exports[`parseNote over the default Profile > renders the note for thesis 1`] = `
+{
+  "children": [
+    {
+      "children": [
+        {
+          "type": "text",
+          "value": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+        },
+      ],
+      "properties": {},
+      "tagName": "h1",
+      "type": "element",
+    },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "type": "text",
+              "value": "Zotero",
+            },
+          ],
+          "properties": {
+            "className": [
+              "zt-link",
+            ],
+            "data-target": "zotero://select/library/items/I49R3FTL",
+            "data-zt": "link",
+          },
+          "tagName": "span",
+          "type": "element",
+        },
+      ],
+      "properties": {},
+      "tagName": "p",
+      "type": "element",
+    },
+  ],
+  "type": "root",
+}
+`;

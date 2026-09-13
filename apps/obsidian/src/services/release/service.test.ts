@@ -65,10 +65,27 @@ function vaultWith(
   } as unknown as App["vault"];
 }
 
-const flush = () => new Promise((resolve) => setTimeout(resolve));
-
 /** The configured Literature Note template folder in the fixture settings. */
 const CONFIGURED_TEMPLATE_FOLDER = "templates";
+
+it.each([
+  ["zt-note.eta.md", true],
+  ["zt-content.eta.md", true],
+  ["zotlit-note.eta.md", false],
+  ["zotlit-profile.default.md", false],
+  ["zt-note.liquid.md", false],
+] as const)("reports v1 evidence for %s as %s", async (name, expected) => {
+  await using service = new ReleaseService({
+    app: {
+      workspace: { onLayoutReady: () => {} },
+      vault: vaultWith([name], CONFIGURED_TEMPLATE_FOLDER),
+    } as unknown as App,
+    version: "2.1.0",
+    settings: fakeSettings(false, vi.fn()),
+  });
+  expect(service.hasV1Templates(CONFIGURED_TEMPLATE_FOLDER)).toBe(expected);
+  expect(service.hasV1Templates("another folder")).toBe(false);
+});
 
 async function runCheck(opts: {
   origin: HydrationOrigin;
@@ -85,7 +102,7 @@ async function runCheck(opts: {
 }> {
   const update = vi.fn();
   const openWelcomeView = vi.fn();
-  let layoutReady: (() => void) | undefined;
+  let layoutReady: (() => void | Promise<void>) | undefined;
   const settings = {
     loaded: Promise.resolve({
       "release.previous-version": opts.recordedVersion ?? null,
@@ -98,7 +115,7 @@ async function runCheck(opts: {
   } as unknown as SettingsService;
   const app = {
     workspace: {
-      onLayoutReady: (cb: () => void) => {
+      onLayoutReady: (cb: () => void | Promise<void>) => {
         layoutReady = cb;
       },
     },
@@ -113,8 +130,7 @@ async function runCheck(opts: {
     openWelcomeView,
   });
   await service.ready;
-  layoutReady?.();
-  await flush();
+  await layoutReady?.();
   return { update, openWelcomeView };
 }
 

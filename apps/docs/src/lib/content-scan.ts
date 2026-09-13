@@ -1,7 +1,7 @@
 // The content directory as the build sees it, outside the app's module graph.
 //
 // Vite loads its config outside the app's module graph, so the collection index
-// (`collections/server`, built on `import.meta.glob`) is out of reach for the
+// (native macros built on `import.meta.glob`) is out of reach for the
 // build-time lists — the prerender page list and the OG card inventory. Both
 // read the content directory through this scan instead, using fumadocs' own
 // `getSlugs` and frontmatter reader so the folder-group and `index` rules match
@@ -19,13 +19,13 @@ import type { MarkdownSection } from "./markdown-routes.js";
 /** One content file, addressed the way the loaders address it. */
 export interface ContentEntry {
   slugs: string[];
-  /** Raw YAML frontmatter; the collection schemas in `source.config.ts` own its shape. */
+  /** Raw YAML frontmatter; the collection schemas in `content.config.ts` own its shape. */
   frontmatter: unknown;
 }
 
 /**
  * One content directory per section, matching the file patterns the
- * collections in `source.config.ts` pick up.
+ * collections in `collections.ts` pick up.
  */
 const sections: Record<MarkdownSection, { dir: string; files: string }> = {
   docs: { dir: "content/docs", files: "**/[!_]*.mdx" },

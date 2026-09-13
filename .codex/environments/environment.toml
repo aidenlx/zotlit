@@ -3,7 +3,7 @@ version = 1
 name = "zotlit-v2"
 
 [setup]
-script = "mise trust && mise run init $CODEX_WORKTREE_PATH"
+script = "git lfs checkout && mise trust && mise run init $CODEX_WORKTREE_PATH"
 
 [cleanup]
 script = "git submodule deinit --force --all && { node packages/scripts/scripts/obsidian-vault.ts remove --purge || true; }"

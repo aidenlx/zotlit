@@ -46,7 +46,7 @@ export function pandocIntegrationDefinition(
       },
       {
         name: m.settings_citation_pandoc_guide_name(),
-        desc: guideDescription(ctx.plugin.manifest.version),
+        desc: guideDescription(ctx.manifest.version),
       },
     ],
   };

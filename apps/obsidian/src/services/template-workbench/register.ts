@@ -1,9 +1,3 @@
-// Registers the Workbench commands with Obsidian's CLI.
-//
-// Command, flag, guide, and diagnostic text is all hardcoded English: an
-// agent-facing contract surface, not localized UI. See
-// apps/obsidian/policies/cli-text.md.
-
 import type {
   App,
   CliFlag,
@@ -11,9 +5,15 @@ import type {
   FileSystemAdapter,
   Plugin,
 } from "obsidian";
+// Registers the Workbench commands with Obsidian's CLI.
+//
+// Command, flag, guide, and diagnostic text is all hardcoded English: an
+// agent-facing contract surface, not localized UI. See
+// apps/obsidian/policies/cli-text.md.
 
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -26,21 +26,27 @@ import {
   FRONTMATTER_SET_COMMAND,
   FRONTMATTER_STATUS_COMMAND,
   TEMPLATE_DATA_COMMAND,
+  TEMPLATE_DOCUMENT_RENDER_COMMAND,
   TEMPLATE_GUIDE_COMMAND,
   TEMPLATE_RENDER_COMMAND,
   TEMPLATE_SCHEMA_COMMAND,
   TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
-import { loadTemplateData } from "./data";
+import { loadCitationData, loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./request";
 import type {
   DATA_PARAMS,
+  DOCUMENT_RENDER_PARAMS,
   FRONTMATTER_EVAL_PARAMS,
   FRONTMATTER_REMOVE_PARAMS,
   FRONTMATTER_REORDER_PARAMS,
@@ -57,16 +63,39 @@ interface TemplateWorkbenchRegistrationDeps {
   db: DatabaseService;
   noteIndex: NoteIndex;
   settings: SettingsService;
+  profile: ProfileService;
   templates: TemplateService;
   zoteroPref: ZoteroPrefService;
 }
 
-/** The Indexed Key selector both item-backed commands take. */
+/** The Indexed Key selector a command with no other way to name an object takes. */
 function keyFlag(): CliFlag {
   return {
     value: "<indexed-key>",
     description: "Zotero key for an object",
     required: true,
+  };
+}
+
+/**
+ * The Indexed Key selector on a command an `example=` set can select instead.
+ * Obsidian answers "Missing required parameter" before it calls the handler,
+ * so an either/or selector is declared optional here and the parser reports
+ * which of the two a call must name.
+ */
+function selectorKeyFlag(): CliFlag {
+  return {
+    value: "<indexed-key>",
+    description:
+      "Zotero key for an object; the citation root takes example instead",
+  };
+}
+
+/** The built-in Citation set the citation root reads in place of a key. */
+function exampleFlag(): CliFlag {
+  return {
+    value: choices(CITATION_EXAMPLE_NAMES),
+    description: "Built-in citation set to read instead of key",
   };
 }
 
@@ -100,8 +129,9 @@ function formatFlag(values: readonly string[]): CliFlag {
 
 function dataFlags(): CliFlags {
   return {
-    key: keyFlag(),
+    key: selectorKeyFlag(),
     root: rootFlag(),
+    example: exampleFlag(),
     format: formatFlag(["json"]),
     ...expectationFlags(),
   } satisfies Record<(typeof DATA_PARAMS)[number], CliFlag>;
@@ -118,15 +148,44 @@ function guideFlags(): CliFlags {
 
 function renderFlags(): CliFlags {
   return {
-    key: keyFlag(),
+    key: selectorKeyFlag(),
     template: {
-      value: choices(TEMPLATE_SLOT_NAMES),
+      value: choices(RENDER_TEMPLATE_NAMES),
       description: "Template to render",
       required: true,
     },
+    root: {
+      value: choices(PARTIAL_CONTEXT_NAMES),
+      description:
+        "Caller a partial is rendered as, for template=partial:<name>, default note",
+    },
+    variant: {
+      value: choices(CITATION_VARIANT_NAMES),
+      description: "Citation Variant for template=citation, default main",
+    },
+    example: exampleFlag(),
     format: formatFlag(["markdown", "json"]),
     ...expectationFlags(),
   } satisfies Record<(typeof RENDER_PARAMS)[number], CliFlag>;
+}
+
+function documentRenderFlags(): CliFlags {
+  return {
+    key: keyFlag(),
+    profile: {
+      value: "<default|profile-id>",
+      description: "Profile id whose document to render",
+    },
+    document: {
+      value: "<reference>",
+      description: "Installed document reference to render",
+    },
+    source: {
+      value: "<document-source>",
+      description: "Uninstalled document source to render in memory",
+    },
+    ...expectationFlags(),
+  } satisfies Record<(typeof DOCUMENT_RENDER_PARAMS)[number], CliFlag>;
 }
 
 function sourceFlags(): CliFlags {
@@ -209,7 +268,7 @@ export function registerTemplateWorkbench(
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: plugin.manifest.version,
     getIdentity: async () => {
-      await deps.zoteroPref.ready;
+      await Promise.all([deps.zoteroPref.ready, deps.profile.ready]);
       return {
         vault: {
           name: deps.app.vault.getName(),
@@ -223,7 +282,29 @@ export function registerTemplateWorkbench(
       };
     },
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
+    loadCitation: (selector, variant) =>
+      loadCitationData(deps, selector, variant),
     templates: deps.templates,
+    literatureNotes: {
+      readProfiles: () => {
+        const settings = deps.settings.current;
+        if (!settings) throw new Error("Settings are not loaded");
+        return {
+          defaultProfile: deps.profile.resolveProfile("default"),
+          profiles: deps.profile.profiles.map((entry) => ({
+            ...entry,
+            bindings: deps.profile.resolveProfile(entry.id)!.bindings,
+          })),
+          diagnostics: deps.profile.diagnostics,
+        };
+      },
+      getDocumentStatuses: () =>
+        deps.templates.getLiteratureNoteTemplateStatuses(),
+      getDocument: (reference) =>
+        deps.templates.getLiteratureNoteTemplate(reference),
+      renderSource: (source, data) =>
+        deps.templates.renderLiteratureNoteTemplateSource(source, data),
+    },
     frontmatter: {
       read: () => {
         const status = deps.templates.getFrontmatterFieldStatus();
@@ -266,6 +347,12 @@ export function registerTemplateWorkbench(
     "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
     renderFlags(),
     handlers[TEMPLATE_RENDER_COMMAND],
+  );
+  plugin.registerCliHandler(
+    TEMPLATE_DOCUMENT_RENDER_COMMAND,
+    "Render a Literature Note Template document in memory, create and update bytes under 'render'",
+    documentRenderFlags(),
+    handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND],
   );
   plugin.registerCliHandler(
     TEMPLATE_GUIDE_COMMAND,

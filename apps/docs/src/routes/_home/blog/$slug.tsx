@@ -1,23 +1,30 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import collections from "collections/browser";
+import { use } from "react";
 
 import { BackCrumb } from "@/components/back-crumb";
 import { Comments } from "@/components/comments";
+import { DocsLastUpdated } from "@/components/docs-last-updated";
 import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { cn } from "@/lib/cn";
+import { blogs } from "@/lib/collections";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
+import { m } from "@/paraglide/messages.js";
 
 const getPost = createServerFn({ method: "GET" })
   .validator((slug: string) => slug)
-  .handler(({ data: slug }) => {
+  .handler(async ({ data: slug }) => {
     const page = blog.getPage([slug]);
     if (!page) throw notFound();
+    // The git date rides with the compiled body, not the frontmatter head.
+    const modified = (await page.data.load()).lastModified
+      ?.toISOString()
+      .slice(0, 10);
     // getBlogPages() runs newest-first, so the neighbour after this post in
     // the list is the older one and the neighbour before it is the newer one.
     const pages = getBlogPages();
@@ -33,21 +40,36 @@ const getPost = createServerFn({ method: "GET" })
       description: page.data.description,
       author: page.data.author,
       date: page.data.date,
+      // Only a revision after publication is worth telling readers and crawlers.
+      modified:
+        modified !== undefined && modified > page.data.date
+          ? modified
+          : undefined,
       older: neighbour(pages[index + 1]),
       newer: neighbour(index > 0 ? pages[index - 1] : undefined),
     };
   });
 
-const postBody = collections.blogs.createClientLoader<object>({
-  id: "blogs",
-  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
-});
+function PostBody({ path, modified }: { path: string; modified?: string }) {
+  const page = blogs.get(path);
+  if (!page) throw notFound();
+  const { lastModified } = use(page.load());
+  const MDX = page.body;
+  return (
+    <>
+      <MDX components={getMDXComponents()} />
+      {modified !== undefined && (
+        <DocsLastUpdated date={lastModified} className="mt-8 font-sans" />
+      )}
+    </>
+  );
+}
 
 export const Route = createFileRoute("/_home/blog/$slug")({
   component: BlogPost,
   loader: async ({ params }) => {
     const post = await getPost({ data: params.slug });
-    await postBody.preload(post.path);
+    await blogs.get(post.path)?.preload();
     return post;
   },
   head: ({ loaderData: post }) =>
@@ -60,20 +82,25 @@ export const Route = createFileRoute("/_home/blog/$slug")({
           card: {
             type: "blog",
             slugs: post.slugs,
-            alt: `${post.title} — ZotLit blog`,
+            alt: m.docs_blog_post_og_alt({ title: post.title }),
           },
-          article: { publishedTime: post.date, authors: [post.author] },
+          article: {
+            publishedTime: post.date,
+            modifiedTime: post.modified,
+            authors: [post.author],
+          },
           schemas: [
             blogPostingSchema({
               title: post.title,
               description: post.description,
               author: post.author,
               date: post.date,
+              modified: post.modified,
               url: post.url,
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },
-              { name: "Blog", url: blogRoute },
+              { name: m.docs_nav_blog(), url: blogRoute },
               { name: post.title, url: post.url },
             ]),
           ],
@@ -82,12 +109,11 @@ export const Route = createFileRoute("/_home/blog/$slug")({
 
 function BlogPost() {
   const post = Route.useLoaderData();
-  const Body = postBody.getComponent(post.path);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <BackCrumb to="/blog" label="Blog" />
+        <BackCrumb to="/blog" label={m.docs_nav_blog()} />
         <header className="pt-4.5 pb-2">
           <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance">
             {post.title}
@@ -98,12 +124,15 @@ function BlogPost() {
             </p>
           )}
           <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-            {formatReleaseDate(post.date)} · by {post.author}
+            {m.docs_blog_post_byline({
+              date: formatReleaseDate(post.date),
+              author: post.author,
+            })}
           </p>
         </header>
         <div className="border-t border-fd-border pt-6">
           <div className={cn("prose max-w-none", ztProse)}>
-            <Body />
+            <PostBody path={post.path} modified={post.modified} />
           </div>
         </div>
 

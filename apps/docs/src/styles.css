@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
@@ -104,8 +105,8 @@
   --color-fd-accent: oklch(95.04% 0.0204 62.86); /* #f9ece1 */
   --color-fd-accent-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
   --color-fd-primary: oklch(
-    0.58 0.17 40.45
-  ); /* deeper orange, ~4.6:1 vs cream */
+    0.54 0.17 40.45
+  ); /* orange text and filled controls meet 4.5:1 on the light surfaces */
   --color-fd-primary-foreground: oklch(96.13% 0.0111 89.72);
   --color-fd-ring: oklch(0.58 0.17 40.45);
   --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */
@@ -138,6 +139,18 @@
 }
 
 @theme inline {
+  /* shadcn controls share the site's semantic palette. */
+  --color-background: var(--color-fd-background);
+  --color-foreground: var(--color-fd-foreground);
+  --color-popover: var(--color-fd-popover);
+  --color-popover-foreground: var(--color-fd-popover-foreground);
+  --color-muted: var(--color-fd-muted);
+  --color-muted-foreground: var(--color-fd-muted-foreground);
+  --color-border: var(--color-fd-border);
+  --color-input: var(--color-fd-border);
+  --color-ring: var(--color-fd-ring);
+  --color-destructive: var(--color-fd-primary);
+
   /* Sans is the app-wide default: preflight's html font-family rule reads
      --default-font-family, which resolves to --font-sans, so Inter reaches
      everywhere — portaled dialogs and the not-found page included. */

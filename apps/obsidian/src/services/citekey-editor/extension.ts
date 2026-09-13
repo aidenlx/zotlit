@@ -711,11 +711,12 @@ function citationWidget(options: {
  *   on no mark or moves within the one it is already inside.
  */
 function citekeyElementAt(event: MouseEvent): HTMLElement | null {
-  const { target, relatedTarget } = event;
-  if (!(target instanceof HTMLElement)) return null;
+  const target = event.target as Node | null;
+  const relatedTarget = event.relatedTarget as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return null;
   const targetEl = target.closest<HTMLElement>(`.${themeHook.citationKey}`);
   if (targetEl === null) return null;
-  if (relatedTarget instanceof Node && targetEl.contains(relatedTarget)) {
+  if (relatedTarget?.instanceOf(Node) && targetEl.contains(relatedTarget)) {
     return null;
   }
   return targetEl;
@@ -723,8 +724,8 @@ function citekeyElementAt(event: MouseEvent): HTMLElement | null {
 
 /** @returns the citation widget the event landed in, or null when it landed in none. */
 function citationElementAt(event: MouseEvent): HTMLElement | null {
-  const { target } = event;
-  if (!(target instanceof HTMLElement)) return null;
+  const target = event.target as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return null;
   return target.closest<HTMLElement>(`.${themeHook.citation}`);
 }
 

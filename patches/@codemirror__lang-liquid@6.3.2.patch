@@ -1,0 +1,79 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 94f62e9..dcba637 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -339,7 +339,7 @@ function makeLiquid(base) {
+ /**
+ A language provider for Liquid templates.
+ */
+-const liquidLanguage = makeLiquid(baseHTML.language);
++const liquidLanguage = /*@__PURE__*/(() => makeLiquid(baseHTML.language))();
+ /**
+ Liquid template support.
+ */
+@@ -360,3 +360,4 @@ exports.closePercentBrace = closePercentBrace;
+ exports.liquid = liquid;
+ exports.liquidCompletionSource = liquidCompletionSource;
+ exports.liquidLanguage = liquidLanguage;
++exports.liquidTagLanguage = tagLanguage;
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index 01714e3..a0b6249 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -43,6 +43,10 @@ declare const closePercentBrace: _codemirror_state.Extension;
+ A language provider for Liquid templates.
+ */
+ declare const liquidLanguage: LRLanguage;
++/**
++The Liquid tag language without a base-language overlay.
++*/
++declare const liquidTagLanguage: LRLanguage;
+ /**
+ Liquid template support.
+ */
+@@ -53,4 +57,4 @@ declare function liquid(config?: LiquidCompletionConfig & {
+     base?: LanguageSupport;
+ }): LanguageSupport;
+ 
+-export { type LiquidCompletionConfig, closePercentBrace, liquid, liquidCompletionSource, liquidLanguage };
++export { type LiquidCompletionConfig, closePercentBrace, liquid, liquidCompletionSource, liquidLanguage, liquidTagLanguage };
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 01714e3..a0b6249 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -43,6 +43,10 @@ declare const closePercentBrace: _codemirror_state.Extension;
+ A language provider for Liquid templates.
+ */
+ declare const liquidLanguage: LRLanguage;
++/**
++The Liquid tag language without a base-language overlay.
++*/
++declare const liquidTagLanguage: LRLanguage;
+ /**
+ Liquid template support.
+ */
+@@ -53,4 +57,4 @@ declare function liquid(config?: LiquidCompletionConfig & {
+     base?: LanguageSupport;
+ }): LanguageSupport;
+ 
+-export { type LiquidCompletionConfig, closePercentBrace, liquid, liquidCompletionSource, liquidLanguage };
++export { type LiquidCompletionConfig, closePercentBrace, liquid, liquidCompletionSource, liquidLanguage, liquidTagLanguage };
+diff --git a/dist/index.js b/dist/index.js
+index 747c17f..b735194 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -337,7 +337,7 @@ function makeLiquid(base) {
+ /**
+ A language provider for Liquid templates.
+ */
+-const liquidLanguage = /*@__PURE__*/makeLiquid(baseHTML.language);
++const liquidLanguage = /*@__PURE__*/(() => makeLiquid(baseHTML.language))();
+ /**
+ Liquid template support.
+ */
+@@ -352,4 +352,4 @@ function liquid(config = {}) {
+     ]);
+ }
+ 
+-export { closePercentBrace, liquid, liquidCompletionSource, liquidLanguage };
++export { closePercentBrace, liquid, liquidCompletionSource, liquidLanguage, tagLanguage as liquidTagLanguage };

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Code Review (Codex)"
+  short_description: "Run the two-axis review through the Codex CLI"
+policy:
+  allow_implicit_invocation: false

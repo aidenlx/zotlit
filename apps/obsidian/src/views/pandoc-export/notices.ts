@@ -36,11 +36,18 @@ export type ExportProblem =
   | ExportFailure
   | { kind: "document-style-invalid" }
   | { kind: "document-language-invalid" }
+  | {
+      kind: "document-profile-invalid";
+      stamp: string;
+      target: string;
+      recover: () => void;
+    }
+  | { kind: "profile-style-invalid"; styleId: string }
   | { kind: "destination-unwritable"; detail: string };
 
 /** One message per failure arm, each naming the situation and its fix. */
 export function showExportFailure(failure: ExportProblem): void {
-  new BaseNotice(
+  const notice = new BaseNotice(
     BaseNotice.render((renderer) => {
       renderer.setTitle(m.notice_pandoc_export_failed());
       switch (failure.kind) {
@@ -102,6 +109,25 @@ export function showExportFailure(failure: ExportProblem): void {
           break;
         case "document-language-invalid":
           renderer.addText(m.pandoc_export_error_document_language());
+          break;
+        case "document-profile-invalid":
+          renderer.addText(
+            m.notice_imported_note_profile_unknown({
+              stamp: failure.stamp,
+              target: failure.target,
+            }),
+          );
+          renderer.addAction((button) => {
+            button.setButtonText(m.profile_switch_recovery()).onClick(() => {
+              notice.hide();
+              failure.recover();
+            });
+          });
+          break;
+        case "profile-style-invalid":
+          renderer.addText(
+            m.pandoc_export_error_profile_style({ style: failure.styleId }),
+          );
           break;
         case "destination-unwritable":
           renderer.addText(

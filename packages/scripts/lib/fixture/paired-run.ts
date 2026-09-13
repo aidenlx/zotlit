@@ -5,6 +5,8 @@ export type PairedRunMode = "open" | "dev";
 export interface PairedRunOptions {
   mode: PairedRunMode;
   scopeCase: string;
+  /** Vault Case to seed; absent keeps the Development Vault's current case. */
+  vaultCase?: string;
   purge: boolean;
 }
 
@@ -30,19 +32,26 @@ export interface PairedRunReady {
 
 export interface PairedRunPorts {
   assertObsidianHost(): Promise<void>;
-  assertFixtureIdle(): Promise<void>;
+  /**
+   * Close a Paired Zotero that still holds this Fixture, so the rebuild that
+   * follows starts on a Fixture root no process keeps open.
+   */
+  stopLivePairedZotero(): Promise<void>;
   /** A port that is free right now, for this run's Live Updates channel. */
   allocateLiveUpdatePort(): Promise<number>;
   /** A port that is free right now, for this run's Zotero HTTP server. */
   allocateZoteroHttpPort(): Promise<number>;
   prepareDevelopmentVault(options: {
     scopeCase: string;
+    vaultCase?: string;
     purge: boolean;
     liveUpdatePort: number;
     zoteroHttpPort: number;
   }): Promise<DevelopmentVault>;
   openPairedZotero(): Promise<PairedZotero>;
-  startDevelopmentSession(): Promise<DevelopmentSession>;
+  startDevelopmentSession(options: {
+    vaultCase?: string;
+  }): Promise<DevelopmentSession>;
   reportReady(result: PairedRunReady): void;
 }
 
@@ -51,12 +60,13 @@ export async function runPairedRun(
   ports: PairedRunPorts,
 ): Promise<void> {
   if (options.mode === "open") {
-    await ports.assertFixtureIdle();
+    await ports.stopLivePairedZotero();
     const liveUpdatePort = await ports.allocateLiveUpdatePort();
     const zoteroHttpPort = await ports.allocateZoteroHttpPort();
     await ports.assertObsidianHost();
     const vault = await ports.prepareDevelopmentVault({
       scopeCase: options.scopeCase,
+      vaultCase: options.vaultCase,
       purge: options.purge,
       liveUpdatePort,
       zoteroHttpPort,
@@ -75,19 +85,22 @@ export async function runPairedRun(
   }
 
   await ports.assertObsidianHost();
-  await ports.assertFixtureIdle();
+  await ports.stopLivePairedZotero();
   // Two fresh ports per Paired Run keep both loopback servers independent of
   // other ZotLit and Zotero profiles on the machine.
   const liveUpdatePort = await ports.allocateLiveUpdatePort();
   const zoteroHttpPort = await ports.allocateZoteroHttpPort();
   const vault = await ports.prepareDevelopmentVault({
     scopeCase: options.scopeCase,
+    vaultCase: options.vaultCase,
     purge: options.purge,
     liveUpdatePort,
     zoteroHttpPort,
   });
 
-  const session = await ports.startDevelopmentSession();
+  const session = await ports.startDevelopmentSession({
+    vaultCase: options.vaultCase,
+  });
   const zotero = await session.ready;
   ports.reportReady({
     mode: options.mode,

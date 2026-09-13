@@ -1,10 +1,12 @@
 // Obsidian's own popover, hosting one live React root of ZotLit's own content.
 
-import { HoverPopover } from "obsidian";
 import type { HoverParent } from "obsidian";
 import type { ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+
+import { SingletonHoverPopover } from "@/lib/singleton-hover-popover";
 
 import "./style.css";
 
@@ -27,7 +29,7 @@ export const PLACEMENT_CLASS = {
  * tall stack of entries scrolls inside the content rather than being cut off by
  * it.
  */
-export class CitationHoverPopover extends HoverPopover {
+export class CitationHoverPopover extends SingletonHoverPopover {
   #root: Root | null;
 
   constructor(parent: HoverParent, targetEl: HTMLElement) {
@@ -43,6 +45,8 @@ export class CitationHoverPopover extends HoverPopover {
       this.#root?.unmount();
       this.#root = null;
     });
+    // Content and subscriptions exist during the opening delay too.
+    this.load();
   }
 
   /**
@@ -56,8 +60,15 @@ export class CitationHoverPopover extends HoverPopover {
    */
   render(content: ReactNode): boolean {
     if (!this.#root) return false;
-    this.#root.render(content);
+    flushSync(() => this.#root?.render(content));
+    if (this.hoverEl.isConnected) this.position();
     return true;
+  }
+
+  override retarget(target: HTMLElement): void {
+    this.staticPos = null;
+    super.retarget(target);
+    if (this.hoverEl.isConnected) this.position();
   }
 
   /**

@@ -75,7 +75,8 @@ export async function setCitationPresentation(
   const [vault] = await Promise.all([settings.loaded, zoteroPref.ready]);
   const choice = await openCitationPresentationModal(app, {
     dataDir: zoteroPref.dataDir,
-    vaultStyleId: vault["citation.references-style"],
+    vaultStyleId:
+      vault["note.default-profile"].bindings["citation.references-style"],
     vaultLocale: vault["citation.locale"] ?? "",
     declared: declaredPresentation(app.metadataCache.getFileCache(file)),
   });

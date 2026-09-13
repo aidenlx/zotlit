@@ -1,0 +1,244 @@
+{
+  "contractVersion": 3,
+  "item": {
+    "key": "I49R3FTL",
+    "indexedKey": "I49R3FTL",
+    "itemType": "thesis",
+    "title": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+    "library": {
+      "type": "personal"
+    }
+  },
+  "provenance": {
+    "kind": "sample",
+    "id": "thesis",
+    "source": "migrated-library"
+  },
+  "roots": {
+    "note": {
+      "title": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+      "date": {
+        "kind": "year",
+        "value": null,
+        "year": 2010,
+        "month": null,
+        "day": null,
+        "raw": "2010-00-00 2010"
+      },
+      "citationKey": "Batista2010",
+      "key": "I49R3FTL",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "I49R3FTL",
+      "itemType": "thesis",
+      "dateAdded": "2025-05-22T03:30:30Z",
+      "dateModified": "2025-05-22T03:30:30Z",
+      "creators": [
+        {
+          "family": "Batista",
+          "given": "Edgard Antunes Dias",
+          "literal": null,
+          "role": "author",
+          "fullName": "Edgard Antunes Dias Batista"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": null,
+      "citekey": "Batista2010",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "publisher": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": null
+      },
+      "annotations": [],
+      "attachments": [],
+      "collections": [],
+      "notePath": null,
+      "backlink": "zotero://select/library/items/I49R3FTL",
+      "weblink": null,
+      "authors": [
+        {
+          "family": "Batista",
+          "given": "Edgard Antunes Dias",
+          "literal": null,
+          "role": "author",
+          "fullName": "Edgard Antunes Dias Batista"
+        }
+      ],
+      "authorsShort": "Batista",
+      "relatedItems": [],
+      "notes": []
+    },
+    "filename": {
+      "title": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+      "date": {
+        "kind": "year",
+        "value": null,
+        "year": 2010,
+        "month": null,
+        "day": null,
+        "raw": "2010-00-00 2010"
+      },
+      "citationKey": "Batista2010",
+      "key": "I49R3FTL",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "I49R3FTL",
+      "itemType": "thesis",
+      "dateAdded": "2025-05-22T03:30:30Z",
+      "dateModified": "2025-05-22T03:30:30Z",
+      "creators": [
+        {
+          "family": "Batista",
+          "given": "Edgard Antunes Dias",
+          "literal": null,
+          "role": "author",
+          "fullName": "Edgard Antunes Dias Batista"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": null,
+      "citekey": "Batista2010",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "publisher": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "authors": [
+        {
+          "family": "Batista",
+          "given": "Edgard Antunes Dias",
+          "literal": null,
+          "role": "author",
+          "fullName": "Edgard Antunes Dias Batista"
+        }
+      ],
+      "authorsShort": "Batista",
+      "notePath": "",
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": ""
+      },
+      "collections": []
+    },
+    "annotations": []
+  },
+  "descriptors": {
+    "note": {
+      "stringCoercions": [
+        {
+          "path": [],
+          "value": "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities"
+        },
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2010"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "Edgard Antunes Dias Batista"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "Edgard Antunes Dias Batista"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "filename": {
+      "stringCoercions": [
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2010"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "Edgard Antunes Dias Batista"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "Edgard Antunes Dias Batista"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "annotations": []
+  },
+  "unavailable": [
+    {
+      "path": "zt.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
+    }
+  ],
+  "revision": "296825c0efbbcb2ce871f5a5e50d5e274c65707fac53b84a347fd81630bbdde4"
+}

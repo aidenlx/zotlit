@@ -1,18 +1,24 @@
+import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
+import {
+  createProfileCreator,
+  createProfileImporter,
+} from "@/setting-tab/profiles";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
-import { createCitationPopover } from "./citation-popover/service";
-import type { CitationPopover } from "./citation-popover/service";
+import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
+import { GraphCitations } from "./graph-citations/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
-import { LiveUpdateService } from "./live-update/service";
+import { LocalBridgeService } from "./local-bridge/service";
+import { LocalServerService } from "./local-server/service";
 import { LoggingService } from "./log/service";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
@@ -24,6 +30,7 @@ import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
+import { ProfileService } from "./profile/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
@@ -36,8 +43,13 @@ import {
   migrateV6ToV7,
   migrateV7ToV8,
   migrateV8ToV9,
+  migrateV9ToV10,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
+import {
+  LiteratureNoteTemplateMigrationService,
+  loadLiteratureNoteTemplateMigrationData,
+} from "./template/migration";
 import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
@@ -75,6 +87,7 @@ export function buildServices(
           migrateV6: migrateV6ToV7,
           migrateV7: migrateV7ToV8,
           migrateV8: migrateV8ToV9,
+          migrateV9: migrateV9ToV10,
         }),
     })
     .use({
@@ -91,17 +104,17 @@ export function buildServices(
     })
     .use({
       template: ({ settings }) =>
-        new TemplateService({ plugin, app: plugin.app, settings }),
-    })
-    .use({
-      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
+        new TemplateService({ app: plugin.app, settings }),
     })
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
-      liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
-        new LiveUpdateService({ settings, zoteroPref, noteIndex }),
+      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
+    })
+    .use({
+      localServer: ({ settings, zoteroPref, noteIndex }) =>
+        new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
     .use({
       db: ({ settings, zoteroPref }) =>
@@ -111,14 +124,53 @@ export function buildServices(
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
     })
+    .use({
+      libraryScope: ({ db, settings }) =>
+        new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      profile: ({ settings, template, noteIndex, libraryScope }) =>
+        new ProfileService({
+          app: plugin.app,
+          settings,
+          template,
+          noteIndex,
+          libraryScope,
+        }),
+    })
+    .use({
+      localBridge: ({
+        settings,
+        profile,
+        localServer,
+        db,
+        noteIndex,
+        template,
+        zoteroPref,
+      }) =>
+        new LocalBridgeService({
+          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+          app: plugin.app,
+          settings,
+          profile,
+          localServer,
+          db,
+          noteIndex,
+          template,
+          zoteroPref,
+          pluginVersion: plugin.manifest.version,
+        }),
+    })
     .useValue({
       noteImport: ({
+        profile,
         noteIndex,
         template,
         zoteroPref,
         attachmentImport,
       }): NoteImporter =>
         createNoteImporter({
+          profile,
           app: plugin.app,
           noteIndex,
           template,
@@ -127,8 +179,33 @@ export function buildServices(
         }),
     })
     .use({
-      libraryScope: ({ db, settings }) =>
-        new LibraryScopeService({ db, settings }),
+      templateMigration: ({
+        db,
+        libraryScope,
+        noteIndex,
+        settings,
+        template,
+        zoteroPref,
+      }) =>
+        new LiteratureNoteTemplateMigrationService({
+          app: plugin.app,
+          settings,
+          template,
+          loadVerificationData: (options) =>
+            loadLiteratureNoteTemplateMigrationData(
+              {
+                app: plugin.app,
+                db,
+                libraryScope,
+                noteIndex,
+                settings,
+                templates: template,
+                zoteroPref,
+              },
+              options,
+            ),
+          openPrompt: () => openWelcomeView(plugin.app, "upgraded"),
+        }),
     })
     .use({
       itemLookup: ({ db, libraryScope }) =>
@@ -140,6 +217,7 @@ export function buildServices(
     })
     .useValue({
       noteFeature: ({
+        profile,
         template,
         db,
         noteIndex,
@@ -149,6 +227,7 @@ export function buildServices(
         noteImport,
       }): NoteFeature =>
         createNoteFeature({
+          profile,
           app: plugin.app,
           template,
           db,
@@ -160,7 +239,58 @@ export function buildServices(
         }),
     })
     .useValue({
+      createProfile: ({
+        profile,
+        template,
+        db,
+        noteIndex,
+        zoteroPref,
+        settings,
+        libraryScope,
+        noteFeature,
+      }) =>
+        createProfileCreator({
+          app: plugin.app,
+          profile,
+          template,
+          db,
+          noteIndex,
+          zoteroPref,
+          settings,
+          libraryScope,
+          noteFeature,
+        }),
+    })
+    .useValue({
+      importProfile: ({
+        profile,
+        template,
+        db,
+        noteIndex,
+        zoteroPref,
+        settings,
+        libraryScope,
+        noteFeature,
+      }) =>
+        createProfileImporter({
+          app: plugin.app,
+          profile,
+          template,
+          db,
+          noteIndex,
+          zoteroPref,
+          settings,
+          libraryScope,
+          noteFeature,
+        }),
+    })
+    .useValue({
       batchImport: ({
+        profile,
+        noteFeature,
+        createProfile,
+        importProfile,
+        zoteroPref,
         db,
         settings,
         libraryScope,
@@ -169,7 +299,13 @@ export function buildServices(
         template,
       }): BatchImport =>
         createBatchImport({
-          view: createNoteImportView(plugin.app),
+          view: createNoteImportView(plugin.app, {
+            createProfile,
+            importProfile,
+            zoteroPref,
+          }),
+          profile,
+          noteFeature,
           db,
           settings,
           libraryScope,
@@ -193,8 +329,15 @@ export function buildServices(
       pandocEngine: () => createPandocEngineService(plugin.app),
     })
     .use({
-      bibliographyRender: ({ db, pandocEngine, zoteroPref, settings }) =>
+      bibliographyRender: ({
+        db,
+        pandocEngine,
+        zoteroPref,
+        settings,
+        profile,
+      }) =>
         new BibliographyRenderCache({
+          profile,
           db,
           pandocEngine,
           zoteroPref,
@@ -202,8 +345,15 @@ export function buildServices(
         }),
     })
     .use({
-      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+      citationText: ({
+        profile,
+        db,
+        citationIndex,
+        noteIndex,
+        bibliographyRender,
+      }) =>
         new CitationText({
+          profile,
           app: plugin.app,
           db,
           citationIndex,
@@ -211,15 +361,17 @@ export function buildServices(
           bibliographyRender,
         }),
     })
-    .useValue({
+    .use({
       citationPopover: ({
+        profile,
         db,
         citationIndex,
         citationText,
         bibliographyRender,
         libraryScope,
       }): CitationPopover =>
-        createCitationPopover({
+        new CitationPopover({
+          profile,
           app: plugin.app,
           db,
           citationIndex,
@@ -232,6 +384,9 @@ export function buildServices(
       citekeyEditor: ({
         noteIndex,
         noteFeature,
+        createProfile,
+        importProfile,
+        zoteroPref,
         db,
         citationText,
         citationPopover,
@@ -244,6 +399,9 @@ export function buildServices(
           plugin,
           noteIndex,
           noteFeature,
+          createProfile,
+          importProfile,
+          zoteroPref,
           db,
           citationText,
           citationPopover,
@@ -307,6 +465,27 @@ export function buildServices(
           citationIndex,
           citationPopover,
           citekeyEditor,
+          settings,
+        }),
+    })
+    .use({
+      graphCitations: ({
+        db,
+        libraryScope,
+        citationIndex,
+        noteIndex,
+        citekeyEditor,
+        citationPopover,
+        settings,
+      }) =>
+        new GraphCitations({
+          app: plugin.app,
+          db,
+          libraryScope,
+          citationIndex,
+          noteIndex,
+          citekeyEditor,
+          citationPopover,
           settings,
         }),
     });

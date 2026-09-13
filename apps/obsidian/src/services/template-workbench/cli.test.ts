@@ -1,11 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
+import { inlineCitation } from "@zotlit/templates";
+import {
+  MissingTemplateError,
+  TemplateError,
+  TemplateFacade,
+} from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
+import {
+  ContractMetadataError,
+  markInertPlaceholder,
+} from "@zotlit/workbench/explorer";
+import { citationExampleData } from "@zotlit/workbench/render";
 
+import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
-import { markInertPlaceholder } from "@/services/template/inert-placeholder";
-import type { CompileError } from "@/services/template/service";
+import type {
+  CompileError,
+  LiteratureNoteTemplateStatus,
+} from "@/services/template/service";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -22,9 +35,9 @@ import {
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
-import { TEMPLATE_SLOT_NAMES } from "./request";
+import { GUIDE_TOPIC_NAMES } from "./guide";
+import { RENDER_TEMPLATE_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
-import { ContractMetadataError } from "./serialize";
 
 const PLUGIN_VERSION = "1.2.3";
 const IDENTITY = {
@@ -47,6 +60,15 @@ const FRONTMATTER_EVALUATE_EMPTY = () => ({
 });
 const FRONTMATTER_VALIDATE_EMPTY = () => null;
 const FRONTMATTER_WRITE_NOOP = () => {};
+/** The Citation Template status while the vault holds no `zotlit-citation.md`. */
+const BUILT_IN_CITATION_STATUS = () => ({
+  path: "Templates/zotlit-citation.md",
+  customized: false,
+  language: "liquid" as const,
+  inertPath: null,
+  compileError: null,
+});
+const NO_CITATION = async () => ({ kind: "not-found" }) as const;
 
 const TEMPLATE_FILES = [
   {
@@ -96,34 +118,6 @@ const TEMPLATE_FILES = [
     inertFiles: [],
     compileError: null,
   },
-  {
-    name: "cite",
-    winner: {
-      language: "eta",
-      source: {
-        kind: "vault",
-        path: "Templates/zotlit-cite.eta.md",
-      },
-    },
-    editablePath: "Templates/zotlit-cite.eta.md",
-    shadowedFiles: [],
-    inertFiles: ["Templates/zotlit-cite.eta.md"],
-    compileError: "Unexpected token",
-  },
-  {
-    name: "cite2",
-    winner: {
-      language: "liquid",
-      source: {
-        kind: "vault",
-        path: "Templates/zotlit-cite2.liquid.md",
-      },
-    },
-    editablePath: "Templates/zotlit-cite2.liquid.md",
-    shadowedFiles: ["Templates/zotlit-cite2.eta.md"],
-    inertFiles: [],
-    compileError: "Unknown filter",
-  },
 ] as const;
 
 describe("Template Workbench CLI", () => {
@@ -131,18 +125,22 @@ describe("Template Workbench CLI", () => {
     const callOrder: string[] = [];
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       getIdentity: () => {
         callOrder.push("identity");
         return IDENTITY;
       },
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => {
           callOrder.push("status");
           return TEMPLATE_FILES;
         },
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -181,13 +179,17 @@ describe("Template Workbench CLI", () => {
     const getTemplateFileStatuses = vi.fn(() => TEMPLATE_FILES);
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       getIdentity,
       settleTimeoutMs: 25,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -205,7 +207,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers["zotlit:template-status"]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: "zotlit:template-status",
       ok: false,
       diagnostic: {
@@ -225,12 +227,16 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
+      loadCitation: NO_CITATION,
       loadData,
       settleTimeoutMs: 25,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -252,7 +258,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: {
@@ -291,11 +297,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -318,7 +328,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -350,6 +360,7 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({
         kind: "data",
         data: {
@@ -359,9 +370,12 @@ describe("Template Workbench CLI", () => {
         },
       }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -398,6 +412,7 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({
         kind: "data",
         data: {
@@ -407,9 +422,12 @@ describe("Template Workbench CLI", () => {
         },
       }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -445,14 +463,18 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({
         kind: "data",
         data: { notAContractMember: () => "value" },
       }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -480,11 +502,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -502,7 +528,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_STATUS_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_STATUS_COMMAND,
       ok: false,
       diagnostic: {
@@ -517,11 +543,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -553,24 +583,42 @@ describe("Template Workbench CLI", () => {
     expect(output).toContain("frontmatter-set");
     expect(output).toContain("frontmatter-remove");
     expect(output).toContain("frontmatter-reorder");
-    for (const topic of [
-      "data",
-      "render",
-      "editing",
-      "eta",
-      "liquid",
-      "frontmatter",
-    ]) {
-      expect(output).toContain(topic);
-    }
+    // Every topic the index offers, read from the registry the guide renders
+    // it from, so a topic added later cannot be left out of the index.
+    for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
   });
 
   it.each([
     ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
-    ["render", [...TEMPLATE_SLOT_NAMES]],
+    [
+      "render",
+      [
+        // Every form template-render accepts, the Citation Template and a
+        // Shared Partial among them, each with the row that explains it.
+        ...RENDER_TEMPLATE_NAMES,
+        "Renders zotlit-citation.md",
+        "zotlit-partial.<name>.md",
+        "root=<note|annotation|citation>",
+      ],
+    ],
+    [
+      "profiles",
+      [
+        "SHARED PARTIALS",
+        "zotlit-partial.<name>.md",
+        "template=partial:<name>",
+        "root=<note|annotation|citation>",
+        // Every reserved name, so the guide cannot drift from defaults.ts.
+        "'filename', 'note', 'annotation', 'content', or 'citation'",
+        "ADR 0055",
+      ],
+    ],
     ["editing", ["editablePath", "shadowedFiles"]],
-    ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
-    ["liquid", ["liquidjs", "zt", "bq", "group_by"]],
+    [
+      "eta",
+      ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED", "pandocCite"],
+    ],
+    ["liquid", ["liquidjs", "zt", "bq", "group_by", "pandoc_cite"]],
     [
       "frontmatter",
       [
@@ -593,11 +641,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -622,11 +674,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -644,7 +700,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic: "bogus" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
@@ -692,11 +748,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -714,7 +774,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_DATA_COMMAND](params);
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       diagnostic: {
@@ -731,11 +791,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -766,11 +830,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -800,11 +868,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -844,11 +916,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -888,11 +964,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -929,11 +1009,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -955,7 +1039,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: { key: "ITEM2345", root: "note", format: "json" },
@@ -982,11 +1066,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1009,7 +1097,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         identity: IDENTITY,
@@ -1030,11 +1118,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1052,7 +1144,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: true,
       pluginVersion: PLUGIN_VERSION,
@@ -1077,11 +1169,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1101,7 +1197,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_SCHEMA_COMMAND,
         ok: false,
         diagnostic: {
@@ -1119,11 +1215,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1143,7 +1243,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: false,
       diagnostic: {
@@ -1159,11 +1259,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1206,11 +1310,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1237,6 +1345,59 @@ describe("Template Workbench CLI", () => {
     },
   );
 
+  it("reports a controlled selector diagnostic for retired Literature Note slots", async () => {
+    const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+    const render = vi.fn(() => "");
+    const getTemplateSource = vi.fn(async () => "");
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
+      loadData,
+      templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => [],
+        getPartialDocument: () => null,
+        render,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+
+    const rendered = await handlers[TEMPLATE_RENDER_COMMAND]({
+      key: "ITEM2345",
+      template: "note",
+      format: "json",
+    });
+    const sourced = await handlers[TEMPLATE_SOURCE_COMMAND]({
+      template: "annotation",
+    });
+
+    for (const output of [rendered, sourced]) {
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "template" },
+        },
+      });
+    }
+    expect(loadData).not.toHaveBeenCalled();
+    expect(render).not.toHaveBeenCalled();
+    expect(getTemplateSource).not.toHaveBeenCalled();
+  });
+
   it.each(["markdown", "json"] as const)(
     "renders filename through the collapsing render method for format=%s",
     async (format) => {
@@ -1247,11 +1408,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render,
           renderFilename,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1286,11 +1451,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: () => markdown,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1313,7 +1482,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: true,
       request: {
@@ -1346,11 +1515,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: (name, data) => templates.render(name, data),
         renderFilename: (data) => templates.render("filename", data),
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1380,12 +1553,16 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       settleTimeoutMs: 25,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1407,7 +1584,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       request: {
@@ -1436,13 +1613,13 @@ describe("Template Workbench CLI", () => {
     },
     {
       error: new InertTemplateError(
-        "Templates/zotlit-cite.eta.md is inert",
-        "cite",
+        "Templates/zotlit-citation.md is inert",
+        "citation",
       ),
       compileErrors: NO_COMPILE_ERRORS,
       code: "ETA_OPT_IN_REQUIRED",
-      message: "Templates/zotlit-cite.eta.md is inert",
-      template: "cite",
+      message: "Templates/zotlit-citation.md is inert",
+      template: "citation",
     },
     {
       error: new Error("note cannot compile"),
@@ -1459,6 +1636,13 @@ describe("Template Workbench CLI", () => {
       template: "content",
     },
     {
+      error: new MissingTemplateError("venue-line"),
+      compileErrors: NO_COMPILE_ERRORS,
+      code: "MISSING_PARTIAL",
+      message: 'Template "venue-line" not found',
+      template: "venue-line",
+    },
+    {
       error: new Error("render failed"),
       compileErrors: NO_COMPILE_ERRORS,
       code: "TEMPLATE_RENDER_ERROR",
@@ -1467,7 +1651,7 @@ describe("Template Workbench CLI", () => {
     },
     {
       error: new Error("render failed: Unknown filter"),
-      compileErrors: new Map([["cite2", { message: "Unknown filter" }]]),
+      compileErrors: new Map([["citation", { message: "Unknown filter" }]]),
       code: "TEMPLATE_RENDER_ERROR",
       message: "render failed: Unknown filter",
       template: "note",
@@ -1478,11 +1662,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: () => {
             throw error;
           },
@@ -1506,7 +1694,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1528,11 +1716,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: () => "",
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1554,7 +1746,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1571,11 +1763,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1598,7 +1794,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1644,11 +1840,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1666,7 +1866,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[TEMPLATE_RENDER_COMMAND](params);
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1684,11 +1884,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1713,7 +1917,8 @@ describe("Template Workbench CLI", () => {
     expect(JSON.parse(output)).toMatchObject({
       ok: false,
       diagnostic: {
-        message: "template-render infers the data root from template.",
+        message:
+          "template-render infers the data root from template; root names the caller a partial is rendered as, on template=partial:<name> only.",
       },
     });
   });
@@ -1722,11 +1927,15 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: () => "# Paper\n",
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1760,11 +1969,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: (name, data) => templates.render(name, data),
           renderFilename: (data) => templates.render("filename", data),
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
@@ -1799,11 +2012,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: (name, data) => templates.render(name, data),
           renderFilename: (data) => templates.render("filename", data),
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
@@ -1833,11 +2050,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: (name, data) => templates.render(name, data),
           renderFilename: (data) => templates.render("filename", data),
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
@@ -1868,11 +2089,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1892,7 +2117,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -1910,11 +2135,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1942,11 +2171,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1966,7 +2199,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: false,
         diagnostic: {
@@ -1981,11 +2214,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2016,11 +2253,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2040,7 +2281,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2055,11 +2296,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2085,11 +2330,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2109,7 +2358,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_GUIDE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2129,11 +2378,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: () => {
             throw error;
           },
@@ -2170,13 +2423,17 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: new Map([
             ["note", { message: "Unexpected token", context }],
           ]),
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: () => {
             throw new Error("note cannot compile");
           },
@@ -2230,11 +2487,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2256,7 +2517,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2277,7 +2538,12 @@ describe("Template Workbench CLI", () => {
             inert: true,
           },
         ],
-        reservedKeys: ["zotero-key", "zotero-note-key", "zotero-lastmod"],
+        reservedKeys: [
+          "zotero-key",
+          "zotlit-profile",
+          "zotero-note-key",
+          "zotero-lastmod",
+        ],
       });
     });
 
@@ -2285,11 +2551,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: true,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2324,11 +2594,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2348,7 +2622,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2362,11 +2636,15 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2426,12 +2704,16 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: overrides.loadData ?? (async () => ({ kind: "not-found" })),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled:
             overrides.javascriptTemplatesEnabled ?? false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2474,7 +2756,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: { key: "ITEM2345", format: "json", adhoc: null },
@@ -2641,7 +2923,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: {
@@ -2854,12 +3136,16 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled:
             overrides.javascriptTemplatesEnabled ?? false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2902,7 +3188,7 @@ describe("Template Workbench CLI", () => {
         },
       ]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_SET_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3279,11 +3565,15 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -3316,7 +3606,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_REMOVE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3468,11 +3758,15 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -3505,7 +3799,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_REORDER_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3666,6 +3960,505 @@ describe("Template Workbench CLI", () => {
         ok: true,
         fields: [{ key: "word-count" }, { key: "tags" }, { key: "summary" }],
       });
+    });
+  });
+});
+
+describe("zotlit:template-render for the Citation Template", () => {
+  /**
+   * The Citation Template rendered the way production renders it: the
+   * document's source through the facade, normalized to its inline form.
+   */
+  function citationHandlers(
+    source = CITATION_TEMPLATE_SOURCE,
+    status = BUILT_IN_CITATION_STATUS,
+  ) {
+    const facade = new TemplateFacade();
+    facade.define("citation", source, "liquid");
+    return createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadCitation: async (selector, variant) =>
+        "example" in selector
+          ? {
+              kind: "data",
+              data: citationExampleData(selector.example, variant),
+            }
+          : { kind: "not-found" },
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        getCitationTemplateStatus: status,
+        renderCitationData: (data) =>
+          inlineCitation(facade.render("citation", data)),
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => [],
+        getPartialDocument: () => null,
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+  }
+
+  async function renderCitation(
+    params: Record<string, string>,
+    handlers = citationHandlers(),
+  ): Promise<Record<string, unknown>> {
+    return JSON.parse(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "citation",
+        ...params,
+      }),
+    ) as Record<string, unknown>;
+  }
+
+  it("renders the bracketed form for the main variant", async () => {
+    expect(await renderCitation({ example: "one-item" })).toMatchObject({
+      contractVersion: CONTRACT_VERSION,
+      command: TEMPLATE_RENDER_COMMAND,
+      ok: true,
+      request: {
+        example: "one-item",
+        template: "citation",
+        variant: "main",
+        format: "json",
+      },
+      identity: IDENTITY,
+      template: {
+        name: "citation",
+        language: "liquid",
+        source: { kind: "embedded-default" },
+      },
+      warnings: [],
+      markdown: "[@ioannidisWhyMost2005]",
+    });
+  });
+
+  it("renders the author-in-text form for the alt variant", async () => {
+    expect(
+      await renderCitation({ example: "one-item", variant: "alt" }),
+    ).toMatchObject({
+      ok: true,
+      request: { variant: "alt" },
+      markdown: "@ioannidisWhyMost2005",
+    });
+  });
+
+  // The alt column repeats the main text wherever the author-in-text form has
+  // no author to lift out: a suppressed author, and a Citation Prefix that
+  // would otherwise lead the sentence.
+  it.each([
+    ["one-item", "[@ioannidisWhyMost2005]", "@ioannidisWhyMost2005"],
+    [
+      "two-items",
+      "[@ioannidisWhyMost2005; @Kahneman2011]",
+      "@ioannidisWhyMost2005 [@Kahneman2011]",
+    ],
+    [
+      "item-with-page",
+      "[@ioannidisWhyMost2005, {p. 12-14}]",
+      "@ioannidisWhyMost2005 [{p. 12-14}]",
+    ],
+    [
+      "suppressed-author",
+      "[-@ioannidisWhyMost2005]",
+      "[-@ioannidisWhyMost2005]",
+    ],
+    [
+      "prefix-and-suffix",
+      "[see @ioannidisWhyMost2005 for a review]",
+      "[see @ioannidisWhyMost2005 for a review]",
+    ],
+    [
+      "annotation-citation",
+      "[@ioannidisWhyMost2005, {p. 1}]",
+      "@ioannidisWhyMost2005 [{p. 1}]",
+    ],
+  ])(
+    "renders the %s example under both variants",
+    async (example, main, alt) => {
+      const handlers = citationHandlers();
+      expect(await renderCitation({ example }, handlers)).toMatchObject({
+        ok: true,
+        markdown: main,
+      });
+      expect(
+        await renderCitation({ example, variant: "alt" }, handlers),
+      ).toMatchObject({ ok: true, markdown: alt });
+    },
+  );
+
+  it("renders a customized document and reports its vault path", async () => {
+    const handlers = citationHandlers(
+      "{{ zt.variant }}:{{ zt.citations[0].item.citekey }}",
+      () => ({
+        path: "Templates/zotlit-citation.md",
+        customized: true,
+        language: "liquid" as const,
+        inertPath: null,
+        compileError: null,
+      }),
+    );
+
+    expect(
+      await renderCitation({ example: "one-item", variant: "alt" }, handlers),
+    ).toMatchObject({
+      ok: true,
+      template: {
+        name: "citation",
+        language: "liquid",
+        source: { kind: "vault", path: "Templates/zotlit-citation.md" },
+      },
+      markdown: "alt:ioannidisWhyMost2005",
+    });
+  });
+
+  it("returns the rendered bytes alone for format=markdown", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "citation",
+        example: "one-item",
+        format: "markdown",
+      }),
+    ).toBe("[@ioannidisWhyMost2005]");
+  });
+
+  it.each([
+    [
+      { example: "one-item", variant: "sidebar" },
+      "variant",
+      "variant must be 'main', or 'alt'.",
+    ],
+    [
+      { example: "three-items" },
+      "example",
+      "example must be 'one-item', 'two-items', 'item-with-page', 'suppressed-author', 'prefix-and-suffix', or 'annotation-citation'.",
+    ],
+    [
+      { example: "one-item", key: "ITEM2345" },
+      "example",
+      "Select the Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation> or with key=<indexed-key>, not both.",
+    ],
+    [
+      {},
+      "key",
+      "key must be an Indexed Key, or select a built-in Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation>.",
+    ],
+  ])("refuses %o", async (params, parameter, message) => {
+    expect(
+      await renderCitation(params as Record<string, string>),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message,
+        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+        details: { parameter },
+      },
+    });
+  });
+
+  it("refuses variant and example on a Legacy Template File slot", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          key: "ITEM2345",
+          template: "note",
+          variant: "alt",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message:
+          "variant names a Citation Variant; it applies to template=citation only.",
+        details: { parameter: "variant" },
+      },
+    });
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "note",
+          example: "one-item",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "example" },
+      },
+    });
+  });
+
+  it("refuses an example set on every other data root", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_DATA_COMMAND]({
+          root: "note",
+          example: "one-item",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "example" },
+      },
+    });
+  });
+});
+
+describe("zotlit:template-render for a Shared Partial", () => {
+  const PARTIAL_DOCUMENT = {
+    name: "authors",
+    path: "Templates/zotlit-partial.authors.md",
+    language: "liquid" as const,
+  };
+
+  /**
+   * One partial registered on a facade, rendered by name the way production
+   * renders it, against the note root and the Citation example sets alike.
+   */
+  function partialHandlers(
+    source = "[{{ zt.title }}|{{ zt.variant }}]",
+    /** Installed Profile documents, for the manifests a bundle still sits in. */
+    documents: readonly LiteratureNoteTemplateStatus[] = [],
+  ) {
+    const facade = new TemplateFacade();
+    facade.define("authors", source, "liquid");
+    return createTemplateWorkbenchHandlers({
+      literatureNotes: {
+        readProfiles: () => ({ defaultProfile: undefined, profiles: [] }),
+        getDocumentStatuses: () => documents,
+        getDocument: () => undefined,
+        renderSource: () => ({ create: "", update: null }),
+      },
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadCitation: async (selector, variant) =>
+        "example" in selector
+          ? {
+              kind: "data",
+              data: citationExampleData(selector.example, variant),
+            }
+          : { kind: "not-found" },
+      loadData: async (_key, root) => ({
+        kind: "data",
+        data: root === "annotation" ? { text: "Read me" } : { title: "Paper" },
+      }),
+      templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => [],
+        getPartialDocument: (name: string) =>
+          name === PARTIAL_DOCUMENT.name ? PARTIAL_DOCUMENT : null,
+        render: (name, data) => facade.render(name, data),
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+  }
+
+  it("renders a partial under the citation set an example names", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:authors",
+          root: "citation",
+          example: "one-item",
+        }),
+      ),
+    ).toMatchObject({
+      contractVersion: CONTRACT_VERSION,
+      command: TEMPLATE_RENDER_COMMAND,
+      ok: true,
+      request: {
+        template: "partial:authors",
+        root: "citation",
+        example: "one-item",
+        variant: "main",
+        format: "json",
+      },
+      template: {
+        name: "partial:authors",
+        language: "liquid",
+        source: { kind: "vault", path: PARTIAL_DOCUMENT.path },
+      },
+      markdown: "[|main]",
+    });
+  });
+
+  it("reads the note root when the request names no caller", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "partial:authors",
+        key: "ITEM2345",
+        format: "markdown",
+      }),
+    ).toBe("[Paper|]");
+  });
+
+  it("reads the Annotation root when the request names it", async () => {
+    const handlers = partialHandlers("{{ zt.text }}");
+
+    expect(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "partial:authors",
+        root: "annotation",
+        key: "ITEM2345",
+        format: "markdown",
+      }),
+    ).toBe("Read me");
+  });
+
+  it("names a partial the vault registers no document for", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:venue-line",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "MISSING_PARTIAL",
+        message: "No Shared Partial named 'venue-line'.",
+        hint: "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
+        details: { template: "venue-line" },
+      },
+    });
+  });
+
+  it("names the Profile document a partial is still bundled inside", async () => {
+    const handlers = partialHandlers("{{ zt.title }}", [
+      {
+        reference: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
+        validation: {
+          state: "valid",
+          hasManagedBlock: false,
+          manifest: {
+            partials: [
+              { name: "venue-line", language: "liquid", source: "Venue" },
+            ],
+          },
+        },
+      } as unknown as LiteratureNoteTemplateStatus,
+    ]);
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:venue-line",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "BUNDLED_PARTIAL",
+        message:
+          "No Shared Partial named 'venue-line': the Profile document 'zotlit-profile.books.md' still carries it in its manifest.",
+        hint: DIAGNOSTIC_HINTS.BUNDLED_PARTIAL,
+        details: { template: "venue-line" },
+      },
+    });
+  });
+
+  it("reports a partial name another ZotLit Template answers to", async () => {
+    const handlers = partialHandlers();
+
+    for (const name of ["citation", "annotation"]) {
+      expect(
+        JSON.parse(
+          await handlers[TEMPLATE_RENDER_COMMAND]({
+            template: `partial:${name}`,
+            key: "ITEM2345",
+          }),
+        ),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "RESERVED_PARTIAL_NAME",
+          message: `'${name}' names another ZotLit Template, so no Shared Partial answers to it.`,
+          hint: DIAGNOSTIC_HINTS.RESERVED_PARTIAL_NAME,
+          details: { parameter: "template" },
+        },
+      });
+    }
+  });
+
+  it("refuses a partial name that is not letters, digits, and hyphens", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:my authors",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "template" },
+      },
+    });
+  });
+
+  it("refuses a caller that names no root a partial is called from", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:authors",
+          root: "filename",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "root must be 'note', 'annotation', or 'citation'.",
+        details: { parameter: "root" },
+      },
     });
   });
 });

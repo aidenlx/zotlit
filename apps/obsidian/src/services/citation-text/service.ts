@@ -1,6 +1,5 @@
-// The formatted text of one document's Citations, held for every surface that shows them.
-
 import type { App, TFile } from "obsidian";
+// The formatted text of one document's Citations, held for every surface that shows them.
 
 import {
   getItemsByKey,
@@ -10,10 +9,9 @@ import {
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
+import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
-import { isRenderableCitation } from "@/lib/citation-fragment";
-import type { CitationKey } from "@/lib/citation-fragment";
-import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitationKey } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
 import { HeldReads } from "@/lib/held-reads";
 import type { Held } from "@/lib/held-reads";
@@ -44,6 +42,7 @@ import type {
   HeldRenderOutcome,
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
+import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
 
 import { citationKey, presentedCitationEqual } from "./present";
@@ -86,6 +85,7 @@ export interface CitationTextDeps {
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
+  profile: ProfileReader;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -121,6 +121,7 @@ export class CitationText extends Service<void> {
   readonly #db;
   readonly #citationIndex;
   readonly #noteIndex;
+  readonly #profile: ProfileReader;
   readonly #bibliographyRender;
   readonly #documents = new HeldReads<DocumentCitations>({
     limit: HELD_DOCUMENTS,
@@ -135,6 +136,7 @@ export class CitationText extends Service<void> {
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
+    this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
     this.ready = this.#load();
   }
@@ -248,6 +250,7 @@ export class CitationText extends Service<void> {
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await Promise.all([
       this.#noteIndex.whenIndexed(),
+      this.#profile.ready,
       this.#citationIndex.whenResolved(),
     ]);
     const body = await this.#app.vault.cachedRead(file);
@@ -284,7 +287,7 @@ export class CitationText extends Service<void> {
     // nothing: its citations keep the source the author wrote, rather than
     // reading as though a vault selection were what the note declared.
     const presented = documentCitationPresentation(
-      documentPresentation(this.#app.metadataCache, file),
+      documentPresentation(this.#app.metadataCache, file, this.#profile),
       this.#bibliographyRender.vaultPresentation,
       { citations: set.citations, works },
     );
@@ -351,6 +354,9 @@ export class CitationText extends Service<void> {
       ),
     }));
     return {
+      ...(presented.kind === "unusable" && presented.property === "profile"
+        ? { presentationFailure: presented }
+        : {}),
       formatted,
       entrySerials,
       summaries: new Map(
@@ -464,15 +470,6 @@ export class CitationText extends Service<void> {
         cited.push(citation.indexedKey);
       }
       const citation = citationOfRun(run);
-      // A derivation the engine would read back as something else stays out of
-      // the render and keeps its native wikilink presentation.
-      if (!isRenderableCitation(citation)) {
-        logger.debug("Wikilink citation is not Pandoc source", {
-          path: file.path,
-          source: citation.source,
-        });
-        continue;
-      }
       citations.push({
         start: run[0]!.source.position.start.offset,
         ...citation,
@@ -723,9 +720,29 @@ function documentCitationsEqual(
 ): boolean {
   return (
     prev.entrySerials === next.entrySerials &&
+    profilePresentationFailuresEqual(
+      prev.presentationFailure,
+      next.presentationFailure,
+    ) &&
     mapsEqual(prev.summaries, next.summaries, Object.is) &&
     mapsEqual(prev.literalWorks, next.literalWorks, Object.is) &&
     mapsEqual(prev.formatted, next.formatted, occurrencesEqual)
+  );
+}
+
+function profilePresentationFailuresEqual(
+  prev: DocumentCitations["presentationFailure"],
+  next: DocumentCitations["presentationFailure"],
+): boolean {
+  if (prev === undefined || next === undefined) return prev === next;
+  return (
+    prev.target === next.target &&
+    prev.diagnostic.code === next.diagnostic.code &&
+    prev.diagnostic.hint === next.diagnostic.hint &&
+    prev.diagnostic.recovery.action === next.diagnostic.recovery.action &&
+    prev.diagnostic.stamp === next.diagnostic.stamp &&
+    prev.diagnostic.path === next.diagnostic.path &&
+    prev.diagnostic.indexedKey === next.diagnostic.indexedKey
   );
 }
 

@@ -119,6 +119,45 @@ describe("liquid define/render through the facade", () => {
   });
 });
 
+describe("source override", () => {
+  it("renders an unregistered liquid source against the live registry", () => {
+    const facade = new TemplateFacade();
+    facade.define("heading", "# Registered heading", "liquid");
+
+    expect(
+      facade.render(
+        "preview",
+        { title: "Paper" },
+        {
+          source: '{% render "heading" %}\nPreview',
+          language: "liquid",
+        },
+      ),
+    ).toBe("# Registered heading\nPreview");
+    expect(() => facade.render("preview", { title: "Paper" })).toThrow(
+      /preview/,
+    );
+  });
+
+  it("renders an unregistered eta source against the live registry", () => {
+    const facade = new TemplateFacade();
+    facade.define("heading", "# Registered heading", "liquid");
+
+    expect(
+      facade.render(
+        "preview",
+        {},
+        {
+          source:
+            '<% if (include("heading", zt) === "# Registered heading") { %># Registered heading<% } %>\nPreview',
+          language: "eta",
+        },
+      ),
+    ).toBe("# Registered heading\nPreview");
+    expect(() => facade.render("preview", {})).toThrow(/preview/);
+  });
+});
+
 describe("cross-language includes", () => {
   it("includes an eta template from liquid via with...as zt", () => {
     const facade = new TemplateFacade();

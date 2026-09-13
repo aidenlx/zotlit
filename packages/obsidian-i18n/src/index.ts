@@ -12,6 +12,7 @@ export {
   type RemotePackInfo,
 } from "./lifecycle.js";
 export {
+  LANGUAGE_PACK_LIMITS,
   LanguagePackSchemaVersionError,
   validateLanguagePack,
 } from "./validation.js";
@@ -23,7 +24,14 @@ export {
   type TargetLocaleMessages,
 } from "./runtime.js";
 export { languageEndonym } from "./endonyms.js";
-export type { LanguagePack } from "./language-pack.js";
+export type {
+  Declaration,
+  Expression,
+  LanguagePack,
+  Match,
+  Message,
+  Variant,
+} from "./language-pack.js";
 export {
   noopLogger,
   type LogProperties,

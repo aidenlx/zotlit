@@ -267,6 +267,7 @@ export function batchGroups(
   const qualify = libraries.length > 1;
   return libraries.flatMap((library) =>
     kinds.map((kind) => ({
+      ...kind,
       kind: batchGroupKey(library.libraryID, kind.kind),
       header: qualify
         ? (args: { count: number }) =>

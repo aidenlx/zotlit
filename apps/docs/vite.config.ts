@@ -5,22 +5,62 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { fumadocsMdx } from "fumadocs-mdx/vite";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
+import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
+
+import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
+import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
-import {
-  renderHeadersFile,
-  renderRedirectsFile,
-} from "./src/lib/v1-redirects.js";
+import type { DocsLine } from "./src/lib/shared.js";
+import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
-let docsLine: Cloudflare.Env["DOCS_LINE"] | undefined;
+// Keep Miniflare's local Worker registry with the package's other ignored
+// runtime state, so a build needs no access to the user's global config path.
+process.env.MINIFLARE_REGISTRY_PATH ??= resolve(
+  packageRoot,
+  ".wrangler/registry",
+);
+/** The real `fumadocs-core/server`, the entry its `import` condition names. */
+const fumadocsServer = fileURLToPath(
+  import.meta.resolve("fumadocs-core/server"),
+);
 
-function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
+/**
+ * `fumadocs-core/server` lists its `browser` export condition first, and the
+ * Worker carries that condition — `@cloudflare/vite-plugin` resolves `workerd`,
+ * `worker`, `module`, `browser` — so the Worker would load the stub whose
+ * `renderToMarkdown` throws. The Markdown editions render inside the Worker, so
+ * that environment alone takes the real entry; the client keeps the stub, which
+ * is what holds Markdown rendering out of its bundle. This is a `resolveId`
+ * hook rather than an alias because Vite resolves `resolve.alias` once for
+ * every environment, leaving no place to name the Worker on its own.
+ */
+function fumadocsServerOnWorker(): Plugin {
+  return {
+    name: "zotlit:fumadocs-server-on-worker",
+    enforce: "pre",
+    resolveId(source) {
+      if (
+        source !== "fumadocs-core/server" ||
+        this.environment.name !== "ssr"
+      ) {
+        return undefined;
+      }
+      return fumadocsServer;
+    },
+  };
+}
+
+let docsLine: DocsLine | undefined;
+
+function resolvedDocsLine(): DocsLine {
   if (docsLine === undefined) {
     throw new Error("Cloudflare configuration did not provide DOCS_LINE.");
   }
@@ -31,6 +71,7 @@ function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
  * Emits the Cloudflare asset-layer rule files into the client build, so legacy
  * permalinks and the giscus CORS header resolve without a Worker invocation.
  * @see src/lib/v1-redirects.ts
+ * @see src/lib/headers.ts
  */
 function cloudflareAssetRules(): Plugin {
   return {
@@ -74,7 +115,7 @@ function machineAssets(): Plugin {
       if (this.environment.name !== "client") return;
 
       const assets = new Map(await agentSkills());
-      for (const [path, card] of ogCards(packageRoot)) {
+      for (const [path, card] of await ogCards(packageRoot)) {
         assets.set(path, await renderCard(card));
       }
       for (const [path, source] of assets) {
@@ -92,7 +133,7 @@ function machineAssets(): Plugin {
           return { type, body: skill };
         }
 
-        const card = ogCards(packageRoot).get(path);
+        const card = (await ogCards(packageRoot)).get(path);
         if (!card) return undefined;
         return { type: "image/webp", body: await renderCard(card) };
       }
@@ -120,28 +161,51 @@ function machineAssets(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
   // is told to convert it, and the missing named export stops hydration before
   // the page becomes interactive. The production build converts it either way.
   optimizeDeps: {
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
+    // The Workbench sits behind a dynamic import the router's own entry scan
+    // stops short of, so its dependencies — CodeMirror, the Lezer parsers, the
+    // template engines, the reading view's parser stack — were found one by
+    // one as the page requested them, each round re-optimizing and reloading.
+    // Named here, the scan finds them all before the first request.
+    entries: ["src/lib/workbench/workbench.tsx"],
   },
-  // Both aliases are declared here rather than through
-  // `resolve.tsconfigPaths`, which under Vite 8 leaves the `paths` in
-  // `tsconfig.app.json` unresolved.
+  environments: {
+    ssr: {
+      optimizeDeps: {
+        // Macro-generated and MDX-only imports arrive after the initial scan.
+        // Pre-bundle them so the first render keeps its SSR dependency graph.
+        include: [
+          "fumadocs-mdx/runtime/macro",
+          "fumadocs-ui/components/card",
+          "fumadocs-ui/components/steps",
+        ],
+      },
+    },
+  },
+  // Resolve the app alias explicitly: Vite 8 leaves the app tsconfig paths
+  // unresolved through `resolve.tsconfigPaths`.
   resolve: {
     alias: {
       "@": resolve(packageRoot, "src"),
-      // fumadocs-mdx writes its collection index files under `.source`
-      collections: resolve(packageRoot, ".source"),
     },
   },
   plugins: [
+    fumadocsServerOnWorker(),
+    paraglideVitePlugin({
+      ...paraglideOptions,
+      // Group messages in dev to avoid one HTTP request per message.
+      outputStructure:
+        command === "serve" ? "locale-modules" : "message-modules",
+    }),
     devtools(),
     tailwindcss(),
-    fumadocsMdx(),
+    fumadocsMdx({ index: false }),
     cloudflareAssetRules(),
     machineAssets(),
     cloudflare({
@@ -168,4 +232,4 @@ export default defineConfig({
     }),
     viteReact(),
   ],
-});
+}));

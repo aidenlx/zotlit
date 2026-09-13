@@ -83,7 +83,7 @@ describe("wikilinkDecorations", () => {
         from: 2,
         to: 2 + `${WANG_LINK}#cite:locator=7`.length,
         citation: {
-          source: "[@wang2020, p. 7]",
+          source: "[@wang2020, {p. 7}]",
           keys: [{ citekey: "wang2020", start: 1, end: 10 }],
           works: [WANG.indexedKey],
         },
@@ -178,7 +178,7 @@ describe("wikilinkDecorations over a Citation Run", () => {
       {
         from: spans[0]!.inner.from,
         to: spans[1]!.inner.to,
-        citation: { source: "[@wang2020, p. 7; @wang2020]" },
+        citation: { source: "[@wang2020, {p. 7}; @wang2020]" },
       },
     ]);
   });

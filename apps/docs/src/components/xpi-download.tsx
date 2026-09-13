@@ -1,7 +1,9 @@
 import { ActionLink } from "@/components/action-link";
+import { Message } from "@/components/message";
 import { useReleaseSnapshot } from "@/components/release-snapshot";
 import { releasesUrl } from "@/lib/github-releases";
 import type { ReleaseChannel } from "@/lib/github-releases";
+import * as m from "@/paraglide/messages.js";
 
 export interface XpiDownloadProps {
   channel?: ReleaseChannel;
@@ -18,7 +20,10 @@ export function XpiDownload({ channel = "pre-release" }: XpiDownloadProps) {
   if (!companion) {
     return (
       <ActionLink href={releasesUrl} kind="external">
-        Browse releases for the latest <code>.xpi</code>
+        <Message
+          text={m.docs_browse_xpi({ extension: "{extension}" })}
+          slots={{ extension: <code>.xpi</code> }}
+        />
       </ActionLink>
     );
   }
@@ -29,7 +34,10 @@ export function XpiDownload({ channel = "pre-release" }: XpiDownloadProps) {
       kind="download"
       filename={`zotlit-zotero-${companion.version}.xpi`}
     >
-      Download the <code>.xpi</code>
+      <Message
+        text={m.docs_download_xpi({ extension: "{extension}" })}
+        slots={{ extension: <code>.xpi</code> }}
+      />
     </ActionLink>
   );
 }

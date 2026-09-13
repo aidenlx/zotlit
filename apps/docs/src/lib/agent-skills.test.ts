@@ -16,9 +16,11 @@ describe("agentSkillAssets", () => {
       new TextDecoder().decode(assets.get(indexRoute)),
     ) as { skills: Array<{ url: string }> };
 
-    expect(index.skills.map(({ url }) => new URL(url).origin)).toEqual(
-      index.skills.map(() => zotlitBetaUrl),
-    );
+    expect(index.skills.map(({ url }) => new URL(url).origin)).toEqual([
+      zotlitBetaUrl,
+      zotlitBetaUrl,
+      zotlitBetaUrl,
+    ]);
   });
 
   it("pins archive URLs to the GitHub build commit", async () => {
@@ -32,6 +34,6 @@ describe("agentSkillAssets", () => {
 
     expect(
       index.skills.map(({ url }) => new URL(url).pathname.split("/").at(-2)),
-    ).toEqual(index.skills.map(() => commitSha));
+    ).toEqual([commitSha, commitSha, commitSha]);
   });
 });

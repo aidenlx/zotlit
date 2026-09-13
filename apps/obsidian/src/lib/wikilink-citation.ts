@@ -1,12 +1,23 @@
 // The shared core that derives Citations from Literature Note wikilinks.
 
+import {
+  formatPandocCitation,
+  PandocCitationError,
+  scanPandocCitations,
+} from "@zotlit/templates/pandoc-citation";
+import type {
+  PandocCitationForm,
+  PandocCitationItem,
+} from "@zotlit/templates/pandoc-citation";
+
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
-import { citationRunItem, citationRunSource } from "./citation-fragment";
-import type { CitationRunItem, CitationSource } from "./citation-fragment";
+import { citationRunItem } from "./citation-fragment";
+import type { CitationRunItem } from "./citation-fragment";
+import type { CitationSource } from "./citation-source";
 import { getLogger } from "./log";
 
 const logger = getLogger("wikilink-citation");
@@ -100,6 +111,12 @@ export function wikilinkCitation(
     fragment: target.fragment,
   });
   if (item === null) return null;
+  try {
+    formatPandocCitation([pandocItem(item)], pandocForm(item));
+  } catch (error) {
+    if (error instanceof PandocCitationError) return null;
+    throw error;
+  }
   return {
     item,
     indexedKey: note.indexedKey,
@@ -130,9 +147,43 @@ export interface RunCitationSource extends CitationSource {
 export function citationOfRun<T>(
   run: readonly RunMember<T>[],
 ): RunCitationSource {
+  const items = run.map(({ citation }) => citation.item);
+  const source = formatPandocCitation(
+    items.map(pandocItem),
+    pandocForm(items[0]!),
+  );
+  const [citation] = scanPandocCitations(source);
   return {
-    ...citationRunSource(run.map(({ citation }) => citation.item)),
+    source,
+    keys: citation!.items.map(({ citationKey, start, end }) => ({
+      citekey: citationKey,
+      start,
+      end,
+    })),
     works: run.map(({ citation }) => citation.indexedKey),
+  };
+}
+
+function pandocForm(item: CitationRunItem): PandocCitationForm {
+  return item.details.mode === "author-in-text"
+    ? "prefer-author-in-text"
+    : "normal";
+}
+
+function pandocItem({
+  citekey,
+  details,
+  labelShort,
+}: CitationRunItem): PandocCitationItem {
+  return {
+    citationKey: citekey,
+    prefix: details.prefix === null ? null : `${details.prefix} `,
+    suffix: details.suffix === null ? null : `, ${details.suffix}`,
+    locator:
+      details.locator === null
+        ? null
+        : { label: labelShort!, value: details.locator },
+    suppressAuthor: details.mode === "suppress-author",
   };
 }
 

@@ -63,9 +63,7 @@ export class ReleaseService extends Service<void> {
     });
     // The launch check needs settings loaded and the workspace ready to open
     // leaves; `ready` settles now, the check runs after layout is ready.
-    this.#app.workspace.onLayoutReady(() => {
-      void this.#runCheck();
-    });
+    this.#app.workspace.onLayoutReady(() => this.#runCheck());
     this.commit(stack.move());
   }
 
@@ -116,9 +114,9 @@ export class ReleaseService extends Service<void> {
     // whether the flag should auto-clear.
     const legacyTemplatesPresent =
       origin === "absent"
-        ? this.#hasEjectedTemplates(V1_TEMPLATE_FOLDER)
+        ? this.hasV1Templates(V1_TEMPLATE_FOLDER)
         : migrationPending
-          ? this.#hasEjectedTemplates(settings["template.folder"])
+          ? this.hasV1Templates(settings["template.folder"])
           : false;
 
     const decision = decideRelease({
@@ -176,7 +174,7 @@ export class ReleaseService extends Service<void> {
   }
 
   /** True when `folderPath` holds at least one ejected `zt-*.eta.md` template. */
-  #hasEjectedTemplates(folderPath: string): boolean {
+  hasV1Templates(folderPath: string): boolean {
     const folder = this.#app.vault.getFolderByPath(folderPath);
     if (!folder) return false;
     return folder.children.some(

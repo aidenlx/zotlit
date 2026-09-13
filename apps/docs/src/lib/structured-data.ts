@@ -69,12 +69,14 @@ function personSchema(author: string): Person {
 
 /**
  * @param date publication day in ISO form, as `source.config.ts` normalizes it.
+ * @param modified last commit day in ISO form, when git knows one.
  */
 export function blogPostingSchema(input: {
   title: string;
   description?: string;
   author: string;
   date: string;
+  modified?: string;
   url: string;
 }): WithContext<BlogPosting> {
   return {
@@ -85,6 +87,7 @@ export function blogPostingSchema(input: {
       description: input.description,
     }),
     datePublished: input.date,
+    ...(input.modified !== undefined && { dateModified: input.modified }),
     author: personSchema(input.author),
     publisher: organization,
     url: absoluteUrl(input.url),

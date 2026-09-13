@@ -1,8 +1,144 @@
 // Shared DOM primitives for the batch-modal shell and its manifest bodies.
-import { setIcon } from "obsidian";
+import { setIcon, setTooltip } from "obsidian";
+import type { App } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { cn } from "@/lib/utils";
 import type { BatchFailure } from "@/services/batch-run";
+import { describeSelectionSource } from "@/services/note-feature/selection-copy";
+
+import type { BatchListControls, BatchProfileChoice } from "./types";
+
+export interface BatchRow {
+  label: string;
+  path?: string;
+  profile?: string;
+  reason?: string;
+}
+
+export function profileChoiceControl(
+  parent: HTMLElement,
+  choice: BatchProfileChoice,
+  controls?: BatchListControls,
+): void {
+  const container = parent.createDiv({
+    cls: "zt:flex zt:flex-wrap zt:items-start zt:gap-x-4 zt:gap-y-2 zt:normal-case zt:tracking-normal zt:font-normal",
+    attr: choice.scope ? { "data-profile-choice-scope": choice.scope } : {},
+  });
+  const text = profileChoiceText(choice);
+  const description = container.createDiv({
+    cls: "zt:min-w-0 zt:flex-1 zt:basis-56 zt:space-y-1",
+  });
+  if (choice.scope) {
+    description.createDiv({
+      text: profileChoiceLabel(choice),
+      cls: "zt:text-sm zt:font-medium zt:text-(--text-normal)",
+    });
+  }
+  const help = profileChoiceHelp(choice.scope);
+  const helpEl = help
+    ? description.createDiv({
+        text: help,
+        cls: "zt:text-xs zt:leading-normal zt:text-pretty zt:text-(--text-muted)",
+        attr: { id: `zt-profile-choice-${crypto.randomUUID()}` },
+      })
+    : undefined;
+  const picker = container.createDiv({
+    cls: "zt:flex zt:min-w-0 zt:max-w-full zt:flex-col zt:items-start zt:gap-1",
+  });
+  if (controls) {
+    const button = picker.createEl("button", {
+      cls: "zt:max-w-full zt:gap-2",
+      attr: { type: "button", "data-profile-choice": "" },
+    });
+    button.createSpan({
+      text: choice.scope
+        ? (choice.label ?? m.modal_profile_choose_placeholder())
+        : text,
+      cls: "zt:truncate",
+    });
+    setIcon(
+      button.createSpan({
+        cls: "zt:flex zt:shrink-0",
+        attr: { "aria-hidden": "true" },
+      }),
+      "chevron-down",
+    );
+    setTooltip(
+      button,
+      choice.scope && choice.label === undefined
+        ? m.batch_profile_choose({ scope: profileChoiceLabel(choice) ?? "" })
+        : text,
+    );
+    if (helpEl) button.setAttribute("aria-describedby", helpEl.id);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void controls.chooseProfile(choice);
+    });
+  } else {
+    picker.createSpan({ text, cls: "zt:text-sm zt:break-words" });
+  }
+  if (!choice.scope) description.remove();
+  const source =
+    choice.label === undefined
+      ? undefined
+      : describeSelectionSource(choice.source);
+  if (source)
+    picker.createSpan({
+      text: source,
+      cls: "zt:text-xs zt:text-(--text-muted)",
+    });
+}
+
+function profileChoiceLabel({ count = 0, scope }: BatchProfileChoice) {
+  switch (scope) {
+    case "unresolved":
+      return m.batch_profile_unresolved_label({ count });
+    case "affected":
+      return m.batch_profile_affected_label({ count });
+    case "all-new":
+      return m.batch_profile_override_all_label();
+  }
+}
+
+/** The control's own words: which rows it governs and where they go. */
+function profileChoiceText({ label, count = 0, scope }: BatchProfileChoice) {
+  switch (scope) {
+    case "unresolved":
+      return m.batch_profile_unresolved_destination({
+        count,
+        label: label ?? "",
+      });
+    case "affected":
+      return label === undefined
+        ? m.batch_profile_affected_choose({ count })
+        : m.batch_profile_affected_destination({ count, label });
+    case "all-new":
+      return label === undefined
+        ? m.batch_profile_override_all()
+        : m.batch_profile_override_all_destination({ label });
+    default:
+      return m.batch_profile_destination({ label: label ?? "" });
+  }
+}
+
+/** One line telling a fallback apart from an override. */
+function profileChoiceHelp(
+  scope: BatchProfileChoice["scope"],
+): string | undefined {
+  switch (scope) {
+    case "unresolved":
+      return m.batch_profile_unresolved_help();
+    case "affected":
+      return m.batch_profile_recovery_help();
+    case "all-new":
+      return m.batch_profile_override_all_help();
+    default:
+      return undefined;
+  }
+}
 
 export type RowStatus = "pending" | "done" | "skipped" | "failed";
 
@@ -63,17 +199,35 @@ export function section(
 export function row(
   ul: HTMLElement,
   label: string,
-  opts?: { indent?: boolean },
+  opts?: { indent?: boolean } & Omit<BatchRow, "label">,
 ): HTMLElement {
   const li = ul.createEl("li", {
     cls: cn(ROW_CLS, opts?.indent && "zt:pl-6"),
   });
   const icon = li.createSpan({ cls: ICON_CLS });
-  li.createSpan({
+  const detailed = opts?.profile || opts?.path || opts?.reason;
+  const content = detailed ? li.createDiv({ cls: "zt:flex-1 zt:min-w-0" }) : li;
+  const title = detailed
+    ? content.createDiv({ cls: "zt:flex zt:items-center zt:gap-2 zt:min-w-0" })
+    : li;
+  title.createSpan({
     text: label,
     cls: ROW_LABEL_CLS,
     attr: { "aria-label": label },
   });
+  if (opts?.profile)
+    title.createSpan({
+      text: opts.profile,
+      cls: "zt:shrink-0 zt:rounded-sm zt:bg-(--background-modifier-hover) zt:px-1 zt:text-xs zt:text-(--text-muted)",
+      attr: { "data-profile-stamp": "" },
+    });
+  for (const text of [opts?.path, opts?.reason]) {
+    if (text)
+      content.createDiv({
+        text,
+        cls: "zt:text-xs zt:text-(--text-muted) zt:break-all",
+      });
+  }
   return icon;
 }
 
@@ -85,7 +239,7 @@ export function setRowIcon(icon: HTMLElement, status: RowStatus): void {
 
 export interface StaticGroup {
   header: string;
-  items: readonly { label: string }[];
+  items: readonly BatchRow[];
   icon: string;
   colorCls: string;
 }
@@ -99,16 +253,46 @@ export function listGroup(parent: HTMLElement, group: StaticGroup): void {
     group.items.length <= SECTION_OPEN_MAX,
   );
   for (const item of group.items) {
-    const icon = row(ul, item.label);
+    const icon = row(ul, item.label, item);
     icon.addClass(group.colorCls);
     setIcon(icon, group.icon);
+  }
+}
+
+/** Completed rows retain their confirmed Profile in each summary group. */
+export function profileListGroup(
+  parent: HTMLElement,
+  group: StaticGroup & { profileHeader: (args: { count: number }) => string },
+): void {
+  if (!group.items.some((item) => item.profile)) {
+    listGroup(parent, group);
+    return;
+  }
+  for (const [profile, items] of Map.groupBy(
+    group.items,
+    (item) => item.profile,
+  )) {
+    listGroup(parent, {
+      ...group,
+      items,
+      header: profile
+        ? m.batch_profile_group({
+            group: group.profileHeader({ count: items.length }),
+            profile,
+          })
+        : group.header,
+    });
   }
 }
 
 /** A failed-item row: an x-icon + truncated label, with the error message on a
  * second muted line indented under the label. Shared by the live run-phase
  * panel and the summary's Failed group. */
-export function failureRow(ul: HTMLElement, failure: BatchFailure): void {
+export function failureRow(
+  ul: HTMLElement,
+  failure: BatchFailure,
+  app: App,
+): void {
   const li = ul.createEl("li", {
     cls: "zt:py-0.5 zt:min-w-0 zt:[content-visibility:auto] zt:[contain-intrinsic-size:auto_2.5rem]",
   });
@@ -125,4 +309,5 @@ export function failureRow(ul: HTMLElement, failure: BatchFailure): void {
     text: failure.message,
     cls: "zt:text-xs zt:text-(--text-muted) zt:pl-6",
   });
+  if (failure.recovery) renderProfileRecovery(li, app, failure.recovery);
 }

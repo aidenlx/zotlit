@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { compileFrontmatterFields, evalFrontmatterFields } from "./frontmatter";
+import {
+  compileFrontmatterFields,
+  compileManagedFrontmatterEntries,
+  evalFrontmatterFields,
+  evalManagedFrontmatterEntries,
+} from "./frontmatter";
 import type { FrontmatterField } from "./frontmatter";
 import { createLiquidEngine } from "./liquid";
+import type { ManagedFrontmatterEntry } from "./literature-note-template";
 
 function evalFields(
   fields: readonly FrontmatterField[],
@@ -205,7 +211,133 @@ describe("evalFrontmatterFields (javascript fields)", () => {
   });
 });
 
+describe("document Managed Frontmatter entries", () => {
+  const operationTimestamp = Temporal.Instant.from("2026-08-28T01:02:03Z");
+
+  function compile(
+    entries: readonly ManagedFrontmatterEntry[],
+    javascript = true,
+  ) {
+    return compileManagedFrontmatterEntries(entries, {
+      liquid: createLiquidEngine(),
+      javascript,
+    });
+  }
+
+  it("evaluates expr, value, and js entries in order", () => {
+    const result = evalManagedFrontmatterEntries(
+      compile([
+        { key: "title", merge: "replace", expr: "zt.title" },
+        {
+          key: "tags",
+          merge: "append",
+          value: { $eval: "zt.tags" },
+        },
+        { key: "label", merge: "keep", js: "zt.title + '!'" },
+      ]).compiled,
+      { title: "A Study", tags: ["paper"] },
+      operationTimestamp,
+    );
+
+    expect(result).toEqual({
+      values: [
+        { key: "title", merge: "replace", value: "A Study", position: 1 },
+        { key: "tags", merge: "append", value: ["paper"], position: 2 },
+        { key: "label", merge: "keep", value: "A Study!", position: 3 },
+      ],
+      keys: ["title", "tags", "label"],
+      errors: [],
+    });
+  });
+
+  it("collects every field error without substitute values", () => {
+    const result = evalManagedFrontmatterEntries(
+      compile([
+        { key: "broken-expr", merge: "replace", expr: "zt.title | flatten" },
+        {
+          key: "broken-value",
+          merge: "replace",
+          value: { $eval: "zt.infinity" },
+        },
+        { key: "working", merge: "replace", expr: "zt.title" },
+      ]).compiled,
+      { title: "A Study", infinity: Number.POSITIVE_INFINITY },
+      operationTimestamp,
+    );
+
+    expect(result.values).toEqual([
+      { key: "working", merge: "replace", value: "A Study", position: 3 },
+    ]);
+    // Each error carries the list position of the entry that raised it, which
+    // is how a host marks the row it belongs to.
+    expect(
+      result.errors.map(({ key, position }) => ({ key, position })),
+    ).toEqual([
+      { key: "broken-expr", position: 1 },
+      { key: "broken-value", position: 2 },
+    ]);
+  });
+
+  it("keeps js entries inert when JavaScript Templates are disabled", () => {
+    const compiled = compile(
+      [
+        { key: "plain", merge: "replace", expr: "zt.title" },
+        { key: "scripted", merge: "replace", js: "zt.title" },
+      ],
+      false,
+    );
+
+    expect(compiled.inertKeys).toEqual(["scripted"]);
+    expect(compiled.compiled.map(({ key }) => key)).toEqual(["plain"]);
+  });
+});
+
 describe("evalFrontmatterFields (liquid fields)", () => {
+  it("returns a flattened unique collection-path list", () => {
+    const fm = evalFields(
+      [
+        {
+          key: "collections",
+          expr: 'zt.collections | map: "path" | flatten | uniq',
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      {
+        collections: [{ path: ["Top", "Sub"] }, { path: ["Top", "Other"] }],
+      },
+    );
+
+    expect(fm).toEqual({ collections: ["Top", "Sub", "Other"] });
+  });
+
+  it("reports non-array flatten input against its field key", () => {
+    const errors: { key: string; message: string }[] = [];
+    const fm = evalFields(
+      [
+        {
+          key: "collections",
+          expr: "zt.collections | flatten",
+          merge: "replace",
+          language: "liquid",
+        },
+      ],
+      { collections: null },
+      {
+        onError: (key, error) =>
+          errors.push({
+            key,
+            message: error instanceof Error ? error.message : String(error),
+          }),
+      },
+    );
+
+    expect(fm).toEqual({});
+    expect(errors).toEqual([
+      { key: "collections", message: "flatten requires an array" },
+    ]);
+  });
+
   it("returns an intact array regardless of the javascript gate", () => {
     const zt = { tags: [{ name: "ai" }, { name: "nlp" }] };
     const fields: FrontmatterField[] = [

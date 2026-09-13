@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/cn";
 import { zotlitLegacyUrl } from "@/lib/shared";
+import * as m from "@/paraglide/messages.js";
 
 /** What the query says about how the reader arrived, or null for a direct visit. */
 interface Arrival {
@@ -55,12 +56,11 @@ export function RedirectNotice({ className }: { className?: string }) {
     >
       {isZh ? (
         <p className="text-fd-muted-foreground" lang="zh-CN">
-          ZotLit v2 中文内容尚未提供，当前显示英文页面。
+          {m.docs_redirect_translation_pending({}, { locale: "zh-CN" })}
         </p>
       ) : (
         <p className="text-fd-muted-foreground">
-          You followed a link to the ZotLit v1 docs. This is the closest page in
-          the v2 docs.
+          {m.docs_redirect_v1_notice()}
         </p>
       )}
       {v1Src && (
@@ -75,13 +75,18 @@ export function RedirectNotice({ className }: { className?: string }) {
             "transition-[text-decoration-color] hover:decoration-fd-primary",
           )}
         >
-          {isZh ? "参阅 v1 中文文档" : "View the original v1 page"}
+          {isZh
+            ? m.docs_redirect_original_page({}, { locale: "zh-CN" })
+            : m.docs_redirect_original_page()}
           <ArrowUpRight aria-hidden className="size-[1.05em]" />
         </a>
       )}
       <button
         type="button"
-        aria-label={isZh ? "关闭提示" : "Dismiss notice"}
+        aria-label={m.docs_dismiss_notice(
+          {},
+          isZh ? { locale: "zh-CN" } : undefined,
+        )}
         onClick={() => setDismissed(true)}
         className="absolute inset-e-2 top-2 text-fd-muted-foreground/60 hover:text-fd-foreground"
       >

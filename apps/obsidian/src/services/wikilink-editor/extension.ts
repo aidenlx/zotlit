@@ -316,8 +316,8 @@ function renderedCitationAt(
   view: EditorView,
   handlers: WikilinkEditorHandlers,
 ): { element: HTMLElement; hover: CitationHover } | null {
-  const { target } = event;
-  if (!(target instanceof HTMLElement)) return null;
+  const target = event.target as Node | null;
+  if (!target?.instanceOf(HTMLElement)) return null;
   const element = target.closest<HTMLElement>(
     `.${themeHook.literatureNoteLink}`,
   );

@@ -415,8 +415,8 @@ function hoverResult(
   const surface = where.surface;
   // The same re-entry guard Obsidian runs before its own hover, so moving
   // within one citation hovers once.
-  const { relatedTarget } = event;
-  if (relatedTarget instanceof Node && element.contains(relatedTarget)) {
+  const relatedTarget = event.relatedTarget as Node | null;
+  if (relatedTarget?.instanceOf(Node) && element.contains(relatedTarget)) {
     return null;
   }
 

@@ -2,34 +2,44 @@
 title: "Configure frontmatter properties"
 description: "Add custom YAML frontmatter fields to literature notes using template expressions and merge strategies."
 introduced: "2.0.0"
-updated: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 You can map Zotero data into YAML frontmatter properties that appear at the top of every literature note. ZotLit ships four default fields: `title`, `related`, `collections`, and `citekey`.
+
+<Callout type="info" title="Properties belong to a profile">
+  Each profile stores its property rules in its template document. The Profile
+  Editor changes those rules and saves the document automatically.
+</Callout>
 
 ## Add a frontmatter field
 
 <Steps>
   <Step>
-    ### Open the Frontmatter sub-page
+    ### Open the Template Workbench View
 
-    In Obsidian, open **Settings > ZotLit > Templates > Frontmatter**. This sub-page lists all configured user fields.
+    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_properties_name()} /> row, select <UiLabel name={m.template_workbench_customize()} />.
+
+    The Template Workbench View opens on the Default profile. Select the <UiLabel name={m.workbench_tab_properties()} /> tab.
 
   </Step>
   <Step>
     ### Add a new field
 
-    Click the add button. A modal opens with four inputs:
+    Select <UiLabel name={m.workbench_properties_add()} />. Each property has these controls:
 
-    - **Key**: the YAML property name written to frontmatter.
-    - **Language**: **Liquid** or **JavaScript**. The JavaScript option appears only when the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates) is enabled on that device.
-    - **Expression**: the template expression whose output becomes the field value. Use `zt.` paths (e.g. `zt.title`, `zt.DOI`). Browse available paths with the [Template Data Explorer](/docs/how-to/explore-template-data).
-    - **Merge strategy**: controls how the value is applied on note update.
+    - <UiLabel name={m.workbench_properties_name()} /> is the YAML property name written to frontmatter.
+    - <UiLabel name={m.workbench_properties_format()} /> selects a Zotero field, fixed text, or a rule.
+    - <UiLabel name={m.workbench_properties_expression()} /> is the field value or rule. Use `zt.` paths such as `zt.title` or `zt.DOI` for Zotero data.
+    - <UiLabel name={m.workbench_properties_merge()} /> controls how ZotLit applies the value when it updates a note.
 
   </Step>
   <Step>
@@ -37,17 +47,17 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
 
     Three strategies are available:
 
-    | Strategy | Behavior on update |
-    |----------|-------------------|
-    | **Replace** | Overwrites the field with the new value every time. |
-    | **Append arrays** | Adds new array items without removing existing ones. |
-    | **Keep existing** | Writes the field only if it does not already exist in frontmatter. |
+    | Strategy                                                   | Behavior on update                                                 |
+    | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+    | <UiLabel name={m.workbench_properties_merge_replace()} /> | Overwrites the field with the new value every time.                |
+    | <UiLabel name={m.workbench_properties_merge_append()} />  | Adds new array items without removing existing ones.               |
+    | <UiLabel name={m.workbench_properties_merge_keep()} />    | Writes the field only if it does not already exist in frontmatter. |
 
   </Step>
   <Step>
-    ### Save
+    ### Check the result
 
-    Click **Save**. If validation passes, the field is added to the list.
+    The Template Workbench View saves the property automatically. Check the preview to see the value for the selected paper.
 
   </Step>
 </Steps>
@@ -61,23 +71,23 @@ Zotero tag objects from `zt.tags` and returns an array of Obsidian tag values.
   <Step>
     ### Add the `tags` field
 
-    In **Settings > ZotLit > Templates > Frontmatter**, add a field with these values:
+    In the <UiLabel name={m.workbench_tab_properties()} /> tab, select <UiLabel name={m.workbench_properties_add()} /> and enter these values:
 
     | Input | Value |
     | ----- | ----- |
-    | **Key** | `tags` |
-    | **Language** | **Liquid** |
-    | **Expression** | `zt.tags \| obsidian_tag` |
-    | **Merge strategy** | **Replace** |
+    | <UiLabel name={m.workbench_properties_name()} /> | `tags` |
+    | <UiLabel name={m.workbench_properties_format()} /> | <UiLabel name={m.workbench_properties_format_value()} /> |
+    | <UiLabel name={m.workbench_properties_expression()} /> | `zt.tags \| obsidian_tag` |
+    | <UiLabel name={m.workbench_properties_merge()} /> | <UiLabel name={m.workbench_properties_merge_replace()} /> |
 
-    The `Replace` strategy keeps the note's Zotero tags in sync. Choose
-    **Append arrays** when you want to keep manual Obsidian tags too.
+    The <UiLabel name={m.workbench_properties_merge_replace()} /> strategy keeps the note's Zotero tags in sync. Choose
+    <UiLabel name={m.workbench_properties_merge_append()} /> when you want to keep manual Obsidian tags too.
 
   </Step>
   <Step>
     ### Update the note
 
-    Run <Command inline>ZotLit: Update literature note metadata</Command> on an
+    Run <Command inline name={m.command_update_note_metadata_name()} /> on an
     existing literature note. ZotLit evaluates the field and writes the result
     to its frontmatter.
 
@@ -99,28 +109,29 @@ normalization rules.
 
 For agent-assisted setup, install the [ZotLit skill](/docs/install-skill) and
 ask the agent to add a managed `tags` field with the expression
-`zt.tags | obsidian_tag`. The [Template Workbench](/docs/concepts/template-workbench)
-lets the agent configure the field and test the rendered result.
+`zt.tags | obsidian_tag`. The [Template Workbench
+CLI](/docs/concepts/template-workbench) lets the agent configure
+the field and test the rendered result.
 
 ## Edit or remove a field
 
-Click a field's row to reopen the edit modal and change its settings. To remove a field, use the delete control on its row in the Frontmatter list.
+Select a property row to edit it. Use <UiLabel name={m.workbench_properties_remove()} /> to remove it.
 
 ## Reorder fields
 
-The order of fields in the Frontmatter list determines the order of frontmatter keys when ZotLit creates a new literature note. On a new note, the system identity field `zotero-key` follows the user-configured fields.
+The order of the properties in the Template Workbench View determines the order of frontmatter keys when ZotLit creates a new literature note. On a new note, the system identity field `zotero-key` follows the configured properties.
 
-To change the order, drag a field by the handle on its row in **Settings > ZotLit > Templates > Frontmatter**.
+Use <UiLabel name={m.workbench_properties_move_up()} /> or <UiLabel name={m.workbench_properties_move_down()} /> to move a property.
 
 ### Existing notes
 
-Reordering the list does not change property order in notes that already exist. When ZotLit updates an existing note, a key already present in that note's YAML keeps its current position.
+Reordering the fields does not change property order in notes that already exist. When ZotLit updates an existing note, a key already present in that note's YAML keeps its current position.
 
 To reorder properties within a single note, use Obsidian's properties panel: drag the property type icon to the left of a property name to move that row. Obsidian writes the new key order back into the note's YAML. The note must have two or more properties for this to work.
 
 ## Validation rules
 
-The modal rejects invalid configurations:
+ZotLit rejects invalid configurations:
 
 - Empty key: "Enter a key."
 - Reserved key: "'`{key}`' is managed by ZotLit and can't be used." Reserved keys are `zotero-key`, `zotero-note-key`, and `zotero-lastmod`.
@@ -132,19 +143,21 @@ The modal rejects invalid configurations:
 
 After changing frontmatter configuration, run:
 
-<Command>ZotLit: Update literature note metadata</Command>
+<Command name={m.command_update_note_metadata_name()} />
 
 This re-evaluates all field expressions and writes the results to the active note's frontmatter according to each field's merge strategy.
 
-The default `citekey` field uses `zt.citationKey`, Liquid, and **Replace**. It writes `null` when the Zotero item has no citation key. You can edit or remove this field because it is not reserved.
+The default `citekey` field uses `zt.citationKey`, Liquid, and <UiLabel name={m.settings_frontmatter_merge_replace()} />. It writes `null` when the Zotero item has no citation key. You can edit or remove this field because it is not reserved.
 
 ## Agent-based configuration
 
-An agent with the ZotLit skill can configure managed frontmatter field templates through the Template Workbench CLI. See [Template Workbench](/docs/concepts/template-workbench) for details.
+An agent with the ZotLit skill can configure managed frontmatter field templates through the [Template Workbench CLI](/docs/concepts/template-workbench).
 
 <Callout type="info" title="JavaScript fields and the gate">
-  A frontmatter field with Language set to JavaScript is inert when the
-  JavaScript Templates gate is off on that device. The settings page shows:
+  A frontmatter field with{" "}
+  <UiLabel name={m.settings_frontmatter_language_name()} /> set to{" "}
+  <UiLabel name={m.settings_frontmatter_language_javascript()} /> is inert when
+  the JavaScript Templates gate is off on that device. The settings page shows:
   "This field is inactive because JavaScript templates are disabled on this
   device." See [Enable JavaScript
   templates](/docs/how-to/enable-javascript-templates).
@@ -174,7 +187,7 @@ An agent with the ZotLit skill can configure managed frontmatter field templates
     href="/docs/how-to/enable-javascript-templates"
   />
   <Card
-    title="Template Workbench"
+    title="Template Workbench CLI"
     description="Configure managed frontmatter field templates through the Obsidian CLI."
     href="/docs/concepts/template-workbench"
   />

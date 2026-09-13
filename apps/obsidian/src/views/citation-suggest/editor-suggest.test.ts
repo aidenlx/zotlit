@@ -58,12 +58,12 @@ describe("resolveCitationInsert", () => {
     const outcome = resolveCitationInsert(
       insertDeps(renderCitation),
       hit,
-      false,
+      "main",
     );
 
     expect(renderCitation).toHaveBeenCalledWith(
       [{ citationKey: "abc2024", item: hit.item }],
-      false,
+      "main",
     );
     expect(outcome).toEqual({
       kind: "notice",
@@ -73,18 +73,18 @@ describe("resolveCitationInsert", () => {
 
   it("resolves an inert-template error to a notice carrying its own message", () => {
     const renderCitation = vi.fn(() => {
-      throw new InertTemplateError("cite template is inert");
+      throw new InertTemplateError("The citation text is inert");
     });
 
     const outcome = resolveCitationInsert(
       insertDeps(renderCitation),
       makeHit("abc2024"),
-      false,
+      "main",
     );
 
     expect(outcome).toEqual({
       kind: "notice",
-      message: "cite template is inert",
+      message: "The citation text is inert",
     });
   });
 
@@ -97,7 +97,7 @@ describe("resolveCitationInsert", () => {
       resolveCitationInsert(
         insertDeps(renderCitation),
         makeHit("abc2024"),
-        false,
+        "main",
       ),
     ).toThrow("boom");
   });
@@ -108,7 +108,7 @@ describe("resolveCitationInsert", () => {
     const outcome = resolveCitationInsert(
       insertDeps(renderCitation),
       makeHit(null),
-      false,
+      "main",
     );
 
     expect(renderCitation).not.toHaveBeenCalled();
@@ -130,7 +130,7 @@ describe("resolveCitationInsert", () => {
         ],
       }),
       makeHit("abc2024"),
-      false,
+      "main",
     );
 
     // The inserted text carries the key alone, so inserting it would lose the
@@ -150,7 +150,7 @@ describe("resolveCitationInsert", () => {
     const outcome = resolveCitationInsert(
       insertDeps(renderCitation, { kind: "missing" }, null),
       makeHit("abc2024"),
-      false,
+      "main",
     );
 
     expect(renderCitation).not.toHaveBeenCalled();
@@ -170,7 +170,7 @@ describe("resolveCitationInsert", () => {
         "failed",
       ),
       makeHit("abc2024"),
-      false,
+      "main",
     );
 
     expect(outcome).toEqual({ kind: "insert", text: "[@abc2024]" });
@@ -182,7 +182,7 @@ describe("resolveCitationInsert", () => {
     const outcome = resolveCitationInsert(
       insertDeps(renderCitation),
       makeHit("abc2024"),
-      false,
+      "main",
     );
 
     expect(outcome).toEqual({ kind: "insert", text: "[@abc2024]" });
@@ -196,7 +196,7 @@ describe("resolveCitationTrigger", () => {
       start: 4,
       end: 9,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -206,7 +206,7 @@ describe("resolveCitationTrigger", () => {
       start: 1,
       end: 6,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -215,10 +215,10 @@ describe("resolveCitationTrigger", () => {
     const wideBracketLine = "见【@foo";
     expect(
       resolveCitationTrigger(bracketLine, bracketLine.length, true),
-    ).toEqual({ start: 4, end: 9, query: "foo", secondary: false });
+    ).toEqual({ start: 4, end: 9, query: "foo", variant: "main" });
     expect(
       resolveCitationTrigger(wideBracketLine, wideBracketLine.length, true),
-    ).toEqual({ start: 1, end: 6, query: "foo", secondary: false });
+    ).toEqual({ start: 1, end: 6, query: "foo", variant: "main" });
   });
 
   it("extends `end` to swallow an adjacent closing bracket for bracket matches", () => {
@@ -228,7 +228,7 @@ describe("resolveCitationTrigger", () => {
       start: 0,
       end: 6,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -240,7 +240,7 @@ describe("resolveCitationTrigger", () => {
       start: 1,
       end: 5,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -250,7 +250,7 @@ describe("resolveCitationTrigger", () => {
       start: 0,
       end: 4,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -268,7 +268,7 @@ describe("resolveCitationTrigger", () => {
       start,
       end: line.length,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -283,7 +283,7 @@ describe("resolveCitationTrigger", () => {
       start: 0,
       end: atLine.length,
       query: "machine learning",
-      secondary: false,
+      variant: "main",
     });
 
     const bracketLine = "[@machine_learning";
@@ -293,27 +293,27 @@ describe("resolveCitationTrigger", () => {
       start: 0,
       end: bracketLine.length,
       query: "machine_learning",
-      secondary: false,
+      variant: "main",
     });
   });
 
-  it("strips a trailing `/` and marks `secondary` for the Bracket Trigger", () => {
+  it("strips a trailing `/` and asks for the alt variant in the Bracket Trigger", () => {
     const line = "[@foo/";
     expect(resolveCitationTrigger(line, line.length, false)).toEqual({
       start: 0,
       end: line.length,
       query: "foo",
-      secondary: true,
+      variant: "alt",
     });
   });
 
-  it("strips a trailing `/` (before underscore conversion) and marks `secondary` for the At Trigger", () => {
+  it("strips a trailing `/` (before underscore conversion) and asks for the alt variant in the At Trigger", () => {
     const line = "@foo_bar/";
     expect(resolveCitationTrigger(line, line.length, true)).toEqual({
       start: 0,
       end: line.length,
       query: "foo bar",
-      secondary: true,
+      variant: "alt",
     });
   });
 
@@ -323,7 +323,7 @@ describe("resolveCitationTrigger", () => {
       start: 0,
       end: 1,
       query: "",
-      secondary: false,
+      variant: "main",
     });
   });
 
@@ -341,7 +341,7 @@ describe("resolveCitationTrigger", () => {
       start: 0,
       end: 6,
       query: "foo",
-      secondary: false,
+      variant: "main",
     });
   });
 

@@ -12,7 +12,9 @@ import type {
   App,
   Command,
   Debouncer,
+  GraphOptionListener,
   EditorSuggestContext,
+  FrontMatterInfo,
   EventRef,
   Events,
   HoverParent,
@@ -26,6 +28,10 @@ import type {
   SearchResult,
   UserEvent,
 } from "obsidian";
+import {
+  parse as parseYamlSource,
+  stringify as stringifyYamlSource,
+} from "yaml";
 
 /**
  * Stand-in for Obsidian's simple search: every whitespace-separated term of the
@@ -55,6 +61,17 @@ export function getIcon(name: IconName): SVGSVGElement | null {
   if (!svg) return null;
   svg.setAttribute("class", `svg-icon lucide-${name}`);
   return svg;
+}
+
+export function setIcon(el: HTMLElement, name: IconName): void {
+  const icon = getIcon(name);
+  el.replaceChildren(...(icon ? [icon] : []));
+  el.setAttribute("data-icon", name);
+}
+
+/** Stand-in for Obsidian's delegated tooltip attributes. */
+export function setTooltip(el: HTMLElement, tooltip: string): void {
+  el.setAttribute("aria-label", tooltip);
 }
 
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
@@ -137,6 +154,13 @@ export class MarkdownRenderChild extends Component {
   }
 }
 
+export enum PopoverState {
+  Showing,
+  Shown,
+  Hiding,
+  Hidden,
+}
+
 /**
  * Stand-in for Obsidian's own hover popover: the element a plugin fills, the
  * unload hook its content is torn down through, and the placement `position()`
@@ -145,16 +169,22 @@ export class MarkdownRenderChild extends Component {
  *
  * The opening sequence follows the runtime one — the constructor arms the wait
  * timer, and the timer opens the popover — so a subclass meets the lifecycle it
- * inherits rather than a stub of it.
+ * inherits rather than a stub of it. Timers keep the runtime's windows too: each
+ * is armed on `activeWindow` and cancelled with the main window's
+ * `clearTimeout`, which is what misses while a popout owns focus.
  */
 export class HoverPopover {
   readonly hoverEl: HTMLElement;
-  readonly targetEl: HTMLElement | null;
+  targetEl: HTMLElement | null;
+  onTarget = true;
+  onHover = false;
+  state = PopoverState.Showing;
   readonly waitTime: number;
   hidden = false;
   readonly #parent: HoverParent;
   readonly #unload: (() => void)[] = [];
-  readonly #timer: ReturnType<typeof setTimeout>;
+  #loaded = false;
+  timer: number;
 
   constructor(
     parent: HoverParent,
@@ -166,13 +196,66 @@ export class HoverPopover {
     this.targetEl = targetEl;
     this.waitTime = waitTime;
     this.#parent = parent;
-    this.#timer = setTimeout(() => {
+    targetEl?.addEventListener("mouseover", this.onMouseIn);
+    targetEl?.addEventListener("mouseout", this.onMouseOut);
+    this.hoverEl.addEventListener("mouseover", (event) => {
+      if (this.hoverEl.contains(event.relatedTarget as Node | null)) return;
+      this.onHover = true;
+      this.transition();
+    });
+    this.hoverEl.addEventListener("mouseout", (event) => {
+      if (this.hoverEl.contains(event.relatedTarget as Node | null)) return;
+      this.onHover = false;
+      this.transition();
+    });
+    this.timer = activeWindow.setTimeout(() => {
       this.show();
     }, waitTime);
   }
 
+  onMouseIn = (event: MouseEvent): void => {
+    if (this.targetEl?.contains(event.relatedTarget as Node | null)) return;
+    this.onTarget = true;
+    this.transition();
+  };
+
+  onMouseOut = (event: MouseEvent): void => {
+    if (this.targetEl?.contains(event.relatedTarget as Node | null)) return;
+    this.onTarget = false;
+    this.transition();
+  };
+
+  #shouldShow(): boolean {
+    return (
+      this.onTarget ||
+      this.onHover ||
+      this.hoverEl.contains(document.activeElement)
+    );
+  }
+
+  transition(): void {
+    if (this.#shouldShow()) {
+      if (this.state === PopoverState.Hiding) {
+        this.state = PopoverState.Shown;
+        clearTimeout(this.timer);
+      }
+    } else if (this.state === PopoverState.Showing) {
+      this.hide();
+    } else if (this.state === PopoverState.Shown) {
+      this.state = PopoverState.Hiding;
+      this.timer = activeWindow.setTimeout(() => {
+        if (this.#shouldShow()) this.transition();
+        else this.hide();
+      }, this.waitTime);
+    }
+  }
+
   register(cb: () => void): void {
     this.#unload.push(cb);
+  }
+
+  load(): void {
+    this.#loaded = true;
   }
 
   registerEvent(ref: EventRef): void {
@@ -181,8 +264,14 @@ export class HoverPopover {
   }
 
   show(): void {
+    if (this.targetEl && !document.body.contains(this.targetEl)) {
+      this.hide();
+      return;
+    }
+    this.state = PopoverState.Shown;
     this.position();
     this.onShow();
+    this.load();
   }
 
   /** This popover as the parent holds it, which the vendored type names. */
@@ -191,6 +280,7 @@ export class HoverPopover {
   }
 
   onShow(): void {
+    this.#parent.hoverPopover?.hide();
     this.#parent.hoverPopover = this.#self;
   }
 
@@ -203,11 +293,19 @@ export class HoverPopover {
   watchResize(_el: HTMLElement): void {}
 
   hide(): void {
-    clearTimeout(this.#timer);
+    clearTimeout(this.timer);
+    this.state = PopoverState.Hidden;
+    this.targetEl?.removeEventListener("mouseover", this.onMouseIn);
+    this.targetEl?.removeEventListener("mouseout", this.onMouseOut);
+    this.onTarget = false;
+    this.onHover = false;
     this.hidden = true;
     this.hoverEl.remove();
     this.onHide();
-    for (const cb of this.#unload.splice(0)) cb();
+    if (this.#loaded) {
+      this.#loaded = false;
+      for (const cb of this.#unload.splice(0).reverse()) cb();
+    }
   }
 
   onHide(): void {
@@ -241,9 +339,15 @@ export class TFolder extends TAbstractFile {
 /** Minimal ItemView shell for tests of plugin-registered views. */
 export class ItemView {
   readonly contentEl: HTMLElement;
+  readonly titleEl: HTMLElement;
 
   constructor(readonly leaf: WorkspaceLeaf) {
+    if (typeof Reflect.get(leaf, "updateHeader") !== "function")
+      leaf.updateHeader = () => {};
     const content = globalThis.document?.createElement("div");
+    this.titleEl =
+      globalThis.document?.createElement("div") ??
+      ({ textContent: "" } as HTMLElement);
     if (!content) {
       this.contentEl = {
         addClass: (..._classes: string[]) => {},
@@ -256,7 +360,31 @@ export class ItemView {
     this.contentEl = content;
   }
 
+  readonly actions: HTMLElement[] = [];
+
+  addAction(
+    _icon: string,
+    title: string,
+    callback: (evt: MouseEvent) => unknown,
+  ): HTMLElement {
+    const action = document.createElement("div");
+    action.setAttribute("aria-label", title);
+    action.addEventListener("click", callback);
+    this.actions.push(action);
+    return action;
+  }
+
   registerEvent(_event: EventRef): void {}
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+  }
   register<T extends () => void>(disposer: T): T {
     return disposer;
   }
@@ -269,6 +397,8 @@ export class ItemView {
     return Promise.resolve();
   }
 
+  onResize(): void {}
+  onPaneMenu(_menu: Menu, _source: string): void {}
   getViewType(): string {
     return "";
   }
@@ -290,7 +420,65 @@ export class ItemView {
   }
 }
 
+/** File serialization seam; tests drive the editor's load and save callbacks. */
+export class TextFileView extends ItemView {
+  readonly app: App;
+  file: TFile | null = null;
+  data = "";
+  dirty = false;
+  lastSavedData: string | null = null;
+  scope: Scope | null = null;
+  requestSave = (): void => {};
+  constructor(leaf: WorkspaceLeaf) {
+    super(leaf);
+    this.app = (leaf as unknown as { app: App }).app;
+  }
+  getViewData(): string {
+    return this.data;
+  }
+  setViewData(data: string, _clear: boolean): void {
+    this.data = data;
+  }
+  clear(): void {
+    this.data = "";
+  }
+  async save(): Promise<void> {
+    this.data = this.getViewData();
+  }
+  /** Native read/baseline ordering; real-app checks cover native three-way merging. */
+  async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    const source = await this.app.vault.read(
+      file as unknown as import("obsidian").TFile,
+    );
+    const previous = this.lastSavedData;
+    this.lastSavedData = source;
+    if (!clear && previous === source) return;
+    this.data = source;
+    this.setViewData(source, clear);
+  }
+  onPaneMenu(_menu: Menu, _source: string): void {}
+  override async setState(state: unknown, result: unknown): Promise<void> {
+    if (
+      state &&
+      typeof state === "object" &&
+      "file" in state &&
+      state.file === null &&
+      this.file
+    ) {
+      await this.save();
+      this.file = null;
+    }
+    await super.setState(state, result);
+  }
+  override getState(): Record<string, unknown> {
+    return this.file ? { file: this.file.path } : {};
+  }
+}
+
 export class Vault {
+  getConfig(_key: string): boolean {
+    return false;
+  }
   static recurseChildren(
     root: TFolder,
     cb: (file: TAbstractFile) => any,
@@ -363,10 +551,26 @@ export function parseLinktext(linktext: string): {
   return { path: linktext.slice(0, hash), subpath: linktext.slice(hash) };
 }
 
-export function stringifyYaml(data: Record<string, unknown>): string {
-  return Object.entries(data)
-    .map(([key, value]) => `${key}: ${String(value)}\n`)
-    .join("");
+export function stringifyYaml(data: unknown): string {
+  return stringifyYamlSource(data);
+}
+
+export function parseYaml(source: string): unknown {
+  return parseYamlSource(source);
+}
+
+/** Stand-in for Obsidian's Properties block scan: a leading `---` fence. */
+export function getFrontMatterInfo(source: string): FrontMatterInfo {
+  const end = source.startsWith("---\n") ? source.indexOf("\n---\n", 4) : -1;
+  return end < 0
+    ? { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 }
+    : {
+        exists: true,
+        frontmatter: source.slice(4, end),
+        from: 4,
+        to: end,
+        contentStart: end + 5,
+      };
 }
 
 export abstract class EditorSuggest<T> {
@@ -384,6 +588,14 @@ export abstract class EditorSuggest<T> {
 
   abstract renderSuggestion(value: T, el: HTMLElement): void;
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+}
+
+export abstract class AbstractInputSuggest<T> {
+  constructor(_app: App, _input: HTMLInputElement | HTMLDivElement) {}
+  close(): void {}
+  protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void;
 }
 
 /**
@@ -408,8 +620,18 @@ export class Scope {
   }
 }
 
+export abstract class FuzzySuggestModal<T> {
+  constructor(readonly app: App) {}
+  setPlaceholder(_placeholder: string): void {}
+  open(): void {}
+  abstract getItems(): T[];
+  abstract getItemText(item: T): string;
+  abstract onChooseItem(item: T): void;
+}
+
 export abstract class SuggestModal<T> {
   limit = 0;
+  readonly contentEl = { addClass: (_className: string) => {} };
   emptyStateText = "";
   readonly app: App;
   readonly scope = new Scope();
@@ -419,8 +641,20 @@ export abstract class SuggestModal<T> {
   }
 
   setPlaceholder(_placeholder: string): void {}
+  setTitle(_title: string): this {
+    return this;
+  }
   setInstructions(_instructions: Instruction[]): void {}
+  open(): void {}
+  close(): void {
+    this.onClose();
+  }
+  onClose(): void {}
   selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
+  selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void {
+    this.close();
+    this.onChooseSuggestion(value, event);
+  }
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
@@ -457,8 +691,16 @@ export function createMockPlugin(): {
 
 let platformIsWin: boolean | undefined;
 let platformIsMacOS: boolean | undefined;
+let platformIsDesktopApp: boolean | undefined;
 
 export const Platform = {
+  get isDesktopApp(): boolean {
+    if (platformIsDesktopApp === undefined)
+      throw new Error(
+        "Platform.isDesktopApp not configured — call setMockPlatform({ isDesktopApp }) in test setup",
+      );
+    return platformIsDesktopApp;
+  },
   get isWin(): boolean {
     if (platformIsWin === undefined) {
       throw new Error(
@@ -485,14 +727,18 @@ export const Platform = {
 export function setMockPlatform(overrides: {
   isWin?: boolean;
   isMacOS?: boolean;
+  isDesktopApp?: boolean;
 }): void {
   if (overrides.isWin !== undefined) platformIsWin = overrides.isWin;
   if (overrides.isMacOS !== undefined) platformIsMacOS = overrides.isMacOS;
+  if (overrides.isDesktopApp !== undefined)
+    platformIsDesktopApp = overrides.isDesktopApp;
 }
 
 export function resetMockPlatform(): void {
   platformIsWin = undefined;
   platformIsMacOS = undefined;
+  platformIsDesktopApp = undefined;
 }
 
 export function getLanguage(): string {
@@ -508,6 +754,9 @@ export function requireApiVersion(_version: string): boolean {
   return true;
 }
 
+/** The version an error report names its host by. */
+export const apiVersion = "1.0.0-test";
+
 /** Minimal stand-in for `MenuItem`; only the builder methods the plugin
  * chains off `Menu.addItem` plus a test-only `click()` to invoke the
  * registered handler. */
@@ -515,6 +764,7 @@ export class MenuItem {
   #title = "";
   #section = "";
   #checked: boolean | null = null;
+  #disabled = false;
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
@@ -534,12 +784,26 @@ export class MenuItem {
     return this.#section;
   }
 
+  /** Whether the row is disabled, as in Obsidian. */
+  get disabled(): boolean {
+    return this.#disabled;
+  }
+
   setTitle(title: string): this {
     this.#title = title;
     return this;
   }
 
   setIcon(_icon: string | null): this {
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.#disabled = disabled;
+    return this;
+  }
+
+  setWarning(_isWarning: boolean): this {
     return this;
   }
 
@@ -563,8 +827,10 @@ export class MenuItem {
     return this;
   }
 
-  /** Test helper: invoke the registered `onClick` handler. */
+  /** Test helper: invoke the registered `onClick` handler; a no-op while
+   * disabled, as Obsidian ignores clicks on disabled items. */
   click(): void {
+    if (this.#disabled) return;
     this.#onClick?.({} as MouseEvent);
   }
 }
@@ -661,8 +927,8 @@ export class Modal {
   static instances: Modal[] = [];
 
   containerEl: HTMLElement = noticeElStub;
-  modalEl: HTMLElement = noticeElStub;
-  contentEl: HTMLElement = containerElStub();
+  modalEl: HTMLElement = elementOrStub();
+  contentEl: HTMLElement = elementOrStub();
 
   title = "";
   isOpen = false;
@@ -697,6 +963,14 @@ export class Modal {
   onClose(): void {}
 }
 
+/** A real element under a DOM environment, so a dialog can build its body and
+ * footer; the row-only stub elsewhere. */
+function elementOrStub(): HTMLElement {
+  return globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
+}
+
 /** Minimal container a `Setting` row attaches itself to. */
 function containerElStub(): HTMLElement {
   return {
@@ -713,6 +987,24 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
   return settingRows.get(containerEl) ?? [];
 }
 
+type Control =
+  | ButtonComponent
+  | DropdownComponent
+  | TextComponent
+  | ToggleComponent;
+const controls = new WeakMap<HTMLElement, Control[]>();
+function registerControl(containerEl: HTMLElement, control: Control): void {
+  const list = controls.get(containerEl) ?? [];
+  list.push(control);
+  controls.set(containerEl, list);
+}
+
+/** The controls built directly on one container, in the order built; a dialog
+ * that lays its own fields out (no `Setting` row) is read through this. */
+export function controlsOf(containerEl: HTMLElement): Control[] {
+  return controls.get(containerEl) ?? [];
+}
+
 /**
  * Stand-in for one `Setting` row. It records what it was named and holds the
  * components it was given, so a test reads a dialog the way a user does and
@@ -720,16 +1012,28 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
  * TextComponent.type}, and {@link ButtonComponent.click}.
  */
 export class Setting {
+  /** The row's own element. Removing it takes the row out of {@link settingsOf}, as it takes it off the screen. */
+  readonly settingEl: HTMLElement = Object.assign(containerElStub(), {
+    remove: () => this.#remove(),
+    detach: () => this.#remove(),
+  });
+  readonly controlEl = containerElStub();
   /** Every component added to this row, in the order it was added. */
   readonly components: (
     | ButtonComponent
     | DropdownComponent
     | ExtraButtonComponent
     | TextComponent
+    | ToggleComponent
   )[] = [];
 
   name = "";
   desc = "";
+  /** The hover text the row carries, as the user reads it. */
+  tooltip = "";
+  /** The classes the row was given, in the order it was given them. */
+  readonly classes: string[] = [];
+  errorMessage: string | null = null;
 
   constructor(readonly containerEl: HTMLElement) {
     const rows = settingRows.get(containerEl) ?? [];
@@ -737,13 +1041,40 @@ export class Setting {
     settingRows.set(containerEl, rows);
   }
 
+  #remove(): void {
+    const rows = settingRows.get(this.containerEl) ?? [];
+    settingRows.set(
+      this.containerEl,
+      rows.filter((row) => row !== this),
+    );
+  }
+
   setName(name: string): this {
     this.name = name;
     return this;
   }
 
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  setClass(cls: string): this {
+    this.classes.push(cls);
+    return this;
+  }
+
   setDesc(desc: string): this {
     this.desc = desc;
+    return this;
+  }
+
+  setErrorMessage(message: string | null): this {
+    this.errorMessage = message;
+    return this;
+  }
+
+  setHeading(): this {
     return this;
   }
 
@@ -753,6 +1084,14 @@ export class Setting {
 
   addText(cb: (text: TextComponent) => unknown): this {
     return this.#add(new TextComponent(this.containerEl), cb);
+  }
+
+  addTextArea(cb: (text: TextAreaComponent) => unknown): this {
+    return this.#add(new TextAreaComponent(this.containerEl), cb);
+  }
+
+  addToggle(cb: (toggle: ToggleComponent) => unknown): this {
+    return this.#add(new ToggleComponent(this.containerEl), cb);
   }
 
   addButton(cb: (button: ButtonComponent) => unknown): this {
@@ -768,7 +1107,8 @@ export class Setting {
       | ButtonComponent
       | DropdownComponent
       | ExtraButtonComponent
-      | TextComponent,
+      | TextComponent
+      | ToggleComponent,
   >(component: T, cb: (component: T) => unknown): this {
     this.components.push(component);
     cb(component);
@@ -790,10 +1130,18 @@ export class DropdownComponent {
   #value = "";
   #changed: ((value: string) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   addOption(value: string, label: string): this {
     this.options.push({ value, label });
+    return this;
+  }
+
+  addOptions(options: Record<string, string>): this {
+    for (const [value, label] of Object.entries(options))
+      this.addOption(value, label);
     return this;
   }
 
@@ -823,12 +1171,19 @@ export class DropdownComponent {
 function inputElStub(): HTMLInputElement {
   const input = {
     value: "",
+    addClass: (..._classNames: string[]) => {},
     placeholder: "",
     validationMessage: "",
     setCustomValidity: (message: string) => {
       input.validationMessage = message;
     },
     reportValidity: () => !input.validationMessage,
+    // A dialog wires its own key handling and takes focus; a test drives the
+    // component through `type` instead, so both stand in as no-ops.
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    focus: () => {},
+    select: () => {},
   };
   return input as unknown as HTMLInputElement;
 }
@@ -838,7 +1193,9 @@ export class TextComponent {
 
   #changed: ((value: string) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   getValue(): string {
     return this.inputEl.value;
@@ -866,6 +1223,56 @@ export class TextComponent {
   }
 }
 
+export class TextAreaComponent extends TextComponent {}
+
+export class ToggleComponent {
+  #value = false;
+  #changed: ((value: boolean) => unknown) | undefined;
+  readonly toggleEl: HTMLElement;
+  disabled = false;
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+    this.toggleEl = containerEl.createEl("label");
+  }
+  getValue(): boolean {
+    return this.#value;
+  }
+  setValue(value: boolean): this {
+    if (this.#value !== value) {
+      this.#value = value;
+      this.#changed?.(value);
+    }
+    return this;
+  }
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
+    return this;
+  }
+  /**
+   * Publishes the value under `key`, the way a graph controls-panel row
+   * persists: the listener reads the value, and writes it when called with
+   * one — which fires `onChange`, as `setValue` does.
+   */
+  registerOptionListener(
+    listeners: Record<string, GraphOptionListener>,
+    key: string,
+  ): this {
+    listeners[key] = (value?: unknown) => {
+      if (typeof value === "boolean") this.setValue(value);
+      return this.getValue();
+    };
+    return this;
+  }
+  onChange(callback: (value: boolean) => unknown): this {
+    this.#changed = callback;
+    return this;
+  }
+  /** Test helper: change the checked state, as the user does. */
+  toggle(value: boolean): void {
+    if (!this.disabled) this.setValue(value);
+  }
+}
+
 /**
  * The borderless icon action a row carries beside its control. It is read by
  * the tooltip it names, which is the label the user gets from it.
@@ -874,6 +1281,8 @@ export class ExtraButtonComponent {
   icon = "";
   /** The label the button carries, as the user reads it on hover. */
   tooltip = "";
+  /** Whether the row locked the button, as the user finds it. */
+  disabled = false;
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 
@@ -881,6 +1290,11 @@ export class ExtraButtonComponent {
 
   setIcon(icon: string): this {
     this.icon = icon;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
     return this;
   }
 
@@ -901,14 +1315,37 @@ export class ExtraButtonComponent {
 }
 
 export class ButtonComponent {
+  setDestructive(): this {
+    return this;
+  }
   buttonEl: HTMLElement = noticeElStub;
 
   /** The label the button carries, as the user reads it. */
   text = "";
+  icon = "";
+  /** The label an icon-only button carries, as the user reads it on hover. */
+  tooltip = "";
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  then(cb: (button: this) => unknown): this {
+    cb(this);
+    return this;
+  }
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   onClick(cb: (evt: MouseEvent) => unknown): this {
     this.#clicked = cb;
@@ -917,6 +1354,10 @@ export class ButtonComponent {
 
   setButtonText(text: string): this {
     this.text = text;
+    return this;
+  }
+
+  setDisabled(_disabled: boolean): this {
     return this;
   }
 
@@ -931,5 +1372,48 @@ export class ButtonComponent {
   /** Test helper: press the button, as the user does. */
   click(): void {
     this.#clicked?.({} as MouseEvent);
+  }
+}
+
+export class ConfirmationButton extends ButtonComponent {
+  setDisabled(_disabled: boolean): this {
+    return this;
+  }
+  setDestructive(): this {
+    return this;
+  }
+}
+
+export class ConfirmationModal {
+  readonly contentEl = globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
+  #closed: (() => void) | undefined;
+  constructor(_app: App) {}
+  setTitle(_title: string): this {
+    return this;
+  }
+  setContent(content: string | DocumentFragment): this {
+    if (typeof content === "string") this.contentEl.textContent = content;
+    else this.contentEl.replaceChildren(content);
+    return this;
+  }
+  addCheckbox(_label: string, _changed: (value: boolean) => void): this {
+    return this;
+  }
+  addButton(cb: (button: ConfirmationButton) => unknown): this {
+    cb(new ConfirmationButton(noticeElStub));
+    return this;
+  }
+  addCancelButton(_label: string): this {
+    return this;
+  }
+  setCloseCallback(callback: () => void): this {
+    this.#closed = callback;
+    return this;
+  }
+  open(): void {}
+  close(): void {
+    this.#closed?.();
   }
 }

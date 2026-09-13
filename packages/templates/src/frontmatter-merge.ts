@@ -1,12 +1,25 @@
 import type { FrontmatterMergeStrategy } from "./constants";
 
+/**
+ * Generated-field state that deletes an existing key under `replace` and
+ * preserves it under `append` or `keep`. A create operation always omits it.
+ */
+export const FRONTMATTER_ABSENT = Symbol("frontmatter absent");
+
 export interface FrontmatterFieldMergeSpec {
   key: string;
   merge: FrontmatterMergeStrategy;
 }
 
+export interface EvaluatedFrontmatterField extends FrontmatterFieldMergeSpec {
+  readonly value: unknown;
+  readonly position?: number;
+}
+
 export interface FrontmatterMergeConflict {
   reason: "shape-mismatch";
+  position?: number;
+  recovery?: string;
 }
 
 export type FrontmatterMergeConflictHandler = (
@@ -23,30 +36,73 @@ export interface MergeFrontmatterOptions {
 export function mergeFrontmatterFields(
   fields: readonly FrontmatterFieldMergeSpec[],
   evaluated: Record<string, unknown>,
+  options: MergeFrontmatterOptions = {},
+): Record<string, unknown> {
+  return mergeManagedFrontmatterEntries(
+    fields
+      .filter(({ key }) => Object.hasOwn(evaluated, key))
+      .map((field) => ({ ...field, value: evaluated[field.key] })),
+    options,
+  );
+}
+
+/** Resolve each contribution against the note overlaid by the pending patch. */
+export function mergeManagedFrontmatterEntries(
+  fields: readonly EvaluatedFrontmatterField[],
   { current = {}, onConflict }: MergeFrontmatterOptions = {},
 ): Record<string, unknown> {
-  const patch: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = Object.create(null);
+
+  const setPatch = (key: string, value: unknown): void => {
+    Object.defineProperty(patch, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  };
 
   for (const field of fields) {
-    if (!Object.hasOwn(evaluated, field.key)) continue;
-
-    const generated = evaluated[field.key];
-    const existing = current[field.key];
+    const generated = field.value;
+    if (generated === undefined) continue;
+    const pending = Object.hasOwn(patch, field.key)
+      ? patch[field.key]
+      : Object.hasOwn(current, field.key)
+        ? current[field.key]
+        : undefined;
+    const existing = pending === FRONTMATTER_ABSENT ? undefined : pending;
+    if (generated === FRONTMATTER_ABSENT) {
+      if (
+        field.merge === "replace" &&
+        (Object.hasOwn(patch, field.key) || Object.hasOwn(current, field.key))
+      ) {
+        setPatch(field.key, FRONTMATTER_ABSENT);
+      }
+      continue;
+    }
     switch (field.merge) {
       case "replace":
-        patch[field.key] = generated;
+        setPatch(field.key, generated);
         break;
       case "append":
         if (Array.isArray(existing) && Array.isArray(generated)) {
-          patch[field.key] = appendDistinct(existing, generated);
+          setPatch(field.key, appendDistinct(existing, generated));
         } else if (isBlank(existing)) {
-          patch[field.key] = generated;
+          setPatch(field.key, generated);
         } else {
-          onConflict?.(field.key, { reason: "shape-mismatch" });
+          onConflict?.(field.key, {
+            reason: "shape-mismatch",
+            ...(field.position === undefined
+              ? {}
+              : {
+                  position: field.position,
+                  recovery: `Use arrays for field '${field.key}' in entry #${field.position}, or use replace.`,
+                }),
+          });
         }
         break;
       case "keep":
-        if (isBlank(existing)) patch[field.key] = generated;
+        if (isBlank(existing)) setPatch(field.key, generated);
         break;
     }
   }

@@ -1,0 +1,45 @@
+export { ANNOTATION_HEADER } from "@zotlit/templates/constants";
+
+export {
+  entryPosition,
+  entrySlice,
+  externalEdit,
+  sliceEdit,
+  WorkbenchDocumentController,
+} from "./controller";
+export type {
+  WorkbenchAnnotationSection,
+  WorkbenchDocumentKind,
+  WorkbenchEntrySliceId,
+  WorkbenchProblem,
+  WorkbenchProblemCode,
+  WorkbenchSliceEditor,
+  WorkbenchSliceId,
+  WorkbenchSliceRange,
+  WorkbenchUpdate,
+} from "./controller";
+export {
+  managedEntryEdit,
+  managedFrontmatterEntries,
+  manifestKeyEdit,
+  manifestNodeRange,
+  manifestScalarSlice,
+  manifestValueEdit,
+} from "./manifest-patch";
+export type {
+  ManagedEntryAction,
+  ManagedEntryLanguage,
+  ManagedEntrySource,
+  ManagedFrontmatterList,
+  ManifestScalar,
+} from "./manifest-patch";
+export { noteRegions, partialCalls, templateCalls } from "./regions";
+export type {
+  AnnotationRenderSite,
+  ManagedBlockRegion,
+  NoteRegions,
+  PartialRenderSite,
+} from "./regions";
+export { workbenchSlice } from "./slice";
+
+export { jsonLayout, jsonPosition } from "./json-source";

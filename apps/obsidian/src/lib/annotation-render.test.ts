@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Attachment } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import { attachmentAbsPath } from "@zotlit/db/path";
 
 import type {
   AttachmentSource,
@@ -43,75 +42,6 @@ function makeAttachment(overrides: Partial<Attachment>): Attachment {
 }
 
 const ctx = { dataDir: "/data", baseAttachmentPath: "/base" };
-
-describe("attachmentAbsPath", () => {
-  it("resolves a storage path under the data dir", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
-        ctx,
-      ),
-    ).toBe("/data/storage/ATCH2345/paper.pdf");
-  });
-
-  it("passes an absolute linked path through", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({ path: "/abs/file.pdf", linkMode: 2 }),
-        ctx,
-      ),
-    ).toBe("/abs/file.pdf");
-  });
-
-  it("resolves a base-relative linked path against the base dir", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({ path: "attachments:sub/file.pdf", linkMode: 2 }),
-        ctx,
-      ),
-    ).toBe("/base/sub/file.pdf");
-  });
-
-  it("returns null for a base-relative path with no base configured", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({ path: "attachments:sub/file.pdf", linkMode: 2 }),
-        { dataDir: "/data", baseAttachmentPath: null },
-      ),
-    ).toBeNull();
-  });
-
-  it("returns null for URL links", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({ path: "https://example.com", linkMode: 3 }),
-        ctx,
-      ),
-    ).toBeNull();
-  });
-
-  it("returns null for a malformed stored-file location", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({ path: "storage:sub/paper.pdf", linkMode: 0 }),
-        ctx,
-      ),
-    ).toBeNull();
-  });
-
-  it("returns null for a malformed item key", () => {
-    expect(
-      attachmentAbsPath(
-        makeAttachment({
-          path: "storage:paper.pdf",
-          linkMode: 0,
-          key: "not-a-key",
-        }),
-        ctx,
-      ),
-    ).toBeNull();
-  });
-});
 
 describe("attachmentFileLink", () => {
   it("builds a file link labelled with the basename by default", () => {

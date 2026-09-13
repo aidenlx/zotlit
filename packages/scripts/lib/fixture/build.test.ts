@@ -18,6 +18,8 @@ import {
   getAttachmentsByParents,
   getCitekeysByLibrary,
   getCollectionIDByKey,
+  getCollectionIDsByItem,
+  getCollectionNodesByLibrary,
   getIndexedItemIDsByLibrary,
   getIndexedItemIDsByCollection,
   getIndexedItemsByID,
@@ -43,15 +45,25 @@ import {
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
+  FIXTURE_PARTIAL_NAME,
   getFixtureLayout,
   INSTALLED_STYLES,
   ITEMS,
+  legacyTemplateFilename,
+  legacyTemplateSource,
+  LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   SCOPE_CASES,
+  SEEDED_CITATION_KEYS,
+  seededCitationKeyDrift,
   selectScopeCase,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
+  UPGRADER_LEGACY_TEMPLATES,
+  VAULT_CASES,
 } from "./build.ts";
-import type { FixtureLayout } from "./build.ts";
+import type { FixtureLayout, PersistedLibraryScope } from "./build.ts";
 import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
@@ -354,6 +366,13 @@ describe("the generated Zotero database", () => {
         path: join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
         charsetID: null,
         title: "Rougier et al. 2014 PDF",
+        url: null,
+      },
+      {
+        key: "CNPDF26A",
+        path: "storage:research-interfaces.pdf",
+        charsetID: null,
+        title: "Research interfaces conference paper",
         url: null,
       },
     ]);
@@ -927,6 +946,27 @@ describe("the generated Zotero database", () => {
     ).toBe(3);
   });
 
+  it("nests one collection under another so descendant and direct membership differ", () => {
+    using db = openClient();
+
+    expect(
+      getCollectionNodesByLibrary(db, 1)
+        .map(({ key, parentCollectionID }) => ({ key, parentCollectionID }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    ).toEqual([
+      { key: "PERSCHLD", parentCollectionID: 4 },
+      { key: "PERSNAL2", parentCollectionID: null },
+      { key: "SHAREDCL", parentCollectionID: null },
+    ]);
+    expect(getCollectionIDsByItem(db, 11)).toEqual([5]);
+    expect(
+      getIndexedItemIDsByCollection(db, {
+        libraryID: 1,
+        collectionKey: "PERSNAL2",
+      }),
+    ).toContain(11);
+  });
+
   it("carries controlled modification times, including cross- and same-Library ties", () => {
     using db = openClient();
 
@@ -1016,6 +1056,111 @@ describe("the generated Zotero database", () => {
 
     expect(readSemantics(layout)).toBe(before);
     expect(await digest(layout.databasePath)).toBe(bytes);
+  });
+});
+
+/** Whether a Library takes part in a saved Library Scope. */
+function inLibraryScope(
+  libraryID: number,
+  scope: PersistedLibraryScope,
+): boolean {
+  if (scope.mode === "all") return true;
+  const library = LIBRARIES.find(
+    (candidate) => candidate.libraryID === libraryID,
+  );
+  if (library === undefined) return false;
+  return scope.libraries.some((selector) =>
+    selector.type === "personal"
+      ? library.type === "user"
+      : selector.groupID === library.groupID,
+  );
+}
+
+describe("the seeded Citation Keys", () => {
+  it("resolves every declared key the way the Spec fixes it", () => {
+    expect(seededCitationKeyDrift(ITEMS)).toEqual([]);
+  });
+
+  it("reports a declared unique key that no Item holds", () => {
+    expect(
+      seededCitationKeyDrift(
+        ITEMS.filter(
+          ({ citationKey }) => citationKey !== "labArchiveAlpha2021",
+        ),
+      ),
+    ).toEqual([
+      'seeded Citation Key "labArchiveAlpha2021" resolves as missing, the Spec declares unique',
+    ]);
+  });
+
+  it("reports a declared ambiguous key that one Item alone holds", () => {
+    expect(
+      seededCitationKeyDrift(
+        ITEMS.filter(
+          ({ key, libraryID }) => !(key === "GGGG7777" && libraryID === 3),
+        ),
+      ),
+    ).toEqual([
+      'seeded Citation Key "duplicateAcross2019" resolves as unique, the Spec declares ambiguous',
+    ]);
+  });
+
+  it("reports a declared missing key an Item has taken over", () => {
+    expect(
+      seededCitationKeyDrift(
+        ITEMS.map((item) =>
+          item.key === "EEEE5555"
+            ? { ...item, citationKey: "nonexistentCitekeyForSmokeTest2099" }
+            : item,
+        ),
+      ),
+    ).toEqual([
+      'seeded Citation Key "nonexistentCitekeyForSmokeTest2099" resolves as unique, the Spec declares missing',
+    ]);
+  });
+
+  it("keeps the scope-sensitive keys resolving the way the seeded page names", () => {
+    const scoped = [
+      "labArchiveAlpha2021",
+      "sharedReadingAlpha2023",
+      "consortiumAlpha2020",
+    ];
+    const resolving = SCOPE_CASES.map(({ id, scope }) => [
+      id,
+      scoped.filter((key) =>
+        ITEMS.some(
+          (item) =>
+            item.citationKey === key && inLibraryScope(item.libraryID, scope),
+        ),
+      ),
+    ]);
+
+    expect(resolving).toEqual([
+      [
+        "all",
+        [
+          "labArchiveAlpha2021",
+          "sharedReadingAlpha2023",
+          "consortiumAlpha2020",
+        ],
+      ],
+      [
+        "available",
+        [
+          "labArchiveAlpha2021",
+          "sharedReadingAlpha2023",
+          "consortiumAlpha2020",
+        ],
+      ],
+      ["partial", ["labArchiveAlpha2021"]],
+      ["unavailable", []],
+    ]);
+  });
+
+  it("keeps the unique, ambiguous, and missing cases all represented", () => {
+    const declared = new Set(Object.values(SEEDED_CITATION_KEYS));
+
+    expect([...declared].sort()).toEqual(["ambiguous", "missing", "unique"]);
   });
 });
 
@@ -1143,11 +1288,17 @@ describe("a Stress Build", () => {
 describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [
+      "citation-only-test.md",
+      "cited-work-node-test.md",
       "citekey-smoke-test.md",
       "literature-note-citation-test.md",
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
       "pandoc-export-success.md",
+      "profile-examples/profile-import-partials.md",
+      "profile-examples/profile-import-replacement-v1.md",
+      "profile-examples/profile-import-replacement-v2.md",
+      "profile-examples/profile-import-unavailable-style.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
     ]) {
@@ -1158,6 +1309,72 @@ describe("the generated Obsidian vault", () => {
 
       expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
     }
+  });
+
+  it("cites every declared Citation Key somewhere in the vault", async () => {
+    const markdown = await Promise.all(
+      (await readdir(layout.vaultDir, { recursive: true }))
+        .filter((entry) => entry.endsWith(".md"))
+        .map((entry) => readFile(join(layout.vaultDir, entry), "utf-8")),
+    );
+    const body = markdown.join("\n");
+
+    expect(
+      Object.keys(SEEDED_CITATION_KEYS).filter(
+        (key) => !body.includes(`@${key}`),
+      ),
+    ).toEqual([]);
+  });
+
+  it("holds a note whose only link is one citation", async () => {
+    const page = await readFile(
+      join(layout.vaultDir, "citation-only-test.md"),
+      "utf-8",
+    );
+
+    expect(page).toContain("[@rougierTenSimpleRules2014]");
+    expect(page).not.toContain("[[");
+    expect(page.match(/\[@/gu)).toHaveLength(1);
+  });
+
+  it("cites a second work from a seeded Literature Note", async () => {
+    const note = await readFile(
+      join(layout.vaultDir, "literatures", "rougierTenSimpleRules2014.md"),
+      "utf-8",
+    );
+
+    expect(note).toContain("[@ioannidisWhyMost2005]");
+  });
+
+  it("carries descriptive Profile import examples outside the template folder", async () => {
+    const examples = await Promise.all(
+      [
+        "profile-import-partials.md",
+        "profile-import-replacement-v1.md",
+        "profile-import-replacement-v2.md",
+        "profile-import-unavailable-style.md",
+      ].map((name) =>
+        readFile(join(layout.vaultDir, "profile-examples", name), "utf-8"),
+      ),
+    );
+
+    expect(examples).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("id: ImportV1Abc1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import and replacement.",
+        ),
+        expect.stringContaining("id: AbsentStyle1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import with an unavailable citation style.",
+        ),
+        expect.stringContaining("id: ImportPart01"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import with bundled Shared Partials.",
+        ),
+      ]),
+    );
+    expect(examples.join("\n")).not.toMatch(/smoke/i);
   });
 
   it("carries every tutorial citation form in the Pandoc success case", async () => {
@@ -1181,6 +1398,9 @@ describe("the generated Obsidian vault", () => {
     const items = ITEMS.filter(({ libraryID }) => libraryID === 1);
     expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(
       items
+        .filter(
+          ({ literatureNoteProfile }) => literatureNoteProfile === undefined,
+        )
         .map(({ key, literatureNoteName }) => `${literatureNoteName ?? key}.md`)
         .sort(),
     );
@@ -1198,7 +1418,7 @@ describe("the generated Obsidian vault", () => {
       const note = await readFile(
         join(
           layout.vaultDir,
-          "literatures",
+          item.literatureNoteProfile === undefined ? "literatures" : "books",
           `${item.literatureNoteName ?? item.key}.md`,
         ),
         "utf-8",
@@ -1209,6 +1429,24 @@ describe("the generated Obsidian vault", () => {
       expect(citationKeys.get(item.itemID) ?? null).toBe(item.citationKey);
       expect(note.includes("\ncitekey:")).toBe(item.citationKey !== null);
     }
+  });
+
+  it("stamps the Books Profile Literature Note and leaves the others bare", async () => {
+    const stamped = await readFile(
+      join(layout.vaultDir, "books", "books-duplicateWithin2020.md"),
+      "utf-8",
+    );
+    const unstamped = await readFile(
+      join(layout.vaultDir, "literatures", "AAAAAAAA.md"),
+      "utf-8",
+    );
+
+    expect(await readdir(join(layout.vaultDir, "books"))).toEqual([
+      "books-duplicateWithin2020.md",
+    ]);
+    expect(stamped).toContain("zotlit-profile: Books (V1StGXR8Z5jd)");
+    expect(stamped).toContain("%%zt-managed%%");
+    expect(unstamped).not.toContain("zotlit-profile:");
   });
 
   it("resolves every positive prose-page target to a generated Item", async () => {
@@ -1460,11 +1698,120 @@ describe("the generated Obsidian vault", () => {
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
 
-    expect(data.__VERSION__).toBe(9);
+    expect(data.__VERSION__).toBe(10);
+    expect(data["note.default-profile"]).toEqual({
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    });
     expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual({ mode: "all" });
   });
 
+  it("saves the Fixture's document-backed Literature Note Profile", async () => {
+    const data = JSON.parse(
+      await readFile(layout.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data).not.toHaveProperty("note.profiles");
+    const source = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+    expect(source).toContain("id: V1StGXR8Z5jd");
+    expect(source).toContain("name: Books");
+    expect(source).toContain(`match: 'itemType == "book"'`);
+    expect(source).toContain("folder: books");
+    expect(source).toContain(
+      "citationStyle: http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
+    );
+  });
+
+  it("writes Managed Frontmatter into the Fixture Profile document", async () => {
+    const document = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+
+    expect(document).toContain(`frontmatter:
+  - key: fixture-title
+    expr: zt.title
+    merge: replace`);
+    expect(document).toContain(`  - key: fixture-kind
+    value: {"$if":"zt.itemType == 'journalArticle'","then":"reference/article","else":"reference/other"}
+    merge: replace`);
+    expect(document).toContain(`  - key: fixture-obsolete
+    value: {"$if":"zt.itemType == 'bookSection'","then":"retained"}
+    merge: replace`);
+  });
+
+  it("writes the Citation Template with its visible edit", async () => {
+    const source = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-citation.md"),
+      "utf-8",
+    );
+
+    expect(source).toMatch(/^---\nlanguage: liquid\n---\n/);
+    // The alternate branch carries the edit; the main branch stays shipped, so
+    // the two gestures read apart at a glance.
+    expect(source).toContain(
+      'cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+    );
+    expect(source).toContain("{{ zt.citations | pandoc_cite }}");
+  });
+
+  it("writes the Shared Partial the Books Profile calls", async () => {
+    const partial = await readFile(
+      join(
+        layout.vaultDir,
+        "templates",
+        `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+      ),
+      "utf-8",
+    );
+    const profile = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+
+    expect(partial).toMatch(/^---\nlanguage: liquid\n---\n/);
+    expect(partial).toContain("[!info] Book details");
+    // The call sits in the Managed Block, so removing the file refuses a
+    // Literature Note create as well as an update.
+    expect(profile).toContain(
+      `{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}`,
+    );
+  });
+
+  it("bundles a differing edition of that partial in a Profile import example", async () => {
+    const bundle = await readFile(
+      join(layout.vaultDir, "profile-examples", "profile-import-partials.md"),
+      "utf-8",
+    );
+    const held = await readFile(
+      join(
+        layout.vaultDir,
+        "templates",
+        `zotlit-partial.${FIXTURE_PARTIAL_NAME}.md`,
+      ),
+      "utf-8",
+    );
+
+    expect(bundle).toContain(`  - name: ${FIXTURE_PARTIAL_NAME}\n`);
+    expect(bundle).toContain("  - name: reading-log\n");
+    // Import asks keep or replace only when the bytes differ, so the bundled
+    // edition must not be the vault's own text.
+    expect(held).not.toContain("Bundled book details");
+  });
+
   it("selects the available, partial, and fully unavailable scope cases", async () => {
+    const original = await readFile(layout.pluginDataPath);
+    await using restore = new AsyncDisposableStack();
+    restore.defer(() => writeFile(layout.pluginDataPath, original));
+
     for (const scopeCase of SCOPE_CASES) {
       await selectScopeCase(layout, scopeCase.id);
       const data = JSON.parse(
@@ -1480,5 +1827,183 @@ describe("the generated Obsidian vault", () => {
       "partial",
       "unavailable",
     ]);
+  });
+});
+
+describe("a Vault Case", () => {
+  async function buildVaultCase(vaultCase: string): Promise<FixtureLayout> {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+    // A stale bundle folder stands in for a Development Vault's plugin folder,
+    // whose data.json holds whatever ZotLit last saved there.
+    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
+    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
+    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
+    await writeFile(
+      join(bundleDir, "data.json"),
+      JSON.stringify({ __VERSION__: 10, stale: true }),
+    );
+    await buildFixture(caseLayout, { vaultCase, pluginBundleDir: bundleDir });
+    return caseLayout;
+  }
+
+  it("names the configured, fresh, and upgrader cases", () => {
+    expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
+      "configured",
+      "fresh",
+      "upgrader",
+    ]);
+  });
+
+  it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {
+    const fresh = await buildVaultCase("fresh");
+
+    // `attachments` holds the vault-backed linked-file Attachment the Zotero
+    // data references: a file the user keeps in the vault, not ZotLit state.
+    expect(await readdir(fresh.vaultDir)).toEqual([".obsidian", "attachments"]);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(fresh.vaultDir, ".obsidian", "community-plugins.json"),
+          "utf-8",
+        ),
+      ),
+    ).toEqual(["hot-reload", "zotlit"]);
+    await expect(
+      readFile(join(fresh.pluginDir, "main.js"), "utf-8"),
+    ).resolves.toBe("// stale bundle\n");
+    await expect(stat(fresh.pluginDataPath)).rejects.toThrow("ENOENT");
+  });
+
+  it("refuses a fresh vault with a saved Library Scope", async () => {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-fresh-scope-")),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+
+    await expect(
+      buildFixture(caseLayout, { vaultCase: "fresh", scopeCase: "partial" }),
+    ).rejects.toThrow('cannot save the "partial" Scope Case');
+  });
+
+  it("writes the v2.1 settings shape into an upgrader vault", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const data = JSON.parse(
+      await readFile(upgrader.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "literatures",
+      "note.import-folder": "zotero_notes",
+      "note.frontmatter-fields": UPGRADER_FRONTMATTER_FIELDS,
+      "release.previous-version": "2.1.0",
+      "server.enabled": true,
+      [LIBRARY_SCOPE_SETTING_KEY]: { mode: "all" },
+    });
+    expect(UPGRADER_FRONTMATTER_FIELDS.map((field) => field.key)).toEqual([
+      "title",
+      "related",
+      "collections",
+      "citekey",
+      "year",
+    ]);
+  });
+
+  it("ejects every Legacy Template File with its visible edit, and no Profile document", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const templates = join(upgrader.vaultDir, "templates");
+
+    expect((await readdir(templates)).sort()).toEqual(
+      [
+        "zotlit-annotation.liquid.md",
+        "zotlit-content.liquid.md",
+        "zotlit-filename.liquid.md",
+        "zotlit-note.liquid.md",
+        "zotlit-cite.liquid.md",
+        "zotlit-cite2.eta.md",
+        `zotlit-${UPGRADER_LEGACY_PARTIAL_NAME}.liquid.md`,
+      ].sort(),
+    );
+    for (const template of UPGRADER_LEGACY_TEMPLATES) {
+      const source = await readFile(
+        join(templates, legacyTemplateFilename(template)),
+        "utf-8",
+      );
+      expect(source).toBe(await legacyTemplateSource(template));
+      expect(source).toContain(template.replace);
+    }
+    // The v2.1 vault has no Profiles, so the Books Profile note it seeds is
+    // one more unstamped note in the single literature folder.
+    expect(
+      (await readdir(join(upgrader.vaultDir, "literatures"))).sort(),
+    ).toEqual(
+      [
+        ...(await readdir(join(layout.vaultDir, "literatures"))),
+        "books-duplicateWithin2020.md",
+      ].sort(),
+    );
+    expect(await readdir(upgrader.vaultDir)).not.toContain("books");
+  });
+
+  it("ejects a mixed-language citation pair the conversion folds to Liquid", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const templates = join(upgrader.vaultDir, "templates");
+
+    // `cite` is the Liquid side the fold takes, so its edit reaches the
+    // converted `zotlit-citation.md`.
+    await expect(
+      readFile(join(templates, "zotlit-cite.liquid.md"), "utf-8"),
+    ).resolves.toBe("({{ zt.citations | pandoc_cite }})\n");
+    // `cite2` is the Eta side the fold leaves in the vault and names in its
+    // notice, so the alternate gesture falls back to the built-in branch.
+    await expect(
+      readFile(join(templates, "zotlit-cite2.eta.md"), "utf-8"),
+    ).resolves.toBe(
+      'cf. <%= pandocCite(zt.citations, "prefer-author-in-text") %>\n',
+    );
+  });
+
+  it("ejects one bare partial from the shipped annotation default", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+
+    const source = await readFile(
+      join(
+        upgrader.vaultDir,
+        "templates",
+        `zotlit-${UPGRADER_LEGACY_PARTIAL_NAME}.liquid.md`,
+      ),
+      "utf-8",
+    );
+
+    // The bare name is the partial's own; the shipped source is the annotation
+    // slot's, so the file reads as a factored-out callout.
+    expect(source).toContain("[!tip] Page");
+    expect(source).not.toContain("[!note] Page");
+    expect(source).toContain("{% bq %}");
+  });
+
+  it("fails when a shipped slot default drifts away from its edit", async () => {
+    await expect(
+      legacyTemplateSource({
+        name: "note",
+        language: "liquid",
+        find: "text the default note template never held",
+        replace: "",
+      }),
+    ).rejects.toThrow("update the Fixture Spec");
+  });
+
+  it("fails when a shipped citation branch drifts away from its edit", async () => {
+    await expect(
+      legacyTemplateSource({
+        name: "cite",
+        language: "liquid",
+        find: "text the default cite branch never held",
+        replace: "",
+      }),
+    ).rejects.toThrow("update the Fixture Spec");
   });
 });

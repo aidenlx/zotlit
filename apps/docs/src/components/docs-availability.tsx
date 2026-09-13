@@ -1,6 +1,7 @@
 import Link from "fumadocs-core/link";
 
 import type { DocsAvailability as Availability } from "@/lib/docs-availability";
+import * as m from "@/paraglide/messages.js";
 
 function Version({
   version,
@@ -38,7 +39,7 @@ export function DocsAvailability({
   return (
     <p className="my-0 flex flex-wrap items-baseline gap-x-2 font-mono text-[0.72rem] text-fd-muted-foreground">
       <span className="font-semibold tracking-widest text-fd-primary uppercase">
-        Available since
+        {m.docs_available_since()}
       </span>
       <span>ZotLit {version}</span>
     </p>

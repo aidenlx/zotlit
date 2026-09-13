@@ -1,16 +1,19 @@
 ---
 title: "Collect debug logs"
-description: "Gather ZotLit logs, Zotero debug output, and Obsidian debug info to include when reporting a bug."
+description: "Gather a template error report, ZotLit logs, Zotero debug output, and Obsidian debug info to include when reporting a bug."
 introduced: "2.0.0"
 updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
-Bug reports often need ZotLit logs, Obsidian logs, or Zotero debug output from ZotLit Companion, the Zotero add-on. Each section below is self-contained. Follow only the one you were asked for.
+Bug reports often need a template error report, ZotLit logs, Obsidian logs, or Zotero debug output from ZotLit Companion, the Zotero add-on. Each section below is self-contained. Follow only the one you were asked for.
 
 Once you have the logs, file the report in the [Bug reports discussion](https://github.com/aidenlx/zotlit/discussions/categories/bug-reports).
 
@@ -21,6 +24,57 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   output](#zotero-debug-output) before you reproduce the problem. Reproduce
   once, then save logs from both sides.
 </Callout>
+
+## Template error report [#template-error-report]
+
+Collect this when a template preview fails in the Template Workbench. The report holds the template engine's own message and the context of the attempt that failed, so another person can investigate the actual failure.
+
+<Steps>
+  <Step>
+    ### Open the problem
+
+    In the Template Workbench, select <UiLabel name={m.workbench_problem_show()} /> in the preview or on the source marker. The <UiLabel name={m.workbench_problems_heading()} /> area explains the failure.
+
+  </Step>
+  <Step>
+    ### Copy the report
+
+    Select <UiLabel name={m.workbench_problems_copy()} />. Select <UiLabel name={m.workbench_problems_technical()} /> first if you want to read the report before you copy it: the disclosure shows the same text.
+
+    The report holds the engine message, the error name, its causes, any source excerpt, and the location the engine named. Beside those it records the time of the failure, whether an automatic check or <UiLabel name={m.workbench_preview_run()} /> started it, the Template Document and section, the template language, the preview root and its options, the selected item or example, the source revision, and the ZotLit and Obsidian versions. A value the failed attempt could not supply reads `unavailable`.
+
+  </Step>
+  <Step>
+    ### Paste it into the report
+
+    Paste the copied text into your bug report. Nothing leaves your vault until you paste it yourself.
+
+  </Step>
+</Steps>
+
+<Callout type="info" title="The report survives the repair">
+  Keep working on the template. The copied report describes the attempt that
+  failed, so later edits and a different selected item do not change it. After a
+  successful repair, the open <UiLabel name={m.workbench_problems_heading()} />{" "}
+  area offers <UiLabel name={m.workbench_problems_copy_last()} /> for the
+  failure you were reading.
+</Callout>
+
+<Callout type="info" title="Ask the community">
+  <UiLabel name={m.workbench_problems_community()} /> sits beside the copy
+  action and opens the [community page](/community). It opens a page; it sends
+  nothing.
+</Callout>
+
+### When to add more evidence
+
+The copied report covers one failed template attempt. Collect one of the following as well when it applies:
+
+- **[ZotLit logs](#zotlit-logs)** — the failure has no engine message, or it happens while creating or updating a note rather than in the preview.
+- **[Template data](#template-data)** — the template rendered without failing, but produced the wrong content.
+- **[Obsidian debug info](#obsidian-debug-info)** — the problem may involve another plugin, a theme, or a specific Obsidian build.
+
+Each one is a separate collection step. The copied report never carries a log archive or a template-data export.
 
 ## Obsidian debug info [#obsidian-debug-info]
 
@@ -43,15 +97,15 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 
 <Steps>
   <Step>
-    ### Open the Maintenance settings
+    ### Open the Advanced settings
 
-    In Obsidian, open **Settings > ZotLit > Maintenance**.
+    In Obsidian, open <SettingsPath page={m.settings_page_advanced()} /> and find the <UiLabel name={m.settings_advanced_logging_heading()} /> group.
 
   </Step>
   <Step>
     ### Turn on debug logging
 
-    Set **Log level** to **debug**, then turn on **Write logs to file**. Logs now append to `zotlit.log.jsonl` inside the plugin folder.
+    Set <UiLabel name={m.settings_log_level_name()} /> to **debug**, then turn on <UiLabel name={m.settings_log_to_file_name()} />. Logs now append to `zotlit.log.jsonl` inside the plugin folder.
 
   </Step>
   <Step>
@@ -63,7 +117,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   <Step>
     ### Save the log archive
 
-    Back in **Settings > ZotLit > Maintenance**, click **Save log archive**. This exports the log file for sharing.
+    Back in <SettingsPath page={m.settings_page_advanced()} />, click <UiLabel name={m.settings_log_export_name()} />. This exports the log file for sharing.
 
   </Step>
   <Step>
@@ -75,8 +129,10 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 </Steps>
 
 <Callout type="info" title="Turn logging back off">
-  Set **Log level** back to **info** and turn off **Write logs to file** once
-  you no longer need ongoing logging.
+  Set <UiLabel name={m.settings_log_level_name()} /> back to **info** and turn
+  off
+  <UiLabel name={m.settings_log_to_file_name()} /> once you no longer need
+  ongoing logging.
 </Callout>
 
 ## Template data [#template-data]
@@ -93,13 +149,13 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
   <Step>
     ### Anchor at the annotation
 
-    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select **Explore as annotation template data**. For any other template, skip this step and stay at the note root.
+    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select <UiLabel name={m.template_data_explorer_menu_explore_annotation()} />. For any other template, skip this step and stay at the note root.
 
   </Step>
   <Step>
     ### Save the template data
 
-    Open the more-options menu on the explorer's tab and select **Save template data as JSON**. This downloads a file named like `zotlit-template-data-ABCD2345-20260512-143000.json`.
+    Open the more-options menu on the explorer's tab and select <UiLabel name={m.template_data_explorer_menu_export_json()} />. This downloads a file named like `zotlit-template-data-ABCD2345-20260512-143000.json`.
 
     The file always holds the whole current root: the full note template data at the note root, or the annotation's data when the explorer is anchored at an annotation. A filter in the explorer does not narrow it.
 
@@ -132,7 +188,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
   <Step>
     ### Set the Companion's log level
 
-    In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS), then select the **ZotLit** pane. Set **Log level** to **Debug**.
+    In Zotero, open **Edit > Settings** (Windows/Linux) or **Zotero > Settings** (macOS), then select the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane. Set <UiLabel name={m["zotero.prefs_logging_level"]()} /> to <UiLabel name={m["zotero.prefs_log_level_debug.label"]()} />.
 
   </Step>
   <Step>
@@ -174,8 +230,8 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
 </Steps>
 
 <Callout type="info" title="Reset the log level">
-  Set the Companion's **Log level** back to its previous value after collecting
-  the output.
+  Set the Companion's <UiLabel name={m["zotero.prefs_logging_level"]()} /> back
+  to its previous value after collecting the output.
 </Callout>
 
 ## See also
@@ -183,7 +239,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
 <Cards>
   <Card
     title="Settings"
-    description="Full reference for every ZotLit setting, including Maintenance."
+    description={`Full reference for every ZotLit setting, including ${m.settings_page_advanced()}.`}
     href="/docs/reference/settings"
   />
   <Card

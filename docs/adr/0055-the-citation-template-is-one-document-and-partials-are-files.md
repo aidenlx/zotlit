@@ -1,0 +1,18 @@
+# The Citation Template is one document with a gesture variant, and Shared Partials are files
+
+After the Literature Note Template moved into one Profile document per Profile (ADR 0025, ADR 0031, ADR 0035), two vault-global things stayed in the 2.1.x per-slot shape: the `cite` / `cite2` pair and the bare partial files `zotlit-<name>.liquid.md`. The Template Workbench had no editor, preview, or data root for either. We decided that both become Template Documents the same view opens, beside the Profile document.
+
+**One Citation Template, one gesture enum.** `zotlit-citation.md` replaces `cite` and `cite2`. The citation suggester hands the template a Citation Variant — `main` on Enter, `alt` on Shift+Enter or a trailing `/` — and the template decides what each variant renders. The variant names the gesture only. The alternative, keeping two files or handing the template a Pandoc form such as `prefer-author-in-text`, was rejected because the two gestures do not mean parenthetical and author-in-text; that is one mapping a user may keep, change, or drop inside one source. An annotation's `zt.citation` renders the same template with the `main` variant and a page locator. Citation data enters the Template Contract as the `citation` root, so the explorer, completion, the CLI, and the generated reference share one description of it.
+
+**Shared Partials are files; the manifest copy is a transport.** A partial is `zotlit-partial.<name>.md`, vault-global in one flat namespace, per ADR 0025's ruling. The Profile manifest's `partials` list exists only so a Profile shares as one pasteable file: import unpacks each entry to a file, and a document opened for editing that still carries one reports a problem with an Unpack action. A partial has no root data of its own; the Workbench previews it under a context the user chooses — Note, Annotation, or Citation — and remembers per file. Inference from callers was rejected: it fails on an unused partial and on one called from two roots.
+
+**Plain documents, prefix classification.** A citation or partial document is an optional YAML manifest carrying `language`, then one source; no frontmatter means Liquid. The template folder classifies by prefix — `zotlit-profile.`, `zotlit-citation`, `zotlit-partial.` — and reports any other `zotlit-` file once in settings. A one-shot converter, the same prompted and byte-verified pass that folds the note slots, folds `cite` plus `cite2` into the if/else form and renames each bare partial. Only the 2.1.x shipped shapes convert.
+
+**Dependencies stay a recommendation.** The textual dependency scan preselects the Share checklist and does nothing else: no reverse index, no "used by" cue, no scan-based problems. A missing partial is the engine's own render failure, surfaced as a diagnostic that names the partial with Create and Pick actions in the Workbench, and as a refused Literature Note render with an Open template workbench action in the vault. A note with a silent hole was rejected in favour of a refused write.
+
+## Consequences
+
+- ADR 0025's line "`cite` / `cite2` stay vault-global template files outside the Profile" is superseded by this ADR; its partial-namespace ruling stands.
+- The Template Contract version bumps for the `citation` root; the hand-written citation-template reference page retires into the generated one.
+- The web Workbench is unchanged: the bridge stays Profile-shaped and bundles `zotlit-citation.md` under the name the annotation preview expects. Citation and partial editing are Obsidian-only until the bridge gains a document kind.
+- The Obsidian view formerly named Profile Editor opens all three kinds; the tab set and the preview root follow the kind.

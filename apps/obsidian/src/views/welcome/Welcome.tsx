@@ -1,6 +1,10 @@
-// Presentational tree for the Welcome View: fresh-state onboarding timeline with doc chips and footer links, plus the upgraded-state Migration Prompt banner.
+// Welcome onboarding timeline with conversion status and evidence-backed v1 guidance.
+import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
+import { useState } from "react";
+
+import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
@@ -327,30 +331,122 @@ function FooterLink() {
   );
 }
 
-function MigrationBanner() {
-  const actions = useWelcomeActions();
+/**
+ * The accent surface a callout that carries an action wears: the accent at the
+ * two opacities the timeline nodes use, so it reads as the same palette.
+ */
+const ACCENT_CALLOUT_SURFACE = {
+  background: "hsla(var(--interactive-accent-hsl), 0.14)",
+  borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
+};
+
+/**
+ * A titled callout. The body runs the full width of the card and the action
+ * takes the row below it, the same order the timeline steps read in. Holding
+ * the action in a side column instead costs the body the width of one button
+ * for every line it wraps, and leaves that column empty below the first line.
+ */
+function Callout({
+  tone,
+  title,
+  action,
+  children,
+}: {
+  tone: "accent" | "muted";
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div
-      className="zt:relative zt:mt-6 zt:flex zt:flex-wrap zt:items-center zt:gap-4.5 zt:rounded-lg zt:border zt:px-6 zt:py-5.5"
-      style={{
-        background: "hsla(var(--interactive-accent-hsl), 0.14)",
-        borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
-      }}
+      className={cn(
+        "zt:relative zt:mt-6 zt:rounded-lg zt:border zt:px-6 zt:py-5.5",
+        tone === "muted" && "zt:border-border zt:bg-muted",
+      )}
+      style={tone === "accent" ? ACCENT_CALLOUT_SURFACE : undefined}
     >
-      <div className="zt:min-w-0 zt:flex-1 zt:basis-[220px]">
-        <StepHeading>{m.welcome_migration_title()}</StepHeading>
-        <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-          {m.welcome_migration_body()}
-        </p>
-      </div>
-      <Button
-        variant="cta"
-        icon="book-marked"
-        onClick={() => actions.openExternal(MIGRATION_GUIDE)}
-      >
-        {m.welcome_action_open_migration_guide()}
-      </Button>
+      <StepHeading>{title}</StepHeading>
+      <p className="zt:mt-1 zt:text-sm zt:text-pretty zt:text-muted-foreground">
+        {children}
+      </p>
+      {action ? <div className="zt:mt-3">{action}</div> : null}
     </div>
+  );
+}
+
+function MigrationBanner() {
+  const actions = useWelcomeActions();
+  const templateConversionPending = useWelcomeStore(
+    (state) => state.templateConversionPending,
+  );
+  const templateFolder = useWelcomeStore((state) => state.templateFolder);
+  const result = useWelcomeStore((state) => state.templateConversionResult);
+  const v1TemplatesPresent = useWelcomeStore(
+    (state) => state.v1TemplatesPresent,
+  );
+  const [converting, setConverting] = useState(false);
+  if (templateConversionPending) {
+    return (
+      <Callout
+        tone="accent"
+        title={m.welcome_template_conversion_title()}
+        action={
+          <Button
+            variant="cta"
+            icon="combine"
+            loading={converting}
+            disabled={converting}
+            onClick={() => {
+              setConverting(true);
+              void actions.convertLiteratureNoteTemplates().finally(() => {
+                setConverting(false);
+              });
+            }}
+          >
+            {m.welcome_template_conversion_action()}
+          </Button>
+        }
+      >
+        {m.welcome_template_conversion_body({
+          path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+        })}
+      </Callout>
+    );
+  }
+  if (result) {
+    return (
+      <Callout
+        tone="muted"
+        title={m.welcome_template_conversion_completed_title()}
+      >
+        {result.document
+          ? m.welcome_template_conversion_completed_body({
+              path: result.document,
+              count: result.trashed,
+            })
+          : m.welcome_template_conversion_completed_files({
+              count: result.trashed,
+            })}
+      </Callout>
+    );
+  }
+  if (!v1TemplatesPresent) return null;
+  return (
+    <Callout
+      tone="accent"
+      title={m.welcome_migration_title()}
+      action={
+        <Button
+          variant="cta"
+          icon="book-marked"
+          onClick={() => actions.openExternal(MIGRATION_GUIDE)}
+        >
+          {m.welcome_action_open_migration_guide()}
+        </Button>
+      }
+    >
+      {m.welcome_migration_body()}
+    </Callout>
   );
 }
 
@@ -359,7 +455,7 @@ export function Welcome() {
   return (
     <div className="zt:mx-auto zt:max-w-160 zt:px-8 zt:pt-6 zt:pb-2">
       <Header />
-      {mode === "upgraded" ? <MigrationBanner /> : null}
+      <MigrationBanner />
       <div className="zt:mt-9">
         <StepConnect />
         <StepCompanion />

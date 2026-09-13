@@ -29,13 +29,19 @@ import { promisify } from "node:util";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { getDevVaultDir, getFixtureVaultDir } from "#dev-vault";
+import {
+  DEV_VAULT_CASE_ENV,
+  getDevVaultDir,
+  getFixtureVaultDir,
+} from "#dev-vault";
 import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
   getFixtureLayout,
   getFixtureRoot,
   SCOPE_CASES,
+  VAULT_CASES,
 } from "#fixture";
 import {
   createObsidianHostReadiness,
@@ -201,6 +207,8 @@ async function resolveRemovalHost(exclude?: string): Promise<string> {
 interface SeedOptions {
   purge?: boolean;
   scopeCase?: string;
+  /** Vault Case to seed; each case has its own Development Vault folder. */
+  vaultCase?: string;
   /**
    * Live Updates port the generated seed binds, in the vault settings and in
    * the Companion's notify URL alike. Absent, both keep their shipped defaults.
@@ -215,6 +223,7 @@ async function create(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
@@ -240,6 +249,7 @@ async function create(
 
   await rebuildFixtureVault(abs, {
     scopeCase,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   });
@@ -331,10 +341,21 @@ async function create(
   await linkFixture(id);
 }
 
-/** Release Windows file handles while the generated Fixture is replaced. */
-async function suspendLoadedPlugin(abs: string): Promise<AsyncDisposableStack> {
+/**
+ * Unload the plugin while the generated Fixture is replaced. Windows needs this
+ * on every sync, to release its file handles. A purge needs it on every
+ * platform, so the loaded plugin writes none of its vault-scoped local storage
+ * back after the purge clears it.
+ */
+async function suspendLoadedPlugin(
+  abs: string,
+  { always = false }: { always?: boolean } = {},
+): Promise<AsyncDisposableStack> {
   await using suspension = new AsyncDisposableStack();
-  if (process.platform !== "win32" || !(await isObsidianRunning())) {
+  if (
+    (!always && process.platform !== "win32") ||
+    !(await isObsidianRunning())
+  ) {
     return suspension.move();
   }
 
@@ -379,22 +400,26 @@ async function sync(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
-  await resolveHost();
+  const host = await resolveHost();
 
   await access(abs).catch(() => {
     throw new Error(`no vault at ${abs}. Run 'create' first.`);
   });
 
   {
-    await using _pluginSuspension = await suspendLoadedPlugin(abs);
+    await using _pluginSuspension = await suspendLoadedPlugin(abs, {
+      always: purge,
+    });
     // Build before a purge so the generated seed captures the current dev bundle.
     await rebuildFixtureVault(abs, {
       scopeCase,
+      vaultCase,
       liveUpdatePort,
       zoteroHttpPort,
     });
@@ -402,7 +427,14 @@ async function sync(
     // `--purge` deletes the folder first, so renamed or removed Fixture files
     // drop out too, not just the ones the Fixture Vault still has.
     if (purge) {
+      // Every ZotLit key goes with the folder, so a purged vault holds no
+      // Device Overrides, consent, or view state. Obsidian's own keys stay,
+      // including the trust marker that keeps Restricted Mode off.
+      const registered = findVaultId(await vaultList(host), abs);
       await purgeVault(abs);
+      if (registered) {
+        await clearVaultLocalStorage(registered, host, { keyPrefix: pluginId });
+      }
       await mkdir(abs, { recursive: true });
     }
 
@@ -418,28 +450,47 @@ async function rebuildFixtureVault(
   target: string,
   {
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase = DEFAULT_VAULT_CASE,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
 
-  const pluginBundleDir = join(
+  // The dev build's output is the source: `build:dev` declares `dist-dev` as
+  // its turbo output, so it holds the current bundle on a fresh run and on a
+  // cache hit alike, whatever `ZT_VAULT_CASE` the build saw. Reading the
+  // target's own bundle first would recycle it forever — the seed would carry
+  // the vault's old bundle, and `--purge` would copy that same bundle straight
+  // back, so a new build could never reach the vault.
+  const distDev = join(workspaceRoot, "apps", "obsidian", "dist-dev");
+  const hasDistDev = await access(join(distDev, "main.js")).then(
+    () => true,
+    () => false,
+  );
+  // The target's own bundle stands in when this script runs on its own, with
+  // no dev build in the worktree.
+  const vaultBundleDir = join(
     resolve(target),
     ".obsidian",
     "plugins",
     pluginId,
   );
-  const hasBundle = await access(join(pluginBundleDir, "main.js")).then(
+  const hasVaultBundle = await access(join(vaultBundleDir, "main.js")).then(
     () => true,
     () => false,
   );
   await buildFixture(fixtureLayout, {
     scopeCase,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
     linkedAttachmentVaultDir: resolve(target),
-    pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
+    pluginBundleDir: hasDistDev
+      ? distDev
+      : hasVaultBundle
+        ? vaultBundleDir
+        : undefined,
   });
 }
 
@@ -449,6 +500,7 @@ async function open(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
@@ -457,12 +509,13 @@ async function open(
   const host = await resolveHost();
   const registered = findVaultId(await vaultList(host), abs);
 
+  const seed = { purge, scopeCase, vaultCase, liveUpdatePort, zoteroHttpPort };
   if (!registered) {
-    await create(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
+    await create(abs, seed);
     return;
   }
 
-  await sync(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
+  await sync(abs, seed);
   if ((await vaultList(host))[registered]?.open !== true) {
     const opened = await obEval(
       `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
@@ -481,11 +534,20 @@ async function open(
     }
   }
 
-  const reloaded = await cli([
-    `vault=${registered}`,
-    "plugin:reload",
-    `id=${pluginId}`,
-  ]);
+  // Right after a vault window opens (or resumes), the CLI's own command
+  // registry can lag a beat behind `vault-list`'s `open` flag, so the first
+  // `plugin:reload` sometimes answers "not found" even though the plugin is
+  // enabled. Retry a few times before treating it as a real failure.
+  let reloaded = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    reloaded = await cli([
+      `vault=${registered}`,
+      "plugin:reload",
+      `id=${pluginId}`,
+    ]);
+    if (reloaded.toLowerCase().startsWith("reloaded:")) break;
+    await delay(250);
+  }
   if (!reloaded.toLowerCase().startsWith("reloaded:")) {
     throw new Error(`could not reload ZotLit in ${registered}: ${reloaded}`);
   }
@@ -614,6 +676,31 @@ async function removeOffline(abs: string): Promise<string | undefined> {
   return id;
 }
 
+/**
+ * Delete vault-scoped local storage through a live window. Obsidian keeps these
+ * keys in the shared `app://obsidian.md` origin as `<vaultId>-<key>`, outside
+ * the vault folder, so they outlive a folder purge and an unregister alike. A
+ * `keyPrefix` narrows the sweep to one owner's keys; the empty default takes
+ * every key the vault holds.
+ */
+async function clearVaultLocalStorage(
+  vaultId: string,
+  host: string,
+  { keyPrefix = "" }: { keyPrefix?: string } = {},
+): Promise<void> {
+  const prefix = `${vaultId}-${keyPrefix}`;
+  const cleared = await obEval(
+    `(function(){var p=${JSON.stringify(prefix)};` +
+      `Object.keys(localStorage).filter(function(k){return k.indexOf(p)===0})` +
+      `.forEach(function(k){localStorage.removeItem(k)});` +
+      `return 'ok'})()`,
+    host,
+  );
+  if (cleared !== "ok") {
+    throw new Error(`could not clear local storage for vault ${vaultId}`);
+  }
+}
+
 async function removeOnline(abs: string): Promise<string | undefined> {
   let host = await resolveRemovalHost();
   const id = findVaultId(await vaultList(host), abs);
@@ -629,11 +716,11 @@ async function removeOnline(abs: string): Promise<string | undefined> {
     }
 
     // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
-    // so a surviving window clears the keys that `vault-remove` leaves behind.
+    // so a surviving window clears what `vault-remove` leaves behind.
+    await clearVaultLocalStorage(id, host).catch(() => undefined);
     await obEval(
       `(function(){var id=${JSON.stringify(id)};` +
-        `Object.keys(localStorage).filter(function(k){return k.indexOf(id+'-')===0||k==='enable-plugin-'+id})` +
-        `.forEach(function(k){localStorage.removeItem(k)});` +
+        `localStorage.removeItem('enable-plugin-'+id);` +
         `['cache','webview','backup','sync'].forEach(function(n){indexedDB.deleteDatabase(id+'-'+n)});` +
         `return 'ok'})()`,
       host,
@@ -714,7 +801,7 @@ const vaultPathPosition = {
 
 const syncPurgeOption = {
   describe:
-    "delete the Development Vault folder before restoring the complete generated seed",
+    "delete the Development Vault folder and the plugin's vault-scoped local storage before restoring the complete generated seed",
   type: "boolean",
   default: false,
 } as const;
@@ -743,6 +830,13 @@ const scopeCaseOption = {
   default: DEFAULT_SCOPE_CASE,
 } as const;
 
+const vaultCaseOption = {
+  describe: `Vault Case to build; each case other than the default uses its own Development Vault folder (default: $${DEV_VAULT_CASE_ENV})`,
+  type: "string",
+  choices: VAULT_CASES.map(({ id }) => id),
+  default: process.env[DEV_VAULT_CASE_ENV],
+} as const;
+
 const hostReadinessReference = `Host readiness:
   Host-dependent commands require a vault window that answers within
   ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. Run 'obsidian-vault.ts check' before changing the Fixture.
@@ -756,6 +850,7 @@ generated seed. Open and sync keep extra Development Vault files unless
 
 Environment:
   ${OBSIDIAN_HOST_VAULT_ENV}  verified open vault name or id whose window hosts eval calls
+  ${DEV_VAULT_CASE_ENV}  Vault Case that --vault-case defaults to; the dev build copies into its vault
 
 ${hostReadinessReference}`;
 
@@ -779,15 +874,20 @@ const vaultCli = yargs(hideBin(process.argv))
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
         .option("scope-case", scopeCaseOption)
+        .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption),
     async (argv) => {
-      await open(argv["vault-path"] ?? defaultVault, {
-        purge: argv.purge,
-        scopeCase: argv["scope-case"],
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
+      await open(
+        argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
+        {
+          purge: argv.purge,
+          scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
+          liveUpdatePort: argv["live-update-port"],
+          zoteroHttpPort: argv["zotero-http-port"],
+        },
+      );
     },
   )
   .command(
@@ -805,14 +905,19 @@ const vaultCli = yargs(hideBin(process.argv))
       y
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
+        .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption),
     async (argv) => {
-      await sync(argv["vault-path"] ?? defaultVault, {
-        purge: argv.purge,
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
+      await sync(
+        argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
+        {
+          purge: argv.purge,
+          vaultCase: argv["vault-case"],
+          liveUpdatePort: argv["live-update-port"],
+          zoteroHttpPort: argv["zotero-http-port"],
+        },
+      );
     },
   )
   .command(

@@ -2,12 +2,15 @@
 // citations show formatted in the reading view, navigate like links, and are
 // rewritten in place while Obsidian shows their section.
 
-import { MarkdownView } from "obsidian";
+import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { renderProfileRecovery } from "@/lib/profile-recovery";
 import {
   LiveSections,
+  isDraftMarkdown,
   rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
@@ -43,6 +46,7 @@ import type {
   CitationNavigation,
   HoverPreferences,
 } from "@/services/citekey-navigation";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -231,6 +235,7 @@ export class CitekeyReading extends Service<void> {
    * place for as long as Obsidian shows the section.
    */
   #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
+    if (isDraftMarkdown(el)) return;
     if (this.#active !== true) return;
     const citations = sectionCitations(el);
     if (citations.length === 0) return;
@@ -266,6 +271,9 @@ export class CitekeyReading extends Service<void> {
     // Source stays until a first answer: native text while the read settles,
     // and what a placed element shows until fresh text replaces it.
     if (text === null && !resolutionPending) return;
+    renderProfileRecovery(el, this.#app, {
+      path: text?.value.presentationFailure?.target,
+    });
     const snapshotState = (citekey: string) =>
       citekeyState(this.#citationIndex.resolveCitekey(citekey));
     const stateOf =
@@ -306,6 +314,7 @@ export class CitekeyReading extends Service<void> {
         states,
         works,
         at,
+        failure: text?.value.presentationFailure,
       });
       placed[index] = { ...built, shown, states };
       return built.element;
@@ -333,12 +342,15 @@ export class CitekeyReading extends Service<void> {
       states,
       works,
       at,
+      failure,
     }: {
       content: PresentedCitation | string;
       states: readonly CitationKeyState[];
       works: CitationNavigation["works"];
       /** The occurrence shown in the citation's place, where formatted text is. */
       at: CitationNavigation["shown"];
+      /** The Profile failure the document's presentation reports, if any. */
+      failure: ProfilePresentationFailure | undefined;
     },
   ): { element: HTMLElement; navigation: CitationNavigation } {
     const themeClasses = [
@@ -346,6 +358,16 @@ export class CitekeyReading extends Service<void> {
       ...citationStateHooks(citationState(states)),
     ];
     const element = citationElement(doc, content, themeClasses);
+    if (failure) {
+      element.dataset["citationPresentationError"] = "profile";
+      setTooltip(
+        element,
+        m.notice_imported_note_profile_unknown({
+          stamp: failure.diagnostic.stamp,
+          target: failure.target,
+        }),
+      );
+    }
     const navigation: CitationNavigation = {
       works,
       // The occurrence this section shows in the citation's place, which is

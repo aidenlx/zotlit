@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { BatchUpdateRefusedError } from "@/services/note-feature/update-batch";
+import { NoteImportProfileError } from "@/services/note-import/service";
+
 import { classifyChunked, executeBatchRun, runBatchWrite } from "./batch-run";
 import type {
   BatchClassifyControls,
@@ -107,6 +111,37 @@ describe("executeBatchRun", () => {
     expect(onTaskFailed).toHaveBeenCalledTimes(1);
     expect(onTaskFailed.mock.calls[0]![0]).toMatchObject({ id: 2 });
   });
+
+  it.each([
+    new BatchUpdateRefusedError(
+      unknownProfileDiagnostic("Missing", { path: "Reading/Paper.md" }),
+    ),
+    new NoteImportProfileError("Missing", { path: "Reading/Paper.md" }),
+  ])(
+    "keeps note recovery on a per-item Profile failure: $name",
+    async (error) => {
+      const { controls, settled } = makeRunControls();
+      await executeBatchRun({
+        tasks: [task(1)],
+        controls,
+        concurrency: 1,
+        run: async () => {
+          throw error;
+        },
+      });
+      expect(settled).toEqual([
+        {
+          id: 1,
+          status: "failed",
+          failure: {
+            label: "Item 1",
+            message: error.message,
+            recovery: { action: "switch-profile", path: "Reading/Paper.md" },
+          },
+        },
+      ]);
+    },
+  );
 
   it("runs no tasks when the signal is already aborted", async () => {
     const { controls, abort, settled } = makeRunControls();

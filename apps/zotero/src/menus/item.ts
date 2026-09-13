@@ -1,6 +1,6 @@
 import type { ProtocolAction, UpdateScope } from "@zotlit/protocol";
 
-import { registerMenu } from "@/lib/l10n";
+import { l10nArgs, registerMenu } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 
 import { copyObjectKeys } from "./copy-key.js";
@@ -69,7 +69,7 @@ function onShowing(action: ProtocolAction) {
       return;
     }
     context.setVisible(count >= 1);
-    context.setL10nArgs(JSON.stringify({ count }));
+    context.setL10nArgs(l10nArgs("zotlit-menu-item-update", { count }));
   };
 }
 
@@ -113,7 +113,7 @@ export function registerItemMenu(pluginID: string): Disposable {
           const items = allItems(context);
           context.setVisible(items.length >= 1);
           context.setL10nArgs(
-            JSON.stringify({
+            l10nArgs("zotlit-menu-item-copy-key", {
               count: items.length,
               kind: selectedKind(items),
             }),

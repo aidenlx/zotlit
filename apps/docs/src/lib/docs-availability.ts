@@ -8,6 +8,8 @@
 import type * as PageTree from "fumadocs-core/page-tree";
 import { gt, lt, major, minor, patch, valid } from "semver";
 
+import * as m from "@/paraglide/messages.js";
+
 // `release.ts` is the sole writer of the Docs Release Line, and writes it to
 // the package root — see ADR 0002. `package.json` maps the subpath import.
 import zotlitRelease from "#zotlit-release.json" with { type: "json" };
@@ -158,5 +160,5 @@ export function renderAvailabilityMarkdown(
     ? `[${availability.introduced}](${changelogUrl})`
     : availability.introduced;
 
-  return `_Available since ZotLit ${version}._`;
+  return `_${m.docs_availability_markdown({ version })}_`;
 }

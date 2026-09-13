@@ -2,9 +2,16 @@
   "extends": ["@zotlit/config/tsconfig", "@zotlit/config/tsconfig.node26"],
   "compilerOptions": {
     "isolatedDeclarations": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "types": ["node"],
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@obsidian-messages": [
+        "../../apps/obsidian/src/lib/i18n/generated/messages.ts"
+      ]
+    }
   },
   "include": ["./src/**/*.ts"],
   "exclude": ["./node_modules"]

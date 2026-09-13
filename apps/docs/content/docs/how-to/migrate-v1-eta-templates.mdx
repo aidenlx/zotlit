@@ -6,35 +6,40 @@ updated: "2.0.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 Custom v1 Eta templates need renamed files and updated variables to run in v2. If you never customized your templates (using only the defaults), no action is needed. V2 ships updated defaults.
 
 Two migration paths:
 
-- **Keep Eta**: rename files, update the data vocabulary, enable the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates). The rest of this page covers this path.
+- **Keep Eta**: rename files, update the data vocabulary, enable the [<UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates). The rest of this page covers this path.
 - **Convert to Liquid**: rewrite each template in v2's default Liquid engine. No gate needed. See [Eta to Liquid translations](#eta-to-liquid-translations) at the end.
 
 <Callout type="info" title="JavaScript Templates gate required for Eta">
-  Eta templates require the JavaScript Templates gate. See [Enable JavaScript
-  templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
+  Eta templates require the{" "}
+  <UiLabel name={m.settings_template_js_enable_name()} /> gate. See [Enable
+  JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in
+  procedure.
 </Callout>
 
 <Steps>
   <Step>
     ### Rename template files
 
-    v2 templates use a `zotlit-` prefix (replacing `zt-`) and the template formerly called `annots` is now `content`.
+    v2 reads templates from a `zotlit-` prefix, replacing `zt-`, and the template formerly called `annots` is now `content`. Rename your files to these names first. ZotLit loads and renders them under these names, and the [one-pass conversion](#convert) below folds them into v2's template documents.
 
-    | v1 filename | v2 filename |
-    |-------------|-------------|
-    | `zt-note.eta.md` | `zotlit-note.eta.md` |
-    | `zt-annots.eta.md` | `zotlit-content.eta.md` |
-    | `zt-annot.eta.md` | `zotlit-annotation.eta.md` |
-    | `zt-cite.eta.md` | `zotlit-cite.eta.md` |
-    | `zt-cite2.eta.md` | `zotlit-cite2.eta.md` |
+    | v1 filename        | Rename to                  | Where its content ends up                                   |
+    | ------------------ | -------------------------- | ------------------------------------------------------------- |
+    | `zt-note.eta.md`   | `zotlit-note.eta.md`       | The note body of the default profile document               |
+    | `zt-annots.eta.md` | `zotlit-content.eta.md`    | The managed block inside that same note body                |
+    | `zt-annot.eta.md`  | `zotlit-annotation.eta.md` | The annotation section of that same profile document        |
+
+    Your two v1 citation files, `zt-cite*.eta.md`, take the same `zt-` to `zotlit-` rename. Both of them fold into one citation text document, `zotlit-citation.md`, as an `if`/`else` on `zt.variant`.
 
     Delete these files if present (they have no v2 equivalent):
 
@@ -62,19 +67,19 @@ Two migration paths:
 
     These fields changed name or type:
 
-    | v1 property | v2 property | Notes |
-    |-------------|-------------|-------|
-    | `it.citekey` | `zt.citationKey` | `zt.citekey` also works as an alias |
-    | `it.abstractNote` | `zt.abstract` | `zt.abstractNote` also works |
-    | `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` also works |
-    | `it.color` | `zt.colorHex` | Hex string, e.g. `#ffd400` |
-    | — | `zt.colorName` | New: palette name (`"yellow"`, `"red"`, etc.) |
-    | `it.imgExcerpt` | `embed(zt.imgLink)` | `zt.imgLink` is a [link helper](/docs/reference/templates/eta-syntax#link-helpers) or `null`; `embed()` adds the `!` prefix |
-    | `it.imgPath` | _(removed)_ | Use `zt.imgLink()` instead |
-    | `it.imgUrl` | _(removed)_ | Use `zt.imgLink()` instead |
-    | `it.textExcerpt` | `zt.text` | Renamed |
-    | `it.commentMd` | `zt.comment` | Markdown comment is now the default |
-    | `it.comment` | `zt.commentHtml` | Raw HTML (only `<i>/<b>/<sub>/<sup>`) |
+    | v1 property           | v2 property         | Notes                                                                                                                       |
+    | --------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+    | `it.citekey`          | `zt.citationKey`    | `zt.citekey` also works as an alias                                                                                         |
+    | `it.abstractNote`     | `zt.abstract`       | `zt.abstractNote` also works                                                                                                |
+    | `it.publicationTitle` | `zt.containerTitle` | `zt.publicationTitle` also works                                                                                            |
+    | `it.color`            | `zt.colorHex`       | Hex string, e.g. `#ffd400`                                                                                                  |
+    | —                     | `zt.colorName`      | New: palette name (`"yellow"`, `"red"`, etc.)                                                                               |
+    | `it.imgExcerpt`       | `embed(zt.imgLink)` | `zt.imgLink` is a [link helper](/docs/reference/templates/eta-syntax#link-helpers) or `null`; `embed()` adds the `!` prefix |
+    | `it.imgPath`          | _(removed)_         | Use `zt.imgLink()` instead                                                                                                  |
+    | `it.imgUrl`           | _(removed)_         | Use `zt.imgLink()` instead                                                                                                  |
+    | `it.textExcerpt`      | `zt.text`           | Renamed                                                                                                                     |
+    | `it.commentMd`        | `zt.comment`        | Markdown comment is now the default                                                                                         |
+    | `it.comment`          | `zt.commentHtml`    | Raw HTML (only `<i>/<b>/<sub>/<sup>`)                                                                                       |
 
     Direct Zotero fields that are plain strings (`title`, `DOI`, `url`, `volume`, `issue`, `pages`, `publisher`, etc.) carry over unchanged after the `it` → `zt` rename.
 
@@ -101,11 +106,11 @@ Two migration paths:
 
     v2 reshapes collection objects. Key differences:
 
-    | Aspect | v1 | v2 |
-    |--------|----|----|
-    | `path` order | leaf → root | root → leaf |
+    | Aspect           | v1                          | v2                                         |
+    | ---------------- | --------------------------- | ------------------------------------------ |
+    | `path` order     | leaf → root                 | root → leaf                                |
     | `path` rendering | auto-rendered `"A > B > C"` | plain `string[]`; use `c.path.join(" > ")` |
-    | Singular alias | `it.collection` | removed; use the `zt.collections` array |
+    | Singular alias   | `it.collection`             | removed; use the `zt.collections` array    |
 
     ```eta
     <%/* Collections coerce to their name in string contexts */%>
@@ -119,9 +124,9 @@ Two migration paths:
   <Step>
     ### Update date fields
 
-    | v1 property | v2 property | Type change |
-    |-------------|-------------|-------------|
-    | `it.date` | `zt.date` | Was a year-only string; now a parsed `ItemDate` object. `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year. |
+    | v1 property                        | v2 property                        | Type change                                                                                                                        |
+    | ---------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+    | `it.date`                          | `zt.date`                          | Was a year-only string; now a parsed `ItemDate` object. `<%= zt.date %>` renders ISO; `zt.date?.year` gets the numeric year.       |
     | `it.dateAdded` / `it.dateModified` | `zt.dateAdded` / `zt.dateModified` | Were raw SQL strings (`"YYYY-MM-DD HH:MM:SS"`); now `Temporal.Instant`. Render as local date in `<%= %>` tags (e.g. `2026-06-21`). |
 
     If your v1 template used `it.date` as a year string, replace with `zt.date?.year`:
@@ -140,10 +145,10 @@ Two migration paths:
 
     v1 inlined child-note content as Markdown on `it.notes`. v2 writes each child note to a separate file and provides link-only entries:
 
-    | v1 | v2 |
-    |----|-----|
-    | `it.notes`: array of `{title, content}` | `zt.notes`: array of `{key, title, noteLink()}` |
-    | Note content inlined | Content in a separate file; `noteLink()` links to it |
+    | v1                                      | v2                                                   |
+    | --------------------------------------- | ---------------------------------------------------- |
+    | `it.notes`: array of `{title, content}` | `zt.notes`: array of `{key, title, noteLink()}`      |
+    | Note content inlined                    | Content in a separate file; `noteLink()` links to it |
 
     The default content template renders child notes as a bulleted list of links:
 
@@ -205,7 +210,7 @@ Two migration paths:
 
   </Step>
   <Step>
-    ### Update citation templates
+    ### Update the citation source
 
     v1 passed `it` as a raw array. v2 wraps items in an object:
 
@@ -223,6 +228,7 @@ Two migration paths:
 
     - `it` (array) becomes `zt.citations` (array inside an object). `zt.items` exposes the same items without citation metadata.
     - `lit.citekey` becomes `c.item.citationKey` (or `c.item.citekey`).
+    - Both of your v1 citation files render from one v2 document. The conversion below writes them as the two branches of an `if`/`else` on `zt.variant`, which is `"main"` or `"alt"`. See [Citation templates](/docs/reference/templates/data#citation-templates).
 
   </Step>
   <Step>
@@ -261,7 +267,7 @@ Two migration paths:
   <Step>
     ### Update the filename template
 
-    The filename template is a template file (`zotlit-filename.eta.md`), not a setting string. The v2 default adds `suffix()` for collision avoidance:
+    The filename template is a template file (`zotlit-filename.eta.md`), not a setting string. The [one-pass conversion](#convert) later folds it into the `filename` key of your profile document's manifest. The v2 default adds `suffix()` for collision avoidance:
 
     ```eta
     <%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
@@ -275,43 +281,43 @@ Two migration paths:
   <Step>
     ### Migrate frontmatter fields
 
-    If you customized `zt-field.eta.md`, delete it and recreate the fields in **Settings > ZotLit > Templates > Frontmatter**:
+    If you customized `zt-field.eta.md`, delete it and recreate the fields in your Profile's template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row at <SettingsPath /> with <UiLabel name={m.template_workbench_customize()} />:
 
     For each field, configure:
 
-    - **Key**: the YAML property name.
-    - **Expression**: a JavaScript or Liquid expression evaluated against `zt`.
-    - **Language**: select JavaScript to use JS expressions (requires the JavaScript Templates gate), or Liquid for Liquid expressions.
-    - **Merge strategy**: Replace, Append arrays, or Keep existing.
+    - <UiLabel name={m.settings_frontmatter_key_name()} />: the YAML property name.
+    - <UiLabel name={m.settings_frontmatter_expr_name()} />: a JavaScript or Liquid expression evaluated against `zt`.
+    - <UiLabel name={m.settings_frontmatter_language_name()} />: select <UiLabel name={m.settings_frontmatter_language_javascript()} /> to use JS expressions (requires the <UiLabel name={m.settings_template_js_enable_name()} /> gate), or <UiLabel name={m.settings_frontmatter_language_liquid()} /> for Liquid expressions.
+    - <UiLabel name={m.settings_frontmatter_merge_name()} />: <UiLabel name={m.settings_frontmatter_merge_replace()} />, <UiLabel name={m.settings_frontmatter_merge_append()} />, or <UiLabel name={m.settings_frontmatter_merge_keep()} />.
 
-    | v1 template line | v2 frontmatter field |
-    |-----------------|---------------------|
-    | `title: "<%= it.title %>"` | Key: `title`, Expr: `zt.title`, Merge: Replace |
-    | `authors: ...` | Key: `authors`, Expr: `zt.authors.map(c => c.fullName)`, Merge: Replace |
-    | `year: "<%= it.date %>"` | Key: `year`, Expr: `zt.date?.year`, Merge: Replace |
-    | `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.name)`, Merge: Append arrays |
+    | v1 template line           | v2 frontmatter field                                                                                                                                                                                                                                                         |
+    | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `title: "<%= it.title %>"` | <UiLabel name={m.settings_frontmatter_key_name()} />: `title`, <UiLabel name={m.settings_frontmatter_expr_name()} />: `zt.title`, <UiLabel name={m.settings_frontmatter_merge_name()} />: <UiLabel name={m.settings_frontmatter_merge_replace()} />                          |
+    | `authors: ...`             | <UiLabel name={m.settings_frontmatter_key_name()} />: `authors`, <UiLabel name={m.settings_frontmatter_expr_name()} />: `zt.authors.map(c => c.fullName)`, <UiLabel name={m.settings_frontmatter_merge_name()} />: <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
+    | `year: "<%= it.date %>"`   | <UiLabel name={m.settings_frontmatter_key_name()} />: `year`, <UiLabel name={m.settings_frontmatter_expr_name()} />: `zt.date?.year`, <UiLabel name={m.settings_frontmatter_merge_name()} />: <UiLabel name={m.settings_frontmatter_merge_replace()} />                      |
+    | `tags: ...`                | <UiLabel name={m.settings_frontmatter_key_name()} />: `tags`, <UiLabel name={m.settings_frontmatter_expr_name()} />: `zt.tags.map(t => t.name)`, <UiLabel name={m.settings_frontmatter_merge_name()} />: <UiLabel name={m.settings_frontmatter_merge_append()} />            |
 
     YAML escaping is handled automatically.
 
     ZotLit manages reserved frontmatter keys that you cannot target from a user field. For Literature Notes, only `zotero-key` is reserved. For imported notes, `zotero-note-key` and `zotero-lastmod` are reserved. The default `citekey` entry is an ordinary Managed Frontmatter field. See [Frontmatter reference](/docs/reference/templates/frontmatter) for details.
 
     <Callout type="info" title="Language selector">
-      JavaScript expressions (like `zt.authors.map(...)`) require selecting **JavaScript** in the Language dropdown for that field. The JavaScript Templates gate must be on.
+      JavaScript expressions (like `zt.authors.map(...)`) require selecting <UiLabel name={m.settings_frontmatter_language_javascript()} /> in the <UiLabel name={m.settings_frontmatter_language_name()} /> dropdown for that field. The <UiLabel name={m.settings_template_js_enable_name()} /> gate must be on.
     </Callout>
 
   </Step>
   <Step>
     ### Overwrite v1 notes to add the managed region
 
-    v1 notes lack the `%%zt-managed%%` / `%%/zt-managed%%` markers that v2 uses to isolate generated content. Incremental update cannot target their body. Running <Command inline>ZotLit: Update literature note</Command> on a v1 note refreshes frontmatter only.
+    v1 notes lack the `%%zt-managed%%` / `%%/zt-managed%%` markers that v2 uses to isolate generated content. Incremental update cannot target their body. Running <Command inline name={m.command_update_note_name()} /> on a v1 note refreshes frontmatter only.
 
     To add the managed region, run the overwrite command on each note you want refreshed:
 
-    <Command>ZotLit: Overwrite literature note</Command>
+    <Command name={m.command_overwrite_note_name()} />
 
-    A confirmation modal appears. Click **Overwrite** to proceed. ZotLit regenerates the entire note body from the current templates, inserting the managed-region markers.
+    A confirmation modal appears. Click <UiLabel name={m.modal_overwrite_note_confirm()} /> to proceed. ZotLit regenerates the entire note body from the current templates, inserting the managed-region markers.
 
-    After overwriting, the note responds to <Command inline>ZotLit: Update literature note</Command> for incremental updates going forward. You do not need to overwrite every note at once. Leave notes untouched until you are ready.
+    After overwriting, the note responds to <Command inline name={m.command_update_note_name()} /> for incremental updates going forward. You do not need to overwrite every note at once. Leave notes untouched until you are ready.
 
     See [Refresh v1 notes](/docs/how-to/migrate-from-v1#refresh-v1-notes) for the full procedure.
 
@@ -326,9 +332,29 @@ Two migration paths:
 
 After completing these steps, your custom Eta templates render with v2 field names and helpers. Notes that have been overwritten contain the `%%zt-managed%%` markers and respond to incremental updates. Notes you have not overwritten continue to work for frontmatter-only refreshes.
 
+## Convert to template documents [#convert]
+
+Renamed files load and render as they are, so you can stop here. ZotLit also offers to fold them into v2's template documents in one pass.
+
+The offer appears once in the Welcome view, as <UiLabel name={m.welcome_template_conversion_title()} />, and stays available as a reminder row at the top of settings with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action. Select <UiLabel name={m.welcome_template_conversion_action()} /> to run it.
+
+One pass does all of it:
+
+- Your note, content, filename, and annotation files fold into one profile document, `zotlit-profile.default.md`.
+- Your two citation files fold into one `zotlit-citation.md`, as an `if`/`else` on `zt.variant`. A side you never customized contributes ZotLit's built-in text.
+- Every other `zotlit-` file becomes its own partial, `zotlit-partial.<name>.md`, keeping its language in a manifest.
+
+Before it writes anything, ZotLit renders both citation variants and the note, update, filename, and annotation output, and compares them byte for byte against what your renamed files produce. A mismatch converts nothing, so nothing you rely on changes silently. The old files then move to Obsidian's configured trash, where you can recover them.
+
+The pass needs one Zotero item in scope to verify against, and an annotation as well if you customized the annotation file.
+
+Two things to know if your files mix languages. Where a `.liquid.md` and an `.eta.md` file share one name, the Liquid file is the one that renders and the conversion trashes both. Where your two citation files use different languages, the fold is Liquid, the Eta file stays where it is, and ZotLit tells you which files no longer affect citations.
+
+See [How templates work](/docs/concepts/how-templates-work#kinds) for what the resulting documents are.
+
 ## Eta to Liquid translations
 
-v2's default engine is Liquid. Converting your templates to Liquid removes the need for the JavaScript Templates gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
+v2's default engine is Liquid. Converting your templates to Liquid removes the need for the <UiLabel name={m.settings_template_js_enable_name()} /> gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
 
 | Eta construct                                         | Liquid equivalent                                 | Reference                                                                      |
 | ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -345,7 +371,7 @@ v2's default engine is Liquid. Converting your templates to Liquid removes the n
 | `zt.dateAdded` (Temporal.Instant formatting)          | `{{ zt.dateAdded \| date: "%Y-%m-%d" }}`          | [date filter](/docs/reference/templates/syntax#date-formatting-filter)         |
 | `-%>` (trim one newline after tag)                    | `-%}` / `-}}`                                     | [Whitespace control](/docs/reference/templates/syntax#whitespace-control)      |
 
-Liquid template files use the `.liquid.md` extension (e.g. `zotlit-note.liquid.md`). The data variable is still `zt` and the property names are identical to the Eta equivalents documented above.
+A renamed 2.1 Liquid file uses the `.liquid.md` extension (e.g. `zotlit-note.liquid.md`); a converted template document carries no language in its name. The data variable is still `zt` and the property names are identical to the Eta equivalents documented above.
 
 ## See also
 

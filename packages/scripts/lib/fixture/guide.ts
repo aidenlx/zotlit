@@ -16,9 +16,16 @@ import {
   SCOPE_CASES,
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_PARTIAL_NAME,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
+  VAULT_CASES,
 } from "./spec.ts";
 import type { FixtureItem, FixtureNote } from "./spec.ts";
 
+import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import { OBSIDIAN_HOST_VAULT_ENV } from "#obsidian-host-readiness";
 
 function libraryName(libraryID: number): string {
@@ -62,7 +69,11 @@ function collectionsSection(): string {
       entries.length > 1
         ? ` — shared by ${librariesRow(entries)}`
         : ` — ${libraryName(entries[0]!.libraryID)}`;
-    return `  ${key}${flag}`;
+    const parent = COLLECTIONS.find(
+      (c) => c.collectionID === entries[0]!.parentCollectionID,
+    );
+    const nesting = parent ? `, under ${parent.key}` : "";
+    return `  ${key}${flag}${nesting}`;
   });
   return `COLLECTIONS
 
@@ -152,6 +163,49 @@ The persisted key and value shape live in LIBRARY_SCOPE_SETTING_KEY
 ("${LIBRARY_SCOPE_SETTING_KEY}") and PersistedLibraryScope in spec.ts. They
 are the one place to update when the Library Scope setting changes shape.`;
 
+const VAULT_CASES_SECTION = `VAULT CASES
+
+${VAULT_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}
+
+A Vault Case selects what the Fixture Vault holds beside the Library Scope.
+Build one directly, or name it on a Paired Run:
+
+  pnpm fixture build --vault-case fresh
+  pnpm fixture open --vault-case upgrader
+
+Each Vault Case other than the default opens its own Development Vault,
+tests/fixture-vault-<worktree>-<case>, so the cases never overwrite one
+another. A dev run sets ${DEV_VAULT_CASE_ENV} for the Obsidian watcher, so the
+Vite build copies each bundle into that case's vault and hot reload reaches
+it. Set ${DEV_VAULT_CASE_ENV} yourself to point dev:vault or a plain
+obsidian-vault.ts open at a case vault:
+
+  ${DEV_VAULT_CASE_ENV}=fresh pnpm --filter @zotlit/obsidian dev:vault
+
+The fresh case writes no settings file, so it accepts only the default Scope
+Case and leaves Live Updates off. The Paired Run still points ZotLit at the
+Fixture database through the Device Overrides, so the first Literature Note
+needs no Zotero setup.
+
+The upgrader case writes the ZotLit ${UPGRADER_PLUGIN_VERSION} shape: settings version ${UPGRADER_SETTINGS_VERSION} with
+the note bindings vault-global, no Profiles, release.previous-version
+${UPGRADER_PLUGIN_VERSION}, and this note.frontmatter-fields list:
+
+${UPGRADER_FRONTMATTER_FIELDS.map((f) => `  ${f.key.padEnd(12)} ${f.expr}`).join("\n")}
+
+Its template folder holds these ejected Legacy Template Files. Each starts
+from a shipped default and carries one visible edit:
+
+${UPGRADER_LEGACY_TEMPLATES.map((t) => `${`  zotlit-${t.name}.${t.language}.md`.padEnd(38)}${JSON.stringify(t.find)} -> ${JSON.stringify(t.replace)}`).join("\n")}
+
+The citation pair is mixed-language on purpose. The one-pass conversion folds
+the Liquid cite into zotlit-citation.md and renames the bare partial to
+zotlit-partial.${UPGRADER_LEGACY_PARTIAL_NAME}.md. It leaves the Eta cite2
+file in the vault and names it in its notice.
+
+On load, ZotLit migrates the settings to the current version, sets
+note.template-conversion-pending, and opens the conversion prompt.`;
+
 const PAIRED_RUN_SECTION = `PAIRED RUN
 
 Confirm that a live host vault answers before changing the Fixture:
@@ -175,13 +229,20 @@ Add a Scope Case or restore the exact generated vault seed when needed:
 
   pnpm fixture open partial --purge
 
+The purge deletes the Development Vault folder and every ZotLit key in the
+vault's local storage, which Obsidian keeps outside that folder. A purged run
+therefore starts without held Device Overrides, Local Bridge installation ID,
+Pandoc consent, approved attachment folders, or saved view state.
+
 Use dev for the live form. It watches both extensions until Ctrl-C, then stops
 Paired Zotero and leaves the Development Vault window open:
 
   pnpm fixture dev
 
 The host-vault check must succeed before the dev command starts.
-Close an existing Paired Zotero before either command rebuilds the Fixture.
+Either command closes a Paired Zotero that still holds this Fixture, then
+rebuilds and starts a fresh one. It waits for that instance to release the
+database, and reports the process it closed.
 
 Fixture builds and Paired Zotero launches install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from its
 verified, cached XPI.
@@ -283,6 +344,7 @@ export function renderGuide(): string {
     itemsSection(),
     notesSection(),
     SCOPE_CASES_SECTION,
+    VAULT_CASES_SECTION,
     PAIRED_RUN_SECTION,
     CANCEL_TESTING_SECTION,
     STRESS_BUILD_SECTION,

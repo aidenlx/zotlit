@@ -62,13 +62,6 @@ describe("revealSetting", () => {
       tab,
       style,
     );
-  });
-
-  it("opens the sub-page before scrolling, which reaches the rendered page alone", () => {
-    const { app, setting } = createSettingsModal();
-
-    revealSetting(app, TAB_ID, style.name);
-
     expect(
       setting.navigateToSearchResult.mock.invocationCallOrder[0]!,
     ).toBeLessThan(setting.scrollToDefinition.mock.invocationCallOrder[0]!);

@@ -4,11 +4,13 @@ import type { IconName } from "obsidian";
 import type { MouseEvent, ReactNode } from "react";
 
 import { AmbiguousCandidates } from "@/components/ambiguous-candidates";
+import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { Inlines } from "@/services/pandoc/ast";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { InlineContent } from "@/services/pandoc/inline-content";
 
 import type { CitationPopoverActions } from "./actions";
@@ -28,6 +30,8 @@ export interface CitationPopoverContentProps {
    * inline, which shows its entries instead.
    */
   note?: Inlines;
+  /** The Imported Note Profile diagnostic this popover shows above its works. */
+  profileFailure?: ProfilePresentationFailure;
   actions: CitationPopoverActions;
   /**
    * The citekey resolution snapshot could not answer at read time — it is
@@ -35,6 +39,7 @@ export interface CitationPopoverContentProps {
    * "not answered yet", never "matches no item".
    */
   pending?: boolean;
+  unavailable?: "database" | "item";
 }
 
 /**
@@ -45,20 +50,66 @@ export interface CitationPopoverContentProps {
 export function CitationPopoverContent({
   blocks,
   note,
+  profileFailure,
   actions,
   pending = false,
+  unavailable,
 }: CitationPopoverContentProps) {
-  if (note?.length) {
+  if (unavailable) {
     return (
-      <NoteCitation
-        note={note}
-        blocks={blocks}
-        actions={actions}
-        pending={pending}
-      />
+      <div className={cn(blockClass, "zt:text-destructive")} role="status">
+        {unavailable === "database"
+          ? m.citation_popover_database_unavailable()
+          : m.citation_popover_item_unavailable()}
+      </div>
     );
   }
-  return <EntryStack blocks={blocks} actions={actions} pending={pending} />;
+  return (
+    <>
+      {profileFailure && (
+        <ProfileFailure failure={profileFailure} actions={actions} />
+      )}
+      {note?.length ? (
+        <NoteCitation
+          note={note}
+          blocks={blocks}
+          actions={actions}
+          pending={pending}
+        />
+      ) : (
+        <EntryStack blocks={blocks} actions={actions} pending={pending} />
+      )}
+    </>
+  );
+}
+
+function ProfileFailure({
+  failure,
+  actions,
+}: {
+  failure: ProfilePresentationFailure;
+  actions: CitationPopoverActions;
+}) {
+  return (
+    <div
+      className={cn(blockClass, "zt:text-destructive")}
+      data-citation-popover-profile-error
+    >
+      {m.notice_imported_note_profile_unknown({
+        stamp: failure.diagnostic.stamp,
+        target: failure.target,
+      })}
+      <Button
+        data-profile-recovery
+        onClick={() => {
+          actions.onDone();
+          actions.onSwitchProfile(failure.target);
+        }}
+      >
+        {m.profile_switch_recovery()}
+      </Button>
+    </div>
+  );
 }
 
 /**
@@ -87,7 +138,7 @@ function EntryStack({
           // a citation that writes one twice all the same.
           key={`${block.citekey}-${index}`}
           className={blockClass}
-          data-citation-popover-block={block.citekey}
+          data-citation-popover-block={block.citekey ?? ""}
         >
           {block.kind === "entry" ? (
             <>
@@ -135,7 +186,7 @@ function NoteCitation({
           <div
             key={`${block.citekey}-${index}`}
             className="zt:grid zt:grid-cols-[max-content_minmax(0,1fr)] zt:items-center zt:gap-x-2"
-            data-citation-popover-block={block.citekey}
+            data-citation-popover-block={block.citekey ?? ""}
           >
             {/* The serial this work's slot of the inline run showed, carrying
                 the same public class, so a theme styles the label and the run

@@ -9,6 +9,11 @@ import type {
   AmbiguousCandidate,
   CandidateRow,
 } from "@/services/citation-index/ambiguity";
+import {
+  FLAIR_ROW_CLASS,
+  appendInlineFlair,
+  appendTrailingFlair,
+} from "@/services/item-lookup/render-hit";
 
 import type { AmbiguousCitekey, CitekeyEditor } from "./service";
 
@@ -54,14 +59,19 @@ class AmbiguousCitekeyModal extends SuggestModal<AmbiguousCandidate> {
     el: HTMLElement,
   ): void {
     const row = candidateRow(candidate);
-    const contentEl = el.createDiv("suggestion-content");
+    el.classList.add("zt-citations", "mod-complex", FLAIR_ROW_CLASS);
+    const contentEl = el.createDiv({ cls: "suggestion-content zt:min-w-0" });
     contentEl.createDiv({ cls: "suggestion-title", text: row.summary });
-    // The Library name and the key are two facts, so the row keeps them apart.
-    const noteEl = contentEl.createDiv(
-      "suggestion-note zt:flex zt:gap-2 zt:min-w-0",
-    );
-    if (row.library) noteEl.createSpan({ text: row.library });
-    noteEl.createSpan({ text: row.key });
+    contentEl.createDiv({ cls: "suggestion-note zt:font-mono", text: row.key });
+    // The Library is a second fact, so it takes the trailing slot an item row
+    // gives it, or a badge under the key on a narrow row.
+    if (row.library) {
+      appendInlineFlair(
+        contentEl.createDiv({ cls: "suggestion-note" }),
+        row.library,
+      );
+      appendTrailingFlair(el, row.library);
+    }
   }
 
   override onChooseSuggestion(candidate: AmbiguousCandidate): void {

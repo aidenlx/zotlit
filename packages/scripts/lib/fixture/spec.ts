@@ -1,6 +1,6 @@
 // Deterministic description of the Fixture.
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
+import { CONTRACT_VERSION, USER_LIBRARY_ID } from "@zotlit/db";
 
 /** Names My Library in the printed Library table, beside the group IDs. */
 export const PERSONAL_SELECTOR = "my-library";
@@ -80,6 +80,8 @@ export interface FixtureCollection {
    */
   key: string;
   name: string;
+  /** Parent in the same Library; absent for a top-level collection. */
+  parentCollectionID?: number;
 }
 
 /**
@@ -90,12 +92,23 @@ export interface FixtureCollection {
  */
 export const BUILD_TIMESTAMP = "2026-08-19 08:00:00";
 
-/** `SHAREDCL` repeats in three Libraries, so a collection target must name one. */
+/**
+ * `SHAREDCL` repeats in three Libraries, so a collection target must name one.
+ * `PERSCHLD` nests under `PERSNAL2`, so a descendant walk and a direct
+ * membership check give different answers for the one Item filed there.
+ */
 export const COLLECTIONS: readonly FixtureCollection[] = [
   { collectionID: 1, libraryID: 1, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 2, libraryID: 2, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 3, libraryID: 3, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 4, libraryID: 1, key: "PERSNAL2", name: "Personal only" },
+  {
+    collectionID: 5,
+    libraryID: 1,
+    key: "PERSCHLD",
+    name: "Personal child",
+    parentCollectionID: 4,
+  },
 ];
 
 /**
@@ -106,8 +119,10 @@ export const COLLECTIONS: readonly FixtureCollection[] = [
 export const FIXTURE_ITEM_TYPES = [
   "journalArticle",
   "bookSection",
+  "conferencePaper",
   "preprint",
   "book",
+  "thesis",
   "letter",
 ] as const;
 
@@ -124,6 +139,17 @@ export interface FixtureItem {
   citationKey: string | null;
   /** Fixture Vault filename stem when a prose page needs a stable target. */
   literatureNoteName?: string;
+  /**
+   * Citation Keys the seeded Literature Note cites in its body, so a
+   * Literature Note carries citation edges of its own and a local graph can
+   * walk from one literature node to a second.
+   */
+  literatureNoteCitations?: readonly string[];
+  /**
+   * Literature Note Profile the seeded note belongs to, written as a Profile
+   * stamp. An absent value seeds the note under the default Profile, unstamped.
+   */
+  literatureNoteProfile?: string;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -154,6 +180,9 @@ export interface FixtureCreator {
   /** `1` stores a single-field institutional name in {@link lastName}. */
   fieldMode: 0 | 1;
 }
+
+/** Id of the Fixture's second Literature Note Profile, {@link LITERATURE_NOTE_PROFILES}. */
+const BOOKS_PROFILE_ID = "V1StGXR8Z5jd";
 
 /**
  * The item set every discovery, Citation Key, and batch tracer reads.
@@ -206,6 +235,8 @@ export const ITEMS: readonly FixtureItem[] = [
     key: "BBBB2222",
     itemType: "journalArticle",
     citationKey: "duplicateWithin2020",
+    literatureNoteName: "books-duplicateWithin2020",
+    literatureNoteProfile: BOOKS_PROFILE_ID,
     title: "Within-library duplicate, first item",
     venue: "Journal of Personal Records",
     date: "2020",
@@ -330,7 +361,7 @@ export const ITEMS: readonly FixtureItem[] = [
     date: "2017",
     creators: [author("Kim", "Tie")],
     dateModified: "2025-03-01 12:00:00",
-    collectionIDs: [],
+    collectionIDs: [5],
   },
   {
     itemID: 12,
@@ -467,6 +498,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "rougierTenSimpleRules2014",
     literatureNoteName: "rougierTenSimpleRules2014",
+    literatureNoteCitations: ["ioannidisWhyMost2005"],
     title: "Ten Simple Rules for Better Figures",
     venue: "PLOS Computational Biology",
     date: "2014",
@@ -516,7 +548,108 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-02-02 12:00:00",
     collectionIDs: [1],
   },
+  {
+    itemID: 60,
+    libraryID: 1,
+    key: "CNPF226A",
+    itemType: "conferencePaper",
+    citationKey: "riveraResearchInterfaces2026",
+    title: "Designing reproducible research interfaces",
+    venue: "Proceedings of the Open Research Conference",
+    date: "2026",
+    creators: [author("Mara", "Rivera"), author("Tao", "Chen")],
+    dateModified: "2025-01-03 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 61,
+    libraryID: 1,
+    key: "NW2CPDTC",
+    itemType: "book",
+    citationKey: "Kahneman2011",
+    title: "Thinking, fast and slow",
+    venue: "Penguin Books",
+    date: "2011-00-00 2011",
+    creators: [author("D", "Kahneman")],
+    dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
+  {
+    itemID: 62,
+    libraryID: 1,
+    key: "I49R3FTL",
+    itemType: "thesis",
+    citationKey: "Batista2010",
+    title:
+      "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+    venue: "",
+    date: "2010-00-00 2010",
+    creators: [author("Edgard Antunes Dias", "Batista")],
+    dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
 ];
+
+/** How a seeded Citation Key resolves against the Items the build writes. */
+export type SeededCitationKeyResolution = "unique" | "ambiguous" | "missing";
+
+/**
+ * The Citation Keys the seeded vault cites for its graph cases, with the
+ * resolution each case rests on: one Item behind a Literature Note, several
+ * behind an ambiguous key, none behind an unresolved key.
+ * {@link assertSeededCitationKeys} holds the build to this map, so an Item
+ * edit that retires a case stops the build instead of leaving a seeded page
+ * that no longer shows what it names. Declare a key here as you seed a page
+ * that cites it.
+ */
+export const SEEDED_CITATION_KEYS: Readonly<
+  Record<string, SeededCitationKeyResolution>
+> = {
+  Hensher2011: "unique",
+  consortiumAlpha2020: "unique",
+  duplicateAcross2019: "ambiguous",
+  ioannidisWhyMost2005: "unique",
+  labArchiveAlpha2021: "unique",
+  nonexistentCitekeyForSmokeTest2099: "missing",
+  rougierTenSimpleRules2014: "unique",
+  sharedReadingAlpha2023: "unique",
+  "wallgren-petterssonDistalMyopathyCaused2007": "unique",
+  wangMutationalClinicalSpectrum2020a: "unique",
+  wittNebulinRegulatesThin2006: "unique",
+  xuNoCitationKeyProperty2019: "missing",
+  yinClinicopathologicalFeaturesMutational2021: "unique",
+};
+
+function citationKeyResolution(
+  items: readonly FixtureItem[],
+  key: string,
+): SeededCitationKeyResolution {
+  const held = items.filter((item) => item.citationKey === key).length;
+  if (held === 0) return "missing";
+  return held === 1 ? "unique" : "ambiguous";
+}
+
+/** One message per seeded Citation Key that left its declared resolution. */
+export function seededCitationKeyDrift(
+  items: readonly FixtureItem[],
+): readonly string[] {
+  return Object.entries(SEEDED_CITATION_KEYS).flatMap(([key, declared]) => {
+    const resolution = citationKeyResolution(items, key);
+    return resolution === declared
+      ? []
+      : [
+          `seeded Citation Key "${key}" resolves as ${resolution}, the Spec declares ${declared}`,
+        ];
+  });
+}
+
+/** Stops a build whose Items no longer carry the seeded citation cases. */
+export function assertSeededCitationKeys(items: readonly FixtureItem[]): void {
+  const drift = seededCitationKeyDrift(items);
+  if (drift.length > 0) {
+    throw new Error(drift.join("; "));
+  }
+}
 
 function author(firstName: string, lastName: string): FixtureCreator {
   return { firstName, lastName, creatorType: "author", fieldMode: 0 };
@@ -791,6 +924,19 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "rougier-2014/rougier-2014.pdf",
     dateModified: "2025-02-04 12:00:00",
   },
+  {
+    itemID: 63,
+    libraryID: 1,
+    key: "CNPDF26A",
+    parentItemID: 60,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    title: "Research interfaces conference paper",
+    path: "research-interfaces.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-01-03 11:00:00",
+  },
 ];
 
 interface FixtureAnnotationBase {
@@ -851,7 +997,7 @@ export type FixtureAnnotation = FixtureAnnotationBase &
       }
   );
 
-/** Real anchors captured from pages in the committed PDFs. */
+/** Reviewed anchors for the committed Fixture documents. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
   {
     itemID: 26,
@@ -1059,6 +1205,22 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     dateAdded: "2026-08-23 16:20:12",
     dateModified: "2026-08-23 16:20:18",
   },
+  {
+    itemID: 64,
+    libraryID: 1,
+    key: "CNPAN26A",
+    parentItemID: 63,
+    type: 1,
+    text: "A reproducible interface makes its inputs and outputs inspectable.",
+    comment: "Reviewed Fixture text; it contains no personal library data.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000001|00000",
+    position: { pageIndex: 0, rects: [[58, 590, 375, 610]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-01-03 11:30:00",
+    dateModified: "2025-01-03 11:30:00",
+  },
 ];
 
 /** One CSL style a user installed in Zotero, as the Fixture carries it. */
@@ -1087,6 +1249,108 @@ export const INSTALLED_STYLES: readonly FixtureStyle[] = [
     title: "China National Standard GB/T 7714-1987 (numeric, 中文)",
   },
 ];
+
+/**
+ * The Fixture's second Literature Note Profile. Together with the built-in
+ * default Profile and its built-in document, it provides two document-backed
+ * layouts and two target folders for real-vault checks.
+ */
+export const LITERATURE_NOTE_PROFILES = [
+  {
+    id: BOOKS_PROFILE_ID,
+    label: "Books",
+    document: "zotlit-profile.books.md",
+    bindings: {
+      "note.literature-folder": "books",
+      "citation.references-style": INSTALLED_STYLES[0]!.id,
+    },
+  },
+] as const;
+
+/**
+ * The Fixture's Shared Partial. The Books Profile note body calls it, the
+ * Profile import example bundles a different edition under this name, and
+ * removing the file is what makes a Literature Note create refuse.
+ */
+export const FIXTURE_PARTIAL_NAME = "book-details";
+
+/**
+ * The Configured vault's `zotlit-citation.md`: the shipped Citation Template
+ * default with one visible edit, so an inserted alternate citation reads as
+ * the reader's own rather than the built-in text.
+ */
+export const CITATION_DOCUMENT_EDIT: FixtureTemplateEdit = {
+  find: '{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+  replace: 'cf. {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}',
+};
+
+/** One Shared Partial the Fixture Vault holds, as its `zotlit-partial.<name>.md` file carries it. */
+export interface FixtureSharedPartial {
+  /** The partial's vault-global name, which a render call names. */
+  readonly name: string;
+  readonly language: "liquid" | "eta";
+  /** The template source below the document's manifest. */
+  readonly source: string;
+}
+
+/** Shared Partial documents placed in the Fixture template folder. */
+export const SHARED_PARTIAL_DOCUMENTS: readonly FixtureSharedPartial[] = [
+  {
+    name: FIXTURE_PARTIAL_NAME,
+    language: "liquid",
+    source: `> [!info] Book details
+> Type: {{ zt.itemType }}
+> Citation key: {{ zt.citationKey | default: zt.key }}
+`,
+  },
+];
+
+/** Literature Note Template documents placed in the Fixture template folder. */
+export const LITERATURE_NOTE_DOCUMENTS = [
+  {
+    filename: "zotlit-profile.books.md",
+    source: `---
+id: ${BOOKS_PROFILE_ID}
+name: Books
+folder: books
+citationStyle: ${INSTALLED_STYLES[0]!.id}
+version: 1.0.0
+author: ZotLit
+description: A visibly distinct book layout for the End-to-end Run
+contract: ${CONTRACT_VERSION}
+filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
+match: 'itemType == "book"'
+frontmatter:
+  - key: fixture-title
+    expr: zt.title
+    merge: replace
+  - key: fixture-kind
+    value: {"$if":"zt.itemType == 'journalArticle'","then":"reference/article","else":"reference/other"}
+    merge: replace
+  - key: fixture-obsolete
+    value: {"$if":"zt.itemType == 'bookSection'","then":"retained"}
+    merge: replace
+  - value: {"fixture-spread-title":{"$eval":"zt.title"},"fixture-spread-kind":{"$eval":"zt.itemType"}}
+---
+# Book profile: {{ zt.title }}
+
+{% managed %}
+## Book details
+
+Citation key: {{ zt.citationKey }}
+
+{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+[!quote] Fixture page {{ zt.pageLabel }}
+
+{{ zt.text }}
+{% endbq %}
+`,
+  },
+] as const;
 
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
@@ -1219,3 +1483,192 @@ export function findScopeCase(id: string): FixtureScopeCase {
   }
   return found;
 }
+
+/**
+ * Persisted shape of one Managed Frontmatter field, as ZotLit v2.1 saved it
+ * under `note.frontmatter-fields`.
+ */
+export interface FixtureFrontmatterField {
+  readonly key: string;
+  readonly expr: string;
+  readonly merge: "replace";
+  readonly language: "liquid";
+}
+
+/**
+ * One find-and-replace against a shipped default, which stands in for a
+ * reader's own customization.
+ */
+export interface FixtureTemplateEdit {
+  /** Text present in the shipped default source; the build fails otherwise. */
+  readonly find: string;
+  /** Visible edit that stands in for a user's customization. */
+  readonly replace: string;
+}
+
+/**
+ * Shipped default one ejected Legacy Template File starts from: a Literature
+ * Note slot's default file, or one 2.1.x citation branch.
+ */
+export type FixtureLegacyTemplateOrigin =
+  | "filename"
+  | "note"
+  | "content"
+  | "annotation"
+  | "cite"
+  | "cite2";
+
+/**
+ * The bare 2.1.x partial the Upgrader vault ejects. The one-pass conversion
+ * renames it to `zotlit-partial.annotation-callout.md`.
+ */
+export const UPGRADER_LEGACY_PARTIAL_NAME = "annotation-callout";
+
+/**
+ * One 2.1.x Legacy Template File the Upgrader vault ejects. The file is
+ * `zotlit-<name>.<language>.md` in the template folder, and its text is the
+ * shipped default of the same name with the edit applied. The bare partial is
+ * the exception: it has no default of its own, so it names the one it starts
+ * from in `from`.
+ */
+export type FixtureLegacyTemplate = FixtureTemplateEdit & {
+  /** The language the file is written in; it picks the extension. */
+  readonly language: "liquid" | "eta";
+} & (
+    | { readonly name: FixtureLegacyTemplateOrigin }
+    | {
+        readonly name: typeof UPGRADER_LEGACY_PARTIAL_NAME;
+        readonly from: FixtureLegacyTemplateOrigin;
+      }
+  );
+
+export interface FixtureVaultCase {
+  id: "configured" | "fresh" | "upgrader";
+  /** One line for the maintainer choosing a case. */
+  summary: string;
+}
+
+/**
+ * A Vault Case is a named, saved Fixture Vault state. The Scope Case selects
+ * the saved Library Scope; the Vault Case selects everything else the vault
+ * holds: settings file, notes, Profiles, and template files.
+ */
+export const VAULT_CASES: readonly FixtureVaultCase[] = [
+  {
+    id: "configured",
+    summary:
+      "Current settings, the Books Profile, an edited Citation Template, the Shared Partial that Profile calls, Literature Notes (one stamped under the Books Profile), and Imported Notes. This is the default.",
+  },
+  {
+    id: "fresh",
+    summary:
+      "Vault with no notes, ZotLit installed, and no settings file: the new-user path.",
+  },
+  {
+    id: "upgrader",
+    summary:
+      "A ZotLit v2.1 vault: version-9 settings, an edited Managed Frontmatter list, and ejected Legacy Template Files with visible edits: the note slots, a mixed-language citation pair, and one bare partial.",
+  },
+];
+
+export const DEFAULT_VAULT_CASE = "configured";
+
+export function findVaultCase(id: string): FixtureVaultCase {
+  const found = VAULT_CASES.find((vaultCase) => vaultCase.id === id);
+  if (!found) {
+    throw new Error(
+      `unknown vault case "${id}". Known: ${VAULT_CASES.map((c) => c.id).join(", ")}`,
+    );
+  }
+  return found;
+}
+
+/** Settings version ZotLit v2.1.0 wrote, before Profiles absorbed the note bindings. */
+export const UPGRADER_SETTINGS_VERSION = 9;
+
+/** Plugin version the Upgrader vault records as its last launch. */
+export const UPGRADER_PLUGIN_VERSION = "2.1.0";
+
+/**
+ * The v2.1 `note.frontmatter-fields` list: the four shipped defaults, plus one
+ * visible addition so the list reads as user-edited.
+ */
+export const UPGRADER_FRONTMATTER_FIELDS: readonly FixtureFrontmatterField[] = [
+  { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
+  {
+    key: "related",
+    expr: "zt.relatedItems | note_links",
+    merge: "replace",
+    language: "liquid",
+  },
+  {
+    key: "collections",
+    expr: "zt.collections | collection_paths",
+    merge: "replace",
+    language: "liquid",
+  },
+  {
+    key: "citekey",
+    expr: "zt.citationKey",
+    merge: "replace",
+    language: "liquid",
+  },
+  { key: "year", expr: "zt.date.year", merge: "replace", language: "liquid" },
+];
+
+/**
+ * Legacy Template Files the Upgrader vault ejects into its template folder:
+ * the four Literature Note slots, the two citation slots, and one bare
+ * partial. Each starts from a shipped default and carries one visible edit, so
+ * a converted document is recognizably the user's own and the trashed files
+ * are easy to tell from the defaults.
+ *
+ * The pair is mixed-language on purpose: `cite` is Liquid and `cite2` is Eta,
+ * so the fold takes the Liquid side and the conversion leaves the Eta file in
+ * the vault and names it in its notice.
+ */
+export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
+  {
+    name: "filename",
+    language: "liquid",
+    find: "{{ zt.citationKey",
+    replace: "lit-{{ zt.citationKey",
+  },
+  {
+    name: "note",
+    language: "liquid",
+    find: "# {{ zt.title }}",
+    replace: "# {{ zt.title }} (v2.1 template)",
+  },
+  {
+    name: "content",
+    language: "liquid",
+    find: "## Notes",
+    replace: "## Zotero notes",
+  },
+  {
+    name: "annotation",
+    language: "liquid",
+    find: "[!note] Page",
+    replace: "[!quote] Page",
+  },
+  {
+    name: "cite",
+    language: "liquid",
+    find: "{{ zt.citations | pandoc_cite }}",
+    replace: "({{ zt.citations | pandoc_cite }})",
+  },
+  {
+    name: "cite2",
+    language: "eta",
+    find: "<%= pandocCite(",
+    replace: "cf. <%= pandocCite(",
+  },
+  {
+    name: UPGRADER_LEGACY_PARTIAL_NAME,
+    language: "liquid",
+    from: "annotation",
+    find: "[!note] Page",
+    replace: "[!tip] Page",
+  },
+];

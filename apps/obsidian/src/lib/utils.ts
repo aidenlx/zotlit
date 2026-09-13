@@ -1,5 +1,5 @@
-import { clsx } from "clsx";
-import type { ClassValue } from "clsx";
+import { clsx } from "cn";
+import type { ClassValue } from "cn";
 import type { TooltipOptions } from "obsidian";
 import type { KeyboardEvent, MouseEvent } from "react";
 

@@ -27,3 +27,11 @@ _Avoid_: note status (that names the Literature Note column), sync status (that 
 **Freshness Signal**:
 The Companion's payload-free push telling the Obsidian plugin to refresh after write activity settles. It can follow a Checkpoint, but it does not prove that the main database file contains every recent change.
 _Avoid_: item update (the retired per-item push), change notification, ping
+
+**Fluent Attribute**:
+A named sub-value of a Companion message that a XUL element reads by name — a label, a tooltip, an access key — authored as a nested leaf beside the message's value in the inlang project.
+_Avoid_: suffix, sub-key, property
+
+**Derived Fluent File**:
+The per-locale FTL file the build emits from the inlang project and ships in the XPI. Never edited by hand.
+_Avoid_: locale file, translation file

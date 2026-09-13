@@ -9,6 +9,8 @@ description: "Use when you need to resolve an in-progress git merge/rebase confl
 
 3. **Resolve each hunk.** Preserve both intents where possible. Where incompatible, pick the one matching the merge's stated goal and note the trade-off. Do **not** invent new behaviour. Always resolve; never `--abort`.
 
-4. Discover the project's **automated checks** and run them — typically typecheck, then tests, then format. Fix anything the merge broke.
+4. **Scan for semantic conflicts.** Clean merges break too: one side changes a signature, default, or invariant, and the other side's new code still assumes the old one. List the files each side changed since the merge base, collect the contract changes on each side, and check them against the other side's new callers. Account for every contract change.
 
-5. **Finish the merge/rebase.** Stage everything and commit. If rebasing, continue the rebase process until all commits are rebased.
+5. Discover the project's **automated checks** and run them — typically typecheck, then tests, then format. Fix anything the merge broke.
+
+6. **Finish the merge/rebase.** Stage everything and commit. If rebasing, continue the rebase process until all commits are rebased.

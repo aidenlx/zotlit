@@ -136,8 +136,9 @@ export interface TemplateAnnotation extends TemplateAnnotationBaseData {
 export interface AnnotationTemplateContext extends TemplateAnnotation {
   /**
    * Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered
-   * through the `cite` template with this annotation's {@link pageLabel} as
-   * locator; `null` when there is no parent item or it carries no citation key.
+   * through the citation template (`zotlit-citation.md`) with this
+   * annotation's {@link pageLabel} as locator and the `main` variant; `null`
+   * when there is no parent item or it carries no citation key.
    * Computed at the app layer.
    */
   citation: string | null;
@@ -148,7 +149,7 @@ export interface AnnotationTemplateContext extends TemplateAnnotation {
  * data, promoting it to the annotation root.
  *
  * @param renderCitation - Called lazily, only when a template reads
- *   `zt.citation`, so the `cite` render is skipped otherwise.
+ *   `zt.citation`, so the citation render is skipped otherwise.
  * @returns `data` itself, redeclared as the annotation root.
  */
 export function withAnnotationCitation(

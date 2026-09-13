@@ -56,8 +56,13 @@ jobs:
             "require('semver').prerelease('${{ steps.meta.outputs.version }}') !== null")"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
+      # A pre-release build links to Pre-release Docs, the site that describes
+      # its own line; a stable build links to Stable Docs. Baked into main.js
+      # through the DOCS_SITE_URL build variable (see apps/obsidian/vite.config.ts).
       - name: Build
         if: steps.gate.outputs.exists == 'false'
+        env:
+          DOCS_SITE_URL: ${{ steps.prerelease.outputs.prerelease == 'true' && 'https://zotlit-beta.aidenlx.site' || 'https://zotlit.aidenlx.site' }}
         run: pnpm turbo run build --filter=@zotlit/obsidian
 
       # Everything the installed plugin downloads at runtime, staged into one

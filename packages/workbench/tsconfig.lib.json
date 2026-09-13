@@ -1,0 +1,34 @@
+{
+  "extends": ["@zotlit/config/tsconfig"],
+  "compilerOptions": {
+    "target": "ES2025",
+    "lib": [
+      "ES2025",
+      "DOM",
+      "ESNext.Disposable",
+      "ESNext.Error",
+      "ESNext.Temporal",
+      "ESNext.Date",
+      "ESNext.Intl"
+    ],
+    "declaration": true,
+    "declarationMap": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "outDir": "dist",
+    "rootDir": "src",
+    "isolatedDeclarations": false,
+    "jsx": "react-jsx",
+    "types": []
+  },
+  "include": ["./src/**/*.ts", "./src/**/*.tsx"],
+  "exclude": [
+    "./node_modules",
+    "./dist/**/*",
+    "./src/**/*.test.ts",
+    "./src/**/*.test.tsx",
+    "./src/ui/test-host.tsx",
+    "./src/ui/test-messages.ts",
+    "./src/ui/generated/test-en.json"
+  ]
+}

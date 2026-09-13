@@ -1,6 +1,13 @@
-/** @see https://zotlit.aidenlx.site — the v2 documentation site. */
-export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
+/**
+ * The documentation site this build belongs to, fixed at build time: Stable
+ * Docs (https://zotlit.aidenlx.site) for a stable release, Pre-release Docs
+ * (https://zotlit-beta.aidenlx.site) for a pre-release. CI sets it per
+ * release line through the `DOCS_SITE_URL` build variable; a local build
+ * defaults to Stable Docs.
+ */
+export const DOCS_SITE_URL = __DOCS_SITE_URL__;
 export const DOCS_COMPANION = `${DOCS_SITE_URL}/docs/install-companion`;
+export const WEB_WORKBENCH_ENABLED = __WEB_WORKBENCH_ENABLED__;
 
 /**
  * Host and repository ZotLit's releases are served from, as shown to the user
@@ -20,6 +27,8 @@ export const resourceReleaseUrl = (pluginVersion: string): string =>
   `https://${RELEASE_ORIGIN}/releases/download/res-${pluginVersion}`;
 
 export const FIELD_ZOTERO_KEY = "zotero-key";
+/** Stable Literature Note Profile id. Absence selects the built-in default. */
+export const FIELD_LITERATURE_NOTE_PROFILE = "zotlit-profile";
 export const FIELD_CITEKEY = "citekey";
 /**
  * CSL ID of the Zotero-installed style one document renders its Citations and
@@ -67,6 +76,7 @@ export function stringifyInstant(
  */
 export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_ZOTERO_KEY,
+  FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
   FIELD_ZOTERO_LASTMOD,
 ]);

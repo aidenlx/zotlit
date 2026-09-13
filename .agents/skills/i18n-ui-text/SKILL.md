@@ -35,7 +35,7 @@ Internal logs, code comments, and developer-only diagnostics are *not* UI text a
 
 Before committing a new string, verify:
 
-- **Sentence case** — `"Refresh Zotero database"`, not `"Refresh Zotero Database"`. Capitalize only the first word and proper nouns. Applies to command names, button labels, setting names, headings, modal titles.
+- **Sentence case** — `"Refresh Zotero database"`, not `"Refresh Zotero Database"`. Capitalize only the first word and proper nouns. Applies to command names, button labels, setting names, headings, modal titles. Exception: Companion menu labels under the `zotero` namespace use Title Case to match Zotero's menus — see `apps/zotero/policies/localization.md`.
 - **Imperative verb for actions** — commands and buttons that perform something start with a verb: `"Import notes"`, `"Open library"`, not `"Importing notes"` or `"Library import"`.
 - **"Select", not "click" or "tap"** — when copy refers to an action the user takes on UI (e.g., setting descriptions saying "Select a folder to…").
 - **American English** — `organize`, `color`, `behavior`, `synchronize`. Not `organise`, `colour`, `behaviour`, `synchronise`.

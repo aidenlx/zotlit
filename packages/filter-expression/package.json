@@ -1,0 +1,36 @@
+{
+  "name": "@zotlit/filter-expression",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "generate:parser": "lezer-generator src/filter-expression.grammar --typeScript -o src/generated/parser.ts"
+  },
+  "dependencies": {
+    "@lezer/common": "catalog:",
+    "@lezer/lr": "catalog:"
+  },
+  "devDependencies": {
+    "@lezer/generator": "1.8.0",
+    "@types/node": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "oxlint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -1,0 +1,21 @@
+/* What a hovered node's popover stands on. The graph draws its nodes into a
+   canvas, so a node has no element of its own: `hover.ts` places this anchor
+   at the node in the renderer's container, which the graph keeps
+   `position: relative`. It is zero-size, so the popover reads the node's own
+   point, and it takes no pointer events, so the canvas beneath it keeps every
+   gesture the graph itself reads. */
+.zt-graph-hover-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Native groups capture this theme value when they are created. */
+:where(body) {
+  --zt-graph-literature-note-color: #e8622c;
+}
+
+:where(body.theme-dark) {
+  --zt-graph-literature-note-color: #f0793f;
+}

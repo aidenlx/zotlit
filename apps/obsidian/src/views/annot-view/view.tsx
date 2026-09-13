@@ -18,13 +18,15 @@ import type { AnnotViewItem, Item, ItemRef, Library } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import type {
   AttachmentImport,
   AttachmentImportService,
 } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
+import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LiveUpdateService } from "@/services/live-update/service";
+import type { LocalServerService } from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -39,7 +41,6 @@ import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
-import { pickItem } from "./item-picker";
 import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
 import type { LoadTarget } from "./resolve-target";
 import {
@@ -66,7 +67,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
 export interface AnnotViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "on" | "ready" | "refresh">;
-  liveUpdate: Pick<LiveUpdateService, "available" | "readerTarget" | "on">;
+  liveUpdate: Pick<LocalServerService, "available" | "readerTarget" | "on">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   noteFeature: Pick<
     NoteFeature,
@@ -167,8 +168,9 @@ export class AnnotationView extends ItemView {
       onLinkItem: () => this.#linkItem(),
       onUnlinkItem: () => this.#setFollowMode("note"),
       onDragStart: createDragInsertHandler({
-        workspace: this.#deps.app.workspace,
+        app: this.#deps.app,
         noteFeature: this.#deps.noteFeature,
+        notify: (message) => void new BaseNotice(message),
         getImportHandle: () => this.#importHandle,
         onSettled: () => this.#syncImportHandle(),
       }),
@@ -278,11 +280,14 @@ export class AnnotationView extends ItemView {
   }
 
   #linkItem(): void {
-    void pickItem({
-      app: this.#deps.app,
-      lookup: this.#deps.itemLookup,
-      settings: this.#deps.settings,
-    }).then((hit) => {
+    void pickItem(
+      {
+        app: this.#deps.app,
+        lookup: this.#deps.itemLookup,
+        settings: this.#deps.settings,
+      },
+      m.annot_view_link_placeholder(),
+    ).then((hit) => {
       if (!hit) return;
       const { item } = hit;
       this.#setLinkedItem(item);
@@ -566,7 +571,7 @@ export class AnnotationView extends ItemView {
       const el = this.contentEl.querySelector(
         `.zt-annot-card[data-id="${id}"]`,
       );
-      if (el instanceof HTMLElement) {
+      if (el?.instanceOf(HTMLElement)) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }

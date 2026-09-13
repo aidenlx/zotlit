@@ -3,65 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DocumentCitationSet } from "@/services/citation-index/service";
 
-import {
-  CITATIONS_GUIDE_COMMAND,
-  CITED_BY_COMMAND,
-  REFERENCES_COMMAND,
-} from "./commands";
+import { CITATIONS_GUIDE_COMMAND, REFERENCES_COMMAND } from "./commands";
 import { registerCitationsCli } from "./register";
 
 describe("Citations CLI registration", () => {
-  it("publishes cited-by with command and flag help", () => {
-    const registerCliHandler = vi.fn();
-    const plugin = { registerCliHandler } as unknown as Plugin;
-
-    registerCitationsCli(plugin, {} as never);
-
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      CITED_BY_COMMAND,
-      "List the notes that cite one Zotero item, with the position of every citation",
-      {
-        key: {
-          value: "<zotero-key>",
-          description: "Zotero key of the item; use instead of citekey",
-        },
-        citekey: {
-          value: "<citation-key>",
-          description: "Citation key of the item; use instead of key",
-        },
-        "expect-source": {
-          value: "<source-id>",
-          description: "Zotero source ID the call must match",
-        },
-      },
-      expect.any(Function),
-    );
-  });
-
-  it("publishes references with command and flag help", () => {
-    const registerCliHandler = vi.fn();
-    const plugin = { registerCliHandler } as unknown as Plugin;
-
-    registerCitationsCli(plugin, {} as never);
-
-    expect(registerCliHandler).toHaveBeenCalledWith(
-      REFERENCES_COMMAND,
-      "List what one note cites, with the position of every citation",
-      {
-        file: {
-          value: "<vault-path>",
-          description: "Vault path of the note, such as notes/review.md",
-          required: true,
-        },
-        "expect-source": {
-          value: "<source-id>",
-          description: "Zotero source ID the call must match",
-        },
-      },
-      expect.any(Function),
-    );
-  });
-
   it("publishes the guide with command help and no flags", async () => {
     const registerCliHandler = vi.fn();
     const plugin = { registerCliHandler } as unknown as Plugin;

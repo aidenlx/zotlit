@@ -11,6 +11,10 @@ optionally taking named inputs. A consumer may exclude key prefixes from its
 generated artifacts.
 _Avoid_: token, translation string
 
+**Included Message**:
+A Message a consumer names by bundle ID so it enters the facade and every Language Pack although a key-prefix exclusion would drop it. The facade exports it under its literal ID.
+_Avoid_: opt-in key, allowlisted message
+
 **Message Input**:
 A named value a Message takes from its call site. The base locale alone
 determines which inputs a Message has and what each one accepts; another locale

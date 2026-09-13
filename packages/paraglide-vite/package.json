@@ -1,0 +1,35 @@
+{
+  "name": "@zotlit/paraglide-vite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@inlang/paraglide-js": "^2.24.1"
+  },
+  "devDependencies": {
+    "@inlang/plugin-message-format": "catalog:",
+    "@types/node": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "oxlint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "vite": ">=8.0.0"
+  }
+}

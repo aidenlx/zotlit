@@ -2,12 +2,11 @@ import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import * as toast from "@/lib/toast";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
-import { EmptyFilenameError } from "@/services/note-feature/filename";
-import { InertTemplateError } from "@/services/template/errors";
+import { createNoteInteractively } from "@/services/note-feature";
+import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 
 import type { QuickSwitchDeps } from "./register";
 
@@ -50,10 +49,21 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {
-    const existing = this.#deps.noteIndex.getNotesByItemKey(
-      hit.item.indexedKey,
-    )[0];
-    const file = existing ?? (await this.#create(hit));
+    await this.#deps.noteIndex.whenIndexed();
+    const existing = resolveLiteratureNoteWithWarning(
+      this.#deps.noteIndex.getNotesByItemKey(hit.item.indexedKey),
+    );
+    if (existing) {
+      await this.#open(existing, evt);
+      return;
+    }
+    await this.#open(await createNoteInteractively(this.#deps, hit.item), evt);
+  }
+
+  async #open(
+    file: TFile | null | undefined,
+    evt: MouseEvent | KeyboardEvent,
+  ): Promise<void> {
     if (!file) return;
 
     await this.#deps.app.workspace.openLinkText(
@@ -62,27 +72,5 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       Keymap.isModEvent(evt),
       { active: true },
     );
-  }
-
-  /** Create-arm: no existing note → render one and return it. */
-  async #create(hit: SearchHit): Promise<TFile | null> {
-    try {
-      const file = await toast.promise(
-        this.#deps.noteFeature.createNote(hit.item),
-        {
-          loading: m.notice_creating_note(),
-          success: m.notice_created_note(),
-          error: (_msg, e) =>
-            e instanceof EmptyFilenameError || e instanceof InertTemplateError
-              ? e.message
-              : m.notice_create_note_failed(),
-          swallowError: false,
-        },
-      );
-      return file;
-    } catch {
-      // toast.promise already surfaced the failure to the user.
-      return null;
-    }
   }
 }

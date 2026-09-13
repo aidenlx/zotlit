@@ -42,7 +42,18 @@ pnpm fixture paths
 
 ## Use the Fixture Vault
 
-The Fixture Vault contains generated Literature Notes, imported-note mirrors, and committed test pages. Its Literature Notes reference only Items in the generated Zotero data.
+The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
+
+The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:
+
+| File | Purpose |
+| --- | --- |
+| `profile-import-replacement-v1.md` | First version of a Profile import example. |
+| `profile-import-replacement-v2.md` | Second version of the same Profile. It has the same ID and a later version, for replacement checks. |
+| `profile-import-unavailable-style.md` | Profile import example that declares an unavailable citation style. |
+| `profile-import-partials.md` | Profile import example that bundles two Shared Partials. `book-details` is the name the vault already holds under different text, so import asks keep or replace. `reading-log` is new, so import writes it. |
+
+Each build writes a minimal saved layout. The first open shows the file explorer and search on the left. The right sidebar shows the Annotations, References, and Cited by tabs, then the Obsidian backlinks and outgoing links tabs. The ZotLit tabs are in this layout only when the build installs the plugin bundle. Obsidian writes its own layout to `workspace.json` while a session runs, so a rebuild is necessary to restore this preset.
 
 For plugin development, use the per-worktree Development Vault:
 
@@ -57,6 +68,8 @@ The open and sync operations rebuild the Fixture Vault before they copy it. A no
 ```sh
 packages/scripts/scripts/obsidian-vault.ts open --purge
 ```
+
+A purge deletes the Development Vault folder and the plugin's vault-scoped local storage, which Obsidian keeps outside that folder. Run `pnpm fixture --help` for the state each purge clears.
 
 Vault creation needs Obsidian 1.13.4 or later. Enable **Settings → General → Advanced → Command line interface**, and keep one Obsidian vault window open to host the registration calls.
 
@@ -100,9 +113,9 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
 Each Paired Run takes two free TCP ports. It writes the Live Updates port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. It writes the Zotero HTTP port into the Fixture profile as `extensions.zotero.httpServer.port`. Zotero uses that HTTP server for Better BibTeX and the local API. The ready report names both ports. A Paired Run therefore stays clear of the default Live Updates port `9091` and Zotero HTTP port `23119` used by other profiles.
 
-The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed.
+The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed. Add `--vault-case <id>` to open the Development Vault of a different [Vault Case](#vault-cases).
 
-Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
+Both commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
 
@@ -161,6 +174,63 @@ pnpm fixture partial
 
 Use `all`, `available`, `partial`, or `unavailable` in each command.
 
+## Vault Cases
+
+A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the saved Library Scope. The Vault Case selects everything else the vault holds: the settings file, the notes, the Profiles, and the template files.
+
+| Vault Case | Saved state |
+| --- | --- |
+| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. It also seeds the graph's citation cases. The Fixture writes a Literature Note for My Library Items only, so `cited-work-node-test.md` cites three works without one — one key the `partial` Scope Case keeps, two it drops — and a fourth key that two Items hold, which stays ambiguous. `citation-only-test.md` carries its citation as its only link, and the `rougierTenSimpleRules2014` Literature Note cites a second Literature Note. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
+| `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
+| `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list. |
+
+The Configured vault's template folder carries the two Template Documents the Template Workbench opens beside a Profile:
+
+| File | Content |
+| --- | --- |
+| `zotlit-citation.md` | The shipped Citation Template with one visible edit: the alternate branch inserts `cf. ` before the citation, so Shift+Enter and Enter read apart. |
+| `zotlit-partial.book-details.md` | The Fixture's Shared Partial. The Books Profile note body calls it with `{% render "book-details" with zt as zt %}`. Delete the file, then create a Literature Note for a book: the create refuses and names the partial, and writes nothing. |
+
+The Upgrader vault's template folder carries the 2.1.x shapes the one-pass conversion folds:
+
+| File | Converts to |
+| --- | --- |
+| `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md` | The default Profile document. |
+| `zotlit-cite.liquid.md` | The main branch of `zotlit-citation.md`. |
+| `zotlit-cite2.eta.md` | Nothing. The pair is mixed-language, so the fold takes the Liquid side, the alternate branch keeps the built-in text, and this file stays in the vault and is named in the conversion notice. |
+| `zotlit-annotation-callout.liquid.md` | `zotlit-partial.annotation-callout.md`. |
+
+Build the complete Fixture directly in a Vault Case:
+
+```sh
+pnpm fixture build --vault-case fresh
+```
+
+Name a Vault Case on a Paired Run:
+
+```sh
+pnpm fixture open --vault-case upgrader
+```
+
+Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. Every open seeds the case vault with the bundle from `apps/obsidian/dist-dev`, so a new dev build always reaches the vault. The `select` command changes only the Scope Case; rebuild to change the Vault Case.
+
+`pnpm fixture dev --vault-case <id>` sets `ZT_VAULT_CASE` for the Obsidian watcher, so the Vite build copies each bundle into that case's vault and hot reload reaches it. Set `ZT_VAULT_CASE` yourself to point `dev:vault` or a plain `obsidian-vault.ts open` at a case vault:
+
+```sh
+ZT_VAULT_CASE=fresh pnpm --filter @zotlit/obsidian dev:vault
+```
+
+The `fresh` case writes no settings file. It accepts only the default `all` Scope Case, and Live Updates stay off. The Paired Run still points ZotLit at the Fixture database through the Device Overrides, so the first Literature Note needs no Zotero setup.
+
+The `upgrader` case writes the ZotLit 2.1.0 shape:
+
+- Settings version 9, with the note bindings vault-global and no Profiles.
+- `release.previous-version` set to `2.1.0`, so the release check sees a real upgrade.
+- A `note.frontmatter-fields` list of the four shipped defaults plus a visible `year` field.
+- The four legacy slot files `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, and `zotlit-annotation.liquid.md` in the template folder. Each starts from the shipped Liquid default and carries one visible edit.
+
+On load, ZotLit migrates the settings to the current version, sets `note.template-conversion-pending`, and opens the conversion prompt. Run `pnpm fixture --help` for the exact field list and edits, which come from the Fixture Spec.
+
 ## Run the Paired Zotero
 
 Paired Zotero is a real Zotero 10 instance that opens the Fixture profile and data directory. Build the Fixture first, then launch it:
@@ -181,7 +251,7 @@ All worktrees reuse the cache. Windows selects the `win-arm64`, `win-x64`, or `w
 
 Before launch, the command writes a Gecko extension proxy into the Fixture profile. The proxy maps the ZotLit companion add-on ID to the absolute `apps/zotero/dist-dev/addon` path in the current worktree.
 
-The build and launcher install pinned Better BibTeX 9.0.55 from an official release XPI. They verify the XPI checksum and reuse the verified download from the per-user ZotLit cache. The Fixture Spec supplies native Citation Keys. The profile disables Better BibTeX key generation and regeneration, so these keys stay stable and intentionally unkeyed Items stay unkeyed.
+The build and launcher install pinned Better BibTeX 9.0.64 from an official release XPI. They verify the XPI checksum and reuse the verified download from the per-user ZotLit cache. The Fixture Spec supplies native Citation Keys. The profile disables Better BibTeX key generation and regeneration, so these keys stay stable and intentionally unkeyed Items stay unkeyed.
 
 Set `ZOTERO_APP` to run a different application through the same profile and companion setup.
 
@@ -236,6 +306,44 @@ pnpm fixture && pnpm exec turbo run test --filter=@zotlit/scripts
 
 Commit the regenerated template and style archive with all related version changes.
 
+## Run the mock Local Bridge
+
+The mock Local Bridge connects the web Template Workbench to Fixture data without a running Obsidian. It uses bridge contract version 2 and requires a Connection code before it creates a Workbench Connection.
+
+Run these commands from the workspace root in separate terminals:
+
+```sh
+pnpm --filter @zotlit/docs dev
+```
+
+```sh
+pnpm fixture bridge
+```
+
+The bridge command builds the Fixture and plugin bundles, then listens on `127.0.0.1:23120`. It prints a one-use Connection code. Open this URL, replacing `<code>` with the printed value:
+
+```text
+http://localhost:3000/workbench#zotlit-connect=<code>&port=23120
+```
+
+The default allowed origin is `http://localhost:3000`, the docs development server's origin. The hostname is part of the origin: use `localhost` for the page. The page exchanges the code, removes the fragment, and loads the Fixture's Books Profile and selected Item. Save writes to the Fixture Vault. Restart the bridge to rebuild the Fixture and receive a fresh code.
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--port <number>` | `23120` | Sets the bridge's loopback port. Use the same value in the launch URL's `port` field. |
+| `--origin <origin>` | `http://localhost:3000` | Sets the one allowed Workbench origin, including its scheme, hostname, and port. |
+| `--conflict-next-save` | `false` | Makes the next Save encounter an external revision, for conflict handling checks. |
+
+For example, start a bridge on another port and make its next Save conflict:
+
+```sh
+pnpm fixture bridge --port 23121 --conflict-next-save
+```
+
+Open `http://localhost:3000/workbench#zotlit-connect=<code>&port=23121` with this process's printed code. The refused Save keeps the draft available for editing.
+
+Press `Ctrl-C` to stop the bridge. These flags belong to the Fixture mock; the plugin's allowed docs origins are fixed in code.
+
 ## Run the End-to-end Run suite
 
 An End-to-end Run starts the plugin in a real desktop Obsidian window. The plugin reads the Fixture Zotero data directory from disk.
@@ -288,4 +396,4 @@ Discard the complete generated tree:
 pnpm fixture discard
 ```
 
-To change semantic content, edit `packages/scripts/lib/fixture/spec.ts` and rebuild. The generator tests in `packages/scripts/lib/fixture/build.test.ts` guard the Fixture Spec properties.
+To change semantic content, edit `packages/scripts/lib/fixture/spec.ts` and rebuild. The generator tests in `packages/scripts/lib/fixture/build.test.ts` guard the Fixture Spec properties. A build stops when a Citation Key listed in the Spec's `SEEDED_CITATION_KEYS` resolves differently from its declaration, so declare the new resolution with the Item edit, and list a key there as you seed a page that cites it.

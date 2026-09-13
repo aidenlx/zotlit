@@ -23,22 +23,24 @@ export function obsidianI18n(options: ObsidianI18nViteOptions = {}): Plugin {
 
   return {
     name: "obsidian-i18n",
-    config(userConfig) {
+    async config(userConfig) {
       let build: { watch: { exclude: string[] } } | undefined;
+      const { outputDirectory } = resolveCompilePaths({
+        ...options,
+        root: userConfig.root,
+      });
       if (userConfig.build?.watch) {
-        const { outputDirectory } = resolveCompilePaths({
-          ...options,
-          root: userConfig.root,
-        });
         build = { watch: { exclude: [`${outputDirectory}/**`] } };
       }
-      const define =
+      const serverUrl =
         options.servePacks === undefined
           ? undefined
+          : await startPackServer(outputDirectory, options.servePacks.port);
+      const define =
+        serverUrl === undefined
+          ? undefined
           : {
-              __LANGUAGE_PACK_DEV_SERVER__: JSON.stringify(
-                `http://${PACK_SERVER_HOST}:${options.servePacks.port}`,
-              ),
+              __LANGUAGE_PACK_DEV_SERVER__: JSON.stringify(serverUrl),
             };
       if (build === undefined && define === undefined) return;
       return { build, define };
@@ -52,45 +54,6 @@ export function obsidianI18n(options: ObsidianI18nViteOptions = {}): Plugin {
         this.addWatchFile(watchPath);
       }
       if (result.warnings.length > 0) this.warn(result.warnings.join("\n"));
-
-      if (options.servePacks !== undefined && packServer === undefined) {
-        await using resources = new AsyncDisposableStack();
-        const { port } = options.servePacks;
-        console.log("serving language packs on port", port);
-        const packDirectory = result.outputDirectory;
-        const server = createServer(async (request, response) => {
-          const fileName = request.url?.slice(1) ?? "";
-          try {
-            if (!isLanguagePackFileName(fileName)) {
-              throw new Error("Unsupported Language Pack path");
-            }
-            const contents = await readFile(
-              join(packDirectory, fileName),
-              "utf8",
-            );
-            response.writeHead(200, {
-              "content-type": "application/json",
-            });
-            response.end(contents);
-          } catch {
-            response.writeHead(404);
-            response.end();
-          }
-        });
-        resources.defer(async () => {
-          if (server.listening) await server[Symbol.asyncDispose]();
-        });
-        await new Promise<void>((resolveListen, rejectListen) => {
-          const onError = (error: Error): void => rejectListen(error);
-          server.once("error", onError);
-          server.listen(port, PACK_SERVER_HOST, () => {
-            server.off("error", onError);
-            resolveListen();
-          });
-        });
-        server.unref();
-        packServer = resources.move();
-      }
     },
     /**
      * Only `closeWatcher` tears the pack server down: watch builds close the
@@ -101,4 +64,50 @@ export function obsidianI18n(options: ObsidianI18nViteOptions = {}): Plugin {
       packServer = undefined;
     },
   };
+
+  async function startPackServer(
+    packDirectory: string,
+    port: number,
+  ): Promise<string> {
+    await using resources = new AsyncDisposableStack();
+    const server = createServer(async (request, response) => {
+      const fileName = request.url?.slice(1) ?? "";
+      try {
+        if (!isLanguagePackFileName(fileName)) {
+          throw new Error("Unsupported Language Pack path");
+        }
+        const contents = await readFile(join(packDirectory, fileName), "utf8");
+        response.writeHead(200, {
+          "content-type": "application/json",
+        });
+        response.end(contents);
+      } catch {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    resources.defer(async () => {
+      if (server.listening) await server[Symbol.asyncDispose]();
+    });
+    const address = await new Promise<{ port: number }>(
+      (resolveListen, rejectListen) => {
+        const onError = (error: Error): void => rejectListen(error);
+        server.once("error", onError);
+        server.listen(port, PACK_SERVER_HOST, () => {
+          server.off("error", onError);
+          const address = server.address();
+          if (address === null || typeof address === "string") {
+            rejectListen(new Error("Expected a TCP address"));
+            return;
+          }
+          resolveListen(address);
+        });
+      },
+    );
+    server.unref();
+    const url = `http://${PACK_SERVER_HOST}:${address.port}`;
+    console.log("serving language packs on port", address.port);
+    packServer = resources.move();
+    return url;
+  }
 }

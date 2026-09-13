@@ -1,7 +1,7 @@
 import { getLanguage, Plugin, requestUrl } from "obsidian";
 import semverGte from "semver/functions/gte";
 
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -22,27 +22,39 @@ import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candid
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
+import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
+import { addCustomizeActions } from "./services/local-bridge/actions";
+import { createCustomize } from "./services/local-bridge/customize";
+import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
+import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
 import { reapCslStore } from "./services/pandoc/reap-temps";
 import { registerPandocResolve } from "./services/pandoc/register";
+import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
+import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationPresentation } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
+import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
+import {
+  openNativeProfile,
+  registerTemplateWorkbenchView,
+} from "./views/template-workbench/register";
 import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
 
@@ -152,7 +164,17 @@ export default class ZotLitPlugin extends Plugin {
   // Debug/escape-hatch access only. Services should depend on each other via DI.
   #services?: ReturnType<typeof buildServices>["services"];
 
-  get services(): ReturnType<typeof buildServices>["services"] {
+  /**
+   * The service container, for `obsidian eval` callers outside the bundle —
+   * `packages/e2e` and `packages/scripts` reach it through a string, so they
+   * keep working while TypeScript sees nothing to navigate.
+   *
+   * Typed `unknown` on purpose: it stays unset until `onload()` commits, so
+   * anything inside the bundle that reads a service through it gets a value
+   * that throws at exactly the wrong moment. Take the service as an explicit
+   * dependency instead.
+   */
+  get services(): unknown {
     if (!this.#services) throw new Error("Plugin not loaded");
     return this.#services;
   }
@@ -196,13 +218,49 @@ export default class ZotLitPlugin extends Plugin {
 
     const { services } = buildServices(this, stack);
 
+    // One Customize flow shared by every entry action.
+    const customize = createCustomize({
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+      app: this.app,
+      settings: services.settings,
+      profile: services.profile,
+      template: services.template,
+      localServer: services.localServer,
+      bridge: services.localBridge,
+      pluginVersion: this.manifest.version,
+      confirmLaunch: createLaunchSheet(this.app),
+      openExternal: (url) => window.open(url),
+      openNative: async ({ profileId, item, originatingNote }) => {
+        const entry = services.profile.profiles.find(
+          (profile) => profile.id === profileId,
+        );
+        const target =
+          profileId === "default"
+            ? services.profile
+            : entry && this.app.vault.getFileByPath(entry.path);
+        if (target)
+          await openNativeProfile(this.app, target, {
+            ...(item ? { itemIndexedKey: item.key } : {}),
+            originatingNote,
+            explainUnsupported: false,
+            customize: true,
+          });
+      },
+    });
+
     this.addSettingTab(
       new ZotLitSettingTab({
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+        importProfile: services.importProfile,
+        profile: services.profile,
         plugin: this,
         settings: services.settings,
         db: services.db,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
+        localServer: services.localServer,
+        localBridge: services.localBridge,
+        customize,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         template: services.template,
@@ -212,25 +270,50 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
+    addCustomizeActions(this, {
+      settings: services.settings,
+      profile: services.profile,
+      customize,
+    });
+    addCitationTemplateActions(this, { template: services.template });
+    addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
+    addGraphCitationsActions(this, {
+      app: this.app,
+      graphCitations: services.graphCitations,
+    });
     registerIndexedKeyFileMenu(this);
+    const updateAll = () =>
+      runBatchUpdateAll({
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        zoteroPref: services.zoteroPref,
+        profile: services.profile,
+        app: this.app,
+        db: services.db,
+        settings: services.settings,
+        libraryScope: services.libraryScope,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+      });
     addNoteFeatureActions(this, {
+      createProfile: services.createProfile,
+      importProfile: services.importProfile,
       app: this.app,
       noteFeature: services.noteFeature,
+      zoteroPref: services.zoteroPref,
       batchImport: services.batchImport,
-      updateAll: () =>
-        runBatchUpdateAll({
-          app: this.app,
-          db: services.db,
-          settings: services.settings,
-          libraryScope: services.libraryScope,
-          noteFeature: services.noteFeature,
-          noteIndex: services.noteIndex,
-        }),
+      updateAll,
     });
+    stack.defer(
+      registerWorkbenchSavedNotice({
+        localBridge: services.localBridge,
+        updateAll,
+      }),
+    );
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,
@@ -239,15 +322,22 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
+      createProfile: services.createProfile,
+      importProfile: services.importProfile,
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      zoteroPref: services.zoteroPref,
     });
 
     void stack.use(
       registerProtocolHandlers(this, {
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        profile: services.profile,
         app: this.app,
         settings: services.settings,
         db: services.db,
@@ -256,20 +346,45 @@ export default class ZotLitPlugin extends Plugin {
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
         batchImport: services.batchImport,
-        liveUpdate: services.liveUpdate,
+        liveUpdate: services.localServer,
       }),
     );
 
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
-      liveUpdate: services.liveUpdate,
+      liveUpdate: services.localServer,
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
       attachmentImport: services.attachmentImport,
       itemLookup: services.itemLookup,
       settings: services.settings,
+    });
+
+    registerTemplateWorkbenchView(this, {
+      noteFeature: services.noteFeature,
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+      customize,
+      app: this.app,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      zoteroPref: services.zoteroPref,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
+      templates: services.template,
+      profile: services.profile,
+      nativePreview: {
+        app: this.app,
+        db: services.db,
+        noteIndex: services.noteIndex,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        templates: services.template,
+        profile: services.profile,
+        bibliographyRender: services.bibliographyRender,
+        citationIndex: services.citationIndex,
+      },
     });
 
     registerTemplateDataExplorer(this, {
@@ -282,6 +397,19 @@ export default class ZotLitPlugin extends Plugin {
       templates: services.template,
     });
 
+    registerNotePreview(this, {
+      app: this.app,
+      itemLookup: services.itemLookup,
+      profile: services.profile,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      templates: services.template,
+      bibliographyRender: services.bibliographyRender,
+      citationIndex: services.citationIndex,
+    });
+
     stack.defer(
       registerCitationStyleNotice(services.bibliographyRender, () => {
         revealSetting(
@@ -292,6 +420,7 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
     registerReferencesView(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       citationIndex: services.citationIndex,
@@ -300,7 +429,6 @@ export default class ZotLitPlugin extends Plugin {
       citekeyEditor: services.citekeyEditor,
       pandocEngine: services.pandocEngine,
       bibliographyRender: services.bibliographyRender,
-      settings: services.settings,
     });
 
     registerCitedByView(this, {
@@ -324,6 +452,7 @@ export default class ZotLitPlugin extends Plugin {
     }
 
     registerTemplateWorkbench(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       noteIndex: services.noteIndex,
@@ -339,6 +468,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerPandocExport(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       pandocEngine: services.pandocEngine,
@@ -361,6 +491,8 @@ export default class ZotLitPlugin extends Plugin {
       db: services.db,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
+      templateMigration: services.templateMigration,
+      release: services.release,
     });
 
     stack.defer(
@@ -392,7 +524,7 @@ export default class ZotLitPlugin extends Plugin {
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
     // lane as the filesystem watchers.
     stack.defer(
-      services.liveUpdate.on("db/updated", () => {
+      services.localServer.on("db/updated", () => {
         services.db.notifyExternalChange();
       }),
     );

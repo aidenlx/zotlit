@@ -2,8 +2,7 @@
 
 import { CONTRACT_VERSION } from "@zotlit/db";
 import type { ContractRoot } from "@zotlit/db";
-
-import { serializeTemplateData } from "@/services/template-workbench/serialize";
+import { serializeTemplateData } from "@zotlit/workbench/explorer";
 
 export interface TemplateDataExportInput {
   /** The object the pane currently shows: the note context, or the anchored annotation. */
@@ -29,7 +28,7 @@ export interface TemplateDataExport {
  * this file's only versioned surface is the `zt` contract each
  * `<root>.schema.json` publishes.
  *
- * @throws {import("@/services/template-workbench/serialize").ContractMetadataError} when the committed contract IR no longer covers this build's data shapes.
+ * @throws {import("@zotlit/workbench/explorer").ContractMetadataError} when the committed contract IR no longer covers this build's data shapes.
  */
 export function buildTemplateDataExport(
   input: TemplateDataExportInput,
