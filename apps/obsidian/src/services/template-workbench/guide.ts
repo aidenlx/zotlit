@@ -10,6 +10,7 @@ import {
 import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
 import { RESERVED_PARTIAL_NAME_LIST } from "@/services/template/defaults";
 
+import { CHECK_GUIDE } from "./check";
 import { DISCOVERY_HELP } from "./discovery";
 import type { DiagnosticCode } from "./envelope";
 import { INSPECT_GUIDE, INSPECT_SYNOPSIS } from "./inspect-contract";
@@ -586,6 +587,7 @@ RENDER
 /** Canonical `topic` registry for `template-guide`. */
 export const GUIDE_TOPICS = {
   inspect: INSPECT_GUIDE,
+  check: CHECK_GUIDE,
   data: DATA_SECTION,
   render: RENDER_SECTION,
   editing: EDITING_SECTION,
@@ -610,6 +612,8 @@ export function parseGuideTopic(value: string | undefined): GuideTopic | null {
 
 const TOPIC_SUMMARIES = {
   inspect: "Document selection, source freshness, flags, and recovery",
+  check:
+    "Complete saved Profile checks, output disclosure, and attempt evidence",
   data: "Data roots, serialization, and key resolution",
   render: "Template roles, data roots, formats, and rendering behavior",
   editing: "Active source, edit procedure, and file status",

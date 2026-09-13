@@ -10,7 +10,6 @@ import type {
 import { replaceSuffixMarkers } from "@zotlit/templates";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
-import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 import { restoreTemplateData } from "@zotlit/workbench/render";
@@ -59,6 +58,7 @@ import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 
+import { nativePropertyRows } from "./check-profile";
 import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
@@ -478,16 +478,7 @@ export async function renderNativeProfile(
     const { prepared } = composed;
     const properties: TemplateRenderResult["properties"][number][] = [];
     if (prepared.kind === "document")
-      for (const field of prepared.fields) {
-        const missing =
-          field.value === undefined || field.value === FRONTMATTER_ABSENT;
-        properties.push({
-          key: field.key,
-          position: field.position!,
-          missing,
-          ...(missing ? {} : { value: field.value }),
-        });
-      }
+      properties.push(...nativePropertyRows(prepared.fields));
     if (composed.outcome === "refused")
       for (const error of composed.evaluation.errors)
         diagnostics.push({

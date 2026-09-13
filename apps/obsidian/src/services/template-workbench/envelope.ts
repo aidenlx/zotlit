@@ -32,9 +32,10 @@ import type { RenderTemplate } from "./vocabulary";
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
  * commands, versioned on its own (ADR 0026). Version 5 reports each Profile
  * row's `id` as a `ProfileSelector` (`"default"` for the built-in default
- * Profile) instead of `null`.
+ * Profile) instead of `null`. Version 6 adds complete Profile checking and
+ * retained attempt evidence with disclosure-independent component statuses.
  */
-export const CONTRACT_VERSION = 5;
+export const CONTRACT_VERSION = 6;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {

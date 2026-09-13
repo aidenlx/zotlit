@@ -5,6 +5,7 @@ import type {
   FileSystemAdapter,
   Plugin,
 } from "obsidian";
+import { apiVersion } from "obsidian";
 // Registers the Workbench commands with Obsidian's CLI.
 //
 // Command, flag, guide, and diagnostic text is all hardcoded English: an
@@ -18,6 +19,11 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import {
+  createCheckHandler,
+  checkFlags,
+  TEMPLATE_CHECK_COMMAND,
+} from "./check";
 import {
   createTemplateWorkbenchHandlers,
   FRONTMATTER_EVAL_COMMAND,
@@ -309,6 +315,21 @@ export function registerTemplateWorkbench(
       templates: deps.templates,
       folder: () => deps.settings.current!["template.folder"],
       identity: getIdentity,
+    }),
+  );
+  plugin.registerCliHandler(
+    TEMPLATE_CHECK_COMMAND,
+    "Check every saved Profile create component with verified source freshness",
+    checkFlags,
+    createCheckHandler({
+      pluginVersion: plugin.manifest.version,
+      hostVersion: `Obsidian ${apiVersion}`,
+      app: deps.app,
+      profile: deps.profile,
+      templates: deps.templates,
+      folder: () => deps.settings.current!["template.folder"],
+      identity: getIdentity,
+      data: deps,
     }),
   );
   const handlers = createTemplateWorkbenchHandlers({
