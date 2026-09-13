@@ -16,6 +16,7 @@ import {
   PreviewControls,
   renderDiagnosis,
   ResultColumn,
+  usePublishedProblems,
   useRenderState,
   useWorkbenchHost,
 } from "@zotlit/workbench/ui";
@@ -30,9 +31,6 @@ import { m } from "@/paraglide/messages.js";
 import type { SampleItem } from "./fields";
 import { WorkbenchHelp } from "./frame";
 
-/** Nothing found, as one value, so an idle preview publishes no new list. */
-const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
-
 interface PreviewState {
   mode: PreviewMode;
   live: boolean;
@@ -43,6 +41,7 @@ interface PreviewState {
 
 export function WebPreview({
   source,
+  document,
   sample,
   resources,
   hold,
@@ -55,6 +54,8 @@ export function WebPreview({
   reportContext,
 }: {
   source: string;
+  /** The Template Document this preview reads, which its retained output belongs to. */
+  document: string;
   sample: SampleItem;
   resources: RenderResources | undefined;
   hold: boolean | "invalid";
@@ -62,8 +63,11 @@ export function WebPreview({
   sampleBar: ReactNode;
   annotationChoice: string;
   onAnnotationChoice: (choice: string) => void;
-  /** Reads one problem in the editor's Problems area. */
-  onShowProblem: (id: string) => void;
+  /**
+   * Reads one problem in the editor's Problems area; a null id opens the area
+   * on whatever the editor's own checks found.
+   */
+  onShowProblem: (id: string | null) => void;
   /** Hands what this render found to the editor that explains it. */
   publishProblems: (diagnostics: readonly RenderDiagnostic[]) => void;
   /** What names this preview in the report a failed attempt is copied as. */
@@ -116,6 +120,7 @@ export function WebPreview({
   useEffect(() => {
     scheduler?.setInput({
       source,
+      document,
       snapshot: sample,
       annotation: example,
       resources,
@@ -126,6 +131,7 @@ export function WebPreview({
   }, [
     scheduler,
     source,
+    document,
     sample,
     example,
     resources,
@@ -137,24 +143,13 @@ export function WebPreview({
     useRenderState(scheduler);
   // The editor owns the explanation, so this preview publishes what its render
   // found and takes it back when it closes.
-  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
-  const publish = useRef(publishProblems);
-  publish.current = publishProblems;
-  const open = useRef(onShowProblem);
-  open.current = onShowProblem;
-  useEffect(() => {
-    publish.current(diagnostics);
-  }, [diagnostics]);
-  useEffect(() => () => publish.current(NO_DIAGNOSTICS), []);
-  const opened = useRef(attempt);
-  useEffect(() => {
-    if (attempt === opened.current) return;
-    opened.current = attempt;
-    // A deliberate Run that failed is worth an explanation at once.
-    const first = diagnostics[0];
-    if (trigger === "explicit" && first)
-      open.current(renderDiagnosis(first).id);
-  }, [attempt, trigger, diagnostics]);
+  usePublishedProblems({
+    result,
+    trigger,
+    attempt,
+    publish: publishProblems,
+    showProblem: onShowProblem,
+  });
   const annotationResult =
     result?.annotationId === example.id &&
     result.annotationRevision === example.revision
@@ -194,7 +189,9 @@ export function WebPreview({
         showManaged={state.showManaged}
         onShowManaged={(showManaged) => store.setState({ showManaged })}
         onShowProblem={(diagnostic) =>
-          onShowProblem(renderDiagnosis(diagnostic).id)
+          onShowProblem(
+            diagnostic === null ? null : renderDiagnosis(diagnostic).id,
+          )
         }
         help={
           <WorkbenchHelp title={m.workbench_result_heading()}>

@@ -104,8 +104,10 @@ export interface ResultBodyProps {
   /**
    * Reads the failure behind this preview in the editor's Problems area. A
    * preview with no editor to reach leaves it out, and Show problem is absent.
+   * A document the parser refuses reached no render and names no diagnostic,
+   * so the reading opens on whatever the editor's own checks found.
    */
-  onShowProblem?: (diagnostic: RenderDiagnostic) => void;
+  onShowProblem?: (diagnostic: RenderDiagnostic | null) => void;
   /** Runs a render now; on demand, this is how the stale-behind notice offers Run. */
   onRun?: () => void;
   busy?: boolean;
@@ -169,6 +171,18 @@ export function ResultBody({
   const annotationShown = kept ?? annotationResult ?? null;
   const filenameTooltip = useTooltip(shown?.filename ?? "");
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
+  /** Show problem, which every failure this preview reports offers. */
+  const showProblem = (diagnostic: RenderDiagnostic | null) =>
+    onShowProblem && (
+      <button
+        type="button"
+        disabled={!sourceAvailable}
+        onClick={() => onShowProblem(diagnostic)}
+        {...part("problem-open")}
+      >
+        {m.workbench_problem_show()}
+      </button>
+    );
   // "Rendering…" is honest only while a render is on its way: on demand the
   // notice below says Run starts one, and a hold shows its own problem.
   const showPending = staleReason === "live";
@@ -198,7 +212,11 @@ export function ResultBody({
       )}
       <ResultRegion emphasis={false}>
         {shown || failed ? (
-          <Suspense fallback={pending}>
+          // The notice and the note's name are this pane's own words, so they
+          // stand while the host's Markdown renderer is still on its way: what
+          // waits is the output, and a reader is never left reading
+          // "Rendering…" in place of the failure it replaced.
+          <>
             {showNote && !failed && shown && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
@@ -217,16 +235,7 @@ export function ResultBody({
                       {m.workbench_preview_problem()}
                     </strong>{" "}
                     {diagnosticText(m, previewProblem)}{" "}
-                    {onShowProblem && (
-                      <button
-                        type="button"
-                        disabled={!sourceAvailable}
-                        onClick={() => onShowProblem(previewProblem)}
-                        {...part("problem-open")}
-                      >
-                        {m.workbench_problem_show()}
-                      </button>
-                    )}
+                    {showProblem(previewProblem)}
                   </p>
                 )}
                 {failed && (
@@ -238,50 +247,59 @@ export function ResultBody({
                   >
                     {kept === null
                       ? m.workbench_preview_unavailable()
-                      : m.workbench_preview_retained()}
+                      : m.workbench_preview_retained()}{" "}
+                    {/* A document the parser refuses produced no diagnostic to
+                        name, and the reading it leads to is the editor's own
+                        check — the same one control, on the sentence that
+                        reports the failure. */}
+                    {previewProblem ? null : showProblem(null)}
                   </p>
                 )}
               </div>
             )}
-            {(failed && kept === null) ||
-            shown === null ? null : showCitation || showPartial ? (
-              <Markdown
-                markdown={(showPartial ? shown.partial : shown.citation) ?? ""}
-                properties={[]}
-                showMarkdown={showMarkdown}
-              />
-            ) : showAnnotation ? (
-              annotationShown ? (
+            <Suspense fallback={pending}>
+              {(failed && kept === null) ||
+              shown === null ? null : showCitation || showPartial ? (
                 <Markdown
-                  markdown={annotationShown.annotation ?? ""}
+                  markdown={
+                    (showPartial ? shown.partial : shown.citation) ?? ""
+                  }
                   properties={[]}
                   showMarkdown={showMarkdown}
                 />
-              ) : (
-                pending
-              )
-            ) : showNote && showManaged ? (
-              shown.managedRegion === null ? (
-                <p {...part("empty")}>{m.workbench_result_managed_none()}</p>
+              ) : showAnnotation ? (
+                annotationShown ? (
+                  <Markdown
+                    markdown={annotationShown.annotation ?? ""}
+                    properties={[]}
+                    showMarkdown={showMarkdown}
+                  />
+                ) : (
+                  pending
+                )
+              ) : showNote && showManaged ? (
+                shown.managedRegion === null ? (
+                  <p {...part("empty")}>{m.workbench_result_managed_none()}</p>
+                ) : (
+                  <Markdown
+                    markdown={shown.managedRegion}
+                    properties={[]}
+                    showMarkdown={showMarkdown}
+                  />
+                )
               ) : (
                 <Markdown
-                  markdown={shown.managedRegion}
-                  properties={[]}
+                  markdown={shown.creationBody ?? ""}
+                  // The sheet is the note, so its list is the fold every
+                  // entry merged into, not each entry's own contribution.
+                  properties={shown.fold}
+                  frontmatterBlock={shown.frontmatterBlock}
                   showMarkdown={showMarkdown}
+                  marks={shown.annotationRanges}
                 />
-              )
-            ) : (
-              <Markdown
-                markdown={shown.creationBody ?? ""}
-                // The sheet is the note, so its list is the fold every
-                // entry merged into, not each entry's own contribution.
-                properties={shown.fold}
-                frontmatterBlock={shown.frontmatterBlock}
-                showMarkdown={showMarkdown}
-                marks={shown.annotationRanges}
-              />
-            )}
-          </Suspense>
+              )}
+            </Suspense>
+          </>
         ) : showPending ? (
           pending
         ) : null}

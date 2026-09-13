@@ -99,20 +99,6 @@ export function problemText(
   }
 }
 
-/**
- * The button one problem carries beside its recovery line, for a problem the
- * host can repair on the reader's word. Absent for every code whose repair is
- * the reader's own edit.
- */
-export function problemAction(
-  m: WorkbenchMessages,
-  problem: WorkbenchProblem,
-): string | null {
-  return problem.code === "bundled-partial"
-    ? m.workbench_problem_bundled_partial_unpack()
-    : null;
-}
-
 /** The one line a render diagnostic reads as. */
 export function diagnosticText(
   m: WorkbenchMessages,
@@ -169,9 +155,15 @@ export function diagnosticText(
         ? `${conflict} ${diagnostic.message}`
         : conflict;
     }
+    case "render-error":
+      // The engine refused and named nothing this package classifies. Its own
+      // words are evidence, which the explanation keeps under Technical
+      // details; the reader gets a plain sentence here instead.
+      return m.workbench_diagnostic_render_error();
     default:
-      // The template engine's failure and the Local Bridge's own wording, which
-      // this app shows as they stand.
+      // A refusal this package does name — an unreadable Profile document, a
+      // dependency the bundle is missing — carries the wording the renderer or
+      // the Local Bridge wrote for it.
       return diagnostic.message ?? diagnostic.code;
   }
 }
@@ -282,17 +274,32 @@ export function documentDiagnosis(
 export function renderDiagnosis(
   diagnostic: RenderDiagnostic,
 ): WorkbenchDiagnosis {
-  const { code, part, position, callSite } = diagnostic;
-  // The verified call joins the identity, so one code naming one object in two
-  // places stays two problems. An unverified location adds nothing, which is
-  // what leaves an unclassified failure grouping with nothing.
-  const repair = callSite ? `@${callSite.from}` : "";
+  const { code, part, position } = diagnostic;
+  // No offset joins the identity: the reader typing above a failed call moves
+  // every offset in the document without changing what failed, and a problem
+  // that keeps its identity through such an edit is the one the reader is
+  // still reading. What the failure names, and the section it was reported
+  // under, are what tell two problems apart.
   return {
-    id: `render:${code}:${diagnosticSubject(diagnostic)}:${part ?? ""}:${position ?? ""}${repair}`,
+    id: `render:${code}:${diagnosticSubject(diagnostic)}:${part ?? ""}:${position ?? ""}`,
     kind: "render",
     diagnostic,
     occurrences: [diagnostic],
   };
+}
+
+/**
+ * Whether anything verified tells this failure from another one the same check
+ * found: the object it names, or the call it is repaired at. A failure with
+ * neither is the engine's own unclassified refusal, and two of them are two
+ * problems however alike they read — equal words establish nothing.
+ */
+function verified(diagnosis: WorkbenchDiagnosis): boolean {
+  if (diagnosis.kind === "document") return true;
+  return (
+    diagnosis.diagnostic.callSite !== undefined ||
+    diagnosticSubject(diagnosis.diagnostic) !== ""
+  );
 }
 
 /**
@@ -302,32 +309,43 @@ export function renderDiagnosis(
  * Occurrences that share an identity are one problem with several places, so a
  * partial missing from two checks is read once rather than as two competing
  * explanations. Nothing here compares wording: two failures that say the same
- * thing about different objects, or at different repair targets, stay two
- * problems, and an unclassified failure the engine attributed to nothing keeps
- * whatever the identity already tells apart.
+ * thing about different objects stay two problems, and an unclassified failure
+ * the engine attributed to nothing groups with nothing at all.
  */
 export function workbenchDiagnoses(
   problems: readonly WorkbenchProblem[],
   diagnostics: readonly RenderDiagnostic[],
 ): WorkbenchDiagnosis[] {
-  const grouped = new Map<string, WorkbenchDiagnosis>();
-  for (const found of [
+  const found = [
     ...problems.map(documentDiagnosis),
     ...diagnostics.map(renderDiagnosis),
-  ]) {
-    const kept = grouped.get(found.id);
-    if (kept === undefined) {
-      grouped.set(found.id, found);
-      continue;
-    }
-    // The first occurrence stays the one the explanation is written from; the
-    // later ones add only the places this problem was found.
-    grouped.set(found.id, {
-      ...kept,
-      occurrences: [...kept.occurrences, ...found.occurrences],
-    } as WorkbenchDiagnosis);
-  }
-  return [...grouped.values()];
+  ];
+  // An unverified failure joins no group: the second one the same check finds
+  // takes an identity of its own, so its explanation and its report stay
+  // reachable rather than hiding behind the first. The first keeps the plain
+  // identity, which is the one a preview's Show problem asks for.
+  const seen = new Map<string, number>();
+  const keyed = found.map((diagnosis) => {
+    if (verified(diagnosis)) return [diagnosis.id, diagnosis] as const;
+    const before = seen.get(diagnosis.id) ?? 0;
+    seen.set(diagnosis.id, before + 1);
+    return [
+      before === 0 ? diagnosis.id : `${diagnosis.id}#${before}`,
+      diagnosis,
+    ] as const;
+  });
+  return [...Map.groupBy(keyed, ([id]) => id)].map(
+    ([id, group]) =>
+      ({
+        // The first occurrence stays the one the explanation is written from; the
+        // later ones add only the places this problem was found.
+        ...group[0]![1],
+        id,
+        occurrences: group.flatMap(([, diagnosis]) => [
+          ...diagnosis.occurrences,
+        ]),
+      }) as WorkbenchDiagnosis,
+  );
 }
 
 /** One problem as the Problems area reads it, top to bottom. */

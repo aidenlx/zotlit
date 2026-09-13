@@ -297,6 +297,30 @@ async function failing(
  * The clipboard the host copies through, as a list of what reached it. This
  * runtime supplies none, so the test defines one and takes it away after.
  */
+/**
+ * One report's fields, read once. A `Label: value` line carries one field; a
+ * label alone opens a block that runs to the next blank line, so an engine
+ * message or a stack is read whole rather than scanned for.
+ */
+function reportFields(text: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (line.endsWith(":")) {
+      const block: string[] = [];
+      while (++index < lines.length && lines[index] !== "")
+        block.push(lines[index]!);
+      fields[line.slice(0, -1)] = block.join("\n");
+      continue;
+    }
+    const separator = line.indexOf(": ");
+    if (separator > 0)
+      fields[line.slice(0, separator)] = line.slice(separator + 2);
+  }
+  return fields;
+}
+
 function stubClipboard(): string[] {
   const writes: string[] = [];
   Object.defineProperty(navigator, "clipboard", {
@@ -1257,26 +1281,25 @@ Annotation`,
     const details = area.querySelector("details")!;
     expect(details.open).toBe(false);
     // The engine's own account of the missing partial, as it was thrown. The
-    // partial name reaches the report as the location the engine named.
-    expect(report()).toContain(
-      [
-        "Engine message:",
-        'Template "book-details" not found',
-        "",
-        "Problem code: missing-partial",
-        "Engine name: MissingTemplateError",
-        "Reported location: book-details",
-      ].join("\n"),
-    );
-    // Nothing has established where the failure belongs, and the report says
-    // so rather than leaving the reader a blank to read as "none".
-    expect(report()).toContain("Engine location: unavailable");
-    expect(report()).toContain("Trigger: automatic");
-    expect(report()).toContain("Template document: templates/paper.md");
-    expect(report()).toContain("Template language: liquid");
-    expect(report()).toContain("Rendering root: note");
-    expect(report()).toContain("Selection: item=MAIN2345");
-    expect(report()).toContain("Host version: Obsidian 1.0.0-test");
+    // partial name reaches the report as the location the engine named, and
+    // nothing has established where the failure belongs, which the report
+    // says rather than leaving the reader a blank to read as "none".
+    const captured = reportFields(report());
+    expect(captured).toMatchObject({
+      "Engine message": 'Template "book-details" not found',
+      "Problem code": "missing-partial",
+      "Engine name": "MissingTemplateError",
+      "Reported location": "book-details",
+      "Engine location": "unavailable",
+      Trigger: "automatic",
+      "Template document": "templates/paper.md",
+      "Template language": "liquid",
+      "Rendering root": "note",
+      "Host version": "Obsidian 1.0.0-test",
+    });
+    // The paper this attempt rendered, beside the annotation example whose own
+    // revision the fixture supplies.
+    expect(captured["Selection"]).toContain("item=MAIN2345");
 
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_copy()),
@@ -1297,13 +1320,17 @@ Annotation`,
     );
     await advance();
     await act(async () => previewButton(preview, m.workbench_problem_show()));
-    expect(report()).toContain('Template "figure-caption" not found');
+    expect(reportFields(report())).toMatchObject({
+      "Engine message": 'Template "figure-caption" not found',
+    });
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_copy()),
     );
     const second = copied[1]!;
     expect(second).not.toBe(inspected);
-    expect(second).toContain("Reported location: figure-caption");
+    expect(reportFields(second)).toMatchObject({
+      "Reported location": "figure-caption",
+    });
 
     // Choosing another paper re-renders and reports that attempt's own paper.
     await act(async () =>
@@ -1327,7 +1354,56 @@ Annotation`,
       problemsButton(test.editor, m.workbench_problems_copy_last()),
     );
     expect(copied.at(-1)).toBe(copied.at(-2));
-    expect(copied.at(-1)).toContain("Reported location: figure-caption");
+    expect(reportFields(copied.at(-1)!)).toMatchObject({
+      "Reported location": "figure-caption",
+    });
+  });
+
+  it("names the Item a pinned preview read, not the one the editor moved to", async () => {
+    const copied = stubClipboard();
+    const source = PROFILE_SOURCE.replace(
+      "value: [review]",
+      'value: ["review"]',
+    );
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+
+    // The editor moves to another paper; a pinned preview keeps the one it is
+    // showing, so the attempt that fails next read that paper and no other.
+    preview.leaf.pinned = true;
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "BOOK2345", title: "Reading between the lines" }),
+    );
+    await advance();
+    await act(async () =>
+      test.editor.setViewData(
+        source.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+
+    expect(reportFields(copied.at(-1)!)["Selection"]).toContain(
+      "item=MAIN2345",
+    );
   });
 
   it("reports a document problem the parser found, with no engine behind it", async () => {
@@ -1348,33 +1424,29 @@ Annotation`,
     // Hand-derived: the value the parser refused is the second entry's, and
     // it stands where the fixture spells it.
     const at = PROFILE_SOURCE.indexOf("[review]");
-    expect(report()).toContain(
-      [
-        "Engine message:",
-        m.workbench_problem_invalid_manifest_field({
-          field: "frontmatter.1.value",
-        }),
-        "",
-        "Problem code: invalid-manifest",
-        "Engine name: unavailable",
-        `Reported location: offset ${at}-${at + "[review]".length}`,
-        "Engine location: unavailable",
-        "Calling template: unavailable",
-        "Repair target: unavailable",
-        "Document section: entry:2",
-      ].join("\n"),
-    );
-    // No error was ever thrown, and no render ever ran for this one.
-    expect(report()).toContain("Stack: unavailable");
-    expect(report()).toContain("Attempt: unavailable");
-    expect(report()).toContain("Snapshot revision: unavailable");
-    // The attempt's own context is captured whole, the same as a render's.
-    expect(report()).toContain("Trigger: automatic");
-    expect(report()).toContain("Template document: templates/paper.md");
-    expect(report()).toContain("Template language: liquid");
-    expect(report()).toContain("Rendering root: note");
-    expect(report()).toContain("Selection: item=MAIN2345");
-    expect(report()).toContain("Host version: Obsidian 1.0.0-test");
+    // No error was ever thrown and no render ever ran for this one, and the
+    // attempt's own context is captured whole, the same as a render's.
+    expect(reportFields(report())).toMatchObject({
+      "Engine message": m.workbench_problem_invalid_manifest_field({
+        field: "frontmatter.1.value",
+      }),
+      "Problem code": "invalid-manifest",
+      "Engine name": "unavailable",
+      "Reported location": `offset ${at}-${at + "[review]".length}`,
+      "Engine location": "unavailable",
+      "Calling template": "unavailable",
+      "Repair target": "unavailable",
+      "Document section": "entry:2",
+      Stack: "unavailable",
+      Attempt: "unavailable",
+      "Snapshot revision": "unavailable",
+      Trigger: "automatic",
+      "Template document": "templates/paper.md",
+      "Template language": "liquid",
+      "Rendering root": "note",
+      Selection: "item=MAIN2345",
+      "Host version": "Obsidian 1.0.0-test",
+    });
 
     await act(async () =>
       problemsButton(test.editor, m.workbench_problems_copy()),

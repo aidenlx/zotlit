@@ -228,10 +228,56 @@ describe("Sample Items", () => {
     const result = renderProfile(source, SAMPLE_ITEMS[1]!);
 
     expect(result.creationBody).toBeNull();
+    // The web reads the same attribution Obsidian does: the partial the engine
+    // could not resolve is named, and the call to it is the repair target.
     expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
-      ["render-error", "annotation"],
+      ["missing-partial", "annotation"],
     ]);
-    expect(result.diagnostics[0]!.message).toContain("book-details");
+    expect(result.diagnostics[0]!.params).toEqual({ name: "book-details" });
+    expect(result.diagnostics[0]!.callSite).toEqual({
+      from: source.indexOf("{% render 'book-details' %}"),
+      to:
+        source.indexOf("{% render 'book-details' %}") +
+        "{% render 'book-details' %}".length,
+    });
+  });
+
+  it("repairs a blamed template at its one call, and names none where two spell it", () => {
+    // A partial the engine refuses: it reports the failure inside the partial,
+    // and the reader repairs it where that partial was called.
+    const withPartial = (body: string) =>
+      DEFAULT_PROFILE_SOURCE.replace(
+        "filename:",
+        [
+          "partials:",
+          "  - name: venue-line",
+          "    language: liquid",
+          "    source: '{{ zt.title | bogus_filter }}'",
+          "filename:",
+        ].join("\n"),
+      ).replace("# {{ zt.title }}", body);
+    const call = "{% render 'venue-line' %}";
+    const one = withPartial(call);
+
+    const single = renderProfile(one, SAMPLE_ITEMS[0]!).diagnostics[0]!;
+    expect(single.engine).toEqual({
+      template: "venue-line",
+      line: 1,
+      column: 1,
+    });
+    expect(single.callSite).toEqual({
+      from: one.indexOf(call),
+      to: one.indexOf(call) + call.length,
+    });
+
+    // Two calls, and nothing says which one this render took: the location
+    // stays absent rather than pointing at whichever comes first.
+    const several = renderProfile(
+      withPartial(`${call}\n${call}`),
+      SAMPLE_ITEMS[0]!,
+    ).diagnostics[0]!;
+    expect(several.engine).toEqual(single.engine);
+    expect(several.callSite).toBeUndefined();
   });
 
   it("keeps the note preview when a broken format is never called", () => {
@@ -278,8 +324,10 @@ describe("Sample Items", () => {
       "Clear methods make research easier to reproduce.",
     );
     expect(result.creationBody).toBeNull();
-    expect(result.diagnostics.map(({ part }) => part)).toEqual(["render"]);
-    expect(result.diagnostics[0]!.message).toContain("missing-note");
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "render"],
+    ]);
+    expect(result.diagnostics[0]!.params).toEqual({ name: "missing-note" });
   });
 
   it("identifies a format error in a note call while the selected example succeeds", () => {
@@ -294,8 +342,12 @@ describe("Sample Items", () => {
       "Compare these findings with the replication study.",
     );
     expect(result.creationBody).toBeNull();
-    expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
-    expect(result.diagnostics[0]!.message).toContain("missing-for-highlight");
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "annotation"],
+    ]);
+    expect(result.diagnostics[0]!.params).toEqual({
+      name: "missing-for-highlight",
+    });
   });
 
   it("reports both a selected-example error and an unrelated note error", () => {
@@ -309,12 +361,14 @@ describe("Sample Items", () => {
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
       annotation: SAMPLE_ANNOTATIONS[0]!,
     });
-    expect(result.diagnostics.map(({ part }) => part)).toEqual([
-      "annotation",
-      "render",
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "annotation"],
+      ["missing-partial", "render"],
     ]);
-    expect(result.diagnostics[0]!.message).toContain("missing-example");
-    expect(result.diagnostics[1]!.message).toContain("missing-note");
+    expect(result.diagnostics.map(({ params }) => params?.name)).toEqual([
+      "missing-example",
+      "missing-note",
+    ]);
   });
 
   it("locates no highlight when the note calls the format nowhere", () => {

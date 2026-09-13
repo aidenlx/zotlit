@@ -17,12 +17,20 @@ import { captureRenderReport, engineEvidence } from "#/render/report";
 import {
   failedRender,
   renderFailed,
+  retainOutputs,
   templateSourceRevision,
   renderIdentity,
 } from "#/render/result";
 
 export interface RenderSchedulerInput {
   readonly source: string;
+  /**
+   * The Template Document this preview reads — a vault path or a draft
+   * reference. Output kept from another document is another preview's, so a
+   * scheduler that follows the reader from one document to the next names the
+   * one it is on. A host with one document all along leaves it out.
+   */
+  readonly document?: string;
   readonly mode: PreviewMode;
   readonly live: boolean;
   /** The paper a render is shown against; `null` while the host loads one. */
@@ -63,10 +71,12 @@ export interface RenderSchedulerState<
 > {
   readonly result: R | null;
   /**
-   * The last result that produced output, kept while `result` is a failed
-   * attempt the reader can still compare against it. Null once the retained
-   * output describes a paper, example, caller, or mode the reader has left,
-   * which is what keeps another preview's result out of this one.
+   * The newest output each preview surface produced, kept while `result` is a
+   * failed attempt the reader can still compare against it. A note that failed
+   * beside an annotation that rendered keeps the last note that worked. Null
+   * once the retained output describes a document, paper, example, caller, or
+   * mode the reader has left, which is what keeps another preview's result out
+   * of this one.
    */
   readonly retained: R | null;
   /** Set from the moment a render starts until its result lands or is dropped. */
@@ -154,8 +164,11 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     trigger: null,
     attempt: 0,
   };
-  // The last result that produced output, whatever has failed since.
+  // The last output each preview surface produced, whatever has failed since.
   let produced: R | null = null;
+  // The Template Document `produced` was rendered from, so output kept for one
+  // document is never read against another.
+  let producedDocument = initial.document;
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
   // A host may reach a disposed scheduler from a continuation it started while
@@ -238,14 +251,29 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
         ? stamp(published, trigger, attempt)
         : published;
     const busy = next.busy ?? state.busy;
-    if (result !== null && !renderFailed(result)) produced = result;
+    // Each surface keeps the newest output it produced, so a note that failed
+    // beside an annotation that rendered leaves the last good note standing.
+    if (result !== null && !renderFailed(result)) {
+      produced =
+        produced !== null && producedDocument === input.document
+          ? retainOutputs(produced, result)
+          : result;
+      producedDocument = input.document;
+    }
     // Only a failure sends the reader back to working output, and only where
-    // that output still answers for the selection they are reading now. A
-    // document the parser refuses is such a failure: no attempt ever ran.
+    // that output still answers for the document and the selection they are
+    // reading now. A document the parser refuses is such a failure: no attempt
+    // ever ran.
     const broken =
-      input.hold === "invalid" || (result !== null && renderFailed(result));
+      input.hold === "invalid" ||
+      (result !== null && result.diagnostics.length > 0);
     const retained =
-      broken && produced !== null && sameSelection(produced) ? produced : null;
+      broken &&
+      produced !== null &&
+      producedDocument === input.document &&
+      sameSelection(produced)
+        ? produced
+        : null;
     const identityMismatch =
       result !== null &&
       (result.sourceRevision !== templateSourceRevision(input.source) ||
@@ -373,6 +401,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       }
       const sameRenderInput =
         input.source === previous.source &&
+        input.document === previous.document &&
         input.mode === previous.mode &&
         input.snapshot === previous.snapshot &&
         input.annotation === previous.annotation &&

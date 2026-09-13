@@ -1575,6 +1575,19 @@ language: liquid
       params: { names: "authors, venue-line" },
     });
 
+    // Unpacking writes files, so the reader reaches it among the ordinary
+    // partial operations rather than inside the reading of a problem
+    // (ADR 0056). It is offered only while this document carries any.
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    const partials = menu.items.find(
+      (item) => item.title === m.template_workbench_partials(),
+    )!;
+    expect(partials.submenu?.items.map((item) => item.title)).toEqual([
+      m.workbench_partial_new(),
+      m.workbench_problem_bundled_partial_unpack(),
+    ]);
+
     // Both entries go — the written one and the one the reader's own file
     // answers — so the problem clears and neither name has two homes left.
     expect(await view.unpackBundledPartials()).toBe(true);
@@ -1582,6 +1595,14 @@ language: liquid
     expect(view.getViewData()).not.toContain("partials:");
     expect(view.getViewData()).toContain("filename: paper");
     expect(view.controller.problems).toEqual([]);
+
+    const repaired = new Menu();
+    view.onPaneMenu(repaired as never, "more-options");
+    expect(
+      repaired.items
+        .find((item) => item.title === m.template_workbench_partials())!
+        .submenu?.items.map((item) => item.title),
+    ).toEqual([m.workbench_partial_new()]);
   });
 
   it("names no partial while the template service is still scanning the folder", () => {

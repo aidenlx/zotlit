@@ -487,7 +487,6 @@ export const WEB_THEME: WorkbenchTheme = {
         "mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
       "problems-open": "cursor-pointer underline underline-offset-2",
       "problems-return": "cursor-pointer underline underline-offset-2",
-      "problems-action": "cursor-pointer underline underline-offset-2",
       "problems-copy": "cursor-pointer underline underline-offset-2",
       "problems-community": "underline underline-offset-2",
     },

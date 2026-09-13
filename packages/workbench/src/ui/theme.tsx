@@ -263,7 +263,6 @@ export interface WorkbenchParts {
     | "problems-report"
     | "problems-copy-failed"
     | "problems-controls"
-    | "problems-action"
     | "problems-copy"
     | "problems-community"
     | "problems-return"

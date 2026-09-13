@@ -6,9 +6,9 @@ import {
   diagnosisLocated,
   diagnosisWhere,
   diagnosticText,
-  problemAction,
   problemText,
   renderDiagnosis,
+  workbenchDiagnoses,
 } from "./problems";
 import { m } from "./test-messages";
 
@@ -60,7 +60,7 @@ describe("problemText", () => {
     });
   });
 
-  it("names the bundled partials a vault-side document still carries, with an unpack button", () => {
+  it("names the bundled partials a vault-side document still carries", () => {
     const controller = new WorkbenchDocumentController(
       DEFAULT_PROFILE_SOURCE.replace(
         "filename:",
@@ -77,16 +77,13 @@ describe("problemText", () => {
     const problem = controller.problems[0]!;
 
     expect(problem.code).toBe("bundled-partial");
+    // The recovery is a text suggestion like every other one: unpacking writes
+    // files, which the host offers among its ordinary partial operations
+    // rather than inside the reading of a problem (ADR 0056).
     expect(problemText(m, problem)).toEqual({
       message: m.workbench_problem_bundled_partial({ names: "authors" }),
       recovery: m.workbench_problem_bundled_partial_recovery(),
     });
-    expect(problemAction(m, problem)).toBe(
-      m.workbench_problem_bundled_partial_unpack(),
-    );
-    expect(
-      problemAction(m, { code: "invalid-document", slice: "advanced" }),
-    ).toBeNull();
   });
 
   it("leaves the web host to read a bundle as the transport it is", () => {
@@ -168,14 +165,24 @@ describe("diagnosticText", () => {
     ).toBe(m.workbench_diagnostic_missing_partial({ name: "venue-line" }));
   });
 
-  it("shows the engine's own failure text for a render error", () => {
-    expect(
-      diagnosticText(m, {
-        code: "render-error",
-        message: "Unexpected tag",
-        part: "render",
-      }),
-    ).toBe("Unexpected tag");
+  it("reads an unclassified engine failure as a plain sentence", () => {
+    const failure = {
+      code: "render-error",
+      message: "Unexpected tag",
+      part: "render",
+    } as const;
+
+    expect(diagnosticText(m, failure)).toBe(
+      m.workbench_diagnostic_render_error(),
+    );
+    // The engine's own words are evidence, and Technical details is where the
+    // reader finds them.
+    expect(diagnosisExplanation(m, renderDiagnosis(failure))).toEqual({
+      object: m.workbench_problems_object_profile(),
+      condition: m.workbench_diagnostic_render_error(),
+      suggestion: m.workbench_diagnostic_render_error_suggestion(),
+      evidence: "Unexpected tag",
+    });
   });
 });
 
@@ -238,7 +245,7 @@ describe("attribution", () => {
     );
   });
 
-  it("keeps one code naming one partial at two calls as two problems", () => {
+  it("keeps one problem's identity through an edit that moves its call", () => {
     const at = (from: number) =>
       renderDiagnosis({
         code: "missing-partial",
@@ -247,8 +254,46 @@ describe("attribution", () => {
         callSite: { from, to: from + 27 },
       }).id;
 
-    expect(at(395)).not.toBe(at(512));
-    expect(at(395)).toBe(at(395));
+    // Typing above the call moves every offset below it and changes nothing
+    // about the failure, so the reader stays on the problem they are reading.
+    expect(at(512)).toBe(at(395));
+    // Another partial is another problem, whatever either call's offset is.
+    expect(
+      renderDiagnosis({
+        code: "missing-partial",
+        params: { name: "venue-line" },
+        part: "render",
+        callSite: { from: 395, to: 422 },
+      }).id,
+    ).not.toBe(at(395));
+  });
+
+  it("gives each unattributed failure a problem of its own", () => {
+    const failure = (message: string) =>
+      ({ code: "render-error", message, part: "render" }) as const;
+    const [first, second, ...rest] = workbenchDiagnoses(
+      [],
+      [failure("Unexpected tag"), failure("Unexpected tag")],
+    );
+
+    // Nothing is verified about either, so nothing establishes them as one
+    // problem — least of all the words they share. Both explanations, and both
+    // reports, stay reachable.
+    expect(rest).toEqual([]);
+    expect(first!.id).not.toBe(second!.id);
+    expect([first, second].map((found) => found!.occurrences.length)).toEqual([
+      1, 1,
+    ]);
+    // A named object is what makes two occurrences one problem.
+    expect(
+      workbenchDiagnoses(
+        [],
+        [
+          { code: "missing-partial", params: { name: "venue-line" } },
+          { code: "missing-partial", params: { name: "venue-line" } },
+        ],
+      ).map(({ occurrences }) => occurrences.length),
+    ).toEqual([2]);
   });
 
   it("says no verified location for a failure the engine reported nowhere", () => {

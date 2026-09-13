@@ -50,7 +50,6 @@ export {
   diagnosisWhere,
   diagnosticText,
   documentDiagnosis,
-  problemAction,
   problemText,
   renderDiagnosis,
   workbenchDiagnoses,
@@ -63,6 +62,7 @@ export type {
 export {
   ProblemsFooter,
   problemWhere,
+  usePublishedProblems,
   useWorkbenchProblems,
 } from "./problems-footer";
 export type {

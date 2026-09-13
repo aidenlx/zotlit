@@ -12,7 +12,11 @@ status: accepted
 > resolved gets no reported location at all, since nothing was read there, and
 > a caller is recorded only when the failure names a document path rather than
 > a placeholder reference. Everything else leaves the repair location absent
-> and says so.
+> and says so. A source that spells the blamed template at several calls
+> reached it from one of them and names which nowhere, so the location stays
+> absent there too; a partial the engine could not resolve is the exception,
+> because every call naming it is broken by the same missing document and the
+> first is as good a repair target as any.
 
 > Amended 2026-09-13: the report's own labels and its `unavailable` marker are
 > English, whatever language the explanation above them is read in. A report is
@@ -20,13 +24,13 @@ status: accepted
 > reports comparable and the engine's own words are untranslated anyway. The
 > explanation, the disclosure label, and the reporting controls stay localized.
 
-> Amended 2026-09-13: the Problems area keeps one host repair control, Unpack
-> partials for the `bundled-partial` document problem. That control is the only
-> route to unpacking a shared Profile's carried partials, and it repairs the
-> document the reader already has open rather than creating a template the
-> reader has not asked for. Every render diagnosis keeps text suggestions
-> alone. Remove the control here once an ordinary editor or settings workflow
-> offers unpacking.
+> Amended 2026-09-13: the Problems area performs no repair at all. Unpack
+> partials, its one remaining host control, is an ordinary partial operation —
+> it writes partial files — and the editor already offers every other one from
+> its Partials menu, beside the vault's partials and New partial. That is where
+> it lives now, offered only while the open document still carries bundled
+> partials, and the `bundled-partial` problem names the route in its own
+> suggestion. Every diagnosis keeps text suggestions alone.
 
 > Amended 2026-09-13: the scheduler's hold carried two conditions under one
 > sentence — a document the parser refuses, and a preview that is paused or
@@ -51,11 +55,33 @@ status: accepted
 
 > Amended 2026-09-13: the selected problem is held from the moment the area is
 > open, whether the reader chose it or read whichever came first, and it is
-> let go once a check finds nothing at all. A compact area follows the first
-> problem found, because nothing is being read there; an open one does not,
-> because a check would otherwise change the explanation under the reader. A
+> let go once a check finds nothing at all — and once the reader reclaims the
+> area, because nothing is being read there from then on. A compact area
+> follows the first problem found; an open one does not, because a check would
+> otherwise change the explanation under the reader. A
 > check that finds nothing ends the reading, so the next failure arrives as
 > the problem it is rather than as a resolved state with Next problem.
+
+> Amended 2026-09-13: a problem's identity holds no offset. The reader typing
+> above a failed call moves every offset below it and changes nothing about the
+> failure, and an identity that moved with it read as a repair the reader never
+> made. What tells two problems apart is the code, the object the failure
+> names, and the section it was reported under; a failure with nothing verified
+> about it — no object named, no call to repair it at — is its own problem
+> every time one is found, because the words two of them share establish
+> nothing.
+
+> Amended 2026-09-13: retention is per preview surface. One attempt renders the
+> note, the annotation, the Citation text, and a Shared Partial apart, so a
+> note that failed beside an annotation that rendered keeps the last note that
+> worked while the annotation shows what this attempt produced. Matching
+> includes the Template Document, the same as the paper and the example: output
+> kept for the document before this one is another preview's.
+
+> Amended 2026-09-13: navigating to the source gives the pane back first. An
+> explanation holding the whole editor would otherwise send the reader to
+> source it hides, so the control that opens the pane a problem is repaired in
+> leaves Expand behind and returns the area to its settled share.
 
 The citation-template walkthrough showed a missing partial's name,
 explanation, and two recovery actions squeezed into one source-line widget.

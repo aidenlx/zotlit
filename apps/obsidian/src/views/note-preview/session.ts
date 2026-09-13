@@ -293,6 +293,9 @@ export class NativePreviewSession implements Disposable {
     // Item; the paper it cites still stamps the result the scheduler compares.
     const citation = citationSet ? { variant, example: citationExample } : null;
     this.#scheduler.setInput({
+      // The editor this preview follows can hand it another Template Document,
+      // and output kept for the one before it is another preview's.
+      document: context?.path ?? undefined,
       citation,
       partial: context?.partial ?? null,
       snapshot: previewSnapshot(

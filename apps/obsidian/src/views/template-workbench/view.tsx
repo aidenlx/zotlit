@@ -450,16 +450,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * What names this Workbench in a copied error report. Read once per failed
    * attempt, so the report keeps the document, root, and Item that attempt
    * ran against however the reader moves on afterwards.
+   *
+   * `selection` is the Item the attempt read, which a linked preview answers
+   * for itself: a pinned one keeps the Item it was pinned on while this editor
+   * moves to another. Left out, this editor's own choice answers.
    */
-  reportContext(root: TemplateRoot): WorkbenchReportContext {
+  reportContext(
+    root: TemplateRoot,
+    selection: string | null = this.store.getState().item?.id ?? null,
+  ): WorkbenchReportContext {
     const path = this.file?.path;
-    const item = this.store.getState().item;
     const version = this.#deps.pluginVersion;
     return {
       ...(path === undefined ? {} : { document: path }),
       language: this.#controller.language,
       root,
-      ...(item ? { selection: item.id } : {}),
+      ...(selection === null ? {} : { selection }),
       ...(version === undefined ? {} : { zotlitVersion: version }),
       hostVersion: `Obsidian ${apiVersion}`,
     };
@@ -1368,6 +1374,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #addPartialsMenu(menu: Menu): void {
     const templates = this.#deps.templates;
     if (!templates.loaded) return;
+    // The partials this document still carries from the Profile it was shared
+    // with. Unpacking writes them into files, which is an ordinary partial
+    // operation and belongs beside the rest of them rather than inside the
+    // reading of a problem (ADR 0056).
+    const bundled = this.#controller.document?.manifest.partials ?? [];
     menu.addItem((item) => {
       item
         .setSection("zotlit")
@@ -1393,6 +1404,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("plus")
           .onClick(() => void this.createPartial()),
       );
+      if (bundled.length > 0 && !this.#controller.readOnly)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(m.workbench_problem_bundled_partial_unpack())
+            .setIcon("package-open")
+            .onClick(() => void this.unpackBundledPartials()),
+        );
     });
   }
 
@@ -2376,7 +2394,6 @@ function EditorContent({
         problems={problems}
         onOpen={openDiagnosis}
         onReturn={returnToTemplate}
-        onAction={() => void view.unpackBundledPartials()}
       />
     </div>
   );

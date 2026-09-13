@@ -3,7 +3,7 @@ import "./style.css";
 import { apiVersion, ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -33,6 +33,7 @@ import {
   ResultBody,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  usePublishedProblems,
   useRenderState,
 } from "@zotlit/workbench/ui";
 import type {
@@ -961,10 +962,15 @@ export class NotePreviewView extends ItemView {
    * names what it can and leaves the rest unavailable.
    */
   #reportContext(): WorkbenchReportContext {
-    const root = this.#session?.state.getState().context?.root ?? "note";
+    const state = this.#session?.state.getState();
+    const root = state?.context?.root ?? "note";
+    // The Item this preview rendered against, which a pinned preview keeps
+    // while the editor it reads source from moves to another.
+    const selection = state?.item?.id ?? null;
     return (
-      this.#sourceEditor()?.reportContext(root) ?? {
+      this.#sourceEditor()?.reportContext(root, selection) ?? {
         root,
+        ...(selection === null ? {} : { selection }),
         hostVersion: `Obsidian ${apiVersion}`,
       }
     );
@@ -1127,9 +1133,6 @@ export class NotePreviewView extends ItemView {
 }
 const sidebarBar = selectionBar({ placement: "sidebar" });
 
-/** Nothing found, as one value, so an idle preview publishes no new list. */
-const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
-
 function PreviewContent({
   session,
   scheduler,
@@ -1169,26 +1172,15 @@ function PreviewContent({
   } = useStore(session.state, (state) => state);
   useEffect(rendered, [result, status, showMarkdown, showManaged, rendered]);
   // The editor owns the explanation, so this preview publishes what its render
-  // found and takes it back when it closes.
-  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
-  const publish = useRef(publishProblems);
-  publish.current = publishProblems;
-  const open = useRef(showProblem);
-  open.current = showProblem;
-  useEffect(() => {
-    publish.current(diagnostics);
-  }, [diagnostics]);
-  useEffect(() => () => publish.current(NO_DIAGNOSTICS), []);
-  const opened = useRef(attempt);
-  useEffect(() => {
-    if (attempt === opened.current) return;
-    opened.current = attempt;
-    // A deliberate Run that failed is worth an explanation at once; the
-    // editor's pane is left where the reader put it.
-    const first = diagnostics[0];
-    if (trigger === "explicit" && first)
-      open.current(renderDiagnosis(first).id, false);
-  }, [attempt, trigger, diagnostics]);
+  // found and takes it back when it closes. A deliberate Run that failed opens
+  // its explanation; the editor's pane is left where the reader put it.
+  usePublishedProblems({
+    result,
+    trigger,
+    attempt,
+    publish: publishProblems,
+    showProblem: (id) => showProblem(id, false),
+  });
   const mode = context ? resultMode(context) : "note";
   const partialContext = partialContextOf(context);
   // A partial reads the root its chosen caller reads, so the set it is shown
@@ -1332,7 +1324,10 @@ function PreviewContent({
             showManaged={showManaged}
             sourceAvailable={editorAvailable}
             onShowProblem={(diagnostic) =>
-              showProblem(renderDiagnosis(diagnostic).id, true)
+              showProblem(
+                diagnostic === null ? null : renderDiagnosis(diagnostic).id,
+                true,
+              )
             }
             onRun={() => scheduler.run()}
             busy={busy}

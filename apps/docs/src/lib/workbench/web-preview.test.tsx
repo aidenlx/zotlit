@@ -78,6 +78,7 @@ describe("preview scheduling", () => {
         <WebTestHost>
           <WebPreview
             source={source}
+            document="standalone"
             sample={SAMPLE_ITEMS[0]!}
             resources={undefined}
             hold={false}

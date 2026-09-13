@@ -143,34 +143,38 @@ the document controller and the store itself; the editor calls `host.render`, wh
 answers one request with a promise on the calling thread and whose rejection
 reads as a `render-error` diagnostic. An optional `mapResult` gives successful
 and failed results the host's own result shape. The host calls `setInput` with the
-paper, the annotation example, its own bundle, and `hold` where nothing may
-render yet — `hold: "invalid"` for the one hold that is a failure, a document
-the parser refuses, which reads as `staleReason: "invalid"`. Its state —
-`result`, `retained`, `busy`, `stale` — is what every result surface paints.
-`retained` is the last result that produced output, kept while the document is
-invalid or `result` is a failed attempt, and the reader is still on the paper,
-example, caller, and mode it was rendered for, so a repair reads against
-working output rather than an empty pane; a source edit leaves that match
-intact. Its `trigger` says whether Run or the quiet time after an edit asked
+paper, the annotation example, its own bundle, the `document` it is reading,
+and `hold` where nothing may render yet — `hold: "invalid"` for the one hold
+that is a failure, a document the parser refuses, which reads as
+`staleReason: "invalid"`. Its state — `result`, `retained`, `busy`, `stale` —
+is what every result surface paints. `retained` is the newest output each
+preview surface produced, kept while the document is invalid or `result` is a
+failed attempt, and the reader is still on the document, paper, example,
+caller, and mode it was rendered for, so a repair reads against working output
+rather than an empty pane; a source edit leaves that match intact. A note that
+failed beside an annotation that rendered keeps the last note that worked,
+because the surfaces are kept apart. Its `trigger` says whether Run or the quiet time after an edit asked
 for the shown result, and `attempt` counts the results it has published, so two
 attempts over the same bytes stay distinct. Outside the editor provider the
 tree paints inert, which the web's skeleton relies on. The components so far:
 `TabBar` and `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a
-host's own controls as children), and `ProblemsFooter` with `problemText`,
-`problemAction`, and `diagnosticText`, the words for every core code. A host
-that passes `onAction` gets the button `problemAction` names for the codes a
-host can repair on the reader's word; a Profile edited beside a vault reports
-`bundled-partial` for the partials its manifest still carries, and the vault
-host unpacks them into files with `dropBundledPartials`.
+host's own controls as children), and `ProblemsFooter` with `problemText` and
+`diagnosticText`, the words for every core code. A Profile edited beside a
+vault reports `bundled-partial` for the partials its manifest still carries;
+the recovery is a text suggestion like every other one, and the vault host
+unpacks them into files with `dropBundledPartials` from its own partial
+workflow.
 
 `ProblemsFooter` is the editor's Problems area, and the editor owns detailed
 diagnosis (ADR 0056). `workbenchDiagnoses(problems, diagnostics)` folds the
 parser's problems and the renderer's diagnostics into one list of
 `WorkbenchDiagnosis`, each with an identity built from its code, the object it
-names, and where it is repaired — never from its message text. Occurrences
-that share an identity become one problem with several `occurrences`, and
+names, and the section it was reported under — never from its message text and
+never from an offset, which the reader's own typing moves. Occurrences that
+share an identity become one problem with several `occurrences`, and
 `diagnosisEngineSources` writes out the place each was reported from; equal
-words about two objects, or at two repair targets, stay two problems.
+words about two objects stay two problems, and a failure with nothing verified
+about it — no object named, no call to repair it at — groups with nothing.
 `useWorkbenchProblems` holds the reader's selection and their open-or-collapsed
 choice: automatic checks leave that choice alone, while `select` — what a
 source marker, the area's own selector, and the preview's Show problem call —
@@ -180,7 +184,10 @@ selected problem a repair resolved as resolved, offering `next` rather than
 moving the reader to it. `diagnosisExplanation` writes the affected object, a
 plain condition, and a text suggestion; repairs stay the reader's own edit.
 A preview publishes what its render found to the editor beside it rather than
-explaining it beside its own empty result.
+explaining it beside its own empty result: `usePublishedProblems` is that half
+of the contract, and both hosts keep it alike — the findings go up, a preview
+that closes takes them back, and a deliberate Run that failed asks for its
+explanation at once.
 
 Technical details shows the failed attempt's report, and Copy error report
 copies that same text through the host's `copy`; Ask the community links to the

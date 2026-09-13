@@ -26,8 +26,8 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { renderFailureCause } from "./attribution";
-import type { RenderFailureCause } from "./attribution";
+import { renderFailureCause, renderFailureDiagnostic } from "./attribution";
+import type { RenderCallerSource, RenderFailureCause } from "./attribution";
 import { engineEvidence } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
@@ -160,6 +160,13 @@ export function renderProfile(
       })),
     ...citationStyleDiagnostics(resources?.citationStyle),
   ];
+  // The draft this render reads, which a repair location is an offset into:
+  // both hosts name the partial the engine could not resolve and the call to
+  // repair it at, rather than leaving the web with the engine's bare words.
+  const caller: RenderCallerSource = {
+    source,
+    language: document.manifest.language ?? "liquid",
+  };
   let preview: string | null = null;
   let annotationCitation: string | null = null;
   let formatFailure: RenderDiagnostic | null = null;
@@ -216,8 +223,7 @@ export function renderProfile(
       preview = null;
       formatCause = renderFailureCause(error);
       formatFailure = {
-        code: "render-error",
-        message: errorMessage(error),
+        ...renderFailureDiagnostic(error, caller),
         evidence: engineEvidence(error),
         part: "annotation",
       };
@@ -281,8 +287,7 @@ export function renderProfile(
     };
   } catch (error) {
     const failure = failedRender(identity, {
-      code: "render-error",
-      message: errorMessage(error),
+      ...renderFailureDiagnostic(error, caller),
       evidence: engineEvidence(error),
       part: isAnnotationError(error) ? "annotation" : "render",
     });

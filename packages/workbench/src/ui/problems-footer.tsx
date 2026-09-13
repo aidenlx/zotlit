@@ -25,8 +25,8 @@
 // that scroll, where a long explanation and an open disclosure leave every one
 // of them where the reader last saw it.
 
-import type { WorkbenchProblem } from "#/document/controller";
 import type { RenderReport, WorkbenchReportContext } from "#/render/report";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import {
   useCallback,
   useEffect,
@@ -47,8 +47,8 @@ import {
   diagnosisLocated,
   diagnosisReport,
   diagnosisWhere,
-  problemAction,
   problemText,
+  renderDiagnosis,
 } from "./problems";
 import type { RenderTrigger } from "./scheduler";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
@@ -129,10 +129,16 @@ export function useWorkbenchProblems({
   const [expanded, setExpanded] = useState(false);
   // Reclaiming the area hands the editor back whole, so the next Show problem
   // starts from the split rather than from the space the last reading took.
+  // The reading is over with it: a compact area follows the first problem
+  // found, so a repair that resolves the problem the reader had open leaves
+  // the summary on whatever is still there rather than on nothing at all.
   // One identity for the life of the hook: a host subscribes with this.
   const openArea = useCallback((next: boolean) => {
     setOpen(next);
-    if (!next) setExpanded(false);
+    if (!next) {
+      setExpanded(false);
+      setSelectedId(null);
+    }
   }, []);
   // Selection keys on the problem's identity rather than its place in the
   // list, so a check that finds the same problem keeps the reader's place.
@@ -221,11 +227,58 @@ export function useWorkbenchProblems({
   };
 }
 
+/** Nothing found, as one value, so an idle preview publishes no new list. */
+const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
+
+/**
+ * The preview's half of the Problems contract, which both hosts keep alike:
+ * what this preview's render found goes to the editor that explains it, a
+ * preview that closes takes its findings back with it, and a deliberate Run
+ * that failed asks for its explanation at once. A failure while the reader
+ * types asks for nothing, which is what leaves the editor as they left it.
+ *
+ * `publish` and `showProblem` are read through refs, so a host may pass a
+ * fresh callback on every draw without republishing on every draw.
+ */
+export function usePublishedProblems({
+  result,
+  trigger,
+  attempt,
+  publish,
+  showProblem,
+}: {
+  /** The newest landed result, whose diagnostics this preview publishes. */
+  readonly result: TemplateRenderResult | null;
+  /** How the attempt behind that result started. */
+  readonly trigger: RenderTrigger | null;
+  /** Counts published results, so one deliberate failure opens the area once. */
+  readonly attempt: number;
+  readonly publish: (diagnostics: readonly RenderDiagnostic[]) => void;
+  readonly showProblem: (id: string) => void;
+}): void {
+  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
+  const publishing = useRef(publish);
+  publishing.current = publish;
+  const open = useRef(showProblem);
+  open.current = showProblem;
+  useEffect(() => {
+    publishing.current(diagnostics);
+  }, [diagnostics]);
+  useEffect(() => () => publishing.current(NO_DIAGNOSTICS), []);
+  const opened = useRef(attempt);
+  useEffect(() => {
+    if (attempt === opened.current) return;
+    opened.current = attempt;
+    const first = diagnostics[0];
+    if (trigger === "explicit" && first)
+      open.current(renderDiagnosis(first).id);
+  }, [attempt, trigger, diagnostics]);
+}
+
 export function ProblemsFooter({
   problems,
   onOpen,
   onReturn,
-  onAction,
 }: {
   /** The area's state, from `useWorkbenchProblems`. */
   problems: WorkbenchProblemsState;
@@ -237,11 +290,6 @@ export function ProblemsFooter({
    * where the reading left it.
    */
   onReturn?: () => void;
-  /**
-   * Performs the repair a document problem carries its own button for. A host
-   * that supplies none leaves the reader with the pane button alone.
-   */
-  onAction?: (problem: WorkbenchProblem) => void;
 }) {
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
@@ -359,10 +407,6 @@ export function ProblemsFooter({
   if (selected === null && !open) return null;
   const explanation = selected && diagnosisExplanation(m, selected);
   const engineSources = selected ? diagnosisEngineSources(m, selected) : [];
-  const action =
-    onAction && selected?.kind === "document"
-      ? problemAction(m, selected.problem)
-      : null;
   // Several problems are chosen between rather than read at once, and the
   // choice names the object each one is about, so it stands in for the line
   // the explanation would otherwise lead with.
@@ -459,21 +503,18 @@ export function ProblemsFooter({
           <div {...part("problems-controls")}>
             <button
               type="button"
-              onClick={() => onOpen(selected)}
+              onClick={() => {
+                // The reading gives the pane back before the caret moves:
+                // an explanation holding the whole editor would otherwise
+                // send the reader to source it hides.
+                setExpanded(false);
+                onOpen(selected);
+              }}
               {...part("problems-open")}
             >
               {diagnosisWhere(m, selected)}
             </button>
             {returnControl()}
-            {action !== null && selected.kind === "document" && (
-              <button
-                type="button"
-                onClick={() => onAction?.(selected.problem)}
-                {...part("problems-action")}
-              >
-                {action}
-              </button>
-            )}
             {reportControls(reportText)}
           </div>
         </div>

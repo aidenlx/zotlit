@@ -356,6 +356,7 @@ export function Workbench() {
       // the wrong partials — the last good result stands until its own bundle
       // lands.
       scheduler?.setInput({
+        document: drafts.location.reference,
         snapshot: sample,
         annotation: selectedAnnotation,
         hold: unparsed ? "invalid" : !renderable || resourcesStale,
@@ -363,6 +364,7 @@ export function Workbench() {
       }),
     [
       scheduler,
+      drafts.location.reference,
       sample,
       selectedAnnotation,
       unparsed,
@@ -540,9 +542,10 @@ export function Workbench() {
    * so a narrow screen showing the result switches to it rather than leaving
    * the reader on a control whose answer is in the other view.
    */
-  function showProblem(id: string) {
+  function showProblem(id: string | null) {
     setView("edit");
-    problems.select(id);
+    if (id === null) problems.setOpen(true);
+    else problems.select(id);
   }
 
   /**
@@ -1240,6 +1243,7 @@ export function Workbench() {
           annotationChoice={previewAnnotationChoice}
           onAnnotationChoice={setPreviewAnnotationChoice}
           source={controller.source}
+          document={drafts.location.reference}
           sample={sample}
           resources={resources}
           hold={unparsed ? "invalid" : !renderable || resourcesStale}

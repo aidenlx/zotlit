@@ -468,7 +468,6 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
       "problems-return": templateWorkbenchButton,
-      "problems-action": templateWorkbenchButton,
       // How much editor each of its three sizes takes is a container rule in
       // `style.css`, where an unlayered `button` rule can be outranked.
       problems:

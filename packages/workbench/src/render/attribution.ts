@@ -54,7 +54,9 @@ export function renderFailureDiagnostic(
   );
   // The partial the engine could not resolve is the one to repair the call to;
   // every other failure is repaired where the template it names was called.
-  const site = callSite(caller, named?.templateName ?? engine?.template);
+  const site = named
+    ? callSites(caller, named.templateName)[0]
+    : verifiedCallSite(caller, engine?.template);
   const from = callerOf(chain);
   const attribution = {
     ...(engine ? { engine } : {}),
@@ -69,9 +71,7 @@ export function renderFailureDiagnostic(
     };
   return {
     code:
-      engine?.template === CITATION_TEMPLATE &&
-      site &&
-      refusedCitationData(chain)
+      engine?.template === CITATION_TEMPLATE && refusedCitationData(chain)
         ? "citation-data-mismatch"
         : "render-error",
     message: errorText(error),
@@ -184,16 +184,32 @@ function liquidToken(
 }
 
 /**
- * The first call in `caller` naming `template`, which is the verified place to
- * repair a failure the engine attributed to that template. Nothing is returned
- * for a name the source never spells, so an unnamed location stays unnamed.
+ * Every call in `caller` naming `template`, in source order. Empty for a name
+ * the source never spells, so an unnamed location stays unnamed.
  */
-function callSite(
+function callSites(
   { source, language }: RenderCallerSource,
   template: string | undefined,
+): { from: number; to: number }[] {
+  if (template === undefined) return [];
+  return templateCalls(source, { from: 0, to: source.length }, language)
+    .filter(({ name }) => name === template)
+    .map(({ call }) => call);
+}
+
+/**
+ * Where a failure the engine reported inside `template` is repaired: the one
+ * call that reached it. A source spelling that name twice reached it from one
+ * of them and nothing here says which, so the repair location stays absent
+ * rather than sending the reader to whichever call comes first — which may be
+ * one this render never took. A template the engine could not resolve at all
+ * is the other case: every call naming it is broken by the same missing
+ * document, so the first one is as good a repair target as any.
+ */
+function verifiedCallSite(
+  caller: RenderCallerSource,
+  template: string | undefined,
 ): { from: number; to: number } | undefined {
-  if (template === undefined) return undefined;
-  return templateCalls(source, { from: 0, to: source.length }, language).find(
-    ({ name }) => name === template,
-  )?.call;
+  const calls = callSites(caller, template);
+  return calls.length === 1 ? calls[0] : undefined;
 }

@@ -244,6 +244,75 @@ export function failedRender(
 }
 
 /**
+ * Whether two results describe the same paper, example, caller, and mode. The
+ * source is left out: an edit makes a result stale without making it another
+ * preview's, which is what keeps a retained output readable through a repair.
+ */
+export function sameRenderSelection(
+  kept: RenderIdentity,
+  result: RenderIdentity,
+): boolean {
+  return (
+    kept.previewMode === result.previewMode &&
+    kept.snapshotRevision === result.snapshotRevision &&
+    kept.annotationId === result.annotationId &&
+    kept.annotationRevision === result.annotationRevision &&
+    kept.citationVariant === result.citationVariant &&
+    kept.citationExample === result.citationExample &&
+    kept.partialContext === result.partialContext &&
+    kept.partialProfile === result.partialProfile
+  );
+}
+
+/**
+ * `result` with the outputs it produced none of taken from `kept`, so an
+ * attempt where one preview surface failed and another succeeded leaves each
+ * reader the newest output their own surface has. The note's name, properties,
+ * and marks travel with the note body they were rendered beside; a surface
+ * whose output is null either failed or is not this document's to produce, and
+ * either way the last one that worked is what a reader compares against.
+ *
+ * A result for another paper, example, caller, or mode replaces what was kept
+ * rather than filling in from it: another preview's output is no comparison.
+ */
+export function retainOutputs<R extends TemplateRenderResult>(
+  kept: R,
+  result: R,
+): R {
+  if (!sameRenderSelection(kept, result)) return result;
+  const surfaces = [
+    result.creationBody === null && kept.creationBody !== null
+      ? {
+          filename: kept.filename,
+          properties: kept.properties,
+          fold: kept.fold,
+          frontmatterBlock: kept.frontmatterBlock,
+          creationBody: kept.creationBody,
+          managedRegion: kept.managedRegion,
+          annotationRanges: kept.annotationRanges,
+        }
+      : null,
+    result.annotation === null && kept.annotation !== null
+      ? {
+          annotation: kept.annotation,
+          annotationCitation: kept.annotationCitation,
+        }
+      : null,
+    result.citation === null && kept.citation !== null
+      ? { citation: kept.citation }
+      : null,
+    result.partial === null && kept.partial !== null
+      ? { partial: kept.partial }
+      : null,
+  ].filter((outputs) => outputs !== null);
+  // A result that produced every surface is the whole of what is kept, and it
+  // is kept as itself: a copy would read as a new result to everything
+  // comparing what this scheduler published last.
+  if (surfaces.length === 0) return result;
+  return Object.assign({ ...result }, ...surfaces) as R;
+}
+
+/**
  * Whether an attempt produced nothing at all. A template that renders empty
  * text still produced it, so a valid empty result stays apart from a failure,
  * and only a failure sends a reader to the last preview that worked.

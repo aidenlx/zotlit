@@ -70,7 +70,9 @@ function Preview({ live = true }: { live?: boolean }) {
       >
         {result?.creationBody ?? ""}
       </div>
-      <div data-testid="retained">{retained?.creationBody ?? ""}</div>
+      <div data-testid="retained" data-annotation={retained?.annotation ?? ""}>
+        {retained?.creationBody ?? ""}
+      </div>
       <div data-testid="diagnostics">
         {(result?.diagnostics ?? [])
           .map(({ code, message }) => `${code}: ${message ?? ""}`)
@@ -371,6 +373,50 @@ it("takes retained output back once another annotation example is chosen", async
   act(() => scheduler.setInput({ snapshot: PAPER, annotation: OTHER_EXAMPLE }));
   // That output answers for the example the reader has left.
   expect(retained().textContent).toBe("");
+});
+
+it("takes retained output back once another Template Document is opened", async () => {
+  using mounted = open();
+  const { host, controller, scheduler } = mounted;
+  act(() => scheduler.setInput({ document: "templates/paper.md" }));
+  await advance(300);
+  await act(async () => host.renders[0]!.answer({ creationBody: "Working" }));
+  act(() => void controller.setManifestKey("name", "Broken"));
+  await advance(300);
+  await act(async () => host.renders[1]!.reject(new Error("Unclosed tag")));
+  expect(retained().textContent).toBe("Working");
+
+  // Another document the parser refuses, on the same paper: the note kept for
+  // the document before it answers for that one, not for this reader's.
+  act(() =>
+    scheduler.setInput({ document: "templates/book.md", hold: "invalid" }),
+  );
+  expect(retained().textContent).toBe("");
+});
+
+it("keeps the note that worked while the annotation beside it renders", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  await advance(300);
+  await act(async () =>
+    host.renders[0]!.answer({
+      creationBody: "Working",
+      annotation: "First highlight",
+    }),
+  );
+  act(() => void controller.setManifestKey("name", "Broken"));
+  await advance(300);
+  // One attempt, two surfaces: the note produced nothing and the annotation
+  // rendered, so each surface keeps the newest output it has.
+  await act(async () =>
+    host.renders[1]!.answer({
+      annotation: "Second highlight",
+      diagnostics: [{ code: "render-error", message: "Unclosed tag" }],
+    }),
+  );
+  expect(output().textContent).toBe("");
+  expect(retained().textContent).toBe("Working");
+  expect(retained().dataset["annotation"]).toBe("Second highlight");
 });
 
 it("names every selection on a failure the host reports", async () => {

@@ -1,4 +1,3 @@
-import type { WorkbenchProblem } from "#/document/controller";
 import type { RenderDiagnostic } from "#/render/result";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -28,13 +27,11 @@ function Problems({
   diagnoses,
   onOpen,
   onReturn,
-  onAction,
   open,
 }: {
   diagnoses: readonly WorkbenchDiagnosis[];
   onOpen: (diagnosis: WorkbenchDiagnosis) => void;
   onReturn?: () => void;
-  onAction?: (problem: WorkbenchProblem) => void;
   open?: boolean;
 }): ReactNode {
   const problems = useWorkbenchProblems({
@@ -47,12 +44,7 @@ function Problems({
     if (open === true) setOpen(true);
   }, [open, setOpen]);
   return (
-    <ProblemsFooter
-      problems={problems}
-      onOpen={onOpen}
-      onReturn={onReturn}
-      onAction={onAction}
-    />
+    <ProblemsFooter problems={problems} onOpen={onOpen} onReturn={onReturn} />
   );
 }
 
@@ -428,47 +420,35 @@ describe("the Problems area", () => {
     expect(opened).toEqual(["unsupported-language"]);
   });
 
-  it("offers the unpack button only to a host that can perform it", () => {
+  it("suggests unpacking bundled partials and repairs nothing itself", () => {
+    // A repair that writes files belongs to the host's ordinary partial
+    // workflow; this area navigates, discloses, and reports (ADR 0056).
     const problem = {
       code: "bundled-partial",
       params: { names: "authors" },
       slice: "advanced",
     } as const;
-    const unpacked: string[] = [];
     using mounted = mount(
-      <>
-        <Problems
-          diagnoses={workbenchDiagnoses([problem], [])}
-          onOpen={() => {}}
-          onAction={(target) => unpacked.push(target.code)}
-          open
-        />
-        <Problems
-          diagnoses={workbenchDiagnoses([problem], [])}
-          onOpen={() => {}}
-          open
-        />
-      </>,
+      <Problems
+        diagnoses={workbenchDiagnoses([problem], [])}
+        onOpen={() => {}}
+        onReturn={() => {}}
+        open
+      />,
     );
     const { ui } = mounted;
     render(ui);
 
     expect(
+      screen.getByRole("region", { name: m.workbench_problems_heading() })
+        .textContent,
+    ).toContain(m.workbench_problem_bundled_partial_recovery());
+    expect(
       screen
         .getAllByRole("button")
         .map((button) => button.textContent)
         .filter((label) => !SPACE_CONTROLS.has(label ?? "")),
-    ).toEqual([
-      m.workbench_problems_where_advanced(),
-      m.workbench_problem_bundled_partial_unpack(),
-      m.workbench_problems_where_advanced(),
-    ]);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: m.workbench_problem_bundled_partial_unpack(),
-      }),
-    );
-    expect(unpacked).toEqual(["bundled-partial"]);
+    ).toEqual([m.workbench_problems_where_advanced()]);
   });
 
   it("points a row problem at its entry and a section problem at the Annotation tab", () => {
@@ -721,6 +701,105 @@ describe("the Problems area", () => {
     expect(area.dataset.state).toBe("open");
   });
 
+  it("gives the source back its share of the pane before navigating to it", () => {
+    const opened: string[] = [];
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses(
+          [{ code: "invalid-document", slice: "advanced" }],
+          [],
+        )}
+        onOpen={({ id }) => opened.push(id)}
+        open
+      />,
+    );
+    const { ui } = mounted;
+    render(ui);
+    const area = screen.getByRole("region", {
+      name: m.workbench_problems_heading(),
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_expand() }),
+    );
+    expect(area.dataset.state).toBe("full");
+
+    // An explanation holding the whole editor would send the reader to source
+    // it hides, so the reading gives the pane back before the caret moves.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: m.workbench_problems_where_advanced(),
+      }),
+    );
+    expect(opened).toHaveLength(1);
+    expect(area.dataset.state).toBe("open");
+  });
+
+  it("follows the problem still there once a compact area's own is repaired", () => {
+    const partial = {
+      code: "missing-partial",
+      params: { name: "book-details" },
+      part: "render",
+    } as const;
+    const property = {
+      code: "property-error",
+      params: { key: "tags" },
+      message: "Cannot read properties of undefined",
+      part: "properties",
+      position: 2,
+    } as const;
+    function Harness(): ReactNode {
+      const [repaired, setRepaired] = useState(false);
+      const problems = useWorkbenchProblems({
+        diagnoses: workbenchDiagnoses(
+          [],
+          repaired ? [property] : [partial, property],
+        ),
+        trigger: "automatic",
+        attempt: 1,
+      });
+      return (
+        <>
+          <button type="button" onClick={() => setRepaired(true)}>
+            repair
+          </button>
+          <ProblemsFooter problems={problems} onOpen={() => {}} />
+        </>
+      );
+    }
+    using mounted = mount(<Harness />);
+    const { ui } = mounted;
+    render(ui);
+    const area = screen.getByRole("region", {
+      name: m.workbench_problems_heading(),
+    });
+    // The reader opens the missing partial, reads it, and takes the editor
+    // back: nothing is being read there from now on.
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problem_show() }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_collapse() }),
+    );
+    expect(area.dataset.state).toBe("compact");
+
+    fireEvent.click(screen.getByText("repair"));
+    // A compact area follows the first problem found, so the repair leaves the
+    // summary on the one still there rather than on nothing at all.
+    expect(area.dataset.state).toBe("compact");
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 1 }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_property_error({
+        key: "tags",
+        message: "Cannot read properties of undefined",
+      }),
+    );
+  });
+
   it("keeps an open area after a check finds nothing, and gives its space back on Collapse", () => {
     function Harness(): ReactNode {
       const [failing, setFailing] = useState(true);
@@ -747,7 +826,12 @@ describe("the Problems area", () => {
     using mounted = mount(<Harness />);
     const { ui } = mounted;
     render(ui);
-    expect(screen.getAllByText("Late")).toHaveLength(2);
+    // The explanation reads the plain condition; the engine's own words stay
+    // under Technical details.
+    expect(
+      screen.getByText(m.workbench_diagnostic_render_error()),
+    ).toBeDefined();
+    expect(screen.getByText("Late")).toBeDefined();
 
     fireEvent.click(screen.getByText("repair"));
     expect(screen.getByText(m.workbench_problems_none())).toBeDefined();
