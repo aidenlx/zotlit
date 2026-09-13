@@ -157,6 +157,7 @@ export interface WorkbenchParts {
   annotation:
     | "help-bar"
     | "help-button"
+    | "help-lede"
     | "help"
     | "help-steps"
     | "sample-bar"

@@ -158,9 +158,10 @@ export function TabPanel({
       hidden={!active}
       {...part("tab-panel", active ? "active" : "inactive")}
     >
-      {description && tab !== "name" && tab !== "match" && (
-        <p {...part("description")}>{tabLede(m, tab)}</p>
-      )}
+      {description &&
+        tab !== "annotation" &&
+        tab !== "name" &&
+        tab !== "match" && <p {...part("description")}>{tabLede(m, tab)}</p>}
       {children}
     </div>
   );

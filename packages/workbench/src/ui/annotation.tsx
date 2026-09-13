@@ -186,6 +186,7 @@ export function AnnotationPane({
         </p>
       )}
       <div {...part("help-bar")}>
+        <p {...part("help-lede")}>{m.workbench_annotation_lede()}</p>
         <button
           ref={helpButton}
           type="button"
@@ -209,7 +210,6 @@ export function AnnotationPane({
             closeHelp();
           }}
         >
-          <strong>{m.workbench_annotation_help_title()}</strong>
           <ol {...part("help-steps")}>
             <li>
               {m.workbench_annotation_help_edit({
@@ -220,9 +220,6 @@ export function AnnotationPane({
             <li>{m.workbench_annotation_help_preview()}</li>
             <li>{finishHelp ?? m.workbench_annotation_help_finish_web()}</li>
           </ol>
-          <button type="button" {...part("help-button")} onClick={closeHelp}>
-            {m.workbench_annotation_help_hide()}
-          </button>
         </section>
       )}
       <div {...part("pane")}>

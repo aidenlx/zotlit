@@ -31,10 +31,10 @@ the reader can do next, in terms of the template and its result.
 
 ## Guide the first annotation edit
 
-Annotation offers optional **Help** beside the task. Its bounded inline guide
-keeps the source visible and the editor mounted, preserving selection, scroll,
-and history. Keyboard users can reach the guide and close it with focus returned
-to Help. Experienced users can keep editing with the guide closed.
+Annotation offers one **Help** toggle in the same row as the task. Its bounded
+inline guide keeps the source visible and the editor mounted, preserving
+selection, scroll, and history. The same toggle opens and closes the guide.
+Keyboard users can also close it with Escape and return focus to Help.
 
 Teach one edit: replace `[!note]` with `[!quote]` in the built-in annotation format
 and keep the rest of the line. Ask the researcher to inspect a real annotation

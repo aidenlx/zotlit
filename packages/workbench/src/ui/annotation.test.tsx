@@ -354,11 +354,11 @@ it("keeps the annotation editor position and history while Help opens and closes
   expect(view.state.selection.main.from).toBe(start);
   expect(view.state.selection.main.to).toBe(start + 7);
   expect(view.scrollDOM.scrollTop).toBe(24);
-  const hide = screen.getByRole("button", {
-    name: m.workbench_annotation_help_hide(),
-  });
-  hide.focus();
-  fireEvent.keyDown(hide, { key: "Escape" });
+  expect(screen.getAllByRole("button", { name: m.workbench_help() })).toEqual([
+    help,
+  ]);
+  guide.focus();
+  fireEvent.keyDown(guide, { key: "Escape" });
   expect(screen.queryByRole("region")).toBeNull();
   expect(document.activeElement).toBe(help);
   expect(view.state.selection.main.from).toBe(start);
@@ -370,9 +370,7 @@ it("keeps the annotation editor position and history while Help opens and closes
     }),
   );
   fireEvent.click(help);
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_annotation_help_hide() }),
-  );
+  fireEvent.click(help);
   expect(document.activeElement).toBe(help);
   act(() => controller.undo());
   expect(controller.source).toBe(DEFAULT_PROFILE_SOURCE);

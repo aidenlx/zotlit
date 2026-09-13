@@ -450,7 +450,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         ).toBe(true);
         await obEval(
           freshId,
-          `(function(){const view=${editor};const close=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_annotation_help_hide())});close.focus();close.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
+          `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(m.workbench_annotation_help_title())}]');guide.focus();guide.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
         );
         expect(
           await obEvalUntil(
