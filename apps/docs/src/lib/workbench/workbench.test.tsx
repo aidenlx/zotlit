@@ -129,3 +129,23 @@ it("hands a Default copy from the Profile menu to the native import flow", async
   expect(urls).toEqual(["obsidian://zotlit/import-profile?clipboard=true"]);
   expect(page.host.textContent).toContain(m.workbench_open_obsidian_copied());
 });
+
+it("keeps each tab's editor mounted once the reader has opened it", async () => {
+  await using page = await open();
+  await page.settle();
+  const editorIn = (selector: string) =>
+    page.host.querySelector<HTMLElement>(`${selector} .cm-editor`);
+
+  page.press(m.workbench_tab_name_and_folder());
+  const name = editorIn('[data-part="filename-editor"]');
+  expect(name).not.toBeNull();
+
+  page.press(m.workbench_tab_properties());
+  // The Name pane folds away but keeps its editor in the page.
+  expect(name!.closest("[role=tabpanel]")).toHaveProperty("hidden", true);
+  expect(editorIn('[data-part="filename-editor"]')).toBe(name);
+
+  page.press(m.workbench_tab_note());
+  page.press(m.workbench_tab_name_and_folder());
+  expect(editorIn('[data-part="filename-editor"]')).toBe(name);
+});

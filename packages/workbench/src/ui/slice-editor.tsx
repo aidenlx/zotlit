@@ -10,7 +10,15 @@ import { linter, setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { useEffect, useId, useMemo, useRef } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+} from "react";
+import type { ReactNode } from "react";
 
 import { completionFields } from "./completion-fields";
 import { useDocumentRevision } from "./editor";
@@ -40,6 +48,24 @@ import {
 } from "#/language/index";
 
 export type { SuggestionSource } from "#/language/index";
+
+/**
+ * Whether the panes under this provider are on screen. A retained pane stays
+ * mounted inside a hidden wrapper and provides `false`, so the editors under it
+ * report no selection. A host with its own notion of visibility sets `visible`
+ * on the editor itself instead.
+ */
+const Visible = createContext(true);
+
+export function SliceEditorVisibility({
+  visible,
+  children,
+}: {
+  visible: boolean;
+  children?: ReactNode;
+}) {
+  return <Visible.Provider value={visible}>{children}</Visible.Provider>;
+}
 
 /** The expression pane edits a bare Liquid expression; the note includes Markdown. */
 export type SliceLanguage = "liquid" | "json-e" | "expression";
@@ -72,6 +98,15 @@ export interface SliceEditorProps {
    */
   extensions?: Extension;
   /**
+   * Whether this pane is on screen, overriding the surrounding visibility. A
+   * pane that is not visible reports no selection and answers no reveal, so a
+   * retained editor never moves the caret the reader is working with in the
+   * pane they can see. A pane inside a hidden `SliceEditorVisibility` needs no
+   * prop; a host with its own notion of visibility sets this itself.
+   * @default true
+   */
+  visible?: boolean;
+  /**
    * Master offsets to select and scroll to, so a problem opens on the text
    * that caused it. Each new object reveals again.
    */
@@ -98,11 +133,13 @@ export function SliceEditor({
   language = "liquid",
   singleLine = false,
   extensions,
+  visible,
   reveal,
   suggest,
   onSelection,
   onFocus,
 }: SliceEditorProps) {
+  const onScreen = visible ?? useContext(Visible);
   const revision = useDocumentRevision(controller);
   const diagnoses = useSourceDiagnoses();
   const revealDiagnosis = useRevealSourceDiagnosis();
@@ -142,6 +179,7 @@ export function SliceEditor({
     editorExtension,
     syntax,
     m,
+    visible: onScreen,
   });
   report.current = {
     onSelection,
@@ -152,6 +190,7 @@ export function SliceEditor({
     editorExtension,
     syntax,
     m,
+    visible: onScreen,
   };
 
   useEffect(() => {
@@ -278,6 +317,7 @@ export function SliceEditor({
             if (update.focusChanged && update.view.hasFocus) {
               report.current.onFocus?.();
             }
+            if (!report.current.visible) return;
             const { from } = controller.sliceRange(slice);
             report.current.onSelection?.(
               sliceSelection(
@@ -292,8 +332,18 @@ export function SliceEditor({
       parent: host.current!,
     });
     editor.current = view;
-    // A pane mounts unfocused and sends no update, so it reports where its own
-    // caret starts — the host follows the pane on screen, not the pane before it.
+    return () => {
+      editor.current = null;
+      view.destroy();
+    };
+  }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
+
+  // A pane reports where its own caret starts whenever it comes on screen — on
+  // mount, and again when a host shows a pane it had kept mounted and hidden.
+  // The host follows the pane on screen, not the pane before it.
+  useEffect(() => {
+    const view = editor.current;
+    if (!view || !onScreen) return;
     report.current.onSelection?.(
       sliceSelection(
         view,
@@ -301,11 +351,7 @@ export function SliceEditor({
         language === "json-e" ? controller.sliceText(slice) : undefined,
       ),
     );
-    return () => {
-      editor.current = null;
-      view.destroy();
-    };
-  }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
+  }, [controller, slice, language, onScreen]);
 
   useEffect(() => {
     const view = editor.current;
@@ -348,7 +394,13 @@ export function SliceEditor({
 
   useEffect(() => {
     const view = editor.current;
-    if (!view || !reveal || (reveal.slice && reveal.slice !== slice)) return;
+    if (
+      !view ||
+      !onScreen ||
+      !reveal ||
+      (reveal.slice && reveal.slice !== slice)
+    )
+      return;
     const { from } = controller.sliceRange(slice);
     const inSlice = (offset: number) => {
       const local = Math.min(
@@ -371,7 +423,7 @@ export function SliceEditor({
       scrollIntoView: reveal.scrollIntoView ?? true,
     });
     if (reveal.focus !== false) view.focus();
-  }, [controller, slice, reveal, language]);
+  }, [controller, slice, reveal, language, onScreen]);
 
   // The host is the scroll container and the editor grows to its content, so
   // the browser's own scroll anchoring holds the pane in place when a block

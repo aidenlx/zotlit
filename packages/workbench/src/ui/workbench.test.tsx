@@ -26,7 +26,7 @@ function Panes() {
       <EditToolbar />
       <TabBar />
       <div hidden={advanced}>
-        <TabPanel tab="note" keepMounted>
+        <TabPanel tab="note">
           <NotePane
             controller={controller}
             preview="Selected annotation"
@@ -191,3 +191,49 @@ it("restores a reversed stale slice selection without moving focus or host scrol
       .scrollTop,
   ).toBe(0);
 });
+
+it("reports no selection from a pane a retained tab keeps hidden", () => {
+  const reported: string[] = [];
+  const pane = (slice: "note" | "annotation") => (
+    <TabPanel tab={slice} description={false}>
+      <SelectionProbe slice={slice} onSelection={reported} />
+    </TabPanel>
+  );
+  function ProbePanes() {
+    return (
+      <>
+        <TabBar />
+        {pane("note")}
+        {pane("annotation")}
+      </>
+    );
+  }
+  using mounted = mount(<ProbePanes />);
+  render(mounted.ui);
+  expect(reported).toEqual(["note"]);
+  // The Note pane folds away but stays mounted; only the pane on screen reports.
+  act(() => mounted.store.getState().setTab("annotation"));
+  expect(reported).toEqual(["note", "annotation"]);
+  // Returning restores the Note pane's own caret, and reports nothing else.
+  act(() => mounted.store.getState().setTab("note"));
+  expect(reported).toEqual(["note", "annotation", "note"]);
+});
+
+/** A pane that names itself the moment it reports a selection. */
+function SelectionProbe({
+  slice,
+  onSelection,
+}: {
+  slice: "note" | "annotation";
+  onSelection: string[];
+}) {
+  const controller = useWorkbenchController();
+  return (
+    <SliceEditor
+      controller={controller}
+      slice={slice}
+      label={slice}
+      onSelection={() => onSelection.push(slice)}
+    />
+  );
+}
