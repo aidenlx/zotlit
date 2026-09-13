@@ -32,18 +32,15 @@ it("renders editor examples and independent Preview after StrictMode replays eff
   expect(owners).toHaveLength(2);
   expect(owners[0]![Symbol.dispose]).toHaveBeenCalledOnce();
   expect(owners[1]![Symbol.dispose]).not.toHaveBeenCalled();
-  await page.settle();
   page.press(m.workbench_tab_name_and_folder());
-  await page.waitFor(() =>
+  await page.waitFor(() => {
     expect(
       page.host.querySelector('[data-part="filename-output"]')?.textContent,
-    ).toBe("ioannidisWhyMost2005"),
-  );
-  await page.waitFor(() =>
+    ).toBe("ioannidisWhyMost2005");
     expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
       "Why Most Published Research Findings Are False",
-    ),
-  );
+    );
+  });
   expect(page.host.querySelector('[data-part="tab-bar"]')?.className).toBe(
     WEB_THEME.classes?.tabBar?.["tab-bar"],
   );
@@ -51,17 +48,14 @@ it("renders editor examples and independent Preview after StrictMode replays eff
     WEB_THEME.classes?.notePane?.["note-pane"],
   );
   await page.show("NW2CPDTC");
-  await page.settle();
-  await page.waitFor(() =>
+  await page.waitFor(() => {
     expect(
       page.host.querySelector('[data-part="filename-output"]')?.textContent,
-    ).toBe("Kahneman2011"),
-  );
-  await page.waitFor(() =>
+    ).toBe("Kahneman2011");
     expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
       "Thinking, fast and slow",
-    ),
-  );
+    );
+  });
   page.press(m.workbench_tab_properties());
   await page.waitFor(() =>
     expect(
