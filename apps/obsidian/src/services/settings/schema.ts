@@ -136,6 +136,7 @@ export const schema = v.object({
 
   "note.default-profile": defaultLiteratureNoteProfileSchema,
   "note.template-conversion-pending": v.boolean(),
+  "note.template-conversion-copy": v.nullable(v.string()),
   "note.template-conversion-result": v.nullable(
     v.object({
       /** `null` when the vault held no Literature Note slots to fold. */
@@ -144,6 +145,7 @@ export const schema = v.object({
       documents: v.optional(v.array(v.string())),
       trashedFiles: v.optional(v.array(v.string())),
       pendingCleanup: v.optional(v.array(v.string())),
+      acceptance: v.optional(v.picklist(["matching", "reviewed-changes"])),
       kept: v.optional(v.array(v.string())),
     }),
   ),
@@ -205,6 +207,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-graph": false,
   "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
   "note.template-conversion-pending": false,
+  "note.template-conversion-copy": null,
   "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-highlight-mappings": {},

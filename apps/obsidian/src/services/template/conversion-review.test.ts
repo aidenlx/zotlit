@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import type { ConversionCopy, ConversionRepairReview } from "./conversion-copy";
 import { TemplateConversionReviewModal } from "./conversion-review";
 import type { LiteratureNoteTemplateConversionReview } from "./migration";
 
@@ -58,6 +59,12 @@ it("renders source and verification evidence before the explicit activation acti
     },
   };
   const migration = {
+    resumeRepair: async () => null,
+    startRepair: vi.fn(),
+    reviewRepair: vi.fn(),
+    acceptRepair: vi.fn(),
+    discardRepair: vi.fn(),
+    refreshRepairOriginals: vi.fn(),
     prepare: vi.fn(async () => review),
     activate: vi.fn(async () => ({
       outcome: "converted" as const,
@@ -130,7 +137,16 @@ it("shows a refusal with original source evidence and keeps activation unavailab
       },
     },
   };
-  const migration = { prepare: vi.fn(async () => review), activate: vi.fn() };
+  const migration = {
+    resumeRepair: async () => null,
+    startRepair: vi.fn(),
+    reviewRepair: vi.fn(),
+    acceptRepair: vi.fn(),
+    discardRepair: vi.fn(),
+    refreshRepairOriginals: vi.fn(),
+    prepare: vi.fn(async () => review),
+    activate: vi.fn(),
+  };
   const modal = new TemplateConversionReviewModal({} as App, {
     migration,
     completed: vi.fn(),
@@ -149,4 +165,130 @@ it("shows a refusal with original source evidence and keeps activation unavailab
   ).toEqual([m.conversion_review_retry(), m.conversion_review_later()]);
   modal.close();
   expect(migration.activate).not.toHaveBeenCalled();
+});
+
+it("distinguishes unavailable original evaluation and sends explicit repaired acceptance", async () => {
+  const review: ConversionRepairReview = {
+    copy: "templates/conversion-copy-review/conversion.json",
+    itemKey: "TYY6Z6ZF",
+    comparisons: [
+      {
+        output: "create",
+        outcome: "matching",
+        original: "Original body",
+        candidate: "Original body",
+      },
+      {
+        output: "frontmatter",
+        outcome: "original-unavailable",
+        original: null,
+        candidate: '{"repair-field":"reviewed-1098"}',
+        error: {
+          code: "evaluation-failed",
+          detail: "Original expression could not evaluate",
+        },
+      },
+    ],
+    valid: true,
+    requiresAcceptance: true,
+    diagnostic: null,
+    documents: [],
+  };
+  const migration = {
+    prepare: vi.fn(),
+    activate: vi.fn(),
+    startRepair: vi.fn(),
+    resumeRepair: async () => ({}) as ConversionCopy,
+    reviewRepair: async () => review,
+    acceptRepair: vi.fn(async () => ({
+      outcome: "converted" as const,
+      document: "zotlit-profile.default.md",
+      documents: [],
+      pendingCleanup: [],
+      trashed: [],
+      kept: [],
+    })),
+    discardRepair: vi.fn(),
+    refreshRepairOriginals: vi.fn(),
+  };
+  const completed = vi.fn();
+  const modal = new TemplateConversionReviewModal({} as App, {
+    migration,
+    completed,
+  });
+  modal.open();
+  await vi.waitFor(() =>
+    expect(modal.contentEl.textContent).toContain(
+      m.conversion_repair_unavailable(),
+    ),
+  );
+  expect(modal.contentEl.textContent).toContain(m.conversion_repair_matching());
+  expect(modal.contentEl.textContent).toContain("reviewed-1098");
+  expect(modal.contentEl.textContent).toContain(
+    "Original expression could not evaluate",
+  );
+  const buttons = [...modal.modalEl.querySelectorAll("button")];
+  expect(
+    buttons.some(
+      (button) => button.textContent === m.conversion_review_activate(),
+    ),
+  ).toBe(false);
+  buttons
+    .find(
+      (button) => button.textContent === m.conversion_repair_accept_changes(),
+    )!
+    .click();
+  await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce());
+  expect(migration.acceptRepair).toHaveBeenCalledWith(
+    review,
+    "reviewed-changes",
+  );
+});
+
+it.each([
+  [
+    { code: "no-verification-item" as const },
+    () => m.notice_literature_note_template_conversion_no_item(),
+  ],
+  [
+    { code: "javascript-required" as const, fields: ["repair-marker"] },
+    () => m.conversion_repair_javascript_required({ fields: "repair-marker" }),
+  ],
+  [
+    { code: "managed-block-missing" as const },
+    () => m.conversion_repair_managed_block_missing(),
+  ],
+])("shows localized repair guidance for %j", async (diagnostic, message) => {
+  const review: ConversionRepairReview = {
+    copy: "templates/conversion-copy-guidance/conversion.json",
+    comparisons: [],
+    valid: false,
+    requiresAcceptance: false,
+    diagnostic,
+    documents: [],
+  };
+  const migration = {
+    prepare: vi.fn(),
+    activate: vi.fn(),
+    startRepair: vi.fn(),
+    resumeRepair: async () => ({}) as ConversionCopy,
+    reviewRepair: async () => review,
+    acceptRepair: vi.fn(),
+    discardRepair: vi.fn(),
+    refreshRepairOriginals: vi.fn(),
+  };
+  const modal = new TemplateConversionReviewModal({} as App, {
+    migration,
+    completed: vi.fn(),
+  });
+  modal.open();
+  await vi.waitFor(() =>
+    expect(modal.contentEl.textContent).toContain(message()),
+  );
+  expect(
+    [...modal.modalEl.querySelectorAll("button")].some(
+      (button) => button.textContent === m.conversion_review_activate(),
+    ),
+  ).toBe(false);
+  modal.close();
 });

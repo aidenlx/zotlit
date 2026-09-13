@@ -25,6 +25,10 @@ import {
 } from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { SettingsService } from "@/services/settings/service";
+import { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
+import { TemplateService } from "@/services/template/service";
+import { MockVault, PluginStub } from "@/services/template/test-vault";
 import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
@@ -2428,4 +2432,151 @@ language: liquid
       citation: { variant: "main", example: "one-item" },
     });
   });
+});
+
+it("edits a copied field through native Properties, saves it, and restores the isolated editor", async () => {
+  const vault = new MockVault();
+  const originals = {
+    "templates/zotlit-note.liquid.md": '{% render "content" with zt as zt %}',
+    "templates/zotlit-content.liquid.md": "Original native body",
+    "templates/zotlit-filename.liquid.md": "{{ zt.citationKey }}",
+  };
+  for (const [path, source] of Object.entries(originals))
+    vault.addFile(path, source);
+  const leaves: WorkspaceLeaf[] = [];
+  const app = {
+    scope: null,
+    vault,
+    ...localStorageStub,
+    workspace: {
+      requestSaveLayout: vi.fn(),
+      trigger: vi.fn(),
+      on: vi.fn(() => ({})),
+      offref: vi.fn(),
+      iterateAllLeaves: vi.fn(),
+      revealLeaf: vi.fn(async () => {}),
+      getActiveFile: () => null,
+      getLeavesOfType: () => leaves,
+      onLayoutReady: vi.fn(),
+      updateOptions: vi.fn(),
+    },
+    fileManager: {
+      trashFile: async (file: TFile) => vault.deleteFile(file.path),
+    },
+  } as unknown as App;
+  const noMigration = (raw: unknown) => raw;
+  await using stack = new AsyncDisposableStack();
+  const settings = stack.use(
+    new SettingsService({
+      plugin: new PluginStub(app, { __VERSION__: 1 }),
+      migrateLegacy: noMigration,
+      migrateV1: noMigration,
+      migrateV2: noMigration,
+      migrateV3: noMigration,
+      migrateV4: noMigration,
+      migrateV5: noMigration,
+      migrateV6: noMigration,
+      migrateV7: noMigration,
+      migrateV8: noMigration,
+      migrateV9: noMigration,
+    }),
+  );
+  await settings.ready;
+  settings.update({
+    "note.frontmatter-fields": [
+      {
+        key: "native-repair",
+        expr: "1 +",
+        language: "liquid",
+        merge: "replace",
+      },
+    ],
+  });
+  const templates = stack.use(new TemplateService({ app, settings }));
+  await templates.ready;
+  const migration = stack.use(
+    new LiteratureNoteTemplateMigrationService({
+      app,
+      settings,
+      template: templates,
+      loadVerificationData: async () => ({
+        note: { title: "Paper" },
+        filename: { citationKey: "native2026" },
+        annotation: null,
+        citation: [{ citationKey: "native2026" }],
+      }),
+      openPrompt: () => {},
+    }),
+  );
+  const copy = await migration.startRepair();
+  const file = vault.getFileByPath(copy.profilePath!)!;
+  const deps = {
+    settings,
+    templates,
+    resolveCopyEditor: (path: string) => migration.resolveCopyEditor(path),
+  };
+  const first = setup(deps, app);
+  leaves.push(first.leaf);
+  first.view.file = file;
+  document.body.append(first.view.contentEl);
+  const saved = Promise.withResolvers<void>();
+  first.view.save = async () => {
+    await vault.modify(file, first.view.getViewData());
+    first.view.lastSavedData = first.view.getViewData();
+    first.view.dirty = false;
+  };
+  first.view.requestSave = () => {
+    void first.view.save().then(saved.resolve, saved.reject);
+  };
+  let state: Record<string, unknown>;
+  try {
+    await act(async () => {
+      await first.view.open();
+      await first.view.loadFileInternal(file, true);
+      await first.view.setState(
+        { file: file.path, tab: "properties" },
+        { history: false },
+      );
+    });
+    expect(first.view.store.getState().tab).toBe("properties");
+    expect(first.view.contentEl.textContent).toContain("native-repair");
+    await act(() => {
+      expect(
+        first.view.controller.setManifestValue(
+          ["frontmatter", 0, "expr"],
+          "'native-restored-1098'",
+        ),
+      ).toBe(true);
+    });
+    await saved.promise;
+    state = first.view.getState();
+  } finally {
+    await act(async () => first.view.close());
+    first.view.contentEl.remove();
+    leaves.length = 0;
+  }
+  const restored = setup(deps, app);
+  restored.view.file = file;
+  document.body.append(restored.view.contentEl);
+  try {
+    await act(async () => {
+      await restored.view.open();
+      await restored.view.loadFileInternal(file, true);
+      await restored.view.setState(state!, { history: false });
+    });
+    expect(restored.view.store.getState().tab).toBe("properties");
+    expect(restored.view.getViewData()).toContain("native-restored-1098");
+    expect(restored.view.documentKind).toBe("profile");
+    expect(settings.current?.["note.frontmatter-fields"][0]?.expr).toBe("1 +");
+    for (const [path, source] of Object.entries(originals))
+      expect(vault.contents.get(path)).toBe(source);
+    const review = await migration.reviewRepair();
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter")
+        ?.candidate,
+    ).toBe('{"native-repair":"native-restored-1098"}');
+  } finally {
+    await act(async () => restored.view.close());
+    restored.view.contentEl.remove();
+  }
 });

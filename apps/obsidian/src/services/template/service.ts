@@ -17,6 +17,7 @@ import type {
 import {
   formatPlainTemplateDocument,
   LegacyTemplateConversionError,
+  synthesizeLegacyLiteratureNoteTemplate,
   LiteratureNoteTemplateError,
   MissingTemplateError,
   parsePlainTemplateDocument,
@@ -103,7 +104,8 @@ export interface TemplateServiceEvents {
 
 export interface TemplateServiceOptions {
   app: App;
-  settings: SettingsService;
+  settings: Pick<SettingsService, "current" | "loaded" | "subscribe">;
+  javascriptTemplatesEnabled?: boolean;
 }
 
 /**
@@ -436,57 +438,58 @@ export type SettleOutcome = "settled" | "timeout" | "init-failed";
 export class TemplateService extends Service<void> {
   readonly #app;
   readonly #settings;
-  readonly #facade = new TemplateFacade({
-    transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
-  });
+  #registry = {
+    facade: new TemplateFacade({
+      transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+    }),
+    compileErrors: new Map<string, CompileError>(),
+    /** Name → the winner {@link #reconcileName} last resolved it to, with the
+     *  JavaScript Templates gate already applied. Read by
+     *  {@link getTemplateFileStatuses}, so status reports the winner the
+     *  reconciler computed instead of re-deriving one from the vault. */
+    winners: new Map<string, TemplateWinner>(),
+    shadowed: new Map<string, string>(),
+    inertEta: new Map<string, string>(),
+    /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
+    partials: new Map<string, RegisteredPartial>(),
+    /** Partial name → the text of a document the JavaScript Templates gate left
+     *  inert. Nothing renders it here; a Share still carries what the reader
+     *  wrote, since the gate rules out running the text, not copying it. */
+    inertPartials: new Map<string, LiteratureNoteTemplatePartial>(),
+    /** Every name the folder holds a `zotlit-partial.<name>.md` for, whether or
+     *  not it compiled: the vault's namespace, which completion offers and the
+     *  name rule checks a new name against. */
+    partialNames: new Set<string>(),
+    /** Reserved name → the partial file claiming it, reported in settings. */
+    reservedPartialFiles: new Map<string, string>(),
+    /** The Citation Template currently registered, `null` while none compiles. */
+    citation: null as RegisteredCitationTemplate | null,
+    /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
+    unrecognizedFiles: new Set<string>(),
+    literatureNoteDocuments: new Map<
+      string,
+      ReconciledLiteratureNoteTemplate
+    >(),
+    literatureNoteDocumentErrors: new Map<string, Error>(),
+
+    /** Compiled managed-frontmatter fields, memoized by the settings array
+     *  reference (which changes only when the list is mutated). */
+    lastFrontmatterFields: null as readonly FrontmatterField[] | null,
+    compiledFrontmatterFields: [] as readonly CompiledFrontmatterField[],
+    inertFrontmatterKeys: [] as readonly string[],
+
+    lastTemplateFolder: "",
+    lastAutoTrim: [false, false] as [AutoTrim, AutoTrim],
+  };
   readonly #emitter = createNanoEvents<TemplateServiceEvents>();
-  readonly #compileErrors = new Map<string, CompileError>();
-  /** Name → the winner {@link #reconcileName} last resolved it to, with the
-   *  JavaScript Templates gate already applied. Read by
-   *  {@link getTemplateFileStatuses}, so status reports the winner the
-   *  reconciler computed instead of re-deriving one from the vault. */
-  readonly #winners = new Map<string, TemplateWinner>();
-  readonly #shadowed = new Map<string, string>();
-  readonly #inertEta = new Map<string, string>();
   readonly #pending: TemplateWork = emptyTemplateWork();
-  /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
-  readonly #partials = new Map<string, RegisteredPartial>();
-  /** Partial name → the text of a document the JavaScript Templates gate left
-   *  inert. Nothing renders it here; a Share still carries what the reader
-   *  wrote, since the gate rules out running the text, not copying it. */
-  readonly #inertPartials = new Map<string, LiteratureNoteTemplatePartial>();
-  /** Every name the folder holds a `zotlit-partial.<name>.md` for, whether or
-   *  not it compiled: the vault's namespace, which completion offers and the
-   *  name rule checks a new name against. */
-  readonly #partialNames = new Set<string>();
-  /** Reserved name → the partial file claiming it, reported in settings. */
-  readonly #reservedPartialFiles = new Map<string, string>();
-  /** The Citation Template currently registered, `null` while none compiles. */
-  #citation: RegisteredCitationTemplate | null = null;
-  /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
-  readonly #unrecognizedFiles = new Set<string>();
-  readonly #literatureNoteDocuments = new Map<
-    string,
-    ReconciledLiteratureNoteTemplate
-  >();
-  readonly #literatureNoteDocumentErrors = new Map<string, Error>();
   readonly #settledWaiters = new Set<SettledWaiter>();
-
   #javascriptTemplatesEnabled: boolean;
-
-  /** Compiled managed-frontmatter fields, memoized by the settings array
-   *  reference (which changes only when the list is mutated). */
-  #lastFrontmatterFields: readonly FrontmatterField[] | null = null;
-  #compiledFrontmatterFields: readonly CompiledFrontmatterField[] = [];
-  #inertFrontmatterKeys: readonly string[] = [];
-
+  #activationSettings: Readonly<Settings> | null = null;
   #flushTimer: number | null = null;
   #settlingTasks = 0;
   #folderGeneration = 0;
   #loaded = false;
-
-  #lastTemplateFolder = "";
-  #lastAutoTrim: [AutoTrim, AutoTrim] = [false, false];
 
   ready: Promise<void>;
 
@@ -495,22 +498,69 @@ export class TemplateService extends Service<void> {
     this.#app = options.app;
     this.#settings = options.settings;
     this.#javascriptTemplatesEnabled =
+      options.javascriptTemplatesEnabled ??
       this.#app.loadLocalStorage(JS_TEMPLATES_STORAGE_KEY) === "1";
     this.ready = this.#load();
   }
 
+  /** Keep the active registry unchanged while conversion files and acceptance are saved. */
+  async holdActivation(): Promise<AsyncDisposable> {
+    await this.#settle();
+    if (this.#activationSettings) {
+      throw new Error("Template activation is already in progress");
+    }
+    this.#activationSettings = this.#settings.current!;
+    this.#cancelFlush();
+    return {
+      [Symbol.asyncDispose]: async () => {
+        if (!this.#activationSettings) return;
+        this.#activationSettings = null;
+        const settings = this.#settings.current;
+        if (settings) this.#onSettingsChanged(settings);
+        await this.#flushPending();
+      },
+    };
+  }
+
+  /** Compile the complete activation registry before its synchronous publication. */
+  async prepareActivation(): Promise<() => void> {
+    if (!this.#activationSettings) {
+      throw new Error(
+        "Template activation must be held while preparing its registry",
+      );
+    }
+    await using staged = new TemplateService({
+      app: this.#app,
+      settings: this.#settings,
+      javascriptTemplatesEnabled: this.#javascriptTemplatesEnabled,
+    });
+    await staged.ready;
+    await staged.#settle();
+    return () => {
+      this.#registry = staged.#registry;
+      for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
+      this.#cancelFlush();
+      this.#activationSettings = null;
+      this.#emitter.emit("compile-status-changed");
+    };
+  }
+
+  get #activeSettings(): Readonly<Settings> | null {
+    return this.#activationSettings ?? this.#settings.current;
+  }
+
   get compileErrors(): ReadonlyMap<string, CompileError> {
-    return this.#compileErrors;
+    return this.#registry.compileErrors;
   }
 
   /** Name → vault path of a shadowed `.eta.md` file whose Liquid edition currently wins. */
   get shadowedFiles(): ReadonlyMap<string, string> {
-    return this.#shadowed;
+    return this.#registry.shadowed;
   }
 
   /** Name → vault path of an `.eta.md` template file that is inert because the JavaScript Templates gate is off. */
   get inertEtaFiles(): ReadonlyMap<string, string> {
-    return this.#inertEta;
+    return this.#registry.inertEta;
   }
 
   /** Per-device consent flag gating all Eta compilation; see {@link setJavascriptTemplatesEnabled}. */
@@ -531,7 +581,7 @@ export class TemplateService extends Service<void> {
    */
   getUnrecognizedFiles(): readonly string[] {
     this.#requireLoaded("getUnrecognizedFiles");
-    return [...this.#unrecognizedFiles].sort();
+    return [...this.#registry.unrecognizedFiles].sort();
   }
 
   /**
@@ -542,7 +592,7 @@ export class TemplateService extends Service<void> {
    */
   getTemplateFileStatuses(): readonly TemplateFileStatus[] {
     this.#requireLoaded("getTemplateFileStatuses");
-    return this.#settings.current?.["note.template-conversion-pending"]
+    return this.#activeSettings?.["note.template-conversion-pending"]
       ? this.#getTemplateFileStatuses(TEMPLATE_NAMES)
       : [];
   }
@@ -554,14 +604,16 @@ export class TemplateService extends Service<void> {
   getCitationTemplateStatus(): CitationTemplateStatus {
     this.#requireLoaded("getCitationTemplateStatus");
     const path = citationPath(this.#currentTemplateFolder());
-    const inertPath = this.#inertEta.get(CITATION_TEMPLATE_NAME) ?? null;
+    const inertPath =
+      this.#registry.inertEta.get(CITATION_TEMPLATE_NAME) ?? null;
     return {
       path,
       customized: this.#app.vault.getFileByPath(path) !== null,
-      language: this.#citation?.language ?? "liquid",
+      language: this.#registry.citation?.language ?? "liquid",
       inertPath,
       compileError:
-        this.#compileErrors.get(CITATION_TEMPLATE_NAME)?.message ?? null,
+        this.#registry.compileErrors.get(CITATION_TEMPLATE_NAME)?.message ??
+        null,
     };
   }
 
@@ -609,10 +661,11 @@ export class TemplateService extends Service<void> {
       // Every canonical name is written while a folder rebuild walks it; the
       // fallback covers a read taken inside that walk, before the name's own
       // reconcile resolved.
-      const winner = this.#winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
+      const winner =
+        this.#registry.winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
 
-      const shadowed = this.#shadowed.get(name);
-      const inert = this.#inertEta.get(name);
+      const shadowed = this.#registry.shadowed.get(name);
+      const inert = this.#registry.inertEta.get(name);
       return {
         name,
         winner,
@@ -620,7 +673,7 @@ export class TemplateService extends Service<void> {
           winner.source.kind === "vault" ? winner.source.path : liquidPath,
         shadowedFiles: shadowed ? [shadowed] : [],
         inertFiles: inert ? [inert] : [],
-        compileError: this.#compileErrors.get(name)?.message ?? null,
+        compileError: this.#registry.compileErrors.get(name)?.message ?? null,
       };
     });
   }
@@ -630,9 +683,9 @@ export class TemplateService extends Service<void> {
     reference: string,
   ): ResolvedLiteratureNoteTemplate | undefined {
     this.#requireLoaded("getLiteratureNoteTemplate");
-    const error = this.#literatureNoteDocumentErrors.get(reference);
+    const error = this.#registry.literatureNoteDocumentErrors.get(reference);
     if (error) throw error;
-    const entry = this.#literatureNoteDocuments.get(reference);
+    const entry = this.#registry.literatureNoteDocuments.get(reference);
     if (!entry) return undefined;
     return this.#resolveLiteratureDocument(entry, reference);
   }
@@ -640,18 +693,21 @@ export class TemplateService extends Service<void> {
   /** Compile a draft against the installed partials without installing or writing it. */
   prepareLiteratureNoteTemplateSource(
     source: string,
+    options: { rawFilename?: boolean } = {},
   ): ResolvedLiteratureNoteTemplate {
     this.#requireLoaded("prepareLiteratureNoteTemplateSource");
-    const document = this.#facade.parseLiteratureNoteTemplate(source);
+    const document = this.#registry.facade.parseLiteratureNoteTemplate(source);
     return this.#resolveLiteratureDocument(
       { document, path: "source override" },
       "source override",
+      options,
     );
   }
 
   #resolveLiteratureDocument(
     entry: ReconciledLiteratureNoteTemplate,
     reference: string,
+    options: { rawFilename?: boolean } = {},
   ): ResolvedLiteratureNoteTemplate {
     const { document, path } = entry;
     if (
@@ -667,7 +723,7 @@ export class TemplateService extends Service<void> {
       ? new TemplateFacade({
           transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
         })
-      : this.#facade;
+      : this.#registry.facade;
     for (const partial of document.manifest.partials ?? [])
       facade.define(partial.name, partial.source, partial.language);
     const frontmatter = document.manifest.frontmatter
@@ -696,13 +752,13 @@ export class TemplateService extends Service<void> {
           () => facade.renderLiteratureNoteTemplateAnnotation(document, data),
           path,
         ),
-      renderFilename: <T extends object>(data: T) =>
-        toSingleLine(
-          this.#classifyRender(
-            () => facade.renderLiteratureNoteTemplateFilename(document, data),
-            path,
-          ),
-        ),
+      renderFilename: <T extends object>(data: T) => {
+        const output = this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateFilename(document, data),
+          path,
+        );
+        return options.rawFilename ? output : toSingleLine(output);
+      },
     };
   }
 
@@ -723,8 +779,8 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       const failure = classifyRenderFailure(
         error,
-        this.#compileErrors,
-        this.#inertEta,
+        this.#registry.compileErrors,
+        this.#registry.inertEta,
       );
       throw documentPath !== undefined &&
         failure instanceof MissingTemplateError &&
@@ -740,7 +796,10 @@ export class TemplateService extends Service<void> {
     options: { profile: ResolvedProfile },
   ): string {
     const { profile } = options;
-    if (profile.settings["note.template-conversion-pending"]) {
+    if (
+      this.#activationSettings?.["note.template-conversion-pending"] ??
+      profile.settings["note.template-conversion-pending"]
+    ) {
       return this.render("annotation", data);
     }
 
@@ -756,7 +815,7 @@ export class TemplateService extends Service<void> {
       return document.renderAnnotation(data);
     }
     this.#requireLoaded("renderProfileAnnotation");
-    return this.#facade.render("annotation", data, {
+    return this.#registry.facade.render("annotation", data, {
       source: DEFAULT_TEMPLATES.annotation,
       language: "liquid",
     });
@@ -766,11 +825,11 @@ export class TemplateService extends Service<void> {
   getLiteratureNoteTemplateStatuses(): readonly LiteratureNoteTemplateStatus[] {
     this.#requireLoaded("getLiteratureNoteTemplateStatuses");
     const references = new Set([
-      ...this.#literatureNoteDocuments.keys(),
-      ...this.#literatureNoteDocumentErrors.keys(),
+      ...this.#registry.literatureNoteDocuments.keys(),
+      ...this.#registry.literatureNoteDocumentErrors.keys(),
     ]);
     return [...references].sort().map((reference) => {
-      const entry = this.#literatureNoteDocuments.get(reference);
+      const entry = this.#registry.literatureNoteDocuments.get(reference);
       if (entry) {
         return {
           reference,
@@ -782,7 +841,7 @@ export class TemplateService extends Service<void> {
           },
         };
       }
-      const error = this.#literatureNoteDocumentErrors.get(reference)!;
+      const error = this.#registry.literatureNoteDocumentErrors.get(reference)!;
       const path = join(this.#currentTemplateFolder(), reference);
       return {
         reference,
@@ -828,7 +887,7 @@ export class TemplateService extends Service<void> {
     options: { includeFolders?: boolean } = {},
   ): Promise<string> {
     this.#requireLoaded("exportLiteratureNotePack");
-    const reconciled = this.#literatureNoteDocuments.get(reference);
+    const reconciled = this.#registry.literatureNoteDocuments.get(reference);
     if (!reconciled) {
       throw new Error(
         `Literature Note Template '${reference}' is not installed`,
@@ -858,7 +917,7 @@ export class TemplateService extends Service<void> {
     this.#requireLoaded("exportLiteratureNotePackSource");
     const partials = (
       await Promise.all(
-        [...this.#winners.entries()].map(async ([name, winner]) => {
+        [...this.#registry.winners.entries()].map(async ([name, winner]) => {
           if (winner.source.kind === "none") return null;
           if (winner.source.kind === "embedded-default") {
             if (!isTemplateName(name)) return null;
@@ -885,11 +944,11 @@ export class TemplateService extends Service<void> {
     // own name, so a host that renders an annotation's citation — the web
     // Workbench — gets the text this vault would produce.
     partials.push(...this.getPartialEntries());
-    if (this.#citation) {
+    if (this.#registry.citation) {
       partials.push({
         name: CITATION_TEMPLATE_NAME,
-        language: this.#citation.language,
-        source: this.#citation.source,
+        language: this.#registry.citation.language,
+        source: this.#registry.citation.source,
       });
     }
     return exportLiteratureNotePack(source, partials, options);
@@ -954,14 +1013,14 @@ export class TemplateService extends Service<void> {
    *   could half-apply a synced field configuration to a note.
    */
   get frontmatterFields(): readonly CompiledFrontmatterField[] {
-    if (this.#inertFrontmatterKeys.length > 0) {
+    if (this.#registry.inertFrontmatterKeys.length > 0) {
       throw new InertTemplateError(
         m.notice_frontmatter_js_inert({
-          fields: this.#inertFrontmatterKeys.join(", "),
+          fields: this.#registry.inertFrontmatterKeys.join(", "),
         }),
       );
     }
-    return this.#compiledFrontmatterFields;
+    return this.#registry.compiledFrontmatterFields;
   }
 
   /**
@@ -972,8 +1031,8 @@ export class TemplateService extends Service<void> {
    */
   getFrontmatterFieldStatus(): FrontmatterFieldStatus {
     return {
-      fields: this.#lastFrontmatterFields ?? [],
-      inertKeys: this.#inertFrontmatterKeys,
+      fields: this.#registry.lastFrontmatterFields ?? [],
+      inertKeys: this.#registry.inertFrontmatterKeys,
     };
   }
 
@@ -994,10 +1053,10 @@ export class TemplateService extends Service<void> {
     inertKeys: readonly string[];
   } {
     this.#requireLoaded("evaluateFrontmatterFields");
-    const { compiled, inertKeys } = this.#facade.compileFrontmatterFields(
-      fields,
-      { javascript: this.#javascriptTemplatesEnabled },
-    );
+    const { compiled, inertKeys } =
+      this.#registry.facade.compileFrontmatterFields(fields, {
+        javascript: this.#javascriptTemplatesEnabled,
+      });
     const errors: Record<string, string> = {};
     const values = evalFrontmatterFields(compiled, zt, (key, error) => {
       errors[key] = error instanceof Error ? error.message : String(error);
@@ -1022,21 +1081,21 @@ export class TemplateService extends Service<void> {
    */
   render<T extends object>(name: string, data: T): string {
     this.#requireLoaded("render");
-    const inertPath = this.#inertEta.get(name);
+    const inertPath = this.#registry.inertEta.get(name);
     if (inertPath !== undefined) {
       throw new InertTemplateError(
         m.settings_template_inert_eta({ path: inertPath }),
         name,
       );
     }
-    const compileError = this.#compileErrors.get(name);
+    const compileError = this.#registry.compileErrors.get(name);
     if (compileError !== undefined) {
       throw new TemplateError(
         compileErrorMessage(name, compileError.message),
         name,
       );
     }
-    return this.#classifyRender(() => this.#facade.render(name, data));
+    return this.#classifyRender(() => this.#registry.facade.render(name, data));
   }
 
   /**
@@ -1075,11 +1134,11 @@ export class TemplateService extends Service<void> {
    */
   getPartialDocument(name: string): SharedPartialDocument | null {
     this.#requireLoaded("getPartialDocument");
-    const registered = this.#partials.get(name);
+    const registered = this.#registry.partials.get(name);
     if (registered)
       return { name, path: registered.path, language: registered.language };
     const path = partialPath(this.#currentTemplateFolder(), name);
-    if (this.#inertEta.get(name) === path)
+    if (this.#registry.inertEta.get(name) === path)
       return { name, path, language: "eta" };
     // A document the parser refused names no language, so it reads as the
     // Liquid default a manifest-less document declares.
@@ -1097,7 +1156,7 @@ export class TemplateService extends Service<void> {
    */
   getPartialNames(): readonly string[] {
     this.#requireLoaded("getPartialNames");
-    return [...this.#partialNames].sort();
+    return [...this.#registry.partialNames].sort();
   }
 
   /** {@link getPartialNames} as documents, for a caller that shows the file. */
@@ -1121,12 +1180,12 @@ export class TemplateService extends Service<void> {
   getPartialEntries(): readonly LiteratureNoteTemplatePartial[] {
     this.#requireLoaded("getPartialEntries");
     return this.getPartialNames().flatMap((name) => {
-      const registered = this.#partials.get(name);
+      const registered = this.#registry.partials.get(name);
       if (registered)
         return [
           { name, language: registered.language, source: registered.source },
         ];
-      const inert = this.#inertPartials.get(name);
+      const inert = this.#registry.inertPartials.get(name);
       return inert ? [inert] : [];
     });
   }
@@ -1170,7 +1229,7 @@ export class TemplateService extends Service<void> {
         if (name !== undefined) otherCase.add(partial.name);
         continue;
       }
-      const registered = this.#partials.get(name);
+      const registered = this.#registry.partials.get(name);
       held.set(
         partial.name,
         registered
@@ -1183,7 +1242,7 @@ export class TemplateService extends Service<void> {
       held,
       // A name the vault answers under this very spelling is settled above, so
       // `taken` speaks for the case-folded ones alone.
-      (name) => partialNameRefusal(name, this.#partialNames) === null,
+      (name) => partialNameRefusal(name, this.#registry.partialNames) === null,
     );
     // The name rule refuses a case-folded name only because the vault answers
     // it, which is a reason of its own. This plan says so once, and every
@@ -1260,7 +1319,7 @@ export class TemplateService extends Service<void> {
    */
   #heldPartialName(name: string): string | undefined {
     const folded = name.toLowerCase();
-    return [...this.#partialNames].find(
+    return [...this.#registry.partialNames].find(
       (taken) => taken.toLowerCase() === folded,
     );
   }
@@ -1310,7 +1369,7 @@ export class TemplateService extends Service<void> {
    */
   getReservedPartialFiles(): readonly { name: string; path: string }[] {
     this.#requireLoaded("getReservedPartialFiles");
-    return [...this.#reservedPartialFiles]
+    return [...this.#registry.reservedPartialFiles]
       .map(([name, path]) => ({ name, path }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
@@ -1333,7 +1392,7 @@ export class TemplateService extends Service<void> {
   ): Promise<TFile> {
     await this.ready;
     this.#requireLoaded("createPartial");
-    const refusal = partialNameRefusal(name, this.#partialNames);
+    const refusal = partialNameRefusal(name, this.#registry.partialNames);
     if (refusal) throw new PartialNameError(name, refusal);
     const folder = this.#currentTemplateFolder();
     await ensureFolder(this.#app, folder || "/");
@@ -1408,7 +1467,7 @@ export class TemplateService extends Service<void> {
       );
     }
     return this.#classifyRender(() =>
-      this.#facade.render(options.name, data, {
+      this.#registry.facade.render(options.name, data, {
         source: parsed.source,
         language,
       }),
@@ -1459,7 +1518,7 @@ export class TemplateService extends Service<void> {
    */
   analyzeRootVariables(name: string): RootVariableUse[] | null {
     this.#requireLoaded("analyzeRootVariables");
-    return this.#facade.analyzeRootVariables(name);
+    return this.#registry.facade.analyzeRootVariables(name);
   }
 
   /**
@@ -1471,7 +1530,7 @@ export class TemplateService extends Service<void> {
    */
   async getTemplateSource(name: TemplateName): Promise<string> {
     this.#requireLoaded("getTemplateSource");
-    const winner = this.#winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
+    const winner = this.#registry.winners.get(name) ?? EMBEDDED_DEFAULT_WINNER;
     if (winner.source.kind === "vault") {
       const file = this.#app.vault.getFileByPath(winner.source.path);
       if (file) return await this.#app.vault.cachedRead(file);
@@ -1520,7 +1579,7 @@ export class TemplateService extends Service<void> {
     const citation: LegacyTemplateFile[] = [];
     const partials: LegacyTemplateFile[] = [];
     // Sorted, so `cite` folds before `cite2` and both lists read stably.
-    for (const name of [...this.#winners.keys()].sort()) {
+    for (const name of [...this.#registry.winners.keys()].sort()) {
       if (isTemplateName(name)) continue;
       const file = this.#legacyTemplateFile(name);
       if (!file) continue;
@@ -1594,7 +1653,7 @@ export class TemplateService extends Service<void> {
         trashed.push(file.path, ...file.shadowed);
         removedNames.push(file.name);
       }
-      const { source } = this.#facade.convertLegacyCitationTemplates(
+      const { source } = this.#registry.facade.convertLegacyCitationTemplates(
         legacy,
         {
           main: citekeysToCiteTemplateData(refs, "main"),
@@ -1628,9 +1687,9 @@ export class TemplateService extends Service<void> {
 
   /** The reconciled state of one bare legacy name, `null` when no file backs it. */
   #legacyTemplateFile(name: string): LegacyTemplateFile | null {
-    const winner = this.#winners.get(name);
+    const winner = this.#registry.winners.get(name);
     if (!winner) return null;
-    const shadowed = this.#shadowed.get(name);
+    const shadowed = this.#registry.shadowed.get(name);
     if (winner.source.kind === "vault") {
       return {
         name,
@@ -1640,7 +1699,7 @@ export class TemplateService extends Service<void> {
         shadowed: shadowed ? [shadowed] : [],
       };
     }
-    const inertPath = this.#inertEta.get(name);
+    const inertPath = this.#registry.inertEta.get(name);
     if (!inertPath) return null;
     return {
       name,
@@ -1666,13 +1725,9 @@ export class TemplateService extends Service<void> {
     return await this.#app.vault.cachedRead(file);
   }
 
-  /** Build and byte-verify the converted default Profile document in memory. */
-  async convertLegacyLiteratureNoteTemplates(data: {
-    readonly note: object;
-    readonly filename: object;
-    readonly annotation?: object;
-  }): Promise<ConvertedLegacyProfileDocument> {
-    this.#requireLoaded("convertLegacyLiteratureNoteTemplates");
+  /** Capture the current source set before synthesis or output verification. */
+  async getLegacyLiteratureNoteSources() {
+    this.#requireLoaded("getLegacyLiteratureNoteSources");
     const statuses = this.#getTemplateFileStatuses(TEMPLATE_NAMES);
     const inert = statuses.find(
       (status) =>
@@ -1712,13 +1767,31 @@ export class TemplateService extends Service<void> {
       annotationStatus.winner.source.kind === "vault"
         ? await source("annotation")
         : undefined;
+    return { note, content, filename, annotation };
+  }
+
+  /** Build an inactive Profile source even when field evaluation still needs repair. */
+  async synthesizeLegacyLiteratureNoteTemplate(): Promise<string> {
+    return synthesizeLegacyLiteratureNoteTemplate(
+      await this.getLegacyLiteratureNoteSources(),
+      {
+        frontmatter: this.#activeSettings?.["note.frontmatter-fields"] ?? [],
+      },
+    );
+  }
+
+  /** Build and byte-verify the converted default Profile document in memory. */
+  async convertLegacyLiteratureNoteTemplates(data: {
+    readonly note: object;
+    readonly filename: object;
+    readonly annotation?: object;
+  }): Promise<ConvertedLegacyProfileDocument> {
     return {
-      ...this.#facade.convertLegacyLiteratureNoteTemplates(
-        { note, content, filename, annotation },
+      ...this.#registry.facade.convertLegacyLiteratureNoteTemplates(
+        await this.getLegacyLiteratureNoteSources(),
         data,
         {
-          frontmatter:
-            this.#settings.current?.["note.frontmatter-fields"] ?? [],
+          frontmatter: this.#activeSettings?.["note.frontmatter-fields"] ?? [],
           javascript: this.#javascriptTemplatesEnabled,
         },
       ),
@@ -1740,7 +1813,7 @@ export class TemplateService extends Service<void> {
     if (language === "javascript" && !this.#javascriptTemplatesEnabled) {
       return null;
     }
-    return this.#facade.validateFrontmatterExpr(expr, language);
+    return this.#registry.facade.validateFrontmatterExpr(expr, language);
   }
 
   /**
@@ -1757,8 +1830,8 @@ export class TemplateService extends Service<void> {
     this.#javascriptTemplatesEnabled = enabled;
     logger.info("JavaScript templates flag changed", { enabled });
 
-    if (this.#lastFrontmatterFields) {
-      this.#compileFrontmatter(this.#lastFrontmatterFields);
+    if (this.#registry.lastFrontmatterFields) {
+      this.#compileFrontmatter(this.#registry.lastFrontmatterFields);
     }
 
     await this.#rebuildFolder(this.#currentTemplateFolder());
@@ -1766,12 +1839,14 @@ export class TemplateService extends Service<void> {
 
   async #load(): Promise<void> {
     const snapshot = await this.#settings.loaded;
-    this.#lastTemplateFolder = normalizeVaultPath(snapshot["template.folder"]);
-    this.#lastAutoTrim = [
+    this.#registry.lastTemplateFolder = normalizeVaultPath(
+      snapshot["template.folder"],
+    );
+    this.#registry.lastAutoTrim = [
       snapshot["template.auto-trim-leading"],
       snapshot["template.auto-trim-trailing"],
     ];
-    this.#facade.setAutoTrim(this.#lastAutoTrim);
+    this.#registry.facade.setAutoTrim(this.#registry.lastAutoTrim);
     this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
 
     await using stack = new AsyncDisposableStack();
@@ -1780,7 +1855,7 @@ export class TemplateService extends Service<void> {
     // before it walks the folder, so anything queued during the walk survives
     // into the debounced flush that follows.
     stack.defer(this.#registerVaultEvents());
-    await this.#rebuildFolder(this.#lastTemplateFolder);
+    await this.#rebuildFolder(this.#registry.lastTemplateFolder);
 
     stack.defer(
       this.#settings.subscribe((settings) => {
@@ -1809,28 +1884,29 @@ export class TemplateService extends Service<void> {
   }
 
   #onSettingsChanged(settings: Readonly<Settings>): void {
+    if (this.#activationSettings) return;
     const folder = normalizeVaultPath(settings["template.folder"]);
     const autoTrim: [AutoTrim, AutoTrim] = [
       settings["template.auto-trim-leading"],
       settings["template.auto-trim-trailing"],
     ];
 
-    const folderChanged = folder !== this.#lastTemplateFolder;
+    const folderChanged = folder !== this.#registry.lastTemplateFolder;
     const autoTrimChanged =
-      autoTrim[0] !== this.#lastAutoTrim[0] ||
-      autoTrim[1] !== this.#lastAutoTrim[1];
+      autoTrim[0] !== this.#registry.lastAutoTrim[0] ||
+      autoTrim[1] !== this.#registry.lastAutoTrim[1];
 
     const frontmatterFields = settings["note.frontmatter-fields"];
 
-    this.#lastTemplateFolder = folder;
-    this.#lastAutoTrim = autoTrim;
+    this.#registry.lastTemplateFolder = folder;
+    this.#registry.lastAutoTrim = autoTrim;
 
-    if (frontmatterFields !== this.#lastFrontmatterFields) {
+    if (frontmatterFields !== this.#registry.lastFrontmatterFields) {
       this.#compileFrontmatter(frontmatterFields);
     }
 
     if (autoTrimChanged) {
-      this.#facade.setAutoTrim(autoTrim);
+      this.#registry.facade.setAutoTrim(autoTrim);
       logger.debug("Template autoTrim changed", { autoTrim });
     }
 
@@ -1847,19 +1923,19 @@ export class TemplateService extends Service<void> {
       const generation = ++this.#folderGeneration;
       this.#cancelFlush();
       for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
-      this.#shadowed.clear();
-      this.#inertEta.clear();
-      this.#winners.clear();
-      this.#partials.clear();
-      this.#inertPartials.clear();
-      this.#partialNames.clear();
-      this.#reservedPartialFiles.clear();
-      this.#citation = null;
-      this.#unrecognizedFiles.clear();
-      this.#facade.reset();
-      this.#compileErrors.clear();
-      this.#literatureNoteDocuments.clear();
-      this.#literatureNoteDocumentErrors.clear();
+      this.#registry.shadowed.clear();
+      this.#registry.inertEta.clear();
+      this.#registry.winners.clear();
+      this.#registry.partials.clear();
+      this.#registry.inertPartials.clear();
+      this.#registry.partialNames.clear();
+      this.#registry.reservedPartialFiles.clear();
+      this.#registry.citation = null;
+      this.#registry.unrecognizedFiles.clear();
+      this.#registry.facade.reset();
+      this.#registry.compileErrors.clear();
+      this.#registry.literatureNoteDocuments.clear();
+      this.#registry.literatureNoteDocumentErrors.clear();
 
       const root =
         folder === ""
@@ -1926,7 +2002,7 @@ export class TemplateService extends Service<void> {
   }
 
   #scheduleFlush(): void {
-    if (this.#flushTimer !== null) return;
+    if (this.#activationSettings || this.#flushTimer !== null) return;
     this.#flushTimer = window.setTimeout(() => {
       this.#flushTimer = null;
       void this.#flushPending();
@@ -1958,9 +2034,9 @@ export class TemplateService extends Service<void> {
   async #reconcileWork(work: TemplateWork, generation: number): Promise<void> {
     for (const path of work.unrecognizedPaths) {
       if (this.#app.vault.getFileByPath(path)) {
-        this.#unrecognizedFiles.add(path);
+        this.#registry.unrecognizedFiles.add(path);
       } else {
-        this.#unrecognizedFiles.delete(path);
+        this.#registry.unrecognizedFiles.delete(path);
       }
     }
     await Promise.all([
@@ -1998,10 +2074,14 @@ export class TemplateService extends Service<void> {
     // `zotlit-partial.<name>.md` document that replaces it. The document owns
     // the name — the conversion writes it before it trashes the legacy file,
     // so the deletion event that follows leaves the registered partial alone.
-    if (this.#partials.has(name)) {
+    if (
+      this.#registry.partials.has(name) ||
+      (!RESERVED_PARTIAL_NAMES.has(name) &&
+        this.#app.vault.getFileByPath(partialPath(folder, name)) !== null)
+    ) {
       if (!liquidFile && !etaFile) {
-        this.#winners.delete(name);
-        this.#shadowed.delete(name);
+        this.#registry.winners.delete(name);
+        this.#registry.shadowed.delete(name);
       }
       return;
     }
@@ -2009,15 +2089,15 @@ export class TemplateService extends Service<void> {
     // A shadowed eta file is reported as shadowed regardless of the gate —
     // the liquid edition wins either way, so the flag never changes its fate.
     if (liquidFile && etaFile) {
-      if (this.#shadowed.get(name) !== etaFile.path) {
+      if (this.#registry.shadowed.get(name) !== etaFile.path) {
         logger.warn("Eta template shadowed by its Liquid edition", {
           name,
           path: etaFile.path,
         });
       }
-      this.#shadowed.set(name, etaFile.path);
+      this.#registry.shadowed.set(name, etaFile.path);
     } else {
-      this.#shadowed.delete(name);
+      this.#registry.shadowed.delete(name);
     }
 
     // Inert means the eta file would win, but the gate keeps it from compiling.
@@ -2025,23 +2105,23 @@ export class TemplateService extends Service<void> {
     // must fail loudly with InertTemplateError rather than degrade to the
     // embedded default.
     if (!this.#javascriptTemplatesEnabled && !liquidFile && etaFile) {
-      if (this.#inertEta.get(name) !== etaFile.path) {
+      if (this.#registry.inertEta.get(name) !== etaFile.path) {
         logger.info(
           "Eta template inert while JavaScript templates are disabled",
           { name, path: etaFile.path },
         );
       }
-      this.#inertEta.set(name, etaFile.path);
-      this.#winners.set(name, {
+      this.#registry.inertEta.set(name, etaFile.path);
+      this.#registry.winners.set(name, {
         language: "eta",
         source: { kind: "none" },
       });
-      this.#compileErrors.delete(name);
-      this.#facade.remove(name, "liquid");
-      this.#facade.remove(name, "eta");
+      this.#registry.compileErrors.delete(name);
+      this.#registry.facade.remove(name, "liquid");
+      this.#registry.facade.remove(name, "eta");
       return;
     }
-    this.#inertEta.delete(name);
+    this.#registry.inertEta.delete(name);
 
     const etaCandidate = this.#javascriptTemplatesEnabled ? etaFile : null;
     const winner = liquidFile
@@ -2051,7 +2131,7 @@ export class TemplateService extends Service<void> {
         : null;
 
     if (!winner) {
-      this.#compileErrors.delete(name);
+      this.#registry.compileErrors.delete(name);
       this.#useDefault(name);
       return;
     }
@@ -2070,9 +2150,12 @@ export class TemplateService extends Service<void> {
     }
 
     if (generation !== this.#folderGeneration) return;
-    this.#facade.remove(name, winner.language === "liquid" ? "eta" : "liquid");
+    this.#registry.facade.remove(
+      name,
+      winner.language === "liquid" ? "eta" : "liquid",
+    );
     this.#defineTemplate(name, content, winner.language);
-    this.#winners.set(name, {
+    this.#registry.winners.set(name, {
       language: winner.language,
       source: { kind: "vault", path: winner.file.path },
     });
@@ -2087,22 +2170,23 @@ export class TemplateService extends Service<void> {
     const path = folder === "" ? reference : join(folder, reference);
     const file = this.#app.vault.getFileByPath(path);
     if (!file) {
-      this.#literatureNoteDocuments.delete(reference);
-      this.#literatureNoteDocumentErrors.delete(reference);
+      this.#registry.literatureNoteDocuments.delete(reference);
+      this.#registry.literatureNoteDocumentErrors.delete(reference);
       return;
     }
 
     try {
       const source = await this.#app.vault.cachedRead(file);
       if (generation !== this.#folderGeneration) return;
-      const document = this.#facade.parseLiteratureNoteTemplate(source);
-      this.#literatureNoteDocuments.set(reference, { path, document });
-      this.#literatureNoteDocumentErrors.delete(reference);
+      const document =
+        this.#registry.facade.parseLiteratureNoteTemplate(source);
+      this.#registry.literatureNoteDocuments.set(reference, { path, document });
+      this.#registry.literatureNoteDocumentErrors.delete(reference);
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       const failure = Error.isError(error) ? error : new Error(String(error));
-      this.#literatureNoteDocuments.delete(reference);
-      this.#literatureNoteDocumentErrors.set(reference, failure);
+      this.#registry.literatureNoteDocuments.delete(reference);
+      this.#registry.literatureNoteDocumentErrors.set(reference, failure);
       logger.warn("Failed to reconcile Literature Note Template document", {
         error: failure,
         path,
@@ -2133,19 +2217,21 @@ export class TemplateService extends Service<void> {
           name,
           path,
         });
-        this.#reservedPartialFiles.set(name, path);
+        this.#registry.reservedPartialFiles.set(name, path);
       } else {
-        this.#reservedPartialFiles.delete(name);
+        this.#registry.reservedPartialFiles.delete(name);
       }
       return;
     }
 
     if (!file) {
-      this.#partialNames.delete(name);
+      // A create rolled back during activation never owned the legacy name.
+      if (!this.#registry.partialNames.has(name)) return;
+      this.#registry.partialNames.delete(name);
       this.#removePartial(name);
       return;
     }
-    this.#partialNames.add(name);
+    this.#registry.partialNames.add(name);
 
     let source: string;
     try {
@@ -2163,14 +2249,14 @@ export class TemplateService extends Service<void> {
       parsed = parsePlainTemplateDocument(source);
     } catch (error) {
       this.#removePartial(name);
-      this.#compileErrors.set(name, { message: errorMessage(error) });
+      this.#registry.compileErrors.set(name, { message: errorMessage(error) });
       logger.warn("Failed to parse partial document", { error, path });
       return;
     }
 
     const { language } = parsed.manifest;
     if (language === "eta" && !this.#javascriptTemplatesEnabled) {
-      if (this.#inertEta.get(name) !== path) {
+      if (this.#registry.inertEta.get(name) !== path) {
         logger.debug(
           "Eta partial inert while JavaScript templates are disabled",
           {
@@ -2180,13 +2266,21 @@ export class TemplateService extends Service<void> {
         );
       }
       this.#removePartial(name);
-      this.#inertEta.set(name, path);
-      this.#inertPartials.set(name, { name, language, source: parsed.source });
+      this.#registry.inertEta.set(name, path);
+      this.#registry.inertPartials.set(name, {
+        name,
+        language,
+        source: parsed.source,
+      });
       return;
     }
 
     this.#removePartial(name);
-    this.#partials.set(name, { path, language, source: parsed.source });
+    this.#registry.partials.set(name, {
+      path,
+      language,
+      source: parsed.source,
+    });
     this.#defineTemplate(name, parsed.source, language);
   }
 
@@ -2228,21 +2322,21 @@ export class TemplateService extends Service<void> {
       parsed = parsePlainTemplateDocument(source);
     } catch (error) {
       this.#unregisterCitation();
-      this.#compileErrors.set(name, { message: errorMessage(error) });
+      this.#registry.compileErrors.set(name, { message: errorMessage(error) });
       logger.warn("Failed to parse the Citation Template", { error, path });
       return;
     }
 
     const { language } = parsed.manifest;
     if (language === "eta" && !this.#javascriptTemplatesEnabled) {
-      if (this.#inertEta.get(name) !== path) {
+      if (this.#registry.inertEta.get(name) !== path) {
         logger.debug(
           "Citation Template inert while JavaScript templates are disabled",
           { path },
         );
       }
       this.#unregisterCitation();
-      this.#inertEta.set(name, path);
+      this.#registry.inertEta.set(name, path);
       return;
     }
 
@@ -2264,9 +2358,9 @@ export class TemplateService extends Service<void> {
    * citation instead of re-instrumenting the reconcile.
    */
   #registerCitation(citation: RegisteredCitationTemplate): void {
-    const previous = this.#citation;
+    const previous = this.#registry.citation;
     this.#unregisterCitation();
-    this.#citation = citation;
+    this.#registry.citation = citation;
     this.#defineTemplate(
       CITATION_TEMPLATE_NAME,
       citation.source,
@@ -2285,23 +2379,23 @@ export class TemplateService extends Service<void> {
   }
 
   #unregisterCitation(): void {
-    this.#citation = null;
+    this.#registry.citation = null;
     this.#unregisterTemplate(CITATION_TEMPLATE_NAME);
   }
 
   #removePartial(name: string): void {
-    this.#partials.delete(name);
-    this.#inertPartials.delete(name);
+    this.#registry.partials.delete(name);
+    this.#registry.inertPartials.delete(name);
     this.#unregisterTemplate(name);
   }
 
   /** Drop every trace of `name`: its compiled editions and the status a
    *  previous reconcile recorded for it. */
   #unregisterTemplate(name: string): void {
-    this.#compileErrors.delete(name);
-    this.#inertEta.delete(name);
-    this.#facade.remove(name, "liquid");
-    this.#facade.remove(name, "eta");
+    this.#registry.compileErrors.delete(name);
+    this.#registry.inertEta.delete(name);
+    this.#registry.facade.remove(name, "liquid");
+    this.#registry.facade.remove(name, "eta");
   }
 
   /**
@@ -2316,32 +2410,32 @@ export class TemplateService extends Service<void> {
     language: TemplateLanguage,
   ): void {
     try {
-      this.#facade.define(name, content, language);
-      this.#compileErrors.delete(name);
+      this.#registry.facade.define(name, content, language);
+      this.#registry.compileErrors.delete(name);
     } catch (error) {
-      this.#compileErrors.set(name, {
+      this.#registry.compileErrors.set(name, {
         message: errorMessage(error),
         context: errorContext(error),
       });
       logger.warn("Failed to compile vault template", { error, name });
-      this.#facade.remove(name, language);
+      this.#registry.facade.remove(name, language);
     }
   }
 
   /** Use a canonical name's package default (Liquid) when no vault override exists, else remove a non-canonical one. */
   #useDefault(name: string): void {
-    this.#facade.remove(name, "eta");
+    this.#registry.facade.remove(name, "eta");
     if (!isTemplateName(name)) {
-      this.#facade.remove(name, "liquid");
-      this.#winners.delete(name);
+      this.#registry.facade.remove(name, "liquid");
+      this.#registry.winners.delete(name);
       return;
     }
-    this.#winners.set(name, EMBEDDED_DEFAULT_WINNER);
+    this.#registry.winners.set(name, EMBEDDED_DEFAULT_WINNER);
     try {
-      this.#facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
-      this.#compileErrors.delete(name);
+      this.#registry.facade.define(name, DEFAULT_TEMPLATES[name], "liquid");
+      this.#registry.compileErrors.delete(name);
     } catch (error) {
-      this.#compileErrors.set(name, {
+      this.#registry.compileErrors.set(name, {
         message: errorMessage(error),
         context: errorContext(error),
       });
@@ -2349,7 +2443,7 @@ export class TemplateService extends Service<void> {
         error,
         name,
       });
-      this.#facade.remove(name, "liquid");
+      this.#registry.facade.remove(name, "liquid");
     }
   }
 
@@ -2363,7 +2457,8 @@ export class TemplateService extends Service<void> {
 
   #currentTemplateFolder(): string {
     return normalizeVaultPath(
-      this.#settings.current?.["template.folder"] ?? this.#lastTemplateFolder,
+      this.#activeSettings?.["template.folder"] ??
+        this.#registry.lastTemplateFolder,
     );
   }
 
@@ -2375,14 +2470,14 @@ export class TemplateService extends Service<void> {
    * throws rather than hand back a partial set.
    */
   #compileFrontmatter(fields: readonly FrontmatterField[]): void {
-    this.#lastFrontmatterFields = fields;
+    this.#registry.lastFrontmatterFields = fields;
     const filtered = fields.filter((field) => !RESERVED_KEYS.has(field.key));
-    const { compiled, inertKeys } = this.#facade.compileFrontmatterFields(
-      filtered,
-      { javascript: this.#javascriptTemplatesEnabled },
-    );
-    this.#compiledFrontmatterFields = compiled;
-    this.#inertFrontmatterKeys = inertKeys;
+    const { compiled, inertKeys } =
+      this.#registry.facade.compileFrontmatterFields(filtered, {
+        javascript: this.#javascriptTemplatesEnabled,
+      });
+    this.#registry.compiledFrontmatterFields = compiled;
+    this.#registry.inertFrontmatterKeys = inertKeys;
 
     if (inertKeys.length > 0) {
       logger.info("Skipping inert frontmatter fields", { keys: inertKeys });

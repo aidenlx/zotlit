@@ -20,6 +20,10 @@ export class MockVault {
     return this.contents.get(file.path) ?? "";
   });
 
+  async read(file: TFile): Promise<string> {
+    return this.cachedRead(file);
+  }
+
   #mtime = 1;
   readonly #listeners: Record<VaultEvent, Set<VaultCallback>> = {
     create: new Set(),
@@ -93,6 +97,23 @@ export class MockVault {
     const result = transform(source);
     this.modifyFile(file.path, result);
     return result;
+  }
+
+  async modify(file: TFile, content: string): Promise<void> {
+    this.modifyFile(file.path, content);
+  }
+
+  async delete(file: TAbstractFile, _force?: boolean): Promise<void> {
+    if (file instanceof TFile) {
+      this.deleteFile(file.path);
+      return;
+    }
+    for (const path of this.files.keys())
+      if (path.startsWith(`${file.path}/`)) this.deleteFile(path);
+    for (const path of this.folders.keys())
+      if (path === file.path || path.startsWith(`${file.path}/`))
+        this.folders.delete(path);
+    this.#detach(file);
   }
 
   modifyFile(path: string, content: string): void {

@@ -15,7 +15,7 @@ import type { ItemLookup, SearchHit } from "./service";
 export interface ItemSearchDeps {
   app: App;
   lookup: Pick<ItemLookup, "search">;
-  settings: SettingsService;
+  settings: Pick<SettingsService, "current">;
 }
 
 export abstract class ItemSearchModal extends SuggestModal<SearchHit> {

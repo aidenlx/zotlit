@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
+import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import { defaults } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
@@ -31,6 +32,7 @@ function makeHarness(options?: {
       ...defaults["note.default-profile"],
     },
     "note.template-conversion-pending": options?.pending ?? false,
+    "note.template-conversion-copy": null as string | null,
     "note.template-conversion-result": null as {
       document: string | null;
       trashed: number;
@@ -71,8 +73,18 @@ function makeHarness(options?: {
       Object.assign(state, patch),
     ),
     flush: vi.fn(async () => {}),
+    async updatePersisted(
+      patch: Partial<typeof state>,
+      beforePublish?: () => void,
+    ) {
+      settings.update(patch);
+      await settings.flush();
+      beforePublish?.();
+    },
   };
   const template = {
+    holdActivation: async () => ({ async [Symbol.asyncDispose]() {} }),
+    prepareActivation: async () => () => {},
     javascriptTemplatesEnabled: false,
     refresh: vi.fn(async () => {}),
     waitUntilSettled: async () => "settled" as const,
@@ -445,7 +457,11 @@ const SUMMARY_LIQUID = "> {{ zt.abstract }}\n";
  */
 async function makeVaultHarness(
   files: Record<string, string>,
-  options?: { javascriptTemplates?: boolean; storedSettings?: unknown },
+  options?: {
+    javascriptTemplates?: boolean;
+    storedSettings?: unknown;
+    selectedKey?: string;
+  },
 ) {
   const vault = new MockVault();
   for (const [path, content] of Object.entries(files)) {
@@ -462,6 +478,7 @@ async function makeVaultHarness(
     vault,
     workspace: {
       updateOptions: vi.fn(),
+      getLeavesOfType: () => [],
       onLayoutReady: (callback: () => void | Promise<void>) => {
         layoutReady = callback;
       },
@@ -506,7 +523,8 @@ async function makeVaultHarness(
       settings,
       template,
       loadVerificationData: async () => ({
-        note: { title: "Paper" },
+        itemKey: options?.selectedKey,
+        note: { title: "Paper", indexedKey: options?.selectedKey },
         filename: { citationKey: "smith2024" },
         annotation: null,
         citation: [{ citationKey: "smith2024" }],
@@ -523,6 +541,7 @@ async function makeVaultHarness(
     settings,
     template,
     vault,
+    app,
     plugin,
     trashFile,
     storedSettings: () => structuredClone(plugin.data),
@@ -973,12 +992,14 @@ describe("conversion review with real templates", () => {
       "templates/zotlit-cite.liquid.md": CITE_LIQUID,
       "templates/zotlit-authors.liquid.md": AUTHORS_LIQUID,
     };
-    await using harness = await makeVaultHarness(original);
+    await using harness = await makeVaultHarness(original, {
+      selectedKey: "SAKIMA22",
+    });
     const before = structuredClone(harness.settings.current);
     const review = await harness.service.prepare();
     expect(review.preparation).toMatchObject({ outcome: "prepared" });
     expect(review.selected).toEqual({
-      item: "Paper",
+      item: "SAKIMA22: Paper",
       annotation: null,
       citation: ["smith2024"],
     });
@@ -1142,4 +1163,393 @@ describe("conversion review with real templates", () => {
       ).toBe(true);
     },
   );
+});
+
+describe("saved field conversion repair", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const originals = {
+    "templates/zotlit-note.liquid.md":
+      '# {{ zt.title }}\n{% render "content" with zt as zt %}',
+    "templates/zotlit-content.liquid.md": "Original research body",
+    "templates/zotlit-filename.liquid.md": "{{ zt.citationKey }}",
+  };
+
+  async function start(
+    harness: Awaited<ReturnType<typeof makeVaultHarness>>,
+    expr = "1 +",
+  ) {
+    harness.settings.update({
+      "note.frontmatter-fields": [
+        { key: "repair-field", language: "liquid", expr, merge: "replace" },
+      ],
+    });
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    return copy;
+  }
+  function edit(
+    harness: Awaited<ReturnType<typeof makeVaultHarness>>,
+    path: string,
+    expr: string,
+  ) {
+    const controller = new WorkbenchDocumentController(
+      harness.vault.contents.get(path)!,
+      { runtime: "native" },
+    );
+    expect(controller.setManifestValue(["frontmatter", 0, "expr"], expr)).toBe(
+      true,
+    );
+    harness.vault.modifyFile(path, controller.source);
+  }
+
+  it("keeps a repaired field inactive and requires explicit acceptance of an unavailable original", async () => {
+    await using harness = await makeVaultHarness(originals);
+    const copy = await start(harness);
+    expect(copy.profilePath).not.toBeNull();
+    edit(harness, copy.profilePath!, "'repair-1098'");
+    await vi.advanceTimersByTimeAsync(500);
+    const review = await harness.service.reviewRepair();
+    expect(review.valid).toBe(true);
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter"),
+    ).toMatchObject({
+      outcome: "original-unavailable",
+      candidate: '{"repair-field":"repair-1098"}',
+    });
+    expect(
+      review.comparisons.find(({ output }) => output === "create"),
+    ).toMatchObject({
+      outcome: "matching",
+      original:
+        "# Paper\n%%zt-managed%%\nOriginal research body\n%%/zt-managed%%\n",
+    });
+    expect(harness.settings.current?.["note.frontmatter-fields"][0]?.expr).toBe(
+      "1 +",
+    );
+    expect(harness.template.render("content", { title: "Paper" })).toBe(
+      "%%zt-managed%%\nOriginal research body\n%%/zt-managed%%",
+    );
+    expect(
+      await harness.service.acceptRepair(review, "matching"),
+    ).toMatchObject({ outcome: "refused" });
+    expect(
+      await harness.service.acceptRepair(review, "reviewed-changes"),
+    ).toMatchObject({ outcome: "converted" });
+    expect(
+      harness.settings.current?.["note.template-conversion-result"]?.acceptance,
+    ).toBe("reviewed-changes");
+    const profile = harness.template.prepareLiteratureNoteTemplateSource(
+      harness.vault.contents.get("templates/zotlit-profile.default.md")!,
+    );
+    expect(profile.renderForCreate({ title: "Paper" })).toBe(
+      "# Paper\n%%zt-managed%%\nOriginal research body\n%%/zt-managed%%\n",
+    );
+    expect(harness.vault.contents.has(copy.path)).toBe(false);
+  });
+
+  it("resumes saved repair after fresh services and discards only the copy", async () => {
+    let saved: unknown;
+    let files: Record<string, string>;
+    let profilePath: string;
+    {
+      await using first = await makeVaultHarness(originals);
+      const copy = await start(first);
+      profilePath = copy.profilePath!;
+      edit(first, profilePath, "'restored-1098'");
+      files = Object.fromEntries(first.vault.contents);
+      saved = first.storedSettings();
+    }
+    await using resumed = await makeVaultHarness(files!, {
+      storedSettings: saved,
+    });
+    const copy = await resumed.service.resumeRepair();
+    expect(copy?.profilePath).toBe(profilePath!);
+    const review = await resumed.service.reviewRepair();
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter")
+        ?.candidate,
+    ).toBe('{"repair-field":"restored-1098"}');
+    await resumed.service.discardRepair();
+    expect(Object.fromEntries(resumed.vault.contents)).toEqual(originals);
+    expect(resumed.settings.current?.["note.frontmatter-fields"][0]?.expr).toBe(
+      "1 +",
+    );
+  });
+
+  it.each(["copy", "original"] as const)(
+    "refuses a saved review after %s changes",
+    async (target) => {
+      await using harness = await makeVaultHarness(originals);
+      const copy = await start(harness, "'original-field'");
+      edit(harness, copy.profilePath!, "'changed-field'");
+      await vi.advanceTimersByTimeAsync(500);
+      const review = await harness.service.reviewRepair();
+      expect(
+        review.comparisons.find(({ output }) => output === "frontmatter")
+          ?.outcome,
+      ).toBe("changed");
+      if (target === "copy")
+        edit(harness, copy.profilePath!, "'unreviewed-field'");
+      else
+        harness.vault.modifyFile(
+          "templates/zotlit-content.liquid.md",
+          "New original body",
+        );
+      expect(
+        await harness.service.acceptRepair(review, "reviewed-changes"),
+      ).toMatchObject({
+        outcome: "refused",
+        diagnostic: { code: "originals-changed" },
+      });
+      expect(
+        harness.vault.contents.has("templates/zotlit-profile.default.md"),
+      ).toBe(false);
+    },
+  );
+
+  it("blocks a partial candidate when citation synthesis failed after the Profile was created", async () => {
+    await using harness = await makeVaultHarness({
+      ...originals,
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+      "templates/zotlit-cite2.liquid.md": '{% render "cite" with zt as zt %}!',
+    });
+    const copy = await start(harness);
+    expect(copy.profilePath).not.toBeNull();
+    edit(harness, copy.profilePath!, "'valid-repaired-field'");
+    await vi.advanceTimersByTimeAsync(500);
+    const review = await harness.service.reviewRepair();
+    expect(review.valid).toBe(false);
+    expect(review.diagnostic).not.toBeNull();
+    expect(
+      await harness.service.acceptRepair(review, "reviewed-changes"),
+    ).toMatchObject({ outcome: "refused" });
+    expect(
+      harness.vault.contents.has("templates/zotlit-profile.default.md"),
+    ).toBe(false);
+  });
+
+  it("cleans an incomplete copy when creating its child folder fails", async () => {
+    await using harness = await makeVaultHarness(originals);
+    const create = harness.vault.createFolder.bind(harness.vault);
+    const createFolder = vi.spyOn(harness.vault, "createFolder");
+    createFolder.mockImplementation(async (path) => {
+      if (path.endsWith("/inputs")) throw new Error("Copy folder unavailable");
+      return create(path);
+    });
+    await expect(harness.service.startRepair()).rejects.toThrow(
+      "Copy folder unavailable",
+    );
+    expect(Object.fromEntries(harness.vault.contents)).toEqual(originals);
+    expect(
+      [...harness.vault.folders.keys()].some((path) =>
+        path.includes("conversion-copy-"),
+      ),
+    ).toBe(false);
+    expect(
+      harness.settings.current?.["note.template-conversion-copy"],
+    ).toBeNull();
+  });
+
+  it("releases every copied scope when one scope cannot finish startup", async () => {
+    await using harness = await makeVaultHarness(originals);
+    const on = vi.spyOn(harness.vault, "on");
+    const off = vi.spyOn(harness.vault, "offref");
+    const findFolder = harness.vault.getFolderByPath.bind(harness.vault);
+    vi.spyOn(harness.vault, "getFolderByPath").mockImplementation((path) => {
+      if (
+        on.mock.calls.length > 0 &&
+        path.includes("conversion-copy-") &&
+        path.endsWith("/inputs")
+      )
+        throw new Error("Copied inputs cannot be scanned");
+      return findFolder(path);
+    });
+    await expect(harness.service.startRepair()).rejects.toThrow(
+      "Copied inputs cannot be scanned",
+    );
+    const acquired = on.mock.results.map((result) => result.value);
+    expect(acquired).toHaveLength(12);
+    expect(new Set(off.mock.calls.map(([ref]) => ref))).toEqual(
+      new Set(acquired),
+    );
+    expect(Object.fromEntries(harness.vault.contents)).toEqual(originals);
+    expect(harness.template.render("content", { title: "Paper" })).toBe(
+      "%%zt-managed%%\nOriginal research body\n%%/zt-managed%%",
+    );
+  });
+
+  it("accepts a fully matching repair and keeps unrelated similarly named folders ordinary", async () => {
+    await using harness = await makeVaultHarness(originals);
+    await start(harness, "'unchanged-field'");
+    expect(
+      await harness.service.resolveCopyEditor(
+        "Research/conversion-copy-notes/zotlit-citation.md",
+      ),
+    ).toBeNull();
+    const review = await harness.service.reviewRepair();
+    expect(review.valid).toBe(true);
+    expect(review.requiresAcceptance).toBe(false);
+    expect(
+      review.comparisons.every(({ outcome }) => outcome === "matching"),
+    ).toBe(true);
+    expect(
+      await harness.service.acceptRepair(review, "matching"),
+    ).toMatchObject({ outcome: "converted" });
+    expect(
+      harness.settings.current?.["note.template-conversion-result"]?.acceptance,
+    ).toBe("matching");
+  });
+
+  it("explicitly refreshes the original comparison while preserving the saved repaired field", async () => {
+    await using harness = await makeVaultHarness(originals);
+    const copy = await start(harness);
+    edit(harness, copy.profilePath!, "'kept-repair-1098'");
+    await vi.advanceTimersByTimeAsync(500);
+    harness.settings.update({
+      "note.frontmatter-fields": [
+        {
+          key: "repair-field",
+          language: "liquid",
+          expr: "'new-original-1098'",
+          merge: "replace",
+        },
+      ],
+    });
+    expect(await harness.service.reviewRepair()).toMatchObject({
+      valid: false,
+      diagnostic: { code: "originals-changed" },
+    });
+    const refreshing = harness.service.refreshRepairOriginals();
+    await vi.advanceTimersByTimeAsync(500);
+    const review = await refreshing;
+    expect(review.valid).toBe(true);
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter"),
+    ).toMatchObject({
+      outcome: "changed",
+      original: '{"repair-field":"new-original-1098"}',
+      candidate: '{"repair-field":"kept-repair-1098"}',
+    });
+    expect(harness.settings.current?.["note.frontmatter-fields"][0]?.expr).toBe(
+      "'new-original-1098'",
+    );
+  });
+
+  it.each([
+    ["legacyFiles", "Inbox/preserved.md"],
+    ["kept", "Inbox/preserved.md"],
+    ["documents", "../Inbox/preserved.md"],
+    ["documents", "zotlit-profile.unrelated.md"],
+  ] as const)(
+    "rejects edited copy metadata with an unowned %s path",
+    async (field, path) => {
+      let storedSettings: unknown;
+      let files: Record<string, string>;
+      {
+        await using first = await makeVaultHarness({
+          ...originals,
+          "Inbox/preserved.md": "User research",
+        });
+        const copy = await start(first);
+        files = Object.fromEntries(first.vault.contents);
+        const manifest = JSON.parse(files[copy.path]!) as Record<
+          string,
+          unknown
+        >;
+        manifest[field] = [path];
+        files[copy.path] = JSON.stringify(manifest);
+        storedSettings = first.storedSettings();
+      }
+      await using resumed = await makeVaultHarness(files!, { storedSettings });
+      await expect(resumed.service.resumeRepair()).rejects.toThrow(
+        "copy-invalid",
+      );
+      expect(resumed.vault.contents.get("Inbox/preserved.md")).toBe(
+        "User research",
+      );
+      expect(
+        resumed.vault.contents.has("templates/zotlit-profile.default.md"),
+      ).toBe(false);
+    },
+  );
+
+  it("keeps the established raw filename comparison during repair review", async () => {
+    await using harness = await makeVaultHarness({
+      ...originals,
+      "templates/zotlit-filename.liquid.md": "{{ zt.citationKey }}\n",
+    });
+    await start(harness, "'unchanged-field'");
+    const review = await harness.service.reviewRepair();
+    expect(
+      review.comparisons.find(({ output }) => output === "filename"),
+    ).toEqual({
+      output: "filename",
+      outcome: "matching",
+      original: "smith2024\n",
+      candidate: "smith2024\n",
+    });
+  });
+
+  it("includes a newly added original citation when the user requests a new comparison", async () => {
+    await using harness = await makeVaultHarness(originals);
+    const copy = await start(harness);
+    edit(harness, copy.profilePath!, "'kept-after-new-source'");
+    await vi.advanceTimersByTimeAsync(500);
+    harness.vault.createFile("templates/zotlit-cite.liquid.md", CITE_LIQUID);
+    expect(await harness.service.reviewRepair()).toMatchObject({
+      valid: false,
+      diagnostic: { code: "originals-changed" },
+    });
+    const refreshing = harness.service.refreshRepairOriginals();
+    await vi.advanceTimersByTimeAsync(500);
+    const review = await refreshing;
+    expect(review.valid).toBe(true);
+    expect(review.documents.map(({ path }) => path)).toEqual([
+      "templates/zotlit-profile.default.md",
+      "templates/zotlit-citation.md",
+    ]);
+    expect(
+      review.comparisons.find(({ output }) => output === "main-citation"),
+    ).toMatchObject({ outcome: "matching", candidate: "<[@smith2024]>" });
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter")
+        ?.candidate,
+    ).toBe('{"repair-field":"kept-after-new-source"}');
+  });
+
+  it("keeps a saved copy resumable if persisting discard fails", async () => {
+    await using harness = await makeVaultHarness(originals);
+    const copy = await start(harness);
+    await harness.settings.flush();
+    vi.spyOn(harness.plugin, "saveData").mockRejectedValueOnce(
+      new Error("Discard save unavailable"),
+    );
+    await expect(harness.service.discardRepair()).rejects.toThrow(
+      "Discard save unavailable",
+    );
+    expect(harness.settings.current?.["note.template-conversion-copy"]).toBe(
+      copy.path,
+    );
+    expect(harness.vault.contents.has(copy.profilePath!)).toBe(true);
+    expect((await harness.service.resumeRepair())?.profilePath).toBe(
+      copy.profilePath,
+    );
+    for (const [path, source] of Object.entries(originals))
+      expect(harness.vault.contents.get(path)).toBe(source);
+  });
+
+  it("keeps unresolved copied evaluation failures blocked", async () => {
+    await using harness = await makeVaultHarness(originals);
+    await start(harness);
+    const review = await harness.service.reviewRepair();
+    expect(review.valid).toBe(false);
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter")
+        ?.outcome,
+    ).toBe("candidate-failed");
+    expect(
+      await harness.service.acceptRepair(review, "reviewed-changes"),
+    ).toMatchObject({ outcome: "refused" });
+  });
 });

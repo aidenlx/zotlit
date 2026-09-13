@@ -400,7 +400,7 @@ export async function openTemplateWorkbench(
   options: {
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
-    tab?: "match";
+    tab?: "match" | "properties";
     explainUnsupported?: boolean;
     customize?: boolean;
     defaultProfile?: boolean;

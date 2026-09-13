@@ -1,5 +1,6 @@
 import { join } from "node:path/posix";
-import type { FileManager, Vault, Workspace } from "obsidian";
+import { TextFileView } from "obsidian";
+import type { App } from "obsidian";
 
 import {
   getIndexedItemIDsByLibrary,
@@ -17,11 +18,17 @@ import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
+import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import { ConversionCopy, ConversionRepairError } from "./conversion-copy";
+import type {
+  ConversionCopyEditorScope,
+  ConversionRepairReview,
+} from "./conversion-copy";
 import {
   citationPath,
   partialPath,
@@ -47,6 +54,7 @@ interface MigrationSettings {
         | "note.default-profile"
         | "note.template-conversion-pending"
         | "note.template-conversion-result"
+        | "note.template-conversion-copy"
         | "template.folder"
         | "note.frontmatter-fields"
         | "template.auto-trim-leading"
@@ -55,10 +63,16 @@ interface MigrationSettings {
     >
   >;
   update(patch: Partial<Settings>): void;
+  updatePersisted(
+    patch: Partial<Settings>,
+    beforePublish?: () => void,
+  ): Promise<void>;
   flush(): Promise<void>;
 }
 
 interface MigrationTemplateService {
+  holdActivation(): Promise<AsyncDisposable>;
+  prepareActivation(): Promise<() => void>;
   readonly javascriptTemplatesEnabled: boolean;
   refresh(): Promise<void>;
   waitUntilSettled(
@@ -77,17 +91,8 @@ interface MigrationTemplateService {
   ): Promise<ConvertedLegacyTemplateDocuments>;
 }
 
-interface MigrationApp {
-  vault: Pick<
-    Vault,
-    "getFileByPath" | "create" | "cachedRead" | "getMarkdownFiles"
-  >;
-  fileManager: Pick<FileManager, "trashFile">;
-  workspace: Pick<Workspace, "onLayoutReady">;
-}
-
 export interface LiteratureNoteTemplateMigrationOptions {
-  app: MigrationApp;
+  app: App;
   settings: MigrationSettings;
   template: MigrationTemplateService;
   loadVerificationData: (options: {
@@ -165,6 +170,7 @@ export async function loadLiteratureNoteTemplateMigrationData(
       };
     }
     verificationBase ??= {
+      itemKey: indexedKey,
       note: note.data,
       filename: filename.data,
       annotation: null,
@@ -310,6 +316,12 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   readonly #loadVerificationData;
   readonly #openPrompt;
   #stopped = false;
+  #copy: ConversionCopy | undefined;
+  #copyLoading: Promise<ConversionCopy> | undefined;
+  #creatingCopy: Promise<ConversionCopy> | undefined;
+  #repairReview:
+    | { review: ConversionRepairReview; snapshot: string }
+    | undefined;
   #prepared: PreparedConversion | undefined;
   #selected: LiteratureNoteTemplateConversionReview["selected"] = null;
 
@@ -388,6 +400,267 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
         prepared.outcome === "refused" ? prepared.diagnostic.code : null,
     });
     return review;
+  }
+
+  /** Persist inactive sources before opening the copied field in the native editor. */
+  startRepair(): Promise<ConversionCopy> {
+    return (this.#creatingCopy ??= this.#createRepair().finally(() => {
+      this.#creatingCopy = undefined;
+    }));
+  }
+
+  async #createRepair(): Promise<ConversionCopy> {
+    await this.ready;
+    const existing = await this.resumeRepair();
+    if (existing) return existing;
+    const settings = {
+      ...defaults,
+      ...(this.#settings.current ?? (await this.#settings.loaded)),
+    };
+    if ((await this.#template.waitUntilSettled(5000)) !== "settled")
+      throw new ConversionRepairError({ code: "copy-loading" });
+    const data = await this.#loadVerificationData({
+      annotation: this.#template
+        .getLegacyLiteratureNoteTemplateFiles()
+        .some((path) => templateFileFromPath(path)?.name === "annotation"),
+    });
+    const copy = await ConversionCopy.create(this.#app, {
+      settings,
+      javascript: this.#template.javascriptTemplatesEnabled,
+      data,
+    });
+    try {
+      this.#settings.update({ "note.template-conversion-copy": copy.path });
+      await this.#settings.flush();
+      this.#copy = copy;
+      logger.debug("Saved inactive Conversion Copy", { path: copy.path });
+      return copy;
+    } catch (error) {
+      this.#settings.update({ "note.template-conversion-copy": null });
+      await copy.discard();
+      throw error;
+    }
+  }
+
+  async resumeRepair(): Promise<ConversionCopy | null> {
+    await this.ready;
+    if (this.#copy) return this.#copy;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    const path = settings["note.template-conversion-copy"];
+    if (!path) return null;
+    this.#copyLoading ??= ConversionCopy.resume(this.#app, path);
+    try {
+      this.#copy = await this.#copyLoading;
+      logger.debug("Resumed inactive Conversion Copy", { path });
+      return this.#copy;
+    } finally {
+      this.#copyLoading = undefined;
+    }
+  }
+
+  /** Resolve before native file initialization, including restored workspace leaves. */
+  async resolveCopyEditor(
+    path: string,
+  ): Promise<ConversionCopyEditorScope | null> {
+    const copy = await this.resumeRepair();
+    if (copy && inTemplateFolder(path, copy.editor.folder)) return copy.editor;
+    if (copy && path.startsWith(`${copy.folder}/`))
+      throw new Error(
+        "This Conversion Copy input does not have an editor document yet",
+      );
+    return null;
+  }
+
+  async reviewRepair(): Promise<ConversionRepairReview> {
+    const copy = await this.resumeRepair();
+    if (!copy) throw new ConversionRepairError({ code: "copy-missing" });
+    this.#repairReview = undefined;
+    await this.#flushCopyEditors(copy.folder);
+    const settings = {
+      ...defaults,
+      ...(this.#settings.current ?? (await this.#settings.loaded)),
+    };
+    if (
+      !(await copy.originalsMatch(
+        settings,
+        this.#template.javascriptTemplatesEnabled,
+      ))
+    ) {
+      return {
+        copy: copy.path,
+        comparisons: [],
+        valid: false,
+        requiresAcceptance: false,
+        diagnostic: { code: "originals-changed" },
+        documents: [],
+      };
+    }
+    const data = await this.#loadVerificationData({
+      annotation: copy.requiresAnnotation,
+    });
+    if (!data)
+      return {
+        copy: copy.path,
+        comparisons: [],
+        valid: false,
+        requiresAcceptance: false,
+        diagnostic: { code: "no-verification-item" },
+        documents: [],
+      };
+    const snapshot = await copy.fingerprint();
+    const review = await copy.review(data);
+    if (
+      snapshot !== (await copy.fingerprint()) ||
+      !(await copy.originalsMatch(
+        settings,
+        this.#template.javascriptTemplatesEnabled,
+      ))
+    ) {
+      return {
+        ...review,
+        valid: false,
+        diagnostic: { code: "originals-changed" },
+      };
+    }
+    this.#repairReview = { review, snapshot };
+    logger.debug("Reviewed Conversion Copy", {
+      valid: review.valid,
+      changed: review.requiresAcceptance,
+      comparisons: review.comparisons.length,
+    });
+    return review;
+  }
+
+  async acceptRepair(
+    review: ConversionRepairReview,
+    decision: "matching" | "reviewed-changes",
+  ): Promise<LiteratureNoteTemplateMigrationResult> {
+    const copy = await this.resumeRepair();
+    const prepared = this.#repairReview;
+    if (
+      !copy ||
+      !prepared ||
+      prepared.review !== review ||
+      !review.valid ||
+      (review.requiresAcceptance && decision !== "reviewed-changes")
+    ) {
+      return refused(
+        "originals-changed",
+        "The Conversion Copy requires a valid explicit review",
+        "Review the copied templates and accept the reviewed changes.",
+      );
+    }
+    await this.#flushCopyEditors(copy.folder);
+    const settings = {
+      ...defaults,
+      ...(this.#settings.current ?? (await this.#settings.loaded)),
+    };
+    if (
+      prepared.snapshot !== (await copy.fingerprint()) ||
+      !(await copy.originalsMatch(
+        settings,
+        this.#template.javascriptTemplatesEnabled,
+      ))
+    )
+      return refused(
+        "originals-changed",
+        "The reviewed configuration changed",
+        "Review conversion again before activating it.",
+      );
+    this.#repairReview = undefined;
+    const result = await this.activateDocuments({
+      documents: review.documents,
+      legacyFiles: copy.legacyFiles,
+      kept: copy.kept,
+      profilePath: copy.profilePath
+        ? join(settings["template.folder"], CONVERTED_DEFAULT_PROFILE_DOCUMENT)
+        : null,
+      acceptance: decision,
+    });
+    if (result.outcome === "converted") {
+      // The acceptance is durable before copy disposal, so cleanup never reverses it.
+      try {
+        await this.discardRepair();
+      } catch (error) {
+        logger.warn("Accepted Conversion Copy still needs disposal", {
+          path: copy.path,
+          error,
+        });
+      }
+    }
+    return result;
+  }
+
+  /** Explicitly compare the saved repair with the current active originals. */
+  async refreshRepairOriginals(): Promise<ConversionRepairReview> {
+    const copy = await this.resumeRepair();
+    if (!copy) throw new ConversionRepairError({ code: "copy-missing" });
+    await this.#flushCopyEditors(copy.folder);
+    for (const { leaf } of this.#copyEditors(copy.folder)) leaf.detach();
+    const settings = {
+      ...defaults,
+      ...(this.#settings.current ?? (await this.#settings.loaded)),
+    };
+    const data = await this.#loadVerificationData({
+      annotation:
+        copy.requiresAnnotation ||
+        this.#template
+          .getLegacyLiteratureNoteTemplateFiles()
+          .some((path) => templateFileFromPath(path)?.name === "annotation"),
+    });
+    const replacement = await copy.refreshOriginals(
+      settings,
+      this.#template.javascriptTemplatesEnabled,
+      data,
+    );
+    try {
+      await this.#settings.updatePersisted({
+        "note.template-conversion-copy": replacement.path,
+      });
+    } catch (error) {
+      await replacement.discard();
+      throw error;
+    }
+    this.#copy = replacement;
+    this.#repairReview = undefined;
+    try {
+      await copy.discard();
+    } catch (error) {
+      logger.warn("Previous Conversion Copy still needs disposal", {
+        path: copy.path,
+        error,
+      });
+    }
+    return this.reviewRepair();
+  }
+
+  async discardRepair(): Promise<void> {
+    const copy = await this.resumeRepair();
+    if (!copy) return;
+    for (const { leaf } of this.#copyEditors(copy.folder)) leaf.detach();
+    await this.#settings.updatePersisted({
+      "note.template-conversion-copy": null,
+    });
+    this.#copy = undefined;
+    this.#repairReview = undefined;
+    await copy.discard();
+    logger.debug("Discarded inactive Conversion Copy", { path: copy.path });
+  }
+
+  #copyEditors(folder: string) {
+    return this.#app.workspace
+      .getLeavesOfType("zotlit-template-workbench")
+      .flatMap((leaf) => {
+        const view = leaf.view;
+        return view instanceof TextFileView &&
+          view.file?.path.startsWith(`${folder}/`)
+          ? [{ leaf, view }]
+          : [];
+      });
+  }
+
+  async #flushCopyEditors(folder: string): Promise<void> {
+    for (const { view } of this.#copyEditors(folder)) await view.save();
   }
 
   async #baseline(
@@ -504,19 +777,17 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     });
     this.#selected = data
       ? {
-          item: [
+          item: verificationLabel(
+            data.note,
+            ["indexedKey", "title"],
             data.itemKey,
-            verificationLabel(data.note, ["indexedKey", "title"]),
-          ]
-            .filter(Boolean)
-            .join(": "),
+          ),
           annotation: data.annotation
-            ? [
+            ? verificationLabel(
+                data.annotation,
+                ["indexedKey", "text"],
                 data.annotationKey,
-                verificationLabel(data.annotation, ["indexedKey", "text"]),
-              ]
-                .filter(Boolean)
-                .join(": ")
+              )
             : null,
           citation: data.citation.map(({ citationKey }) => citationKey ?? "—"),
         }
@@ -613,6 +884,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     legacyFiles: readonly string[];
     kept: readonly string[];
     profilePath: string | null;
+    acceptance?: "matching" | "reviewed-changes";
   }): Promise<LiteratureNoteTemplateMigrationResult> {
     await this.ready;
     const { documents, legacyFiles, kept, profilePath } = options;
@@ -631,48 +903,55 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     }
 
     const created: string[] = [];
-    try {
-      for (const { path, source } of documents) {
-        await this.#app.vault.create(path, source);
-        created.push(path);
-      }
-    } catch (error) {
-      // A half-written pass would block its own retry: the documents already
-      // created occupy the paths the next run refuses on, and one of them is
-      // the Profile document that stands the prompt down. Undo them, so the
-      // vault is again what the user handed the pass.
-      await this.#rollback(created);
-      throw error;
-    }
-    try {
-      this.#settings.update({
-        "note.template-conversion-pending": false,
-        "note.template-conversion-result": {
-          document: profilePath,
-          documents: documents.map(({ path }) => path),
-          trashed: 0,
-          trashedFiles: [],
-          pendingCleanup: [...new Set(legacyFiles)].filter((path) =>
-            this.#app.vault.getFileByPath(path),
-          ),
-          kept: [...kept],
-        },
-      });
-      await this.#settings.flush();
-    } catch (error) {
-      this.#settings.update({
-        "note.template-conversion-pending": previousPending,
-        "note.template-conversion-result": previousResult,
-      });
-      await this.#rollback(created);
+    {
+      await using _activation = await this.#template.holdActivation();
       try {
-        await this.#settings.flush();
-      } catch (restoreError) {
-        logger.error("Failed to persist conversion rollback", {
-          error: restoreError,
-        });
+        for (const { path, source } of documents) {
+          await this.#app.vault.create(path, source);
+          created.push(path);
+        }
+      } catch (error) {
+        // A half-written pass would block its own retry: the documents already
+        // created occupy the paths the next run refuses on, and one of them is
+        // the Profile document that stands the prompt down. Undo them, so the
+        // vault is again what the user handed the pass.
+        await this.#rollback(created);
+        throw error;
       }
-      throw error;
+      try {
+        const publishRegistry = await this.#template.prepareActivation();
+        await this.#settings.updatePersisted(
+          {
+            "note.template-conversion-pending": false,
+            "note.template-conversion-result": {
+              document: profilePath,
+              ...(options.acceptance ? { acceptance: options.acceptance } : {}),
+              documents: documents.map(({ path }) => path),
+              trashed: 0,
+              trashedFiles: [],
+              pendingCleanup: [...new Set(legacyFiles)].filter((path) =>
+                this.#app.vault.getFileByPath(path),
+              ),
+              kept: [...kept],
+            },
+          },
+          publishRegistry,
+        );
+      } catch (error) {
+        this.#settings.update({
+          "note.template-conversion-pending": previousPending,
+          "note.template-conversion-result": previousResult,
+        });
+        await this.#rollback(created);
+        try {
+          await this.#settings.flush();
+        } catch (restoreError) {
+          logger.error("Failed to persist conversion rollback", {
+            error: restoreError,
+          });
+        }
+        throw error;
+      }
     }
     logger.debug("Activated accepted template conversion", {
       documents: created,
@@ -756,8 +1035,17 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   async #load(): Promise<void> {
     await Promise.all([this.#settings.loaded, this.#template.ready]);
     await using stack = new AsyncDisposableStack();
-    stack.defer(() => {
+    stack.defer(async () => {
       this.#stopped = true;
+      await this.#copyLoading?.then(
+        (copy) => copy[Symbol.asyncDispose](),
+        () => {},
+      );
+      await this.#creatingCopy?.then(
+        (copy) => copy[Symbol.asyncDispose](),
+        () => {},
+      );
+      await this.#copy?.[Symbol.asyncDispose]();
     });
     await this.#detectTemplates(false);
     this.commit(stack.move());
@@ -838,12 +1126,18 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   }
 }
 
-function verificationLabel(data: object, keys: readonly string[]): string {
+function verificationLabel(
+  data: object,
+  keys: readonly string[],
+  selectedKey?: string,
+): string {
   const values = keys.flatMap((key) => {
     const value: unknown = Reflect.get(data, key);
     return typeof value === "string" && value.length > 0 ? [value] : [];
   });
-  return values.join(": ") || "—";
+  return (
+    [...new Set([selectedKey, ...values].filter(Boolean))].join(": ") || "—"
+  );
 }
 
 function refused(

@@ -161,7 +161,20 @@ import {
 
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
 const logger = getLogger(["views", "template-workbench"]);
-export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
+export type TemplateWorkbenchDeps = Omit<
+  ExplorerViewDeps,
+  "pluginVersion" | "settings"
+> & {
+  settings: Pick<
+    ExplorerViewDeps["settings"],
+    "current" | "loaded" | "subscribe"
+  >;
+  resolveCopyEditor?: (
+    path: string,
+  ) => Promise<
+    | import("@/services/template/conversion-copy").ConversionCopyEditorScope
+    | null
+  >;
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
@@ -227,7 +240,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
   /** Renders compact examples independently of companion views. */
   readonly scheduler: RenderScheduler<NativeRenderResult>;
-  readonly preview: NativePreviewSession | null;
+  preview: NativePreviewSession | null;
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
@@ -253,7 +266,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get matchDatabase() {
     return this.#deps.db;
   }
-  readonly #deps: TemplateWorkbenchDeps;
+  #deps: TemplateWorkbenchDeps;
+  readonly #baseDeps: TemplateWorkbenchDeps;
+  #copyFolder: string | null = null;
+  #settingsUnsubscribe: (() => void) | undefined;
   readonly #host: ReturnType<typeof createTemplateWorkbenchHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
@@ -290,16 +306,18 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
     super(leaf);
+    this.#baseDeps = deps;
     this.#deps = deps;
     this.contentEl.addClass("zt-root", "zt-template-workbench");
-    const render: WorkbenchHost["render"] =
-      (deps.nativePreview
-        ? (request) => renderNativeTemplate(deps.nativePreview!, request)
-        : deps.render) ??
-      ((request) =>
-        Promise.resolve(
-          failedRender(renderIdentity(request), { code: "render-error" }),
-        ));
+    const render: WorkbenchHost["render"] = (request) => {
+      const current = this.#deps;
+      return current.nativePreview
+        ? renderNativeTemplate(current.nativePreview, request)
+        : (current.render?.(request) ??
+            Promise.resolve(
+              failedRender(renderIdentity(request), { code: "render-error" }),
+            ));
+    };
     this.#host = createTemplateWorkbenchHost(
       this.app,
       {
@@ -315,7 +333,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         insertTarget: () => this.insertTarget,
         partials: {
           names: () =>
-            deps.templates.loaded ? deps.templates.getPartialNames() : [],
+            this.#deps.templates.loaded
+              ? this.#deps.templates.getPartialNames()
+              : [],
           create: (query) => this.createPartial(query),
         },
         extractPartial: (source) => this.extractPartial(source),
@@ -418,22 +438,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         }
       }),
     );
-    this.register(
-      deps.settings.subscribe((settings) => {
-        if (!settings) return;
-        const bindings = settings["note.default-profile"].bindings;
-        this.#bindingDefaults = {
-          folder: bindings["note.literature-folder"],
-          citationStyle: bindings["citation.references-style"],
-          importFolder: bindings["note.import-folder"],
-          importColoredHighlights: bindings["note.import-colored-highlights"],
-          importAnnotationsAsTemplate:
-            bindings["note.import-annotations-as-template"],
-        };
-        this.scheduler.invalidate();
-        this.#mount();
-      }),
-    );
+    this.#watchSettings();
+    this.register(() => this.#settingsUnsubscribe?.());
     this.register(
       this.store.subscribe((state, previous) => {
         if (
@@ -445,6 +451,52 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           this.app.workspace.requestSaveLayout();
       }),
     );
+  }
+
+  #watchSettings(): void {
+    this.#settingsUnsubscribe?.();
+    this.#settingsUnsubscribe = this.#deps.settings.subscribe((settings) => {
+      if (!settings) return;
+      const bindings = settings["note.default-profile"].bindings;
+      this.#bindingDefaults = {
+        folder: bindings["note.literature-folder"],
+        citationStyle: bindings["citation.references-style"],
+        importFolder: bindings["note.import-folder"],
+        importColoredHighlights: bindings["note.import-colored-highlights"],
+        importAnnotationsAsTemplate:
+          bindings["note.import-annotations-as-template"],
+      };
+      this.scheduler.invalidate();
+      this.#mount();
+    });
+  }
+
+  async #resolveCopyScope(path: string): Promise<void> {
+    const scope = await this.#baseDeps.resolveCopyEditor?.(path);
+    if ((scope?.folder ?? null) === this.#copyFolder) return;
+    this.preview?.[Symbol.dispose]();
+    this.#copyFolder = scope?.folder ?? null;
+    this.#deps = scope
+      ? {
+          ...this.#baseDeps,
+          settings: scope.settings,
+          templates: scope.templates,
+          profile: undefined,
+          nativePreview: this.#baseDeps.nativePreview
+            ? {
+                ...this.#baseDeps.nativePreview,
+                settings: scope.settings,
+                templates: scope.templates,
+              }
+            : undefined,
+        }
+      : this.#baseDeps;
+    this.preview = this.#deps.nativePreview
+      ? new NativePreviewSession(this.#deps.nativePreview, this.scheduler, {
+          item: this.store.getState().item,
+        })
+      : null;
+    this.#watchSettings();
   }
 
   get nativeRenderDeps(): NativeRenderDeps | undefined {
@@ -861,6 +913,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.preview?.setSource(this.#controller.source);
   }
   override async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    if (
+      this.#baseDeps.resolveCopyEditor &&
+      (this.#copyFolder !== null ||
+        file.path
+          .split("/")
+          .some((part) => part.startsWith("conversion-copy-")))
+    )
+      await this.#resolveCopyScope(file.path);
     const generation = ++this.#readGeneration;
     let reset = clear;
     if (clear) this.#initialRead = generation;
@@ -1083,6 +1143,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     }
   }
   async #restoreState(state: unknown, result: ViewStateResult): Promise<void> {
+    if (
+      state &&
+      typeof state === "object" &&
+      "file" in state &&
+      typeof state.file === "string"
+    )
+      await this.#resolveCopyScope(state.file);
     const builtin =
       !!state &&
       typeof state === "object" &&

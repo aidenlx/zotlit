@@ -36,7 +36,15 @@ export interface WelcomeViewDeps {
   setupActions: SetupActions;
   templateMigration: Pick<
     LiteratureNoteTemplateMigrationService,
-    "prepare" | "activate" | "retryCleanup"
+    | "prepare"
+    | "activate"
+    | "retryCleanup"
+    | "startRepair"
+    | "resumeRepair"
+    | "reviewRepair"
+    | "acceptRepair"
+    | "discardRepair"
+    | "refreshRepairOriginals"
   >;
   release: Pick<ReleaseService, "hasV1Templates">;
 }
@@ -84,6 +92,15 @@ export class WelcomeView extends ItemView {
     }
   }
 
+  openConversionReview(): void {
+    new TemplateConversionReviewModal(this.app, {
+      migration: this.#deps.templateMigration,
+      completed: (result) => {
+        new BaseNotice(templateMigrationNotice(result));
+      },
+    }).open();
+  }
+
   protected override async onOpen(): Promise<void> {
     using stack = new DisposableStack();
 
@@ -122,14 +139,7 @@ export class WelcomeView extends ItemView {
         const result = await this.#deps.templateMigration.retryCleanup();
         new BaseNotice(templateMigrationNotice(result));
       },
-      convertLiteratureNoteTemplates: async () => {
-        new TemplateConversionReviewModal(this.app, {
-          migration: this.#deps.templateMigration,
-          completed: (result) => {
-            new BaseNotice(templateMigrationNotice(result));
-          },
-        }).open();
-      },
+      convertLiteratureNoteTemplates: async () => this.openConversionReview(),
       openExternal: (url) => window.open(url),
       ...this.#deps.setupActions,
     };

@@ -362,6 +362,8 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerTemplateWorkbenchView(this, {
+      resolveCopyEditor: (path) =>
+        services.templateMigration.resolveCopyEditor(path),
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,
