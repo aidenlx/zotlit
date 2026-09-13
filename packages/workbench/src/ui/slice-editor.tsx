@@ -153,6 +153,7 @@ export function SliceEditor({
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   const syntaxSlot = useRef(new Compartment());
+  const problemGutter = useRef<ReturnType<typeof sourceProblemGutter>>(null);
   const syntax = useMemo(
     () =>
       language === "json-e"
@@ -194,6 +195,10 @@ export function SliceEditor({
   };
 
   useEffect(() => {
+    problemGutter.current = sourceProblemGutter(
+      (id) => report.current.revealDiagnosis?.(id),
+      () => report.current.m.workbench_problem_show(),
+    );
     const read: SuggestionSource = (position) => {
       const sliceRange = controller.sliceRange(slice);
       const local =
@@ -303,10 +308,7 @@ export function SliceEditor({
           linter(null, { tooltipFilter: () => [] }),
           // CodeMirror still mounts an empty filtered tooltip.
           EditorView.theme({ ".cm-tooltip-lint": { display: "none" } }),
-          sourceProblemGutter(
-            (id) => report.current.revealDiagnosis?.(id),
-            () => report.current.m.workbench_problem_show(),
-          ),
+          problemGutter.current.extension,
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
           ...(slice === "advanced" ? [lineNumbers()] : []),
@@ -334,6 +336,7 @@ export function SliceEditor({
     editor.current = view;
     return () => {
       editor.current = null;
+      problemGutter.current = null;
       view.destroy();
     };
   }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
@@ -365,6 +368,9 @@ export function SliceEditor({
       json: language === "json-e",
     });
     view.dispatch(setDiagnostics(view.state, diagnostics));
+    view.dispatch({
+      effects: problemGutter.current!.show(diagnostics.length > 0),
+    });
     view.contentDOM.setAttribute(
       "aria-invalid",
       String(invalid || diagnostics.length > 0),

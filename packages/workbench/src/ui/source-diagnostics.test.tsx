@@ -111,3 +111,47 @@ it("opens Problems from the red dot and leaves underlined text editable", () => 
     mounted.getByRole("button", { name: "Return to template" }),
   ).toBeTruthy();
 });
+
+it("keeps the gutter column out of a pane with nothing wrong", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const source = controller.sliceText("note");
+  const from = controller.sliceRange("note").from;
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "render-error",
+        message: "Broken template",
+        sourceSite: { source, offset: from, from: from + 2, to: from + 4 },
+      },
+    ],
+  );
+  const pane = (findings: typeof diagnoses) => (
+    <WorkbenchDiagnosticsProvider value={findings}>
+      <SliceEditor controller={controller} slice="note" label="Note" />
+    </WorkbenchDiagnosticsProvider>
+  );
+  const mounted = render(pane([]));
+  const column = () => mounted.container.querySelector(".cm-problem-gutter");
+  expect(column()).toBeNull();
+  expect(mounted.container.querySelector(".cm-gutters")).toBeNull();
+  act(() => mounted.rerender(pane(diagnoses)));
+  expect(column()).not.toBeNull();
+  expect(mounted.container.querySelectorAll(".cm-problem-button").length).toBe(
+    1,
+  );
+  act(() => mounted.rerender(pane([])));
+  expect(column()).toBeNull();
+  expect(mounted.container.querySelector(".cm-gutters")).toBeNull();
+});
+
+it("leaves the Advanced pane its line numbers when nothing is wrong", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={[]}>
+      <SliceEditor controller={controller} slice="advanced" label="Source" />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  expect(mounted.container.querySelector(".cm-lineNumbers")).not.toBeNull();
+  expect(mounted.container.querySelector(".cm-problem-gutter")).toBeNull();
+});
