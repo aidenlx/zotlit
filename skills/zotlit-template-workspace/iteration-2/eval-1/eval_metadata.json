@@ -1,0 +1,10 @@
+{
+  "eval_id": 1,
+  "eval_name": "citation-partial-heldout",
+  "prompt": "Check both Citation Variants for the Fixture Citation Template and inspect the Books Shared Partial in its supported caller context. Report exactly which source revisions and outputs were checked.",
+  "assertions": [
+    "Both main and alt variants are executed.",
+    "The Shared Partial caller root and Profile context are explicit.",
+    "Source revisions and rendered output are inspected before completion."
+  ]
+}

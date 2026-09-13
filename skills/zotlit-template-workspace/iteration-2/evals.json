@@ -1,0 +1,38 @@
+{
+  "skill_name": "zotlit-template",
+  "cli_contract": 7,
+  "model": "gpt-5.6-luna",
+  "reasoning": "xhigh",
+  "evals": [
+    {
+      "id": "json-e-spread",
+      "prompt": "Add one JSON-e Managed Frontmatter spread to the Books Profile that emits fixture-reviewed: true, preserve existing fields and Literature Note text, then verify the result.",
+      "expected_output": "The agent selects the Books Profile, checks a scratch or direct edit, verifies the emitted field and preservation, and reports freshness and completion evidence.",
+      "assertions": [
+        "The Books Profile and connected source are identified before editing.",
+        "The result exposes the requested fixture-reviewed field.",
+        "The agent checks relevant output and reports preservation and freshness evidence."
+      ]
+    },
+    {
+      "id": "citation-partial-heldout",
+      "prompt": "Check both Citation Variants for the Fixture Citation Template and inspect the Books Shared Partial in its supported caller context. Report exactly which source revisions and outputs were checked.",
+      "expected_output": "Both variants and the selected partial caller are checked with source revisions and output values disclosed.",
+      "assertions": [
+        "Both main and alt variants are executed.",
+        "The Shared Partial caller root and Profile context are explicit.",
+        "Source revisions and rendered output are inspected before completion."
+      ]
+    },
+    {
+      "id": "scratch-draft",
+      "prompt": "Check this complete scratch Profile draft for the Fixture Item without installing it or changing any existing note.",
+      "expected_output": "The draft origin and revision are reported, the requested output is checked, and installed files and notes remain unchanged.",
+      "assertions": [
+        "The scratch path is used as draft input.",
+        "The check returns draft origin and complete output.",
+        "No installed source or note is written."
+      ]
+    }
+  ]
+}

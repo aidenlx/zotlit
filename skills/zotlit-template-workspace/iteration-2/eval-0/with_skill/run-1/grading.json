@@ -1,0 +1,20 @@
+{
+  "expectations": [
+    {
+      "text": "The Books Profile and connected source are identified before editing.",
+      "passed": true,
+      "evidence": "with_skill transcript steps 2–7 inspect the vault, source, Profile, note, and dependencies."
+    },
+    {
+      "text": "The result exposes the requested fixture-reviewed field.",
+      "passed": true,
+      "evidence": "The retained check output reports position-5 fixture-reviewed=true."
+    },
+    {
+      "text": "The agent checks relevant output and reports preservation and freshness evidence.",
+      "passed": true,
+      "evidence": "The check reports freshness=current, preserved update body, and no installed writes."
+    }
+  ],
+  "summary": { "passed": 3, "failed": 0, "total": 3, "pass_rate": 1 }
+}

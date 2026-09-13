@@ -36,7 +36,6 @@ import {
 } from "./cli";
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
-import { RENDER_TEMPLATE_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 
 const PLUGIN_VERSION = "1.2.3";
@@ -209,7 +208,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers["zotlit:template-status"]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: "zotlit:template-status",
       ok: false,
       diagnostic: {
@@ -261,7 +260,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: {
@@ -333,7 +332,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       selection: { key: "ITEM2345", root: "note" },
@@ -542,7 +541,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_STATUS_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_STATUS_COMMAND,
       ok: false,
       diagnostic: {
@@ -584,68 +583,62 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({});
 
     expect(() => JSON.parse(output)).toThrow();
-    expect(output).toContain("test ok");
+    expect(output).toContain("template-check");
     expect(output).toContain("follow diagnostic.hint");
     expect(output).toContain("expect-source=<identity.source.id>");
-    expect(output).toContain("root=note and zt.annotations");
-    expect(output).toContain("can be very large");
-    expect(output).toContain("schemas.<root>.url");
+    expect(output).toContain("Omit expect-source for retained attempt lookups");
+    expect(output).toContain("optional focused field discovery");
+    expect(output).toContain("Edit the Template Document directly");
+    expect(output).toContain("Select and inspect the requested outputs");
     expect(output).toContain(
       "https://zotlit.aidenlx.site/docs/reference/templates",
     );
-    expect(output).toContain("frontmatter-status");
-    expect(output).toContain("frontmatter-eval");
-    expect(output).toContain("frontmatter-set");
-    expect(output).toContain("frontmatter-remove");
-    expect(output).toContain("frontmatter-reorder");
+    expect(output).not.toContain("frontmatter-set");
+    expect(output).not.toContain("template-source");
     // Every topic the index offers, read from the registry the guide renders
     // it from, so a topic added later cannot be left out of the index.
     for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
   });
 
   it.each([
-    ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
     [
-      "render",
+      "check",
       [
-        // Every form template-render accepts, the Citation Template and a
-        // Shared Partial among them, each with the row that explains it.
-        ...RENDER_TEMPLATE_NAMES,
-        "Renders zotlit-citation.md",
+        "omit expect-source",
+        "attempt=<id> evidence=full output=all",
+        "original source identity",
+      ],
+    ],
+    ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
+    ["citations", ["variant=main", "zotlit-citation.md", "output=citation"]],
+    [
+      "partials",
+      [
+        "SHARED PARTIAL CALLERS",
         "zotlit-partial.<name>.md",
-        "root=<note|annotation|citation>",
+        "document=partial:<name>",
+        "root=note",
+        // Every reserved name, so the guide cannot drift from defaults.ts.
+        "'filename', 'note', 'annotation', 'content', or 'citation'",
+        "caller bindings",
       ],
     ],
     [
       "profiles",
       [
-        "SHARED PARTIALS",
-        "zotlit-partial.<name>.md",
-        "template=partial:<name>",
-        "root=<note|annotation|citation>",
-        // Every reserved name, so the guide cannot drift from defaults.ts.
-        "'filename', 'note', 'annotation', 'content', or 'citation'",
-        "ADR 0055",
+        "mode=update",
+        "draft=<absolute-path>",
+        "preserving unrelated user text",
       ],
     ],
-    ["editing", ["editablePath", "shadowedFiles"]],
-    [
-      "eta",
-      ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED", "pandocCite"],
-    ],
-    ["liquid", ["liquidjs", "zt", "bq", "group_by", "pandoc_cite"]],
+    ["eta", ["JavaScript Templates", "recovery hint", "pandocCite"]],
+    ["liquid", ["zt", "bq", "group_by", "pandoc_cite"]],
     [
       "frontmatter",
       [
-        "frontmatter-status",
-        "frontmatter-eval",
-        "frontmatter-set",
-        "frontmatter-remove",
-        "frontmatter-reorder",
-        "field=",
-        "key=",
-        "'liquid'",
-        "'javascript'",
+        "SPREAD ENTRIES",
+        "JSON-e",
+        "output=frontmatter",
         "'replace'",
         "'append'",
         "'keep'",
@@ -717,7 +710,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic: "bogus" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
@@ -792,7 +785,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_DATA_COMMAND](params);
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       diagnostic: {
@@ -1063,7 +1056,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: { key: "ITEM2345", root: "note", format: "json" },
@@ -1122,7 +1115,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         identity: IDENTITY,
@@ -1170,7 +1163,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: true,
       pluginVersion: PLUGIN_VERSION,
@@ -1224,7 +1217,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_SCHEMA_COMMAND,
         ok: false,
         diagnostic: {
@@ -1271,7 +1264,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: false,
       diagnostic: {
@@ -1515,7 +1508,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: true,
       request: {
@@ -1619,7 +1612,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       request: {
@@ -1730,7 +1723,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1783,7 +1776,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1832,7 +1825,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 6,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1905,7 +1898,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[TEMPLATE_RENDER_COMMAND](params);
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -2162,7 +2155,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2246,7 +2239,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2330,7 +2323,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2409,7 +2402,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: TEMPLATE_GUIDE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2571,7 +2564,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2678,7 +2671,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2814,7 +2807,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: { key: "ITEM2345", format: "json", adhoc: null },
@@ -2981,7 +2974,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: {
@@ -3247,7 +3240,7 @@ describe("Template Workbench CLI", () => {
         },
       ]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_SET_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3666,7 +3659,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_REMOVE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3860,7 +3853,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 6,
+        contractVersion: 7,
         command: FRONTMATTER_REORDER_COMMAND,
         ok: true,
         identity: IDENTITY,

@@ -38,6 +38,8 @@ import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
 
 export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
+const ATTEMPT_LOOKUP_HELP =
+  "Keep the same vault prefix. Use only attempt, output, and evidence for a retained lookup; omit expect-source and all input selectors. Example: zotlit:template-check attempt=<id> evidence=full output=all. The retained result carries the original source identity.";
 export const checkFlags = {
   root: {
     value: "<note|annotation|citation>",
@@ -89,7 +91,7 @@ export const checkFlags = {
   },
   attempt: {
     value: "<id>",
-    description: "Read a retained attempt without rerunning it",
+    description: `Read a retained attempt without rerunning it. ${ATTEMPT_LOOKUP_HELP}`,
   },
   evidence: {
     value: "full",
@@ -97,7 +99,8 @@ export const checkFlags = {
   },
   "expect-source": {
     value: "<source-id>",
-    description: "Required Zotero source identity",
+    description:
+      "Zotero source identity assertion for a new check; omit for retained attempt lookups",
   },
 } satisfies CliFlags;
 export const CHECK_GUIDE = `TEMPLATE CHECK
@@ -131,6 +134,9 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   An empty rendered string is a successful output. Any component failure fails the check.
   Each run receives a new attempt ID. The last 32 attempts remain available until
   plugin reload. Reading an expired attempt reports ATTEMPT_NOT_FOUND.
+
+RETAINED ATTEMPTS
+  ${ATTEMPT_LOOKUP_HELP}
 
 FLAGS
 ${Object.entries(checkFlags)
@@ -197,12 +203,12 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         ...(Object.keys(outputs).length ? { outputs } : {}),
       });
     };
-    const fail = (code: string, message: string) =>
+    const fail = (code: string, message: string, hint?: string) =>
       answer({
         contractVersion: CONTRACT_VERSION,
         command: TEMPLATE_CHECK_COMMAND,
         ok: false,
-        diagnostic: { code, message },
+        diagnostic: { code, message, ...(hint === undefined ? {} : { hint }) },
       });
     if (
       Object.keys(params).some((key) => !(key in checkFlags)) ||
@@ -265,6 +271,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         return fail(
           "INVALID_SELECTOR",
           "An attempt lookup takes only attempt, output, and evidence.",
+          ATTEMPT_LOOKUP_HELP,
         );
       const retained = attempts.get(params.attempt as string);
       return retained

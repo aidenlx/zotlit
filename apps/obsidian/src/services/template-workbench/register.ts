@@ -40,6 +40,8 @@ import {
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { loadCitationData, loadTemplateData } from "./data";
+import { diagnostic, envelope } from "./envelope";
+import type { WorkbenchCommand } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
   createInspectHandler,
@@ -382,6 +384,32 @@ export function registerTemplateWorkbench(
     },
   });
 
+  const registerRetired = (
+    command: WorkbenchCommand,
+    flags: CliFlags | null,
+  ) => {
+    plugin.registerCliHandler(
+      command,
+      "Retired: use template-inspect, template-data, and template-check",
+      flags === null
+        ? null
+        : Object.fromEntries(
+            Object.entries(flags).map(([name, flag]) => [
+              name,
+              { ...flag, required: false, description: "Retired parameter" },
+            ]),
+          ),
+      async () =>
+        envelope(command, {
+          ok: false,
+          diagnostic: diagnostic(
+            "COMMAND_RETIRED",
+            `${command} is retired from Template Document authoring.`,
+          ),
+        }),
+    );
+  };
+
   plugin.registerCliHandler(
     TEMPLATE_STATUS_COMMAND,
     "Report ZotLit Template Workbench state",
@@ -394,64 +422,19 @@ export function registerTemplateWorkbench(
     dataFlags(),
     handlers[TEMPLATE_DATA_COMMAND],
   );
-  plugin.registerCliHandler(
-    TEMPLATE_SCHEMA_COMMAND,
-    "Return download URLs for every ZotLit Template data schema",
-    null,
-    handlers[TEMPLATE_SCHEMA_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_RENDER_COMMAND,
-    "Render an active ZotLit Template in memory, rendered bytes under 'markdown'",
-    renderFlags(),
-    handlers[TEMPLATE_RENDER_COMMAND],
-  );
-  plugin.registerCliHandler(
-    TEMPLATE_DOCUMENT_RENDER_COMMAND,
-    "Render a Literature Note Template document in memory, create and update bytes under 'render'",
-    documentRenderFlags(),
-    handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND],
-  );
+  registerRetired(TEMPLATE_SCHEMA_COMMAND, null);
+  registerRetired(TEMPLATE_RENDER_COMMAND, renderFlags());
+  registerRetired(TEMPLATE_DOCUMENT_RENDER_COMMAND, documentRenderFlags());
   plugin.registerCliHandler(
     TEMPLATE_GUIDE_COMMAND,
     "Print the ZotLit Template Workbench guide",
     guideFlags(),
     handlers[TEMPLATE_GUIDE_COMMAND],
   );
-  plugin.registerCliHandler(
-    TEMPLATE_SOURCE_COMMAND,
-    "Return the active ZotLit Template body, under 'source'",
-    sourceFlags(),
-    handlers[TEMPLATE_SOURCE_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_STATUS_COMMAND,
-    "Report the configured ZotLit Managed Frontmatter fields",
-    null,
-    handlers[FRONTMATTER_STATUS_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_EVAL_COMMAND,
-    "Evaluate ZotLit Managed Frontmatter fields, or one ad-hoc expression, against an item",
-    frontmatterEvalFlags(),
-    handlers[FRONTMATTER_EVAL_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_SET_COMMAND,
-    "Add or update one ZotLit Managed Frontmatter field; omitted parameters on an existing field keep their current values",
-    frontmatterSetFlags(),
-    handlers[FRONTMATTER_SET_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_REMOVE_COMMAND,
-    "Delete one ZotLit Managed Frontmatter field",
-    frontmatterRemoveFlags(),
-    handlers[FRONTMATTER_REMOVE_COMMAND],
-  );
-  plugin.registerCliHandler(
-    FRONTMATTER_REORDER_COMMAND,
-    "Arrange the configured ZotLit Managed Frontmatter fields into a new order",
-    frontmatterReorderFlags(),
-    handlers[FRONTMATTER_REORDER_COMMAND],
-  );
+  registerRetired(TEMPLATE_SOURCE_COMMAND, sourceFlags());
+  registerRetired(FRONTMATTER_STATUS_COMMAND, null);
+  registerRetired(FRONTMATTER_EVAL_COMMAND, frontmatterEvalFlags());
+  registerRetired(FRONTMATTER_SET_COMMAND, frontmatterSetFlags());
+  registerRetired(FRONTMATTER_REMOVE_COMMAND, frontmatterRemoveFlags());
+  registerRetired(FRONTMATTER_REORDER_COMMAND, frontmatterReorderFlags());
 }

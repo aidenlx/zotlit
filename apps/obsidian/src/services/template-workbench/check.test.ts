@@ -119,6 +119,38 @@ async function fixture(
 }
 
 describe("plain document checks", () => {
+  it("recovers from a source assertion on retained lookup without rerunning the check", async () => {
+    await using f = await fixture();
+    const checked = await f.check({
+      profile: "Books",
+      key: "ABCD2345",
+      "expect-source": "fixture",
+    });
+    expect(checked.ok).toBe(true);
+    const refused = await f.check({
+      attempt: checked.attempt,
+      "expect-source": "fixture",
+    });
+    expect(refused).toMatchObject({
+      ok: false,
+      diagnostic: { code: "INVALID_SELECTOR" },
+    });
+    expect(refused.diagnostic.hint).toContain("omit expect-source");
+    expect(refused.diagnostic.hint).toContain(
+      "attempt=<id> evidence=full output=all",
+    );
+    f.zoteroPref.sourceId = "later-source";
+    const recovered = await f.check({
+      attempt: checked.attempt,
+      evidence: "full",
+      output: "all",
+    });
+    expect(recovered).toMatchObject({ ok: true, attempt: checked.attempt });
+    expect(recovered.identity).toEqual(checked.identity);
+    expect(recovered.outputs.body).toContain("Paper");
+    expect(recovered.checks).toEqual(checked.checks);
+  });
+
   it("preserves an unreadable binding Profile path in dependency failure evidence", async () => {
     await using f = await fixture();
     const draft = await f.draft("Scratch");
@@ -644,6 +676,50 @@ My conclusion.
     expect(result.outputs.body).toContain("My introduction.");
     expect(result.outputs.body).toContain("Managed");
     expect(result.outputs.body).not.toContain("Old generated text");
+  });
+
+  it("checks a scratch spread and body edit against a saved note in every output mode", async () => {
+    await using f = await fixture(SOURCE, { "Notes/Paper.md": existing });
+    const before = new Map(f.vault.contents);
+    const draft = await f.draft(
+      SOURCE.replace(
+        "  - value: { tags: [first] }",
+        "  - value: { tags: [first], reviewed: true }",
+      ).replace("%}Managed{%", "%}New generated paragraph{%"),
+    );
+    const params = {
+      draft,
+      mode: "update",
+      key: "1:ABCD2345",
+      note: "Notes/Paper.md",
+      "expect-source": "fixture",
+    };
+    const compact = await f.check(params);
+    const selected = await f.check({ ...params, output: "body,frontmatter" });
+    const all = await f.check({ ...params, output: "all" });
+    for (const result of [compact, selected, all]) {
+      expect(result).toMatchObject({
+        ok: true,
+        input: { origin: "draft" },
+        baseline: { kind: "real", path: "Notes/Paper.md" },
+        operation: { outcome: "previewed" },
+      });
+      expect(result.checks).toEqual(compact.checks);
+    }
+    expect(compact.outputs).toBeUndefined();
+    expect(selected.outputs).toEqual({
+      body: all.outputs.body,
+      frontmatter: all.outputs.frontmatter,
+    });
+    expect(all.outputs.body).toBe(
+      "My introduction.\n%%zt-managed%%\nNew generated paragraph\n%%/zt-managed%%\nMy conclusion.\n",
+    );
+    expect(parse(all.outputs.frontmatter)).toMatchObject({
+      personal: "keep me",
+      reviewed: true,
+      title: "Paper",
+    });
+    expect(f.vault.contents).toEqual(before);
   });
 
   it.each(["real", "supplied"] as const)(
