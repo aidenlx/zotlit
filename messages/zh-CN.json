@@ -994,6 +994,7 @@
   "settings_migration_reminder_name": "完成从 v1 的迁移",
   "settings_migration_reminder_mark_done": "标记为已完成",
   "settings_template_conversion_reminder_action": "查看转换",
+  "settings_template_conversion_reminder_desc": "您的旧版模板仍在使用。准备好后即可查看转换。",
   "settings_resources_whats_new_name": "v{version} 的新功能",
   "settings_resources_whats_new_desc": "查看此版本中发生了什么变化。",
   "settings_resources_whats_new_button": "查看发行说明",
