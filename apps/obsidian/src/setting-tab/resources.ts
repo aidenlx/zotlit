@@ -42,9 +42,16 @@ export function migrationReminderItem(
 export function templateConversionReminderItem(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
+  const cleanupPending =
+    !!ctx.settings.current?.["note.template-conversion-result"]?.pendingCleanup
+      ?.length;
   return {
-    name: m.welcome_template_conversion_title(),
-    desc: m.settings_template_conversion_reminder_desc(),
+    name: cleanupPending
+      ? m.welcome_template_cleanup_title()
+      : m.welcome_template_conversion_title(),
+    desc: cleanupPending
+      ? m.welcome_template_cleanup_reminder()
+      : m.settings_template_conversion_reminder_desc(),
     render: (setting) => {
       setting.addButton((button) =>
         button
@@ -86,7 +93,9 @@ export function resourcesGroup(
 ): SettingDefinitionGroup<SettingsKey> {
   const pending = ctx.settings.current?.["release.migration-pending"] === true;
   const templateConversionPending =
-    ctx.settings.current?.["note.template-conversion-pending"] === true;
+    ctx.settings.current?.["note.template-conversion-pending"] === true ||
+    !!ctx.settings.current?.["note.template-conversion-result"]?.pendingCleanup
+      ?.length;
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",

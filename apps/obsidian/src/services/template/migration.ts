@@ -233,6 +233,8 @@ export type LiteratureNoteTemplateMigrationResult =
        *  Literature Note slots to fold into one. */
       document: string | null;
       trashed: readonly string[];
+      documents: readonly string[];
+      pendingCleanup: readonly string[];
       /** Legacy files left in place and reported: the Eta side of a
        *  mixed-language `cite` / `cite2` pair. */
       kept: readonly string[];
@@ -265,7 +267,8 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 
   async convert(): Promise<LiteratureNoteTemplateMigrationResult> {
     await this.ready;
-    const settings = await this.#settings.loaded;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    if (settings["note.template-conversion-result"]) return this.retryCleanup();
     const slotFiles = this.#template.getLegacyLiteratureNoteTemplateFiles();
     const legacy = this.#template.getLegacyTemplateDocuments();
     if (
@@ -334,6 +337,26 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       throw error;
     }
 
+    return this.activateDocuments({
+      documents,
+      legacyFiles,
+      kept,
+      profilePath,
+    });
+  }
+
+  /** Commit the accepted document set before disposing of original sources. */
+  async activateDocuments(options: {
+    documents: readonly { path: string; source: string }[];
+    legacyFiles: readonly string[];
+    kept: readonly string[];
+    profilePath: string | null;
+  }): Promise<LiteratureNoteTemplateMigrationResult> {
+    await this.ready;
+    const { documents, legacyFiles, kept, profilePath } = options;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    const previousPending = settings["note.template-conversion-pending"];
+    const previousResult = settings["note.template-conversion-result"];
     const occupied = documents.find(({ path }) =>
       this.#app.vault.getFileByPath(path),
     );
@@ -359,35 +382,96 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       await this.#rollback(created);
       throw error;
     }
-    this.#settings.update({ "note.template-conversion-pending": false });
-    await this.#settings.flush();
-
-    const trashed: string[] = [];
-    for (const path of legacyFiles) {
-      const file = this.#app.vault.getFileByPath(path);
-      if (!file) continue;
-      await this.#app.fileManager.trashFile(file);
-      trashed.push(path);
+    try {
+      this.#settings.update({
+        "note.template-conversion-pending": false,
+        "note.template-conversion-result": {
+          document: profilePath,
+          documents: documents.map(({ path }) => path),
+          trashed: 0,
+          trashedFiles: [],
+          pendingCleanup: [...new Set(legacyFiles)].filter((path) =>
+            this.#app.vault.getFileByPath(path),
+          ),
+          kept: [...kept],
+        },
+      });
+      await this.#settings.flush();
+    } catch (error) {
+      this.#settings.update({
+        "note.template-conversion-pending": previousPending,
+        "note.template-conversion-result": previousResult,
+      });
+      await this.#rollback(created);
+      try {
+        await this.#settings.flush();
+      } catch (restoreError) {
+        logger.error("Failed to persist conversion rollback", {
+          error: restoreError,
+        });
+      }
+      throw error;
     }
-    this.#settings.update({
-      "note.template-conversion-result": {
-        document: profilePath,
-        trashed: trashed.length,
-      },
-    });
-    await this.#settings.flush();
-    logger.info("Converted legacy templates", {
-      documents: documents.map(({ path }) => path),
-      trashed,
+    logger.debug("Activated accepted template conversion", {
+      documents: created,
+      legacyFiles,
       kept,
     });
-    return {
-      outcome: "converted",
-      document:
-        profilePath === null ? null : CONVERTED_DEFAULT_PROFILE_DOCUMENT,
-      trashed,
-      kept,
+    return this.retryCleanup();
+  }
+
+  /** Retry only the accepted conversion's remaining trash operations. */
+  async retryCleanup(): Promise<LiteratureNoteTemplateMigrationResult> {
+    await this.ready;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    const accepted = settings["note.template-conversion-result"];
+    if (!accepted) {
+      return refused(
+        "no-legacy-templates",
+        "No accepted conversion was found",
+        "Review conversion before cleaning up its source files.",
+      );
+    }
+    const pendingCleanup: string[] = [];
+    const trashedFiles = [...(accepted.trashedFiles ?? [])];
+    for (const path of accepted.pendingCleanup ?? []) {
+      try {
+        const file = this.#app.vault.getFileByPath(path);
+        if (file) await this.#app.fileManager.trashFile(file);
+        if (!trashedFiles.includes(path)) trashedFiles.push(path);
+      } catch (error) {
+        pendingCleanup.push(path);
+        logger.warn("Converted template source still needs cleanup", {
+          path,
+          error,
+        });
+      }
+    }
+    const result = {
+      ...accepted,
+      trashed: accepted.trashedFiles ? trashedFiles.length : accepted.trashed,
+      trashedFiles,
+      pendingCleanup,
     };
+    this.#settings.update({ "note.template-conversion-result": result });
+    try {
+      await this.#settings.flush();
+    } catch (error) {
+      // The saved acceptance still lists every unfinished operation. Missing
+      // files are successful cleanup on the next attempt, including restart.
+      this.#settings.update({ "note.template-conversion-result": accepted });
+      logger.warn("Converted template cleanup progress could not be saved", {
+        error,
+      });
+      return convertedResult(accepted);
+    }
+    logger.debug("Finished accepted template cleanup", {
+      documents: result.documents,
+      trashedFiles,
+      pendingCleanup,
+      kept: result.kept,
+    });
+    return convertedResult(result);
   }
 
   /** Trash the documents this pass created, newest first. A file that resists
@@ -525,4 +609,18 @@ function refusedByConversion(
     };
   }
   return { outcome: "refused", diagnostic: { ...detail, code: error.code } };
+}
+
+function convertedResult(
+  result: NonNullable<Settings["note.template-conversion-result"]>,
+): LiteratureNoteTemplateMigrationResult {
+  return {
+    outcome: "converted",
+    document:
+      result.document === null ? null : CONVERTED_DEFAULT_PROFILE_DOCUMENT,
+    documents: result.documents ?? (result.document ? [result.document] : []),
+    trashed: result.trashedFiles ?? [],
+    pendingCleanup: result.pendingCleanup ?? [],
+    kept: result.kept ?? [],
+  };
 }

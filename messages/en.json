@@ -1199,6 +1199,11 @@
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
   "welcome_template_conversion_title": "Convert your literature note templates",
   "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. It verifies byte-identical output before it writes anything, then moves the old files to Obsidian’s configured trash.",
+  "welcome_template_cleanup_title": "Template cleanup incomplete",
+  "welcome_template_cleanup_body": "Your accepted templates are active. These old files still need to be moved to trash:",
+  "welcome_template_cleanup_retry": "Retry cleanup",
+  "welcome_template_cleanup_kept": "Files kept by conversion:",
+  "welcome_template_cleanup_reminder": "Your accepted templates are active. Review the remaining old files and retry cleanup.",
   "welcome_template_conversion_completed_title": "Literature note templates converted",
   "welcome_template_conversion_completed_body": [
     {

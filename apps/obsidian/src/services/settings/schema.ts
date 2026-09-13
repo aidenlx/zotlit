@@ -141,6 +141,10 @@ export const schema = v.object({
       /** `null` when the vault held no Literature Note slots to fold. */
       document: v.nullable(v.pipe(v.string(), v.nonEmpty())),
       trashed: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+      documents: v.optional(v.array(v.string())),
+      trashedFiles: v.optional(v.array(v.string())),
+      pendingCleanup: v.optional(v.array(v.string())),
+      kept: v.optional(v.array(v.string())),
     }),
   ),
   "note.frontmatter-fields": frontmatterFieldsSchema,

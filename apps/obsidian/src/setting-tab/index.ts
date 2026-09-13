@@ -159,19 +159,26 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // render cycle) never trigger a rebuild and never steal focus from inline
     // inputs.
     let lastPending = settings.current?.["release.migration-pending"];
+    let lastCleanupPending =
+      settings.current?.["note.template-conversion-result"]?.pendingCleanup
+        ?.length;
     let lastTemplateConversionPending =
       settings.current?.["note.template-conversion-pending"];
     plugin.register(
       settings.subscribe((value) => {
         const pending = value?.["release.migration-pending"];
+        const cleanupPending =
+          value?.["note.template-conversion-result"]?.pendingCleanup?.length;
         const templateConversionPending =
           value?.["note.template-conversion-pending"];
         if (
+          cleanupPending === lastCleanupPending &&
           pending === lastPending &&
           templateConversionPending === lastTemplateConversionPending
         ) {
           return;
         }
+        lastCleanupPending = cleanupPending;
         lastPending = pending;
         lastTemplateConversionPending = templateConversionPending;
         this.#requestUpdate();

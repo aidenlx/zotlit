@@ -413,6 +413,36 @@ function MigrationBanner() {
       </Callout>
     );
   }
+  if (result?.pendingCleanup?.length) {
+    return (
+      <Callout
+        tone="accent"
+        title={m.welcome_template_cleanup_title()}
+        action={
+          <Button
+            loading={converting}
+            disabled={converting}
+            onClick={() => {
+              setConverting(true);
+              void actions
+                .retryTemplateCleanup()
+                .finally(() => setConverting(false));
+            }}
+          >
+            {m.welcome_template_cleanup_retry()}
+          </Button>
+        }
+      >
+        <p>{m.welcome_template_cleanup_body()}</p>
+        <ul>
+          {result.pendingCleanup.map((path) => (
+            <li key={path}>{path}</li>
+          ))}
+        </ul>
+        <KeptConversionFiles paths={result.kept} />
+      </Callout>
+    );
+  }
   if (result) {
     return (
       <Callout
@@ -427,6 +457,7 @@ function MigrationBanner() {
           : m.welcome_template_conversion_completed_files({
               count: result.trashed,
             })}
+        <KeptConversionFiles paths={result.kept} />
       </Callout>
     );
   }
@@ -447,6 +478,24 @@ function MigrationBanner() {
     >
       {m.welcome_migration_body()}
     </Callout>
+  );
+}
+
+function KeptConversionFiles({
+  paths,
+}: {
+  paths: readonly string[] | undefined;
+}) {
+  if (!paths?.length) return null;
+  return (
+    <>
+      <p>{m.welcome_template_cleanup_kept()}</p>
+      <ul>
+        {paths.map((path) => (
+          <li key={path}>{path}</li>
+        ))}
+      </ul>
+    </>
   );
 }
 
