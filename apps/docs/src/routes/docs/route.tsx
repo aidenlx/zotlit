@@ -10,27 +10,15 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/layouts/docs/slots/sidebar";
-import { withDocsAvailability } from "@/lib/docs-availability";
 import { baseOptions } from "@/lib/layout.shared";
 import { source } from "@/lib/source";
 
 // The sidebar tree crosses the server boundary as JSON. Its `name` and `icon`
 // fields are typed as React nodes, which the serializer rejects at the type
 // level, so the tree travels as a bare `object`: every name in this site's
-// content is a string and no entry declares an icon. Each page's NEW/UPDATED
-// badge is derived here, so `semver` and the Docs Release Line stay on the
-// server and the sidebar slot reads a plain string.
+// content is a string and no entry declares an icon.
 const getPageTree = createServerFn({ method: "GET" }).handler(
-  () =>
-    withDocsAvailability(source.pageTree, (item) => {
-      const page = source.getNodePage(item);
-      return (
-        page && {
-          introduced: page.data.introduced,
-          updated: page.data.updated,
-        }
-      );
-    }) as object,
+  () => source.pageTree as object,
 );
 
 export const Route = createFileRoute("/docs")({

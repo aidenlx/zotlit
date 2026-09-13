@@ -4,7 +4,7 @@
 import * as v from "valibot";
 
 export const appName = "ZotLit";
-/** The Docs Release Line selected by the Worker configuration. */
+/** The documentation line selected by the Worker configuration. */
 export type DocsLine = "beta" | "production";
 /** Origin every canonical URL, OG card, sitemap entry, and feed link resolves against. */
 export const baseURL = "https://zotlit.aidenlx.site";

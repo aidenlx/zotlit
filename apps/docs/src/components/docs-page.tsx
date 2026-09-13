@@ -20,15 +20,12 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 import { use } from "react";
 
-import { DocsAvailability } from "@/components/docs-availability";
 import { DocsLastUpdated } from "@/components/docs-last-updated";
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { getMDXComponents } from "@/components/mdx";
 import { RedirectNotice } from "@/components/redirect-notice";
 import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
 import { docs } from "@/lib/collections";
-import { getDocsAvailability } from "@/lib/docs-availability";
-import type { DocsAvailability as Availability } from "@/lib/docs-availability";
 import { installPageSlugs } from "@/lib/github-releases";
 import { contentRouteUrl } from "@/lib/markdown-routes";
 import { ztProse } from "@/lib/prose";
@@ -36,7 +33,7 @@ import { getReleaseSnapshot } from "@/lib/release-data";
 import type { ReleaseSnapshot } from "@/lib/release-data";
 import { pageHead } from "@/lib/seo";
 import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
-import { changelog, source } from "@/lib/source";
+import { source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
 import * as m from "@/paraglide/messages.js";
@@ -48,7 +45,6 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
     const page = source.getPage(splat.split("/").filter(Boolean));
     if (!page) throw notFound();
 
-    const availability = getDocsAvailability(page.data.introduced);
     const trail = getBreadcrumbItems(page.url, source.pageTree, {
       includePage: true,
     }).filter(
@@ -63,12 +59,8 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
       title: page.data.title,
       description: page.data.description,
       trail,
-      availability,
       markdownUrl: contentRouteUrl({ section: "docs", slugs: page.slugs }),
       githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${docsSourceBranch(env.DOCS_LINE)}/apps/docs/content/docs/${page.path}`,
-      changelogUrl: availability
-        ? changelog.getPage([availability.introduced])?.url
-        : undefined,
       // Only the install pages carry release facts. The snapshot is the one
       // this render saw — the build's own in a prerendered page, where the
       // provider then refreshes it from `/api/release-snapshot`.
@@ -78,18 +70,14 @@ export const resolveDocsPage = createServerFn({ method: "GET" })
     };
   });
 
-/** What the compiled body needs beyond the module: release history and page actions. */
+/** What the compiled body needs beyond the module: page actions. */
 interface DocsBodyProps {
-  availability?: Availability;
-  changelogUrl?: string;
   githubUrl: string;
   markdownUrl: string;
 }
 
 function DocsPageContent({
   path,
-  availability,
-  changelogUrl,
   githubUrl,
   markdownUrl,
 }: DocsBodyProps & { path: string }) {
@@ -105,10 +93,6 @@ function DocsPageContent({
       <DocsDescription className="mb-0 font-serif text-lg italic">
         {page.description}
       </DocsDescription>
-      <DocsAvailability
-        availability={availability}
-        changelogUrl={changelogUrl}
-      />
       <div className="flex flex-row items-center gap-2 border-b pb-6">
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover markdownUrl={markdownUrl} githubUrl={githubUrl} />
@@ -160,8 +144,6 @@ export function docsPageHead(page: DocsPageData | undefined) {
 export function DocsPageView({
   path,
   snapshot,
-  availability,
-  changelogUrl,
   githubUrl,
   markdownUrl,
 }: DocsBodyProps & {
@@ -172,8 +154,6 @@ export function DocsPageView({
     <ReleaseSnapshotProvider snapshot={snapshot}>
       <DocsPageContent
         path={path}
-        availability={availability}
-        changelogUrl={changelogUrl}
         githubUrl={githubUrl}
         markdownUrl={markdownUrl}
       />

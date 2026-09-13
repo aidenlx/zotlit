@@ -6,7 +6,6 @@ import { $ } from "zx";
 
 import { parseManifest as parseObsidianManifest } from "#obsidian-manifest";
 import { getWorkspaceRoot } from "#package-roots";
-import { runReleaseWithDocsHandoff } from "#release-docs-handoff";
 
 /**
  * Phase 1 of the release pipeline: local, interactive version bump.
@@ -133,20 +132,7 @@ if (currentBranch === "next") {
   prTarget = currentBranch;
 }
 
-await runReleaseWithDocsHandoff({
-  targets: bumps.map(({ app, next }) => ({ app: app.name, version: next })),
-  adapter: {
-    async confirm(prompt) {
-      const answer = await p.confirm(prompt);
-      if (p.isCancel(answer)) cancel();
-      return answer;
-    },
-    handoff(command) {
-      p.outro(["Review docs availability first:", command].join("\n"));
-    },
-  },
-  continueRelease: completeRelease,
-});
+await completeRelease();
 
 async function completeRelease(): Promise<void> {
   const summary = bumps.map((b) => `${b.app.name}@${b.next}`).join(", ");
@@ -167,7 +153,6 @@ async function completeRelease(): Promise<void> {
   s.stop("Versions bumped");
 
   await syncObsidian(bumps, stagedPaths);
-  await syncDocsReleaseLine(bumps, stagedPaths);
 
   s.start("Refreshing lockfile");
   await $({ cwd: workspaceRoot })`pnpm install --lockfile-only`;
@@ -411,21 +396,6 @@ async function syncObsidian(
   versions[manifest.version] = manifest.minAppVersion;
   await writeFile(versionsPath, `${JSON.stringify(versions, null, 2)}\n`);
   staged.add(versionsPath);
-}
-
-async function syncDocsReleaseLine(
-  releases: Bump[],
-  staged: Set<string>,
-): Promise<void> {
-  const obsidian = releases.find((b) => b.app.name === "obsidian");
-  if (!obsidian) return;
-
-  const releasePath = join(workspaceRoot, "apps/docs/zotlit-release.json");
-  await writeFile(
-    releasePath,
-    `${JSON.stringify({ version: obsidian.next }, null, 2)}\n`,
-  );
-  staged.add(releasePath);
 }
 
 async function readPackageJson(

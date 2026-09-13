@@ -58,7 +58,7 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
   const pagePath = join(root, "content/docs/index.mdx");
   await writeFile(
     pagePath,
-    "---\ntitle: Fixture\nintroduced: 2.1.0\n---\n# Overview\n\nFirst body\n",
+    "---\ntitle: Fixture\n---\n# Overview\n\nFirst body\n",
   );
   await writeFile(
     join(root, "content/docs/_partial.mdx"),

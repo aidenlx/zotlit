@@ -1,5 +1,12 @@
 # Release availability is git-diff-assisted, not hand-authored
 
+> **Superseded: release availability was removed from the docs site.**
+> The docs site no longer carries `introduced` / `updated` frontmatter,
+> the `NEW` / `UPDATED` sidebar pills, the `AVAILABLE SINCE` row, or the
+> Markdown preamble. The `pnpm docs:availability` command, its release
+> handoff, and `apps/docs/zotlit-release.json` are gone with it. Kept for
+> the record.
+
 Docs pages do not require `introduced` or `updated` frontmatter during authoring. Both fields are optional. An unset page has no sidebar badge or "Available since" line until it ships.
 
 `pnpm docs:availability <stable-version>` is the sole writer of page-level availability metadata. It requires a clean working tree and a stable semantic version. It uses the net committed diff from the previous stable tag to `HEAD`. Rename detection lets a moved page keep its release history. A pure move needs no review. A moved page with content changes remains a review candidate.
