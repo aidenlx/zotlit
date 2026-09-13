@@ -1,5 +1,7 @@
 // Saved-source checking and attempt retention. Output flags only disclose completed work.
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import type { CliFlags, CliHandler } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
@@ -12,6 +14,7 @@ import type {
 } from "@zotlit/workbench/render";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
+import { bindDraftProfile } from "@/services/profile/service";
 import {
   checkDiagnostic,
   checkNativeProfile,
@@ -34,6 +37,11 @@ export const checkFlags = {
   document: {
     value: "<path-or-reference>",
     description: "Saved Profile document",
+  },
+  draft: {
+    value: "<absolute-path>",
+    description:
+      "Read complete Profile source from a scratch file; profile asserts its identity",
   },
   key: {
     value: "<indexed-key>",
@@ -60,9 +68,15 @@ export const checkFlags = {
 export const CHECK_GUIDE = `TEMPLATE CHECK
 
   obsidian ${TEMPLATE_CHECK_COMMAND} [profile=<id-or-label>] [key=<indexed-key>] [output=all]
+  obsidian ${TEMPLATE_CHECK_COMMAND} draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]
   obsidian ${TEMPLATE_CHECK_COMMAND} attempt=<id> evidence=full [output=all]
 
   Checks saved Profile source and dependencies, then all create components.
+  draft reads a complete document from a scratch file, without installing or saving it.
+  With profile, the draft ID must match that Profile. Without profile, its manifest
+  supplies a standalone identity. Draft bindings inherit current Default settings.
+  Saved source is the default. Editor source is selected explicitly by template-inspect;
+  to check unsaved edits, write them to a scratch file and supply draft.
   Omit key for structural validation; rendering is explicitly not checked.
   Every response includes every component status. output changes disclosure only.
   An empty rendered string is a successful output. Any component failure fails the check.
@@ -90,7 +104,6 @@ export interface CheckDeps extends InspectDeps {
 }
 
 export function createCheckHandler(deps: CheckDeps): CliHandler {
-  const inspect = createInspectHandler(deps);
   const attempts = new Map<string, object>();
   let sequence = 0;
   return async (params) => {
@@ -151,7 +164,14 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
               !(PROFILE_OUTPUTS as readonly string[]).includes(name),
           ))) ||
       (params.evidence !== undefined && params.evidence !== "full") ||
-      [params.key, params.profile, params.document, params.attempt].some(
+      (params.draft !== undefined && params.document !== undefined) ||
+      [
+        params.key,
+        params.profile,
+        params.document,
+        params.draft,
+        params.attempt,
+      ].some(
         (value) =>
           value !== undefined &&
           (typeof value !== "string" || value.trim() === ""),
@@ -165,6 +185,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       if (
         params.profile !== undefined ||
         params.document !== undefined ||
+        params.draft !== undefined ||
         params.key !== undefined ||
         params["expect-source"] !== undefined
       )
@@ -252,6 +273,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         request: {
           profile: params.profile,
           document: params.document,
+          draft: params.draft,
           key: params.key,
         },
       };
@@ -259,6 +281,32 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       if (attempts.size > 32) attempts.delete(attempts.keys().next().value!);
       return answer(retained);
     };
+    let draft: { source: string; path: string } | undefined;
+    if (typeof params.draft === "string") {
+      const input = { origin: "draft", path: params.draft, revision: null };
+      reportDocument = params.draft;
+      try {
+        if (!isAbsolute(params.draft))
+          throw new Error("Use an absolute scratch-file path for draft.");
+        draft = {
+          source: await readFile(params.draft, "utf8"),
+          path: params.draft,
+        };
+        reportSource = draft.source;
+      } catch (error) {
+        return finish({
+          ok: false,
+          input,
+          diagnostic: {
+            code: "DRAFT_READ_FAILED",
+            message: error instanceof Error ? error.message : String(error),
+            recovery:
+              "Write a complete Profile document to a readable scratch file and supply its absolute path as draft.",
+          },
+        });
+      }
+    }
+    const inspect = createInspectHandler(deps, draft);
     const inspectRequest = {
       ...(params.document !== undefined
         ? { document: params.document }
@@ -275,8 +323,25 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       (await inspect(inspectRequest)) as string,
     ) as InspectedSource;
     const { source, ...context } = inspected;
-    reportSource = source ?? "";
-    reportDocument = inspected.document?.path ?? inspected.document?.id;
+    if (draft) {
+      context.input = {
+        origin: "draft",
+        path: draft.path,
+        revision: sourceRevision(draft.source),
+      };
+      // Installed document diagnostics describe the saved version, not this draft.
+      context.problems = [];
+      context.document = {
+        kind: "profile",
+        id: "draft",
+        label: "Draft",
+        path: draft.path,
+        problems: [],
+      };
+    }
+    reportSource = source ?? draft?.source ?? "";
+    reportDocument =
+      draft?.path ?? inspected.document?.path ?? inspected.document?.id;
     if (!inspected.ok) return finish(context);
     if (inspected.document?.kind !== "profile" || source === undefined)
       return finish({
@@ -296,6 +361,28 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     let caller: RenderCallerSource = { source, language: "liquid" };
     try {
       const parsed = parseLiteratureNoteTemplate(source);
+      if (
+        draft &&
+        params.profile !== undefined &&
+        parsed.manifest.id !==
+          (inspected.document.profile?.id ??
+            inspected.document.profileIdentity?.id)
+      )
+        return finish({
+          ...context,
+          ok: false,
+          checks: {
+            ...checks,
+            structure: { status: "failed", diagnostics: [] },
+          },
+          diagnostic: {
+            code: "PROFILE_ID_MISMATCH",
+            message:
+              "The draft manifest ID does not match the selected Profile.",
+            recovery:
+              "Keep the selected Profile ID in the draft, or omit profile to check a standalone identity.",
+          },
+        });
       reportLanguage = parsed.manifest.language ?? "liquid";
       caller = {
         source,
@@ -358,6 +445,26 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       }
       const document =
         deps.templates.prepareLiteratureNoteTemplateSource(source);
+      const selector = parseProfileSelector(document.manifest.id ?? "default");
+      const profile = draft
+        ? bindDraftProfile(await deps.data.settings.loaded, document.manifest)
+        : selector === undefined
+          ? undefined
+          : deps.profile.resolveProfile(selector);
+      if (!profile) throw new Error("The saved Profile does not resolve.");
+      if (draft)
+        context.document = {
+          kind: "profile",
+          id: profile.selector,
+          label: profile.label ?? "Default",
+          path: draft.path,
+          profile: {
+            id: profile.selector,
+            label: profile.label ?? "Default",
+            bindings: profile.bindings,
+          },
+          problems: [],
+        };
       checks.structure = { status: "passed", diagnostics: [] };
       if (params.key === undefined)
         return finish({
@@ -368,12 +475,6 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           reason:
             "Structural validation only; provide key to check rendering with real item data.",
         });
-      const selector = parseProfileSelector(document.manifest.id ?? "default");
-      const profile =
-        selector === undefined
-          ? undefined
-          : deps.profile.resolveProfile(selector);
-      if (!profile) throw new Error("The saved Profile does not resolve.");
       const data = {
         ...deps.data,
         settings: { loaded: Promise.resolve(profile.settings) },

@@ -323,7 +323,10 @@ export function selectInspectionNote(
   return { note: { path: file.path, key }, profile };
 }
 
-export function createInspectHandler(deps: InspectDeps): CliHandler {
+export function createInspectHandler(
+  deps: InspectDeps,
+  draft?: { source: string; path: string },
+): CliHandler {
   return async (params) => {
     const identity = await deps.identity();
     const answer = (result: object) =>
@@ -401,7 +404,7 @@ export function createInspectHandler(deps: InspectDeps): CliHandler {
         (document.kind === "profile" && entry.kind === "citation"));
     let dependencies = inventory.filter(isDependency);
     const editor = params.editor !== undefined;
-    const builtinPaths = [document, ...dependencies]
+    const builtinPaths = [...(draft ? [] : [document]), ...dependencies]
       .filter((entry) => entry.path === null)
       .map((entry) =>
         entry.kind === "profile"
@@ -410,7 +413,7 @@ export function createInspectHandler(deps: InspectDeps): CliHandler {
       );
     const paths = [
       ...new Set([
-        ...(document.path && !editor ? [document.path] : []),
+        ...(document.path && !editor && !draft ? [document.path] : []),
         ...dependencies.flatMap((entry) => (entry.path ? [entry.path] : [])),
         ...builtinPaths,
       ]),
@@ -446,7 +449,8 @@ export function createInspectHandler(deps: InspectDeps): CliHandler {
     )
       return fail("SOURCE_SUPERSEDED", { document, dependencies, freshness });
     let source: string;
-    if (editor) {
+    if (draft) source = draft.source;
+    else if (editor) {
       const view = deps.app.workspace.getActiveViewOfType(MarkdownView);
       if (!document.path || view?.file?.path !== document.path)
         return fail("EDITOR_TARGET_MISMATCH");
@@ -466,8 +470,14 @@ export function createInspectHandler(deps: InspectDeps): CliHandler {
       dependencyScope: "installed-partial-registry",
       freshness,
       input: {
-        origin: editor ? "editor" : document.path ? "saved" : "built-in",
-        path: document.path,
+        origin: draft
+          ? "draft"
+          : editor
+            ? "editor"
+            : document.path
+              ? "saved"
+              : "built-in",
+        path: draft?.path ?? document.path,
         revision: sourceRevision(source),
       },
       ...(editor

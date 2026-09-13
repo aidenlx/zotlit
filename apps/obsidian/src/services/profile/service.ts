@@ -50,6 +50,7 @@ import type {
   ResolvedLiteratureNoteProfileBindings,
 } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
+import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import {
   DEFAULT_FRONTMATTER_FIELDS,
@@ -1161,6 +1162,23 @@ export class ProfileService extends Service {
     );
     if (this.#loaded) this.#events.emit("changed");
   }
+}
+
+/** Resolve a draft from its manifest and current Default settings, without installing it. */
+export function bindDraftProfile(
+  settings: Readonly<Settings>,
+  manifest: LiteratureNoteTemplateManifest,
+): ResolvedProfile {
+  return manifest.id === DEFAULT_PROFILE
+    ? bindProfile(settings, { selector: DEFAULT_PROFILE })
+    : bindProfile(settings, {
+        selector: manifest.id as ProfileId,
+        entry: seedProfileEntry(manifest, {
+          document: "",
+          path: "",
+          libraries: [],
+        }),
+      });
 }
 
 /**

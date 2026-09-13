@@ -46,10 +46,8 @@ import {
   prepareLiteratureNote,
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
-import type { ResolvedProfile } from "@/services/profile/bindings";
-import { seedProfileEntry } from "@/services/profile/service";
+import { bindDraftProfile } from "@/services/profile/service";
 import type { ProfileService } from "@/services/profile/service";
-import type { Settings } from "@/services/settings/schema";
 import {
   loadCitationData,
   loadTemplateData,
@@ -240,28 +238,6 @@ function draftProfileManifest(
   } catch {
     return null;
   }
-}
-
-/**
- * The Profile a draft Profile document resolves under, exactly as the registry
- * resolves a saved one: one entry seeded from the manifest, bound by the
- * shared resolver. The preview reads neither the entry's match nor its
- * document reference, so the draft supplies no Library scope and no path.
- */
-function bindDraftProfile(
-  settings: Settings,
-  manifest: LiteratureNoteTemplateManifest,
-): ResolvedProfile {
-  return manifest.id === DEFAULT_PROFILE
-    ? bindProfile(settings, { selector: DEFAULT_PROFILE })
-    : bindProfile(settings, {
-        selector: manifest.id as ProfileId,
-        entry: seedProfileEntry(manifest, {
-          document: "",
-          path: "",
-          libraries: [],
-        }),
-      });
 }
 
 /**

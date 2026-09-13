@@ -1,11 +1,15 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { CliHandler, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { withAnnotationCitation } from "@zotlit/db";
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import { getProfileBinding } from "@/services/profile/bindings";
 
 import { TEMPLATE_CHECK_COMMAND } from "./check";
 import { loadTemplateData } from "./data";
@@ -39,6 +43,10 @@ frontmatter:
 async function fixture(source = SOURCE) {
   await using stack = new AsyncDisposableStack();
   const f = stack.use(await profileServiceFixture({ [PATH]: source }));
+  const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+  await mkdir(resolve(workspaceRoot, "tmp"), { recursive: true });
+  const scratch = await mkdtemp(resolve(workspaceRoot, "tmp/check-draft-"));
+  stack.defer(() => rm(scratch, { recursive: true, force: true }));
   Object.assign(f.vault, {
     getName: () => "Check fixture",
     adapter: {
@@ -75,6 +83,11 @@ async function fixture(source = SOURCE) {
   return {
     ...f,
     zoteroPref,
+    draft: async (text: string) => {
+      const path = resolve(scratch, "draft.md");
+      await writeFile(path, text);
+      return path;
+    },
     check: async (params: Parameters<CliHandler>[0] = {}) =>
       JSON.parse(
         (await handlers.get(TEMPLATE_CHECK_COMMAND)!({ ...params })) as string,
@@ -106,6 +119,207 @@ beforeEach(() => {
 });
 
 describe("registered template-check", () => {
+  it("checks a targeted scratch draft and leaves installed source, notes, and settings unchanged", async () => {
+    await using f = await fixture();
+    f.vault.addFile("notes/existing.md", "Existing note");
+    const before = [...f.vault.contents];
+    const settings = JSON.stringify(await f.settings.loaded);
+    const draft = await f.draft(
+      SOURCE.replace("# {{ zt.title }}", "# Draft {{ zt.title }}"),
+    );
+    const result = await f.check({
+      profile: "Books",
+      draft,
+      key: "1:ABCD2345",
+      output: "all",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      input: { origin: "draft", path: draft },
+      document: { profile: { id: "Bk3Qn7XvT2Lp" } },
+      outputs: { body: expect.stringContaining("# Draft Paper") },
+    });
+    expect(result.input.revision).toHaveLength(64);
+    expect(result.attemptContext.sourceRevision).toBe(result.input.revision);
+    expect([...f.vault.contents]).toEqual(before);
+    expect(JSON.stringify(await f.settings.loaded)).toBe(settings);
+    expect(f.profile.profiles).toHaveLength(1);
+    expect(f.template.getLoadedDocumentSource(PATH)).toBe(SOURCE);
+    const structural = await f.check({ profile: "Books", draft });
+    expect(structural).toMatchObject({ ok: true, rendering: "not-checked" });
+  });
+
+  it("checks new standalone identities and asserts targeted identity before loading data", async () => {
+    await using f = await fixture();
+    const draft = await f.draft(
+      SOURCE.replace("Bk3Qn7XvT2Lp", "Nx4Qn7XvT2Lp").replace(
+        "name: Books",
+        "name: New draft",
+      ),
+    );
+    const mismatch = await f.check({
+      profile: "Books",
+      draft,
+      key: "1:ABCD2345",
+    });
+    expect(mismatch).toMatchObject({
+      ok: false,
+      input: { origin: "draft", path: draft },
+      diagnostic: { code: "PROFILE_ID_MISMATCH" },
+    });
+    expect(loadTemplateData).not.toHaveBeenCalled();
+    expect(
+      await f.check({ draft, key: "1:ABCD2345", output: "fold" }),
+    ).toMatchObject({
+      ok: true,
+      document: { profile: { id: "Nx4Qn7XvT2Lp", label: "New draft" } },
+      outputs: {
+        fold: { "zotlit-profile": expect.stringContaining("Nx4Qn7XvT2Lp") },
+      },
+    });
+    expect(f.profile.profiles.map((profile) => profile.id)).toEqual([
+      "Bk3Qn7XvT2Lp",
+    ]);
+  });
+
+  it("binds changed and removed draft overrides against current Default settings", async () => {
+    await using f = await fixture(
+      SOURCE.replace(
+        "contract: 5",
+        "contract: 5\nfolder: Installed\ncitationStyle: installed-style",
+      ),
+    );
+    f.settings.updateDefaultLiteratureNoteProfileBindings({
+      "note.literature-folder": "Inherited",
+      "citation.references-style": "inherited-style",
+    });
+    const draft = await f.draft(
+      SOURCE.replace(
+        "contract: 5",
+        "contract: 5\nfolder: Draft\ncitationStyle: draft-style",
+      ),
+    );
+    expect(
+      await f.check({
+        profile: "Books",
+        draft,
+        key: "1:ABCD2345",
+        output: "fold",
+      }),
+    ).toMatchObject({
+      ok: true,
+      document: {
+        profile: {
+          bindings: {
+            "note.literature-folder": "Draft",
+            "citation.references-style": "draft-style",
+          },
+        },
+      },
+      outputs: { fold: { "zotlit-csl": "draft-style" } },
+    });
+    await f.draft(SOURCE);
+    const inherited = await f.check({
+      profile: "Books",
+      draft,
+      key: "1:ABCD2345",
+      output: "fold",
+    });
+    expect(inherited).toMatchObject({
+      ok: true,
+      document: {
+        profile: {
+          bindings: {
+            "note.literature-folder": "Inherited",
+            "citation.references-style": "inherited-style",
+          },
+        },
+      },
+    });
+    expect(inherited.outputs.fold["zotlit-csl"]).toBeUndefined();
+    const loadedSettings = await vi
+      .mocked(loadTemplateData)
+      .mock.calls.at(-1)![0].settings.loaded;
+    expect(getProfileBinding(loadedSettings, "citation.references-style")).toBe(
+      "inherited-style",
+    );
+    expect(
+      f.profile.resolveProfile("Bk3Qn7XvT2Lp" as never)?.bindings[
+        "note.literature-folder"
+      ],
+    ).toBe("Installed");
+  });
+
+  it("keeps Default bindings settings-owned and rejects declarations in Default drafts", async () => {
+    await using f = await fixture();
+    const draft = await f.draft(SOURCE.replace("Bk3Qn7XvT2Lp", "default"));
+    expect(await f.check({ profile: "default", draft })).toMatchObject({
+      ok: true,
+      document: { profile: { id: "default" } },
+    });
+    await f.draft(
+      SOURCE.replace("Bk3Qn7XvT2Lp", "default").replace(
+        "contract: 5",
+        "contract: 5\nfolder: Forbidden",
+      ),
+    );
+    const invalid = await f.check({ profile: "default", draft });
+    expect(invalid).toMatchObject({
+      ok: false,
+      input: { origin: "draft", path: draft },
+      checks: { structure: { status: "failed" } },
+    });
+    expect(invalid.diagnostic.message).toContain(
+      "Default Profile bindings belong in settings",
+    );
+  });
+
+  it("reports unreadable and malformed drafts with their scratch source origin", async () => {
+    await using f = await fixture();
+    const path = await f.draft("not a Profile document");
+    expect(await f.check({ draft: path })).toMatchObject({
+      ok: false,
+      input: { origin: "draft", path },
+      checks: { structure: { status: "failed" } },
+    });
+    const missing = `${path}.missing`;
+    expect(await f.check({ draft: missing })).toMatchObject({
+      ok: false,
+      input: { origin: "draft", path: missing, revision: null },
+      diagnostic: { code: "DRAFT_READ_FAILED", recovery: expect.any(String) },
+    });
+  });
+
+  it("checks installed dependencies during a draft attempt and withholds superseded output", async () => {
+    await using f = await fixture();
+    const draft = await f.draft(SOURCE);
+    const read = f.app.vault.adapter.read.bind(f.app.vault.adapter);
+    let changed = false;
+    vi.spyOn(f.app.vault.adapter, "read").mockImplementation(async (path) => {
+      if (changed && path.endsWith("citation.md"))
+        throw new Error("Dependency unreadable");
+      return read(path);
+    });
+    const load = vi.mocked(loadTemplateData).getMockImplementation()!;
+    vi.mocked(loadTemplateData).mockImplementation(async (...args) => {
+      changed = true;
+      return load(...args);
+    });
+    const result = await f.check({ draft, key: "1:ABCD2345", output: "all" });
+    expect(result).toMatchObject({
+      ok: false,
+      input: { origin: "draft" },
+      diagnostic: { code: "SOURCE_SUPERSEDED" },
+    });
+    expect(result.outputs).toBeUndefined();
+    expect(result.checks).toBeUndefined();
+    expect(await f.check({ draft })).toMatchObject({
+      ok: false,
+      input: { origin: "draft" },
+      diagnostic: { code: "SOURCE_READ_FAILED" },
+    });
+  });
+
   it("checks all create components, folds independent contributions, and discloses complete output", async () => {
     await using f = await fixture();
     const result = await f.check({
