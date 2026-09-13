@@ -98,6 +98,50 @@ async function openProfilesSettings(vaultId: string, pageName: string) {
   );
 }
 
+/** Shared native editing steps; Help can be inspected after selection and before typing. */
+async function changeNativeAnnotationCallout(
+  vaultId: string,
+  options: {
+    view: string;
+    vaultPath: string;
+    tabLabel: string;
+    beforeEdit?: () => Promise<void>;
+  },
+): Promise<void> {
+  const { view, vaultPath, tabLabel } = options;
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `(function(){const view=${view};const tab=Array.from(view?.contentEl.querySelectorAll('[role=tab]')??[]).find(element=>element.textContent.trim()===${JSON.stringify(tabLabel)});if(!tab)return false;tab.click();return true;})()`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  const annotationEditor = `Array.from((${view})?.contentEl.querySelectorAll('.cm-content')??[]).find(element=>element.textContent.includes('[!note]'))?.cmTile?.root?.view`;
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `String(!!(${annotationEditor})?.state.doc.toString().includes('[!note]'))`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  await options.beforeEdit?.();
+  const templatePath = await obEval(vaultId, `(${view}).file.path`);
+  // CodeMirror's mounted view receives the same transaction as typed text.
+  expect(
+    await obEval(
+      vaultId,
+      `(function(){const editor=${annotationEditor};const from=editor.state.doc.toString().indexOf('[!note]');editor.dispatch({changes:{from,to:from+7,insert:'[!quote]'},userEvent:'input.type'});return true;})()`,
+    ),
+  ).toBe("true");
+  expect(
+    await waitFor(async () =>
+      (await readFile(join(vaultPath, templatePath), "utf-8")).includes(
+        "[!quote]",
+      ),
+    ),
+  ).toBe(true);
+}
+
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
   let booksNotePath = "";
@@ -375,69 +419,48 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expected: "true",
       }),
     ).toBe(true);
-    const templatePath = await obEval(freshId, `(${editor}).file.path`);
     expect(
       await obEval(
         freshId,
         `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(m.template_workbench_shared_template({ name: "zotlit-profile.default" }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
       ),
     ).toBe("true");
-    expect(
-      await obEval(
-        freshId,
-        `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('[role=tab]')).find(tab=>tab.textContent.trim()===${JSON.stringify(m.workbench_tab_annotation())}).click();return true;})()`,
-      ),
-    ).toBe("true");
-    expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};return String(Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      freshId,
-      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())}).click();return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(m.workbench_annotation_help_title())}]');const source=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));return String(!!guide&&guide.textContent.includes('[!quote]')&&guide.textContent.includes(${JSON.stringify(m.template_workbench_update_this_note())})&&guide.getBoundingClientRect().height>0&&source.getBoundingClientRect().height>0);})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      freshId,
-      `(function(){const view=${editor};const close=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_annotation_help_hide())});close.focus();close.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        freshId,
-        `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    // CodeMirror's mounted view receives the same transaction as typed text.
-    expect(
-      await obEval(
-        freshId,
-        `(function(){const view=${editor};const content=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));const cm=content.cmTile.root.view;const from=cm.state.doc.toString().indexOf('[!note]');cm.dispatch({changes:{from,to:from+7,insert:'[!quote]'},userEvent:'input.type'});return true;})()`,
-      ),
-    ).toBe("true");
-    expect(
-      await waitFor(async () =>
-        (await readFile(join(freshPath, templatePath), "utf-8")).includes(
-          "[!quote]",
-        ),
-      ),
-    ).toBe(true);
+    await changeNativeAnnotationCallout(freshId, {
+      view: editor,
+      vaultPath: freshPath,
+      tabLabel: m.workbench_tab_annotation(),
+      beforeEdit: async () => {
+        expect(
+          await obEvalUntil(
+            freshId,
+            `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          freshId,
+          `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())}).click();return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            freshId,
+            `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(m.workbench_annotation_help_title())}]');const source=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));return String(!!guide&&guide.textContent.includes('[!quote]')&&guide.textContent.includes(${JSON.stringify(m.template_workbench_update_this_note())})&&guide.getBoundingClientRect().height>0&&source.getBoundingClientRect().height>0);})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          freshId,
+          `(function(){const view=${editor};const close=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_annotation_help_hide())});close.focus();close.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            freshId,
+            `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+      },
+    });
     // The linked Preview belongs to the editor's native window, which can differ from the CLI window.
     expect(
       await obEvalUntil(
@@ -456,10 +479,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       freshId,
       `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(other.path)}));app.workspace.rootSplit.focus();return true;})()`,
     );
+    await obEval(
+      freshId,
+      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.leaf.getContainer().focus();return true;})()`,
+    );
     expect(
       await obEvalUntil(
         freshId,
-        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())});view.leaf.getContainer().focus();button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
+        `String(activeWindow===(${editor}).contentEl.ownerDocument.defaultView)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())});button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -1735,31 +1769,11 @@ describe.skipIf(!reachable)("Fresh destination flow", () => {
     ).toBe(true);
     const defaultView =
       "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var view=${defaultView};var tab=Array.from(view?.contentEl.querySelectorAll('[role=tab]')??[]).find(el=>el.textContent.trim()===${JSON.stringify(m.workbench_tab_annotation())});if(!tab)return false;tab.click();return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var view=${defaultView};var content=Array.from(view?.contentEl.querySelectorAll('.cm-content')??[]).find(el=>el.textContent.includes('[!note]'));var editor=content?.cmTile?.root?.view;return String(!!editor&&editor.state.doc.toString().includes('[!note]'));})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var view=${defaultView};var editor=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(el=>el.textContent.includes('[!note]')).cmTile.root.view;var source=editor.state.doc.toString();var start=source.indexOf('[!note]');editor.dispatch({changes:{from:start,to:start+7,insert:'[!quote]'}});return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "(async function(){return String((await app.plugins.plugins.zotlit.services.profile.getSource('default')).includes('[!quote]'));})()",
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await changeNativeAnnotationCallout(vaultId, {
+      view: defaultView,
+      vaultPath,
+      tabLabel: m.workbench_tab_annotation(),
+    });
     expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
 
     const openAdd = async () => {
