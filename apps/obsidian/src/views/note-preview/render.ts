@@ -1,5 +1,5 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
-import { parseYaml, stringifyYaml, getFrontMatterInfo } from "obsidian";
+import { stringifyYaml } from "obsidian";
 
 import { DEFAULT_CITATION_VARIANT, withAnnotationCitation } from "@zotlit/db";
 import type {
@@ -11,7 +11,6 @@ import { replaceSuffixMarkers } from "@zotlit/templates";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
-import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import {
   citationExampleData,
@@ -56,6 +55,8 @@ import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 
+import { previewBaseline } from "./baseline";
+export { previewBaseline } from "./baseline";
 import { nativePropertyRows } from "./check-profile";
 import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
@@ -367,28 +368,6 @@ async function citationRootData(
   return loaded.kind === "data"
     ? { kind: "data", data: loaded.data }
     : { kind: "unavailable", message: m.workbench_example_missing_item() };
-}
-
-/** Keep the real note's outside body and unrelated Properties, entirely in memory. */
-export function previewBaseline(
-  source: string | null,
-  created: string,
-  managed: string | null,
-) {
-  const info = source === null ? null : getFrontMatterInfo(source);
-  const current: unknown = info?.exists ? parseYaml(info.frontmatter) : {};
-  const frontmatter: Record<string, unknown> =
-    current !== null && typeof current === "object" && !Array.isArray(current)
-      ? { ...current }
-      : {};
-  const body = source === null ? created : source.slice(info!.contentStart);
-  return {
-    frontmatter,
-    body:
-      managed === null
-        ? body
-        : replaceManagedRegion(body, () => managed).content,
-  };
 }
 
 export async function renderNativeProfile(

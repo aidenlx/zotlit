@@ -22,6 +22,7 @@ import {
 } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
+import { selectCheckBaseline } from "./check-baseline";
 import { loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION } from "./envelope";
@@ -30,9 +31,22 @@ import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
 
 export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
 export const checkFlags = {
+  mode: {
+    value: "<create|update>",
+    description: "Operation to check; defaults to create",
+  },
+  note: {
+    value: "<vault-path>",
+    description: "Update baseline: select one matching Literature Note",
+  },
+  existing: {
+    value: "<text>",
+    description: "Update baseline: supplied note text, checked in memory",
+  },
   profile: {
     value: "<id-or-label>",
-    description: "Saved Profile or default; defaults to default",
+    description:
+      "Saved Profile or default; update follows the baseline stamp when omitted",
   },
   document: {
     value: "<path-or-reference>",
@@ -71,12 +85,20 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   obsidian ${TEMPLATE_CHECK_COMMAND} draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]
   obsidian ${TEMPLATE_CHECK_COMMAND} attempt=<id> evidence=full [output=all]
 
-  Checks saved Profile source and dependencies, then all create components.
+  Checks saved Profile source and dependencies, then all operation components.
   draft reads a complete document from a scratch file, without installing or saving it.
   With profile, the draft ID must match that Profile. Without profile, its manifest
   supplies a standalone identity. Draft bindings inherit current Default settings.
   Saved source is the default. Editor source is selected explicitly by template-inspect;
   to check unsaved edits, write them to a scratch file and supply draft.
+  Use mode=update key=<indexed-key> to read the item's real Literature Note.
+  Multiple notes require note=<vault-path>. existing=<text> supplies a controlled
+  in-memory baseline. An item without a note uses a labeled synthetic baseline.
+  Update follows the baseline's Profile stamp; an explicit Profile or document
+  previews a proposed change. Baseline path, revision, stamp, and selected Profile
+  identify the inputs. Body and frontmatter outputs show the final update fold.
+  Static bodies remain unchanged. Failed fields or invalid blocks refuse the operation.
+  No check writes notes, changes Profiles, or imports attachments.
   Omit key for structural validation; rendering is explicitly not checked.
   Every response includes every component status. output changes disclosure only.
   An empty rendered string is a successful output. Any component failure fails the check.
@@ -107,6 +129,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
   const attempts = new Map<string, object>();
   let sequence = 0;
   return async (params) => {
+    const mode = params.mode === "update" ? "update" : "create";
     const output =
       typeof params.output === "string" ? params.output.split(",") : [];
     const answer = (result: object) => {
@@ -165,12 +188,21 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           ))) ||
       (params.evidence !== undefined && params.evidence !== "full") ||
       (params.draft !== undefined && params.document !== undefined) ||
+      (params.mode !== undefined &&
+        params.mode !== "create" &&
+        params.mode !== "update") ||
+      (params.existing !== undefined && typeof params.existing !== "string") ||
+      (params.note !== undefined && params.existing !== undefined) ||
+      ((params.note !== undefined || params.existing !== undefined) &&
+        mode !== "update") ||
+      (mode === "update" && params.key === undefined) ||
       [
         params.key,
         params.profile,
         params.document,
         params.draft,
         params.attempt,
+        params.note,
       ].some(
         (value) =>
           value !== undefined &&
@@ -187,6 +219,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         params.document !== undefined ||
         params.draft !== undefined ||
         params.key !== undefined ||
+        params.mode !== undefined ||
+        params.note !== undefined ||
+        params.existing !== undefined ||
         params["expect-source"] !== undefined
       )
         return fail(
@@ -208,6 +243,11 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     let dataRevision = "";
     let reportLanguage: string | undefined;
     let reportDocument: string | undefined;
+    let itemKey = params.key as string;
+    let baseline:
+      | Extract<Awaited<ReturnType<typeof selectCheckBaseline>>, { ok: true }>
+      | undefined;
+    let selectedProfile: { id: string; label: string } | undefined;
     const reportContext = () => ({
       document: reportDocument,
       language: reportLanguage,
@@ -230,7 +270,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           ...renderIdentity({
             source: reportSource,
             snapshot: dataRevision ? { revision: dataRevision } : null,
-            mode: "create",
+            mode,
           }),
           ...(diagnostic.annotation
             ? {
@@ -265,16 +305,46 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         attemptContext: {
           sequence: attemptSequence,
           capturedAt,
-          mode: "create",
+          mode,
           sourceRevision: reportSource ? sourceRevision(reportSource) : null,
           dataRevision: dataRevision || null,
           ...reportContext(),
         },
+        ...(baseline
+          ? {
+              baseline: {
+                kind: baseline.kind,
+                indexedKey: itemKey,
+                path: baseline.path,
+                revision:
+                  baseline.source === null
+                    ? null
+                    : sourceRevision(baseline.source),
+                profile: {
+                  id: baseline.stamp?.id ?? (baseline.stamp ? null : "default"),
+                  stamp: baseline.stamp?.stamp ?? null,
+                },
+              },
+              selectedProfile,
+              proposedProfileChange:
+                baseline.kind !== "synthetic" &&
+                selectedProfile !== undefined &&
+                selectedProfile.id !==
+                  (baseline.stamp?.id ?? (baseline.stamp ? null : "default")),
+              operation: {
+                outcome: (result as { ok?: boolean }).ok
+                  ? "previewed"
+                  : "refused",
+              },
+            }
+          : {}),
         request: {
           profile: params.profile,
           document: params.document,
           draft: params.draft,
           key: params.key,
+          mode,
+          note: params.note,
         },
       };
       attempts.set(attempt, JSON.parse(JSON.stringify(retained)) as object);
@@ -306,11 +376,70 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         });
       }
     }
+    if (mode === "update") {
+      try {
+        await deps.profile.ready;
+        const parent = await loadTemplateData(deps.data, itemKey, "filename");
+        if (
+          parent.kind !== "data" ||
+          !("indexedKey" in parent.data) ||
+          typeof parent.data.indexedKey !== "string"
+        )
+          return finish({
+            ok: false,
+            diagnostic: {
+              code: "TARGET_NOT_FOUND",
+              message: "The selected Zotero item is unavailable.",
+              recovery:
+                "Select an existing item, attachment, annotation, or child-note key and run the check again.",
+            },
+          });
+        itemKey = parent.data.indexedKey;
+        const selected = await selectCheckBaseline(deps.data, {
+          key: itemKey,
+          note: params.note as string | undefined,
+          existing: params.existing as string | undefined,
+        });
+        if (!selected.ok) return finish(selected);
+        baseline = selected;
+        if (
+          params.profile === undefined &&
+          params.document === undefined &&
+          params.draft === undefined &&
+          baseline.stamp &&
+          (!baseline.stamp.id ||
+            !deps.profile.resolveProfile(baseline.stamp.id))
+        )
+          return finish({
+            ok: false,
+            diagnostic: {
+              code: "UNKNOWN_PROFILE_STAMP",
+              message:
+                "The baseline's Profile stamp does not resolve. Select an explicit Profile to preview a change.",
+              stamp: baseline.stamp.stamp,
+            },
+          });
+      } catch (error) {
+        return finish({
+          ok: false,
+          diagnostic: {
+            code: "BASELINE_READ_FAILED",
+            message: error instanceof Error ? error.message : String(error),
+            recovery:
+              "Restore access to the selected Zotero source and run the update check again.",
+          },
+        });
+      }
+    }
     const inspect = createInspectHandler(deps, draft);
     const inspectRequest = {
       ...(params.document !== undefined
         ? { document: params.document }
-        : { profile: params.profile ?? "default" }),
+        : {
+            profile:
+              params.profile ??
+              (draft ? "default" : (baseline?.stamp?.id ?? "default")),
+          }),
       ...(params.profile !== undefined && params.document !== undefined
         ? { profile: params.profile }
         : {}),
@@ -475,9 +604,28 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           reason:
             "Structural validation only; provide key to check rendering with real item data.",
         });
+      selectedProfile = {
+        id: profile.selector,
+        label: profile.label ?? "Default",
+      };
       const data = {
         ...deps.data,
         settings: { loaded: Promise.resolve(profile.settings) },
+        ...(baseline
+          ? {
+              noteIndex: {
+                whenIndexed: () => deps.data.noteIndex.whenIndexed(),
+                getImportedNoteByNoteKey: (key: string) =>
+                  deps.data.noteIndex.getImportedNoteByNoteKey(key),
+                getNotesByItemKey: (key: string) => {
+                  const notes = deps.data.noteIndex.getNotesByItemKey(key);
+                  return key === itemKey
+                    ? notes.filter((file) => file.path === baseline!.path)
+                    : notes;
+                },
+              },
+            }
+          : {}),
       };
       const [note, filename] = await Promise.all([
         loadTemplateData(data, params.key as string, "note"),
@@ -530,11 +678,26 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           note: note.data as NoteTemplateContext,
           filename: filename.data,
           annotations,
+          ...(baseline ? { existing: baseline.source } : {}),
         }),
       );
       const after = JSON.parse(
         (await inspect(inspectRequest)) as string,
       ) as InspectedSource;
+      if (baseline?.kind === "real") {
+        const file = deps.app.vault.getFileByPath(baseline.path!);
+        if (!file || (await deps.app.vault.read(file)) !== baseline.source)
+          return finish({
+            ...context,
+            ok: false,
+            rendering: "checked",
+            diagnostic: {
+              code: "BASELINE_SUPERSEDED",
+              message:
+                "The Literature Note changed during this attempt. Run a new check.",
+            },
+          });
+      }
       if (
         !after.ok ||
         sourceRevision(after.source ?? "") !== inspected.input?.revision ||

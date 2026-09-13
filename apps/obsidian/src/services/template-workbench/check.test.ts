@@ -1,13 +1,17 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import type { CliHandler, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { withAnnotationCitation } from "@zotlit/db";
+import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
+import type { DatabaseService } from "@/services/database/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
 
@@ -40,7 +44,11 @@ frontmatter:
 --- zotlit:annotation ---
 {{ zt.comment }}`;
 
-async function fixture(source = SOURCE) {
+async function fixture(
+  source = SOURCE,
+  notes: Record<string, string> = {},
+  db?: Pick<DatabaseService, "acquireRead">,
+) {
   await using stack = new AsyncDisposableStack();
   const f = stack.use(await profileServiceFixture({ [PATH]: source }));
   const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
@@ -48,6 +56,7 @@ async function fixture(source = SOURCE) {
   const scratch = await mkdtemp(resolve(workspaceRoot, "tmp/check-draft-"));
   stack.defer(() => rm(scratch, { recursive: true, force: true }));
   Object.assign(f.vault, {
+    read: async (file: { path: string }) => f.vault.contents.get(file.path)!,
     getName: () => "Check fixture",
     adapter: {
       getBasePath: () => "/fixture",
@@ -60,10 +69,21 @@ async function fixture(source = SOURCE) {
     },
   });
   const handlers = new Map<string, CliHandler>();
+  const noteFiles = Object.entries(notes).map(([path, text]) =>
+    f.vault.addFile(path, text),
+  );
+  const noteIndex = {
+    whenIndexed: async () => {},
+    getNotesByItemKey: (key: string) =>
+      key === "ABCD2345" || key === "1:ABCD2345" ? noteFiles : [],
+    getImportedNoteByNoteKey: () => [],
+  };
   const zoteroPref = {
     ready: Promise.resolve(),
     sourceId: "fixture",
     databasePath: "/fixture/db",
+    dataDir: "/fixture",
+    baseAttachmentPath: null,
   };
   registerTemplateWorkbench(
     {
@@ -77,6 +97,8 @@ async function fixture(source = SOURCE) {
       settings: f.settings,
       profile: f.profile,
       zoteroPref,
+      noteIndex,
+      db,
     } as never,
   );
   const cleanup = stack.move();
@@ -101,7 +123,7 @@ beforeEach(() => {
     kind: "data",
     data:
       root === "filename"
-        ? { title: "Paper" }
+        ? { title: "Paper", indexedKey: "1:ABCD2345" }
         : root === "annotation"
           ? {
               indexedKey: "1:ANNO2345",
@@ -318,6 +340,352 @@ describe("registered template-check", () => {
       input: { origin: "draft" },
       diagnostic: { code: "SOURCE_READ_FAILED" },
     });
+  });
+  const existing = `---
+personal: keep me
+title: Old title
+zotlit-profile: Books (Bk3Qn7XvT2Lp)
+tags: [old]
+---
+My introduction.
+%%zt-managed%%
+Old generated text
+%%/zt-managed%%
+My conclusion.
+`;
+
+  it("checks a standalone draft update against an unresolved baseline stamp", async () => {
+    await using f = await fixture();
+    const draft = await f.draft(SOURCE);
+    const result = await f.check({
+      mode: "update",
+      draft,
+      key: "1:ABCD2345",
+      existing: existing.replace("Bk3Qn7XvT2Lp", "Unk3Qn7XvT2L"),
+      output: "body",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      input: { origin: "draft" },
+      selectedProfile: { id: "Bk3Qn7XvT2Lp" },
+      proposedProfileChange: true,
+      operation: { outcome: "previewed" },
+    });
+    expect(result.outputs.body).toContain("My introduction.");
+    expect(result.outputs.body).toContain("Managed");
+    expect(result.outputs.body).not.toContain("Old generated text");
+  });
+
+  it.each(["real", "supplied"] as const)(
+    "updates the %s baseline through its stamp and keeps user text and key order",
+    async (kind) => {
+      await using f = await fixture(
+        SOURCE,
+        kind === "real" ? { "Notes/Paper.md": existing } : {},
+      );
+      const before = new Map(f.vault.contents);
+      const writes = vi.spyOn(f.app.fileManager, "processFrontMatter");
+      const result = await f.check({
+        mode: "update",
+        key: "1:ABCD2345",
+        ...(kind === "supplied" ? { existing } : {}),
+        output: "all",
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        baseline: {
+          kind,
+          path: kind === "real" ? "Notes/Paper.md" : null,
+          profile: { id: "Bk3Qn7XvT2Lp" },
+        },
+        selectedProfile: { id: "Bk3Qn7XvT2Lp" },
+        proposedProfileChange: false,
+        operation: { outcome: "previewed" },
+        attemptContext: { mode: "update" },
+      });
+      expect(result.outputs.body).toBe(
+        "My introduction.\n%%zt-managed%%\nManaged\n%%/zt-managed%%\nMy conclusion.\n",
+      );
+      expect(result.outputs.fold).toMatchObject({
+        personal: "keep me",
+        title: "Paper",
+        tags: ["first", "second"],
+      });
+      expect(
+        Object.keys(parse(result.outputs.frontmatter)).slice(0, 4),
+      ).toEqual(["personal", "title", "zotlit-profile", "tags"]);
+      expect(f.vault.contents).toEqual(before);
+      expect(writes).not.toHaveBeenCalled();
+      const retained = await f.check({
+        attempt: result.attempt,
+        output: "body",
+      });
+      expect(retained.outputs).toEqual({
+        body: "My introduction.\n%%zt-managed%%\nManaged\n%%/zt-managed%%\nMy conclusion.\n",
+      });
+    },
+  );
+
+  it("requires an explicit path for duplicate notes and reports a proposed Profile change", async () => {
+    await using f = await fixture(SOURCE, {
+      "Notes/One.md": existing,
+      "Notes/Two.md": existing,
+    });
+    const duplicate = await f.check({ mode: "update", key: "1:ABCD2345" });
+    expect(duplicate).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "duplicate-literature-notes",
+        candidates: ["Notes/One.md", "Notes/Two.md"],
+      },
+    });
+    const result = await f.check({
+      mode: "update",
+      key: "1:ABCD2345",
+      note: "Notes/Two.md",
+      profile: "default",
+      output: "fold",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      baseline: { path: "Notes/Two.md", profile: { id: "Bk3Qn7XvT2Lp" } },
+      selectedProfile: { id: "default" },
+      proposedProfileChange: true,
+    });
+    expect(result.outputs.fold).not.toHaveProperty("zotlit-profile");
+  });
+
+  it.each(["ABCD2345", "ATCH2345", "NATE2345"])(
+    "uses the selected parent note in real loader output for %s",
+    async (key) => {
+      using stack = new DisposableStack();
+      const client = stack.adopt(createClient(":memory:"), (value) =>
+        (value.$client as DatabaseSync).close(),
+      );
+      const sqlite = client.$client as DatabaseSync;
+      createFixtureSchema(sqlite);
+      sqlite.exec(`
+      insert into libraries (libraryID, type) values (1, 'user');
+      insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle'), (2, 'attachment'), (3, 'note');
+      insert into items (itemID, itemTypeID, libraryID, key) values
+        (1, 1, 1, 'ABCD2345'), (2, 2, 1, 'ATCH2345'), (3, 3, 1, 'NATE2345');
+      update items set dateAdded = '2024-01-01 00:00:00', dateModified = '2024-01-01 00:00:00';
+      insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+        values (2, 1, 0, 'application/pdf', 'storage:paper.pdf');
+      insert into itemNotes (itemID, parentItemID, note, title) values (3, 1, '<p>Child</p>', 'Child');
+      PRAGMA query_only = ON;
+    `);
+      const actual = await vi.importActual<typeof import("./data")>("./data");
+      vi.mocked(loadTemplateData).mockImplementation(actual.loadTemplateData);
+      await using f = await fixture(
+        SOURCE.replace("%}Managed{%", "%}{{ zt.notePath }}{%"),
+        {
+          "Notes/One.md": existing.replace("My introduction.", "First note."),
+          "Notes/Two.md": existing.replace("My introduction.", "Second note."),
+        },
+        {
+          acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never,
+        },
+      );
+      Object.assign(f.app.fileManager, {
+        generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,
+        getAvailablePathForAttachment: async () => "images/probe.png",
+      });
+      const duplicate = await f.check({ mode: "update", key });
+      expect(duplicate, JSON.stringify(duplicate)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "duplicate-literature-notes",
+          candidates: ["Notes/One.md", "Notes/Two.md"],
+        },
+      });
+      const result = await f.check({
+        mode: "update",
+        key,
+        note: "Notes/Two.md",
+        output: "body",
+      });
+      expect(result, JSON.stringify(result)).toMatchObject({
+        ok: true,
+        baseline: {
+          kind: "real",
+          indexedKey: "ABCD2345",
+          path: "Notes/Two.md",
+        },
+      });
+      expect(result.outputs.body).toBe(
+        "Second note.\n%%zt-managed%%\nNotes/Two.md\n%%/zt-managed%%\nMy conclusion.\n",
+      );
+    },
+  );
+
+  it("retains the selected baseline identity and recovery when reading its bytes fails", async () => {
+    await using f = await fixture(SOURCE, { "Notes/Unreadable.md": existing });
+    vi.spyOn(f.app.vault, "read").mockRejectedValue(
+      new Error("Permission denied"),
+    );
+    const result = await f.check({ mode: "update", key: "1:ABCD2345" });
+    expect(result).toMatchObject({
+      ok: false,
+      baseline: {
+        kind: "real",
+        path: "Notes/Unreadable.md",
+        indexedKey: "1:ABCD2345",
+        revision: null,
+      },
+      diagnostic: {
+        code: "BASELINE_READ_FAILED",
+        recovery:
+          "Restore access to 'Notes/Unreadable.md' and correct its frontmatter, then run the check again with note=Notes/Unreadable.md.",
+      },
+    });
+  });
+
+  it.each(["real", "supplied"] as const)(
+    "retains the %s baseline identity and recovery for invalid frontmatter",
+    async (kind) => {
+      const malformed = "---\ntags: [broken\n---\nMy note";
+      await using f = await fixture(
+        SOURCE,
+        kind === "real" ? { "Notes/Broken.md": malformed } : {},
+      );
+      const result = await f.check({
+        mode: "update",
+        key: "1:ABCD2345",
+        ...(kind === "supplied" ? { existing: malformed } : {}),
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        baseline: {
+          kind,
+          path: kind === "real" ? "Notes/Broken.md" : null,
+          revision: expect.any(String),
+        },
+        diagnostic: {
+          code: "BASELINE_READ_FAILED",
+          recovery:
+            kind === "real"
+              ? "Restore access to 'Notes/Broken.md' and correct its frontmatter, then run the check again with note=Notes/Broken.md."
+              : "Correct the supplied existing=<text> frontmatter and run the check again.",
+        },
+      });
+    },
+  );
+
+  it("labels a synthetic baseline and preserves a supplied static body", async () => {
+    await using f = await fixture();
+    const synthetic = await f.check({
+      mode: "update",
+      key: "1:ABCD2345",
+      profile: "Books",
+      output: "body",
+    });
+    expect(synthetic).toMatchObject({
+      ok: true,
+      baseline: { kind: "synthetic", path: null, revision: null },
+      outputs: { body: "# Paper\n%%zt-managed%%\nManaged\n%%/zt-managed%%\n" },
+    });
+    const result = await f.check({
+      mode: "update",
+      key: "1:ABCD2345",
+      existing: "My static note.\n",
+      profile: "Books",
+      output: "body",
+    });
+    expect(result.outputs.body).toBe("My static note.\n");
+  });
+
+  it("reports append conflicts, keep/replace, spread omission and static deletion against the baseline", async () => {
+    const source = `---
+id: Bk3Qn7XvT2Lp
+name: Books
+version: 1.0.0
+contract: 5
+filename: Paper
+frontmatter:
+  - key: tags
+    merge: append
+    value: [new]
+  - key: personal
+    merge: keep
+    value: ignored
+  - key: title
+    value: Changed
+  - key: remove
+    value: { $if: 'false', then: value }
+  - value: { $if: 'false', then: { untouched: no } }
+---
+Static template
+--- zotlit:annotation ---
+Annotation`;
+    await using f = await fixture(source);
+    const result = await f.check({
+      mode: "update",
+      key: "1:ABCD2345",
+      profile: "Books",
+      existing:
+        "---\npersonal: Mine\ntags: conflict\nremove: old\nuntouched: retained\n---\nPersonal body",
+      output: "all",
+    });
+    expect(result, JSON.stringify(result)).toMatchObject({
+      ok: true,
+      checks: {
+        body: { behavior: "static-body" },
+        fold: {
+          diagnostics: [{ code: "property-append-conflict", position: 1 }],
+        },
+      },
+    });
+    expect(result.outputs.body).toBe("Personal body");
+    expect(result.outputs.fold).toMatchObject({
+      personal: "Mine",
+      tags: "conflict",
+      untouched: "retained",
+      title: "Changed",
+    });
+    expect(result.outputs.fold).not.toHaveProperty("remove");
+    expect(result.outputs.properties).toEqual(
+      expect.arrayContaining([
+        {
+          key: "remove",
+          position: 4,
+          missing: true,
+          merge: "replace",
+          omission: "static-key-deleted",
+        },
+        {
+          position: 5,
+          missing: true,
+          omission: "spread-omitted",
+          merge: "replace",
+        },
+      ]),
+    );
+  });
+
+  it("refuses failed properties without presenting a partial fold", async () => {
+    await using f = await fixture(
+      SOURCE.replace(
+        'value: "${zt.title}"',
+        'value: { $eval: "missing.value" }',
+      ),
+    );
+    const result = await f.check({
+      mode: "update",
+      key: "1:ABCD2345",
+      existing,
+      output: "all",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      operation: { outcome: "refused" },
+      checks: {
+        properties: { status: "failed" },
+        fold: { status: "not-checked" },
+        frontmatter: { status: "not-checked" },
+      },
+    });
+    expect(result.outputs).not.toHaveProperty("fold");
   });
 
   it("checks all create components, folds independent contributions, and discloses complete output", async () => {

@@ -319,7 +319,7 @@ export function registerTemplateWorkbench(
   );
   plugin.registerCliHandler(
     TEMPLATE_CHECK_COMMAND,
-    "Check every saved Profile create component with verified source freshness",
+    "Check every saved Profile create or update component with verified source freshness",
     checkFlags,
     createCheckHandler({
       pluginVersion: plugin.manifest.version,

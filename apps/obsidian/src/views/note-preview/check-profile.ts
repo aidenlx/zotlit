@@ -1,4 +1,6 @@
 // Complete, write-free Profile checking through the native preview's composition boundary.
+import { stringifyYaml } from "obsidian";
+
 import type { NoteTemplateContext } from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
 import { stringifyFrontmatterInOrder } from "@zotlit/templates/frontmatter";
@@ -18,6 +20,8 @@ import { prepareManagedFrontmatter } from "@/services/note-feature/frontmatter";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { TemplateService } from "@/services/template/service";
 
+import { previewBaseline } from "./baseline";
+
 export const PROFILE_OUTPUTS = [
   "filename",
   "properties",
@@ -30,6 +34,7 @@ export const PROFILE_OUTPUTS = [
 export type ProfileOutput = (typeof PROFILE_OUTPUTS)[number];
 export interface ProfileCheck {
   status: "passed" | "failed" | "not-checked";
+  behavior?: "static-body" | "managed-region";
   output?: unknown;
   diagnostics: (RenderDiagnostic & {
     recovery: string;
@@ -80,6 +85,8 @@ export function checkNativeProfile(
     source: string;
     note: NoteTemplateContext;
     filename: object;
+    /** Undefined selects create; null selects a synthetic update baseline. */
+    existing?: string | null;
     annotations: readonly {
       key: string;
       revision?: string;
@@ -124,6 +131,17 @@ export function checkNativeProfile(
   );
   run("body", () => document.renderForCreate(note));
   run("managed", () => document.renderForUpdate(note));
+  const updating = input.existing !== undefined;
+  if (
+    updating &&
+    checks.body.status === "passed" &&
+    checks.managed.status === "passed"
+  ) {
+    const created = checks.body.output as string;
+    const managed = checks.managed.output as string | null;
+    run("body", () => previewBaseline(input.existing!, created, managed).body);
+    checks.body.behavior = managed === null ? "static-body" : "managed-region";
+  }
   const annotations: {
     key: string;
     check: ProfileCheck;
@@ -195,7 +213,35 @@ export function checkNativeProfile(
       result: ReturnType<typeof prepareManagedFrontmatter>;
       fields: readonly EvaluatedFrontmatterField[];
     };
-    checks.properties.output = nativePropertyRows(fields);
+    checks.properties.output = nativePropertyRows(fields).map((row, index) =>
+      updating
+        ? {
+            ...row,
+            merge: fields[index]!.merge,
+            omission: row.missing
+              ? fields[index]!.value === FRONTMATTER_ABSENT &&
+                fields[index]!.merge === "replace"
+                ? "static-key-deleted"
+                : "preserved"
+              : undefined,
+          }
+        : row,
+    );
+    if (updating) {
+      const rows = checks.properties.output as object[];
+      document.manifest.frontmatter?.forEach((entry, index) => {
+        if (
+          !("key" in entry) &&
+          !fields.some((field) => field.position === index + 1)
+        )
+          rows.push({
+            position: index + 1,
+            missing: true,
+            omission: "spread-omitted",
+            merge: entry.merge ?? "replace",
+          });
+      });
+    }
     checks.properties.entries = document.manifest.frontmatter?.map(
       (entry, index) => ({
         ...("key" in entry ? { key: entry.key } : {}),
@@ -218,7 +264,9 @@ export function checkNativeProfile(
       );
     } else {
       run("fold", () => {
-        const frontmatter: Record<string, unknown> = {};
+        const frontmatter: Record<string, unknown> = updating
+          ? previewBaseline(input.existing!, "", null).frontmatter
+          : {};
         applyComposedFrontmatter({ template: templates }, frontmatter, {
           context: note,
           itemKey: note.indexedKey,
@@ -237,10 +285,12 @@ export function checkNativeProfile(
       });
       if (checks.fold.status === "passed")
         run("frontmatter", () =>
-          stringifyFrontmatterInOrder(
-            checks.fold.output as Record<string, unknown>,
-            result.prepared.kind === "document" ? result.prepared.keys : [],
-          ),
+          updating
+            ? stringifyYaml(checks.fold.output)
+            : stringifyFrontmatterInOrder(
+                checks.fold.output as Record<string, unknown>,
+                result.prepared.kind === "document" ? result.prepared.keys : [],
+              ),
         );
     }
   }
