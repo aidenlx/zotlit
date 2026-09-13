@@ -126,9 +126,11 @@ describe("a draft the parser refuses", () => {
     act(() =>
       area.querySelector<HTMLElement>('[data-part="problems-toggle"]')!.click(),
     );
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 2 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 2 }));
     const select = area.querySelector("select")!;
     expect(select.getAttribute("aria-label")).toBe(
       m.workbench_problems_selected(),
