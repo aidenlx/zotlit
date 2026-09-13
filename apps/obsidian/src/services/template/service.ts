@@ -895,6 +895,13 @@ export class TemplateService extends Service<void> {
     return exportLiteratureNotePack(source, partials, options);
   }
 
+  /** Rescan the current vault inventory after Obsidian finishes opening a vault. */
+  async refresh(): Promise<void> {
+    await this.ready;
+    await this.#rebuildFolder(this.#currentTemplateFolder());
+    await this.#settle();
+  }
+
   /**
    * Wait until every template edit **Obsidian has observed** before or during
    * this call has passed through the debounced compiler. The predicate reads
