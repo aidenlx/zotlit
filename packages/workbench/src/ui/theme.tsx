@@ -155,6 +155,10 @@ export interface WorkbenchParts {
     | "primary-action"
     | "secondary-action";
   annotation:
+    | "help-bar"
+    | "help-button"
+    | "help"
+    | "help-steps"
     | "sample-bar"
     | "problem"
     | "pane"

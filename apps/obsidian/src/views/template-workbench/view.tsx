@@ -2674,6 +2674,11 @@ function EditorContent({
                 </button>
               )}
               <AnnotationPane
+                finishHelp={
+                  view.originatingNote
+                    ? m.workbench_annotation_help_finish_note()
+                    : m.workbench_annotation_help_finish_native()
+                }
                 controller={controller}
                 problem={
                   formatProblem

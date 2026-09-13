@@ -29,6 +29,20 @@ The editing and result panes carry this loop. Keep optional explanation behind
 a visible Help control beside the task. A message says what happened and what
 the reader can do next, in terms of the template and its result.
 
+## Guide the first annotation edit
+
+Annotation offers optional **Help** beside the task. Its bounded inline guide
+keeps the source visible and the editor mounted, preserving selection, scroll,
+and history. Keyboard users can reach the guide and close it with focus returned
+to Help. Experienced users can keep editing with the guide closed.
+
+Teach one edit: replace `[!note]` with `[!quote]` in the built-in annotation format
+and keep the rest of the line. Ask the researcher to inspect a real annotation
+from the selected paper. Separate the three outcomes: the template saves, the
+preview shows a quote callout, and **Update this note** applies it to the originating
+Literature Note. The host names its available save and update actions. Explain
+conditions, loops, and publishing metadata only when the reader asks for them.
+
 ## Create a second destination
 
 Settings **Add profile** collects **Name** and **Literature Note folder** together.

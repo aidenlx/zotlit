@@ -282,6 +282,11 @@ export const WEB_THEME: WorkbenchTheme = {
       "secondary-action": buttonVariants({ variant: "ghost", size: "xs" }),
     },
     annotation: {
+      "help-bar": "mb-2 flex shrink-0 justify-end",
+      "help-button": buttonVariants({ variant: "ghost", size: "xs" }),
+      help: "mb-2 max-h-40 shrink-0 overflow-auto rounded-md border border-fd-border bg-fd-card p-3 text-xs leading-normal focus-visible:outline-2 focus-visible:outline-fd-ring",
+      "help-steps": "my-2 list-decimal space-y-2 ps-4",
+
       "sample-bar": "mb-2 flex shrink-0 items-center gap-2",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",

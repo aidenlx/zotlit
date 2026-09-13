@@ -395,6 +395,35 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      freshId,
+      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())}).click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(m.workbench_annotation_help_title())}]');const source=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));return String(!!guide&&guide.textContent.includes('[!quote]')&&guide.textContent.includes(${JSON.stringify(m.template_workbench_update_this_note())})&&guide.getBoundingClientRect().height>0&&source.getBoundingClientRect().height>0);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      freshId,
+      `(function(){const view=${editor};const close=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_annotation_help_hide())});close.focus();close.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     // CodeMirror's mounted view receives the same transaction as typed text.
     expect(
       await obEval(
