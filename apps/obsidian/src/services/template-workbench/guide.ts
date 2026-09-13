@@ -10,6 +10,7 @@ import {
 import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
 import { RESERVED_PARTIAL_NAME_LIST } from "@/services/template/defaults";
 
+import { DISCOVERY_HELP } from "./discovery";
 import type { DiagnosticCode } from "./envelope";
 import { INSPECT_GUIDE, INSPECT_SYNOPSIS } from "./inspect-contract";
 import { CONTRACT_ROOT_NAMES } from "./schema";
@@ -49,8 +50,8 @@ const ANNOTATION_REQUIRED: DiagnosticCode = "ANNOTATION_REQUIRED";
 const ETA_OPT_IN_REQUIRED: DiagnosticCode = "ETA_OPT_IN_REQUIRED";
 
 const TEMPLATE_DATA_SYNOPSIS = `obsidian zotlit:template-data \\
-    (key=<zotero-key> | example=<${CITATION_EXAMPLE_NAMES.join("|")}>) \\
-    root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>`;
+    (key=<zotero-key> | note=<vault-path> | example=<${CITATION_EXAMPLE_NAMES.join("|")}>) \\
+    root=<${CONTRACT_ROOT_NAMES.join("|")}> [query=<words> | path=<zt.path> | full] expect-source=<source-id>`;
 
 const TEMPLATE_RENDER_SYNOPSIS = `obsidian zotlit:template-render \\
     (key=<zotero-key> | example=<citation-set>) \\
@@ -127,8 +128,10 @@ ${manList(CITATION_EXAMPLE_NAMES, " ".repeat(11))}
   obtain a Zotero key.
 
 OUTPUT
-  template-data stores the template object under the literal key "zt".
-  Example: jq '.zt.annotations'.
+  ${DISCOVERY_HELP}
+  Responses identify the environment and selected object with its root.
+  full stores the complete template object under the literal key "zt".
+  Example: query=title or path=zt.annotations[0].comment.
 
   template-schema takes no parameters. It answers with schemas.<root>.url and
   schemas.<root>.fileName for every root. Each schema file is a release asset of

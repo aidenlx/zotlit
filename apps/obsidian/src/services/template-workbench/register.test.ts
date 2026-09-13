@@ -38,6 +38,14 @@ function declaredFlags(): Map<string, CliFlags | null> {
 }
 
 describe("Template Workbench CLI registration", () => {
+  it("teaches optional focused discovery and explicit broad output", () => {
+    const flags = declaredFlags().get(TEMPLATE_DATA_COMMAND)!;
+    expect(flags.query?.description).toContain("Optional focused discovery");
+    expect(flags.path?.description).toContain("zt.creators[0].family");
+    expect(flags.full?.description).toContain("complete zt object");
+    expect(flags.note?.description).toContain("template-inspect");
+    expect(flags.query?.required).not.toBe(true);
+  });
   it.each([TEMPLATE_DATA_COMMAND, TEMPLATE_RENDER_COMMAND])(
     "leaves key optional on %s, where an example set selects the object instead",
     (command) => {

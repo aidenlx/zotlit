@@ -37,6 +37,7 @@ import { loadCitationData, loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
   createInspectHandler,
+  selectInspectionNote,
   inspectFlags,
   TEMPLATE_INSPECT_COMMAND,
 } from "./inspect";
@@ -135,6 +136,21 @@ function formatFlag(values: readonly string[]): CliFlag {
 function dataFlags(): CliFlags {
   return {
     key: selectorKeyFlag(),
+    note: {
+      value: "<vault-path>",
+      description:
+        "Literature Note selected as in template-inspect; alternative to key or example",
+    },
+    query: {
+      value: "<words>",
+      description:
+        "Optional focused discovery: definitions, values, and expressions",
+    },
+    path: {
+      value: "<zt.path>",
+      description: "Exact nested field, such as zt.creators[0].family",
+    },
+    full: { description: "Explicitly include the complete zt object" },
     root: rootFlag(),
     example: exampleFlag(),
     format: formatFlag(["json"]),
@@ -298,6 +314,10 @@ export function registerTemplateWorkbench(
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: plugin.manifest.version,
     getIdentity,
+    selectNote: async (name) => {
+      await deps.profile.ready;
+      return selectInspectionNote(deps, name);
+    },
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
     loadCitation: (selector, variant) =>
       loadCitationData(deps, selector, variant),

@@ -223,6 +223,7 @@ export type EnvelopeTail =
       documents?: readonly LiteratureNoteDocumentRow[];
       /** The object a Template reads as `zt`. */
       zt?: unknown;
+      discovery?: object;
       markdown?: string;
       render?: { create: string; update: string | null };
       language?: TemplateLanguage;

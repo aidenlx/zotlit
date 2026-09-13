@@ -124,6 +124,7 @@ describe("Template Workbench CLI", () => {
   it("reports template and target state after compilation settles", async () => {
     const callOrder: string[] = [];
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
@@ -178,6 +179,7 @@ describe("Template Workbench CLI", () => {
     const getIdentity = vi.fn(() => IDENTITY);
     const getTemplateFileStatuses = vi.fn(() => TEMPLATE_FILES);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
@@ -225,6 +227,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const waitUntilSettled = vi.fn(async () => "timeout" as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
       loadCitation: NO_CITATION,
@@ -295,6 +298,7 @@ describe("Template Workbench CLI", () => {
     root.annotations = [{ parentItem: root }];
     const loadData = vi.fn(async () => ({ kind: "data", data: root }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -325,16 +329,19 @@ describe("Template Workbench CLI", () => {
       root: "note",
       format: "json",
       "expect-source": "a1b2c3d4",
+      full: "true",
     });
 
     expect(JSON.parse(output)).toEqual({
       contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
+      selection: { key: "ITEM2345", root: "note" },
       request: {
         key: "ITEM2345",
         root: "note",
         format: "json",
+        full: true,
       },
       identity: IDENTITY,
       zt: {
@@ -358,6 +365,7 @@ describe("Template Workbench CLI", () => {
 
   it("preserves a helper evaluation error in its marker", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -394,6 +402,7 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       root: "note",
       format: "json",
+      full: "true",
     });
 
     expect(JSON.parse(output)).toMatchObject({
@@ -410,6 +419,7 @@ describe("Template Workbench CLI", () => {
 
   it("names no template for a note-root data fault", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -446,6 +456,7 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       root: "note",
       format: "json",
+      full: "true",
     });
 
     expect(JSON.parse(output)).toMatchObject({
@@ -461,6 +472,7 @@ describe("Template Workbench CLI", () => {
 
   it("re-throws a stale contract IR instead of reporting a diagnostic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -494,12 +506,14 @@ describe("Template Workbench CLI", () => {
         key: "ITEM2345",
         root: "note",
         format: "json",
+        full: "true",
       }),
     ).rejects.toThrow(ContractMetadataError);
   });
 
   it("reports TEMPLATE_NOT_READY when template startup itself failed", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -541,6 +555,7 @@ describe("Template Workbench CLI", () => {
 
   it("prints the quickstart and topic index as literal text", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -639,6 +654,7 @@ describe("Template Workbench CLI", () => {
     ],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -672,6 +688,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an invalid guide topic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -746,6 +763,7 @@ describe("Template Workbench CLI", () => {
   ])("rejects an invalid selector %#", async (params, parameter) => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -789,6 +807,7 @@ describe("Template Workbench CLI", () => {
   it("defaults template-data format to json when absent", async () => {
     const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -828,6 +847,7 @@ describe("Template Workbench CLI", () => {
   it("ignores every --* token a CLI binary forwards", async () => {
     const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -866,6 +886,7 @@ describe("Template Workbench CLI", () => {
   it("reports vault= placed after the command name as INVALID_SELECTOR", async () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -914,6 +935,7 @@ describe("Template Workbench CLI", () => {
   it("names the offending parameter and the accepted list for an unknown key", async () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -962,6 +984,7 @@ describe("Template Workbench CLI", () => {
 
   it("cross-references template= to root= on template-data", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1007,6 +1030,7 @@ describe("Template Workbench CLI", () => {
     ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1064,6 +1088,7 @@ describe("Template Workbench CLI", () => {
     async ({ argument, expected, target, actual }) => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1116,6 +1141,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const waitUntilSettled = vi.fn(async () => "settled" as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
       loadCitation: NO_CITATION,
@@ -1167,6 +1193,7 @@ describe("Template Workbench CLI", () => {
     "rejects a %s selector for template-schema",
     async (parameter) => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1213,6 +1240,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an item selector for template-schema", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1257,6 +1285,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an unrecognized parameter for template-schema", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1308,6 +1337,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "data", data }) as const);
       const render = vi.fn(() => markdown);
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1350,6 +1380,7 @@ describe("Template Workbench CLI", () => {
     const render = vi.fn(() => "");
     const getTemplateSource = vi.fn(async () => "");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1406,6 +1437,7 @@ describe("Template Workbench CLI", () => {
       const render = vi.fn(() => "# multi\nline\n");
       const renderFilename = vi.fn(() => "Paper 2024");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1449,6 +1481,7 @@ describe("Template Workbench CLI", () => {
   it("wraps the same Markdown and active template identity as JSON", async () => {
     const markdown = "# Paper\n";
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1513,6 +1546,7 @@ describe("Template Workbench CLI", () => {
     );
     templates.define("content", "BODY {{ zt.title }}", "liquid");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1551,6 +1585,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const render = vi.fn(() => "");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1660,6 +1695,7 @@ describe("Template Workbench CLI", () => {
     "returns $code for a render failure",
     async ({ error, compileErrors, code, message, template }) => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1714,6 +1750,7 @@ describe("Template Workbench CLI", () => {
     ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps render data result %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1761,6 +1798,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const render = vi.fn(() => "");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1838,6 +1876,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const render = vi.fn(() => "");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1882,6 +1921,7 @@ describe("Template Workbench CLI", () => {
 
   it("keeps template-render's explicit root rejection message", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1925,6 +1965,7 @@ describe("Template Workbench CLI", () => {
 
   it("defaults template-render format to json when absent", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1967,6 +2008,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2010,6 +2052,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ zt.title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2048,6 +2091,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ zt.title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2087,6 +2131,7 @@ describe("Template Workbench CLI", () => {
     it("returns the winning vault file body", async () => {
       const getTemplateSource = vi.fn(async () => "vault body for note");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2133,6 +2178,7 @@ describe("Template Workbench CLI", () => {
 
     it("returns the embedded default body when no vault file exists", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2169,6 +2215,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unknown template name", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2212,6 +2259,7 @@ describe("Template Workbench CLI", () => {
 
     it("cross-references root= to template= on template-source", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2251,6 +2299,7 @@ describe("Template Workbench CLI", () => {
   describe("template-status and template-guide selectors", () => {
     it("rejects any parameter for template-status", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2294,6 +2343,7 @@ describe("Template Workbench CLI", () => {
     it("tolerates --* tokens for template-status", async () => {
       const waitUntilSettled = vi.fn(async () => "settled" as const);
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2328,6 +2378,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unrecognized parameter for template-guide", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2376,6 +2427,7 @@ describe("Template Workbench CLI", () => {
       };
       error.context = "1| {{ zt.title | bogus }}\n         ^^^^^";
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2421,6 +2473,7 @@ describe("Template Workbench CLI", () => {
     it("surfaces a recorded compile error's caret excerpt in details.context", async () => {
       const context = "1| {{ zt.title\n         ^";
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2485,6 +2538,7 @@ describe("Template Workbench CLI", () => {
 
     it("reports each configured field, the reserved keys, and the gate state", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2549,6 +2603,7 @@ describe("Template Workbench CLI", () => {
 
     it("flags no field inert once the JavaScript Templates gate is on", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2592,6 +2647,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unrecognized parameter", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2634,6 +2690,7 @@ describe("Template Workbench CLI", () => {
 
     it("tolerates --* tokens", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2702,6 +2759,7 @@ describe("Template Workbench CLI", () => {
       } = {},
     ) {
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3134,6 +3192,7 @@ describe("Template Workbench CLI", () => {
         EXISTING_FIELD,
       ];
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3563,6 +3622,7 @@ describe("Template Workbench CLI", () => {
         FIELD_B,
       ];
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3756,6 +3816,7 @@ describe("Template Workbench CLI", () => {
         FIELD_C,
       ];
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3976,6 +4037,7 @@ describe("zotlit:template-render for the Citation Template", () => {
     const facade = new TemplateFacade();
     facade.define("citation", source, "liquid");
     return createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: async (selector, variant) =>
@@ -4244,6 +4306,7 @@ describe("zotlit:template-render for a Shared Partial", () => {
     const facade = new TemplateFacade();
     facade.define("authors", source, "liquid");
     return createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       literatureNotes: {
         readProfiles: () => ({ defaultProfile: undefined, profiles: [] }),
         getDocumentStatuses: () => documents,
@@ -4462,3 +4525,7 @@ describe("zotlit:template-render for a Shared Partial", () => {
     });
   });
 });
+
+function noNoteSelection() {
+  return Promise.resolve({ error: "TARGET_NOT_FOUND" as const, matches: [] });
+}

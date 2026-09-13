@@ -295,6 +295,34 @@ export function selectInspectDocument(
   );
 }
 
+/** The same Literature Note selector for document inspection and field discovery. */
+export function selectInspectionNote(
+  deps: Pick<InspectDeps, "app" | "profile">,
+  name: string,
+) {
+  const files = deps.app.vault.getMarkdownFiles();
+  const exact = files.filter((file) => file.path === name);
+  const candidates = exact.length
+    ? exact
+    : files.filter((file) => file.basename === name);
+  if (candidates.length !== 1)
+    return {
+      error: candidates.length
+        ? ("AMBIGUOUS_TARGET" as const)
+        : ("TARGET_NOT_FOUND" as const),
+      matches: candidates.map((file) => file.path),
+    };
+  const file = candidates[0]!;
+  const key = itemKeyFromFrontmatter(deps.app.metadataCache.getFileCache(file));
+  if (!key) return { error: "NOT_LITERATURE_NOTE" as const };
+  const owner = deps.profile.profileOf(file);
+  const profile = owner.ok
+    ? owner.profile.selector
+    : (owner.stamped.id ?? parseProfileSelector(owner.stamped.stamp));
+  if (profile === undefined) return { error: "UNKNOWN_PROFILE_STAMP" as const };
+  return { note: { path: file.path, key }, profile };
+}
+
 export function createInspectHandler(deps: InspectDeps): CliHandler {
   return async (params) => {
     const identity = await deps.identity();
@@ -352,31 +380,11 @@ export function createInspectHandler(deps: InspectDeps): CliHandler {
     let selection = params;
     let note: { path: string; key: string } | undefined;
     if (typeof params.note === "string") {
-      const candidates = deps.app.vault
-        .getMarkdownFiles()
-        .filter(
-          (file) => file.path === params.note || file.basename === params.note,
-        );
-      if (candidates.length !== 1)
-        return fail(
-          candidates.length ? "AMBIGUOUS_TARGET" : "TARGET_NOT_FOUND",
-          { matches: candidates.map((file) => file.path) },
-        );
-      const file = candidates[0]!;
-      const key = itemKeyFromFrontmatter(
-        deps.app.metadataCache.getFileCache(file),
-      );
-      if (!key) return fail("NOT_LITERATURE_NOTE");
-      const owner = deps.profile.profileOf(file);
-      const profile = owner.ok
-        ? owner.profile.selector
-        : (owner.stamped.id ?? parseProfileSelector(owner.stamped.stamp));
-      if (profile === undefined)
-        return fail("UNKNOWN_PROFILE_STAMP", {
-          stamp: owner.ok ? undefined : owner.stamped,
-        });
-      note = { path: file.path, key };
-      selection = { profile };
+      const selected = selectInspectionNote(deps, params.note);
+      if (selected.error)
+        return fail(selected.error, { matches: selected.matches });
+      note = selected.note;
+      selection = { profile: selected.profile };
     }
     const selectionOptions = { profileIdentityOnly: note !== undefined };
     let matches = selectInspectDocument(inventory, selection, selectionOptions);
