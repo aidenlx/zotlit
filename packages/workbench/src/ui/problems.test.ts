@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  diagnosisForOccurrence,
   diagnosisEngineSources,
   diagnosisExplanation,
   diagnosisLocated,
+  diagnosisReport,
   diagnosisWhere,
   diagnosticText,
+  documentDiagnosis,
   problemText,
   renderDiagnosis,
   workbenchDiagnoses,
@@ -245,6 +248,23 @@ describe("attribution", () => {
     );
   });
 
+  it("keeps a document problem identity when an edit only moves its range", () => {
+    const before = documentDiagnosis({
+      code: "unknown-section-header",
+      params: { section: "wrong" },
+      slice: "advanced",
+      range: { from: 32, to: 46 },
+    });
+    const after = documentDiagnosis({
+      code: "unknown-section-header",
+      params: { section: "wrong" },
+      slice: "advanced",
+      range: { from: 58, to: 72 },
+    });
+
+    expect(after.id).toBe(before.id);
+  });
+
   it("keeps one problem's identity through an edit that moves its call", () => {
     const at = (from: number) =>
       renderDiagnosis({
@@ -284,16 +304,126 @@ describe("attribution", () => {
     expect([first, second].map((found) => found!.occurrences.length)).toEqual([
       1, 1,
     ]);
-    // A named object is what makes two occurrences one problem.
+    // A named object and the same verified call make two occurrences one problem.
     expect(
       workbenchDiagnoses(
         [],
         [
-          { code: "missing-partial", params: { name: "venue-line" } },
-          { code: "missing-partial", params: { name: "venue-line" } },
+          {
+            code: "missing-partial",
+            params: { name: "venue-line" },
+            callSite: { from: 10, to: 30 },
+          },
+          {
+            code: "missing-partial",
+            params: { name: "venue-line" },
+            callSite: { from: 10, to: 30 },
+          },
         ],
       ).map(({ occurrences }) => occurrences.length),
     ).toEqual([2]);
+  });
+
+  it("keeps unrelated failures in one template separate", () => {
+    const failure = (line: number, from: number) => ({
+      code: "render-error" as const,
+      message: "Unexpected tag",
+      part: "render" as const,
+      engine: { template: "shared", line, column: 1 },
+      callSite: { from, to: from + 12 },
+    });
+
+    expect(
+      workbenchDiagnoses([], [failure(2, 20), failure(8, 60)]),
+    ).toHaveLength(2);
+    expect(
+      workbenchDiagnoses(
+        [],
+        [
+          {
+            code: "missing-partial",
+            params: { name: "book-details" },
+            part: "render",
+          },
+          {
+            code: "missing-partial",
+            params: { name: "book-details" },
+            part: "render",
+          },
+        ],
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("keeps an unattributed survivor's identity when an earlier failure disappears", () => {
+    const first = {
+      code: "render-error" as const,
+      message: "First failure",
+      part: "render" as const,
+    };
+    const survivor = {
+      code: "render-error" as const,
+      message: "Surviving failure",
+      part: "render" as const,
+    };
+    const before = workbenchDiagnoses([], [first, survivor]);
+    const after = workbenchDiagnoses([], [survivor]);
+
+    expect(after[0]!.id).toBe(before[1]!.id);
+  });
+
+  it("keeps each grouped preview occurrence's evidence and selects it", () => {
+    const report = (selection: string) => ({
+      code: "missing-partial",
+      capturedAt: "2026-09-13T00:00:00Z",
+      trigger: "automatic" as const,
+      identity: { sourceRevision: "source", snapshotRevision: selection },
+      context: { selection },
+    });
+    const first = {
+      code: "missing-partial" as const,
+      params: { name: "book-details" },
+      part: "render" as const,
+      callSite: { from: 10, to: 30 },
+      evidence: { message: "first preview" },
+      report: report("item-one"),
+    };
+    const second = {
+      ...first,
+      evidence: { message: "second preview" },
+      report: report("item-two"),
+    };
+    const diagnosis = workbenchDiagnoses([], [first, second])[0]!;
+    if (diagnosis.kind !== "render")
+      throw new Error("Expected a render diagnosis");
+
+    expect(
+      diagnosis.occurrences.map((found) => found.report?.context.selection),
+    ).toEqual(["item-one", "item-two"]);
+    const selected = diagnosisForOccurrence(diagnosis, second);
+    if (selected.kind !== "render")
+      throw new Error("Expected a render diagnosis");
+    expect(selected.diagnostic).toBe(second);
+    expect(diagnosisReport(selected)).toBe(second.report);
+  });
+
+  it("names a Citation Template for a generic citation render failure", () => {
+    const diagnosis = renderDiagnosis({
+      code: "render-error",
+      message: "Citation Template failed",
+      part: "render",
+      report: {
+        code: "render-error",
+        capturedAt: "2026-09-13T00:00:00Z",
+        trigger: "automatic",
+        identity: { sourceRevision: "source", snapshotRevision: "item" },
+        context: { root: "citation" },
+      },
+    });
+
+    expect(diagnosisExplanation(m, diagnosis).object).toBe(
+      m.workbench_problems_object_citation(),
+    );
   });
 
   it("says no verified location for a failure the engine reported nowhere", () => {

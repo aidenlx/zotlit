@@ -235,8 +235,17 @@ export type WorkbenchDiagnosis =
       readonly id: string;
       readonly kind: "render";
       readonly diagnostic: RenderDiagnostic;
+      /** Each raw occurrence keeps its own captured preview report. */
       readonly occurrences: readonly RenderDiagnostic[];
     };
+
+type RenderDiagnosticWithCallIdentity = RenderDiagnostic & {
+  /** Stable text for the verified call, independent of its source offset. */
+  readonly callIdentity?: string;
+};
+
+const unattributedOccurrenceIds = new WeakMap<RenderDiagnostic, string>();
+let nextUnattributedId = 0;
 
 /**
  * The object a render diagnostic names, which is what makes two occurrences of
@@ -255,6 +264,67 @@ function diagnosticSubject(diagnostic: RenderDiagnostic): string {
   );
 }
 
+function problemSubject(problem: WorkbenchProblem): string {
+  const params = problem.params ?? {};
+  return String(
+    params.section ??
+      params.field ??
+      params.key ??
+      params.name ??
+      params.names ??
+      "",
+  );
+}
+
+function callIdentity(diagnostic: RenderDiagnostic): string | undefined {
+  return (diagnostic as RenderDiagnosticWithCallIdentity).callIdentity;
+}
+
+function repairTarget(diagnostic: RenderDiagnostic): string | undefined {
+  const identity = callIdentity(diagnostic);
+  if (identity !== undefined) return `call:${identity}`;
+  if (diagnostic.callSite !== undefined) {
+    return `call:${diagnostic.callSite.from}:${diagnostic.callSite.to}`;
+  }
+  if (diagnostic.position !== undefined) return `entry:${diagnostic.position}`;
+  if (diagnostic.code === "citation-style-error") return "citation-style";
+  if (diagnostic.part === "annotation") return "annotation";
+  return undefined;
+}
+
+function engineIdentity(diagnostic: RenderDiagnostic): string {
+  if (diagnostic.code !== "render-error") return "";
+  const engine = diagnostic.engine;
+  return engine === undefined
+    ? ""
+    : `${engine.template}:${engine.line ?? ""}:${engine.column ?? ""}`;
+}
+
+function diagnosticContent(diagnostic: RenderDiagnostic): string {
+  return JSON.stringify({
+    code: diagnostic.code,
+    message: diagnostic.message,
+    params: diagnostic.params,
+    part: diagnostic.part,
+    position: diagnostic.position,
+    engine: diagnostic.engine,
+    caller: diagnostic.caller,
+    evidence: diagnostic.evidence,
+  });
+}
+
+function unattributedIdentity(diagnostic: RenderDiagnostic): string {
+  return `unattributed:${diagnosticContent(diagnostic)}`;
+}
+
+function unattributedOccurrenceIdentity(diagnostic: RenderDiagnostic): string {
+  const kept = unattributedOccurrenceIds.get(diagnostic);
+  if (kept !== undefined) return kept;
+  const id = `occurrence:${nextUnattributedId++}`;
+  unattributedOccurrenceIds.set(diagnostic, id);
+  return id;
+}
+
 /**
  * A diagnosis's identity: its code, the object it names, and where it is
  * repaired. Equal message text establishes nothing, so no part of the identity
@@ -264,7 +334,7 @@ export function documentDiagnosis(
   problem: WorkbenchProblem,
 ): WorkbenchDiagnosis {
   return {
-    id: `document:${problem.code}:${problem.slice}:${problem.range?.from ?? ""}`,
+    id: `document:${problem.code}:${problemSubject(problem)}:${problem.slice}`,
     kind: "document",
     problem,
     occurrences: [problem],
@@ -275,13 +345,23 @@ export function renderDiagnosis(
   diagnostic: RenderDiagnostic,
 ): WorkbenchDiagnosis {
   const { code, part, position } = diagnostic;
+  const subject = diagnosticSubject(diagnostic);
+  const target = repairTarget(diagnostic);
+  const identity =
+    target === undefined
+      ? unattributedIdentity(diagnostic)
+      : `${code}:${subject}:${part ?? ""}:${position ?? ""}:${engineIdentity(diagnostic)}${
+          callIdentity(diagnostic) === undefined
+            ? ""
+            : `:call:${callIdentity(diagnostic)}`
+        }`;
   // No offset joins the identity: the reader typing above a failed call moves
   // every offset in the document without changing what failed, and a problem
   // that keeps its identity through such an edit is the one the reader is
   // still reading. What the failure names, and the section it was reported
   // under, are what tell two problems apart.
   return {
-    id: `render:${code}:${diagnosticSubject(diagnostic)}:${part ?? ""}:${position ?? ""}`,
+    id: `render:${identity}`,
     kind: "render",
     diagnostic,
     occurrences: [diagnostic],
@@ -297,9 +377,15 @@ export function renderDiagnosis(
 function verified(diagnosis: WorkbenchDiagnosis): boolean {
   if (diagnosis.kind === "document") return true;
   return (
-    diagnosis.diagnostic.callSite !== undefined ||
-    diagnosticSubject(diagnosis.diagnostic) !== ""
+    diagnosticSubject(diagnosis.diagnostic) !== "" &&
+    repairTarget(diagnosis.diagnostic) !== undefined
   );
+}
+
+function diagnosisGroupKey(diagnosis: WorkbenchDiagnosis): string | undefined {
+  if (diagnosis.kind === "document") return diagnosis.id;
+  if (!verified(diagnosis)) return undefined;
+  return `${diagnosis.id}:${repairTarget(diagnosis.diagnostic)}`;
 }
 
 /**
@@ -320,32 +406,43 @@ export function workbenchDiagnoses(
     ...problems.map(documentDiagnosis),
     ...diagnostics.map(renderDiagnosis),
   ];
-  // An unverified failure joins no group: the second one the same check finds
-  // takes an identity of its own, so its explanation and its report stay
-  // reachable rather than hiding behind the first. The first keeps the plain
-  // identity, which is the one a preview's Show problem asks for.
-  const seen = new Map<string, number>();
-  const keyed = found.map((diagnosis) => {
-    if (verified(diagnosis)) return [diagnosis.id, diagnosis] as const;
-    const before = seen.get(diagnosis.id) ?? 0;
-    seen.set(diagnosis.id, before + 1);
-    return [
-      before === 0 ? diagnosis.id : `${diagnosis.id}#${before}`,
-      diagnosis,
-    ] as const;
-  });
-  return [...Map.groupBy(keyed, ([id]) => id)].map(
-    ([id, group]) =>
-      ({
-        // The first occurrence stays the one the explanation is written from; the
-        // later ones add only the places this problem was found.
-        ...group[0]![1],
-        id,
-        occurrences: group.flatMap(([, diagnosis]) => [
-          ...diagnosis.occurrences,
-        ]),
-      }) as WorkbenchDiagnosis,
-  );
+  const grouped = new Map<string, WorkbenchDiagnosis>();
+  for (const diagnosis of found) {
+    const verifiedKey = diagnosisGroupKey(diagnosis);
+    let key = verifiedKey ?? diagnosis.id;
+    let current = diagnosis;
+    if (verifiedKey === undefined && grouped.has(key)) {
+      if (diagnosis.kind === "render") {
+        key = `${key}:${unattributedOccurrenceIdentity(diagnosis.diagnostic)}`;
+        current = { ...diagnosis, id: key };
+      }
+    }
+    const kept = grouped.get(key);
+    if (kept === undefined) {
+      grouped.set(key, current);
+      continue;
+    }
+    // The first occurrence stays the one the explanation is written from; the
+    // later ones add only the places this problem was found.
+    grouped.set(key, {
+      ...kept,
+      occurrences: [...kept.occurrences, ...current.occurrences],
+    } as WorkbenchDiagnosis);
+  }
+  return [...grouped.values()];
+}
+
+/** Select one grouped render occurrence while retaining the problem identity. */
+export function diagnosisForOccurrence(
+  diagnosis: WorkbenchDiagnosis,
+  occurrence: RenderDiagnostic,
+): WorkbenchDiagnosis {
+  if (
+    diagnosis.kind !== "render" ||
+    !diagnosis.occurrences.includes(occurrence)
+  )
+    return diagnosis;
+  return { ...diagnosis, diagnostic: occurrence };
 }
 
 /** One problem as the Problems area reads it, top to bottom. */
@@ -414,12 +511,23 @@ function diagnosticObject(
     case "contract-version-mismatch":
     case "invalid-profile":
       return m.workbench_problems_object_profile();
-    default:
-      return diagnostic.part === "annotation"
-        ? m.workbench_annotation_label()
-        : diagnostic.position !== undefined
-          ? m.workbench_tab_properties()
-          : m.workbench_problems_object_profile();
+    default: {
+      if (diagnostic.part === "annotation")
+        return m.workbench_annotation_label();
+      switch (diagnostic.report?.context.root) {
+        case "annotation":
+          return m.workbench_annotation_label();
+        case "citation":
+          return m.workbench_problems_object_citation();
+        case "note":
+          return m.workbench_tab_note();
+        case "partial":
+          return m.workbench_tab_partial();
+      }
+      return diagnostic.position !== undefined
+        ? m.workbench_tab_properties()
+        : m.workbench_problems_object_profile();
+    }
   }
 }
 

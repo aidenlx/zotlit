@@ -15,6 +15,7 @@ import {
 } from "./index";
 
 import { WorkbenchDocumentController } from "#/document/index";
+import { workbenchDiagnoses } from "#/ui/problems";
 
 /** The default Profile with the annotation section printing `zt.citation`. */
 const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
@@ -213,14 +214,18 @@ describe("Sample Items", () => {
     expect(result.annotation).toBeNull();
     expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
       ["render-error", "annotation"],
+      ["render-error", "annotation"],
     ]);
-    expect(result.diagnostics[0]!.message).toContain("annotation");
+    expect(
+      result.diagnostics.every(({ message }) =>
+        message?.includes("annotation"),
+      ),
+    ).toBe(true);
   });
 
-  it("reports one missing partial once when the note and the format both call it", () => {
-    // The engine could not resolve the same partial in either attempt, so the
-    // two failures are one problem — grouped by the engine's own account of
-    // the cause rather than by the wording each failure happened to carry.
+  it("reports note and annotation failures as occurrences of one missing partial", () => {
+    // The engine could not resolve the same partial in either attempt, so both
+    // failures reach the Problems area and can be grouped there by cause.
     const source = DEFAULT_PROFILE_SOURCE.replace(
       "{{ zt.imgLink | embed }}{{ zt.text }}",
       "{% render 'book-details' %}{{ zt.text }}",
@@ -232,14 +237,31 @@ describe("Sample Items", () => {
     // could not resolve is named, and the call to it is the repair target.
     expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
       ["missing-partial", "annotation"],
+      ["missing-partial", "annotation"],
     ]);
-    expect(result.diagnostics[0]!.params).toEqual({ name: "book-details" });
+    expect(result.diagnostics.map(({ params }) => params)).toEqual([
+      { name: "book-details" },
+      { name: "book-details" },
+    ]);
+    expect(result.diagnostics.map(({ evidence }) => evidence?.message)).toEqual(
+      [expect.any(String), expect.any(String)],
+    );
     expect(result.diagnostics[0]!.callSite).toEqual({
       from: source.indexOf("{% render 'book-details' %}"),
       to:
         source.indexOf("{% render 'book-details' %}") +
         "{% render 'book-details' %}".length,
     });
+    expect(result.diagnostics[1]!.callSite).toEqual(
+      result.diagnostics[0]!.callSite,
+    );
+    const diagnosis = workbenchDiagnoses([], result.diagnostics)[0]!;
+    if (diagnosis.kind !== "render")
+      throw new Error("Expected a render diagnosis");
+    expect(diagnosis.occurrences).toHaveLength(2);
+    expect(
+      diagnosis.occurrences.every(({ evidence }) => evidence !== undefined),
+    ).toBe(true);
   });
 
   it("repairs a blamed template at its one call, and names none where two spell it", () => {

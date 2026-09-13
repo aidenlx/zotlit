@@ -26,8 +26,8 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { renderFailureCause, renderFailureDiagnostic } from "./attribution";
-import type { RenderCallerSource, RenderFailureCause } from "./attribution";
+import { renderFailureDiagnostic } from "./attribution";
+import type { RenderCallerSource } from "./attribution";
 import { engineEvidence } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
@@ -170,9 +170,6 @@ export function renderProfile(
   let preview: string | null = null;
   let annotationCitation: string | null = null;
   let formatFailure: RenderDiagnostic | null = null;
-  // What the engine said the format failure was, kept so a note failing on the
-  // same fault is recognized by that account rather than by matching wording.
-  let formatCause: RenderFailureCause | undefined;
 
   try {
     for (const partial of supported) {
@@ -203,7 +200,7 @@ export function renderProfile(
     // The format is rendered on its own first, so a failure inside it is named
     // as the format's and a host can show it where the format is edited. The
     // note goes on rendering: one that never calls the format keeps its
-    // preview, and one that does fails on the same fault, reported once.
+    // preview, and one that does retains its own occurrence of the fault.
     try {
       const selected = example
         ? withRenderedCitation(
@@ -221,9 +218,8 @@ export function renderProfile(
       }
     } catch (error) {
       preview = null;
-      formatCause = renderFailureCause(error);
       formatFailure = {
-        ...renderFailureDiagnostic(error, caller),
+        ...withCallIdentity(renderFailureDiagnostic(error, caller), caller),
         evidence: engineEvidence(error),
         part: "annotation",
       };
@@ -287,20 +283,10 @@ export function renderProfile(
     };
   } catch (error) {
     const failure = failedRender(identity, {
-      ...renderFailureDiagnostic(error, caller),
+      ...withCallIdentity(renderFailureDiagnostic(error, caller), caller),
       evidence: engineEvidence(error),
       part: isAnnotationError(error) ? "annotation" : "render",
     });
-    // The note calls the same Annotation Section the format render already
-    // failed in, so the two failures are one problem when the engine's own
-    // account of each names the same cause. Direct part renders carry the
-    // Profile's qualified name and a call reaches the section under its
-    // registered one, so the qualifier is dropped before the names are read.
-    const sameFormatFailure = sameCause(
-      formatCause,
-      renderFailureCause(error),
-      document.manifest.id,
-    );
     return {
       ...failure,
       annotation: preview,
@@ -308,10 +294,28 @@ export function renderProfile(
       diagnostics: [
         ...resourceDiagnostics,
         ...(formatFailure ? [formatFailure] : []),
-        ...(sameFormatFailure ? [] : failure.diagnostics),
+        ...failure.diagnostics,
       ],
     };
   }
+}
+
+type RenderDiagnosticWithCallIdentity = RenderDiagnostic & {
+  readonly callIdentity?: string;
+};
+
+/** Preserve which verified call failed without making its source offset an ID. */
+function withCallIdentity(
+  diagnostic: Omit<RenderDiagnostic, "part">,
+  caller: RenderCallerSource,
+): Omit<RenderDiagnostic, "part"> {
+  const site = diagnostic.callSite;
+  return site === undefined
+    ? diagnostic
+    : ({
+        ...diagnostic,
+        callIdentity: caller.source.slice(site.from, site.to),
+      } as RenderDiagnosticWithCallIdentity);
 }
 
 /** The Citation Template name an annotation's page-pinned citation renders through. */
@@ -513,31 +517,6 @@ function rendered({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Whether two thrown failures are the one fault, by the engine's own account
- * of each. `qualifier` is the Profile id its own parts are registered under, so
- * a part reached through a call is read as the part it is. Either account
- * missing leaves the failures separate: an unclassified one the engine
- * attributed to nothing is grouped with nothing.
- */
-function sameCause(
-  left: RenderFailureCause | undefined,
-  right: RenderFailureCause | undefined,
-  qualifier: string,
-): boolean {
-  if (left === undefined || right === undefined) return false;
-  if (left.missing !== undefined || right.missing !== undefined)
-    return left.missing === right.missing;
-  if (left.at === undefined || right.at === undefined) return false;
-  const part = (name: string) =>
-    name.startsWith(`${qualifier}:`) ? name.slice(qualifier.length + 1) : name;
-  return (
-    part(left.at.template) === part(right.at.template) &&
-    left.at.line === right.at.line &&
-    left.at.column === right.at.column
-  );
 }
 
 /** Liquid retains the source token when a note call fails inside the format. */
