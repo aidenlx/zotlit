@@ -5,7 +5,7 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { AnnotationExample } from "#/render/index";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { useDocumentRevision } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
@@ -146,18 +146,29 @@ export function AnnotationPane({
   controller,
   problem,
   partials,
+  finishHelp,
   ...editor
 }: Pick<
   SliceEditorProps,
   "controller" | "reveal" | "suggest" | "onSelection"
 > & {
   problem: string | null;
+  /** The host explains its save and existing-note update actions. */
+  finishHelp?: string;
   /** The Shared Partials this section's calls name, previewed as an annotation. */
   partials?: PartialPlaceholderHost;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
+  const icon = useIcon();
   const problemId = useId();
+  const helpId = useId();
+  const helpButton = useRef<HTMLButtonElement>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const closeHelp = () => {
+    setHelpOpen(false);
+    helpButton.current?.focus();
+  };
   useDocumentRevision(controller);
   const boxes = usePartialBoxes(controller, "annotation", partials);
   if (
@@ -174,6 +185,44 @@ export function AnnotationPane({
         <p id={problemId} role="status" {...part("problem")}>
           {problem}
         </p>
+      )}
+      <p {...part("help-bar")}>
+        <span {...part("help-lede")}>{m.workbench_annotation_lede()}</span>{" "}
+        <span {...part("help-toggle")}>
+          <button
+            ref={helpButton}
+            type="button"
+            {...part("help-button")}
+            aria-label={m.workbench_help()}
+            aria-expanded={helpOpen}
+            aria-controls={helpId}
+            onClick={() => setHelpOpen(!helpOpen)}
+          >
+            {icon("help")}
+          </button>
+        </span>
+      </p>
+      {helpOpen && (
+        <section
+          id={helpId}
+          tabIndex={0}
+          aria-label={m.workbench_annotation_help_title()}
+          {...part("help")}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            event.stopPropagation();
+            closeHelp();
+          }}
+        >
+          <p>
+            {m.workbench_annotation_help_edit({
+              before: "[!note]",
+              after: "[!quote]",
+            })}{" "}
+            {m.workbench_annotation_help_preview()}
+          </p>
+          <p>{finishHelp ?? m.workbench_annotation_help_finish_web()}</p>
+        </section>
       )}
       <div {...part("pane")}>
         <SliceEditor

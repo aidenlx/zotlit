@@ -24,6 +24,7 @@ interface Note {
 type FileMenuHandler = (menu: Menu, file: ObsidianFile, source: string) => void;
 
 interface Harness {
+  file: ObsidianFile | null;
   command: Command;
   /** The ZotLit menu items a right-click on the note offers. */
   menu: () => Menu;
@@ -85,6 +86,7 @@ function harness(
   );
 
   return {
+    file: file as unknown as ObsidianFile | null,
     command: commands.find(({ id }) => id === "customize-note-template")!,
     menu: () => {
       const menu = new Menu();
@@ -126,6 +128,7 @@ describe("Customize on a Literature Note", () => {
     expect(h.customize).toHaveBeenCalledExactlyOnceWith({
       profileId: BOOKS.id,
       item: { key: "IANNP5A2", title: "@ioannidis2005" },
+      originatingNote: h.file,
     });
   });
 
@@ -141,6 +144,7 @@ describe("Customize on a Literature Note", () => {
     expect(h.customize).toHaveBeenCalledExactlyOnceWith({
       profileId: BOOKS.id,
       item: { key: "IANNP5A2", title: "@ioannidis2005" },
+      originatingNote: h.file,
     });
   });
 
@@ -151,6 +155,7 @@ describe("Customize on a Literature Note", () => {
     expect(h.customize).toHaveBeenCalledExactlyOnceWith({
       profileId: "default",
       item: { key: "IANNP5A2", title: "@ioannidis2005" },
+      originatingNote: h.file,
     });
   });
 

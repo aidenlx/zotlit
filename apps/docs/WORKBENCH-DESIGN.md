@@ -29,6 +29,51 @@ The editing and result panes carry this loop. Keep optional explanation behind
 a visible Help control beside the task. A message says what happened and what
 the reader can do next, in terms of the template and its result.
 
+## Guide the first annotation edit
+
+Annotation offers one **Help** icon toggle in the same row as the task. Its
+bounded inline guide keeps the source visible and the editor mounted,
+preserving selection, scroll, and history. The same toggle opens and closes
+the guide. Place the toggle directly after the task text. Present the guide as
+quiet text on the pane surface. Keyboard users can also close it with Escape
+and return focus to Help.
+
+Teach one edit: replace `[!note]` with `[!quote]` in the built-in annotation format
+and keep the rest of the line. Ask the researcher to inspect a real annotation
+from the selected paper. Separate the three outcomes: the template saves, the
+preview shows a quote callout, and **Update this note** applies it to the originating
+Literature Note. The host names its available save and update actions. Explain
+conditions, loops, and publishing metadata only when the reader asks for them.
+
+## Create a second destination
+
+Settings **Add profile** collects **Name** and **Literature Note folder** together.
+Explain that the new Profile starts with the current Default template's appearance
+and that existing notes keep their folders. Show validation beside the fields;
+keep creation disabled until the existing Profile rules accept the values.
+Cancel leaves the vault unchanged.
+
+After creation, open **Name and folder** in the native Workbench so the researcher
+can check the destination. Source, publishing metadata, and Match remain available
+in their usual tabs. For a new Item, the manual Profile picker shows the resulting
+note path before creation. Selecting a Profile applies its membership to that note.
+
+## Shared template and note updates
+
+When Customize starts from a Literature Note, identify the shared template
+document before editing and explain that other notes can use it. Keep the
+originating note's name beside **Update this note**. This target stays the same
+when the reader changes the preview item or focuses another window.
+Present this active context as one compact accent-bar notice: group the shared
+template identity with automatic save and Preview behavior, and keep the named
+note with the trailing update action. Let the two groups wrap on narrow panes.
+
+Keep the three outcomes distinct: edits save the template automatically;
+the preview renders the edit; **Update this note** applies the saved template
+to the named note. Report the affected note on success. Give save failures
+and unavailable-note failures their own explanation. Settings-launched editing
+keeps its existing save and preview behavior.
+
 ## Composition and hierarchy
 
 ### Editing leads

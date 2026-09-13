@@ -2,7 +2,7 @@
 import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { MarkdownView, TFile } from "obsidian";
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import {
@@ -25,7 +25,15 @@ vi.mock("@/views/note-preview/register", () => ({
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+const setOriginatingNote = vi.fn<(file: TFile | null) => void>();
+beforeEach(() => {
+  vi.spyOn(
+    TemplateWorkbenchView.prototype,
+    "setOriginatingNote",
+  ).mockImplementation(setOriginatingNote);
+});
 afterEach(() => {
+  vi.restoreAllMocks();
   resetMockPlatform();
   vi.mocked(findWorkbenchLayout).mockReset().mockResolvedValue(null);
 });
@@ -159,6 +167,7 @@ Annotation`);
       await openNativeProfile(app, file, {
         customize: true,
         itemIndexedKey: "MAIN2345",
+        originatingNote: file,
       });
       expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
         file: file.path,
@@ -171,6 +180,7 @@ Annotation`);
       });
       expect(compactSetState).not.toHaveBeenCalled();
       expect(openWorkbenchLayout).toHaveBeenLastCalledWith(app, workbench);
+      expect(setOriginatingNote).toHaveBeenLastCalledWith(file);
       expect(chooseWorkbenchItem).not.toHaveBeenCalled();
       expect(chooseCompactItem).not.toHaveBeenCalled();
     },

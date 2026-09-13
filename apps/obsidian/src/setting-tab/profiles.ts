@@ -43,6 +43,7 @@ export {
   type ImportProfileDeps,
 } from "./import-profile-modal";
 import { duplicateProfileToWorkbench } from "./duplicate-profile";
+import { addProfileDestination } from "./profile-destination-modal";
 export { duplicateProfileToWorkbench } from "./duplicate-profile";
 import { confirmProfileDeletion } from "./delete-profile-modal";
 export {
@@ -185,15 +186,7 @@ function profilesList(
       ? undefined
       : {
           name: m.settings_profile_add(),
-          // Start from Default and edit the copy in the workbench.
-          action: () =>
-            void runAction(
-              () =>
-                duplicateProfileToWorkbench(ctx, "default", {
-                  label: nextProfileLabel(ctx),
-                }),
-              ctx,
-            ),
+          action: () => void runAction(() => addProfileDestination(ctx), ctx),
         },
     extraButtons: locked
       ? undefined
@@ -272,19 +265,6 @@ function profilesList(
       },
     })),
   };
-}
-
-/** The first unused "Profile n", so adding one asks the user nothing. */
-function nextProfileLabel(ctx: SettingTabContext): string {
-  const taken = new Set(
-    ctx.profile.profiles.map((profile) => profile.label.toLocaleLowerCase()),
-  );
-  let number = 1;
-  while (
-    taken.has(m.settings_profile_numbered_name({ number }).toLocaleLowerCase())
-  )
-    number++;
-  return m.settings_profile_numbered_name({ number });
 }
 
 /**

@@ -11,7 +11,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial continues from [Create your first literature note](/docs/tutorial/first-note). You will change the annotation callouts in that note with the Template Workbench View.
+Change the annotation callouts in your first literature note with the Template Workbench View in Obsidian. This tutorial continues from [Create your first literature note](/docs/tutorial/first-note).
 
 <Callout type="info" title="Before you start">
   Use the literature note from [the first tutorial](/docs/tutorial/first-note).
@@ -27,15 +27,17 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
   <Step>
     ### Open the Template Workbench View
 
-    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />.
+    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />. If ZotLit asks where to edit, select <UiLabel name={m.modal_workbench_launch_native()} />, then <UiLabel name={m.modal_workbench_launch_open()} />.
 
-    ZotLit opens the profile used by this note. The note's paper is selected for the preview.
+    ZotLit opens the template document used by this note and selects its paper for the preview. Read the shared-template guidance above the editor: other notes can use this template too. Check that your note's name appears beside <UiLabel name={m.template_workbench_update_this_note()} />.
 
   </Step>
   <Step>
     ### Open the annotation format
 
-    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation and a preview from the selected paper.
+    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation. Choose an annotation from your paper and find its highlighted text in the preview.
+
+    For a short explanation of the format, you can open <UiLabel name={m.workbench_help()} /> beside the annotation instructions.
 
   </Step>
   <Step>
@@ -43,15 +45,15 @@ The built-in annotation format uses `[!note]` as the Obsidian callout type. You 
 
     Find `[!note]` in the annotation format and change it to `[!quote]`.
 
-    ZotLit saves the profile automatically. The annotation preview now uses a quote callout.
+    ZotLit saves the template document automatically. Check that the same annotation now appears in a quote callout in the preview. Your literature note keeps its previous content until you update it.
 
   </Step>
   <Step>
     ### Update the literature note
 
-    Return to the literature note and run <Command name={m.command_update_note_name()} />.
+    In the Workbench, select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. Wait for the notice that names the updated note, then open that note.
 
-    ZotLit renders the managed region with the updated profile. Your writing outside the managed region stays unchanged.
+    Its annotations now use quote callouts. Your writing outside the managed region stays unchanged.
 
   </Step>
 </Steps>
@@ -88,7 +90,7 @@ Template fields insert data from Zotero. You will add the annotation's `colorNam
   <Step>
     ### Update the note again
 
-    Return to the literature note and run <Command name={m.command_update_note_name()} />. Each annotation callout title now includes its highlight color, such as `Page 12, yellow`.
+    Select <UiLabel name={m.template_workbench_update_this_note()} /> beside your note's name. After ZotLit reports the update, open the note. Each annotation callout title now includes its highlight color, such as `Page 12, yellow`.
 
   </Step>
 </Steps>
