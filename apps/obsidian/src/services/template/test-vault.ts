@@ -124,6 +124,11 @@ export class MockVault {
     this.#emit("modify", file);
   }
 
+  async rename(file: TFile, path: string): Promise<void> {
+    if (this.files.has(path)) throw new Error("File already exists.");
+    this.renameFile(file.path, path);
+  }
+
   renameFile(oldPath: string, newPath: string): void {
     const file = this.files.get(oldPath);
     const content = this.contents.get(oldPath);

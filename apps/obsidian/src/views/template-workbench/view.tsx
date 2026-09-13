@@ -269,6 +269,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #deps: TemplateWorkbenchDeps;
   readonly #baseDeps: TemplateWorkbenchDeps;
   #copyFolder: string | null = null;
+  #copyScope:
+    | import("@/services/template/conversion-copy").ConversionCopyEditorScope
+    | null = null;
   #settingsUnsubscribe: (() => void) | undefined;
   readonly #host: ReturnType<typeof createTemplateWorkbenchHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
@@ -473,7 +476,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   async #resolveCopyScope(path: string): Promise<void> {
     const scope = await this.#baseDeps.resolveCopyEditor?.(path);
-    if ((scope?.folder ?? null) === this.#copyFolder) return;
+    if (
+      (scope?.folder ?? null) === this.#copyFolder &&
+      scope?.rawInput?.path === this.#copyScope?.rawInput?.path &&
+      scope?.rawInput?.language === this.#copyScope?.rawInput?.language
+    )
+      return;
+    this.#copyScope = scope ?? null;
     this.preview?.[Symbol.dispose]();
     this.#copyFolder = scope?.folder ?? null;
     this.#deps = scope
@@ -487,6 +496,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                 ...this.#baseDeps.nativePreview,
                 settings: scope.settings,
                 templates: scope.templates,
+                rawInput: scope.rawInput,
               }
             : undefined,
         }
@@ -504,6 +514,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The Template Document this view holds, which picks its tabs and its root. */
   get documentKind(): WorkbenchDocumentKind {
+    if (this.#copyScope?.rawInput) return "profile";
     return templateDocumentKind(this.file, this.#templateFolder);
   }
   /**
@@ -535,7 +546,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return templateFolderOf(this.#deps.settings);
   }
   /** The root an editor with no template region of its own writes. */
+  get rawInput() {
+    return this.#copyScope?.rawInput;
+  }
   get #defaultRoot(): TemplateRoot {
+    if (this.rawInput)
+      return this.rawInput.slot === "content" ? "note" : this.rawInput.slot;
     if (this.documentKind === "citation") return "citation";
     return this.documentKind === "partial" ? this.partialContext : "note";
   }
@@ -837,6 +853,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return TEMPLATE_WORKBENCH_VIEW_TYPE;
   }
   override getDisplayText(): string {
+    if (this.rawInput)
+      return m.conversion_repair_source_title({
+        file: this.file?.name ?? this.rawInput.slot,
+      });
     if (this.documentKind === "citation")
       return m.template_workbench_title_citation();
     const name = templatePartialName(
@@ -888,6 +908,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         readOnly: this.#defaultDraft,
         kind: this.documentKind,
         context: this.partialContext,
+        rawSource: this.rawInput
+          ? {
+              root: this.#defaultRoot as "note" | "filename" | "annotation",
+              language: this.rawInput.language,
+            }
+          : undefined,
       });
       this.#editor.attach(this.#controller);
       this.setPresentation({
@@ -1244,6 +1270,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #applyKindDefaults(): boolean {
     const store = this.store.getState();
     const kind = this.documentKind;
+    if (this.rawInput) {
+      store.setTab("note");
+      store.setRoot(this.#defaultRoot);
+      store.setAdvanced(true);
+      return true;
+    }
     if (kind === "profile") {
       // A tab and root this leaf kept from a document of another kind name no
       // panel and no data here, which would leave every panel unmounted.
@@ -1327,7 +1359,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }
       // Basic and Source are two views of a Profile document's structure; a
       // plain document is one source, so it is never offered the choice.
-      source.toggle(this.documentKind === "profile");
+      source.toggle(this.documentKind === "profile" && !this.rawInput);
       const advanced = this.store.getState().advanced;
       source.setAttribute("aria-pressed", String(advanced));
       source.classList.toggle("is-active", advanced);
@@ -1417,7 +1449,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             ),
         ),
     );
-    if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
+    if (this.documentKind !== "profile" || this.rawInput)
+      this.#addLanguageMenu(menu);
     const target = this.templateDataTarget();
     const pluginVersion = this.#deps.pluginVersion;
     if (target && pluginVersion)
@@ -1546,7 +1579,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * changes language by being rewritten, so no source is converted here.
    */
   #addLanguageMenu(menu: Menu): void {
-    const current = this.#controller.plainDocument?.manifest.language;
+    const current =
+      this.rawInput?.language ??
+      this.#controller.plainDocument?.manifest.language;
     if (current === undefined) return;
     menu.addItem((item) => {
       item.setTitle(m.template_workbench_change_language()).setIcon("code-2");
@@ -1560,7 +1595,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             .setTitle(title)
             .setChecked(current === language)
             .setDisabled(this.#controller.readOnly)
-            .onClick(() => this.#controller.setPlainLanguage(language)),
+            .onClick(() => {
+              if (!this.rawInput) this.#controller.setPlainLanguage(language);
+              else
+                void runTemplateWorkbenchAction("change-language", async () => {
+                  await this.save();
+                  const path =
+                    await this.#copyScope?.changeLanguage?.(language);
+                  if (!path) return;
+                  await this.#resolveCopyScope(path);
+                  const file = this.app.vault.getFileByPath(path);
+                  if (file) {
+                    this.file = file;
+                    await this.loadFileInternal(file, true);
+                  }
+                });
+            }),
         );
     });
   }
@@ -2423,7 +2473,15 @@ function EditorContent({
           <SliceEditor
             controller={controller}
             slice="advanced"
-            label={m.workbench_advanced()}
+            label={
+              view.rawInput
+                ? view.rawInput.slot === "filename"
+                  ? m.workbench_tab_name_and_folder()
+                  : view.rawInput.slot === "annotation"
+                    ? m.workbench_tab_annotation()
+                    : m.workbench_tab_note()
+                : m.workbench_advanced()
+            }
             reveal={reveal}
             onSelection={selection("advanced")}
           />

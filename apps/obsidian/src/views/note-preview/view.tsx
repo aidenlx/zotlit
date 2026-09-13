@@ -163,6 +163,7 @@ let previewCount = 0;
 export class NotePreviewView extends ItemView {
   readonly #pluginId: string;
   readonly #deps: PreviewViewDeps;
+  #renderDeps: NativeRenderDeps;
   readonly state = createNativePreviewStore();
   #root: Root | null = null;
   #cleanup: DisposableStack | null = null;
@@ -182,6 +183,7 @@ export class NotePreviewView extends ItemView {
     super(leaf);
     this.#pluginId = pluginId;
     this.#deps = deps;
+    this.#renderDeps = deps;
     this.contentEl.addClass("zt-root");
   }
   override getViewType(): string {
@@ -469,7 +471,7 @@ export class NotePreviewView extends ItemView {
           snapshot: null,
           ...this.state.getState().preview,
         },
-        render: (request) => renderNativeTemplate(deps, request),
+        render: (request) => renderNativeTemplate(this.#renderDeps, request),
         failed: nativeResult,
         retain: retainNativeOutputs,
         reportContext: () => this.#reportContext(),
@@ -480,7 +482,7 @@ export class NotePreviewView extends ItemView {
     );
     const host = resources.use(
       createTemplateWorkbenchHost(this.app, {
-        render: (request) => renderNativeTemplate(deps, request),
+        render: (request) => renderNativeTemplate(this.#renderDeps, request),
         matchData: {
           tags: async () => [],
           collections: async () => [],
@@ -946,6 +948,8 @@ export class NotePreviewView extends ItemView {
     if (!session) return;
     const previous = session.state.getState().context;
     if (this.leaf.pinned && previous && !explicit) return;
+    this.#renderDeps = this.#editor?.nativeRenderDeps ?? this.#deps;
+    session.setScope(this.#renderDeps);
     if (previous?.annotationId !== context.annotationId)
       session.select(context.annotationId);
     if (this.#file !== this.#editor?.file) this.#sourceGeneration++;

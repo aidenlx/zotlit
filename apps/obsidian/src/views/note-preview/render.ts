@@ -63,6 +63,10 @@ import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
 export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
+  rawInput?: {
+    slot: "note" | "content" | "filename" | "annotation";
+    language: "liquid" | "eta";
+  };
   db: Pick<DatabaseService, "acquireRead" | "on">;
   templates: Pick<
     TemplateService,
@@ -71,6 +75,7 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     | "renderCitation"
     | "renderCitationSource"
     | "renderPartialSource"
+    | "renderLegacySource"
     | "prepareLiteratureNoteTemplateSource"
     | "frontmatterFields"
     | "javascriptTemplatesEnabled"
@@ -124,11 +129,66 @@ export function renderNativeTemplate(
   deps: NativeRenderDeps,
   request: RenderRequest,
 ): Promise<NativeRenderResult> {
+  if (deps.rawInput) return renderNativeLegacy(deps, request, deps.rawInput);
   if (request.partial)
     return renderNativePartial(deps, request, request.partial);
   return request.citation
     ? renderNativeCitation(deps, request)
     : renderNativeProfile(deps, request);
+}
+
+/** Render a raw repair draft with its copied registry and exact legacy root. */
+async function renderNativeLegacy(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+  input: NonNullable<NativeRenderDeps["rawInput"]>,
+): Promise<NativeRenderResult> {
+  const identity = renderIdentity(request);
+  try {
+    await deps.templates.ready;
+    const root = input.slot === "content" ? "note" : input.slot;
+    const data =
+      root === "filename"
+        ? request.snapshot.provenance.kind === "sample"
+          ? {
+              kind: "data" as const,
+              data: restoreTemplateData(
+                request.snapshot.roots.filename,
+                request.snapshot.descriptors.filename,
+              ),
+            }
+          : await loadTemplateData(
+              deps,
+              request.snapshot.item.indexedKey,
+              "filename",
+            )
+        : await partialContextData(deps, request, root);
+    if (data.kind !== "data")
+      throw new Error(m.workbench_example_missing_item());
+    const output = deps.templates.renderLegacySource(
+      request.source,
+      data.data,
+      { name: input.slot, language: input.language },
+    );
+    return {
+      ...nativeResult(emptyRender(identity)),
+      ...(root === "filename"
+        ? { filename: output }
+        : root === "annotation"
+          ? { annotation: output }
+          : { creationBody: output }),
+    };
+  } catch (error) {
+    return nativeResult(
+      failedRender(
+        identity,
+        renderFault(error, "render", {
+          source: request.source,
+          language: input.language,
+        }),
+      ),
+    );
+  }
 }
 
 /**

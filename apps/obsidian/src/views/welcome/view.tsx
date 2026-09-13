@@ -42,6 +42,7 @@ export interface WelcomeViewDeps {
     | "startRepair"
     | "resumeRepair"
     | "reviewRepair"
+    | "regenerateRepair"
     | "acceptRepair"
     | "discardRepair"
     | "refreshRepairOriginals"

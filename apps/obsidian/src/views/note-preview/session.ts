@@ -92,7 +92,8 @@ export const createNativePreviewStore = () =>
 
 export class NativePreviewSession implements Disposable {
   readonly state: StoreApi<NativePreviewState>;
-  readonly #deps: NativeRenderDeps;
+  #deps: NativeRenderDeps;
+  #stopTemplateChanges: () => void;
   readonly #scheduler: RenderScheduler<NativeRenderResult>;
   readonly #cleanup: DisposableStack;
   #dataGeneration = 0;
@@ -112,9 +113,11 @@ export class NativePreviewSession implements Disposable {
     if (options.item !== undefined) this.state.setState({ item: options.item });
     using cleanup = new DisposableStack();
     cleanup.defer(deps.db.on("changed", () => this.refresh()));
-    cleanup.defer(
-      deps.templates.on("compile-status-changed", () => scheduler.invalidate()),
+    this.#stopTemplateChanges = deps.templates.on(
+      "compile-status-changed",
+      () => scheduler.invalidate(),
     );
+    cleanup.defer(() => this.#stopTemplateChanges());
     cleanup.defer(
       deps.bibliographyRender.on("invalidated", () => scheduler.invalidate()),
     );
@@ -127,6 +130,22 @@ export class NativePreviewSession implements Disposable {
     this.#cleanup = cleanup.move();
     this.#loading = this.#loadSnapshot();
   }
+  /** Follow a copy editor's registry while keeping the selected preview data. */
+  setScope(deps: NativeRenderDeps): void {
+    if (this.#closed || deps === this.#deps) return;
+    this.#stopTemplateChanges();
+    this.#deps = deps;
+    this.#stopTemplateChanges = deps.templates.on(
+      "compile-status-changed",
+      () => this.#scheduler.invalidate(),
+    );
+    const source = this.state.getState().source;
+    this.state.setState({ source: null });
+    if (source !== null) this.setSource(source);
+    this.refresh();
+    this.#scheduler.invalidate();
+  }
+
   /** Resolves once the paper a render reads is loaded. */
   get ready(): Promise<void> {
     return this.#loading;
@@ -155,7 +174,8 @@ export class NativePreviewSession implements Disposable {
     const plain = state.context !== null && state.context.kind !== "profile";
     let entries = plain ? [] : state.entries;
     try {
-      if (plain) parsePlainTemplateDocument(source);
+      if (this.#deps.rawInput) entries = [];
+      else if (plain) parsePlainTemplateDocument(source);
       else {
         parseLiteratureNoteTemplate(source);
         const list = managedFrontmatterEntries(source);

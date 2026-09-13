@@ -1446,6 +1446,30 @@ export class TemplateService extends Service<void> {
     });
   }
 
+  /** Preview copied legacy source with its slot language and scoped dependencies. */
+  renderLegacySource<T extends object>(
+    source: string,
+    data: T,
+    options: {
+      name: "note" | "content" | "filename" | "annotation";
+      language: TemplateLanguage;
+    },
+  ): string {
+    this.#requireLoaded("renderLegacySource");
+    return this.#renderPlainSource(
+      formatPlainTemplateDocument(source, options.language),
+      data,
+      {
+        name: options.name,
+        path: templatePath(
+          this.#currentTemplateFolder(),
+          options.name,
+          options.language,
+        ),
+      },
+    );
+  }
+
   /**
    * Render one plain Template Document's draft bytes under the name the facade
    * registers that document by, without registering the draft or writing it.

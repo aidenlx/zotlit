@@ -726,3 +726,62 @@ describe("retained output metadata", () => {
     expect(retainNativeOutputs(kept, other)).toBe(other);
   });
 });
+
+describe("native raw legacy repair rendering", () => {
+  it("uses filename data and Eta directly without a Profile manifest", async () => {
+    await using fixture = await createRenderFixture({ javascript: true });
+    const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
+    const result = await renderNativeTemplate(
+      { ...fixture.deps, rawInput: { slot: "filename", language: "eta" } },
+      {
+        source: "REPAIRED-<%= zt.title %>",
+        snapshot,
+      },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.filename).toBe(`REPAIRED-${snapshot.item.title}`);
+    expect(result.creationBody).toBeNull();
+  });
+
+  it("reports a raw Eta runtime failure through preview diagnostics", async () => {
+    await using fixture = await createRenderFixture({ javascript: true });
+    const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
+    const result = await renderNativeTemplate(
+      { ...fixture.deps, rawInput: { slot: "note", language: "eta" } },
+      { source: '<% throw new Error("RAW-ETA-1099") %>', snapshot },
+    );
+    expect(result.creationBody).toBeNull();
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("RAW-ETA-1099"),
+      }),
+    ]);
+  });
+
+  it("renders selected annotation source with scoped partials and reports raw syntax failures", async () => {
+    await using fixture = await createRenderFixture({
+      partials: { callout: "COPIED {{ zt.text }}" },
+    });
+    const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
+    const annotation = annotationSamples(snapshot, null).example;
+    const deps = {
+      ...fixture.deps,
+      rawInput: { slot: "annotation" as const, language: "liquid" as const },
+    };
+    const result = await renderNativeTemplate(deps, {
+      source: '{% render "callout" with zt as zt %}',
+      snapshot,
+      annotation,
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.annotation).toContain("COPIED ");
+    const broken = await renderNativeTemplate(deps, {
+      source: "{% for item i zt.items %}",
+      snapshot,
+      annotation,
+    });
+    expect(broken.diagnostics).toEqual([
+      expect.objectContaining({ code: "liquid-syntax-error" }),
+    ]);
+  });
+});

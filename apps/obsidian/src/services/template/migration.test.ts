@@ -1553,3 +1553,205 @@ describe("saved field conversion repair", () => {
     ).toMatchObject({ outcome: "refused" });
   });
 });
+
+describe("raw legacy source repair", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const sources = {
+    "templates/zotlit-note.liquid.md": "Before",
+    "templates/zotlit-content.liquid.md": "Body {{ zt.title }}\n",
+    "templates/zotlit-filename.liquid.md": "{{ zt.citationKey }}",
+  };
+
+  it.each([
+    { note: "Before", outcome: "changed", before: "Before\n" },
+    {
+      note: "{% unknown_tag %}",
+      outcome: "original-unavailable",
+      before: null,
+    },
+  ])(
+    "repairs pre-synthesis layout with $outcome original output",
+    async ({ note, outcome, before }) => {
+      const originals = { ...sources, "templates/zotlit-note.liquid.md": note };
+      await using harness = await makeVaultHarness(originals);
+      harness.settings.update({ "note.frontmatter-fields": [] });
+      const copy = await harness.service.startRepair();
+      expect(copy.profilePath).toBeNull();
+      const input = copy.rawInputs.find(({ slot }) => slot === "note")!;
+      harness.vault.modifyFile(
+        input.path,
+        'Repaired\n{% render "content" with zt as zt %}',
+      );
+      const review = await harness.service.regenerateRepair();
+      expect(review.valid).toBe(true);
+      expect(
+        review.comparisons.find(({ output }) => output === "create"),
+      ).toMatchObject({
+        outcome,
+        original: before,
+        candidate: expect.stringContaining("Body Paper"),
+      });
+      for (const [path, source] of Object.entries(originals))
+        expect(harness.vault.contents.get(path)).toBe(source);
+      expect(
+        harness.settings.current?.["note.template-conversion-pending"],
+      ).toBe(true);
+      expect(
+        await harness.service.acceptRepair(review, "matching"),
+      ).toMatchObject({ outcome: "refused" });
+      expect(
+        await harness.service.acceptRepair(review, "reviewed-changes"),
+      ).toMatchObject({ outcome: "converted" });
+      const active = harness.vault.contents.get(
+        "templates/zotlit-profile.default.md",
+      )!;
+      expect(
+        harness.template
+          .prepareLiteratureNoteTemplateSource(active)
+          .renderForCreate({ title: "Paper" }),
+      ).toContain("Body Paper");
+    },
+  );
+
+  it("resumes saved raw edits before any Profile exists and discards only the copy", async () => {
+    let saved: unknown;
+    let files: Record<string, string>;
+    let rawPath: string;
+    {
+      await using first = await makeVaultHarness(sources);
+      first.settings.update({ "note.frontmatter-fields": [] });
+      const copy = await first.service.startRepair();
+      rawPath = copy.rawInputs.find(({ slot }) => slot === "note")!.path;
+      first.vault.modifyFile(
+        rawPath,
+        'Saved raw repair\n{% render "content" with zt as zt %}',
+      );
+      await first.settings.flush();
+      saved = structuredClone(first.plugin.data);
+      files = Object.fromEntries(first.vault.contents);
+    }
+    await using resumed = await makeVaultHarness(files!, {
+      storedSettings: saved,
+    });
+    const copy = await resumed.service.resumeRepair();
+    expect(copy?.profilePath).toBeNull();
+    expect(resumed.vault.contents.get(rawPath!)).toContain("Saved raw repair");
+    expect((await resumed.service.regenerateRepair()).valid).toBe(true);
+    await resumed.service.discardRepair();
+    expect(Object.fromEntries(resumed.vault.contents)).toEqual(sources);
+  });
+
+  it("preserves saved raw corrections when the user refreshes the original baseline", async () => {
+    await using harness = await makeVaultHarness(sources);
+    harness.settings.update({ "note.frontmatter-fields": [] });
+    const copy = await harness.service.startRepair();
+    const note = copy.rawInputs.find(({ slot }) => slot === "note")!;
+    harness.vault.modifyFile(
+      note.path,
+      'Saved correction\n{% render "content" with zt as zt %}',
+    );
+    harness.vault.modifyFile(
+      "templates/zotlit-note.liquid.md",
+      "Changed original",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    const refreshed = await harness.service.refreshRepairOriginals();
+    expect(refreshed.valid).toBe(true);
+    expect(
+      refreshed.comparisons.find(({ output }) => output === "create"),
+    ).toMatchObject({
+      original: "Changed original\n",
+      candidate: expect.stringContaining("Saved correction"),
+    });
+    const resumed = await harness.service.resumeRepair();
+    expect(
+      harness.vault.contents.get(
+        resumed!.rawInputs.find(({ slot }) => slot === "note")!.path,
+      ),
+    ).toContain("Saved correction");
+  });
+
+  it("restores the previous candidate if regeneration metadata cannot be saved", async () => {
+    await using harness = await makeVaultHarness(sources);
+    harness.settings.update({ "note.frontmatter-fields": [] });
+    const copy = await harness.service.startRepair();
+    const note = copy.rawInputs.find(({ slot }) => slot === "note")!;
+    harness.vault.modifyFile(
+      note.path,
+      'First repair\n{% render "content" with zt as zt %}',
+    );
+    await harness.service.regenerateRepair();
+    const previous = harness.vault.contents.get(copy.profilePath!)!;
+    harness.vault.modifyFile(
+      note.path,
+      'Second repair\n{% render "content" with zt as zt %}',
+    );
+    const modify = harness.vault.modify.bind(harness.vault);
+    using _fail = vi
+      .spyOn(harness.vault, "modify")
+      .mockImplementation(async (file, source) => {
+        if (file.path === copy.path)
+          throw new Error("Copy metadata unavailable");
+        return modify(file, source);
+      });
+    await expect(harness.service.regenerateRepair()).rejects.toThrow(
+      "Copy metadata unavailable",
+    );
+    expect(harness.vault.contents.get(copy.profilePath!)).toBe(previous);
+    expect(harness.vault.contents.get("templates/zotlit-note.liquid.md")).toBe(
+      "Before",
+    );
+  });
+
+  it("changes only a copied slot language and retains repaired frontmatter on regeneration", async () => {
+    const originals = {
+      ...sources,
+      "templates/zotlit-note.liquid.md": '{% render "content" with zt as zt %}',
+      "templates/zotlit-content.eta.md": "Body <%= zt.title %>",
+    };
+    delete (originals as Partial<typeof sources>)[
+      "templates/zotlit-content.liquid.md"
+    ];
+    await using harness = await makeVaultHarness(originals);
+    harness.settings.update({
+      "note.frontmatter-fields": [
+        {
+          key: "repair-marker",
+          expr: "'original-field'",
+          language: "liquid",
+          merge: "replace",
+        },
+      ],
+    });
+    const copy = await harness.service.startRepair();
+    expect(copy.profilePath).toBeNull();
+    const content = copy.rawInputs.find(({ slot }) => slot === "content")!;
+    harness.vault.modifyFile(content.path, "Body {{ zt.title }}");
+    const liquid = await copy.changeInputLanguage(content.path, "liquid");
+    expect(liquid).toContain("/inputs/zotlit-content.liquid.md");
+    expect((await harness.service.regenerateRepair()).valid).toBe(true);
+    const profile = copy.profilePath!;
+    harness.vault.modifyFile(
+      profile,
+      harness.vault.contents
+        .get(profile)!
+        .replace("original-field", "kept-field"),
+    );
+    harness.vault.modifyFile(liquid, "REGENERATED {{ zt.title }}");
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await harness.service.reviewRepair()).valid).toBe(false);
+    const review = await harness.service.regenerateRepair();
+    expect(
+      review.comparisons.find(({ output }) => output === "frontmatter")
+        ?.candidate,
+    ).toBe('{"repair-marker":"kept-field"}');
+    expect(
+      review.comparisons.find(({ output }) => output === "update")?.candidate,
+    ).toContain("REGENERATED Paper");
+    expect(harness.vault.contents.get("templates/zotlit-content.eta.md")).toBe(
+      "Body <%= zt.title %>",
+    );
+  });
+});

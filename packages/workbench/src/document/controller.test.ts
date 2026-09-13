@@ -746,3 +746,30 @@ language: liquid
     ).toBe(false);
   });
 });
+
+describe("raw legacy repair source", () => {
+  it("edits and undoes invalid Eta without interpreting authored YAML as a manifest", () => {
+    const source = "---\r\nlanguage: liquid\r\n---\r\n<%= it.title";
+    const controller = new WorkbenchDocumentController(source, {
+      runtime: "native",
+      rawSource: { root: "filename", language: "eta" },
+    });
+    expect(controller.problems).toEqual([]);
+    expect(controller.language).toBe("eta");
+    expect(controller.templateRegions).toEqual([
+      {
+        from: 0,
+        to: source.replaceAll("\r\n", "\n").length,
+        root: "filename",
+        language: "eta",
+        expression: false,
+      },
+    ]);
+    controller.dispatch({
+      changes: { from: controller.state.doc.length, insert: " %>" },
+    });
+    expect(controller.source).toBe(`${source} %>`);
+    controller.undo();
+    expect(controller.source).toBe(source);
+  });
+});

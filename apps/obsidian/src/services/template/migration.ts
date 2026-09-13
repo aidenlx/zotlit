@@ -464,11 +464,31 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   ): Promise<ConversionCopyEditorScope | null> {
     const copy = await this.resumeRepair();
     if (copy && inTemplateFolder(path, copy.editor.folder)) return copy.editor;
+    const input = copy?.inputEditor(path);
+    if (input) return input;
     if (copy && path.startsWith(`${copy.folder}/`))
       throw new Error(
         "This Conversion Copy input does not have an editor document yet",
       );
     return null;
+  }
+
+  /** Rebuild from the saved raw inputs only after an explicit regeneration action. */
+  async regenerateRepair(): Promise<ConversionRepairReview> {
+    const copy = await this.resumeRepair();
+    if (!copy) throw new ConversionRepairError({ code: "copy-missing" });
+    this.#repairReview = undefined;
+    await this.#flushCopyEditors(copy.folder);
+    const data = await this.#loadVerificationData({
+      annotation: copy.requiresAnnotation,
+    });
+    if (!data) return this.reviewRepair();
+    await copy.regenerate(data);
+    logger.debug("Regenerated Conversion Copy from saved sources", {
+      copy: copy.path,
+      sources: copy.rawInputs.length,
+    });
+    return this.reviewRepair();
   }
 
   async reviewRepair(): Promise<ConversionRepairReview> {

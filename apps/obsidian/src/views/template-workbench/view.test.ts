@@ -2580,3 +2580,105 @@ it("edits a copied field through native Properties, saves it, and restores the i
     restored.view.contentEl.remove();
   }
 });
+
+it("restores raw repair bytes and changes roots between inputs in the same copy", async () => {
+  const vault = new MockVault();
+  const folder = "templates/conversion-copy-raw/inputs";
+  const note = vault.addFile(
+    `${folder}/zotlit-note.liquid.md`,
+    "Missing insertion {{ zt.title }}",
+  );
+  const filename = vault.addFile(
+    `${folder}/zotlit-filename.eta.md`,
+    "<%= zt.title",
+  );
+  const base = setup();
+  Object.assign(base.app, { vault });
+  const templates = {
+    loaded: true,
+    on: () => () => {},
+    getPartialNames: () => [],
+    getPartialDocuments: () => [],
+  } as unknown as TemplateService;
+  const settings = {
+    current: { "template.folder": folder },
+    subscribe: () => () => {},
+    loaded: Promise.resolve({}),
+  } as unknown as SettingsService;
+  const deps = {
+    resolveCopyEditor: async (path: string) => ({
+      folder,
+      templates,
+      settings,
+      rawInput: {
+        path,
+        originalPath:
+          path === note.path
+            ? "templates/zotlit-note.liquid.md"
+            : "templates/zotlit-filename.eta.md",
+        slot: path === note.path ? ("note" as const) : ("filename" as const),
+        language: path === note.path ? ("liquid" as const) : ("eta" as const),
+      },
+    }),
+  };
+  const first = setup(deps, base.app);
+  first.view.file = note;
+  first.view.save = async () => {
+    await vault.modify(first.view.file!, first.view.getViewData());
+  };
+  let state: Record<string, unknown>;
+  try {
+    await act(async () => {
+      await first.view.open();
+      await first.view.loadFileInternal(note, true);
+    });
+    expect(first.view.controller.problems).toEqual([]);
+    expect(first.view.store.getState()).toMatchObject({
+      advanced: true,
+      root: "note",
+    });
+    await act(() =>
+      first.view.controller.dispatch({
+        changes: { from: 0, insert: "REPAIRED " },
+      }),
+    );
+    await first.view.save();
+    state = first.view.getState();
+    await act(async () => {
+      first.view.file = filename;
+      await first.view.loadFileInternal(filename, true);
+    });
+    expect(first.view.controller.language).toBe("eta");
+    expect(first.view.store.getState()).toMatchObject({
+      advanced: true,
+      root: "filename",
+    });
+    expect(first.view.controller.templateRegions[0]?.root).toBe("filename");
+    expect(first.view.controller.problems).toEqual([]);
+  } finally {
+    await act(async () => first.view.close());
+  }
+  const restored = setup(deps, base.app);
+  restored.view.file = note;
+  try {
+    await act(async () => {
+      await restored.view.open();
+      await restored.view.loadFileInternal(note, true);
+      await restored.view.setState(
+        { ...state!, advanced: false, tab: "properties" },
+        { history: false },
+      );
+    });
+    expect(restored.view.getViewData()).toBe(
+      "REPAIRED Missing insertion {{ zt.title }}",
+    );
+    expect(restored.view.store.getState()).toMatchObject({
+      advanced: true,
+      root: "note",
+      tab: "note",
+    });
+  } finally {
+    await act(async () => restored.view.close());
+  }
+  await act(async () => base.view.close());
+});

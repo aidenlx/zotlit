@@ -35,6 +35,7 @@ export class TemplateConversionReviewModal extends Modal {
         | "startRepair"
         | "resumeRepair"
         | "reviewRepair"
+        | "regenerateRepair"
         | "acceptRepair"
         | "discardRepair"
         | "refreshRepairOriginals"
@@ -146,6 +147,11 @@ export class TemplateConversionReviewModal extends Modal {
           this.#openRepair(field),
         );
       }
+      if (
+        preparation.diagnostic.code !== "legacy-frontmatter-evaluation" &&
+        preparation.diagnostic.code !== "legacy-frontmatter-inert"
+      )
+        this.#button(m.conversion_repair_sources(), () => this.#openRepair());
       this.#button(m.conversion_review_retry(), () => void this.#prepare());
     } else {
       this.#text("p", m.conversion_review_matching());
@@ -185,12 +191,7 @@ export class TemplateConversionReviewModal extends Modal {
         ? this.app.vault.getFileByPath(copy.profilePath)
         : null;
       if (!file) {
-        this.#text(
-          "p",
-          copy.diagnostic
-            ? repairDiagnostic(copy.diagnostic)
-            : m.conversion_repair_no_document(),
-        );
+        this.#renderRepair(await this.#migration.reviewRepair());
         return;
       }
       await openTemplateWorkbench(this.app, file, {
@@ -245,6 +246,36 @@ export class TemplateConversionReviewModal extends Modal {
         "p",
         m.conversion_review_citation({ citation: review.citation.join(", ") }),
       );
+    if (review.inputs?.length) {
+      const sources = this.#text("section", "");
+      this.#text("h3", m.conversion_repair_sources(), sources);
+      const inputs = this.#text("ul", "", sources);
+      for (const input of review.inputs) {
+        const row = this.#text("li", "", inputs);
+        this.#button(
+          m.conversion_repair_edit_source({
+            file: input.path.split("/").at(-1)!,
+          }),
+          async () => {
+            const file = this.app.vault.getFileByPath(input.path);
+            if (!file) throw new Error(m.conversion_repair_no_document());
+            await openTemplateWorkbench(this.app, file, {
+              itemIndexedKey: review.itemKey,
+              explainUnsupported: false,
+            });
+            this.close();
+          },
+          row,
+        );
+      }
+      this.#text("p", m.conversion_repair_regenerate_hint(), sources);
+      this.#button(
+        m.conversion_repair_regenerate(),
+        async () =>
+          this.#renderRepair(await this.#migration.regenerateRepair()),
+        sources,
+      );
+    }
     for (const comparison of review.comparisons) {
       const details = this.#text("details", "");
       this.#text(
@@ -347,8 +378,9 @@ export class TemplateConversionReviewModal extends Modal {
   #button(
     label: string,
     action: (button: HTMLButtonElement) => void | Promise<void>,
+    parent: HTMLElement = this.#footer,
   ): HTMLButtonElement {
-    const button = this.#text("button", label, this.#footer);
+    const button = this.#text("button", label, parent);
     button.type = "button";
     button.addEventListener("click", () => {
       void Promise.resolve()
@@ -424,6 +456,12 @@ function repairDiagnostic(diagnostic: ConversionRepairDiagnostic): string {
       message = m.conversion_repair_javascript_required({
         fields: diagnostic.fields?.join(", ") ?? "",
       });
+      break;
+    case "copied-inputs-changed":
+      message = m.conversion_repair_sources_changed();
+      break;
+    case "input-language-occupied":
+      message = m.conversion_repair_language_occupied();
       break;
     case "evaluation-failed":
       message = m.conversion_repair_evaluation_failed();

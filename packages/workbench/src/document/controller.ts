@@ -162,6 +162,7 @@ export class WorkbenchDocumentController {
   #readOnly: boolean;
   readonly #runtime: "web" | "native";
   readonly #kind: WorkbenchDocumentKind;
+  readonly #rawSource;
   #context: PartialContext = DEFAULT_PARTIAL_CONTEXT;
   #document: LiteratureNoteTemplateDocument | null = null;
   #plain: PlainTemplateDocument | null = null;
@@ -185,10 +186,16 @@ export class WorkbenchDocumentController {
       kind?: WorkbenchDocumentKind;
       /** The caller a Shared Partial opens as called from. @default "note" */
       context?: PartialContext;
+      /** A legacy source has no document manifest or structured panes. */
+      rawSource?: {
+        root: "note" | "filename" | "annotation";
+        language: "liquid" | "eta";
+      };
     } = {},
   ) {
     this.#runtime = options.runtime ?? "web";
     this.#kind = options.kind ?? "profile";
+    this.#rawSource = options.rawSource;
     if (options.context) this.#context = options.context;
     this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
@@ -287,6 +294,7 @@ export class WorkbenchDocumentController {
    */
   get language(): TemplateLanguage {
     return (
+      this.#rawSource?.language ??
       this.#document?.manifest.language ??
       this.#plain?.manifest.language ??
       "liquid"
@@ -382,6 +390,14 @@ export class WorkbenchDocumentController {
     expression: boolean;
     language?: "liquid" | "eta" | "json-e";
   })[] {
+    if (this.#rawSource)
+      return [
+        {
+          ...this.sliceRange("advanced"),
+          ...this.#rawSource,
+          expression: false,
+        },
+      ];
     if (this.#kind !== "profile") {
       return [
         {
@@ -864,6 +880,11 @@ export class WorkbenchDocumentController {
   #analyze(): void {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
+    if (this.#rawSource) {
+      this.#language = this.#rawSource.language;
+      this.#problems = [];
+      return;
+    }
     if (this.#kind !== "profile") {
       this.#analyzePlain(source);
       return;

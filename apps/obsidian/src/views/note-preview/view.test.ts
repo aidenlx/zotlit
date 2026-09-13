@@ -2547,3 +2547,41 @@ After
     expect(preview.contentEl.textContent).not.toContain("Alpha");
   });
 });
+
+it("follows a raw copy editor with its scoped partial registry", async () => {
+  vi.useFakeTimers();
+  await using test = await setup();
+  await using copied = await createRenderFixture({
+    partials: { repair: "COPIED {{ zt.title }}" },
+  });
+  const preview = await test.open();
+  const file = test.fixture.vault.addFile(
+    "templates/conversion-copy-test/inputs/zotlit-content.liquid.md",
+    '{% render "repair" with zt as zt %}',
+  );
+  const raw = {
+    leaf: {} as WorkspaceLeaf,
+    file,
+    nativeRenderDeps: {
+      ...copied.deps,
+      rawInput: { slot: "content", language: "liquid" },
+    },
+    authoringContext: {
+      ...test.editor.authoringContext,
+      path: file.path,
+      leaf: {} as WorkspaceLeaf,
+      item: { id: "MAIN2345", title: "Better figures" },
+      root: "note",
+      advanced: true,
+    },
+    getViewData: () => '{% render "repair" with zt as zt %}',
+    publishPreviewProblems: vi.fn(),
+    reportContext: () => ({ language: "liquid", root: "note" }),
+  } as unknown as TemplateWorkbenchView;
+  await act(async () => {
+    for (const listener of test.subscriptions) listener(raw);
+  });
+  await advance();
+  expect(preview.contentEl.textContent).toContain("COPIED Better figures");
+  expect(preview.state.getState().sourceProblem).toBeNull();
+});

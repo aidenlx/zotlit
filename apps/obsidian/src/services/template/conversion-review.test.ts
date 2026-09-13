@@ -62,6 +62,7 @@ it("renders source and verification evidence before the explicit activation acti
     resumeRepair: async () => null,
     startRepair: vi.fn(),
     reviewRepair: vi.fn(),
+    regenerateRepair: vi.fn(),
     acceptRepair: vi.fn(),
     discardRepair: vi.fn(),
     refreshRepairOriginals: vi.fn(),
@@ -141,6 +142,7 @@ it("shows a refusal with original source evidence and keeps activation unavailab
     resumeRepair: async () => null,
     startRepair: vi.fn(),
     reviewRepair: vi.fn(),
+    regenerateRepair: vi.fn(),
     acceptRepair: vi.fn(),
     discardRepair: vi.fn(),
     refreshRepairOriginals: vi.fn(),
@@ -162,7 +164,11 @@ it("shows a refusal with original source evidence and keeps activation unavailab
     [...modal.modalEl.querySelectorAll("button")].map(
       (button) => button.textContent,
     ),
-  ).toEqual([m.conversion_review_retry(), m.conversion_review_later()]);
+  ).toEqual([
+    m.conversion_repair_sources(),
+    m.conversion_review_retry(),
+    m.conversion_review_later(),
+  ]);
   modal.close();
   expect(migration.activate).not.toHaveBeenCalled();
 });
@@ -200,6 +206,7 @@ it("distinguishes unavailable original evaluation and sends explicit repaired ac
     startRepair: vi.fn(),
     resumeRepair: async () => ({}) as ConversionCopy,
     reviewRepair: async () => review,
+    regenerateRepair: vi.fn(),
     acceptRepair: vi.fn(async () => ({
       outcome: "converted" as const,
       document: "zotlit-profile.default.md",
@@ -273,6 +280,7 @@ it.each([
     startRepair: vi.fn(),
     resumeRepair: async () => ({}) as ConversionCopy,
     reviewRepair: async () => review,
+    regenerateRepair: vi.fn(),
     acceptRepair: vi.fn(),
     discardRepair: vi.fn(),
     refreshRepairOriginals: vi.fn(),
@@ -290,5 +298,76 @@ it.each([
       (button) => button.textContent === m.conversion_review_activate(),
     ),
   ).toBe(false);
+  modal.close();
+});
+
+it("offers raw source repair and explicit regeneration before a Profile exists", async () => {
+  const review: ConversionRepairReview = {
+    copy: "templates/conversion-copy-raw/conversion.json",
+    comparisons: [],
+    valid: false,
+    requiresAcceptance: false,
+    diagnostic: { code: "copied-inputs-changed" },
+    documents: [],
+    inputs: [
+      {
+        originalPath: "templates/zotlit-note.liquid.md",
+        path: "templates/conversion-copy-raw/inputs/zotlit-note.liquid.md",
+        slot: "note",
+        language: "liquid",
+      },
+    ],
+  };
+  const regenerated: ConversionRepairReview = {
+    ...review,
+    valid: true,
+    diagnostic: null,
+    comparisons: [
+      {
+        output: "create",
+        outcome: "changed",
+        original: "Before",
+        candidate: "Repaired body",
+      },
+    ],
+    requiresAcceptance: true,
+  };
+  const migration = {
+    prepare: vi.fn(),
+    activate: vi.fn(),
+    startRepair: vi.fn(),
+    resumeRepair: async () => ({}) as ConversionCopy,
+    reviewRepair: async () => review,
+    regenerateRepair: vi.fn(async () => regenerated),
+    acceptRepair: vi.fn(),
+    discardRepair: vi.fn(),
+    refreshRepairOriginals: vi.fn(),
+  };
+  const modal = new TemplateConversionReviewModal({} as App, {
+    migration,
+    completed: vi.fn(),
+  });
+  modal.open();
+  await vi.waitFor(() =>
+    expect(modal.modalEl.textContent).toContain(
+      m.conversion_repair_edit_source({ file: "zotlit-note.liquid.md" }),
+    ),
+  );
+  const regenerate = [...modal.modalEl.querySelectorAll("button")].find(
+    (button) => button.textContent === m.conversion_repair_regenerate(),
+  )!;
+  const section = regenerate.closest("section");
+  expect(section?.textContent).toContain(m.conversion_repair_sources());
+  expect(section?.textContent).toContain(m.conversion_repair_regenerate_hint());
+  expect(section?.querySelectorAll("li button")).toHaveLength(1);
+  expect(modal.contentEl.contains(regenerate)).toBe(true);
+  regenerate.click();
+  await vi.waitFor(() =>
+    expect(modal.contentEl.textContent).toContain("Repaired body"),
+  );
+  expect(migration.regenerateRepair).toHaveBeenCalledOnce();
+  expect(modal.modalEl.textContent).toContain(
+    m.conversion_repair_accept_changes(),
+  );
   modal.close();
 });
