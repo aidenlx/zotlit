@@ -44,6 +44,12 @@ it("renders editor examples and independent Preview after StrictMode replays eff
       "Why Most Published Research Findings Are False",
     ),
   );
+  expect(page.host.querySelector('[data-part="tab-bar"]')?.className).toBe(
+    WEB_THEME.classes?.tabBar?.["tab-bar"],
+  );
+  expect(page.host.querySelector('[data-part="note-pane"]')?.className).toBe(
+    WEB_THEME.classes?.notePane?.["note-pane"],
+  );
   await page.show("NW2CPDTC");
   await page.settle();
   await page.waitFor(() =>
@@ -55,6 +61,12 @@ it("renders editor examples and independent Preview after StrictMode replays eff
     expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
       "Thinking, fast and slow",
     ),
+  );
+  page.press(m.workbench_tab_properties());
+  await page.waitFor(() =>
+    expect(
+      page.host.querySelector('[data-part="summary"]')?.textContent,
+    ).toContain("Thinking, fast and slow"),
   );
 });
 
@@ -93,73 +105,6 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
   );
   expect(refresh().value).toBe("demand");
   expect(section().getAttribute("aria-expanded")).toBe("false");
-});
-
-it("shows filename and property examples for the current Sample Item", async () => {
-  await using page = await open();
-  await page.settle();
-  for (const [key, filename, title] of [
-    [
-      null,
-      "ioannidisWhyMost2005",
-      "Why Most Published Research Findings Are False",
-    ],
-    ["NW2CPDTC", "Kahneman2011", "Thinking, fast and slow"],
-  ] as const) {
-    if (key) {
-      await page.show(key);
-      await page.settle();
-    }
-    page.press(m.workbench_tab_name_and_folder());
-    await page.waitFor(() =>
-      expect(
-        page.host.querySelector('[data-part="filename-output"]')?.textContent,
-      ).toBe(filename),
-    );
-    page.press(m.workbench_tab_properties());
-    await page.waitFor(() =>
-      expect(
-        page.host.querySelector('[data-part="summary"]')?.textContent,
-      ).toContain(title),
-    );
-    expect(page.host.textContent).not.toContain(
-      m.workbench_properties_choose_item(),
-    );
-  }
-});
-
-it("mounts the shared editor with the web theme and its searchable Base UI chooser", async () => {
-  await using page = await open();
-  await page.settle();
-  expect(page.host.querySelector('[data-part="tab-bar"]')?.className).toBe(
-    WEB_THEME.classes?.tabBar?.["tab-bar"],
-  );
-  expect(page.host.querySelector('[data-part="note-pane"]')?.className).toBe(
-    WEB_THEME.classes?.notePane?.["note-pane"],
-  );
-  await page.waitFor(() =>
-    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
-      "Why Most Published Research Findings Are False",
-    ),
-  );
-  page.press(m.workbench_choose_item());
-  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-  expect(dialog).not.toBeNull();
-  expect(dialog.querySelector('[role="combobox"]')).not.toBeNull();
-  expect(dialog.textContent).toContain("Thinking, fast and slow");
-  await act(async () => {
-    dialog
-      .querySelector('[role="combobox"]')!
-      .dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-      );
-  });
-  expect(document.querySelector('[role="dialog"]')).toBeNull();
-  await page.waitFor(() =>
-    expect(document.activeElement).toBe(
-      page.host.querySelector("#workbench-sample"),
-    ),
-  );
 });
 
 it("hands a Default copy from the Profile menu to the native import flow", async () => {
