@@ -375,6 +375,26 @@ it("takes retained output back once another annotation example is chosen", async
   expect(retained().textContent).toBe("");
 });
 
+it("does not retain a successful result for another invalid Template Document", async () => {
+  using mounted = open();
+  const { host, scheduler } = mounted;
+  act(() => scheduler.setInput({ document: "templates/paper.md" }));
+  await advance(300);
+  await act(async () =>
+    host.renders[0]!.answer({ creationBody: "Document A" }),
+  );
+  expect(output().textContent).toBe("Document A");
+
+  act(() =>
+    scheduler.setInput({
+      document: "templates/book.md",
+      hold: "invalid",
+    }),
+  );
+  expect(scheduler.getState().retained).toBeNull();
+  expect(retained().textContent).toBe("");
+});
+
 it("takes retained output back once another Template Document is opened", async () => {
   using mounted = open();
   const { host, controller, scheduler } = mounted;
@@ -415,6 +435,36 @@ it("keeps the note that worked while the annotation beside it renders", async ()
     }),
   );
   expect(output().textContent).toBe("");
+  expect(retained().textContent).toBe("Working");
+  expect(retained().dataset["annotation"]).toBe("Second highlight");
+});
+
+it("keeps the successful note when a Property failure accompanies Annotation output", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  await advance(300);
+  await act(async () =>
+    host.renders[0]!.answer({
+      creationBody: "Working",
+      annotation: "First highlight",
+    }),
+  );
+  act(() => void controller.setManifestKey("name", "Broken"));
+  await advance(300);
+  await act(async () =>
+    host.renders[1]!.answer({
+      creationBody: "Incomplete",
+      annotation: "Second highlight",
+      diagnostics: [
+        {
+          code: "property-error",
+          part: "properties",
+          position: 1,
+          message: "Invalid property",
+        },
+      ],
+    }),
+  );
   expect(retained().textContent).toBe("Working");
   expect(retained().dataset["annotation"]).toBe("Second highlight");
 });

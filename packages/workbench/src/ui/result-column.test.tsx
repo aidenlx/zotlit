@@ -134,6 +134,35 @@ it("names the failure and leads to its explanation", () => {
   });
 });
 
+it("retains the note when a Property evaluation fails", () => {
+  const propertyFailure: TemplateRenderResult = {
+    ...result,
+    creationBody: "Incomplete note",
+    fold: [],
+    frontmatterBlock: null,
+    diagnostics: [
+      {
+        code: "property-error",
+        part: "properties",
+        position: 1,
+        message: "Invalid property",
+      },
+    ],
+  };
+  using mounted = column({ result: propertyFailure, retained: result });
+  const status = screen.getByRole("status");
+  expect(status.textContent).toContain(m.workbench_preview_retained());
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_problem_show() }),
+  );
+  expect(mounted.props.onShowProblem).toHaveBeenCalledWith(
+    propertyFailure.diagnostics[0],
+  );
+});
+
 it("tells a failed render from a template that produced nothing", () => {
   using _failed = column({
     result: {
@@ -207,6 +236,29 @@ it("shows the note that worked while the annotation beside it renders", () => {
   using _annotation = column({
     result: half,
     annotationResult: half,
+    retained: result,
+    mode: "annotation",
+  });
+  expect(screen.queryByText(m.workbench_preview_retained())).toBeNull();
+  expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
+});
+
+it("keeps Annotation output successful beside a failed Note Property", () => {
+  const propertyFailure: TemplateRenderResult = {
+    ...result,
+    creationBody: "Incomplete note",
+    diagnostics: [
+      {
+        code: "property-error",
+        part: "properties",
+        position: 1,
+        message: "Invalid property",
+      },
+    ],
+  };
+  using _mounted = column({
+    result: propertyFailure,
+    annotationResult: propertyFailure,
     retained: result,
     mode: "annotation",
   });

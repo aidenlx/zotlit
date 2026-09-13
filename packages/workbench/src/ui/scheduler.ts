@@ -251,13 +251,33 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
         ? stamp(published, trigger, attempt)
         : published;
     const busy = next.busy ?? state.busy;
+    // A Property failure makes the note surface unsuccessful even when the
+    // renderer returned its partial body; independent surfaces still land.
+    const resultForRetention =
+      result !== null &&
+      result.diagnostics.some(({ code }) => code === "property-error")
+        ? ({
+            ...result,
+            filename: null,
+            properties: [],
+            fold: [],
+            frontmatterBlock: null,
+            creationBody: null,
+            managedRegion: null,
+            annotationRanges: [],
+          } as R)
+        : result;
     // Each surface keeps the newest output it produced, so a note that failed
     // beside an annotation that rendered leaves the last good note standing.
-    if (result !== null && !renderFailed(result)) {
+    if (
+      landed &&
+      resultForRetention !== null &&
+      !renderFailed(resultForRetention)
+    ) {
       produced =
         produced !== null && producedDocument === input.document
-          ? retainOutputs(produced, result)
-          : result;
+          ? retainOutputs(produced, resultForRetention)
+          : resultForRetention;
       producedDocument = input.document;
     }
     // Only a failure sends the reader back to working output, and only where

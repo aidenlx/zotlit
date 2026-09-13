@@ -159,6 +159,8 @@ export function ResultBody({
   // is the editor's; the result on screen is as far behind as a failed one.
   const failed =
     staleReason === "invalid" ||
+    (showNote &&
+      result?.diagnostics.some(({ code }) => code === "property-error")) ||
     (previewProblem !== undefined && output === null);
   // A failure leaves the last successful output standing, so the reader
   // repairs the source against working output rather than an empty pane.
