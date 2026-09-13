@@ -290,6 +290,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "filename-text": "zt:[overflow-wrap:anywhere]",
       problem: "zt:text-sm zt:text-(--text-error) zt:[overflow-wrap:anywhere]",
       "problem-heading": "zt:font-semibold",
+      "problem-output": "zt:mt-1 zt:text-muted-foreground",
       stale: "zt:text-sm zt:text-muted-foreground",
       behind:
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal zt:text-muted-foreground",
@@ -347,9 +348,9 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "partial-name": "zt:min-w-0 zt:whitespace-normal",
       "partial-arguments":
         "zt:min-w-0 zt:truncate zt:font-normal zt:opacity-75",
-      "partial-problem":
-        "zt:min-w-0 zt:whitespace-normal zt:text-(--text-error)",
-      "partial-action": cn(
+      // The box's own missing state carries the error color; a bare button
+      // takes its text color from Obsidian's unlayered rule regardless.
+      "partial-problem": cn(
         templateWorkbenchButton,
         "zt:shrink-0 zt:rounded-sm zt:px-1.5 zt:py-0.5 zt:underline",
       ),
@@ -466,11 +467,66 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
+      "problems-return": templateWorkbenchButton,
       "problems-action": templateWorkbenchButton,
-      problems: "zt:shrink-0 zt:p-3 zt:border-t zt:border-border zt:text-xs",
+      // How much editor each of its three sizes takes is a container rule in
+      // `style.css`, where an unlayered `button` rule can be outranked.
+      problems:
+        "zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal",
+      "problems-summary":
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
-      "problems-text": "zt:text-muted-foreground",
-      "problems-recovery": "zt:text-muted-foreground",
+      // A value that changes as problems are repaired, so its digits hold
+      // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-count":
+        "zt:shrink-0 zt:text-muted-foreground zt:tabular-nums zt:whitespace-nowrap",
+      "problems-text": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
+      // Each control is capped at the row, so a long translated label wraps
+      // inside its own box instead of running past the pane.
+      "problems-space":
+        "zt:ms-auto zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
+      "problems-expand": cn(templateWorkbenchButton, "zt:px-1.5 zt:py-1"),
+      "problems-toggle": cn(templateWorkbenchButton, "zt:px-1.5 zt:py-1"),
+      "problems-body":
+        "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-1",
+      // The explanation, and only the explanation, scrolls. It takes whatever
+      // the area has left, so the controls keep one place along its bottom
+      // edge whichever problem is read and however long its explanation runs.
+      // A reader with no pointer scrolls it from the keyboard, and Obsidian
+      // clears the outline every focus ring would otherwise draw, so the ring
+      // is drawn inside.
+      "problems-scroll": cn(
+        "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-1 zt:overflow-y-auto zt:overscroll-contain",
+        "zt:focus-visible:shadow-[inset_0_0_0_2px_var(--background-modifier-border-focus)]",
+      ),
+      // The chooser leads the explanation where the object line otherwise
+      // would, at its own width rather than stretched across the column.
+      "problems-select": "zt:min-w-0 zt:max-w-full zt:self-start",
+      "problems-next": templateWorkbenchButton,
+      "problems-object": "zt:font-semibold zt:[overflow-wrap:anywhere]",
+      "problems-recovery": "zt:text-pretty zt:text-muted-foreground",
+      // A reported location names the engine's own template, which is one
+      // unbroken machine-written token in a pane the reader can narrow.
+      "problems-location":
+        "zt:text-pretty zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
+      "problems-details": "zt:mt-2 zt:min-w-0",
+      "problems-details-label": "zt:cursor-pointer zt:text-muted-foreground",
+      "problems-evidence":
+        "zt:mt-1 zt:max-h-40 zt:overflow-auto zt:font-mono zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere]",
+      // Its own surface, so the engine's own words read as the block they are.
+      // It scrolls in both directions rather than wrapping: a caret excerpt
+      // only points at the right column while its lines stay intact.
+      "problems-report":
+        "zt:mt-1 zt:max-h-56 zt:overflow-auto zt:rounded-md zt:border zt:border-border zt:bg-(--background-secondary) zt:p-2 zt:font-mono zt:whitespace-pre zt:select-text",
+      "problems-copy-failed": "zt:mt-1 zt:text-pretty zt:text-(--text-error)",
+      // Under the scroll, never inside it: every one of these stays put while
+      // a long explanation and an open disclosure move past above them.
+      "problems-controls":
+        "zt:mt-2 zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
+      "problems-copy": templateWorkbenchButton,
+      // Help, not an action: it reads as the link it is, aligned with the
+      // buttons it shares the row with.
+      "problems-community": "zt:self-center zt:underline zt:underline-offset-2",
     },
   },
 };

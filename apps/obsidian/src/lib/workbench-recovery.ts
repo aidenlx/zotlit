@@ -3,6 +3,7 @@
 import type { App } from "obsidian";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
+import type { RenderDiagnosticCode } from "@zotlit/workbench/render";
 
 import { MissingPartialError } from "@/services/template/errors";
 
@@ -13,18 +14,42 @@ import { BaseNotice } from "./notice";
 const logger = getLogger("workbench-recovery");
 
 /**
+ * The failure a refused note operation asks the Workbench to explain: the
+ * diagnostic code the render reported and the object it named. The Workbench
+ * explains it once its own check finds the same problem, so the reader reads
+ * an explanation of a failure that is still there rather than a recorded
+ * message about one that may already be repaired.
+ */
+export interface ArrivingProblem {
+  readonly code: RenderDiagnosticCode;
+  /** The object the failure named — the partial a call could not resolve. */
+  readonly subject?: string;
+}
+
+/** What brought the reader to the Template Workbench, and what to explain. */
+export interface TemplateWorkbenchRequest {
+  /**
+   * The vault path of the Template Document holding the call that refused, so
+   * the reader lands on it; the Default Profile stands in when the failure
+   * names no document.
+   */
+  readonly document?: string;
+  readonly problem?: ArrivingProblem;
+}
+
+/**
  * Ask the workspace to open the Template Workbench, where a template is
  * repaired.
- *
- * @param document - the vault path of the Template Document holding the call
- *   that refused, so the reader lands on it; the Default Profile stands in
- *   when the failure names no document.
  */
-function requestTemplateWorkbench(app: App, document?: string): void {
+function requestTemplateWorkbench(
+  app: App,
+  request: TemplateWorkbenchRequest,
+): void {
   logger.debug("Requested the Template Workbench from a refused operation", {
-    document: document ?? null,
+    document: request.document ?? null,
+    problem: request.problem?.code ?? null,
   });
-  app.workspace.trigger("zotlit:open-template-workbench", document);
+  app.workspace.trigger("zotlit:open-template-workbench", request);
 }
 
 /**
@@ -48,11 +73,20 @@ export function missingPartialNotice(
   // Profile rather than whichever one the Workbench would default to.
   const document =
     error instanceof MissingPartialError ? error.documentPath : undefined;
+  // The Workbench opens the explanation for this very failure, so the reader
+  // reads what refused rather than hunting for it among the editor's checks.
+  const problem = {
+    code: "missing-partial",
+    subject: error.templateName,
+  } as const;
   return BaseNotice.render((renderer) => {
     renderer.setTitle(message).addAction((button) => {
-      button
-        .setButtonText(m.template_workbench_open_layout())
-        .onClick(() => requestTemplateWorkbench(app, document));
+      button.setButtonText(m.template_workbench_open_layout()).onClick(() =>
+        requestTemplateWorkbench(app, {
+          ...(document === undefined ? {} : { document }),
+          problem,
+        }),
+      );
     });
   });
 }

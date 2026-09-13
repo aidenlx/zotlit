@@ -55,13 +55,69 @@ describe("a draft the parser refuses", () => {
     await page.settle();
 
     // Nothing renders a draft the parser refuses, so the sheet keeps the last
-    // good result while the Problems strip carries the repair.
+    // good result while the Problems area carries the repair.
     expect(rendered()).toHaveLength(rendersOfGoodSource);
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
 
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_problems_where_note());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
+  });
+
+  it("counts the problems found and reads the one the reader chooses", async () => {
+    await using page = await open();
+    await page.settle();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    // Two failures a reader can tell apart: a property expression and the
+    // annotation format, each with its own object and its own repair.
+    const broken = view.state.doc
+      .toString()
+      .replace("expr: zt.title\n", "expr: zt.title | bogus_one\n")
+      .replace("{{ zt.text }}", "{{ zt.text | bogus_two }}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+
+    const area = page.host.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    act(() =>
+      area.querySelector<HTMLElement>('[data-part="problems-toggle"]')!.click(),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 2 }),
+    );
+    const select = area.querySelector("select")!;
+    expect(select.getAttribute("aria-label")).toBe(
+      m.workbench_problems_selected(),
+    );
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      m.workbench_annotation_label(),
+      m.workbench_problems_object_property({ key: "title" }),
+    ]);
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+
+    // Choosing the other problem reads that one and asks for no navigation.
+    const tab = chosenTab(page.host);
+    act(() => {
+      select.value = select.options[1]!.value;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_property_error_suggestion(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+    expect(chosenTab(page.host)).toBe(tab);
   });
 
   it("opens Profile for a field that tab writes", async () => {
@@ -77,6 +133,7 @@ describe("a draft the parser refuses", () => {
     await page.settle();
 
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_problems_where_details());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_profile());
@@ -448,8 +505,9 @@ describe("the annotation box", () => {
       page.host.querySelector<HTMLElement>(
         '[role="region"][data-part="region"]',
       )!,
-      m.workbench_annotation_edit_format(),
+      m.workbench_problem_show(),
     );
+    page.press(m.workbench_annotation_edit_format());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
   });
 
@@ -463,6 +521,7 @@ describe("the annotation box", () => {
     act(() =>
       source.dispatch({ changes: { from, to: source.state.doc.length } }),
     );
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_annotation_label());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
     page.press(m.workbench_section_repair());

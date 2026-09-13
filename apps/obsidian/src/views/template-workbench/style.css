@@ -224,3 +224,42 @@
   align-items: flex-start;
   height: auto;
 }
+
+/* How much editor a reading takes. The summary is whatever one row of it needs.
+   A reading takes a fixed share of the pane, so a repair that empties the
+   explanation leaves the source where it stands. Expand, and a pane with no
+   room left for the split, both give the explanation the whole pane — the
+   source keeps its flexible basis, so it gives its height up and comes back
+   with it. The two container conditions are one measurement written twice, so
+   exactly one of them ever applies, and a pane that already gave everything
+   has nothing left for Expand to do. Declared here because `button` and
+   `.clickable-icon` are styled unlayered, which no `zt:` utility outranks. */
+.view-content.zt-template-workbench
+  [data-part="problems"][data-state="compact"] {
+  flex: 0 0 auto;
+}
+.view-content.zt-template-workbench [data-part="problems"][data-state="full"] {
+  flex: 1 1 100%;
+}
+@container workbench-editor ((height >= 28rem) and (width >= 20rem)) {
+  .view-content.zt-template-workbench
+    [data-part="problems"][data-state="open"] {
+    flex: 0 0 45%;
+  }
+}
+@container workbench-editor ((height < 28rem) or (width < 20rem)) {
+  .view-content.zt-template-workbench
+    [data-part="problems"][data-state="open"] {
+    flex: 1 1 100%;
+  }
+  .view-content.zt-template-workbench [data-part="problems-expand"] {
+    display: none;
+  }
+}
+/* `button { white-space: nowrap }` is unlayered, so a long translated label
+   only wraps where a rule declared here says so. Both rows are controls the
+   reader has to reach; the report block keeps its own unbroken lines. */
+.view-content.zt-template-workbench [data-part="problems-controls"] > button,
+.view-content.zt-template-workbench [data-part="problems-space"] > button {
+  white-space: normal;
+}

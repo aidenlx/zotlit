@@ -42,15 +42,40 @@ export type {
   WorkbenchSuggesterOption,
   WorkbenchSuggesterRequest,
 } from "./host";
-export { diagnosticText, problemAction, problemText } from "./problems";
-export type { ProblemText } from "./problems";
-export { ProblemsFooter, problemWhere } from "./problems-footer";
+export {
+  diagnosisEngineSources,
+  diagnosisExplanation,
+  diagnosisLabel,
+  diagnosisReport,
+  diagnosisWhere,
+  diagnosticText,
+  documentDiagnosis,
+  problemAction,
+  problemText,
+  renderDiagnosis,
+  workbenchDiagnoses,
+} from "./problems";
+export type {
+  DiagnosisExplanation,
+  ProblemText,
+  WorkbenchDiagnosis,
+} from "./problems";
+export {
+  ProblemsFooter,
+  problemWhere,
+  useWorkbenchProblems,
+} from "./problems-footer";
+export type {
+  WorkbenchProblemCapture,
+  WorkbenchProblemsState,
+} from "./problems-footer";
 export { createRenderScheduler } from "./scheduler";
 export type {
   RenderScheduler,
   RenderSchedulerInput,
   RenderSchedulerOptions,
   RenderSchedulerState,
+  RenderTrigger,
 } from "./scheduler";
 export { createWorkbenchStore } from "./store";
 export type {

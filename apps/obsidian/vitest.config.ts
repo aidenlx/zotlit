@@ -2,6 +2,8 @@ import preact from "@preact/preset-vite";
 import { resolve } from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 
+import { testDefaults } from "@zotlit/config/vitest";
+
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 
 const packageRoot = import.meta.dirname;
@@ -42,6 +44,7 @@ export default defineConfig({
   },
   plugins: [preact(), pandocFilterVariants()],
   test: {
+    ...testDefaults,
     // `include`/`exclude` live on the two projects below, not here: Vite's
     // `mergeConfig` concatenates array fields a project shares with this root
     // config, so an `include` set here would survive alongside each project's

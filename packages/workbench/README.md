@@ -144,24 +144,68 @@ answers one request with a promise on the calling thread and whose rejection
 reads as a `render-error` diagnostic. An optional `mapResult` gives successful
 and failed results the host's own result shape. The host calls `setInput` with the
 paper, the annotation example, its own bundle, and `hold` where nothing may
-render yet. Its state — `result`, `busy`, `stale` — is what every result surface
-paints. Outside the editor provider the tree paints inert, which the web's
-skeleton relies on. The components so far: `TabBar` and
-`TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a host's own
-controls as children), and `ProblemsFooter` with `problemText`,
+render yet — `hold: "invalid"` for the one hold that is a failure, a document
+the parser refuses, which reads as `staleReason: "invalid"`. Its state —
+`result`, `retained`, `busy`, `stale` — is what every result surface paints.
+`retained` is the last result that produced output, kept while the document is
+invalid or `result` is a failed attempt, and the reader is still on the paper,
+example, caller, and mode it was rendered for, so a repair reads against
+working output rather than an empty pane; a source edit leaves that match
+intact. Its `trigger` says whether Run or the quiet time after an edit asked
+for the shown result, and `attempt` counts the results it has published, so two
+attempts over the same bytes stay distinct. Outside the editor provider the
+tree paints inert, which the web's skeleton relies on. The components so far:
+`TabBar` and `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a
+host's own controls as children), and `ProblemsFooter` with `problemText`,
 `problemAction`, and `diagnosticText`, the words for every core code. A host
 that passes `onAction` gets the button `problemAction` names for the codes a
 host can repair on the reader's word; a Profile edited beside a vault reports
 `bundled-partial` for the partials its manifest still carries, and the vault
 host unpacks them into files with `dropBundledPartials`.
 
+`ProblemsFooter` is the editor's Problems area, and the editor owns detailed
+diagnosis (ADR 0056). `workbenchDiagnoses(problems, diagnostics)` folds the
+parser's problems and the renderer's diagnostics into one list of
+`WorkbenchDiagnosis`, each with an identity built from its code, the object it
+names, and where it is repaired — never from its message text. Occurrences
+that share an identity become one problem with several `occurrences`, and
+`diagnosisEngineSources` writes out the place each was reported from; equal
+words about two objects, or at two repair targets, stay two problems.
+`useWorkbenchProblems` holds the reader's selection and their open-or-collapsed
+choice: automatic checks leave that choice alone, while `select` — what a
+source marker, the area's own selector, and the preview's Show problem call —
+and a failed explicit Run open the explanation. The area counts the problems
+found, names each one in its selector with `diagnosisLabel`, and reports a
+selected problem a repair resolved as resolved, offering `next` rather than
+moving the reader to it. `diagnosisExplanation` writes the affected object, a
+plain condition, and a text suggestion; repairs stay the reader's own edit.
+A preview publishes what its render found to the editor beside it rather than
+explaining it beside its own empty result.
+
+Technical details shows the failed attempt's report, and Copy error report
+copies that same text through the host's `copy`; Ask the community links to the
+host's `communityUrl` beside it, and both stay reachable while the disclosure
+is collapsed. A clipboard that refuses opens the disclosure and says the copy
+failed, leaving the text to select by hand. `diagnosisReport` reads the report
+one diagnosis carries; `useWorkbenchProblems` keeps the last one read, so an
+open area whose problems are all resolved still offers Copy last error report.
+
+The area states how much editor it is taking — `compact`, `open`, or `full` —
+and the hosts size each from CSS, so a pane too short or too narrow for the
+split reaches the same full-editor reading with no measurement here. `Expand`
+asks for the whole editor; `Return to template` gives the space back and calls
+the host's `onReturn`, which puts the caret back where the reader left it. The
+explanation scrolls inside the area and the controls sit under that scroll, so
+a long explanation and an open disclosure leave every one of them in place.
+
 `usePartialBoxes(controller, slice, host)` draws the Partial Placeholder over
 every Shared Partial call in one pane: the editor extension to pass that pane
-and the boxes to render beside it. The host answers the names the vault
-registers, the names the last render could not resolve, opening a partial,
-creating one, and rendering one for the caller that pane's slice supplies —
-a missing partial is the engine's own render failure, never a scan, so the
-box's Create and Pick another appear only for a name a render reported.
+and the boxes to render beside it. The host answers the names the last render
+could not resolve, opening a partial, reading one's problem, and rendering one
+for the caller that pane's slice supplies — a missing partial is the engine's
+own render failure, never a scan, so the box's short Missing marker appears
+only for a name a render reported, and selects that problem in the editor's
+Problems area.
 
 The host supplies `messages` and `getLocale` through `WorkbenchHostProvider`.
 The web passes its Paraglide facade; Obsidian passes its Language Pack facade.
@@ -179,6 +223,17 @@ the `ui-react` and `ui-preact` Vitest projects, the second with React aliased to
 `preact/compat` and Testing Library to its Preact build.
 
 ## Render
+
+`engineEvidence(error)` takes the engine's own account — message, name, stack,
+the chain behind it, a caret excerpt, and the location the engine named — at
+the boundary that catches a failure, before a diagnostic reduces it to one
+message. The scheduler pairs it with that attempt through `captureRenderReport`
+and hands the result's diagnostics a `report`; `formatRenderReport` is the one
+serializer, so displayed and copied text are the same string. Its labels and
+its `unavailable` marker stay English: a report travels to an issue or the
+community, where one format keeps reports comparable. A scheduler's
+`reportContext` names the Template Document, language, rendering root, Item,
+and versions that only its host knows.
 
 `@zotlit/workbench/render` renders a Profile against an Item Snapshot; the
 Render Scheduler that decides when lives in `@zotlit/workbench/ui`:
@@ -211,6 +266,20 @@ facade — it renders in a browser page and inside Obsidian — so the host writ
 each code in the reader's own language. `message` carries the wording this
 package did not author: the template engine's failure text, the Local Bridge's
 own, and the document parser's.
+
+`renderFailureDiagnostic(error, caller)` reads one thrown render failure
+against the source that render read and keeps its three answers apart:
+`engine` is where the engine itself said it happened, `caller` the document a
+failure named as holding the call, and `callSite` the call in that source which
+reached the failing template — the one verified repair location. Each is set
+only on its own evidence, so a name the source never spells leaves `callSite`
+absent and the host says the location is unverified rather than sending the
+reader to a guessed line. `templateCalls` in `@zotlit/workbench/document` is
+the scan behind it, and reads the reserved names `partialCalls` drops.
+`renderFailureCause(error)` reads the same evidence as the cause alone — the
+template the engine could not resolve, or the place it stopped in the one it
+named — so a render path that tries one document part after another reports
+one fault once without comparing either failure's wording.
 
 ## Bridge
 

@@ -184,8 +184,7 @@ export interface WorkbenchParts {
     | "partial-box"
     | "partial-name"
     | "partial-arguments"
-    | "partial-problem"
-    | "partial-action";
+    | "partial-problem";
   previewControls:
     | "controls"
     | "label"
@@ -209,7 +208,9 @@ export interface WorkbenchParts {
     | "filename"
     | "filename-text"
     | "problem"
+    | "problem-text"
     | "problem-heading"
+    | "problem-output"
     | "problem-open"
     | "empty"
     | "pending"
@@ -242,10 +243,30 @@ export interface WorkbenchParts {
     | "redo";
   problemsFooter:
     | "problems"
+    | "problems-summary"
     | "problems-heading"
+    | "problems-count"
     | "problems-text"
+    | "problems-space"
+    | "problems-expand"
+    | "problems-toggle"
+    | "problems-body"
+    | "problems-scroll"
+    | "problems-select"
+    | "problems-next"
+    | "problems-object"
     | "problems-recovery"
+    | "problems-location"
+    | "problems-details"
+    | "problems-details-label"
+    | "problems-evidence"
+    | "problems-report"
+    | "problems-copy-failed"
+    | "problems-controls"
     | "problems-action"
+    | "problems-copy"
+    | "problems-community"
+    | "problems-return"
     | "problems-open";
 }
 

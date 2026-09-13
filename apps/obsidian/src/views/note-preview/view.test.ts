@@ -95,6 +95,9 @@ class Preview extends NotePreviewView {
   }
 }
 class Editor extends TemplateWorkbenchView {
+  open() {
+    return this.onOpen();
+  }
   close() {
     return this.onClose();
   }
@@ -104,6 +107,8 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   document.body.replaceChildren();
+  if ("clipboard" in navigator)
+    delete (navigator as { clipboard?: unknown }).clipboard;
 });
 
 const NO_PROFILES: PreviewViewDeps["profile"] = {
@@ -133,6 +138,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
         if (event.name === name) event.callback(...args);
     },
     onLayoutReady: (callback: () => void) => callback(),
+    revealLeaf: vi.fn(async () => {}),
     iterateAllLeaves: vi.fn(),
     requestSaveLayout: vi.fn(),
     setActiveLeaf: vi.fn(),
@@ -150,6 +156,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
       client: lease.client,
     },
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
+    templates: fixture.deps.templates,
     nativePreview: fixture.deps,
   } as unknown as TemplateWorkbenchDeps);
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
@@ -223,6 +230,83 @@ async function pick(view: Preview, title: string) {
 }
 const advance = (ms = 300) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+/** Presses the preview's own button whose text is `label`. */
+function previewButton(view: Preview, label: string): void {
+  const button = Array.from(view.contentEl.querySelectorAll("button")).find(
+    (element) => element.textContent === label,
+  );
+  if (!button) throw new Error(`Missing preview action: ${label}`);
+  button.click();
+}
+
+/** The editor's Problems area, which owns the detailed explanation. */
+function problemsArea(view: Editor): HTMLElement {
+  const area = view.contentEl.querySelector<HTMLElement>(
+    '[data-part="problems"]',
+  );
+  if (!area) throw new Error("The Problems area is not open");
+  return area;
+}
+
+/** Presses the Problems area's own button whose text is `label`. */
+function problemsButton(view: Editor, label: string): void {
+  const button = Array.from(problemsArea(view).querySelectorAll("button")).find(
+    (element) => element.textContent === label,
+  );
+  if (!button) throw new Error(`Missing Problems action: ${label}`);
+  button.click();
+}
+
+/** Chooses the problem the Problems selector offers as `label`. */
+function chooseProblem(view: Editor, label: string): void {
+  const select = problemsArea(view).querySelector("select");
+  if (!select) throw new Error("The Problems selector is not shown");
+  const option = Array.from(select.options).find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!option) throw new Error(`Missing problem: ${label}`);
+  select.value = option.value;
+  select.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/**
+ * An editor showing `source` with a preview open on it, both settled. The
+ * editor's own content element is in the document, so the Problems area the
+ * assertions read is the one a reader sees.
+ */
+async function failing(
+  test: Awaited<ReturnType<typeof setup>>,
+  source: string,
+): Promise<Preview> {
+  await act(async () =>
+    test.editor.store
+      .getState()
+      .setItem({ id: "MAIN2345", title: "Better figures" }),
+  );
+  document.body.append(test.editor.contentEl);
+  await act(async () => test.editor.open());
+  const preview = await test.open();
+  await advance();
+  await act(async () => test.editor.setViewData(source, false));
+  await advance();
+  return preview;
+}
+
+/**
+ * The clipboard the host copies through, as a list of what reached it. This
+ * runtime supplies none, so the test defines one and takes it away after.
+ */
+function stubClipboard(): string[] {
+  const writes: string[] = [];
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: (text: string) => (writes.push(text), Promise.resolve()),
+    },
+  });
+  return writes;
+}
 
 async function run(view: Preview) {
   const button = Array.from(view.contentEl.querySelectorAll("button")).find(
@@ -858,6 +942,616 @@ Annotation`,
     expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
   });
 
+  it("explains a failed note render in the editor and clears it after a repair", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+
+    // The preview names the failure rather than presenting an empty note.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_problem(),
+    );
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_diagnostic_missing_partial({ name: "book-details" }),
+    );
+    // The note that last rendered stands beside the failure, named as the
+    // last preview that worked, so the repair is read against it.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    // Automatic checks stay compact: the suggestion waits to be asked for.
+    expect(test.editor.contentEl.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = test.editor.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    expect(area.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("Personal space.", "Repaired output."),
+        false,
+      ),
+    );
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Repaired output.");
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_preview_problem(),
+    );
+    // A successful check publishes the new output and takes the retained
+    // notice with the failure it explained.
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_preview_retained(),
+    );
+    // An area the reader opened keeps its space; the repaired failure is gone.
+    expect(area.isConnected).toBe(true);
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+  });
+
+  it("sends the reader to the call that named the missing partial", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const call = `{% render "book-details" %}`;
+    const source = PROFILE_SOURCE.replace("Personal space.", call);
+    // Hand-derived: the call stands where the personal paragraph stood.
+    const at = {
+      from: source.indexOf(call),
+      to: source.indexOf(call) + call.length,
+    };
+    const preview = await failing(test, source);
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "book-details" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    // Nothing was read inside a partial that does not exist, so the engine
+    // reported no location of its own.
+    expect(area.textContent).not.toContain(
+      m.workbench_problems_engine_source({ template: "book-details" }),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_problems_location_unknown(),
+    );
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_call()),
+    );
+    expect(test.editor.store.getState().presentation.reveal).toEqual(at);
+    // Diagnosis navigates and explains; it writes nothing.
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+  });
+
+  it("blames the call, not the citation text the engine failed inside", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const call = `{% render "citation" %}`;
+    const source = PROFILE_SOURCE.replace("Personal space.", call);
+    const at = {
+      from: source.indexOf(call),
+      to: source.indexOf(call) + call.length,
+    };
+    const preview = await failing(test, source);
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(m.workbench_problems_object_citation());
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_citation_data_mismatch(),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_citation_data_suggestion(),
+    );
+    // Hand-derived: the built-in citation text pipes `zt.citations` through
+    // `pandoc_cite` on its fourth line, and that location stays the engine's
+    // own rather than becoming a line of the note being edited.
+    expect(area.textContent).toContain(
+      m.workbench_problems_engine_source_line({
+        template: "citation",
+        line: 4,
+      }),
+    );
+    expect(area.textContent).toContain("pandoc_cite requires a Citation Item");
+    // The annotation root's rendered citation is no field of a note root, so
+    // it is never proposed as the replacement here. The engine's own excerpt
+    // under Technical details quotes the failing line as the engine wrote it.
+    expect(
+      area.querySelector('[data-part="problems-recovery"]')?.textContent,
+    ).not.toContain("zt.citation");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_call()),
+    );
+    expect(test.editor.store.getState().presentation.reveal).toEqual(at);
+  });
+
+  it("opens the property row a failed managed field came from", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace("expr: zt.title", "expr: zt.title | bogus_filter"),
+    );
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_problems_object_property({ key: "title" }),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_property_error_suggestion(),
+    );
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_entry()),
+    );
+    // The first Managed Frontmatter entry is the row that produced it.
+    expect(test.editor.store.getState().presentation.selected).toBe(1);
+  });
+
+  it("keeps an unclassified engine failure honest about what it knows", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace(
+        "Personal space.",
+        "{{ zt.title | bogus_filter }}",
+      ),
+    );
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+    // The engine's own words survive, and its own location is reported as its
+    // own — no call in this source names the template it blamed.
+    expect(area.textContent).toContain("undefined filter: bogus_filter");
+    expect(area.textContent).toContain(m.workbench_problems_location_unknown());
+    expect(
+      Array.from(problemsArea(test.editor).querySelectorAll("button")).map(
+        (button) => button.textContent,
+      ),
+    ).not.toContain(m.workbench_problems_where_call());
+  });
+
+  it("explains the failure that brought the reader from a refused note operation", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const source = PROFILE_SOURCE.replace(
+      "Personal space.",
+      `{% render "book-details" %}`,
+    );
+    // The route in carries the refusal's own code and the partial it named.
+    await act(async () =>
+      test.editor.explainArrival({
+        code: "missing-partial",
+        subject: "book-details",
+      }),
+    );
+    await failing(test, source);
+
+    expect(problemsArea(test.editor).textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    // One arrival opens one explanation; a later check leaves it alone.
+    expect(test.editor.arrival).toBeNull();
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+    expect(test.fixture.writes.process).not.toHaveBeenCalled();
+  });
+
+  it("hides retained output once the preview selection has moved on", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+
+    // Reading another field is not another preview: the rendering root, and
+    // the output kept for it, are the ones the reader already had.
+    const calls = vi.mocked(renderNativeTemplate).mock.calls.length;
+    await act(async () =>
+      test.editor.setPresentation({ fieldFocus: { field: "title" } }),
+    );
+    await advance();
+    expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "sample:book", title: "Sample book" }),
+    );
+    await advance();
+    // Another paper is another preview, so the first one's note is not read
+    // as its comparison.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_unavailable(),
+    );
+    expect(preview.contentEl.textContent).not.toContain("Personal space.");
+  });
+
+  it("copies the engine evidence from the failed attempt, and keeps it through a repair", async () => {
+    const copied = stubClipboard();
+    // The fixture's own manifest carries a value the rows cannot parse, which
+    // would keep a document problem selected after the repair. This reader's
+    // template has only the failure under test.
+    const source = PROFILE_SOURCE.replace(
+      "value: [review]",
+      'value: ["review"]',
+    );
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      source.replace(
+        "Personal space.",
+        `{% render "book-details" with zt as zt %}`,
+      ),
+    );
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+
+    const area = problemsArea(test.editor);
+    const report = () =>
+      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+        .textContent!;
+    // Technical details shows the report; it is still collapsed, and copying
+    // does not wait for the reader to open it.
+    const details = area.querySelector("details")!;
+    expect(details.open).toBe(false);
+    // The engine's own account of the missing partial, as it was thrown. The
+    // partial name reaches the report as the location the engine named.
+    expect(report()).toContain(
+      [
+        "Engine message:",
+        'Template "book-details" not found',
+        "",
+        "Problem code: missing-partial",
+        "Engine name: MissingTemplateError",
+        "Reported location: book-details",
+      ].join("\n"),
+    );
+    // Nothing has established where the failure belongs, and the report says
+    // so rather than leaving the reader a blank to read as "none".
+    expect(report()).toContain("Engine location: unavailable");
+    expect(report()).toContain("Trigger: automatic");
+    expect(report()).toContain("Template document: templates/paper.md");
+    expect(report()).toContain("Template language: liquid");
+    expect(report()).toContain("Rendering root: note");
+    expect(report()).toContain("Selection: item=MAIN2345");
+    expect(report()).toContain("Host version: Obsidian 1.0.0-test");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied).toEqual([report()]);
+    const inspected = copied[0]!;
+
+    // A later edit fails differently, and that failure brings its own report
+    // rather than rewriting the one already captured.
+    await act(async () =>
+      test.editor.setViewData(
+        source.replace(
+          "Personal space.",
+          `{% render "figure-caption" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    expect(report()).toContain('Template "figure-caption" not found');
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    const second = copied[1]!;
+    expect(second).not.toBe(inspected);
+    expect(second).toContain("Reported location: figure-caption");
+
+    // Choosing another paper re-renders and reports that attempt's own paper.
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "BOOK2345", title: "Reading between the lines" }),
+    );
+    await advance();
+
+    // The repair succeeds. The area keeps the failure the reader was reading,
+    // and copying it again produces the same text it produced before.
+    await act(async () =>
+      test.editor.setViewData(
+        source.replace("Personal space.", "Repaired output."),
+        false,
+      ),
+    );
+    await advance();
+    expect(area.textContent).toContain(m.workbench_problems_none());
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy_last()),
+    );
+    expect(copied.at(-1)).toBe(copied.at(-2));
+    expect(copied.at(-1)).toContain("Reported location: figure-caption");
+  });
+
+  it("reports a document problem the parser found, with no engine behind it", async () => {
+    const copied = stubClipboard();
+    await using test = await setup();
+    vi.useFakeTimers();
+    // The fixture's own manifest carries a list value the rows cannot read,
+    // which is a validation problem with no render behind it at all.
+    await failing(test, PROFILE_SOURCE);
+
+    const area = problemsArea(test.editor);
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problem_show()),
+    );
+    const report = () =>
+      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+        .textContent!;
+    // Hand-derived: the value the parser refused is the second entry's, and
+    // it stands where the fixture spells it.
+    const at = PROFILE_SOURCE.indexOf("[review]");
+    expect(report()).toContain(
+      [
+        "Engine message:",
+        m.workbench_problem_invalid_manifest_field({
+          field: "frontmatter.1.value",
+        }),
+        "",
+        "Problem code: invalid-manifest",
+        "Engine name: unavailable",
+        `Reported location: offset ${at}-${at + "[review]".length}`,
+        "Engine location: unavailable",
+        "Calling template: unavailable",
+        "Repair target: unavailable",
+        "Document section: entry:2",
+      ].join("\n"),
+    );
+    // No error was ever thrown, and no render ever ran for this one.
+    expect(report()).toContain("Stack: unavailable");
+    expect(report()).toContain("Attempt: unavailable");
+    expect(report()).toContain("Snapshot revision: unavailable");
+    // The attempt's own context is captured whole, the same as a render's.
+    expect(report()).toContain("Trigger: automatic");
+    expect(report()).toContain("Template document: templates/paper.md");
+    expect(report()).toContain("Template language: liquid");
+    expect(report()).toContain("Rendering root: note");
+    expect(report()).toContain("Selection: item=MAIN2345");
+    expect(report()).toContain("Host version: Obsidian 1.0.0-test");
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    const inspected = report();
+    expect(copied).toEqual([inspected]);
+
+    // Editing elsewhere leaves the manifest's problem standing, and the report
+    // still describes the check that found it rather than the source now open.
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("Personal space.", "Edited."),
+        false,
+      ),
+    );
+    await advance();
+    expect(report()).toBe(inspected);
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied).toEqual([inspected, inspected]);
+  });
+
+  it("works through two problems one at a time, keeping each one's report", async () => {
+    const copied = stubClipboard();
+    await using test = await setup();
+    vi.useFakeTimers();
+    // Two problems a reader can tell apart: the fixture's own manifest value
+    // the rows cannot read, and a call to a partial the vault does not hold.
+    const source = PROFILE_SOURCE.replace(
+      "Personal space.",
+      `{% render "book-details" %}`,
+    );
+    const preview = await failing(test, source);
+    const area = problemsArea(test.editor);
+    const partial = m.workbench_problems_object_partial({
+      name: "book-details",
+    });
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 2 }),
+    );
+
+    // Show problem reads the preview's own failure in full. One explanation
+    // is shown at a time, so the other problem's guidance is not on screen.
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied.at(-1)).toContain("Problem code: missing-partial");
+    const first = copied.at(-1)!;
+
+    // Choosing the other problem reads that one, with its own captured
+    // evidence, and asks for no navigation: the source stays where it is.
+    const at = test.editor.store.getState().presentation.reveal;
+    await act(async () =>
+      chooseProblem(test.editor, m.workbench_tab_properties()),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+    expect(test.editor.store.getState().presentation.reveal).toBe(at);
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(copied.at(-1)).toContain("Problem code: invalid-manifest");
+
+    // Back to the partial, and a repair that resolves only that one.
+    await act(async () => chooseProblem(test.editor, partial));
+    await act(async () => test.editor.setViewData(PROFILE_SOURCE, false));
+    await advance();
+    // The remaining problem keeps the area from reporting success, and the
+    // reader is offered the next explanation rather than moved to it.
+    expect(area.textContent).toContain(m.workbench_problems_resolved());
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 1 }),
+    );
+    expect(area.textContent).not.toContain(m.workbench_problems_none());
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    // The resolved problem keeps the report the reader inspected.
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy_last()),
+    );
+    expect(copied.at(-1)).toBe(first);
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_next()),
+    );
+    expect(area.textContent).toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+
+    // The second repair leaves nothing, and the area keeps the space it had.
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]'),
+        false,
+      ),
+    );
+    await advance();
+    expect(area.isConnected).toBe(true);
+    expect(area.textContent).toContain(m.workbench_problems_none());
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_invalid_manifest_recovery(),
+    );
+    expect(test.fixture.writes.create).not.toHaveBeenCalled();
+    expect(test.fixture.writes.modify).not.toHaveBeenCalled();
+  });
+
+  it("counts the problems found while a check stops at its first error", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    // Two broken filters, and the engine stops at the one it reached first.
+    // The count says what was found; it claims nothing about the rest.
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]').replace(
+        "Personal space.",
+        "{{ zt.title | bogus_one }} {{ zt.title | bogus_two }}",
+      ),
+    );
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(
+      m.workbench_problems_count({ count: 1 }),
+    );
+    // The one it stopped at, explained; the second fault is undiscovered and
+    // the count makes no claim about it.
+    expect(area.textContent).toContain("undefined filter: bogus_one");
+    // One problem is read on its own, with nothing to choose between.
+    expect(area.querySelector("select")).toBeNull();
+  });
+
+  it("takes a closed preview's findings back out of the editor", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+    await act(async () =>
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace(
+          "Personal space.",
+          `{% render "book-details" with zt as zt %}`,
+        ),
+        false,
+      ),
+    );
+    await advance();
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    expect(test.editor.contentEl.textContent).toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+
+    await act(async () => preview.close());
+    expect(test.editor.contentEl.textContent).not.toContain(
+      m.workbench_diagnostic_missing_partial_suggestion(),
+    );
+  });
+
   it("keeps the last output visible while invalid source is repaired", async () => {
     await using test = await setup();
     vi.useFakeTimers();
@@ -875,10 +1569,33 @@ Annotation`,
     await advance();
     expect(preview.contentEl.querySelector('[role="alert"]')).not.toBeNull();
     expect(preview.contentEl.textContent).toContain("Personal space.");
+    // A document the parser refuses reads as a failure, so the preview names
+    // the output it kept rather than a wait it is not in.
     expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).not.toContain(
       m.workbench_preview_stale(),
     );
+    expect(
+      [...preview.contentEl.querySelectorAll("button")].some(
+        (button) => button.textContent === m.workbench_problem_show(),
+      ),
+    ).toBe(true);
     expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
+
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "sample:book", title: "Sample book" }),
+    );
+    await advance();
+    // The kept output answers for the paper the reader has left.
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_unavailable(),
+    );
+    expect(preview.contentEl.textContent).not.toContain("Personal space.");
+
     await act(async () =>
       test.editor.setViewData(
         PROFILE_SOURCE.replace("Personal space.", "Repaired output."),
@@ -888,6 +1605,9 @@ Annotation`,
     await advance();
     expect(preview.contentEl.textContent).toContain("Repaired output.");
     expect(preview.contentEl.querySelector('[role="alert"]')).toBeNull();
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_preview_unavailable(),
+    );
   });
   it("holds pinned Item context, retains output after source closure, and disables source actions", async () => {
     await using test = await setup();
@@ -913,7 +1633,7 @@ Annotation`,
     );
     await advance();
     const source = [...preview.contentEl.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_problems_where_advanced(),
+      (button) => button.textContent === m.workbench_problem_show(),
     );
     expect(source?.disabled).toBe(true);
   });
@@ -932,7 +1652,7 @@ Annotation`,
       PROFILE_SOURCE,
     );
     const chooseItem = vi.fn();
-    const revealSlice = vi.fn();
+    const showProblem = vi.fn();
     const earlierPeer = {
       leaf: {} as WorkspaceLeaf,
       file: otherFile,
@@ -946,7 +1666,8 @@ Annotation`,
       getViewData: () =>
         PROFILE_SOURCE.replace("Personal space.", "Books output."),
       chooseItem,
-      revealSlice,
+      showProblem,
+      publishPreviewProblems: vi.fn(),
     } as unknown as TemplateWorkbenchView;
     preview.leaf.pinned = true;
     await act(async () => {
@@ -962,11 +1683,11 @@ Annotation`,
     );
     await advance();
     const source = [...preview.contentEl.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_problems_where_advanced(),
+      (button) => button.textContent === m.workbench_problem_show(),
     )!;
     expect(source.disabled).toBe(true);
     await act(async () => source.click());
-    expect(revealSlice).not.toHaveBeenCalled();
+    expect(showProblem).not.toHaveBeenCalled();
     expect(chooseItem).not.toHaveBeenCalled();
     preview.leaf.pinned = false;
     await act(async () => {

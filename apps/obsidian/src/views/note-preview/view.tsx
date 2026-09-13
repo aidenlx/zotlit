@@ -1,9 +1,9 @@
 import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
-import { ItemView, setIcon } from "obsidian";
+import { apiVersion, ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -17,12 +17,18 @@ import {
   isCitationExampleId,
   isPartialContext,
 } from "@zotlit/workbench/render";
-import type { PartialChoice, PartialContext } from "@zotlit/workbench/render";
+import type {
+  PartialChoice,
+  PartialContext,
+  RenderDiagnostic,
+  WorkbenchReportContext,
+} from "@zotlit/workbench/render";
 import {
   citationExampleLabel,
   citationVariantLabel,
   createRenderScheduler,
   partialContextLabel,
+  renderDiagnosis,
   TABS,
   ResultBody,
   WorkbenchHostProvider,
@@ -121,6 +127,9 @@ function PreviewSheet({
 }
 
 export const NOTE_PREVIEW_VIEW_TYPE = "zotlit-note-preview";
+/** Distinguishes the previews one editor explains for. */
+let previewCount = 0;
+
 export class NotePreviewView extends ItemView {
   readonly #pluginId: string;
   readonly #deps: PreviewViewDeps;
@@ -133,6 +142,10 @@ export class NotePreviewView extends ItemView {
   #choiceGeneration = 0;
   #session: NativePreviewSession | null = null;
   #scheduler: RenderScheduler<NativeRenderResult> | null = null;
+  /** Names this preview to the editor that explains what it found. */
+  readonly #problemKey = `note-preview-${++previewCount}`;
+  /** The editor holding this preview's findings, which a close gives back. */
+  #problemHost: TemplateWorkbenchView | null = null;
   readonly #rendered = () => this.#restorePresentation();
   #host: (WorkbenchHost & Disposable) | null = null;
   constructor(leaf: WorkspaceLeaf, pluginId: string, deps: PreviewViewDeps) {
@@ -428,6 +441,7 @@ export class NotePreviewView extends ItemView {
         },
         render: (request) => renderNativeTemplate(deps, request),
         failed: nativeResult,
+        reportContext: () => this.#reportContext(),
       }),
     );
     const session = resources.use(
@@ -930,6 +944,31 @@ export class NotePreviewView extends ItemView {
     )
       session.setSource(this.#editor.getViewData());
   }
+  /**
+   * Hands this preview's findings to the editor that owns the Problems area,
+   * and takes them back from the editor it no longer describes.
+   */
+  #publishProblems(diagnostics: readonly RenderDiagnostic[]): void {
+    const editor = this.#sourceEditor();
+    if (this.#problemHost && this.#problemHost !== editor)
+      this.#problemHost.publishPreviewProblems(this.#problemKey, []);
+    this.#problemHost = editor;
+    editor?.publishPreviewProblems(this.#problemKey, diagnostics);
+  }
+  /**
+   * What names this preview in a copied error report. The linked editor
+   * answers for the document it holds; a preview reading restored source
+   * names what it can and leaves the rest unavailable.
+   */
+  #reportContext(): WorkbenchReportContext {
+    const root = this.#session?.state.getState().context?.root ?? "note";
+    return (
+      this.#sourceEditor()?.reportContext(root) ?? {
+        root,
+        hostVersion: `Obsidian ${apiVersion}`,
+      }
+    );
+  }
   #sourceEditor(): TemplateWorkbenchView | null {
     return this.#editor &&
       this.#session?.state.getState().context?.path ===
@@ -1052,7 +1091,12 @@ export class NotePreviewView extends ItemView {
               editorAvailable={this.#sourceEditor() !== null}
               chooseItem={() => void this.#chooseItem()}
               chooseAnnotation={() => void this.#chooseAnnotation()}
-              reveal={(slice) => this.#sourceEditor()?.revealSlice(slice)}
+              publishProblems={(diagnostics) =>
+                this.#publishProblems(diagnostics)
+              }
+              showProblem={(id, reveal) =>
+                this.#sourceEditor()?.showProblem(id, reveal)
+              }
             />
           </WorkbenchHostProvider>
         </WorkbenchThemeProvider>
@@ -1073,20 +1117,28 @@ export class NotePreviewView extends ItemView {
     );
   }
   protected override async onClose(): Promise<void> {
+    // A closed preview describes nothing, so its findings leave the editor
+    // with it rather than standing as a problem the reader cannot reach.
+    this.#problemHost?.publishPreviewProblems(this.#problemKey, []);
+    this.#problemHost = null;
     this.#cleanup?.dispose();
     this.#cleanup = null;
   }
 }
 const sidebarBar = selectionBar({ placement: "sidebar" });
 
+/** Nothing found, as one value, so an idle preview publishes no new list. */
+const NO_DIAGNOSTICS: readonly RenderDiagnostic[] = [];
+
 function PreviewContent({
   session,
   scheduler,
   chooseItem,
   chooseAnnotation,
-  reveal,
   editorAvailable,
   rendered,
+  publishProblems,
+  showProblem,
 }: {
   rendered: () => void;
   session: NativePreviewSession;
@@ -1094,9 +1146,13 @@ function PreviewContent({
   editorAvailable: boolean;
   chooseItem: () => void;
   chooseAnnotation: () => void;
-  reveal: (slice: "advanced" | "annotation" | `entry:${number}`) => void;
+  /** Hands what this render found to the editor that explains it. */
+  publishProblems: (diagnostics: readonly RenderDiagnostic[]) => void;
+  /** Reads one problem in the editor's Problems area. */
+  showProblem: (id: string | null, reveal: boolean) => void;
 }) {
-  const { result, busy, stale, staleReason } = useRenderState(scheduler);
+  const { result, retained, busy, stale, staleReason, trigger, attempt } =
+    useRenderState(scheduler);
   const {
     context,
     preview,
@@ -1112,6 +1168,27 @@ function PreviewContent({
     citationExample,
   } = useStore(session.state, (state) => state);
   useEffect(rendered, [result, status, showMarkdown, showManaged, rendered]);
+  // The editor owns the explanation, so this preview publishes what its render
+  // found and takes it back when it closes.
+  const diagnostics = result?.diagnostics ?? NO_DIAGNOSTICS;
+  const publish = useRef(publishProblems);
+  publish.current = publishProblems;
+  const open = useRef(showProblem);
+  open.current = showProblem;
+  useEffect(() => {
+    publish.current(diagnostics);
+  }, [diagnostics]);
+  useEffect(() => () => publish.current(NO_DIAGNOSTICS), []);
+  const opened = useRef(attempt);
+  useEffect(() => {
+    if (attempt === opened.current) return;
+    opened.current = attempt;
+    // A deliberate Run that failed is worth an explanation at once; the
+    // editor's pane is left where the reader put it.
+    const first = diagnostics[0];
+    if (trigger === "explicit" && first)
+      open.current(renderDiagnosis(first).id, false);
+  }, [attempt, trigger, diagnostics]);
   const mode = context ? resultMode(context) : "note";
   const partialContext = partialContextOf(context);
   // A partial reads the root its chosen caller reads, so the set it is shown
@@ -1232,9 +1309,9 @@ function PreviewContent({
           <button
             className={templateWorkbenchButton}
             disabled={!editorAvailable}
-            onClick={() => reveal("advanced")}
+            onClick={() => showProblem(null, true)}
           >
-            {m.workbench_problems_where_advanced()}
+            {m.workbench_problem_show()}
           </button>
         </div>
       )}
@@ -1247,15 +1324,16 @@ function PreviewContent({
           <ResultBody
             result={result}
             annotationResult={result}
+            retained={retained}
             mode={mode}
             stale={stale}
             staleReason={staleReason}
             showMarkdown={showMarkdown}
             showManaged={showManaged}
             sourceAvailable={editorAvailable}
-            openAnnotation={() => reveal("annotation")}
-            goToEntry={(position) => reveal(`entry:${position}`)}
-            openSource={() => reveal("advanced")}
+            onShowProblem={(diagnostic) =>
+              showProblem(renderDiagnosis(diagnostic).id, true)
+            }
             onRun={() => scheduler.run()}
             busy={busy}
           />

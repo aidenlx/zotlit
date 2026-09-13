@@ -2,6 +2,7 @@
 // Companion views consume source values through their own render owners.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
+import type { WorkbenchReportContext } from "#/render/report";
 import type { TemplateRenderResult } from "#/render/result";
 import {
   createContext,
@@ -38,6 +39,8 @@ interface WorkbenchEditorOptions {
   state?: Partial<WorkbenchViewState>;
   /** A host may initialize its pure view store before acquiring render resources. */
   store?: WorkbenchStore;
+  /** What names this editor in the report a failed example is copied as. */
+  reportContext?: () => WorkbenchReportContext;
 }
 
 /** Own one editor's view state and rendering through its host adapter. */
@@ -54,6 +57,7 @@ export function createWorkbenchEditor({
   host,
   state,
   store: providedStore,
+  reportContext,
   mapResult,
 }: WorkbenchEditorOptions & {
   mapResult?: (result: TemplateRenderResult) => TemplateRenderResult;
@@ -77,6 +81,7 @@ export function createWorkbenchEditor({
       return mapResult ? result.then(mapResult) : result;
     },
     failed: mapResult ?? ((result) => result),
+    ...(reportContext ? { reportContext } : {}),
   });
   function follow(next: WorkbenchDocumentController) {
     scheduler.setInput({ source: next.source });
@@ -115,9 +120,12 @@ const INERT_STORE = createWorkbenchStore();
 
 const INERT_STATE: RenderSchedulerState = {
   result: null,
+  retained: null,
   busy: false,
   stale: false,
   staleReason: null,
+  trigger: null,
+  attempt: 0,
 };
 
 /** Never renders: what the tree reads where no editor is in context. */

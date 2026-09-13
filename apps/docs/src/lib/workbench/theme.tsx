@@ -376,6 +376,7 @@ export const WEB_THEME: WorkbenchTheme = {
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
       "problem-heading": "font-semibold",
+      "problem-output": "mt-1 text-fd-muted-foreground",
       "problem-open": "cursor-pointer underline underline-offset-2",
       empty: "text-sm text-fd-muted-foreground",
       pending: "text-sm text-fd-muted-foreground",
@@ -420,12 +421,75 @@ export const WEB_THEME: WorkbenchTheme = {
       redo: historyButton,
     },
     problemsFooter: {
-      problems:
-        "flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+      // Three sizes the editor pane itself decides between. The summary is
+      // whatever one row of it needs; a reading takes a fixed share of the pane,
+      // so a repair that empties the explanation leaves the source where it
+      // stands; and the whole pane is what Expand and a pane with no room for
+      // the split both arrive at. `PROBLEMS_SPLIT_FITS` and its complement are
+      // the same measurement written twice, so exactly one of them applies.
+      problems: cn(
+        "flex min-h-0 flex-col gap-2 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+        "data-[state=compact]:shrink-0",
+        "[@container_workbench-editor_((height>=28rem)_and_(width>=20rem))]:data-[state=open]:[flex:0_0_45%]",
+        "[@container_workbench-editor_((height<28rem)_or_(width<20rem))]:data-[state=open]:[flex:1_1_100%]",
+        "data-[state=full]:[flex:1_1_100%]",
+      ),
+      "problems-summary":
+        "flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1",
       "problems-heading": "font-semibold",
+      // A value that changes as problems are repaired, so its digits hold
+      // their width and it keeps its own line rather than wrapping mid-count.
+      "problems-count":
+        "shrink-0 text-fd-muted-foreground tabular-nums whitespace-nowrap",
       "problems-text": "min-w-0 text-pretty",
-      "problems-recovery": "text-fd-muted-foreground",
+      // Each control is capped at the row, so a long translated label wraps
+      // inside its own box instead of running past the pane.
+      "problems-space":
+        "ms-auto flex min-w-0 flex-wrap items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
+      // Subordinate to the control that reclaims the area, and gone in a pane
+      // that already gave the explanation everything it has.
+      "problems-expand": cn(
+        buttonVariants({ variant: "ghost", size: "xs" }),
+        "[@container_workbench-editor_((height<28rem)_or_(width<20rem))]:hidden",
+      ),
+      "problems-toggle": cn(buttonVariants({ variant: "outline", size: "xs" })),
+      "problems-body": "flex min-h-0 min-w-0 flex-1 flex-col gap-1",
+      // The explanation, and only the explanation, scrolls. It takes whatever
+      // the area has left, so the controls keep one place along its bottom
+      // edge whichever problem is read and however long its explanation runs.
+      // A reader with no pointer scrolls it from the keyboard, so it takes the
+      // site's focus indicator the way the other focusable regions do.
+      "problems-scroll":
+        "flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary",
+      // The chooser leads the explanation where the object line otherwise
+      // would, at its own width rather than stretched across the column.
+      "problems-select": "min-w-0 max-w-full self-start",
+      "problems-next": "cursor-pointer underline underline-offset-2",
+      "problems-object": "font-semibold [overflow-wrap:anywhere]",
+      "problems-recovery": "text-pretty text-fd-muted-foreground",
+      // A reported location names the engine's own template, which is one
+      // unbroken machine-written token in a pane the reader can narrow.
+      "problems-location":
+        "text-pretty text-fd-muted-foreground [overflow-wrap:anywhere]",
+      "problems-details": "mt-2 min-w-0",
+      "problems-details-label": "cursor-pointer text-fd-muted-foreground",
+      "problems-evidence":
+        "mt-1 max-h-40 overflow-auto font-mono whitespace-pre-wrap [overflow-wrap:anywhere]",
+      // Its own surface, so the engine's own words read as the block they are.
+      // It scrolls in both directions rather than wrapping: a caret excerpt
+      // only points at the right column while its lines stay intact.
+      "problems-report":
+        "mt-1 max-h-56 overflow-auto rounded-md border border-fd-border bg-fd-muted/60 p-2 font-mono whitespace-pre select-text",
+      "problems-copy-failed": "mt-1 text-pretty text-destructive",
+      // Under the scroll, never inside it: every one of these stays put while
+      // a long explanation and an open disclosure move past above them.
+      "problems-controls":
+        "mt-2 flex min-w-0 shrink-0 flex-wrap items-center gap-2 [&>*]:max-w-full [&>*]:min-w-0",
       "problems-open": "cursor-pointer underline underline-offset-2",
+      "problems-return": "cursor-pointer underline underline-offset-2",
+      "problems-action": "cursor-pointer underline underline-offset-2",
+      "problems-copy": "cursor-pointer underline underline-offset-2",
+      "problems-community": "underline underline-offset-2",
     },
   },
   icon(name) {

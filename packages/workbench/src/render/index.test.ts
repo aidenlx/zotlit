@@ -217,6 +217,23 @@ describe("Sample Items", () => {
     expect(result.diagnostics[0]!.message).toContain("annotation");
   });
 
+  it("reports one missing partial once when the note and the format both call it", () => {
+    // The engine could not resolve the same partial in either attempt, so the
+    // two failures are one problem — grouped by the engine's own account of
+    // the cause rather than by the wording each failure happened to carry.
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{{ zt.imgLink | embed }}{{ zt.text }}",
+      "{% render 'book-details' %}{{ zt.text }}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[1]!);
+
+    expect(result.creationBody).toBeNull();
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["render-error", "annotation"],
+    ]);
+    expect(result.diagnostics[0]!.message).toContain("book-details");
+  });
+
   it("keeps the note preview when a broken format is never called", () => {
     const silent = DEFAULT_PROFILE_SOURCE.replace(
       "{% render_annotation annotation %}\n",

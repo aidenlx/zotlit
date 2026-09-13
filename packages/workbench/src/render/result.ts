@@ -3,9 +3,16 @@
 
 import type { CitationVariant } from "@zotlit/db";
 
-import type { CitationExampleId } from "./citation-examples";
-import type { PartialContext } from "./partial-preview";
-import type { RenderRequest } from "./request";
+import type {
+  CitationExampleId,
+  CitationPreviewSelection,
+} from "./citation-examples";
+import type {
+  PartialContext,
+  PartialPreviewSelection,
+} from "./partial-preview";
+import type { EngineEvidence, RenderReport } from "./report";
+import type { AnnotationExample } from "./sample-annotations";
 
 /**
  * What went wrong, in the vocabulary a host writes its own wording against. One
@@ -13,6 +20,7 @@ import type { RenderRequest } from "./request";
  * English this package would otherwise author.
  */
 export type RenderDiagnosticCode =
+  | "citation-data-mismatch"
   | "citation-style-error"
   | "contract-version-mismatch"
   | "invalid-profile"
@@ -23,6 +31,27 @@ export type RenderDiagnosticCode =
   | "property-javascript"
   | "render-error"
   | "unsupported-dependency";
+
+/**
+ * Where the template engine itself said a failure happened. `template` is the
+ * name the engine renders that source under, and a `line` counts lines of that
+ * template's own source — never of whichever document the reader has open.
+ */
+export interface RenderEngineLocation {
+  readonly template: string;
+  /** 1-based, in the named template's own source. */
+  readonly line?: number;
+  /** 1-based, in that line. */
+  readonly column?: number;
+}
+
+/** The Template Document whose own call reached the failing template. */
+export interface RenderCaller {
+  /** Its vault path, when the failure named one. */
+  readonly document?: string;
+  /** The name the engine renders it under, when the failure named one. */
+  readonly template?: string;
+}
 
 export interface RenderDiagnostic {
   readonly code: RenderDiagnosticCode;
@@ -42,6 +71,32 @@ export interface RenderDiagnostic {
    * which is what sends the reader to Advanced instead.
    */
   readonly position?: number;
+  /**
+   * What the engine reported, kept apart from {@link RenderDiagnostic.callSite}
+   * because the two are different places: a failure inside a called template is
+   * reported there and repaired at the call.
+   */
+  readonly engine?: RenderEngineLocation;
+  readonly caller?: RenderCaller;
+  /**
+   * The call in the source this render read that reached the failing template,
+   * which is the one place the reader repairs it. Set only when that source
+   * actually holds such a call; absent means the location is unknown, and a
+   * host says so rather than sending the reader to a guessed line.
+   */
+  readonly callSite?: { readonly from: number; readonly to: number };
+  /**
+   * What the engine said before this diagnostic reduced it to `message`,
+   * captured at the boundary that catches the error. Absent where the failure
+   * was composed rather than thrown.
+   */
+  readonly evidence?: EngineEvidence;
+  /**
+   * The failed attempt this diagnostic came from, frozen when that attempt
+   * landed. The Problems area inspects and copies it, so later edits,
+   * selection changes, and other previews leave it as it was captured.
+   */
+  readonly report?: RenderReport;
 }
 
 export interface RenderedProperty {
@@ -68,6 +123,11 @@ export interface RenderIdentity {
   readonly partialProfile?: string;
 }
 
+/**
+ * The stamp one render is known by. Takes a request, and equally the
+ * selections a scheduler composes a result of its own from — a failure the
+ * host reports carries the same dimensions, so it is matched the same way.
+ */
 export function renderIdentity({
   source,
   snapshot,
@@ -75,11 +135,19 @@ export function renderIdentity({
   citation,
   partial,
   mode,
-}: RenderRequest): RenderIdentity {
+}: {
+  readonly source: string;
+  /** `null` where no paper is loaded, which leaves the revision unnamed. */
+  readonly snapshot: { readonly revision: string } | null;
+  readonly mode?: "create" | "update";
+  readonly annotation?: AnnotationExample | null;
+  readonly citation?: CitationPreviewSelection | null;
+  readonly partial?: PartialPreviewSelection | null;
+}): RenderIdentity {
   return {
     ...(mode ? { previewMode: mode } : {}),
     sourceRevision: templateSourceRevision(source),
-    snapshotRevision: snapshot.revision,
+    snapshotRevision: snapshot?.revision ?? "",
     ...(annotation
       ? { annotationId: annotation.id, annotationRevision: annotation.revision }
       : {}),
@@ -173,4 +241,21 @@ export function failedRender(
   diagnostic: RenderDiagnostic,
 ): TemplateRenderResult {
   return { ...emptyRender(identity), diagnostics: [diagnostic] };
+}
+
+/**
+ * Whether an attempt produced nothing at all. A template that renders empty
+ * text still produced it, so a valid empty result stays apart from a failure,
+ * and only a failure sends a reader to the last preview that worked.
+ */
+export function renderFailed(result: TemplateRenderResult): boolean {
+  return (
+    result.diagnostics.length > 0 &&
+    result.filename === null &&
+    result.creationBody === null &&
+    result.managedRegion === null &&
+    result.annotation === null &&
+    result.citation === null &&
+    result.partial === null
+  );
 }

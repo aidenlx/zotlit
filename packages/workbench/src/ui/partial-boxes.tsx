@@ -1,7 +1,7 @@
 // The Partial Placeholder: the box a pane draws over every `render` or
 // `include` call that names a Shared Partial outright, the preview that opens
-// under it, and the actions a call to a partial the vault holds no document
-// for offers instead.
+// under it, and the short marker a call to a partial the vault holds no
+// document for carries instead.
 //
 // One pane, one open preview. A call the reader's selection touches shows as
 // the source it is, which is the rule every box in Basic mode follows.
@@ -21,21 +21,18 @@ import { createPortal } from "react-dom";
 
 import { useDocumentRevision } from "./editor";
 import { PreviewWidget, boxAt, boxField, boxRanges } from "./editor-boxes";
-import { useOptionalHost, useTooltip, useWorkbenchHost } from "./host";
-import type { WorkbenchHost } from "./host";
+import { useOptionalHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
 
 import { partialCalls } from "#/document/index";
 
 /**
- * What a host answers for the Shared Partials one pane's calls name. Creating
- * a partial and opening one are the host's own file operations, and the render
- * reads whatever data the pane's slice is previewed with.
+ * What a host answers for the Shared Partials one pane's calls name. Opening a
+ * partial is the host's own file operation, and the render reads whatever data
+ * the pane's slice is previewed with.
  */
 export interface PartialPlaceholderHost {
-  /** Every Shared Partial the vault registers, which Pick another chooses from. */
-  readonly names: readonly string[];
   /**
    * The partials the last render could not resolve, which is what marks a call
    * as a problem: a missing partial is the engine's own render failure.
@@ -56,8 +53,11 @@ export interface PartialPlaceholderHost {
   readonly dataRevision?: string | number;
   /** Opens the Shared Partial's own editor. */
   readonly onEdit: (name: string) => void;
-  /** Starts the host's create flow for `name`, which asks before it writes. */
-  readonly onCreate: (name: string) => void;
+  /**
+   * Reads the missing partial's own problem in the editor's Problems area,
+   * which is where the explanation and its suggestion live.
+   */
+  readonly onShowProblem: (name: string) => void;
   /** The text `name` produces for the caller this pane's slice supplies. */
   readonly onRender: (name: string) => Promise<string>;
 }
@@ -144,7 +144,6 @@ export function usePartialBoxes(
             <PartialPlaceholder
               site={site}
               host={host}
-              controller={controller}
               missing={host.missing.includes(site.name)}
               expanded={expanded?.call.from === site.call.from}
               previewId={previewId}
@@ -177,7 +176,6 @@ export function usePartialBoxes(
 function PartialPlaceholder({
   site,
   host,
-  controller,
   missing,
   expanded,
   previewId,
@@ -185,7 +183,6 @@ function PartialPlaceholder({
 }: {
   site: PartialRenderSite;
   host: PartialPlaceholderHost;
-  controller: WorkbenchDocumentController;
   missing: boolean;
   expanded: boolean;
   previewId: string;
@@ -194,7 +191,6 @@ function PartialPlaceholder({
   const m = useWorkbenchMessages();
   const part = useParts("notePane");
   const icon = useIcon();
-  const adapter = useWorkbenchHost();
   const previewTooltip = useTooltip(m.workbench_partial_preview());
   const editTooltip = useTooltip(m.workbench_partial_edit());
   return (
@@ -207,39 +203,19 @@ function PartialPlaceholder({
         <span {...part("partial-arguments")}>{site.arguments}</span>
       )}
       {missing && (
-        <span {...part("partial-problem")}>
-          {m.workbench_diagnostic_missing_partial({ name: site.name })}
-        </span>
+        // A short marker, not an explanation: the source line keeps its shape
+        // and the Problems area carries the reader's guidance.
+        <button
+          type="button"
+          aria-label={m.workbench_partial_missing_show({ name: site.name })}
+          onClick={() => host.onShowProblem(site.name)}
+          {...part("partial-problem")}
+        >
+          {m.workbench_partial_missing()}
+        </button>
       )}
       <span {...part("annotation-actions")}>
-        {missing ? (
-          <>
-            <button
-              type="button"
-              {...part("partial-action")}
-              onClick={() => host.onCreate(site.name)}
-            >
-              {m.workbench_partial_create()}
-            </button>
-            <button
-              type="button"
-              {...part("partial-action")}
-              disabled={controller.readOnly}
-              onClick={(event) =>
-                void pickPartial(event.currentTarget, {
-                  adapter,
-                  controller,
-                  names: host.names,
-                  site,
-                  title: m.workbench_partial_choose(),
-                  empty: m.workbench_partial_choose_empty(),
-                })
-              }
-            >
-              {m.workbench_partial_pick()}
-            </button>
-          </>
-        ) : (
+        {missing ? null : (
           <>
             <button
               type="button"
@@ -266,65 +242,6 @@ function PartialPlaceholder({
       </span>
     </span>
   );
-}
-
-/**
- * Choose another Shared Partial for one call and write it in place of the name
- * that call holds, which is the whole edit: every other caller stays as
- * authored.
- */
-async function pickPartial(
-  anchor: HTMLElement,
-  {
-    adapter,
-    controller,
-    names,
-    site,
-    title,
-    empty,
-  }: {
-    adapter: WorkbenchHost;
-    controller: WorkbenchDocumentController;
-    names: readonly string[];
-    site: PartialRenderSite;
-    title: string;
-    empty: string;
-  },
-): Promise<void> {
-  // An edit can land from anywhere while the suggester is open, so the name
-  // this choice replaces is followed through every change: a call the document
-  // moved is still written in place, and one the document edited or deleted
-  // takes no write at all.
-  let target: { from: number; to: number } | null = { ...site.nameRange };
-  const unfollow = controller.subscribe(({ transaction, docChanged }) => {
-    if (!docChanged || target === null) return;
-    const from = transaction.changes.mapPos(target.from, 1, MapMode.TrackDel);
-    const to = transaction.changes.mapPos(target.to, -1, MapMode.TrackDel);
-    target = from === null || to === null ? null : { from, to };
-  });
-  try {
-    const chosen = await adapter.suggester({
-      anchor,
-      title,
-      selected: site.name,
-      groups: [
-        {
-          label: title,
-          empty,
-          options: names.map((name) => ({ id: name, label: name })),
-        },
-      ],
-    });
-    if (chosen === null || chosen === site.name || target === null) return;
-    if (controller.state.doc.sliceString(target.from, target.to) !== site.name)
-      return;
-    controller.dispatch({
-      changes: { ...target, insert: chosen },
-      userEvent: "input.form",
-    });
-  } finally {
-    unfollow();
-  }
 }
 
 /** The partial's own text, rendered for the caller this pane supplies. */

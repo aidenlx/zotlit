@@ -1,4 +1,4 @@
-import type { TemplateRenderResult } from "#/render/result";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -42,9 +42,7 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
     onShowMarkdown: vi.fn<(show: boolean) => void>(),
     showManaged: false,
     onShowManaged: vi.fn<(show: boolean) => void>(),
-    openAnnotation: vi.fn<() => void>(),
-    goToEntry: vi.fn<(position: number) => void>(),
-    openSource: vi.fn<() => void>(),
+    onShowProblem: vi.fn<(diagnostic: RenderDiagnostic) => void>(),
     ...overrides,
   };
   const mounted = mount(<ResultColumn {...props} />);
@@ -113,7 +111,7 @@ it("shows a single annotation with no complete-note properties", () => {
   expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
 });
 
-it("links the first property error to its one-based entry", () => {
+it("names the failure and leads to its explanation", () => {
   using mounted = column({
     result: {
       ...result,
@@ -123,21 +121,98 @@ it("links the first property error to its one-based entry", () => {
     },
   });
   const { props } = mounted;
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_problems_where_entry() }),
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_problem(),
   );
-  expect(props.goToEntry).toHaveBeenCalledWith(2);
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_problem_show() }),
+  );
+  expect(props.onShowProblem).toHaveBeenCalledWith({
+    code: "property-error",
+    position: 2,
+    message: "Invalid property",
+  });
 });
 
-it("links a profile error to source", () => {
-  using mounted = column({
-    result: { ...result, diagnostics: [{ code: "render-error" }] },
+it("tells a failed render from a template that produced nothing", () => {
+  using failed = column({
+    result: {
+      ...result,
+      creationBody: null,
+      diagnostics: [{ code: "render-error", message: "Unclosed tag" }],
+    },
   });
-  const { props } = mounted;
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_problems_where_advanced() }),
+  expect(screen.queryByTestId("markdown")).toBeNull();
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("Unclosed tag");
+  failed[Symbol.dispose]();
+  cleanup();
+
+  using _empty = column({ result: { ...result, creationBody: "" } });
+  expect(screen.getByTestId("markdown")).toBeDefined();
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("reads a failure against the last successful preview, or names none", () => {
+  const broken: TemplateRenderResult = {
+    ...result,
+    filename: null,
+    creationBody: null,
+    managedRegion: null,
+    annotation: null,
+    diagnostics: [{ code: "render-error", message: "Unclosed tag" }],
+  };
+  using kept = column({ result: broken, retained: result });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_retained(),
   );
-  expect(props.openSource).toHaveBeenCalledOnce();
+  // The working output stands beside the failure for the repair to be read
+  // against; the note name belongs to the attempt that produced it.
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  kept[Symbol.dispose]();
+  cleanup();
+
+  using _none = column({ result: broken });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_unavailable(),
+  );
+  expect(screen.queryByTestId("markdown")).toBeNull();
+});
+
+it("keeps the hold notice its own sentence while the last result stands", () => {
+  using _mounted = column({ stale: true, staleReason: "hold" });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_stale(),
+  );
+  expect(screen.queryByText(m.workbench_preview_retained())).toBeNull();
+});
+
+it("reads a document the parser refuses as a failure, not as a wait", () => {
+  using kept = column({
+    stale: true,
+    staleReason: "invalid",
+    retained: result,
+  });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_retained(),
+  );
+  expect(screen.queryByText(m.workbench_preview_stale())).toBeNull();
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  kept[Symbol.dispose]();
+  cleanup();
+
+  // Nothing successful stands for this selection, so the preview says so even
+  // before any attempt has run.
+  using _none = column({ result: null, stale: true, staleReason: "invalid" });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_unavailable(),
+  );
+  expect(screen.queryByTestId("markdown")).toBeNull();
 });
 
 it("changes preview mode, runs on demand, and pauses future work", () => {
@@ -241,9 +316,6 @@ it("renders ResultBody with no heading", () => {
       staleReason={null}
       showMarkdown={false}
       showManaged={false}
-      openAnnotation={vi.fn<() => void>()}
-      goToEntry={vi.fn<(position: number) => void>()}
-      openSource={vi.fn<() => void>()}
     />,
   );
   render(mounted.ui);
