@@ -263,12 +263,12 @@ For close, reload, restart, and resume checks, reopen the same Development Vault
 2. Replace its expression `1 +` with `"REPAIRED-FIELD"`, including the quotes. Retry review. Check that the repaired field evaluates successfully and that the original failure is reported as unavailable comparison output.
 3. Close the editor, resume from the settings entry, then restart Obsidian and resume again. Check that the corrected expression survives both operations. The original field must still contain `1 +`.
 4. Discard the Conversion Copy. Reopen repair and confirm that the copied field starts with `1 +` again. Apply the correction and retry.
-5. Once the repair is valid, explicitly accept the reviewed difference. Render a Literature Note and confirm `fixture-repair: REPAIRED-FIELD` in its frontmatter. The review must keep unavailable original output distinct from matching output.
+5. Once the repair is valid, explicitly accept the reviewed difference. Create or update a Literature Note and confirm `fixture-repair: REPAIRED-FIELD` in its frontmatter. The review must keep unavailable original output distinct from matching output.
 
 #### Repair a layout, citations, and a partial
 
-1. Start `upgrader-layout-error`. Confirm that review identifies the copied note source even though Profile synthesis fails.
-2. In that copy, replace `<!-- Restore the content insertion in the Conversion Copy. -->` with `{% render "content" with zt as zt %}`. Retry and inspect the resulting Profile. The original note source must retain the comment until acceptance.
+1. Start `upgrader-layout-error`. Open **Repair copied sources** from review. Confirm that the copied note source is editable even though Profile synthesis fails.
+2. In that copy, replace `<!-- Restore the content insertion in the Conversion Copy. -->` with `{% render "content" with zt as zt %}`. Save, return to review, and select **Regenerate from copied sources**. Inspect the resulting Profile. Regeneration replaces its note body, filename, and annotation while preserving repaired frontmatter fields. The original note source must retain the comment until acceptance.
 3. Add `REPAIRED-CITATION ` to the copied main citation source. Add `REPAIRED-PARTIAL ` to the copied `annotation-callout` source. Open, edit, close, and restore their editors; verify Citation and Shared Partial preview contexts. Exercise any available partial creation or unpack action and check that its files stay inside the inactive copy.
 4. Insert a citation through the normal workflow. The case's annotation source calls `annotation-callout`. Render it with `obsidian vault=<id> zotlit:template-render template=annotation key=TYY6Z6ZF format=markdown`, and select the same Annotation in the repair preview. Check that neither active output contains a repair marker. The inactive previews must show the corresponding markers.
 5. Retry review. Check that matching, changed, and unavailable original outputs have distinct results. Explicitly accept the valid changes, then render the accepted documents with the same data. Confirm both markers and the restored note content insertion.
