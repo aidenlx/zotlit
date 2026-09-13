@@ -83,6 +83,7 @@ export {
   emptyRender,
   failedRender,
   renderFailed,
+  retainOutputs,
   templateSourceRevision,
   renderIdentity,
 } from "./result";
@@ -301,10 +302,6 @@ export function renderProfile(
   }
 }
 
-type RenderDiagnosticWithCallIdentity = RenderDiagnostic & {
-  readonly callIdentity?: string;
-};
-
 /** Preserve which verified call failed without making its source offset an ID. */
 function withCallIdentity(
   diagnostic: Omit<RenderDiagnostic, "part">,
@@ -313,10 +310,10 @@ function withCallIdentity(
   const site = diagnostic.callSite;
   return site === undefined
     ? diagnostic
-    : ({
+    : {
         ...diagnostic,
         callIdentity: caller.source.slice(site.from, site.to),
-      } as RenderDiagnosticWithCallIdentity);
+      };
 }
 
 /** The Citation Template name an annotation's page-pinned citation renders through. */

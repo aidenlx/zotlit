@@ -83,7 +83,11 @@ import {
   onCompanionStateRestored,
   subscribeActiveTemplateWorkbench,
 } from "./register";
-import { nativeResult, renderNativeTemplate } from "./render";
+import {
+  retainNativeOutputs,
+  nativeResult,
+  renderNativeTemplate,
+} from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 import { createNativePreviewStore, NativePreviewSession } from "./session";
 import type { NativePreviewState } from "./session";
@@ -467,6 +471,7 @@ export class NotePreviewView extends ItemView {
         },
         render: (request) => renderNativeTemplate(deps, request),
         failed: nativeResult,
+        retain: retainNativeOutputs,
         reportContext: () => this.#reportContext(),
       }),
     );

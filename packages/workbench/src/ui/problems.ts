@@ -239,11 +239,6 @@ export type WorkbenchDiagnosis =
       readonly occurrences: readonly RenderDiagnostic[];
     };
 
-type RenderDiagnosticWithCallIdentity = RenderDiagnostic & {
-  /** Stable text for the verified call, independent of its source offset. */
-  readonly callIdentity?: string;
-};
-
 const unattributedOccurrenceIds = new WeakMap<RenderDiagnostic, string>();
 let nextUnattributedId = 0;
 
@@ -276,12 +271,13 @@ function problemSubject(problem: WorkbenchProblem): string {
   );
 }
 
-function callIdentity(diagnostic: RenderDiagnostic): string | undefined {
-  return (diagnostic as RenderDiagnosticWithCallIdentity).callIdentity;
-}
-
 function repairTarget(diagnostic: RenderDiagnostic): string | undefined {
-  const identity = callIdentity(diagnostic);
+  if (
+    diagnostic.code === "missing-partial" &&
+    diagnostic.params?.name !== undefined
+  )
+    return `partial:${diagnostic.params.name}`;
+  const identity = diagnostic.callIdentity;
   if (identity !== undefined) return `call:${identity}`;
   if (diagnostic.callSite !== undefined) {
     return `call:${diagnostic.callSite.from}:${diagnostic.callSite.to}`;
@@ -302,8 +298,8 @@ function unattributedOccurrenceIdentity(diagnostic: RenderDiagnostic): string {
 
 /**
  * A diagnosis's identity: its code, the object it names, and where it is
- * repaired. Equal message text establishes nothing, so no part of the identity
- * reads one.
+ * repaired. Engine failures also require captured evidence at a reported
+ * source location; matching message text alone establishes no cause.
  */
 export function documentDiagnosis(
   problem: WorkbenchProblem,
@@ -319,21 +315,29 @@ export function documentDiagnosis(
 export function renderDiagnosis(
   diagnostic: RenderDiagnostic,
 ): WorkbenchDiagnosis {
-  const { code, part, position } = diagnostic;
+  const { code, part, position, engine, evidence } = diagnostic;
   const subject = diagnosticSubject(diagnostic);
+  const target = repairTarget(diagnostic);
+  // A named template alone establishes no cause. For engine failures, match
+  // the reported source location and captured cause as well as the repair
+  // target. Failures with incomplete evidence keep their own occurrence.
+  const cause =
+    code === "render-error"
+      ? engine?.line !== undefined && evidence !== undefined
+        ? [
+            engine.template,
+            engine.line,
+            engine.column,
+            evidence.name,
+            evidence.message,
+            evidence.causes,
+          ]
+        : undefined
+      : code;
   const identity =
-    subject === ""
-      ? unattributedOccurrenceIdentity(diagnostic)
-      : `${code}:${subject}:${part ?? ""}:${position ?? ""}${
-          callIdentity(diagnostic) === undefined
-            ? ""
-            : `:call:${callIdentity(diagnostic)}`
-        }`;
-  // No offset joins the identity: the reader typing above a failed call moves
-  // every offset in the document without changing what failed, and a problem
-  // that keeps its identity through such an edit is the one the reader is
-  // still reading. What the failure names, and the section it was reported
-  // under, are what tell two problems apart.
+    subject !== "" && target !== undefined && cause !== undefined
+      ? JSON.stringify([code, subject, part, position, target, cause])
+      : unattributedOccurrenceIdentity(diagnostic);
   return {
     id: `render:${identity}`,
     kind: "render",
@@ -343,34 +347,13 @@ export function renderDiagnosis(
 }
 
 /**
- * Whether anything verified tells this failure from another one the same check
- * found: the object it names, or the call it is repaired at. A failure with
- * neither is the engine's own unclassified refusal, and two of them are two
- * problems however alike they read — equal words establish nothing.
- */
-function verified(diagnosis: WorkbenchDiagnosis): boolean {
-  if (diagnosis.kind === "document") return true;
-  return (
-    diagnosticSubject(diagnosis.diagnostic) !== "" &&
-    repairTarget(diagnosis.diagnostic) !== undefined
-  );
-}
-
-function diagnosisGroupKey(diagnosis: WorkbenchDiagnosis): string | undefined {
-  if (diagnosis.kind === "document") return diagnosis.id;
-  if (!verified(diagnosis)) return undefined;
-  return `${diagnosis.id}:${repairTarget(diagnosis.diagnostic)}`;
-}
-
-/**
  * Every problem one Workbench has found, parser problems first: the document
  * has to parse before a render can say anything about it.
  *
  * Occurrences that share an identity are one problem with several places, so a
  * partial missing from two checks is read once rather than as two competing
- * explanations. Nothing here compares wording: two failures that say the same
- * thing about different objects stay two problems, and an unclassified failure
- * the engine attributed to nothing groups with nothing at all.
+ * explanations. Different objects, source locations, or engine causes stay
+ * separate, and failures with incomplete evidence keep their own occurrence.
  */
 export function workbenchDiagnoses(
   problems: readonly WorkbenchProblem[],
@@ -380,12 +363,7 @@ export function workbenchDiagnoses(
     ...problems.map(documentDiagnosis),
     ...diagnostics.map(renderDiagnosis),
   ];
-  return [
-    ...Map.groupBy(
-      found,
-      (diagnosis) => diagnosisGroupKey(diagnosis) ?? diagnosis.id,
-    ).values(),
-  ].map(
+  return [...Map.groupBy(found, (diagnosis) => diagnosis.id).values()].map(
     (occurrences) =>
       ({
         ...occurrences[0]!,

@@ -343,7 +343,7 @@ describe("attribution", () => {
   });
 
   it.each([false, true])(
-    "keeps a named failure selected when its engine location moves (call: %s)",
+    "keeps named failures distinct when only their template name matches (call: %s)",
     (withCall) => {
       const failure = (line: number): RenderDiagnostic => ({
         code: "render-error",
@@ -354,7 +354,7 @@ describe("attribution", () => {
           ? { callSite: { from: line * 10, to: line * 10 + 8 } }
           : {}),
       });
-      expect(renderDiagnosis(failure(2)).id).toBe(
+      expect(renderDiagnosis(failure(2)).id).not.toBe(
         renderDiagnosis(failure(3)).id,
       );
       expect(
@@ -445,6 +445,73 @@ describe("attribution", () => {
     expect(
       workbenchDiagnoses([], [failure(2, 20), failure(8, 60)]),
     ).toHaveLength(2);
+  });
+
+  it.each([true, false])(
+    "keeps branch failures separately selectable (verified call: %s)",
+    (withCall) => {
+      const failure = (line: number): RenderDiagnostic => ({
+        code: "render-error",
+        part: "render",
+        engine: { template: "shared", line, column: 1 },
+        evidence: { name: "RenderError", message: "Unknown filter" },
+        ...(withCall
+          ? { callSite: { from: 20, to: 32 }, callIdentity: "render shared" }
+          : {}),
+      });
+      const first = failure(2);
+      const second = failure(8);
+      const diagnoses = workbenchDiagnoses([], [first, second]);
+      expect(diagnoses).toHaveLength(2);
+      expect(new Set(diagnoses.map(({ id }) => id)).size).toBe(2);
+      expect(
+        diagnoses.find(({ id }) => id === renderDiagnosis(second).id)
+          ?.occurrences,
+      ).toEqual([second]);
+    },
+  );
+
+  it("keeps a verified engine failure selected across checks and caller edits", () => {
+    const first: RenderDiagnostic = {
+      code: "render-error",
+      part: "render",
+      engine: { template: "shared", line: 2, column: 1 },
+      callSite: { from: 20, to: 32 },
+      callIdentity: "render shared",
+      evidence: { name: "RenderError", message: "Unknown filter" },
+    };
+    const afterEdit = { ...first, callSite: { from: 50, to: 62 } };
+    expect(renderDiagnosis(afterEdit).id).toBe(renderDiagnosis(first).id);
+    expect(
+      workbenchDiagnoses([], [first, afterEdit]).map(
+        ({ occurrences }) => occurrences,
+      ),
+    ).toEqual([[first, afterEdit]]);
+  });
+
+  it("keeps different engine causes at the same call separately selectable", () => {
+    const first: RenderDiagnostic = {
+      code: "render-error",
+      part: "render",
+      engine: { template: "shared", line: 2, column: 1 },
+      callIdentity: "render shared",
+      evidence: {
+        name: "RenderError",
+        message: "Invalid value",
+        causes: ["Missing title"],
+      },
+    };
+    const second: RenderDiagnostic = {
+      ...first,
+      evidence: {
+        name: "RenderError",
+        message: "Invalid value",
+        causes: ["Missing author"],
+      },
+    };
+    const diagnoses = workbenchDiagnoses([], [first, second]);
+    expect(diagnoses).toHaveLength(2);
+    expect(new Set(diagnoses.map(({ id }) => id)).size).toBe(2);
   });
 
   it("keeps an unattributed survivor's identity when an earlier failure disappears", () => {

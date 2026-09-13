@@ -120,6 +120,7 @@ import type {
 } from "@/views/note-preview/render";
 import {
   nativeResult,
+  retainNativeOutputs,
   renderNativeTemplate,
 } from "@/views/note-preview/render";
 import { NativePreviewSession } from "@/views/note-preview/session";
@@ -326,6 +327,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       controller: this.#controller,
       reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
+      retain: retainNativeOutputs,
     });
     this.store = this.#editor.store;
     this.scheduler = this.#editor.scheduler;

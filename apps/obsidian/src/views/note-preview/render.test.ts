@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
-import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
+import { emptyRender, SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
 
 import {
@@ -19,10 +19,12 @@ import {
 import { presentCitations } from "./markdown";
 import {
   renderNativeProfile,
+  retainNativeOutputs,
   previewBaseline,
   renderNativeTemplate,
   renderRegisteredPartial,
 } from "./render";
+import type { NativeRenderResult } from "./render";
 
 /** Where the counting template records how often its body has rendered. */
 const BODY_RENDERS = "__zotlitPreviewBodyRenders";
@@ -555,5 +557,149 @@ describe("renderRegisteredPartial", () => {
     );
 
     expect(rendered).toBe("Venue Better figures");
+  });
+});
+
+describe("retained output metadata", () => {
+  const kept: NativeRenderResult = {
+    ...emptyRender({ sourceRevision: "first", snapshotRevision: "paper" }),
+    creationBody: "First note [@paper]",
+    managedRegion: "First note [@paper]",
+    annotation: "First highlight [@paper]",
+    annotationCitation: "(Author, 2020)",
+    sourcePath: "notes/paper.md",
+    citations: [
+      {
+        start: 11,
+        source: "First note",
+        links: [],
+        serials: [],
+        text: { content: [], citations: [] },
+      },
+    ],
+    annotationCitations: [
+      {
+        start: 16,
+        source: "First highlight",
+        links: [],
+        serials: [],
+        text: { content: [], citations: [] },
+      },
+    ],
+  };
+
+  it("keeps note metadata while publishing a successful Annotation after a Property failure", () => {
+    const result: NativeRenderResult = {
+      ...emptyRender({ sourceRevision: "second", snapshotRevision: "paper" }),
+      annotation: "New highlight [@paper]",
+      annotationCitation: "(Author, 2021)",
+      sourcePath: "notes/renamed-paper.md",
+      citations: [],
+      annotationCitations: [
+        {
+          start: 14,
+          source: "New highlight",
+          links: [],
+          serials: [],
+          text: { content: [], citations: [] },
+        },
+      ],
+      diagnostics: [{ code: "property-error", part: "properties" }],
+    };
+
+    expect(retainNativeOutputs(kept, result)).toMatchObject({
+      creationBody: "First note [@paper]",
+      managedRegion: "First note [@paper]",
+      sourcePath: "notes/paper.md",
+      citations: [
+        {
+          start: 11,
+          source: "First note",
+          links: [],
+          serials: [],
+          text: { content: [], citations: [] },
+        },
+      ],
+      annotation: "New highlight [@paper]",
+      annotationSourcePath: "notes/renamed-paper.md",
+      annotationCitation: "(Author, 2021)",
+      annotationCitations: [
+        {
+          start: 14,
+          source: "New highlight",
+          links: [],
+          serials: [],
+          text: { content: [], citations: [] },
+        },
+      ],
+      sourceRevision: "second",
+      diagnostics: [{ code: "property-error", part: "properties" }],
+    });
+  });
+
+  it("keeps Annotation metadata while publishing a successful note", () => {
+    const result: NativeRenderResult = {
+      ...emptyRender({ sourceRevision: "second", snapshotRevision: "paper" }),
+      creationBody: "New note [@paper]",
+      managedRegion: "New note [@paper]",
+      sourcePath: "notes/renamed-paper.md",
+      citations: [
+        {
+          start: 9,
+          source: "New note",
+          links: [],
+          serials: [],
+          text: { content: [], citations: [] },
+        },
+      ],
+      annotationCitations: [],
+      diagnostics: [{ code: "render-error", part: "annotation" }],
+    };
+
+    expect(retainNativeOutputs(kept, result)).toMatchObject({
+      creationBody: "New note [@paper]",
+      managedRegion: "New note [@paper]",
+      sourcePath: "notes/renamed-paper.md",
+      citations: [
+        {
+          start: 9,
+          source: "New note",
+          links: [],
+          serials: [],
+          text: { content: [], citations: [] },
+        },
+      ],
+      annotation: "First highlight [@paper]",
+      annotationSourcePath: "notes/paper.md",
+      annotationCitation: "(Author, 2020)",
+      annotationCitations: [
+        {
+          start: 16,
+          source: "First highlight",
+          links: [],
+          serials: [],
+          text: { content: [], citations: [] },
+        },
+      ],
+      sourceRevision: "second",
+      diagnostics: [{ code: "render-error", part: "annotation" }],
+    });
+  });
+
+  it("replaces metadata with successful empty output and with another selection", () => {
+    const empty = {
+      ...kept,
+      creationBody: "",
+      annotation: "",
+      citations: [],
+      annotationCitations: [],
+    };
+    expect(retainNativeOutputs(kept, empty)).toBe(empty);
+
+    const other = {
+      ...empty,
+      ...emptyRender({ sourceRevision: "second", snapshotRevision: "other" }),
+    };
+    expect(retainNativeOutputs(kept, other)).toBe(other);
   });
 });

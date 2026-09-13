@@ -85,6 +85,8 @@ export interface RenderDiagnostic {
    * host says so rather than sending the reader to a guessed line.
    */
   readonly callSite?: { readonly from: number; readonly to: number };
+  /** Stable text for the verified call, independent of its source offset. */
+  readonly callIdentity?: string;
   /**
    * What the engine said before this diagnostic reduced it to `message`,
    * captured at the boundary that catches the error. Absent where the failure
@@ -268,7 +270,7 @@ export function sameRenderSelection(
  * `result` with the outputs it produced none of taken from `kept`, so an
  * attempt where one preview surface failed and another succeeded leaves each
  * reader the newest output their own surface has. The note's name, properties,
- * marks, and host citation metadata travel with the output they describe; a surface
+ * and marks travel with the output they describe; a surface
  * whose output is null either failed or is not this document's to produce, and
  * either way the last one that worked is what a reader compares against.
  *
@@ -290,33 +292,12 @@ export function retainOutputs<R extends TemplateRenderResult>(
           creationBody: kept.creationBody,
           managedRegion: kept.managedRegion,
           annotationRanges: kept.annotationRanges,
-          ...("sourcePath" in kept ? { sourcePath: kept.sourcePath } : {}),
-          ...("citations" in kept ? { citations: kept.citations } : {}),
-          ...("sourcePath" in result && result.annotation !== null
-            ? {
-                annotationSourcePath:
-                  "annotationSourcePath" in result
-                    ? (result.annotationSourcePath ?? result.sourcePath)
-                    : result.sourcePath,
-              }
-            : {}),
         }
       : null,
     result.annotation === null && kept.annotation !== null
       ? {
           annotation: kept.annotation,
           annotationCitation: kept.annotationCitation,
-          ...("sourcePath" in kept
-            ? {
-                annotationSourcePath:
-                  "annotationSourcePath" in kept
-                    ? (kept.annotationSourcePath ?? kept.sourcePath)
-                    : kept.sourcePath,
-              }
-            : {}),
-          ...("annotationCitations" in kept
-            ? { annotationCitations: kept.annotationCitations }
-            : {}),
         }
       : null,
     result.citation === null && kept.citation !== null

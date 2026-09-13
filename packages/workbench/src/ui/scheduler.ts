@@ -103,6 +103,8 @@ export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
    * failure reads like every other result the host publishes.
    */
   readonly failed: (result: TemplateRenderResult) => R;
+  /** Retain outputs together with the host metadata that describes them. */
+  readonly retain?: (kept: R, result: R) => R;
   readonly input: RenderSchedulerInput;
   /**
    * What names this Workbench in the report a failed attempt is copied as,
@@ -150,6 +152,7 @@ function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
 export function createRenderScheduler<R extends TemplateRenderResult>({
   render,
   failed,
+  retain = retainOutputs,
   input: initial,
   reportContext,
   debounceMs = 300,
@@ -276,7 +279,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     ) {
       produced =
         produced !== null && producedDocument === input.document
-          ? retainOutputs(produced, resultForRetention)
+          ? retain(produced, resultForRetention)
           : resultForRetention;
       producedDocument = input.document;
     }

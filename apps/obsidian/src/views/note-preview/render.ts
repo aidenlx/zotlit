@@ -22,6 +22,7 @@ import {
   failedRender,
   renderFailureDiagnostic,
   renderIdentity,
+  retainOutputs,
   sampleItemCitation,
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
@@ -85,6 +86,27 @@ export interface NativeRenderResult extends TemplateRenderResult {
   readonly annotationSourcePath?: string;
   readonly citations: readonly PreviewCitation[];
   readonly annotationCitations: readonly PreviewCitation[];
+}
+
+/** Retain each preview's paths and citation spans with its rendered output. */
+export function retainNativeOutputs(
+  kept: NativeRenderResult,
+  result: NativeRenderResult,
+): NativeRenderResult {
+  const retained = retainOutputs(kept, result);
+  if (retained === result) return result;
+  const note =
+    result.creationBody === null && kept.creationBody !== null ? kept : result;
+  const annotation =
+    result.annotation === null && kept.annotation !== null ? kept : result;
+  return {
+    ...retained,
+    sourcePath: note.sourcePath,
+    citations: note.citations,
+    annotationSourcePath:
+      annotation.annotationSourcePath ?? annotation.sourcePath,
+    annotationCitations: annotation.annotationCitations,
+  };
 }
 
 /** A result composed outside this renderer, in the shape the preview reads. */

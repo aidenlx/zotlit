@@ -1159,6 +1159,48 @@ describe("the error report", () => {
     expect(host.calls.copies).toEqual([CAPTURED_TEXT]);
   });
 
+  it("selects and copies separate branch failures from linked previews", () => {
+    const failure = (line: number, selection: string): RenderDiagnostic => ({
+      code: "render-error",
+      part: "render",
+      engine: { template: "shared", line, column: 1 },
+      callSite: { from: 4, to: 16 },
+      callIdentity: "render shared",
+      evidence: { name: "RenderError", message: "Unknown filter" },
+      report: {
+        ...CAPTURED.report!,
+        code: "render-error",
+        evidence: { name: "RenderError", message: "Unknown filter" },
+        context: { ...CAPTURED.report!.context, selection },
+      },
+    });
+    const first = failure(2, "FIRST234");
+    const second = failure(8, "SECOND23");
+    using mounted = mount(
+      <Problems
+        diagnoses={workbenchDiagnoses([], [first, second])}
+        onOpen={() => {}}
+        open
+      />,
+    );
+    const { ui, host } = mounted;
+    render(ui);
+    const options = screen.getAllByRole("option") as HTMLOptionElement[];
+    expect(options).toHaveLength(2);
+    expect(options[0]!.value).not.toBe(options[1]!.value);
+    expect(reportBlock().textContent).toContain("FIRST234");
+    fireEvent.input(screen.getByRole("combobox"), {
+      target: { value: options[1]!.value },
+    });
+    expect(reportBlock().textContent).toContain("SECOND23");
+    expect(reportBlock().textContent).not.toContain("FIRST234");
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_problems_copy() }),
+    );
+    expect(host.calls.copies).toHaveLength(1);
+    expect(host.calls.copies[0]).toBe(reportBlock().textContent);
+  });
+
   it("keeps the displayed and copied attempt after an automatic recurrence is repaired", async () => {
     const first: RenderDiagnostic = {
       ...CAPTURED,

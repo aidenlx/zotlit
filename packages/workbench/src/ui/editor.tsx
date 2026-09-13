@@ -47,20 +47,23 @@ interface WorkbenchEditorOptions {
 export function createWorkbenchEditor<R extends TemplateRenderResult>(
   options: WorkbenchEditorOptions & {
     mapResult: (result: TemplateRenderResult) => R;
+    retain?: (kept: R, result: R) => R;
   },
 ): WorkbenchEditorInstance<R>;
 export function createWorkbenchEditor(
   options: WorkbenchEditorOptions,
 ): WorkbenchEditorInstance;
-export function createWorkbenchEditor({
+export function createWorkbenchEditor<R extends TemplateRenderResult>({
   controller,
   host,
   state,
   store: providedStore,
   reportContext,
   mapResult,
+  retain,
 }: WorkbenchEditorOptions & {
-  mapResult?: (result: TemplateRenderResult) => TemplateRenderResult;
+  mapResult?: (result: TemplateRenderResult) => R;
+  retain?: (kept: R, result: R) => R;
 }): WorkbenchEditorInstance {
   const store =
     providedStore ??
@@ -69,6 +72,8 @@ export function createWorkbenchEditor({
         ? { ...state, tab: "note" }
         : state,
     );
+  const asHostResult =
+    mapResult ?? ((result: TemplateRenderResult) => result as R);
   const scheduler = createRenderScheduler({
     input: {
       source: controller.source,
@@ -78,9 +83,10 @@ export function createWorkbenchEditor({
     },
     render: (request) => {
       const result = host.render(request);
-      return mapResult ? result.then(mapResult) : result;
+      return mapResult ? result.then(mapResult) : (result as Promise<R>);
     },
-    failed: mapResult ?? ((result) => result),
+    failed: asHostResult,
+    ...(retain ? { retain } : {}),
     ...(reportContext ? { reportContext } : {}),
   });
   function follow(next: WorkbenchDocumentController) {
