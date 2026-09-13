@@ -136,11 +136,14 @@ export function TabBar({
 export function TabPanel({
   tab,
   keepMounted = false,
+  modeActive = true,
   children,
   description = true,
 }: {
   tab: WorkbenchTab;
   keepMounted?: boolean;
+  /** Whether the mode that owns this panel is visible. */
+  modeActive?: boolean;
   children?: ReactNode;
   description?: boolean;
 }) {
@@ -155,8 +158,8 @@ export function TabPanel({
       role="tabpanel"
       id={panelId(prefix, tab)}
       aria-labelledby={tabId(prefix, tab)}
-      hidden={!active}
-      {...part("tab-panel", active ? "active" : "inactive")}
+      hidden={!active || !modeActive}
+      {...part("tab-panel", active && modeActive ? "active" : "inactive")}
     >
       {description && tab !== "name" && tab !== "match" && (
         <p {...part("description")}>{tabLede(m, tab)}</p>
