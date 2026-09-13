@@ -398,6 +398,26 @@ describe("Sample Items", () => {
     expect(pane.slice(site.from, site.to)).toBe("{% for tag i zt.tags %}");
   });
 
+  it("marks a note name YAML wrote as a block scalar, and names no other pane", () => {
+    // A run-time partial name, spelled literally in a note branch this item
+    // never takes: a scan of the whole document would blame that call.
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "filename: '{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}'",
+      `filename: |\n  {% assign part = "book-details" %}{% render part %}`,
+    ).replace(
+      "# {{ zt.title }}",
+      "{% if false %}{% render 'book-details' %}{% endif %}# {{ zt.title }}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!);
+
+    const failure = result.diagnostics[0]!;
+    expect(failure.part).toBe("filename");
+    expect(failure.callSite).toBeUndefined();
+    const pane = new WorkbenchDocumentController(source).sliceText("filename");
+    const site = currentSliceSite(failure, pane)!;
+    expect(pane.slice(site.from, site.to)).toBe("{% render part %}");
+  });
+
   it("keeps the note name when the note itself cannot render", () => {
     const source = DEFAULT_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",

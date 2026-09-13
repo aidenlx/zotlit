@@ -16,9 +16,8 @@ export function currentCallSite(
 ): RenderDiagnostic["callSite"] {
   const site = diagnostic.sourceSite;
   if (site !== undefined) {
-    const offset = caller.source.indexOf(site.source);
-    if (offset < 0 || caller.source.indexOf(site.source, offset + 1) !== -1)
-      return undefined;
+    const offset = uniqueOffset(caller.source, site.source);
+    if (offset === undefined) return undefined;
     return {
       from: offset + site.from - site.offset,
       to: offset + site.to - site.offset,
@@ -57,9 +56,16 @@ export function currentSliceSite(
   const site = diagnostic.sliceSite;
   if (site === undefined) return undefined;
   if (site.kind === "span") {
-    const offset = text.indexOf(site.source);
-    if (offset < 0 || text.indexOf(site.source, offset + 1) !== -1)
-      return undefined;
+    // A one-line block scalar's pane holds the line the author wrote, while
+    // the value the engine read carries the newline YAML adds after it. The
+    // fault sits inside the line either way, so text the pane cannot hold is
+    // looked for again without that trailing newline.
+    const offset =
+      uniqueOffset(text, site.source) ??
+      (site.source.endsWith("\n")
+        ? uniqueOffset(text, site.source.slice(0, -1))
+        : undefined);
+    if (offset === undefined) return undefined;
     return { from: offset + site.from, to: offset + site.to };
   }
   const root = parseTree(text, [], {
@@ -74,6 +80,18 @@ export function currentSliceSite(
   if (JSON.stringify(getNodeValue(found)) !== site.source) return undefined;
   const node = operatorFault(found) ?? found;
   return { from: node.offset, to: node.offset + node.length };
+}
+
+/**
+ * Where `needle` sits in `text`, and undefined unless it sits there exactly
+ * once: text spelled twice was reached at one of those places and says nowhere
+ * which, so nothing is located rather than the first being guessed at.
+ */
+function uniqueOffset(text: string, needle: string): number | undefined {
+  const offset = text.indexOf(needle);
+  return offset < 0 || text.indexOf(needle, offset + 1) !== -1
+    ? undefined
+    : offset;
 }
 
 /**

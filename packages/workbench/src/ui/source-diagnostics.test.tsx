@@ -267,6 +267,28 @@ it("underlines the failing text in the note-name editor", () => {
   expect(editor.contentDOM.getAttribute("aria-invalid")).toBe("true");
 });
 
+it("leaves the note editor unmarked for a note-name failure", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const source = controller.sliceText("filename");
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "liquid-syntax-error",
+        message: "illegal tag",
+        part: "filename",
+        sliceSite: { kind: "span", from: 3, to: 17, source },
+      },
+    ],
+  );
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={diagnoses}>
+      <SliceEditor controller={controller} slice="note" label="Note" />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  expect(mounted.container.querySelector(".cm-lintRange-error")).toBeNull();
+});
+
 it("leaves the note-name editor unmarked for a note-body failure", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
   const note = controller.sliceText("note");

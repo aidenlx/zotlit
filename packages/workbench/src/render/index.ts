@@ -338,13 +338,17 @@ export function filenameErrorDiagnostic(
   error: unknown,
   caller: RenderCallerSource,
 ): RenderDiagnostic {
-  const { sourceSite: _document, ...attributed } = renderFailureDiagnostic(
-    error,
-    caller,
-  );
+  // Every place read off the whole document is dropped: a scan of the source
+  // can spell the blamed template in the note as well, and one fault marks one
+  // place. What is left names the note name and nowhere else.
+  const {
+    sourceSite: _read,
+    callSite: _called,
+    ...attributed
+  } = renderFailureDiagnostic(error, caller);
   const site = renderFailureSpan(error);
   return {
-    ...withCallIdentity(attributed, caller),
+    ...attributed,
     ...(site === undefined ? {} : { sliceSite: site }),
     evidence: engineEvidence(error),
     part: "filename",
