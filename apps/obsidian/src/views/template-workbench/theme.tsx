@@ -1,3 +1,4 @@
+import "./theme.css";
 // Shared authoring controls inherit Obsidian's surfaces and editor typography.
 import { templateHighlighting } from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
@@ -135,6 +136,12 @@ const chipIcon = "clickable-icon zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 /** A one-line bar of chrome: a heading, a hint, and an action at the end. */
 const bar =
   "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
+/**
+ * The shared accent-bar treatment every inline preview notice wears: a bar
+ * states which condition, and the box holds the sentence and its action.
+ */
+const previewNotice =
+  "zt:flex zt:min-w-0 zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal";
 export const templateWorkbenchTheme: WorkbenchTheme = {
   icon: (name) => <Icon name={templateWorkbenchIcons[name]} />,
   editorExtension: () => [templateHighlighting, codePane],
@@ -288,12 +295,25 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "label-text": "zt:text-muted-foreground",
       filename: "zt:text-sm",
       "filename-text": "zt:[overflow-wrap:anywhere]",
-      problem: "zt:text-sm zt:text-(--text-error) zt:[overflow-wrap:anywhere]",
-      "problem-heading": "zt:font-semibold",
-      "problem-output": "zt:mt-1 zt:text-muted-foreground",
+      // A failure wears the same notice as the behind state, and states its
+      // severity in the bar and the heading: the sentence itself stays in
+      // reading color, and the line about the output on screen steps back.
+      problem: cn(
+        previewNotice,
+        "zt:flex-col zt:border-(--text-error) zt:[overflow-wrap:anywhere]",
+      ),
+      "problem-text": "zt:min-w-0 zt:text-pretty",
+      "problem-heading": "zt:font-semibold zt:text-(--text-error)",
+      "problem-output": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
+      // Show problem reads inside the sentence that reports the failure, so
+      // it wears link text rather than the native button box; the box, font
+      // and hover Obsidian styles unlayered are taken back in `theme.css`.
+      "problem-open": "zt-workbench-problem-open",
       stale: "zt:text-sm zt:text-muted-foreground",
-      behind:
-        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal zt:text-muted-foreground",
+      behind: cn(
+        previewNotice,
+        "zt:flex-wrap zt:items-center zt:border-(--interactive-accent) zt:text-muted-foreground",
+      ),
       "behind-text": "zt:min-w-0 zt:flex-1 zt:text-pretty",
       run: cn(templateWorkbenchButton, "zt:ms-auto zt:shrink-0"),
       pending: "zt:text-sm zt:text-muted-foreground",
