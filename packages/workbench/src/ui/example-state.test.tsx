@@ -20,10 +20,12 @@ afterEach(cleanup);
 function Configuration({
   onChooseItem,
   onRetry,
+  onShowProblem,
   selected = null,
 }: {
   onChooseItem?: () => void;
   onRetry?: () => void;
+  onShowProblem?: (id: string) => void;
   selected?: number | null;
 }) {
   const controller = useWorkbenchController();
@@ -36,6 +38,7 @@ function Configuration({
         filename={result?.filename ?? null}
         onChooseItem={onChooseItem}
         onRetry={onRetry}
+        onShowProblem={onShowProblem}
       />
       <PropertiesPane
         controller={controller}
@@ -252,4 +255,98 @@ it("clears note-name and expanded spread results immediately when another item i
   );
   expect(screen.getByText("Second.md")).toBeTruthy();
   expect(screen.getByText("Second item value")).toBeTruthy();
+});
+
+/** The note name the tab shows now, whatever sentence stands beside it. */
+const noteName = (container: HTMLElement) =>
+  container.querySelector('[data-part="filename-output"]')?.textContent;
+
+it("tells a broken Filename Template from an empty note name", async () => {
+  const show = vi.fn<(id: string) => void>();
+  using mounted = mount(<Configuration onShowProblem={show} />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
+  act(() => {
+    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
+    mounted.scheduler.run();
+  });
+  await act(async () =>
+    mounted.host.renders[0]!.answer({
+      creationBody: "# A paper",
+      managedRegion: "Managed",
+      properties: [
+        { key: "title", position: 1, value: "A paper", missing: false },
+      ],
+      diagnostics: [{ code: "liquid-syntax-error", part: "filename" }],
+    }),
+  );
+
+  expect(noteName(dom.container)).toBe(m.workbench_preview_unavailable());
+  // The item is not at fault, and neither is anything the other tabs show.
+  expect(screen.queryByText(m.workbench_example_failed())).toBeNull();
+  expect(screen.getByRole("button", { name: "title A paper" })).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_problem_show() }),
+  );
+  expect(show).toHaveBeenCalledTimes(1);
+});
+
+it("labels the retained note name and drops it with the selected item", async () => {
+  using mounted = mount(<Configuration />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
+  act(() => {
+    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
+    mounted.scheduler.run();
+  });
+  await act(async () =>
+    mounted.host.renders[0]!.answer({
+      filename: "Working.md",
+      creationBody: "# A paper",
+    }),
+  );
+  expect(noteName(dom.container)).toBe("Working.md");
+
+  act(() => mounted.controller.setManifestKey("filename", "{% for a i b %}"));
+  act(() => mounted.scheduler.run());
+  await act(async () =>
+    mounted.host.renders[1]!.answer({
+      creationBody: "# A paper",
+      diagnostics: [{ code: "liquid-syntax-error", part: "filename" }],
+    }),
+  );
+  expect(noteName(dom.container)).toBe("Working.md");
+  expect(screen.getByText(m.workbench_preview_retained())).toBeTruthy();
+
+  act(() =>
+    mounted.store.getState().setItem({ id: "second", title: "Second item" }),
+  );
+  expect(noteName(dom.container)).toBe(m.workbench_loading_item());
+});
+
+it("claims no fault in a note name that never rendered", async () => {
+  const show = vi.fn<(id: string) => void>();
+  using mounted = mount(<Configuration onShowProblem={show} />, {
+    state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
+  });
+  const dom = render(mounted.ui);
+  act(() => {
+    mounted.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! });
+    mounted.scheduler.run();
+  });
+  await act(async () =>
+    mounted.host.renders[0]!.answer({
+      diagnostics: [{ code: "invalid-profile", part: "profile" }],
+    }),
+  );
+
+  expect(noteName(dom.container)).toBe(m.workbench_preview_unavailable());
+  // Nothing names the note name, so the tab offers no explanation of its own
+  // and blames neither the template nor the item.
+  expect(
+    screen.queryByRole("button", { name: m.workbench_problem_show() }),
+  ).toBeNull();
+  expect(screen.queryByText(m.workbench_example_failed())).toBeNull();
 });

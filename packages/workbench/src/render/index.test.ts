@@ -7,6 +7,7 @@ import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 
 import {
+  currentSliceSite,
   DEFAULT_PROFILE_SOURCE,
   renderProfile,
   restoreTemplateData,
@@ -388,6 +389,13 @@ describe("Sample Items", () => {
     expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
       ["liquid-syntax-error", "filename"],
     ]);
+    // The place is named inside the note-name template's own text, so the pane
+    // that shows that text marks it without reading the document around it.
+    const failure = result.diagnostics[0]!;
+    expect(failure.sourceSite).toBeUndefined();
+    const pane = new WorkbenchDocumentController(source).sliceText("filename");
+    const site = currentSliceSite(failure, pane)!;
+    expect(pane.slice(site.from, site.to)).toBe("{% for tag i zt.tags %}");
   });
 
   it("keeps the note name when the note itself cannot render", () => {

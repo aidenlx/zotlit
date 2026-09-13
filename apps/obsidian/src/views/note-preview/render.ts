@@ -19,6 +19,7 @@ import {
   emptyRender,
   engineEvidence,
   failedRender,
+  filenameErrorDiagnostic,
   propertyErrorDiagnostic,
   renderFailureDiagnostic,
   renderIdentity,
@@ -467,9 +468,8 @@ export async function renderNativeProfile(
         () => "",
       );
     } catch (error) {
-      noteNameFailure = renderFault(
+      noteNameFailure = filenameErrorDiagnostic(
         error,
-        "filename",
         callerSource(deps, request.source),
       );
       diagnostics.push(noteNameFailure);

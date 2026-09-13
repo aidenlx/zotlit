@@ -1234,6 +1234,32 @@ Annotation`,
     expect(test.editor.store.getState().presentation.selected).toBe(1);
   });
 
+  it("names a note-name failure and opens the tab it is repaired in", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace(
+        "filename: '{{ zt.title }}'",
+        "filename: '{% for tag i zt.tags %}{{ tag }}{% endfor %}'",
+      ),
+    );
+
+    // Only the note name failed, so the note the reader was reading stands.
+    expect(preview.contentEl.textContent).toContain("Better figures");
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(m.workbench_name_filename_heading());
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_filename()),
+    );
+    expect(test.editor.store.getState()).toMatchObject({
+      advanced: false,
+      tab: "name",
+    });
+  });
+
   it("keeps an unclassified engine failure honest about what it knows", async () => {
     await using test = await setup();
     vi.useFakeTimers();

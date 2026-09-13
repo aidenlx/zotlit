@@ -607,6 +607,14 @@ export function Workbench() {
       openAnnotation();
       return;
     }
+    // The note name is repaired in its own tab, whether or not the failure
+    // named a place inside it.
+    if (part === "filename") {
+      setView("edit");
+      setAdvanced(false);
+      setTab("name");
+      return;
+    }
     setView("edit");
     setAdvanced(true);
   }
@@ -1193,6 +1201,7 @@ export function Workbench() {
                       : {})}
                     reveal={reveal}
                     onSelection={trackSelection}
+                    onShowProblem={showProblem}
                   />
                 </TabPanel>
               ))}

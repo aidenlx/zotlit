@@ -197,6 +197,8 @@ export const WEB_THEME: WorkbenchTheme = {
       "filename-result":
         "flex flex-wrap items-center gap-2 text-xs leading-normal",
       muted: "text-fd-muted-foreground",
+      "filename-status":
+        "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 data-[state=failed]:text-fd-destructive",
       "filename-output": "min-w-0 [overflow-wrap:anywhere]",
       defaults: "flex flex-col gap-1.5 text-xs",
       actions: "flex flex-wrap items-center gap-2",

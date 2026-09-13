@@ -95,6 +95,7 @@ export interface WorkbenchParts {
     | "help"
     | "filename-result"
     | "muted"
+    | "filename-status"
     | "filename-output"
     | "defaults"
     | "actions"
