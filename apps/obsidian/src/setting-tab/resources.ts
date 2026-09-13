@@ -1,17 +1,13 @@
 // Headerless resources strip and migration reminder for the declarative (>=1.13) setting tab.
 
-import { join } from "node:path/posix";
 import type {
   Setting,
   SettingDefinition,
   SettingDefinitionGroup,
 } from "obsidian";
 
-import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
-
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
-import { defaults } from "@/services/settings/schema";
 import {
   BUG_REPORT,
   COMMUNITY,
@@ -50,13 +46,7 @@ export function templateConversionReminderItem(
   return {
     id: "welcome_template_conversion",
     name: m.welcome_template_conversion_title(),
-    desc: m.welcome_template_conversion_body({
-      path: join(
-        ctx.settings.current?.["template.folder"] ??
-          defaults["template.folder"],
-        CONVERTED_DEFAULT_PROFILE_DOCUMENT,
-      ),
-    }),
+    desc: m.settings_template_conversion_reminder_desc(),
     render: (setting) => {
       setting.addButton((button) =>
         button

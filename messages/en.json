@@ -1112,6 +1112,7 @@
   "settings_migration_reminder_name": "Finish migrating from v1",
   "settings_migration_reminder_mark_done": "Mark as done",
   "settings_template_conversion_reminder_action": "Review conversion",
+  "settings_template_conversion_reminder_desc": "Your legacy templates remain active. Review conversion when you are ready.",
   "settings_resources_whats_new_name": "What's new in v{version}",
   "settings_resources_whats_new_desc": "See what changed in this release.",
   "settings_resources_whats_new_button": "View release notes",

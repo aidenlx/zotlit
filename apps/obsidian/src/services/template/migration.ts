@@ -33,6 +33,7 @@ import type {
 const logger = getLogger(["template", "migration"]);
 
 interface MigrationSettings {
+  readonly current?: Awaited<MigrationSettings["loaded"]> | null;
   loaded: Promise<
     Readonly<
       Pick<
@@ -49,6 +50,7 @@ interface MigrationSettings {
 }
 
 interface MigrationTemplateService {
+  refresh(): Promise<void>;
   ready: Promise<void>;
   getLegacyLiteratureNoteTemplateFiles(): readonly string[];
   convertLegacyLiteratureNoteTemplates(data: {
@@ -406,45 +408,87 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    const [settings] = await Promise.all([
-      this.#settings.loaded,
-      this.#template.ready,
-    ]);
+    await Promise.all([this.#settings.loaded, this.#template.ready]);
     await using stack = new AsyncDisposableStack();
     stack.defer(() => {
       this.#stopped = true;
     });
+    await this.#detectTemplates(false);
+    this.commit(stack.move());
+  }
 
+  async #detectTemplates(layoutReady: boolean): Promise<void> {
+    if (this.#stopped) return;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
     const legacy = this.#template.getLegacyTemplateDocuments();
     const hasLegacyFiles =
       this.#template.getLegacyLiteratureNoteTemplateFiles().length > 0 ||
       legacy.citation.length > 0 ||
       legacy.partials.length > 0;
-    // The prompt is one-shot per vault: a recorded result means the user has
-    // already answered, so a legacy file the pass deliberately left in place
-    // never re-arms it.
+    // A recorded result keeps deliberately retained legacy files from arming
+    // another invitation.
     const converted =
       settings["note.template-conversion-result"] !== null ||
       this.#app.vault.getFileByPath(
         join(settings["template.folder"], CONVERTED_DEFAULT_PROFILE_DOCUMENT),
       ) !== null;
+    const detection = {
+      phase: layoutReady ? "layout-ready" : "initial",
+      foundLegacy: hasLegacyFiles,
+    };
+    if (!converted && !hasLegacyFiles && !layoutReady) {
+      logger.debug("Template conversion detection", {
+        ...detection,
+        branch: "deferred",
+      });
+      // The first scan can precede Obsidian's vault inventory. Keep startup
+      // finite and preserve a saved pending flag until the layout-ready scan.
+      this.#app.workspace.onLayoutReady(async () => {
+        if (this.#stopped) return;
+        try {
+          await this.#template.refresh();
+          await this.#detectTemplates(true);
+        } catch (error) {
+          logger.warn("Deferred template conversion detection failed", {
+            error,
+          });
+        }
+      });
+      return;
+    }
     if (converted || !hasLegacyFiles) {
+      logger.debug("Template conversion detection", {
+        ...detection,
+        branch: "converted-or-none",
+        converted,
+      });
       if (settings["note.template-conversion-pending"]) {
         this.#settings.update({ "note.template-conversion-pending": false });
         await this.#settings.flush();
       }
-      this.commit(stack.move());
       return;
     }
 
     if (!settings["note.template-conversion-pending"]) {
       this.#settings.update({ "note.template-conversion-pending": true });
       await this.#settings.flush();
-      this.#app.workspace.onLayoutReady(() => {
-        if (!this.#stopped) void this.#openPrompt();
+      logger.debug("Template conversion detection", {
+        ...detection,
+        branch: "newly-armed",
+      });
+      if (layoutReady) {
+        if (!this.#stopped) await this.#openPrompt();
+      } else {
+        this.#app.workspace.onLayoutReady(() => {
+          if (!this.#stopped) void this.#openPrompt();
+        });
+      }
+    } else {
+      logger.debug("Template conversion detection", {
+        ...detection,
+        branch: "already-answered",
       });
     }
-    this.commit(stack.move());
   }
 }
 

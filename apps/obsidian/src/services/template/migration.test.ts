@@ -52,7 +52,7 @@ function makeHarness(options?: {
     files.set("templates/zotlit-profile.default.md", {
       path: "templates/zotlit-profile.default.md",
     });
-  let layoutReady: (() => void) | undefined;
+  let layoutReady: (() => void | Promise<void>) | undefined;
   const create = vi.fn(async (path: string, source: string) => {
     const file = { path, source };
     files.set(path, file);
@@ -70,6 +70,7 @@ function makeHarness(options?: {
     flush: vi.fn(async () => {}),
   };
   const template = {
+    refresh: vi.fn(async () => {}),
     ready: Promise.resolve(),
     getLegacyLiteratureNoteTemplateFiles: vi.fn(() =>
       documentsOnly
@@ -113,7 +114,7 @@ function makeHarness(options?: {
       },
       fileManager: { trashFile },
       workspace: {
-        onLayoutReady: (callback: () => void) => {
+        onLayoutReady: (callback: () => void | Promise<void>) => {
           layoutReady = callback;
         },
       },
@@ -151,7 +152,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     const paths = [...harness.files.keys()];
 
     await harness.service.ready;
-    harness.layoutReady();
+    await harness.layoutReady();
 
     expect(harness.settings.update).toHaveBeenCalledWith({
       "note.template-conversion-pending": true,
@@ -179,7 +180,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     });
 
     await harness.service.ready;
-    harness.layoutReady();
+    await harness.layoutReady();
 
     expect(harness.settings.update).toHaveBeenCalledWith({
       "note.template-conversion-pending": true,
@@ -432,7 +433,7 @@ const SUMMARY_LIQUID = "> {{ zt.abstract }}\n";
  */
 async function makeVaultHarness(
   files: Record<string, string>,
-  options?: { javascriptTemplates?: boolean },
+  options?: { javascriptTemplates?: boolean; storedSettings?: unknown },
 ) {
   const vault = new MockVault();
   for (const [path, content] of Object.entries(files)) {
@@ -441,7 +442,7 @@ async function makeVaultHarness(
   const localStorage = new Map<string, unknown>(
     options?.javascriptTemplates ? [["zotlit-javascript-templates", "1"]] : [],
   );
-  let layoutReady: (() => void) | undefined;
+  let layoutReady: (() => void | Promise<void>) | undefined;
   const trashFile = vi.fn(async (file: { path: string }) => {
     vault.deleteFile(file.path);
   });
@@ -449,7 +450,7 @@ async function makeVaultHarness(
     vault,
     workspace: {
       updateOptions: vi.fn(),
-      onLayoutReady: (callback: () => void) => {
+      onLayoutReady: (callback: () => void | Promise<void>) => {
         layoutReady = callback;
       },
     },
@@ -460,7 +461,10 @@ async function makeVaultHarness(
       else localStorage.set(key, data);
     },
   } as unknown as App;
-  const plugin = new PluginStub(app, { __VERSION__: 1 });
+  const plugin = new PluginStub(
+    app,
+    options?.storedSettings ?? { __VERSION__: 1 },
+  );
   const noMigration = (raw: unknown) => raw;
   // Each service is owned from the moment it is constructed, so a startup that
   // fails halfway still disposes what it already built.
@@ -507,6 +511,7 @@ async function makeVaultHarness(
     settings,
     template,
     vault,
+    storedSettings: () => structuredClone(plugin.data),
     [Symbol.asyncDispose]: () => owned[Symbol.asyncDispose](),
   };
 }
@@ -655,7 +660,7 @@ language: liquid
       "templates/zotlit-cite.liquid.md": CITE_LIQUID,
     });
 
-    harness.layoutReady();
+    await harness.layoutReady();
 
     expect(harness.openPrompt).toHaveBeenCalledOnce();
     expect(harness.settings.current?.["note.template-conversion-pending"]).toBe(
@@ -668,7 +673,7 @@ language: liquid
       "templates/zotlit-cite.liquid.md": CITE_LIQUID,
     });
 
-    harness.layoutReady();
+    await harness.layoutReady();
 
     expect(harness.openPrompt).toHaveBeenCalledOnce();
   });
@@ -678,7 +683,7 @@ language: liquid
       "templates/zotlit-citation.md": "{{ zt.citations | pandoc_cite }}\n",
     });
 
-    harness.layoutReady();
+    await harness.layoutReady();
 
     expect(harness.openPrompt).not.toHaveBeenCalled();
     expect(await harness.service.convert()).toMatchObject({
@@ -756,5 +761,53 @@ describe("the one-shot conversion aborts before any write", () => {
     expect(harness.create).not.toHaveBeenCalled();
     expect(harness.trashFile).not.toHaveBeenCalled();
     expect(harness.settings.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("layout-ready legacy conversion detection", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("discovers layout-ready originals and preserves postponement across delayed inventory on restart", async () => {
+    const original = {
+      "templates/zotlit-note.liquid.md":
+        '# Late inventory {{ zt.title }}\n{% render "content" with zt as zt %}',
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+    };
+    let storedSettings: unknown;
+    {
+      await using first = await makeVaultHarness({});
+      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
+        false,
+      );
+      // Obsidian populates its initial inventory without create events.
+      for (const [path, source] of Object.entries(original))
+        first.vault.addFile(path, source);
+      await first.layoutReady();
+      expect(first.openPrompt).toHaveBeenCalledOnce();
+      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
+        true,
+      );
+      expect(Object.fromEntries(first.vault.contents)).toEqual(original);
+      storedSettings = first.storedSettings();
+    }
+    await using resumed = await makeVaultHarness({}, { storedSettings });
+    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
+      true,
+    );
+    for (const [path, source] of Object.entries(original))
+      resumed.vault.addFile(path, source);
+    await resumed.layoutReady();
+    expect(resumed.openPrompt).not.toHaveBeenCalled();
+    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
+      true,
+    );
+    expect(
+      resumed.template.render(
+        "cite",
+        citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main"),
+      ),
+    ).toBe("<[@smith2024]>\n");
+    expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
   });
 });
