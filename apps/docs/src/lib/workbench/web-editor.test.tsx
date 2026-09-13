@@ -138,7 +138,7 @@ describe("a draft the parser refuses", () => {
       m.workbench_problems_object_property({ key: "title" }),
     ]);
     expect(area.textContent).toContain(
-      m.workbench_diagnostic_render_error_suggestion(),
+      m.workbench_diagnostic_liquid_syntax_error_suggestion(),
     );
 
     // Choosing the other problem reads that one and asks for no navigation.
@@ -151,7 +151,7 @@ describe("a draft the parser refuses", () => {
       m.workbench_diagnostic_property_error_suggestion(),
     );
     expect(area.textContent).not.toContain(
-      m.workbench_diagnostic_render_error_suggestion(),
+      m.workbench_diagnostic_liquid_syntax_error_suggestion(),
     );
     expect(chosenTab(page.host)).toBe(tab);
   });
