@@ -64,6 +64,9 @@ When Customize starts from a Literature Note, identify the shared template
 document before editing and explain that other notes can use it. Keep the
 originating note's name beside **Update this note**. This target stays the same
 when the reader changes the preview item or focuses another window.
+Present this active context as one compact accent-bar notice: group the shared
+template identity with automatic save and Preview behavior, and keep the named
+note with the trailing update action. Let the two groups wrap on narrow panes.
 
 Keep the three outcomes distinct: edits save the template automatically;
 the preview renders the edit; **Update this note** applies the saved template

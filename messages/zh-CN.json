@@ -1,6 +1,6 @@
 {
-  "template_workbench_shared_template": "共享模板：{name}。其他笔记也可以使用此模板。",
-  "template_workbench_auto_save_scope": "编辑会自动保存并刷新预览。选择“更新此笔记”，将已保存的模板应用到此笔记。",
+  "template_workbench_shared_template": "共享模板：{name}。其他笔记也可使用。",
+  "template_workbench_auto_save_scope": "编辑会自动保存并刷新预览。",
   "template_workbench_update_this_note": "更新此笔记",
   "template_workbench_update_unavailable": "原笔记 {name} 不可用或已更改，请从该笔记重新打开“自定义”。",
   "template_workbench_update_save_failed": "无法保存模板编辑，笔记未更新。",

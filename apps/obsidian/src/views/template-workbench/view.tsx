@@ -161,6 +161,7 @@ import {
 import { getSampleItem } from "./selection-data";
 import { currentProfileSource } from "./source";
 import {
+  originatingNoteNotice,
   templateWorkbenchButton,
   templateWorkbenchTheme,
   selectionBar,
@@ -2442,18 +2443,26 @@ function EditorContent({
           so its selection is the preview pane's own. */}
       {kind === "profile" && <EditorHeader view={view} />}
       {view.originatingNote && (
-        <div className="zt:flex zt:flex-col zt:gap-2 zt:px-3 zt:pb-2 zt:text-xs">
-          <p>
-            {m.template_workbench_shared_template({
-              name: view.file?.basename ?? m.settings_profile_default_name(),
-            })}
-          </p>
-          <p className="zt:text-muted-foreground">
-            {m.template_workbench_auto_save_scope()}
-          </p>
-          <div className="zt:flex zt:flex-wrap zt:items-center zt:gap-2">
+        <div
+          data-part="originating-note"
+          className={originatingNoteNotice.root}
+        >
+          <div className={originatingNoteNotice.guidance}>
+            <p className={originatingNoteNotice.scope}>
+              {m.template_workbench_shared_template({
+                name: view.file?.basename ?? m.settings_profile_default_name(),
+              })}
+            </p>
+            <p className={originatingNoteNotice.behavior}>
+              {m.template_workbench_auto_save_scope()}
+            </p>
+          </div>
+          <div className={originatingNoteNotice.action}>
+            <span className={originatingNoteNotice.note}>
+              {view.originatingNote.basename}
+            </span>
             <button
-              className={templateWorkbenchButton}
+              className={originatingNoteNotice.button}
               disabled={view.updatingNote}
               onClick={async () => {
                 const result = await view.updateOriginatingNote();
@@ -2465,7 +2474,6 @@ function EditorContent({
                 ? m.notice_updating_note()
                 : m.template_workbench_update_this_note()}
             </button>
-            <span>{view.originatingNote.basename}</span>
           </div>
         </div>
       )}
