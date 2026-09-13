@@ -461,6 +461,7 @@ async function makeVaultHarness(
     javascriptTemplates?: boolean;
     storedSettings?: unknown;
     selectedKey?: string;
+    loadVerificationData?: LiteratureNoteTemplateMigrationOptions["loadVerificationData"];
   },
 ) {
   const vault = new MockVault();
@@ -522,13 +523,15 @@ async function makeVaultHarness(
       app,
       settings,
       template,
-      loadVerificationData: async () => ({
-        itemKey: options?.selectedKey,
-        note: { title: "Paper", indexedKey: options?.selectedKey },
-        filename: { citationKey: "smith2024" },
-        annotation: null,
-        citation: [{ citationKey: "smith2024" }],
-      }),
+      loadVerificationData:
+        options?.loadVerificationData ??
+        (async () => ({
+          itemKey: options?.selectedKey,
+          note: { title: "Paper", indexedKey: options?.selectedKey },
+          filename: { citationKey: "smith2024" },
+          annotation: null,
+          citation: [{ citationKey: "smith2024" }],
+        })),
       openPrompt,
     }),
   );
@@ -2119,3 +2122,70 @@ describe("Citation and Shared Partial conversion repair", () => {
     );
   });
 });
+
+it.each(["discard", "regenerate"] as const)(
+  "resumes a copy made without verification data to %s after restart",
+  async (action) => {
+    const originals = {
+      "templates/zotlit-cite.liquid.md": "{{ zt.citations | pandoc_cite }}",
+      "templates/zotlit-callout.liquid.md": "ORIGINAL {{ zt.title }}",
+    };
+    const loadVerificationData = vi.fn<
+      LiteratureNoteTemplateMigrationOptions["loadVerificationData"]
+    >(async () => null);
+    let saved: unknown;
+    let files: Record<string, string>;
+    let partialPath: string;
+    {
+      await using first = await makeVaultHarness(originals, {
+        loadVerificationData,
+      });
+      const copy = await first.service.startRepair();
+      partialPath = copy.rawInputs.find(({ slot }) => slot === "callout")!.path;
+      first.vault.modifyFile(partialPath, "OFFLINE-REPAIR {{ zt.title }}");
+      await first.settings.flush();
+      saved = first.storedSettings();
+      files = Object.fromEntries(first.vault.contents);
+    }
+    await using restarted = await makeVaultHarness(files!, {
+      storedSettings: saved,
+      loadVerificationData,
+    });
+    const copy = await restarted.service.resumeRepair();
+    expect(copy?.diagnostic).toEqual({ code: "no-verification-item" });
+    expect(
+      (await restarted.service.resolveCopyEditor(partialPath!))?.rawInput,
+    ).toMatchObject({ kind: "partial", slot: "callout" });
+    expect(restarted.vault.contents.get(partialPath!)).toBe(
+      "OFFLINE-REPAIR {{ zt.title }}",
+    );
+    expect(await restarted.service.reviewRepair()).toMatchObject({
+      valid: false,
+      diagnostic: { code: "no-verification-item" },
+    });
+    if (action === "regenerate") {
+      loadVerificationData.mockResolvedValue({
+        note: { title: "Paper" },
+        filename: {},
+        annotation: null,
+        citation: [{ citationKey: "smith2024" }],
+      });
+      const review = await restarted.service.regenerateRepair();
+      expect(review.valid).toBe(true);
+      expect(copy!.editor.templates.render("callout", { title: "Paper" })).toBe(
+        "OFFLINE-REPAIR Paper",
+      );
+      expect(
+        copy!.editor.templates.renderCitation(
+          [{ citationKey: "smith2024" }],
+          "main",
+        ),
+      ).toBe("[@smith2024]");
+    }
+    await restarted.service.discardRepair();
+    expect(Object.fromEntries(restarted.vault.contents)).toEqual(originals);
+    expect(
+      restarted.settings.current!["note.template-conversion-copy"],
+    ).toBeNull();
+  },
+);

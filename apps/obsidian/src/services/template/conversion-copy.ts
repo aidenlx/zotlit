@@ -1055,7 +1055,7 @@ export class ConversionCopy implements AsyncDisposable {
         this.#state.kept.push(
           ...converted.kept.map((path) => this.#originalInputPath(path)),
         );
-      }
+      } else this.#state.diagnostic = { code: "no-verification-item" };
     } catch (error) {
       this.#state.diagnostic = conversionRepairDiagnostic(error);
     }
