@@ -50,9 +50,8 @@ function actions() {
     opened,
     hide,
     ...createCitationPopoverActions({
-      open: (entry, pane) => opened.push([entry.citekey!, pane]),
+      open: (citekey, pane) => opened.push([citekey, pane]),
       hide,
-      switchProfile: vi.fn(),
     }),
   };
 }

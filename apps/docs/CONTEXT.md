@@ -12,21 +12,6 @@ _Avoid_: ZotLit for Obsidian, the Obsidian plugin (as a standing name; fine as a
 The required Zotero add-on. Write “ZotLit Companion, the Zotero add-on” on first use in a page and “the Companion” later. It installs under the display name “ZotLit” in Zotero's add-on manager, so docs never call it by its displayed name alone.
 _Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
 
-**Template Workbench**:
-The workflow for building and testing a Template Document — a Literature Note Profile's template document, the Citation Template (**citation text** in reader-facing prose), or a Shared Partial (**partial**). Three surfaces serve it: the web Workbench at `/workbench`, which edits Profile documents alone; the Template Workbench CLI for agents; and the Template Workbench View in Obsidian, which opens all three kinds. The term names the activity, not one surface; each surface qualifies by host when the difference matters.
-
-**Web Workbench** _(web)_:
-The human-facing surface at `/workbench` for editing a Literature Note Profile's template document in the browser, including its note content, Annotation format, properties, and file destination. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
-_Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor
-
-**UI Label**:
-A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text. A notice text that documentation quotes verbatim is treated the same way.
-_Avoid_: UI text, product copy
-
-**Settings Path**:
-The bold navigation route from Obsidian Settings to the ZotLit tab, one of its settings pages, or one setting on that page, always written from Settings through the ZotLit tab. Documentation renders it as one unit rather than as separate labels.
-_Avoid_: settings breadcrumb, menu path, Community plugins route
-
 **Section Index**:
 The wayfinding page at a section's own URL (e.g. /docs/how-to): it helps the reader find the material they need — organized around the reader's situation or question, never a flat listing of the section's pages. It routes and nothing else: no tutorial, how-to, concept, or reference content of its own. The Intro section's index is the docs index ("Introduction").
 _Avoid_: table of contents, overview page, section landing page

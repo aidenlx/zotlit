@@ -6,11 +6,10 @@
     "isolatedDeclarations": false,
     // The build renders the OG cards from JSX through takumi.
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["./worker-configuration.d.ts", "node"]
   },
   "include": [
     "./source.config.ts",
-    "./content.config.ts",
     "./vite.config.ts",
     "./vitest.config.ts",
     "./oxlint.config.ts",

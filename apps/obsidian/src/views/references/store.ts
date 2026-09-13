@@ -11,7 +11,7 @@ import type {
   DocumentCitationError,
   ReferenceSource,
 } from "@/services/citation-index/service";
-import type { DocumentPresentationFailure } from "@/services/pandoc/document-presentation";
+import type { UnusableProperty } from "@/services/pandoc/document-presentation";
 import type { PandocEngineStatus } from "@/services/pandoc/service";
 
 import { buildReferenceEntries } from "./entries";
@@ -77,7 +77,7 @@ export interface ReferencesState {
    * which is a repair on that note rather than on a vault selection; `null`
    * while nothing about that note is at fault.
    */
-  documentPresentationError: DocumentPresentationFailure | null;
+  documentPresentationError: UnusableProperty | null;
   /** `false` while the Zotero database cannot be read. */
   dbReady: boolean;
   /**

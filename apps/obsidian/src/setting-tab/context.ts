@@ -1,28 +1,19 @@
-import type { App, PluginManifest } from "obsidian";
+import type { App } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
-import type { CustomizeAction } from "@/services/local-bridge/customize";
-import type { LocalBridgeService } from "@/services/local-bridge/service";
-import type { LocalServerService } from "@/services/local-server/service";
 import type { PandocEngineService } from "@/services/pandoc/service";
-import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-
-import type { ImportProfile } from "./import-profile-modal";
+import type ZotLitPlugin from "@/zt-main";
 
 /** Settings keys, used to type declarative `control` bindings against the schema. */
 export type SettingsKey = keyof Settings;
-export type ProfileControlKey =
-  `note-profile:default:${"folder" | "citation-style" | "import-folder" | "colored-highlights" | "annotations-as-template"}`;
-export type SettingsControlKey = SettingsKey | ProfileControlKey;
 
 /** The release-service surface the setting tab needs — reused by both render paths. */
 export type ReleaseTabActions = Pick<
@@ -34,18 +25,6 @@ export type ReleaseTabActions = Pick<
 export type PandocEngineActions = Pick<
   PandocEngineService,
   "getStatus" | "subscribe" | "install" | "uninstall"
->;
-
-/** The Local Server surface the setting tab needs: the bound port and its edges. */
-export type LocalServerActions = Pick<
-  LocalServerService,
-  "effectivePort" | "on"
->;
-
-/** The Local Bridge surface the setting tab needs: the live connection and its end. */
-export type LocalBridgeActions = Pick<
-  LocalBridgeService,
-  "connection" | "disconnect" | "on"
 >;
 
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
@@ -64,40 +43,18 @@ export type AttachmentImportActions = Pick<
  * search indexing.
  */
 export interface SettingTabContext {
-  webWorkbenchEnabled: boolean;
   app: App;
-  importProfile: ImportProfile;
-  /**
-   * The plugin's own manifest — its version and its folder in the vault. The
-   * plugin object itself stays out of this context: its `services` getter is a
-   * debug escape hatch that throws until `onload()` commits, and the first
-   * `getSettingDefinitions()` runs inside `onload()`.
-   */
-  manifest: PluginManifest;
+  plugin: ZotLitPlugin;
   settings: SettingsService;
-  profile: ProfileService;
   db: DatabaseService;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
-  /** The one loopback listener, read by the Local server rows. */
-  localServer: LocalServerActions;
-  /** The Workbench Connection the Local server rows name and end. */
-  localBridge: LocalBridgeActions;
-  /** The shared Customize flow the Template document row opens. */
-  customize: CustomizeAction;
   /** The approved-folder store the Attachments page lists and mutates. */
   attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */
   citationIndex: CitationIndexActions;
   release: ReleaseTabActions;
-  /**
-   * The template store the Templates, Frontmatter, and Profile rows read.
-   * Injected rather than reached through `plugin.services`: the first
-   * `getSettingDefinitions()` runs from `addSettingTab()`, while `onload()` is
-   * still wiring and that escape hatch still throws.
-   */
-  template: TemplateService;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
   pandocEngine: PandocEngineActions;
   languagePack: LanguagePackLifecycle;

@@ -1,6 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalPassThroughEnv": ["AI_AGENT"],
+  "globalDependencies": ["mise.toml"],
+  "globalEnv": ["ZOTLIT_TOOLCHAIN"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
@@ -8,8 +9,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "outputLogs": "errors-only",
-      "env": ["DOCS_SITE_URL"]
+      "outputLogs": "errors-only"
     },
     "build:dev": {
       "dependsOn": ["^build"],
@@ -36,7 +36,7 @@
         "@zotlit/zotero#build:dev"
       ],
       "cache": false,
-      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP", "ZT_VAULT_CASE"]
+      "passThroughEnv": ["ZT_HOST_VAULT", "ZOTERO_APP"]
     },
     "e2e": {
       "dependsOn": [
@@ -49,15 +49,13 @@
     "//#lint:repo:deps": {
       "dependsOn": [
         "@zotlit/db#build",
-        "@zotlit/filter-expression#build",
         "@zotlit/item-lookup#build",
         "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
-        "@zotlit/workbench#build",
         "@zotlit/zotero-types#build",
-        "@zotlit/docs#generate:messages",
+        "@zotlit/docs#codegen",
         "@zotlit/docs#cf-typegen:check"
       ]
     },
@@ -67,13 +65,11 @@
     "//#review:plugin:deps": {
       "dependsOn": [
         "@zotlit/db#build",
-        "@zotlit/filter-expression#build",
         "@zotlit/item-lookup#build",
         "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
-        "@zotlit/workbench#build",
         "@zotlit/zotero-types#build"
       ]
     },

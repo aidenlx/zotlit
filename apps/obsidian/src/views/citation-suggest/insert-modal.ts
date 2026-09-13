@@ -1,9 +1,10 @@
-import { Keymap } from "obsidian";
+import { Keymap, SuggestModal } from "obsidian";
 import type { Editor } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { ItemSearchModal } from "@/services/item-lookup/search-modal";
+import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
+import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 
 import { padCitationInsert, resolveCitationInsert } from "./editor-suggest";
@@ -14,18 +15,19 @@ import type { CitationSuggestDeps } from "./register";
  * rendered citation at the editor cursor. The inline `[@` flow lives in
  * {@link CitationEditorSuggest}; both render through `renderCitation`.
  */
-export class InsertCitationModal extends ItemSearchModal {
+export class InsertCitationModal extends SuggestModal<SearchHit> {
   readonly #deps: CitationSuggestDeps;
   readonly #editor: Editor;
 
   constructor(deps: CitationSuggestDeps, editor: Editor) {
-    super(deps);
+    super(deps.app);
     this.#deps = deps;
     this.#editor = editor;
+    this.limit = DEFAULT_LIMIT;
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
-      { command: "⇧↵", purpose: m.instruction_insert_alternate_citation() },
+      { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
     // The suggestion popup registers `Enter` with no modifiers and matches
@@ -37,6 +39,14 @@ export class InsertCitationModal extends ItemSearchModal {
     });
   }
 
+  override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
+    return this.#deps.lookup.search(query, { limit: this.limit });
+  }
+
+  override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
+    renderSearchHit(this.#deps.settings, hit, el);
+  }
+
   override onChooseSuggestion(
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
@@ -44,7 +54,7 @@ export class InsertCitationModal extends ItemSearchModal {
     const outcome = resolveCitationInsert(
       this.#deps,
       hit,
-      Keymap.isModifier(evt, "Shift") ? "alt" : "main",
+      Keymap.isModifier(evt, "Shift"),
     );
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);

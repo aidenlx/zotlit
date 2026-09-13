@@ -6,7 +6,6 @@ import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { getBlogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
-import { m } from "@/paraglide/messages.js";
 
 const listPosts = createServerFn({ method: "GET" }).handler(() =>
   getBlogPages().map((page) => ({
@@ -18,9 +17,9 @@ const listPosts = createServerFn({ method: "GET" }).handler(() =>
   })),
 );
 
-const crumbs = () => [
+const crumbs = [
   { name: appName, url: "/" },
-  { name: m.docs_nav_blog(), url: blogRoute },
+  { name: "Blog", url: blogRoute },
 ];
 
 export const Route = createFileRoute("/_home/blog/")({
@@ -28,11 +27,11 @@ export const Route = createFileRoute("/_home/blog/")({
   loader: () => listPosts(),
   head: () =>
     pageHead({
-      title: m.docs_nav_blog(),
-      description: m.docs_blog_description(),
+      title: "Blog",
+      description: "Notes from building ZotLit.",
       path: blogRoute,
-      card: { type: "blog", alt: m.docs_blog_og_alt() },
-      schemas: [breadcrumbListSchema(crumbs())],
+      card: { type: "blog", alt: "ZotLit Blog" },
+      schemas: [breadcrumbListSchema(crumbs)],
     }),
 });
 
@@ -42,9 +41,10 @@ function BlogIndex() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 font-serif">
       <header className="pt-14 pb-2">
-        <h1 className="mb-2.5 text-4xl font-medium">{m.docs_nav_blog()}</h1>
+        <h1 className="mb-2.5 text-4xl font-medium">Blog</h1>
         <p className="mb-6 max-w-[60ch] text-[16.5px] text-fd-muted-foreground italic">
-          {m.docs_blog_intro()}
+          Notes from building ZotLit — engineering, design, and the occasional
+          detour.
         </p>
       </header>
 
@@ -59,7 +59,7 @@ function BlogIndex() {
                 {formatReleaseDate(post.date)}
               </time>
               <p className="text-[14.5px] text-fd-muted-foreground italic">
-                {m.docs_blog_author({ author: post.author })}
+                by {post.author}
               </p>
             </div>
             <div>
@@ -83,7 +83,7 @@ function BlogIndex() {
                   params={{ slug: post.slug }}
                   className="font-mono text-xs font-semibold tracking-[0.12em] text-fd-primary uppercase hover:underline"
                 >
-                  {m.docs_blog_read_post()}
+                  Read the post →
                 </Link>
               </p>
             </div>

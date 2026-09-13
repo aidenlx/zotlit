@@ -1,47 +1,17 @@
-import { asMarkdown, md } from "fumadocs-core/server";
-import { Terminal } from "lucide-react";
-
-import { toast } from "@/components/ui/toast";
 // "Run this Obsidian command" mark for docs prose: a terminal rubric with the
 // command-palette name in the serif display voice. The block form adds a
 // copy-to-clipboard link; the inline form stays minimal — glyph + name only.
-import * as m from "@/paraglide/messages.js";
-import type { LocalizedString } from "@/paraglide/runtime.js";
+import { Terminal } from "lucide-react";
+import { useState } from "react";
 
-interface CommandOptions {
+export interface CommandProps {
+  /** Exact command-palette string, e.g. `ZotLit: Open template data explorer`. */
+  children: string;
   /** Render mid-sentence instead of as a standalone block directive. */
   inline?: boolean;
 }
 
-export type CommandProps = CommandOptions &
-  (
-    | {
-        /** ZotLit command name rendered from the product Message catalog. */
-        name: LocalizedString;
-        children?: never;
-      }
-    | {
-        /** Exact command-palette name owned by another product. */
-        children: string;
-        name?: never;
-      }
-  );
-
-export function Command(props: CommandProps) {
-  const inline = props.inline ?? false;
-  const commandName =
-    props.name === undefined ? props.children : `ZotLit: ${props.name}`;
-
-  // The Markdown edition carries the command name as code. The inline form
-  // stays mid-sentence; the block form keeps its standalone rubric as a
-  // blockquote, where the terminal glyph becomes the word it stands for and
-  // the copy affordance drops — a reader of Markdown already has the text.
-  if (asMarkdown()) {
-    return inline
-      ? md`\`${commandName}\``
-      : md.linePrefix("> ")`${m.docs_command_label()}: \`${commandName}\``;
-  }
-
+export function Command({ children, inline = false }: CommandProps) {
   if (inline) {
     return (
       <span className="not-prose inline">
@@ -50,19 +20,22 @@ export function Command(props: CommandProps) {
           className="mr-[0.2em] inline size-[1em] shrink-0 align-[-0.14em] text-fd-primary select-none"
         />
         <span className="border-b border-fd-primary/45 pb-[0.02em] font-medium text-fd-foreground">
-          {commandName}
+          {children}
         </span>
       </span>
     );
   }
-  return <BlockCommand commandName={commandName} />;
+  return <BlockCommand>{children}</BlockCommand>;
 }
 
-function BlockCommand({ commandName }: { commandName: string }) {
+function BlockCommand({ children }: { children: string }) {
+  const [copied, setCopied] = useState(false);
+
   function copy() {
-    navigator.clipboard.writeText(commandName).then(
+    navigator.clipboard.writeText(children).then(
       () => {
-        toast.add({ title: m.docs_command_copied_label(), type: "success" });
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
       },
       () => {},
     );
@@ -75,19 +48,19 @@ function BlockCommand({ commandName }: { commandName: string }) {
         className="size-[1.15rem] shrink-0 text-fd-primary select-none"
       />
       <span className="font-serif text-[1.22rem] leading-tight font-medium text-fd-foreground">
-        {commandName}
+        {children}
       </span>
       <button
         type="button"
         onClick={copy}
-        aria-label={m.docs_command_copy_label()}
+        aria-label={copied ? "Command name copied" : "Copy command name"}
         className={
           "ml-auto shrink-0 cursor-pointer self-center font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase transition-opacity" +
           " hover:opacity-80" +
           " focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary"
         }
       >
-        {m.docs_command_copy()}
+        {copied ? "Copied ✓" : "Copy →"}
       </button>
     </span>
   );

@@ -1,8 +1,7 @@
 // Pure decoration-range computation for the citekey editor treatment.
 
-import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
-import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
-
+import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
+import type { TextSpan } from "@/lib/citation-grammar";
 import type {
   CitationKeyState,
   CitationSource,
@@ -86,15 +85,13 @@ export function citekeyMarks(
   isExcluded: (span: TextSpan) => boolean,
 ): CitekeyMark[] {
   const marks: CitekeyMark[] = [];
-  for (const citation of scanPandocCitations(text)) {
-    for (const item of citation.items) {
-      const span = {
-        start: item.suppressAuthor ? item.start + 1 : item.start,
-        end: item.end,
-      };
-      if (isExcluded(span)) continue;
-      marks.push({ ...span, citekey: item.citationKey });
-    }
+  for (const key of scanCitekeys(text)) {
+    const span = {
+      start: key.suppressAuthor ? key.start + 1 : key.start,
+      end: key.end,
+    };
+    if (isExcluded(span)) continue;
+    marks.push({ ...span, citekey: key.citekey });
   }
   return marks;
 }
@@ -136,16 +133,16 @@ export function citationRanges(
   isExcluded: (span: TextSpan) => boolean,
 ): CitationRange[] {
   const found: CitationRange[] = [];
-  for (const { start, end, items } of scanPandocCitations(text)) {
+  for (const { start, end, keys } of scanCitations(text)) {
     if (isExcluded({ start, end })) continue;
     found.push({
       start,
       end,
       source: text.slice(start, end),
-      keys: items.map((item) => ({
-        citekey: item.citationKey,
-        start: item.start - start,
-        end: item.end - start,
+      keys: keys.map((key) => ({
+        citekey: key.citekey,
+        start: key.start - start,
+        end: key.end - start,
       })),
     });
   }

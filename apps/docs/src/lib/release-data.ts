@@ -9,8 +9,6 @@
 import { env } from "cloudflare:workers";
 import { gt, rcompare, valid } from "semver";
 
-import * as m from "@/paraglide/messages.js";
-
 import { assetUrl, tagUrl } from "./github-releases";
 import type { ReleaseChannel } from "./github-releases";
 import { gitConfig, repoSlug } from "./shared";
@@ -18,8 +16,6 @@ import { gitConfig, repoSlug } from "./shared";
 const ZOTERO_ADDON_ID = "zotlit@aidenlx.site";
 /** Release facts may lag GitHub by up to an hour. */
 const CACHE_SECONDS = 3600;
-/** An unavailable release-data host must not hold a page or build open. */
-const FETCH_TIMEOUT_MS = 5_000;
 
 /** The one host the rate-limit token belongs to. */
 const API_HOST = "api.github.com";
@@ -69,7 +65,6 @@ function isApiRequest(url: string) {
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         // GitHub's API rejects a request that names no client.
         "user-agent": `${gitConfig.user}-${gitConfig.repo}-docs`,
@@ -154,8 +149,7 @@ async function getCompanion(channel: ReleaseChannel) {
  * @see https://extensionworkshop.com/documentation/develop/browser-compatibility/
  */
 function formatZoteroRange(min: string, max?: string): string {
-  if (!max || max === "*")
-    return m.docs_zotero_minimum_version({ version: min });
+  if (!max || max === "*") return `Zotero ${min} or newer`;
   if (max.endsWith(".*")) {
     const line = max.slice(0, -2); // "9.*" -> "9", "7.0.*" -> "7.0"
     return min === `${line}.0`
@@ -221,9 +215,7 @@ export async function getReleaseSnapshot(): Promise<ReleaseSnapshot> {
     notesUrl: tagUrl(stableManifest.version),
     publishedAt: publishedAt(stableManifest.version),
     requires: `Obsidian ≥ ${stableManifest.minAppVersion}`,
-    note: stableManifest.isDesktopOnly
-      ? m.docs_release_desktop_only()
-      : undefined,
+    note: stableManifest.isDesktopOnly ? "desktop only" : undefined,
   };
 
   const companionLedger = (channel: ReleaseChannel): Ledger => {
@@ -283,7 +275,7 @@ async function getObsidianPreRelease(
     notesUrl: tagUrl(release.tag_name),
     publishedAt: release.published_at,
     requires: `Obsidian ≥ ${manifest.minAppVersion}`,
-    note: manifest.isDesktopOnly ? m.docs_release_desktop_only() : undefined,
+    note: manifest.isDesktopOnly ? "desktop only" : undefined,
   };
 }
 

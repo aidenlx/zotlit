@@ -15,7 +15,6 @@ import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
-import { Route as WorkbenchRouteImport } from './routes/workbench'
 import { Route as HomeIndexRouteImport } from './routes/_home/index'
 import { Route as HomeCommunityRouteImport } from './routes/_home/community'
 import { Route as ApiReleaseSnapshotRouteImport } from './routes/api/release-snapshot'
@@ -58,11 +57,6 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WorkbenchRoute = WorkbenchRouteImport.update({
-  id: '/workbench',
-  path: '/workbench',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HomeIndexRoute = HomeIndexRouteImport.update({
@@ -143,7 +137,6 @@ export interface FileRoutesByFullPath {
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/workbench': typeof WorkbenchRoute
   '/community': typeof HomeCommunityRoute
   '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
   '/api/repo-stats': typeof ApiRepoStatsRoute
@@ -163,7 +156,6 @@ export interface FileRoutesByTo {
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/workbench': typeof WorkbenchRoute
   '/community': typeof HomeCommunityRoute
   '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
   '/api/repo-stats': typeof ApiRepoStatsRoute
@@ -187,7 +179,6 @@ export interface FileRoutesById {
   '/llms.txt': typeof LlmsDottxtRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/workbench': typeof WorkbenchRoute
   '/_home/community': typeof HomeCommunityRoute
   '/api/release-snapshot': typeof ApiReleaseSnapshotRoute
   '/api/repo-stats': typeof ApiRepoStatsRoute
@@ -212,7 +203,6 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
-    | '/workbench'
     | '/community'
     | '/api/release-snapshot'
     | '/api/repo-stats'
@@ -232,7 +222,6 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
-    | '/workbench'
     | '/community'
     | '/api/release-snapshot'
     | '/api/repo-stats'
@@ -255,7 +244,6 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/robots.txt'
     | '/sitemap.xml'
-    | '/workbench'
     | '/_home/community'
     | '/api/release-snapshot'
     | '/api/repo-stats'
@@ -279,7 +267,6 @@ export interface RootRouteChildren {
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
-  WorkbenchRoute: typeof WorkbenchRoute
   ApiReleaseSnapshotRoute: typeof ApiReleaseSnapshotRoute
   ApiRepoStatsRoute: typeof ApiRepoStatsRoute
   ApiSearchRoute: typeof ApiSearchRoute
@@ -330,13 +317,6 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/workbench': {
-      id: '/workbench'
-      path: '/workbench'
-      fullPath: '/workbench'
-      preLoaderRoute: typeof WorkbenchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_home/': {
@@ -483,7 +463,6 @@ const rootRouteChildren: RootRouteChildren = {
   LlmsDottxtRoute: LlmsDottxtRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
-  WorkbenchRoute: WorkbenchRoute,
   ApiReleaseSnapshotRoute: ApiReleaseSnapshotRoute,
   ApiRepoStatsRoute: ApiRepoStatsRoute,
   ApiSearchRoute: ApiSearchRoute,

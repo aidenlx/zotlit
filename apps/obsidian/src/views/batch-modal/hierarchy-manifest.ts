@@ -6,28 +6,19 @@ import {
   row,
   SECTION_OPEN_MAX,
   setRowIcon,
-  profileChoiceControl,
-  profileListGroup,
 } from "./dom";
-import type { BatchRow } from "./dom";
 import type { FlatTask } from "./flat-manifest";
-import type {
-  BatchCounts,
-  BatchManifest,
-  BatchListControls,
-  BatchProfileChoice,
-} from "./types";
+import type { BatchCounts, BatchManifest } from "./types";
 
 export interface HierarchyParent {
   label: string;
   children: readonly FlatTask[];
-  profileChoice?: BatchProfileChoice;
 }
 
 export interface HierarchyManifestOptions {
   parents: readonly HierarchyParent[];
   /** Items classified as up-to-date; shown as a static informational group. */
-  upToDate?: readonly BatchRow[];
+  upToDate?: readonly { label: string }[];
   upToDateHeader?: (args: { count: number }) => string;
   doneHeader: (args: { count: number }) => string;
   /** Header for items that ran but had nothing to write (e.g. vanished note). */
@@ -58,7 +49,7 @@ export class HierarchyManifest implements BatchManifest {
     return { actionable: this.#children.length, notFound: 0 };
   }
 
-  renderList(parent: HTMLElement, controls?: BatchListControls): void {
+  renderList(parent: HTMLElement): void {
     this.#rowIcons.clear();
     for (const node of this.#options.parents) {
       if (node.children.length === 0) continue;
@@ -74,15 +65,13 @@ export class HierarchyManifest implements BatchManifest {
         cls: "zt:truncate zt:text-sm zt:font-medium zt:text-(--text-normal)",
         attr: { "aria-label": node.label },
       });
-      if (node.profileChoice)
-        profileChoiceControl(summary, node.profileChoice, controls);
       summary.createSpan({
         text: `(${node.children.length})`,
         cls: "zt:shrink-0 zt:text-xs zt:tabular-nums zt:text-(--text-muted)",
       });
       const ul = details.createEl("ul", { cls: "zt:m-0 zt:list-none zt:p-0" });
       for (const child of node.children) {
-        const icon = row(ul, child.label, { ...child, indent: true });
+        const icon = row(ul, child.label, { indent: true });
         setRowIcon(icon, "pending");
         this.#rowIcons.set(child.id, icon);
       }
@@ -114,9 +103,8 @@ export class HierarchyManifest implements BatchManifest {
     const done = this.#children.filter(
       (child) => finalStatus.get(child.id) === "done",
     );
-    profileListGroup(parent, {
+    listGroup(parent, {
       header: this.#options.doneHeader({ count: done.length }),
-      profileHeader: this.#options.doneHeader,
       items: done,
       icon: ROW_ICON.done,
       colorCls: ROW_ICON_CLASS.done,

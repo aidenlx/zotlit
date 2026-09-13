@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 
 import { Logo } from "@/components/logo";
-import * as m from "@/paraglide/messages.js";
 
 import { repoUrl } from "./shared";
 
@@ -19,19 +18,11 @@ export function baseOptions({
     nav: { title: <Logo small className="ml-1 text-lg" /> },
     links: [
       ...(includeDocsLink
-        ? [{ text: m.docs_nav_docs(), url: "/docs", icon: <BookIcon /> }]
+        ? [{ text: "Docs", url: "/docs", icon: <BookIcon /> }]
         : []),
-      {
-        text: m.docs_nav_blog(),
-        url: "/blog",
-        icon: <MessageSquareMoreIcon />,
-      },
-      {
-        text: m.docs_nav_changelog(),
-        url: "/changelog",
-        icon: <NewspaperIcon />,
-      },
-      { text: m.docs_nav_community(), url: "/community", icon: <UsersIcon /> },
+      { text: "Blog", url: "/blog", icon: <MessageSquareMoreIcon /> },
+      { text: "Changelog", url: "/changelog", icon: <NewspaperIcon /> },
+      { text: "Community", url: "/community", icon: <UsersIcon /> },
     ],
     githubUrl: repoUrl,
   };

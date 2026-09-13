@@ -1,13 +1,10 @@
-import type { Extension } from "@codemirror/state";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
+
+import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
-import {
-  getItemsByID,
-  getItemsByKey,
-  resolveIndexedKeyLibrary,
-} from "@zotlit/db";
+import { getItemsByID } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
@@ -32,28 +29,22 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
-import { createNoteInteractively } from "@/services/note-feature";
-import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
+import { createNoteWithToast } from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
-  createProfile: CreateProfile;
-  importProfile: ImportProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   db: DatabaseService;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "on">;
@@ -78,7 +69,6 @@ export interface AmbiguousCitekey {
 interface CitekeyEditorEvents {
   "db-unavailable": (citekey: string) => void;
   "citekey-not-found": (citekey: string) => void;
-  "item-unavailable": (reason: "database" | "item") => void;
   /** The citekey names several Items; a UI subscriber asks which one to open. */
   "citekey-ambiguous": (ambiguous: AmbiguousCitekey) => void;
 }
@@ -94,13 +84,10 @@ interface CitekeyEditorEvents {
  * reconfigure — the mechanism `registerEditorExtension` documents.
  */
 export class CitekeyEditor extends Service<void> {
-  readonly #createProfile;
-  readonly #importProfile;
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
   readonly #noteFeature;
-  readonly #zoteroPref;
   readonly #db;
   readonly #citationText;
   readonly #citationPopover;
@@ -123,12 +110,9 @@ export class CitekeyEditor extends Service<void> {
   constructor(deps: CitekeyEditorDeps) {
     super();
     this.#app = deps.app;
-    this.#createProfile = deps.createProfile;
-    this.#importProfile = deps.importProfile;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#noteFeature = deps.noteFeature;
-    this.#zoteroPref = deps.zoteroPref;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
@@ -361,34 +345,6 @@ export class CitekeyEditor extends Service<void> {
     await this.#openItem(candidate, pane);
   }
 
-  /** Opens an exact Item using current database identity and Literature Note paths. */
-  async openIndexedKey(
-    indexedKey: string,
-    pane: NavigationPane,
-  ): Promise<void> {
-    await this.#noteIndex.whenIndexed();
-    if (this.#db.state !== "ready") {
-      this.#emitter.emit("item-unavailable", "database");
-      return;
-    }
-    let item;
-    try {
-      const selector = resolveIndexedKeyLibrary(this.#db.client, indexedKey);
-      item = selector
-        ? getItemsByKey(this.#db.client, selector.libraryID, [selector.key])[0]
-        : undefined;
-    } catch (error) {
-      logger.warn("Cannot read Item for navigation", { indexedKey, error });
-      this.#emitter.emit("item-unavailable", "database");
-      return;
-    }
-    if (!item) {
-      this.#emitter.emit("item-unavailable", "item");
-      return;
-    }
-    await this.#openItem(item, pane);
-  }
-
   /**
    * @param citekey the key the Item was reached by, for the not-found report
    *   an exact candidate has no key to name.
@@ -399,9 +355,7 @@ export class CitekeyEditor extends Service<void> {
     citekey?: string,
   ): Promise<void> {
     const { workspace } = this.#app;
-    const existing = resolveLiteratureNoteWithWarning(
-      this.#noteIndex.getNotesByItemKey(item.indexedKey),
-    );
+    const existing = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
     if (existing) {
       logger.debug("Opened citekey note", {
         indexedKey: item.indexedKey,
@@ -424,17 +378,7 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
 
-    const file = await createNoteInteractively(
-      {
-        app: this.#app,
-        noteFeature: this.#noteFeature,
-        createProfile: this.#createProfile,
-        importProfile: this.#importProfile,
-        zoteroPref: this.#zoteroPref,
-      },
-      zoteroItem,
-      { direct: true },
-    );
+    const file = await createNoteWithToast(this.#noteFeature, zoteroItem);
     if (!file) {
       logger.debug("Citekey note creation cancelled", {
         indexedKey: item.indexedKey,

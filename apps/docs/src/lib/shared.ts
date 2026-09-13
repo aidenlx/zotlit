@@ -4,8 +4,8 @@
 import * as v from "valibot";
 
 export const appName = "ZotLit";
-/** The Docs Release Line selected by the Worker configuration. */
-export type DocsLine = "beta" | "production";
+export const appDescription =
+  "ZotLit brings your Zotero library into Obsidian. Create literature notes, insert citations, and annotate PDFs without leaving your vault.";
 /** Origin every canonical URL, OG card, sitemap entry, and feed link resolves against. */
 export const baseURL = "https://zotlit.aidenlx.site";
 export const docsRoute = "/docs";
@@ -20,7 +20,7 @@ export const gitConfig = {
 };
 
 /** The repository branch that publishes each documentation line. */
-export function docsSourceBranch(docsLine: DocsLine) {
+export function docsSourceBranch(docsLine: Cloudflare.Env["DOCS_LINE"]) {
   return docsLine === "beta" ? "next" : gitConfig.branch;
 }
 
@@ -45,7 +45,6 @@ export const ogTypes = [
   "blog",
   "changelog",
   "docs",
-  "workbench",
 ] as const;
 export type OgType = (typeof ogTypes)[number];
 
@@ -62,7 +61,7 @@ export function ogImageUrl(type: OgType, slugs: string[] = []) {
  * stands in for `Temporal` (policies/temporal-dates.md) because workerd carries
  * no Temporal API.
  *
- * `content.config.ts` reads frontmatter through this schema, and the build-time
+ * `source.config.ts` reads frontmatter through this schema, and the build-time
  * OG card scan reads the same frontmatter through it again.
  */
 export const publishedOn = v.pipe(
@@ -83,7 +82,7 @@ export function currentYear() {
 
 /**
  * Publication day in the reader's long form. Collections normalize the day to
- * its ISO form (see `content.config.ts`), so the value parses as a UTC instant
+ * its ISO form (see `source.config.ts`), so the value parses as a UTC instant
  * and formats in UTC. `Date` stands in for `Temporal`
  * (policies/temporal-dates.md) because workerd carries no Temporal API.
  */

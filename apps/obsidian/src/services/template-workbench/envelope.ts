@@ -1,22 +1,19 @@
-import type { ContractRoot } from "@zotlit/db";
-import type {
-  FrontmatterLanguage,
-  FrontmatterMergeStrategy,
-} from "@zotlit/templates/constants";
 // The JSON envelope every Workbench command answers with, and its diagnostics.
 //
 // Diagnostic `message` and `hint` text stays literal English: `code` is the
 // stable machine surface agent scripts read, the message is context for a human
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
-import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
+
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
+} from "@zotlit/templates/constants";
+import { TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
-import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
-import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import type { ProfileDiagnostic } from "@/services/profile/service";
 import { InertTemplateError } from "@/services/template/errors";
 import { errorContext } from "@/services/template/service";
 import type {
@@ -26,15 +23,14 @@ import type {
 
 import type { TemplateDataLoadResult } from "./data";
 import type { SchemaAsset } from "./schema";
-import type { RenderTemplate } from "./vocabulary";
 
 /**
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
- * commands, versioned on its own (ADR 0026). Version 5 reports each Profile
- * row's `id` as a `ProfileSelector` (`"default"` for the built-in default
- * Profile) instead of `null`.
+ * commands, versioned on its own (ADR 0026). The value has stood since
+ * 2.0.0-beta.4, when `@zotlit/db`'s `CONTRACT_VERSION` still stamped this
+ * envelope as well.
  */
-export const CONTRACT_VERSION = 5;
+export const CONTRACT_VERSION = 2;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -81,27 +77,6 @@ export const DIAGNOSTIC_HINTS = {
     "Choose a field key ZotLit does not manage; the reservedKeys list from frontmatter-status names every key that is off limits.",
   FIELD_NOT_FOUND:
     "Run frontmatter-status to see the configured keys, then use one of them.",
-  DOCUMENT_NOT_FOUND:
-    "Restore the referenced document, select another document, or provide a source override.",
-  UNKNOWN_PROFILE_STAMP: UNKNOWN_PROFILE_HINT,
-  DUPLICATE_MANAGED_BLOCK:
-    "Keep at most one Managed Block in the document, then render it again.",
-  MISSING_ANNOTATION_SECTION:
-    "Add one standalone --- zotlit:annotation --- line after the note source. Its annotation source extends to EOF and can be empty; template-source template=annotation provides the built-in Liquid source.",
-  DUPLICATE_ANNOTATION_SECTION:
-    "Keep one --- zotlit:annotation --- header, followed by the annotation source through EOF.",
-  UNKNOWN_SECTION_HEADER:
-    "Use the exact standalone --- zotlit:annotation --- header. The note source starts after the manifest.",
-  RESERVED_ANNOTATION_PARTIAL:
-    "Rename the manifest partial named 'annotation' and update its calls. The Annotation Section supplies Profile annotation rendering.",
-  DOCUMENT_INVALID:
-    "Correct the document validation error, then inspect or render it again.",
-  RESERVED_PARTIAL_NAME:
-    "Rename the Shared Partial file to a name ZotLit does not already use. 'citation' names the Citation Template, and 'filename', 'note', 'annotation', and 'content' name the Literature Note Template slots.",
-  MISSING_PARTIAL:
-    "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
-  BUNDLED_PARTIAL:
-    "The partial named in details.template is still carried in a Profile document's manifest. Open that document in the Template Workbench and run Unpack partials, which writes zotlit-partial.<name>.md and clears the manifest entry.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -139,7 +114,6 @@ export type WorkbenchCommand =
       | "data"
       | "schema"
       | "render"
-      | "document-render"
       | "guide"
       | "source"}`
   | `zotlit:frontmatter-${"status" | "eval" | "set" | "remove" | "reorder"}`;
@@ -172,27 +146,6 @@ export interface FrontmatterEvalRow {
   error?: { message: string };
 }
 
-/** One Profile row in template-status. */
-export interface LiteratureNoteProfileRow {
-  id: ProfileSelector;
-  label: string;
-  document: string | null;
-  bindings?: ResolvedLiteratureNoteProfileBindings;
-}
-
-/** One installed or referenced Literature Note Template document. */
-export interface LiteratureNoteDocumentRow {
-  reference: string;
-  path: string | null;
-  validation:
-    | {
-        state: "valid";
-        manifest: object;
-        hasManagedBlock: boolean;
-      }
-    | { state: "invalid" | "missing"; diagnostic: Diagnostic };
-}
-
 /** The facts a command echoes back beside its result, all optional because a
  *  selector-level failure is answered before any of them is resolved. */
 interface EnvelopeFacts {
@@ -218,13 +171,9 @@ export type EnvelopeTail =
       schemas?: Readonly<Record<ContractRoot, SchemaAsset>>;
       javascriptTemplatesEnabled?: boolean;
       templates?: readonly TemplateFileStatus[];
-      profiles?: readonly LiteratureNoteProfileRow[];
-      profileDiagnostics?: readonly ProfileDiagnostic[];
-      documents?: readonly LiteratureNoteDocumentRow[];
       /** The object a Template reads as `zt`. */
       zt?: unknown;
       markdown?: string;
-      render?: { create: string; update: string | null };
       language?: TemplateLanguage;
       source?: string;
       /** Configured Managed Frontmatter fields, in configuration order. */
@@ -291,16 +240,15 @@ export function dataLoadDiagnostic(
  * Classify a fault raised while a command evaluated Template data or rendered
  * a Template.
  *
- * @param template - The Template the render command invoked: a Legacy
- *   Template File slot, or the Citation Template. The data command passes
- *   `null`: reading a data root runs no Template of its own, so
+ * @param template - The slot the render command invoked. The data command
+ *   passes `null`: reading a data root runs no Template of its own, so
  *   `details.template` then appears only when the error itself names one (see
- *   the label the annotation root's citation getter attaches).
+ *   the `cite` label the annotation root's citation getter attaches).
  */
 export function templateFaultDiagnostic(
   error: unknown,
   options: {
-    template: RenderTemplate | null;
+    template: TemplateSlot | null;
     compileErrors: ReadonlyMap<string, CompileError>;
   },
 ): Diagnostic {
@@ -313,14 +261,6 @@ export function templateFaultDiagnostic(
   if (error instanceof InertTemplateError) {
     const details = named === null ? undefined : { template: named };
     return diagnostic("ETA_OPT_IN_REQUIRED", message, details);
-  }
-
-  // The engine reached a name nothing is registered under, which for a
-  // template is a Shared Partial the vault holds no document for.
-  if (error instanceof MissingTemplateError) {
-    return diagnostic("MISSING_PARTIAL", message, {
-      template: error.templateName,
-    });
   }
 
   const compileError =

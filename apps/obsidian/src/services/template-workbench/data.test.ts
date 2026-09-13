@@ -2,16 +2,11 @@ import Ajv2020 from "ajv/dist/2020";
 import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
-import { citekeysToCiteTemplateData } from "@zotlit/db";
-import type { ContractRoot } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
-import citationSchema from "@zotlit/db/contract/citation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { CITATION_EXAMPLE_IDS } from "@zotlit/workbench/render";
-import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
@@ -21,7 +16,7 @@ import {
   TEMPLATE_DATA_COMMAND,
   TEMPLATE_RENDER_COMMAND,
 } from "./cli";
-import { loadCitationData, loadTemplateData } from "./data";
+import { loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
 
 describe("zotlit:template-data with the real loader", () => {
@@ -51,7 +46,6 @@ describe("zotlit:template-data with the real loader", () => {
     ["note", "MAIN2345", noteSchema],
     ["annotation", "ANNA2345", annotationSchema],
     ["filename", "MAIN2345", filenameSchema],
-    ["citation", "MAIN2345", citationSchema],
   ] as const)(
     "serializes fixture data that conforms to the %s schema",
     async (root, key, schema) => {
@@ -77,7 +71,7 @@ describe("zotlit:template-data with the real loader", () => {
     );
 
     expect(result).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 2,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -104,12 +98,12 @@ describe("zotlit:template-data with the real loader", () => {
       code: "ETA_OPT_IN_REQUIRED",
     },
     {
-      error: new Error("citation cannot compile"),
+      error: new Error("cite cannot compile"),
       compileError: "Unexpected token",
       code: "TEMPLATE_COMPILE_ERROR",
     },
     {
-      error: new Error("citation render failed"),
+      error: new Error("cite render failed"),
       compileError: null,
       code: "TEMPLATE_RENDER_ERROR",
     },
@@ -121,7 +115,7 @@ describe("zotlit:template-data with the real loader", () => {
       expect(
         await runTemplateData(fixture.deps, "ANNA2345", "annotation"),
       ).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 2,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         request: {
@@ -135,7 +129,7 @@ describe("zotlit:template-data with the real loader", () => {
         },
         diagnostic: {
           code,
-          details: { template: "citation" },
+          details: { template: "cite" },
         },
       });
     },
@@ -234,7 +228,7 @@ describe("zotlit:template-data with the real loader", () => {
     const result = await runTemplateData(fixture.deps, "MAIN2345", "filename");
 
     expect(result).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 2,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -257,114 +251,6 @@ describe("zotlit:template-data with the real loader", () => {
       },
     });
     expect((result.zt as Record<string, unknown>).annotations).toBeUndefined();
-  });
-
-  it("cites the selected Item alone, with no locator", async () => {
-    using fixture = createFixture();
-
-    const result = await runTemplateData(fixture.deps, "MAIN2345", "citation");
-
-    expect(result).toMatchObject({
-      command: TEMPLATE_DATA_COMMAND,
-      ok: true,
-      request: { key: "MAIN2345", root: "citation", format: "json" },
-      zt: {
-        variant: "main",
-        citations: [
-          {
-            item: { citationKey: "fixture2024", citekey: "fixture2024" },
-            locator: null,
-            label: null,
-            labelShort: "p.",
-            suppressAuthor: false,
-            prefix: null,
-            suffix: null,
-          },
-        ],
-      },
-    });
-    const zt = result.zt as {
-      items: unknown[];
-      citations: { item: unknown }[];
-    };
-    expect(zt.items).toEqual([zt.citations[0]!.item]);
-  });
-
-  it("renders the Citation Template for the Item an Indexed Key names", async () => {
-    using fixture = createFixture();
-
-    const result = await runTemplateRender(
-      fixture.deps,
-      "MAIN2345",
-      "citation",
-    );
-
-    expect(result).toMatchObject({
-      command: TEMPLATE_RENDER_COMMAND,
-      ok: true,
-      request: { key: "MAIN2345", template: "citation", variant: "main" },
-      template: { name: "citation", language: "liquid" },
-    });
-    // The stub Citation Template echoes the data it received as JSON.
-    expect(JSON.parse(result.markdown as string)).toMatchObject({
-      variant: "main",
-      citations: [
-        {
-          item: { citationKey: "fixture2024" },
-          locator: null,
-          label: null,
-          suppressAuthor: false,
-          prefix: null,
-          suffix: null,
-        },
-      ],
-    });
-  });
-
-  it.each(CITATION_EXAMPLE_IDS)(
-    "returns the %s example set without reading the database",
-    async (example) => {
-      using fixture = createFixture();
-
-      const result = await runTemplateData(
-        fixture.deps,
-        { example },
-        "citation",
-      );
-
-      expect(result).toMatchObject({
-        ok: true,
-        request: { example, root: "citation", format: "json" },
-        zt: { variant: "main" },
-      });
-      const zt = result.zt as { citations: { item: { citekey: string } }[] };
-      expect(zt.citations.length).toBeGreaterThan(0);
-      for (const citation of zt.citations) {
-        expect(citation.item.citekey).not.toBe("fixture2024");
-      }
-    },
-  );
-
-  it("cites the journal article and the book for the two-items example", async () => {
-    using fixture = createFixture();
-
-    const result = await runTemplateData(
-      fixture.deps,
-      { example: "two-items" },
-      "citation",
-    );
-
-    const zt = result.zt as {
-      citations: { item: { citekey: string; itemType: string } }[];
-    };
-    expect(zt.citations.map(({ item }) => item.citekey)).toEqual([
-      "ioannidisWhyMost2005",
-      "Kahneman2011",
-    ]);
-    expect(zt.citations.map(({ item }) => item.itemType)).toEqual([
-      "journalArticle",
-      "book",
-    ]);
   });
 
   it.each([
@@ -525,18 +411,8 @@ function createFixture(options?: {
         templates: {
           ready: Promise.resolve(),
           compileErrors: options?.compileError
-            ? new Map([["citation", { message: options.compileError }]])
+            ? new Map([["cite", { message: options.compileError }]])
             : new Map(),
-          renderCitation: (refs, variant) => {
-            if (options?.renderError) throw options.renderError;
-            if (options?.render) {
-              return options.render(
-                "citation",
-                citekeysToCiteTemplateData(refs, variant),
-              );
-            }
-            return "Fixture citation";
-          },
           render: (name, data) => {
             if (options?.renderError) throw options.renderError;
             if (options?.render) return options.render(name, data);
@@ -562,8 +438,8 @@ function createFixture(options?: {
 
 async function runTemplateData(
   deps: FixtureDeps,
-  selector: string | { example: CitationExampleId },
-  root: ContractRoot = "note",
+  key: string,
+  root: "note" | "annotation" | "filename" = "note",
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: "1.2.3",
@@ -571,22 +447,11 @@ async function runTemplateData(
       vault: { name: "Test Vault", path: "/vaults/test" },
       source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
     }),
-    loadCitation: (citation, variant) =>
-      loadCitationData(deps, citation, variant),
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
     templates: {
-      getCitationTemplateStatus: () => ({
-        path: "Templates/zotlit-citation.md",
-        customized: false,
-        language: "liquid" as const,
-        inertPath: null,
-        compileError: null,
-      }),
-      renderCitationData: () => "",
       javascriptTemplatesEnabled: false,
       compileErrors: deps.templates.compileErrors,
       getTemplateFileStatuses: () => [],
-      getPartialDocument: () => null,
       render: deps.templates.render,
       renderFilename: (data) => deps.templates.render("filename", data),
       analyzeRootVariables: () => null,
@@ -606,7 +471,7 @@ async function runTemplateData(
   });
   return JSON.parse(
     await handlers[TEMPLATE_DATA_COMMAND]({
-      ...(typeof selector === "string" ? { key: selector } : selector),
+      key,
       root,
       format: "json",
     }),
@@ -616,7 +481,6 @@ async function runTemplateData(
 async function runTemplateRender(
   deps: FixtureDeps,
   key: string,
-  template: "note" | "citation" = "note",
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: "1.2.3",
@@ -624,23 +488,10 @@ async function runTemplateRender(
       vault: { name: "Test Vault", path: "/vaults/test" },
       source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
     }),
-    loadCitation: (selector, variant) =>
-      loadCitationData(deps, selector, variant),
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
     templates: {
-      getCitationTemplateStatus: () => ({
-        path: "Templates/zotlit-citation.md",
-        customized: false,
-        language: "liquid" as const,
-        inertPath: null,
-        compileError: null,
-      }),
-      // Stands in for the Citation Template, so a test reads the data the
-      // real loader handed it.
-      renderCitationData: (data) => JSON.stringify(data),
       javascriptTemplatesEnabled: false,
       compileErrors: deps.templates.compileErrors,
-      getPartialDocument: () => null,
       getTemplateFileStatuses: () => [
         {
           name: "note",
@@ -674,7 +525,7 @@ async function runTemplateRender(
   return JSON.parse(
     await handlers[TEMPLATE_RENDER_COMMAND]({
       key,
-      template,
+      template: "note",
       format: "json",
     }),
   ) as Record<string, unknown>;

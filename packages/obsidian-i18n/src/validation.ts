@@ -29,8 +29,7 @@ export class LanguagePackSchemaVersionError extends Error {
 
 export const LANGUAGE_PACK_LIMITS = {
   bytes: 256 * 1024,
-  // Sanity bound on entry count; the byte cap above is the size guard.
-  messages: 2_000,
+  messages: 1_000,
   textLength: 10_000,
   depth: 16,
 } as const;

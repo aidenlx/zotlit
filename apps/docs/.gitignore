@@ -10,6 +10,3 @@ dist-ssr
 .vinxi
 __unconfig*
 todos.json
-
-# Keep generated Paraglide files out of Turbo inputs on cold and warm trees.
-src/paraglide/

@@ -36,14 +36,11 @@ describe("renderSuggestion library label", () => {
   });
 });
 
-/** The trailing library label's text, or `null` when no label was rendered. */
+/** The aux-slot library label's text, or `null` when no label was rendered. */
 function libraryText(library: AvailableLibrary | null): string | null {
   const el = document.createElement("div");
   renderSuggestion(settings, hit(library), el);
-  return (
-    el.querySelector(".zt-suggestion-flair .zt-suggestion-flair-text")
-      ?.textContent ?? null
-  );
+  return el.querySelector(".suggestion-aux .library")?.textContent ?? null;
 }
 
 function hit(library: AvailableLibrary | null): SearchHit {

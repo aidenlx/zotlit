@@ -2,10 +2,6 @@ import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import {
-  buildImportProfileProtocolUrl,
-  parseImportProfileProtocolQuery,
-} from "./url";
-import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
@@ -26,7 +22,6 @@ import {
 } from "./url";
 
 const SOURCE = "a1b2c3d4";
-const PROFILE = "V1StGXR8Z5jd";
 
 /** Reconstruct the flat record Obsidian decodes from an `obsidian://zotlit/<action>` link. */
 function decode(url: string): Record<string, string> {
@@ -94,29 +89,6 @@ describe("zotlit obsidian protocol", () => {
   it("rejects an unknown scope", () => {
     expect(() =>
       parseProtocolQuery({ item: "42", "source-id": SOURCE, scope: "body" }),
-    ).toThrow();
-  });
-
-  it("round-trips an explicit Literature Note Profile", () => {
-    const url = buildProtocolUrl("update", 42, {
-      sourceId: SOURCE,
-      profileId: PROFILE,
-    });
-    expect(url).toBe(
-      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&profile=${PROFILE}`,
-    );
-    expect(parseProtocolQuery(decode(url))).toMatchObject({
-      profileId: PROFILE,
-    });
-  });
-
-  it.each([
-    "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
-    "V1StGXR8_Z5j",
-    "V1StGXR8-Z5j",
-  ])("rejects an invalid Literature Note Profile id: %s", (profile) => {
-    expect(() =>
-      parseProtocolQuery({ item: "42", "source-id": SOURCE, profile }),
     ).toThrow();
   });
 });
@@ -211,16 +183,6 @@ describe("zotlit update-many protocol", () => {
       parseProtocolBatchQuery({ items: "1,x,3", "source-id": SOURCE }),
     ).toThrow();
   });
-
-  it("round-trips an explicit Literature Note Profile", () => {
-    const url = buildBatchProtocolUrl([1, 2], {
-      sourceId: SOURCE,
-      profileId: PROFILE,
-    });
-    expect(parseProtocolBatchQuery(decode(url))).toMatchObject({
-      profileId: PROFILE,
-    });
-  });
 });
 
 describe("batchUpdateRequestSchema (HTTP body)", () => {
@@ -235,12 +197,6 @@ describe("batchUpdateRequestSchema (HTTP body)", () => {
     expect(
       v.parse(batchUpdateRequestSchema, { items: [1], scope: "metadata" }),
     ).toEqual({ items: [1], scope: "metadata" });
-  });
-
-  it("parses an explicit Literature Note Profile", () => {
-    expect(
-      v.parse(batchUpdateRequestSchema, { items: [1], profile: PROFILE }),
-    ).toMatchObject({ profileId: PROFILE });
   });
 
   it("rejects an empty item list", () => {
@@ -396,27 +352,5 @@ describe("protocolSourceMatches", () => {
 
   it("rejects when expected is null", () => {
     expect(protocolSourceMatches(query, null)).toBe(false);
-  });
-});
-
-describe("clipboard Profile handoff", () => {
-  it("carries only the clipboard flag and accepts Obsidian's action metadata", () => {
-    expect(buildImportProfileProtocolUrl()).toBe(
-      "obsidian://zotlit/import-profile?clipboard=true",
-    );
-    expect(
-      parseImportProfileProtocolQuery({
-        action: "zotlit/import-profile",
-        clipboard: "true",
-      }),
-    ).toEqual({ clipboard: "true" });
-  });
-  it.each([
-    {},
-    { clipboard: "false" },
-    { source: "document" },
-    { clipboard: true },
-  ])("refuses a handoff without the explicit clipboard flag: %o", (query) => {
-    expect(() => parseImportProfileProtocolQuery(query)).toThrow();
   });
 });

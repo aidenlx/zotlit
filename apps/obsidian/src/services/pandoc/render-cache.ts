@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
 // The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
+
+import { createHash } from "node:crypto";
 
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -8,7 +9,6 @@ import { HeldReads } from "@/lib/held-reads";
 import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
-import type { ProfileService } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -49,7 +49,6 @@ interface BibliographyRenderEvents {
 }
 
 export interface BibliographyRenderCacheOptions {
-  profile: Pick<ProfileService, "ready" | "on">;
   db: Pick<DatabaseService, "on">;
   pandocEngine: Pick<
     PandocEngineService,
@@ -120,7 +119,6 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #engine;
   readonly #zoteroPref;
   readonly #settings;
-  readonly #profile;
   readonly #emitter = createNanoEvents<BibliographyRenderEvents>();
   readonly #styles = new InstalledStyleCache();
   /** Bibliography renders by {@link renderKey}. */
@@ -144,7 +142,6 @@ export class BibliographyRenderCache extends Service<void> {
     this.#engine = options.pandocEngine;
     this.#zoteroPref = options.zoteroPref;
     this.#settings = options.settings;
-    this.#profile = options.profile;
     this.ready = this.#load();
   }
 
@@ -258,8 +255,7 @@ export class BibliographyRenderCache extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await Promise.all([this.#settings.ready, this.#profile.ready]);
-    stack.defer(this.#profile.on("changed", () => this.#invalidate()));
+    await this.#settings.ready;
 
     stack.defer(this.#db.on("changed", () => this.#invalidate()));
     stack.defer(this.#engine.subscribe(() => this.#invalidate()));
@@ -304,7 +300,7 @@ export class BibliographyRenderCache extends Service<void> {
     this.#vault = next;
     logger.info(
       held
-        ? "Citation presentation settings changed"
+        ? "Vault citation presentation changed"
         : "Vault citation presentation selected",
       { styleId: next.styleId, locale: next.locale },
     );

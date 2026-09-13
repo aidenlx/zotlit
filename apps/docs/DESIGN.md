@@ -2,12 +2,7 @@
 
 Theme: **"Manuscript & Machine"** — cream ground, navy ink, deep-orange accent.
 One token system (`--color-fd-*` overrides in `src/styles.css`) drives all
-surfaces: landing, changelog, blog, docs, and the Template Workbench.
-
-Compose each surface around the reader's task. Editorial pages lead with
-content; the Workbench gives space to editing and inspecting the result.
-Apply the shared brand rules together with the relevant per-surface section.
-Use [the brand specification](../../docs/brand.md) for logo and wordmark assets.
+surfaces: landing, changelog, blog, docs.
 
 ## Mechanism
 
@@ -73,7 +68,7 @@ tracking, weight 500–600. Real uppercase over the bundled mono replaces the ol
 stays razor-legible at any size, including shrunk-down OG cards, where
 synthesized small-caps crowd and blur.
 
-On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
+Every apparatus label site-wide is mono uppercase:
 
 - Home nav links
 - Landing eyebrow, feature terms, and feature links
@@ -89,9 +84,6 @@ the same mono-uppercase register.
 text, not labels — so the v2 banner notice, tooltips, and any
 sentence-shaped copy keep their upright case and sans body voice. The Archivo
 wordmark likewise stays outside label treatment.
-
-The [Template Workbench](WORKBENCH-DESIGN.md) uses Inter sentence case
-for its utility chrome, including labels and pane headings.
 
 ## Font loading
 
@@ -122,11 +114,6 @@ The Archivo wordmark subset needs no preload — it sits under Vite's
 `assetsInlineLimit`, so the build inlines it into the stylesheet.
 
 ## Per-surface
-
-### Template Workbench (`/workbench`)
-
-Extracted to [WORKBENCH-DESIGN.md](WORKBENCH-DESIGN.md) — audience, layout,
-control vocabulary, typography, responsive folds, and the enforcement table.
 
 ### Landing (`src/routes/_home/index.tsx`)
 

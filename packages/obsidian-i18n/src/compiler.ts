@@ -2,11 +2,7 @@
 
 import mFunctionMatcherPlugin from "@inlang/plugin-m-function-matcher";
 import messageFormatPlugin from "@inlang/plugin-message-format";
-import {
-  loadProjectInMemory,
-  newProject,
-  selectBundleNested,
-} from "@inlang/sdk";
+import { loadProjectFromDirectory, selectBundleNested } from "@inlang/sdk";
 import type {
   BundleNested,
   Declaration,
@@ -16,6 +12,7 @@ import type {
   Match,
   Pattern,
 } from "@inlang/sdk";
+import fs from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
@@ -55,33 +52,11 @@ export class LanguagePackCompilerError extends Error {
   }
 }
 
-/** Which bundles a consumer's artifacts carry, by bundle ID. */
-export type MessageFilterOptions = {
-  /** Bundle-ID prefixes to leave out; a nested namespace is `"zotero."`. */
-  excludeMessagePrefixes?: readonly string[];
-  /** When set, only bundles under one of these prefixes are carried. */
-  includeMessagePrefixes?: readonly string[];
-  /**
-   * Included Messages: bundle IDs carried although a prefix rule would drop
-   * them. The facade exports one under its literal ID.
-   */
-  includeMessages?: readonly string[];
-};
-
-export type MessageDataOptions = MessageFilterOptions & {
+export type CompileOptions = {
   root?: string;
   project?: string;
-};
-
-export type CompileOptions = MessageDataOptions & {
   output?: string;
-  /**
-   * Generated ESM namespace modules, keyed by `*-messages.ts` file name. Each
-   * module re-exports only Messages under one of its bundle-ID prefixes.
-   */
-  scopedMessageModules?: Readonly<
-    Record<`${string}-messages.ts`, readonly string[]>
-  >;
+  excludeMessagePrefixes?: readonly string[];
   /**
    * Key prefixes whose Messages become Target-Locale Messages: bundled as a
    * per-locale subset and rendered in the resolved target locale regardless of
@@ -89,12 +64,6 @@ export type CompileOptions = MessageDataOptions & {
    */
   targetLocaleMessagePrefixes?: readonly string[];
 };
-
-/** Options the Obsidian emission step reads beyond the message data itself. */
-export type EmitOptions = Pick<
-  CompileOptions,
-  "targetLocaleMessagePrefixes" | "includeMessages" | "scopedMessageModules"
->;
 
 export type RawSourceCatalog = {
   locale: string;
@@ -138,34 +107,6 @@ export type CompilerReports = {
   untranslated: UntranslatedMessages[];
   undeclaredInputs: UndeclaredInputMessage[];
   missingBaseLocale: MissingBaseMessages | undefined;
-};
-
-/** One bundle the base locale defines: its input contract and each locale's eval-free IR. */
-export type CompiledMessage = {
-  id: string;
-  inputs: { name: string; type: string }[];
-  /** Keyed by locale; a locale dropped for an undeclared input is absent. */
-  messages: Record<string, PackMessage>;
-};
-
-/**
- * The message-data step's output: every selected bundle compiled to the IR
- * every emitter shares, plus the compiler reports. Sorted by bundle ID.
- */
-export type MessageData = CompilerReports & {
-  baseLocale: string;
-  locales: string[];
-  sourceCatalogs: RawSourceCatalog[];
-  sourcePaths: string[];
-  messages: CompiledMessage[];
-};
-
-export type MessageDataResult = MessageData & {
-  projectPath: string;
-  /** {@link formatCompilerWarnings}'s report lines, ready for a caller's log sink. */
-  warnings: string[];
-  /** Every input a rebuild should watch: `settings.json` plus every discovered source catalog. */
-  watchPaths: string[];
 };
 
 export type GeneratedArtifact = {
@@ -280,8 +221,12 @@ const RESERVED_IDENTIFIERS = new Set([
 ]);
 
 /**
- * Installed plugins used for every compile. Project settings may still list
- * CDN modules for Inlang editors; the compiler clears those in memory.
+ * The two Inlang plugins a project's `settings.json` normally declares as
+ * `modules` and the SDK fetches from jsdelivr at load time. Supplying them
+ * here keeps every compile hermetic — no network round trip, no dependency on
+ * the CDN being reachable. A project whose `settings.json` still lists them
+ * (e.g. for the Sherlock IDE extension) is unaffected: the SDK loads its own
+ * fetched copies alongside these.
  */
 export const INLANG_PLUGINS: InlangPlugin[] = [
   messageFormatPlugin,
@@ -291,130 +236,83 @@ export const INLANG_PLUGINS: InlangPlugin[] = [
 export async function compile(
   options: CompileOptions = {},
 ): Promise<CompileResult> {
-  const { projectPath, outputDirectory } = resolveCompilePaths(options);
-  const generated = await withProject(projectPath, (input) =>
-    compileProject(input, options),
-  );
-  await writeOutput(generated, outputDirectory);
-  return {
-    messageCount: generated.messageCount,
-    sourcePaths: generated.sourcePaths,
-    untranslated: generated.untranslated,
-    undeclaredInputs: generated.undeclaredInputs,
-    missingBaseLocale: generated.missingBaseLocale,
-    projectPath,
-    outputDirectory,
-    warnings: compilerWarningLines(generated),
-    watchPaths: watchPaths(projectPath, generated.sourcePaths),
-  };
-}
-
-/**
- * The message-data step on its own: loads the project and compiles the
- * selected bundles to the IR without emitting any Obsidian artifact. A
- * consumer with its own output format — the Companion's Fluent files — starts
- * here, so both consumers agree on message semantics.
- */
-export async function loadMessageData(
-  options: MessageDataOptions = {},
-): Promise<MessageDataResult> {
-  const { projectPath } = resolveCompilePaths(options);
-  const data = await withProject(projectPath, (input) =>
-    compileMessageData(input, options),
-  );
-  return {
-    ...data,
-    projectPath,
-    warnings: compilerWarningLines(data),
-    watchPaths: watchPaths(projectPath, data.sourcePaths),
-  };
-}
-
-function watchPaths(projectPath: string, sourcePaths: string[]): string[] {
-  return [join(projectPath, "settings.json"), ...sourcePaths];
-}
-
-async function withProject<T>(
-  projectPath: string,
-  run: (input: CompileProjectInput) => Promise<T>,
-): Promise<T> {
-  let project: InlangProject;
-  try {
-    const settings = JSON.parse(
-      await readFile(join(projectPath, "settings.json"), "utf8"),
-    );
-    project = await loadProjectInMemory({
-      blob: await newProject({ settings: { ...settings, modules: [] } }),
-      providePlugins: INLANG_PLUGINS,
-    });
-  } catch (error) {
+  const compilePaths = resolveCompilePaths(options);
+  const { projectPath, outputDirectory } = compilePaths;
+  const project = await loadProjectFromDirectory({
+    path: projectPath,
+    fs,
+    providePlugins: INLANG_PLUGINS,
+  }).catch(async (error: unknown) => {
     const sourceCatalogs =
       await readConfiguredSourceCatalogsForDiagnostics(projectPath);
-    throw await positionedError(projectPath, error, { sourceCatalogs });
-  }
+    throw await positionedError(projectPath, error, {
+      sourceCatalogs,
+    });
+  });
 
   try {
+    const settings = await project.settings.get();
     const sourceCatalogs = await discoverSourceCatalogs(
       project,
       projectPath,
-      await project.settings.get(),
+      settings,
     );
-    await project
-      .importFiles({
-        pluginKey: messageFormatPlugin.key,
-        files: sourceCatalogs.map(({ locale, contents }) => ({
-          locale,
-          content: Buffer.from(contents),
-        })),
-      })
-      .catch(async (error: unknown) => {
-        throw await positionedError(projectPath, error, { sourceCatalogs });
-      });
     const projectErrors = await project.errors.get();
     if (projectErrors.length > 0) {
       throw await positionedError(projectPath, projectErrors[0]!, {
         sourceCatalogs,
       });
     }
-    return await run({ project, sourceCatalogs });
+
+    const generated = await compileProject(
+      { project, sourceCatalogs },
+      {
+        excludeMessagePrefixes: options.excludeMessagePrefixes,
+        targetLocaleMessagePrefixes: options.targetLocaleMessagePrefixes,
+      },
+    );
+    await writeOutput(generated, outputDirectory);
+    return {
+      messageCount: generated.messageCount,
+      sourcePaths: generated.sourcePaths,
+      untranslated: generated.untranslated,
+      undeclaredInputs: generated.undeclaredInputs,
+      missingBaseLocale: generated.missingBaseLocale,
+      projectPath,
+      outputDirectory,
+      warnings: compilerWarningLines(generated),
+      watchPaths: [
+        join(projectPath, "settings.json"),
+        ...generated.sourcePaths,
+      ],
+    };
   } finally {
     await project.close();
   }
 }
 
 export async function compileProject(
-  input: CompileProjectInput,
-  options: MessageFilterOptions & EmitOptions = {},
-): Promise<GeneratedArtifacts> {
-  const data = await compileMessageData(input, options);
-  return emitObsidianArtifacts(data, options);
-}
-
-/**
- * Compiles every selected bundle to the IR and produces the three reports.
- * The base locale alone defines a bundle's input contract; a locale message
- * that drifts from it is dropped and reported rather than typed.
- */
-export async function compileMessageData(
   { project, sourceCatalogs }: CompileProjectInput,
-  options: MessageFilterOptions = {},
-): Promise<MessageData> {
+  {
+    excludeMessagePrefixes = [],
+    targetLocaleMessagePrefixes = [],
+  }: Pick<
+    CompileOptions,
+    "excludeMessagePrefixes" | "targetLocaleMessagePrefixes"
+  > = {},
+): Promise<GeneratedArtifacts> {
+  const isTargetLocaleMessage = (bundleId: string): boolean =>
+    targetLocaleMessagePrefixes.some((prefix) => bundleId.startsWith(prefix));
   const settings = await project.settings.get();
-  const isSelected = messageSelector(options);
-  rejectMarkupSources(sourceCatalogs, isSelected);
+  rejectMarkupSources(sourceCatalogs, excludeMessagePrefixes);
   const sourceIndex = indexSources(sourceCatalogs);
   const sourcePaths = sourceCatalogs.map((catalog) => catalog.path);
   const bundles = await selectBundleNested(project.db).execute();
-  const definedIds = new Set(bundles.map((bundle) => bundle.id));
-  for (const bundleId of options.includeMessages ?? []) {
-    if (!definedIds.has(bundleId)) {
-      throw new Error(
-        `Included Message ${JSON.stringify(bundleId)} is not defined in the project`,
-      );
-    }
-  }
   const selectedBundles = bundles
-    .filter((bundle) => isSelected(bundle.id))
+    .filter(
+      (bundle) =>
+        !excludeMessagePrefixes.some((prefix) => bundle.id.startsWith(prefix)),
+    )
     .sort((left, right) => compareCodepoints(left.id, right.id));
   const compiled: CompiledBundle[] = [];
   const missingBaseLocale: string[] = [];
@@ -430,27 +328,35 @@ export async function compileMessageData(
       );
     }
   }
+  let facade: string;
+  try {
+    facade = generateFacade(compiled, isTargetLocaleMessage);
+  } catch (error) {
+    const bundleId =
+      error instanceof LanguagePackCompilerError ? error.bundleId : undefined;
+    positionCompilerError(
+      error,
+      effectiveSource(sourceIndex, settings.baseLocale, bundleId),
+    );
+  }
+  const hasTargetLocaleMessages = targetLocaleMessagePrefixes.length > 0;
+  const runtime = generateRuntime(settings.baseLocale, hasTargetLocaleMessages);
+  const catalog = generateCatalog(settings.baseLocale, settings.locales);
   const undeclaredInputs: UndeclaredInputMessage[] = [];
-  const messages: CompiledMessage[] = compiled.map(({ bundle, inputs }) => ({
-    id: bundle.id,
-    inputs,
-    messages: {},
-  }));
-  for (const locale of settings.locales) {
+  const messagesByLocale = new Map<string, Record<string, PackMessage>>();
+  const packs = settings.locales.map((locale) => {
     try {
-      const { messages: localeMessages, drift } = generatePack(compiled, {
+      const { messages, drift } = generatePack(compiled, {
         locale,
         baseLocale: settings.baseLocale,
         sourceLocationForMessage: (bundleId) =>
           sourceLocation(sourceIndex, locale, bundleId),
       });
       undeclaredInputs.push(...drift);
-      for (const message of messages) {
-        const localeMessage = localeMessages[message.id];
-        if (localeMessage !== undefined) {
-          message.messages[locale] = localeMessage;
-        }
-      }
+      messagesByLocale.set(locale, messages);
+      const contents = serializePack(locale, messages);
+      validateLanguagePack(contents, { expectedLocale: locale });
+      return { fileName: `${locale}.json`, contents };
     } catch (error) {
       const bundleId =
         error instanceof LanguagePackCompilerError ? error.bundleId : undefined;
@@ -459,14 +365,29 @@ export async function compileMessageData(
         effectiveSource(sourceIndex, locale, bundleId),
       );
     }
-  }
+  });
 
   return {
+    artifacts: [
+      { fileName: "messages.ts", contents: facade },
+      { fileName: "runtime.ts", contents: runtime },
+      { fileName: "catalog.ts", contents: catalog },
+      ...(hasTargetLocaleMessages
+        ? [
+            {
+              fileName: TARGET_LOCALE_MESSAGES_FILE,
+              contents: generateTargetLocaleMessages(messagesByLocale, {
+                baseLocale: settings.baseLocale,
+                isTargetLocaleMessage,
+              }),
+            },
+          ]
+        : []),
+      ...packs,
+    ],
     baseLocale: settings.baseLocale,
-    locales: [...settings.locales],
-    sourceCatalogs: [...sourceCatalogs],
     sourcePaths,
-    messages,
+    messageCount: compiled.length,
     untranslated: findUntranslatedMessages(compiled, settings, sourceIndex),
     undeclaredInputs,
     missingBaseLocale:
@@ -478,102 +399,6 @@ export async function compileMessageData(
             bundleIds: missingBaseLocale,
           },
   };
-}
-
-/**
- * The Obsidian emission step: the typed facade, the runtime module, the
- * Locale Catalog, every Language Pack, and the Target-Locale Messages subset.
- */
-export function emitObsidianArtifacts(
-  data: MessageData,
-  {
-    targetLocaleMessagePrefixes = [],
-    includeMessages = [],
-    scopedMessageModules = {},
-  }: EmitOptions = {},
-): GeneratedArtifacts {
-  const isTargetLocaleMessage = (bundleId: string): boolean =>
-    targetLocaleMessagePrefixes.some((prefix) => bundleId.startsWith(prefix));
-  const sourceIndex = indexSources(data.sourceCatalogs);
-  let facade: string;
-  try {
-    facade = generateFacade(data.messages, {
-      isTargetLocaleMessage,
-      includedMessages: new Set(includeMessages),
-    });
-  } catch (error) {
-    const bundleId =
-      error instanceof LanguagePackCompilerError ? error.bundleId : undefined;
-    positionCompilerError(
-      error,
-      effectiveSource(sourceIndex, data.baseLocale, bundleId),
-    );
-  }
-  const hasTargetLocaleMessages = targetLocaleMessagePrefixes.length > 0;
-  const runtime = generateRuntime(data.baseLocale, hasTargetLocaleMessages);
-  const catalog = generateCatalog(data.baseLocale, data.locales);
-  const messagesByLocale = new Map<string, Record<string, PackMessage>>();
-  const packs = data.locales.map((locale) => {
-    const messages: Record<string, PackMessage> = {};
-    for (const message of data.messages) {
-      const localeMessage = message.messages[locale];
-      if (localeMessage !== undefined) messages[message.id] = localeMessage;
-    }
-    messagesByLocale.set(locale, messages);
-    const contents = serializePack(locale, messages);
-    validateLanguagePack(contents, { expectedLocale: locale });
-    return { fileName: `${locale}.json`, contents };
-  });
-
-  return {
-    artifacts: [
-      { fileName: "messages.ts", contents: facade },
-      { fileName: "runtime.ts", contents: runtime },
-      { fileName: "catalog.ts", contents: catalog },
-      ...Object.entries(scopedMessageModules)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([fileName, prefixes]) => ({
-          fileName,
-          contents: generateScopedMessageModule(data.messages, prefixes),
-        })),
-      ...(hasTargetLocaleMessages
-        ? [
-            {
-              fileName: TARGET_LOCALE_MESSAGES_FILE,
-              contents: generateTargetLocaleMessages(messagesByLocale, {
-                baseLocale: data.baseLocale,
-                isTargetLocaleMessage,
-              }),
-            },
-          ]
-        : []),
-      ...packs,
-    ],
-    baseLocale: data.baseLocale,
-    sourcePaths: data.sourcePaths,
-    messageCount: data.messages.length,
-    untranslated: data.untranslated,
-    undeclaredInputs: data.undeclaredInputs,
-    missingBaseLocale: data.missingBaseLocale,
-  };
-}
-
-/**
- * Whether a bundle enters a consumer's artifacts. An Included Message always
- * does; otherwise the include prefixes (when set) admit it and the exclude
- * prefixes drop it.
- */
-function messageSelector({
-  excludeMessagePrefixes = [],
-  includeMessagePrefixes,
-  includeMessages = [],
-}: MessageFilterOptions): (bundleId: string) => boolean {
-  const included = new Set(includeMessages);
-  return (bundleId) =>
-    included.has(bundleId) ||
-    ((includeMessagePrefixes === undefined ||
-      includeMessagePrefixes.some((prefix) => bundleId.startsWith(prefix))) &&
-      !excludeMessagePrefixes.some((prefix) => bundleId.startsWith(prefix)));
 }
 
 /**
@@ -779,21 +604,14 @@ function inferInputTypes(
 }
 
 function generateFacade(
-  compiled: CompiledMessage[],
-  {
-    isTargetLocaleMessage,
-    includedMessages,
-  }: {
-    isTargetLocaleMessage: (bundleId: string) => boolean;
-    includedMessages: ReadonlySet<string>;
-  },
+  compiled: CompiledBundle[],
+  isTargetLocaleMessage: (bundleId: string) => boolean,
 ): string {
   const used = new Set<string>();
-  const localNames = new Set(compiled.map(({ id }) => id));
-  const literalExports: string[] = [];
-  const wrappers = compiled.map(({ id, inputs }) => {
+  const wrappers = compiled.map(({ bundle, inputs }) => {
+    assertIdentifier(bundle.id, bundle.id, "bundle ID");
     for (const input of inputs) {
-      assertIdentifier(input.name, id, "input name");
+      assertIdentifier(input.name, bundle.id, "input name");
     }
     const inputParameter =
       inputs.length === 0
@@ -805,23 +623,11 @@ function generateFacade(
     // A Target-Locale Message keeps its wrapper name and signature and only
     // changes which runtime path renders it, so adopting the feature is
     // configuration-only for every call site.
-    const render = isTargetLocaleMessage(id) ? "translateTarget" : "translate";
+    const render = isTargetLocaleMessage(bundle.id)
+      ? "translateTarget"
+      : "translate";
     used.add(render);
-    const wrapper = `(${inputParameter}): string => ${render}(${JSON.stringify(id)}${inputArgument});`;
-    // An Included Message is the one place a bundle ID need not be an
-    // identifier: a dotted ID is declared under a safe local name and
-    // exported under its literal string, Paraglide-style.
-    if (includedMessages.has(id) && !isIdentifier(id)) {
-      const localName = safeLocalName(id);
-      if (localNames.has(localName)) {
-        unsupported(id, `bundle ID colliding with "${localName}"`);
-      }
-      localNames.add(localName);
-      literalExports.push(`export { ${localName} as ${JSON.stringify(id)} };`);
-      return `const ${localName} = ${wrapper}`;
-    }
-    assertIdentifier(id, id, "bundle ID");
-    return `export const ${id} = ${wrapper}`;
+    return `export const ${bundle.id} = (${inputParameter}): string => ${render}(${JSON.stringify(bundle.id)}${inputArgument});`;
   });
   const temporalImport = compiled.some(({ inputs }) =>
     inputs.some((input) => input.type === INPUT_TYPE_DATE),
@@ -841,24 +647,6 @@ function generateFacade(
     `import { ${renderers.join(", ")} } from "./runtime.js";`,
     "",
     ...wrappers,
-    ...(literalExports.length === 0 ? [] : ["", ...literalExports]),
-    "",
-  ].join("\n");
-}
-
-function generateScopedMessageModule(
-  messages: readonly CompiledMessage[],
-  prefixes: readonly string[],
-): string {
-  const exports = messages
-    .filter(({ id }) => prefixes.some((prefix) => id.startsWith(prefix)))
-    .map(({ id }) => `  ${isIdentifier(id) ? id : JSON.stringify(id)},`);
-  return [
-    "// Generated by @zotlit/obsidian-i18n. Do not edit.",
-    "",
-    "export {",
-    ...exports,
-    '} from "./messages.js";',
     "",
   ].join("\n");
 }
@@ -1164,18 +952,10 @@ function assertIdentifier(
   bundleId: string,
   kind: "bundle ID" | "input name",
 ): void {
-  if (isIdentifier(name)) return;
+  if (/^[$A-Z_a-z][$\w]*$/.test(name) && !RESERVED_IDENTIFIERS.has(name)) {
+    return;
+  }
   unsupported(bundleId, `${kind} "${name}"`);
-}
-
-function isIdentifier(name: string): boolean {
-  return /^[$A-Z_a-z][$\w]*$/.test(name) && !RESERVED_IDENTIFIERS.has(name);
-}
-
-/** A local binding name for a bundle ID that is no identifier, e.g. `zotero.a.label` → `zotero_a_label`. */
-function safeLocalName(bundleId: string): string {
-  const replaced = bundleId.replaceAll(/[^$\w]/g, "_");
-  return isIdentifier(replaced) ? replaced : `_${replaced}`;
 }
 
 function unsupported(bundleId: string, construct: string): never {
@@ -1187,12 +967,17 @@ function unsupported(bundleId: string, construct: string): never {
 
 function rejectMarkupSources(
   sourceCatalogs: readonly RawSourceCatalog[],
-  isSelected: (bundleId: string) => boolean,
+  excludeMessagePrefixes: readonly string[],
 ): void {
   for (const source of sourceCatalogs) {
     const catalog = JSON.parse(source.contents) as Record<string, unknown>;
-    for (const [bundleId, message] of catalogBundles(catalog)) {
-      if (!isSelected(bundleId)) continue;
+    for (const [bundleId, message] of Object.entries(catalog)) {
+      if (
+        bundleId === "$schema" ||
+        excludeMessagePrefixes.some((prefix) => bundleId.startsWith(prefix))
+      ) {
+        continue;
+      }
       const markup = findMarkup(message);
       if (markup !== undefined) {
         positionCompilerError(
@@ -1206,26 +991,6 @@ function rejectMarkupSources(
           ),
         );
       }
-    }
-  }
-}
-
-/**
- * A raw catalog's bundles under their dotted IDs: the message-format plugin
- * flattens a nested object into `outer.inner` bundles and keeps an array (a
- * complex message) whole.
- */
-function* catalogBundles(
-  catalog: Record<string, unknown>,
-  prefix = "",
-): Generator<[string, unknown]> {
-  for (const [key, value] of Object.entries(catalog)) {
-    if (prefix === "" && key === "$schema") continue;
-    const bundleId = `${prefix}${key}`;
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      yield* catalogBundles(value as Record<string, unknown>, `${bundleId}.`);
-    } else {
-      yield [bundleId, value];
     }
   }
 }
@@ -1597,7 +1362,6 @@ function isGeneratedArtifactName(fileName: string): boolean {
     fileName === "runtime.ts" ||
     fileName === "catalog.ts" ||
     fileName === TARGET_LOCALE_MESSAGES_FILE ||
-    fileName.endsWith("-messages.ts") ||
     isLanguagePackFileName(fileName)
   );
 }

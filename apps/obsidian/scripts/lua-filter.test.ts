@@ -38,4 +38,8 @@ describe("buildFilterVariant", () => {
       /no --@variant cli region/,
     );
   });
+
+  it("drops the region markers themselves", () => {
+    expect(buildFilterVariant(source, "cli")).not.toContain("--@");
+  });
 });

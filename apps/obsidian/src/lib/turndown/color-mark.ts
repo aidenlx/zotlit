@@ -1,12 +1,5 @@
 // Inline color marks shared by Zotero annotation excerpts and note-editor color
 // spans, rendered as HTML or opt-in Colored Highlight Syntax.
-import { highlightEmoji } from "@/lib/highlight-mapping";
-import type { HighlightMappings } from "@/lib/highlight-mapping";
-
-export interface HighlightOptions {
-  useColoredHighlightSyntax: boolean;
-  highlightMappings?: HighlightMappings;
-}
 
 export type ColorMarkKind = "highlight" | "underline" | "text";
 
@@ -43,15 +36,22 @@ const COLOR_MARK_SPEC: Record<ColorMarkKind, ColorMarkSpec> = {
   },
 };
 
+const HIGHLIGHT_EMOJI: ReadonlyMap<string, string> = new Map([
+  ["red", "🔴"],
+  ["orange", "🟠"],
+  ["yellow", "🟡"],
+  ["green", "🟢"],
+  ["blue", "🔵"],
+  ["purple", "🟣"],
+]);
+
 export function renderHighlight(
   text: string,
   color: ColorMarkColor | null,
-  options: Partial<HighlightOptions>,
+  useColoredHighlightSyntax: boolean,
 ): string {
-  const emoji = options.useColoredHighlightSyntax
-    ? highlightEmoji(color?.name, options.highlightMappings)
-    : null;
-  if (emoji && !text.includes("==")) {
+  const emoji = color?.name ? HIGHLIGHT_EMOJI.get(color.name) : undefined;
+  if (useColoredHighlightSyntax && emoji && !text.includes("==")) {
     return `==${emoji}${text}==`;
   }
   return renderColorMark("highlight", text, color);

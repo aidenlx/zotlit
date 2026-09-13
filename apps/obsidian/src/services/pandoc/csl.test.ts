@@ -1,4 +1,3 @@
-import "@mock/dom-parser";
 import {
   mkdir,
   mkdtemp,

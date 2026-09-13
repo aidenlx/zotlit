@@ -33,15 +33,14 @@ import {
   samePresentation,
 } from "@/services/pandoc/document-presentation";
 import type {
-  DocumentPresentationFailure,
   DocumentPresentation,
+  UnusableProperty,
 } from "@/services/pandoc/document-presentation";
 import type {
   BibliographyRenderCache,
   BibliographyRenderResult,
 } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
-import type { ProfileReader } from "@/services/profile/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -92,7 +91,6 @@ export interface ReferencesViewDeps {
     BibliographyRenderCache,
     "render" | "on" | "vaultPresentation"
   >;
-  profile: ProfileReader;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -139,7 +137,7 @@ export class ReferencesView extends ItemView {
    * The note property that put the current minimal list on screen; `null` while
    * the note's own presentation is not what stopped the render.
    */
-  #documentPresentationError: DocumentPresentationFailure | null = null;
+  #documentPresentationError: UnusableProperty | null = null;
   /** Where the current list's render stands, as copy readiness reads it. */
   #formatting: ReferencesFormatting = "pending";
   /** Copy readiness as it was last published, so only a change is logged. */
@@ -243,16 +241,12 @@ export class ReferencesView extends ItemView {
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
     // for a Zotero change, a Citation and References Style change, or an engine
-    // that came or went — keeps entries on screen while the reload runs. A
-    // changed Profile presentation clears entries from the previous style.
-    this.register(
-      bibliographyRender.on("invalidated", () => {
-        const presentation = this.#readPresentation(this.#file);
-        const invalidate = !samePresentation(this.#presentation, presentation);
-        this.#presentation = presentation;
-        this.#reload({ invalidate });
-      }),
-    );
+    // that came or went — makes the formatted entries here stale rather than
+    // wrong. The reload's own render is what replaces them, so they stay on
+    // screen while it runs and a Zotero refresh that changes nothing never
+    // flashes the minimal list; an unavailable or failed outcome still clears
+    // them through #showMinimal.
+    this.register(bibliographyRender.on("invalidated", () => this.#reload()));
     const repaint = (key: string): void => {
       if (key === this.#renderKey) this.#reload();
     };
@@ -260,8 +254,7 @@ export class ReferencesView extends ItemView {
     this.register(bibliographyRender.on("settled", repaint));
     this.#reload();
     this.#rescan();
-    await Promise.all([db.ready, this.#deps.profile.ready]);
-    this.#rescan();
+    await db.ready;
     this.#reload();
   }
 
@@ -284,7 +277,6 @@ export class ReferencesView extends ItemView {
    * all the same, and the copy it offers names the note now on screen.
    */
   #rescan(): void {
-    if (!this.#deps.profile.loaded) return;
     const scan = ++this.#scan;
     // A presentation change makes the entries on screen stale the moment it is
     // read, and the read that follows lands a turn later at the earliest, so
@@ -325,7 +317,7 @@ export class ReferencesView extends ItemView {
         count: citations.length,
         restyled,
       });
-      this.#reload({ invalidate: restyled });
+      this.#reload();
     });
   }
 
@@ -364,25 +356,11 @@ export class ReferencesView extends ItemView {
   #readPresentation(file: TFile | null): DocumentPresentation {
     return file === null
       ? { kind: "read", presentation: {} }
-      : documentPresentation(
-          this.#deps.app.metadataCache,
-          file,
-          this.#deps.profile,
-        );
+      : documentPresentation(this.#deps.app.metadataCache, file);
   }
 
-  /**
-   * Re-read the cited Items and re-render the whole list. `invalidate` drops
-   * entries whose Citation Presentation no longer matches the active Profile.
-   */
-  #reload({ invalidate = false } = {}): void {
-    if (invalidate) {
-      this.#onScreen.clear();
-      this.#entryMarkers = null;
-      this.#formattingFailed = false;
-      this.#documentPresentationError = null;
-      this.#renderKey = null;
-    }
+  /** Re-read the cited Items and re-render the whole list. */
+  #reload(): void {
     this.#entrySerials = this.#readEntrySerials();
     this.#copyGeneration += 1;
     const citations = this.#citations;
@@ -529,7 +507,7 @@ export class ReferencesView extends ItemView {
     );
     if (presented.kind === "unusable") {
       this.#renderKey = null;
-      this.#documentPresentationError = presented;
+      this.#documentPresentationError = presented.property;
       this.#showMinimal(citations, sources, false);
       return;
     }
@@ -553,21 +531,18 @@ export class ReferencesView extends ItemView {
       this.#documentPresentationError =
         outcome.reason === "style-missing" &&
         declared.kind === "read" &&
-        typeof declared.presentation.styleId === "string"
-          ? declared.profileStyle
-            ? {
-                kind: "unusable",
-                property: "profile-style",
-                styleId: declared.presentation.styleId,
-                ...declared.profileStyle,
-              }
-            : { kind: "unusable", property: "style" }
+        declared.presentation.styleId !== undefined
+          ? "style"
           : null;
       this.#showMinimal(citations, sources, outcome.reason === "failed");
       return;
     }
     this.#renderKey = outcome.key;
     this.#documentPresentationError = null;
+    if (outcome.record.status === "failed") {
+      this.#showMinimal(citations, sources, true);
+      return;
+    }
     this.#paint(outcome.record, citations, sources);
   }
 
@@ -585,13 +560,9 @@ export class ReferencesView extends ItemView {
       this.#onScreen.set(id, { marker, content });
     }
     this.#entryMarkers = hasEntryMarkers;
-    this.#formattingFailed = record.status === "failed";
+    this.#formattingFailed = false;
     this.#formatting =
-      record.status === "revalidating"
-        ? "pending"
-        : record.status === "failed"
-          ? "failed"
-          : "complete";
+      record.status === "revalidating" ? "pending" : "complete";
     logger.debug("References bibliography rendered", {
       count: rendered.length,
       hasEntryMarkers,
@@ -608,7 +579,7 @@ export class ReferencesView extends ItemView {
     this.#store.setState({
       entries,
       listMode: this.#listMode(),
-      formattingFailed: this.#formattingFailed,
+      formattingFailed: false,
       documentPresentationError: null,
       copy: this.#trackCopy(entries),
     });

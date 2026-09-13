@@ -12,122 +12,18 @@ import type {
   ValueToken,
 } from "liquidjs";
 
-import { withCitationInputProvenance } from "./citation-input";
-export { CitationInputError } from "./citation-input";
-
 import type {
   AutoTrim,
   FrontmatterField,
   FrontmatterLanguage,
-  TemplateLanguage,
 } from "./constants";
 import {
   compileFrontmatterFields as compileFrontmatterFieldsImpl,
-  compileManagedFrontmatterEntries as compileManagedFrontmatterEntriesImpl,
-  evalManagedFrontmatterEntries,
   validateFrontmatterExpr as validateFrontmatterExprImpl,
 } from "./frontmatter";
-import type {
-  CompiledFrontmatter,
-  CompiledManagedFrontmatter,
-} from "./frontmatter";
-import { mergeManagedFrontmatterEntries } from "./frontmatter-merge";
+import type { CompiledFrontmatter } from "./frontmatter";
 import { TemplateEngine } from "./index";
-import { inlineCitation } from "./inline-citation";
-import {
-  DEFAULT_CITATION_BRANCHES,
-  foldLegacyCitationTemplates,
-} from "./legacy-citation";
-import type { LegacyCitationSources } from "./legacy-citation";
 import { createLiquidEngine } from "./liquid";
-import {
-  LegacyTemplateConversionError,
-  LiteratureNoteTemplateError,
-  parseLiteratureNoteTemplate as parseLiteratureNoteTemplateImpl,
-  synthesizeLegacyLiteratureNoteTemplate,
-} from "./literature-note-template";
-import type {
-  LegacyLiteratureNoteTemplates,
-  LiteratureNoteTemplateDocument,
-  ManagedFrontmatterEntry,
-} from "./literature-note-template";
-import { formatManagedRegion } from "./obsidian";
-
-export { updateLiteratureNoteTemplateMatch } from "./literature-note-template-match";
-
-export type { TemplateLanguage } from "./constants";
-
-export {
-  CONVERTED_DEFAULT_PROFILE_DOCUMENT,
-  convertLegacyFrontmatterFields,
-  LegacyTemplateConversionError,
-  literatureNoteTemplateManifestRange,
-  LiteratureNoteTemplateError,
-  parseLiteratureNoteTemplate,
-  synthesizeLegacyLiteratureNoteTemplate,
-} from "./literature-note-template";
-export type {
-  AnnotationSection,
-  LegacyLiteratureNoteTemplates,
-  LegacyTemplateConversionErrorCode,
-  LiteratureNoteTemplateDocument,
-  LiteratureNoteTemplateErrorCode,
-  LiteratureNoteTemplateManifest,
-  MatchTree,
-  ManagedBlock,
-  ManagedFrontmatterEntry,
-  SynthesizedLiteratureNoteTemplateManifest,
-} from "./literature-note-template";
-
-export {
-  DEFAULT_CITATION_BRANCHES,
-  foldLegacyCitationTemplates,
-} from "./legacy-citation";
-export type { LegacyCitationSources } from "./legacy-citation";
-
-export {
-  formatPlainTemplateDocument,
-  parsePlainTemplateDocument,
-  PlainTemplateDocumentError,
-} from "./plain-template-document";
-export type {
-  PlainTemplateDocument,
-  PlainTemplateDocumentErrorCode,
-  PlainTemplateDocumentManifest,
-} from "./plain-template-document";
-
-export interface ConvertedLegacyLiteratureNoteTemplate {
-  readonly source: string;
-  readonly document: LiteratureNoteTemplateDocument;
-  readonly rendered: {
-    readonly create: string;
-    readonly update: string;
-    readonly filename: string;
-    readonly annotation: string | null;
-  };
-  readonly frontmatterPatch: Readonly<Record<string, unknown>>;
-}
-
-export interface ConvertedLegacyCitationTemplate {
-  /** The Citation Template source both gestures now render through. */
-  readonly source: string;
-  /** The verified citation each Citation Variant renders, in inline form. */
-  readonly rendered: { readonly main: string; readonly alt: string };
-}
-
-export interface ConvertLegacyCitationTemplateOptions {
-  /** The names the conversion unregisters along with the files it trashes.
-   *  The folded source is verified with these absent — the registry the vault
-   *  has after the pass — so a branch that renders one of them is refused
-   *  instead of converting into a citation that fails on the next insert. */
-  readonly removedNames?: readonly string[];
-}
-
-export interface ConvertLegacyLiteratureNoteTemplateOptions {
-  readonly frontmatter?: readonly FrontmatterField[];
-  readonly javascript?: boolean;
-  readonly operationTimestamp?: Temporal.Instant;
-}
 
 /** One root-variable read found by static analysis of a registered Liquid template. */
 export interface RootVariableUse {
@@ -140,10 +36,7 @@ export interface RootVariableUse {
   col: number;
 }
 
-export interface TemplateSourceOverride {
-  source: string;
-  language: TemplateLanguage;
-}
+export type TemplateLanguage = "liquid" | "eta";
 
 export interface TemplateFacadeOptions {
   /** Eta-only; same semantics as `TemplateEngine`. @default [false, false] */
@@ -165,19 +58,6 @@ export class TemplateError extends Error {
     super(message, options);
     this.name = "TemplateError";
     this.templateName = templateName;
-  }
-}
-
-/**
- * The render reached a name nothing is registered under — a call to a Shared
- * Partial the vault holds no document for. It is its own type so a caller
- * tells this failure from every other named one by structure rather than by
- * the message text.
- */
-export class MissingTemplateError extends TemplateError {
-  constructor(templateName: string, options?: ErrorOptions) {
-    super(`Template "${templateName}" not found`, templateName, options);
-    this.name = "MissingTemplateError";
   }
 }
 
@@ -207,14 +87,10 @@ function bridgeSource(name: string): string {
  */
 export class TemplateFacade {
   readonly #registry = new Map<string, TemplateSlot>();
-  /** Names {@link #withRegistryWithout} hides for the duration of one render,
-   *  so a conversion verifies against the registry the vault ends up with. */
-  #hiddenNames: ReadonlySet<string> | undefined;
   readonly #transform: (name: string, output: string) => string;
   readonly #eta: TemplateEngine;
   readonly #liquid: Liquid;
   readonly #etaBaseRender: OmitThisParameter<TemplateEngine["render"]>;
-  #annotationSource: TemplateSourceOverride | undefined;
 
   constructor({ autoTrim, transformRender }: TemplateFacadeOptions = {}) {
     this.#transform = transformRender ?? ((_name, output) => output);
@@ -256,11 +132,7 @@ export class TemplateFacade {
     } else {
       // Parsed with `name` as the filepath, so every later parse/render
       // error liquidjs throws for this template is labeled `file:<name>`.
-      const parsed = this.#liquid.parse(source, name);
-      const tpls =
-        name === "citation"
-          ? withCitationInputProvenance(parsed, this.#liquid)
-          : parsed;
+      const tpls = this.#liquid.parse(source, name);
       this.#registry.set(name, { ...this.#registry.get(name), liquid: tpls });
     }
   }
@@ -285,313 +157,8 @@ export class TemplateFacade {
     this.#eta.reset();
   }
 
-  render<T extends object>(
-    name: string,
-    data: T,
-    sourceOverride?: TemplateSourceOverride,
-  ): string {
-    const previous = this.#annotationSource;
-    this.#annotationSource = undefined;
-    try {
-      return sourceOverride
-        ? this.#renderSource(name, data, sourceOverride)
-        : this.#renderByName(name, data);
-    } finally {
-      this.#annotationSource = previous;
-    }
-  }
-
-  parseLiteratureNoteTemplate(source: string): LiteratureNoteTemplateDocument {
-    return parseLiteratureNoteTemplateImpl(source);
-  }
-
-  /**
-   * Fold the 2.1.x `cite` and `cite2` sources into one Citation Template and
-   * verify it: each Citation Variant must render exactly the bytes the legacy
-   * file it replaces rendered, in the inline form a citation is inserted as.
-   * Nothing is registered and nothing is written — the caller persists the
-   * returned source only once both variants matched.
-   *
-   * The legacy branches render against the registry as it stands now, and the
-   * folded source against the registry the pass leaves behind — the names in
-   * `options.removedNames` already gone. A branch that renders one of them
-   * therefore fails here, before the write, instead of on the first insert
-   * after the legacy files reach the trash.
-   *
-   * @param data the citation-template data root per variant, each already
-   *   carrying its own `variant`.
-   * @throws {@link LegacyTemplateConversionError} `legacy-render-mismatch` on
-   *   the first variant whose output differs, or `unsupported-legacy-template`
-   *   when either side fails to render at all.
-   */
-  convertLegacyCitationTemplates(
-    legacy: LegacyCitationSources,
-    data: { readonly main: object; readonly alt: object },
-    options: ConvertLegacyCitationTemplateOptions = {},
-  ): ConvertedLegacyCitationTemplate {
-    const { language } = legacy;
-    const source = foldLegacyCitationTemplates(legacy);
-    const branches = DEFAULT_CITATION_BRANCHES[language];
-    const render = (variant: "main" | "alt", from: string, name: string) =>
-      inlineCitation(
-        this.render(name, data[variant], { source: from, language }),
-      );
-
-    const rendered = this.#withRegistryWithout(options.removedNames ?? [], () =>
-      refuseUnrenderable(() => ({
-        main: render("main", source, "citation"),
-        alt: render("alt", source, "citation"),
-      })),
-    );
-    assertSameRender(
-      "main citation output",
-      refuseUnrenderable(() =>
-        render("main", legacy.main ?? branches.main, "cite"),
-      ),
-      rendered.main,
-    );
-    assertSameRender(
-      "alternate citation output",
-      refuseUnrenderable(() =>
-        render("alt", legacy.alt ?? branches.alt, "cite2"),
-      ),
-      rendered.alt,
-    );
-    return { source, rendered };
-  }
-
-  /**
-   * Synthesize and verify the default Profile document without mutating the
-   * facade. Every supplied legacy output must match byte-for-byte before the
-   * caller may persist the returned source.
-   */
-  convertLegacyLiteratureNoteTemplates(
-    legacy: LegacyLiteratureNoteTemplates,
-    data: {
-      readonly note: object;
-      readonly filename: object;
-      readonly annotation?: object;
-    },
-    options: ConvertLegacyLiteratureNoteTemplateOptions = {},
-  ): ConvertedLegacyLiteratureNoteTemplate {
-    const source = synthesizeLegacyLiteratureNoteTemplate(legacy, {
-      frontmatter: options.frontmatter,
-    });
-    const document = this.parseLiteratureNoteTemplate(source);
-    const legacyRendered = {
-      // The legacy path predates the trailing-line-break rule; normalize its
-      // baseline so parity compares the bytes both paths would now write.
-      create: withOneTrailingLineBreak(this.render("note", data.note)),
-      update: this.render("content", data.note),
-      filename: this.render("filename", data.filename),
-      annotation:
-        legacy.annotation && data.annotation
-          ? this.render("annotation", data.annotation)
-          : null,
-    };
-    const rendered = {
-      create: this.renderLiteratureNoteTemplateForCreate(document, data.note),
-      update: this.renderLiteratureNoteTemplateForUpdate(document, data.note),
-      filename: this.renderLiteratureNoteTemplateFilename(
-        document,
-        data.filename,
-      ),
-      annotation:
-        legacy.annotation && data.annotation
-          ? this.renderLiteratureNoteTemplateAnnotation(
-              document,
-              data.annotation,
-            )
-          : null,
-    };
-    if (rendered.update === null) {
-      throw new LegacyTemplateConversionError(
-        "legacy-render-mismatch",
-        "Converted document has no Managed Block",
-        {
-          difference: "update output",
-          recovery: "Keep one standard content render and retry conversion.",
-        },
-      );
-    }
-    assertSameRender("create output", legacyRendered.create, rendered.create);
-    assertSameRender("update output", legacyRendered.update, rendered.update);
-    assertSameRender(
-      "filename output",
-      legacyRendered.filename,
-      rendered.filename,
-    );
-    const frontmatter = this.compileManagedFrontmatterEntries(
-      document.manifest.frontmatter ?? [],
-      { javascript: options.javascript ?? false },
-    );
-    if (frontmatter.inertKeys.length > 0) {
-      throw new LegacyTemplateConversionError(
-        "legacy-frontmatter-inert",
-        `Converted Managed Frontmatter requires JavaScript Templates for: ${frontmatter.inertKeys.join(", ")}`,
-        {
-          difference: "Managed Frontmatter gate",
-          recovery:
-            "Enable JavaScript Templates on this device, then retry conversion.",
-          fields: frontmatter.inertKeys,
-        },
-      );
-    }
-    const evaluation = evalManagedFrontmatterEntries(
-      frontmatter.compiled,
-      data.note,
-      options.operationTimestamp ?? Temporal.Now.instant(),
-    );
-    if (evaluation.errors.length > 0) {
-      const keys = evaluation.errors.map(({ key }) => key).join(", ");
-      throw new LegacyTemplateConversionError(
-        "legacy-frontmatter-evaluation",
-        `Converted Managed Frontmatter failed for: ${keys}`,
-        {
-          difference: "Managed Frontmatter evaluation",
-          recovery: `Correct these fields, then retry conversion: ${keys}.`,
-          fields: evaluation.errors.map(({ key }) => key),
-        },
-      );
-    }
-    const frontmatterPatch = mergeManagedFrontmatterEntries(evaluation.values);
-    if (legacy.annotation) {
-      if (legacyRendered.annotation === null || rendered.annotation === null) {
-        throw new LegacyTemplateConversionError(
-          "unsupported-legacy-template",
-          "Annotation conversion requires verification data and an Annotation Section",
-          {
-            difference: "annotation verification data",
-            recovery:
-              "Make one Zotero annotation available, then retry conversion.",
-          },
-        );
-      }
-      assertSameRender(
-        "annotation output",
-        legacyRendered.annotation,
-        rendered.annotation,
-      );
-    }
-    return {
-      source,
-      document,
-      rendered: { ...rendered, update: rendered.update },
-      frontmatterPatch,
-    };
-  }
-
-  /**
-   * Compiles every source this document renders — the body outside its Managed
-   * Block, the block itself, the Annotation Section, and the note name —
-   * without evaluating any of them and without leaving anything defined, so a
-   * caller can refuse a document whose text the engine cannot parse before it
-   * is written anywhere. Throws the engine's own failure for the first source
-   * that fails.
-   */
-  compileLiteratureNoteTemplate(
-    document: LiteratureNoteTemplateDocument,
-  ): void {
-    const { language } = document.manifest;
-    const block = document.managedBlock;
-    const sources = [
-      block
-        ? document.body.slice(0, block.start) + document.body.slice(block.end)
-        : document.body,
-      ...(block ? [block.source] : []),
-      document.annotationSection.source,
-      document.manifest.filename,
-    ];
-    sources.forEach((source, index) => {
-      // Named apart from every partial, so a compile leaves the registry as it
-      // found it whatever the document calls its own templates.
-      const name = `${document.manifest.id}:compile:${index}`;
-      this.define(name, source, language);
-      this.remove(name, language);
-    });
-  }
-
-  renderLiteratureNoteTemplateForCreate<T extends object>(
-    document: LiteratureNoteTemplateDocument,
-    data: T,
-  ): string {
-    const block = document.managedBlock;
-    if (!block) {
-      return withOneTrailingLineBreak(
-        this.#renderDocumentSource(document, data, {
-          part: "body",
-          source: document.body,
-        }),
-      );
-    }
-
-    const outerSourceWithoutPlaceholder =
-      document.body.slice(0, block.start) + document.body.slice(block.end);
-    const placeholder = managedBlockPlaceholder(outerSourceWithoutPlaceholder);
-    const outerSource =
-      document.body.slice(0, block.start) +
-      placeholder +
-      document.body.slice(block.end);
-    const outer = this.#renderDocumentSource(document, data, {
-      part: "body",
-      source: outerSource,
-    });
-    const firstPlaceholder = outer.indexOf(placeholder);
-    if (
-      firstPlaceholder === -1 ||
-      firstPlaceholder !== outer.lastIndexOf(placeholder)
-    ) {
-      throw new LiteratureNoteTemplateError(
-        "invalid-managed-block",
-        "Managed Block must render exactly once in the document body",
-        {
-          recovery:
-            "Place the Managed Block at the top level, outside conditionals and loops.",
-        },
-      );
-    }
-    const managed = this.#renderDocumentSource(document, data, {
-      part: "managed",
-      source: block.source,
-    });
-    return withOneTrailingLineBreak(
-      outer.replace(
-        placeholder,
-        () => `${formatManagedRegion(managed)}${block.trailingLineBreak}`,
-      ),
-    );
-  }
-
-  renderLiteratureNoteTemplateForUpdate<T extends object>(
-    document: LiteratureNoteTemplateDocument,
-    data: T,
-  ): string | null {
-    if (!document.managedBlock) return null;
-    const managed = this.#renderDocumentSource(document, data, {
-      part: "managed",
-      source: document.managedBlock.source,
-    });
-    return formatManagedRegion(managed);
-  }
-
-  renderLiteratureNoteTemplateAnnotation<T extends object>(
-    document: LiteratureNoteTemplateDocument,
-    data: T,
-  ): string {
-    return this.#renderDocumentSource(document, data, {
-      part: "annotation",
-      source: document.annotationSection.source,
-    });
-  }
-
-  renderLiteratureNoteTemplateFilename<T extends object>(
-    document: LiteratureNoteTemplateDocument,
-    data: T,
-  ): string {
-    return this.#renderDocumentSource(document, data, {
-      part: "filename",
-      source: document.manifest.filename,
-    });
+  render<T extends object>(name: string, data: T): string {
+    return this.#renderByName(name, data);
   }
 
   /** Eta engine only — same semantics as `TemplateEngine#setAutoTrim`. */
@@ -609,16 +176,6 @@ export class TemplateFacade {
     options: { javascript: boolean },
   ): CompiledFrontmatter {
     return compileFrontmatterFieldsImpl(fields, {
-      ...options,
-      liquid: this.#liquid,
-    });
-  }
-
-  compileManagedFrontmatterEntries(
-    entries: readonly ManagedFrontmatterEntry[],
-    options: { javascript: boolean },
-  ): CompiledManagedFrontmatter {
-    return compileManagedFrontmatterEntriesImpl(entries, {
       ...options,
       liquid: this.#liquid,
     });
@@ -672,24 +229,6 @@ export class TemplateFacade {
     else this.#registry.delete(name);
   }
 
-  /** The one registry lookup every name resolution goes through, so hiding a
-   *  name hides it from a direct render and from every include alike. */
-  #slot(name: string): TemplateSlot | undefined {
-    if (this.#hiddenNames?.has(name)) return undefined;
-    return this.#registry.get(name);
-  }
-
-  /** Run `render` against the registry `names` have already left. */
-  #withRegistryWithout<T>(names: readonly string[], render: () => T): T {
-    const previous = this.#hiddenNames;
-    this.#hiddenNames = new Set(names);
-    try {
-      return render();
-    } finally {
-      this.#hiddenNames = previous;
-    }
-  }
-
   /**
    * Single dispatch point for every named render: direct `render()`, an eta
    * include (via the overridden `this.#eta.render`), and a bridge-tag include
@@ -700,69 +239,13 @@ export class TemplateFacade {
    * `renderSync`; both paths apply `transformRender` identically.
    */
   #renderByName(name: string, data: object): string {
-    if (name === "annotation" && this.#annotationSource) {
-      return this.#renderSource(name, data, this.#annotationSource);
-    }
-    const slot = this.#slot(name);
-    if (!slot) throw new MissingTemplateError(name);
+    const slot = this.#registry.get(name);
+    if (!slot) throw new TemplateError(`Template "${name}" not found`, name);
 
     const out = slot.liquid
       ? (this.#liquid.renderSync(slot.liquid, { zt: data }) as string)
       : this.#etaBaseRender(name, data, { filepath: name });
     return this.#transform(name, out);
-  }
-
-  #renderSource(
-    name: string,
-    data: object,
-    { source, language }: TemplateSourceOverride,
-  ): string {
-    if (language === "liquid") {
-      const parsed = this.#liquid.parse(source, name);
-      const templates =
-        name === "citation"
-          ? withCitationInputProvenance(parsed, this.#liquid)
-          : parsed;
-      const out = this.#liquid.renderSync(templates, { zt: data }) as string;
-      return this.#transform(name, out);
-    }
-
-    let template;
-    try {
-      template = this.#eta.compile(source);
-    } catch (error) {
-      throw new TemplateError(`${name}: ${(error as Error).message}`, name, {
-        cause: error,
-      });
-    }
-    const out = this.#etaBaseRender(template, data, { filepath: name });
-    return this.#transform(name, out);
-  }
-
-  #renderDocumentSource(
-    document: LiteratureNoteTemplateDocument,
-    data: object,
-    {
-      part,
-      source,
-    }: {
-      part: "body" | "managed" | "annotation" | "filename";
-      source: string;
-    },
-  ): string {
-    const previous = this.#annotationSource;
-    this.#annotationSource = {
-      source: document.annotationSection.source,
-      language: document.manifest.language,
-    };
-    try {
-      return this.#renderSource(`${document.manifest.id}:${part}`, data, {
-        source,
-        language: document.manifest.language,
-      });
-    } finally {
-      this.#annotationSource = previous;
-    }
   }
 
   /**
@@ -777,15 +260,13 @@ export class TemplateFacade {
    *   `exists` check accepts, then the parser reads it through `readFileSync`.
    */
   #makeFs(): FS {
+    const registry = this.#registry;
     // Shared by readFileSync/readFile (liquidjs's `FS.exists`/`readFile` are
     // required, not optional — see fs.d.ts — so both sync and async paths
     // must be implemented, not just the sync one).
     const readSource = (name: string): string => {
-      if (
-        !this.#slot(name) &&
-        !(name === "annotation" && this.#annotationSource)
-      ) {
-        throw new MissingTemplateError(name);
+      if (!registry.has(name)) {
+        throw new TemplateError(`Template "${name}" not found`, name);
       }
       return bridgeSource(name);
     };
@@ -830,19 +311,13 @@ export class TemplateFacade {
         emitter: Emitter,
       ): Generator<unknown, void, unknown> {
         const name = (yield evalToken(this.#nameToken, ctx)) as string;
-        const binding =
-          name === "annotation" ? self.#annotationSource : undefined;
-        const slot = self.#slot(name);
-        if (!slot && !binding) throw new MissingTemplateError(name);
-        const templates = binding
-          ? binding.language === "liquid"
-            ? self.#liquid.parse(binding.source, name)
-            : undefined
-          : slot?.liquid;
+        const slot = self.#registry.get(name);
+        if (!slot)
+          throw new TemplateError(`Template "${name}" not found`, name);
 
-        if (templates) {
+        if (slot.liquid) {
           const out = (yield self.#liquid.renderer.renderTemplates(
-            templates,
+            slot.liquid,
             ctx,
           )) as string;
           emitter.write(self.#transform(name, out));
@@ -853,67 +328,4 @@ export class TemplateFacade {
       }
     };
   }
-}
-
-/**
- * Carry a render that throws out as a refusal the prompt can report, so a
- * legacy pair the pass cannot render leaves the vault unchanged instead of
- * failing the conversion with an unhandled error.
- */
-function refuseUnrenderable<T>(render: () => T): T {
-  try {
-    return render();
-  } catch (error) {
-    if (error instanceof LegacyTemplateConversionError) throw error;
-    throw new LegacyTemplateConversionError(
-      "unsupported-legacy-template",
-      `The legacy citation templates failed to render: ${(error as Error).message}`,
-      {
-        difference: "citation render",
-        recovery:
-          "Keep the legacy files unchanged and adjust the templates before retrying conversion.",
-        cause: error,
-      },
-    );
-  }
-}
-
-function assertSameRender(
-  difference: string,
-  legacy: string,
-  converted: string,
-): void {
-  if (legacy === converted) return;
-  let byte = 0;
-  const limit = Math.min(legacy.length, converted.length);
-  while (byte < limit && legacy[byte] === converted[byte]) byte += 1;
-  throw new LegacyTemplateConversionError(
-    "legacy-render-mismatch",
-    `Converted ${difference} differs from the legacy render at byte ${byte}`,
-    {
-      difference,
-      recovery:
-        "Keep the legacy files unchanged and adjust the templates before retrying conversion.",
-    },
-  );
-}
-
-let nextManagedBlockPlaceholder = 0;
-
-/**
- * Keep the established rendered-output convention separate from source splitting.
- */
-function withOneTrailingLineBreak(body: string): string {
-  const trimmed = body.trimEnd();
-  const trailing = body.slice(trimmed.length).includes("\r\n") ? "\r\n" : "\n";
-  return `${trimmed}${trailing}`;
-}
-
-function managedBlockPlaceholder(source: string): string {
-  let placeholder: string;
-  do {
-    placeholder = `\uE000zotlit-managed-${nextManagedBlockPlaceholder}\uE001`;
-    nextManagedBlockPlaceholder += 1;
-  } while (source.includes(placeholder));
-  return placeholder;
 }

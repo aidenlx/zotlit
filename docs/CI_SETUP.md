@@ -48,8 +48,7 @@ The docs deployment needs these repository values:
 
 - Secret `CLOUDFLARE_API_TOKEN`
 - Secret `CLOUDFLARE_ACCOUNT_ID`
-- Variable `CF_BEACON_TOKEN` — the production line's Web Analytics site token
-- Variable `CF_BEACON_TOKEN_BETA` — the Pre-release Docs line's site token
+- Variable `CF_BEACON_TOKEN`
 
 The `GITHUB_TOKEN` Worker secret is configured separately for each Wrangler
 environment with `wrangler secret put GITHUB_TOKEN`.

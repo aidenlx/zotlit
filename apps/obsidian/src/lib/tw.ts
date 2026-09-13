@@ -1,4 +1,4 @@
-import { extendTailwindMerge } from "cn/config";
+import { extendTailwindMerge } from "tailwind-merge";
 import { createTV } from "tailwind-variants";
 
 /** Tailwind v4 `prefix(zt)` — prefix string only, no combining character. */

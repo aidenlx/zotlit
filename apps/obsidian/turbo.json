@@ -5,8 +5,6 @@
     "generate:language-packs": {
       "dependsOn": ["@zotlit/obsidian-i18n#build"],
       "inputs": [
-        "scripts/generate-language-packs.ts",
-        "scripts/language-pack-options.ts",
         "$TURBO_ROOT$/packages/obsidian-i18n/src/**",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
@@ -15,8 +13,6 @@
       "outputLogs": "errors-only"
     },
     "build": {
-      "env": ["$TURBO_EXTENDS$", "ANALYZE", "WEB_WORKBENCH_ENABLED"],
-      "outputs": ["$TURBO_EXTENDS$", "bundle-stats.html"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
@@ -24,27 +20,10 @@
       ]
     },
     "build:dev": {
-      "env": [
-        "ANALYZE",
-        "DOCS_SITE_URL",
-        "I18N_DEV_SERVER",
-        "WEB_WORKBENCH_ENABLED",
-        "ZT_VAULT_CASE"
-      ],
-      "outputs": ["$TURBO_EXTENDS$", "bundle-stats.html"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
-      ]
-    },
-    "dev": {
-      "env": [
-        "ANALYZE",
-        "DOCS_SITE_URL",
-        "I18N_DEV_SERVER",
-        "WEB_WORKBENCH_ENABLED",
-        "ZT_VAULT_CASE"
       ]
     },
     "typecheck": {

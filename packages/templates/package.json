@@ -15,9 +15,7 @@
     "./frontmatter": "./dist/frontmatter.mjs",
     "./frontmatter-merge": "./dist/frontmatter-merge.mjs",
     "./liquid": "./dist/liquid.mjs",
-    "./literature-note-pack": "./dist/literature-note-pack.mjs",
     "./obsidian": "./dist/obsidian.mjs",
-    "./pandoc-citation": "./dist/pandoc-citation.mjs",
     "./package.json": "./package.json",
     "./defaults/*.eta": "./defaults/*.eta",
     "./defaults/*.liquid": "./defaults/*.liquid"
@@ -34,10 +32,8 @@
     "@zotlit/shared": "workspace:*",
     "arkregex": "catalog:",
     "eta": "catalog:",
-    "json-e": "^4.8.4",
-    "liquidjs": "^10.27.2",
-    "valibot": "catalog:",
-    "yaml": "catalog:"
+    "liquidjs": "^10.27.1",
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -11,8 +11,6 @@ import {
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
-  buildImportProfileProtocolUrl,
-  importProfileProtocolQuerySchema,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
   exploreProtocolQuerySchema,
@@ -112,13 +110,6 @@ function updateAllUrlWireSurface(): unknown {
   };
 }
 
-function importProfileUrlWireSurface(): unknown {
-  return {
-    example: buildImportProfileProtocolUrl(),
-    params: Object.keys(importProfileProtocolQuerySchema.entries),
-  };
-}
-
 function importAllNotesUrlWireSurface(): unknown {
   return {
     example: buildImportAllNotesProtocolUrl(SOURCE, 7, COLLECTION),
@@ -164,7 +155,6 @@ describe("wire format", () => {
       importAllNotesUrl: importAllNotesUrlWireSurface(),
       importNoteUrl: importNoteUrlWireSurface(),
       importNotesUrl: importNotesUrlWireSurface(),
-      importProfileUrl: importProfileUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
       noteStatus: noteStatusWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
@@ -203,16 +193,9 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "importProfileUrl": {
-          "example": "obsidian://zotlit/import-profile?clipboard=true",
-          "params": [
-            "clipboard",
-          ],
-        },
         "literatureNotes": {
           "body": [
             "items",
-            "profile",
             "scope",
           ],
           "method": "PUT",
@@ -269,7 +252,6 @@ describe("wire format", () => {
           "example": "obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=a1b2c3d4",
           "params": [
             "items",
-            "profile",
             "scope",
             "source-id",
           ],
@@ -285,12 +267,11 @@ describe("wire format", () => {
           ],
           "params": [
             "item",
-            "profile",
             "scope",
             "source-id",
           ],
         },
-        "version": 8,
+        "version": 6,
         "zoteroNotes": {
           "body": [
             "items",

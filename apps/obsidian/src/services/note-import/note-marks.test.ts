@@ -21,7 +21,7 @@ function load(html: string): HTMLElement {
   return root;
 }
 
-const packageRoot = getPackageRoot(import.meta.filename);
+const packageRoot = getPackageRoot();
 
 const LOCAL_USER = "http://zotero.org/users/local/BOtEiq6p/items";
 

@@ -11,7 +11,6 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { missingPartialNotice } from "@/lib/workbench-recovery";
 import type {
   BatchImport,
   ReimportResult,
@@ -19,7 +18,6 @@ import type {
 import {
   batchImportAllToast,
   childImportToast,
-  importedNoteProfileErrorNotice,
 } from "@/services/note-import/batch-import-notices";
 import {
   isLiteratureNote,
@@ -28,23 +26,11 @@ import {
 } from "@/services/note-index/service";
 import { InertTemplateError } from "@/services/template/errors";
 
-import type {
-  NoteFeature,
-  NoteOperationDiagnostic,
-  UpdateScope,
-} from "./operations";
-import { switchNoteProfileInteractively } from "./switch-view";
-import type { InteractiveProfileSwitchDeps } from "./switch-view";
+import type { NoteFeature, UpdateScope } from "./operations";
 import type { BatchUpdateResult } from "./update-batch";
-import {
-  noteOperationDiagnosticContent,
-  updateNoteToast,
-} from "./update-single";
+import { updateNoteToast } from "./update-single";
 
-interface NoteFeatureActionDeps extends Pick<
-  InteractiveProfileSwitchDeps,
-  "zoteroPref" | "createProfile" | "importProfile"
-> {
+interface NoteFeatureActionDeps {
   app: App;
   noteFeature: NoteFeature;
   batchImport: Pick<
@@ -68,16 +54,6 @@ export function addNoteFeatureActions(
     }),
   );
 
-  plugin.registerEvent(
-    deps.app.workspace.on("zotlit:switch-profile", ({ path }) => {
-      const file = deps.app.vault.getFileByPath(path);
-      if (!file) return;
-      const cache = deps.app.metadataCache.getFileCache(file);
-      if (itemKeyFromFrontmatter(cache) || noteKeyFromFrontmatter(cache))
-        void switchNoteProfileInteractively(deps, file);
-    }),
-  );
-
   addUpdateCommand(plugin, deps, {
     id: "update-note",
     name: m.command_update_note_name(),
@@ -87,17 +63,6 @@ export function addNoteFeatureActions(
     id: "update-note-metadata",
     name: m.command_update_note_metadata_name(),
     scope: "metadata",
-  });
-
-  plugin.addCommand({
-    id: "switch-literature-note-profile",
-    name: m.command_switch_literature_note_profile_name(),
-    checkCallback(checking) {
-      const file = deps.app.workspace.getActiveFile();
-      if (!file || !isLiteratureNote(file, deps.app)) return false;
-      if (!checking) void switchNoteProfileInteractively(deps, file);
-      return true;
-    },
   });
 
   plugin.addCommand({
@@ -134,7 +99,7 @@ export function addNoteFeatureActions(
     id: "update-all-notes",
     name: m.command_update_all_notes_name(),
     callback() {
-      void runUpdateAllWithNotice(deps.updateAll);
+      void handleUpdateAll(deps.updateAll);
     },
   });
 
@@ -144,7 +109,7 @@ export function addNoteFeatureActions(
     callback() {
       void toast.promise(
         deps.batchImport.runBatchImportAll(),
-        batchImportAllToast({ app: deps.app }),
+        batchImportAllToast(),
       );
     },
   });
@@ -242,25 +207,22 @@ async function reimportNote(
 
   await toast.promise(
     deps.batchImport.reimportNoteByKey(noteKey, file),
-    reimportNoteToast({ app: deps.app, path: file.path }),
+    reimportNoteToast(),
   );
 }
 
-/** The copy one Reimport note reports with. */
-export function reimportNoteToast(options: { app: App; path: string }): {
+function reimportNoteToast(): {
   loading: string;
   success: (result: ReimportResult) => string | undefined;
-  error: (_msg: string, e: unknown) => string | DocumentFragment;
+  error: (_msg: string, e: unknown) => string;
 } {
   return {
     loading: m.notice_reimporting_note(),
     success: reimportNoteNotice,
     error: (_msg, e) =>
-      missingPartialNotice(e, options) ??
-      (e instanceof InertTemplateError
+      e instanceof InertTemplateError
         ? e.message
-        : (importedNoteProfileErrorNotice(e, options) ??
-          m.notice_reimport_note_failed())),
+        : m.notice_reimport_note_failed(),
   };
 }
 
@@ -310,7 +272,7 @@ function handleUpdateNote(
       indexedKey: opts.itemKey,
       scope: opts.scope,
     }),
-    updateNoteToast(opts.scope, { app: deps.app }),
+    updateNoteToast(opts.scope),
   );
 }
 
@@ -329,32 +291,14 @@ async function handleOverwriteNote(
     deps.app,
   );
   if (!yes) return;
-  await toast.promise(
-    deps.noteFeature.overwriteNote(file, itemKey),
-    overwriteNoteToast({ app: deps.app }),
-  );
-}
-
-/** The copy one Overwrite note reports with, which every caller of it shares. */
-export function overwriteNoteToast(options: { app: App }): {
-  loading: string;
-  success: (result: {
-    diagnostic?: NoteOperationDiagnostic;
-  }) => string | DocumentFragment;
-  error: (_msg: string, e: unknown) => string | DocumentFragment;
-} {
-  return {
+  await toast.promise(deps.noteFeature.overwriteNote(file, itemKey), {
     loading: m.notice_overwriting_note(),
-    success: (result) =>
-      result.diagnostic
-        ? noteOperationDiagnosticContent(options.app, result.diagnostic)
-        : m.notice_overwrote_note(),
+    success: m.notice_overwrote_note(),
     error: (_msg, e) =>
-      missingPartialNotice(e, options) ??
-      (e instanceof InertTemplateError
+      e instanceof InertTemplateError
         ? e.message
-        : m.notice_overwrite_note_failed()),
-  };
+        : m.notice_overwrite_note_failed(),
+  });
 }
 
 function handleChildImport(
@@ -363,15 +307,11 @@ function handleChildImport(
 ): Promise<void> {
   return toast.promise(
     deps.batchImport.runChildImportByKey(itemKey),
-    childImportToast({ app: deps.app }),
+    childImportToast(),
   );
 }
 
-/**
- * Run the Update all notes flow and report its outcome — the batch confirm
- * modal the command opens, reused wherever else that flow is offered.
- */
-export async function runUpdateAllWithNotice(
+async function handleUpdateAll(
   updateAll: () => Promise<BatchUpdateResult>,
 ): Promise<void> {
   await toast.promise(updateAll(), {

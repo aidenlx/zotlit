@@ -1,8 +1,7 @@
 // The citations one rendered reading-view section holds, and the swap that puts formatted text in their place.
 
-import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
-import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
-
+import { scanCitations } from "@/lib/citation-grammar";
+import type { TextSpan } from "@/lib/citation-grammar";
 import type { CitationSource } from "@/services/citation-text/present";
 
 /**
@@ -33,16 +32,16 @@ export function sectionCitations(root: HTMLElement): SectionCitation[] {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const text = node as Text;
     if (text.parentElement?.closest(EXCLUDED_SELECTOR)) continue;
-    for (const { start, end, items } of scanPandocCitations(text.data)) {
+    for (const { start, end, keys } of scanCitations(text.data)) {
       found.push({
         node: text,
         start,
         end,
         source: text.data.slice(start, end),
-        keys: items.map((item) => ({
-          citekey: item.citationKey,
-          start: item.start - start,
-          end: item.end - start,
+        keys: keys.map((key) => ({
+          citekey: key.citekey,
+          start: key.start - start,
+          end: key.end - start,
         })),
       });
     }

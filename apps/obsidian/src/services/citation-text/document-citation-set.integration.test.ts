@@ -25,7 +25,6 @@ import type { CitationIndexHarness } from "@/services/citation-index/test-harnes
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
@@ -226,7 +225,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     expect(
       firstText(
         includedText.formatted.get(
-          citationKey({ source: "[@roe2025, {p. 4}]", works: [KEY_B] }),
+          citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
         ),
       ),
     ).toBe("[2]");
@@ -252,7 +251,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     expect(firstText(excludedText.formatted.get("@doe2024"))).toBe("[1]");
     expect(
       excludedText.formatted.has(
-        citationKey({ source: "[@roe2025, {p. 4}]", works: [KEY_B] }),
+        citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
       ),
     ).toBe(false);
     expect(
@@ -445,7 +444,6 @@ function openText(
   styleXml: string,
 ): CitationText {
   return new CitationText({
-    profile: profileReader(),
     app,
     db,
     citationIndex: index,

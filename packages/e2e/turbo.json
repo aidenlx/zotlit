@@ -1,9 +1,0 @@
-{
-  "$schema": "https://turborepo.dev/schema.json",
-  "extends": ["//"],
-  "tasks": {
-    "e2e": {
-      "env": ["WEB_WORKBENCH_ENABLED"]
-    }
-  }
-}

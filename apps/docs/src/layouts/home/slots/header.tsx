@@ -10,6 +10,7 @@
 
 import { Dialog } from "@base-ui/react/dialog";
 import { NavigationMenu as Primitive } from "@base-ui/react/navigation-menu";
+import { useTranslations } from "@fuma-translate/react";
 import { cva } from "class-variance-authority";
 import Link from "fumadocs-core/link";
 import { buttonVariants } from "fumadocs-ui/components/ui/button";
@@ -38,7 +39,6 @@ import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
 import { mergeRefs } from "@/lib/merge-refs";
-import * as m from "@/paraglide/messages.js";
 
 export const navItemVariants = cva("[&_svg]:size-4", {
   variants: {
@@ -74,6 +74,7 @@ export function Header(props: ComponentProps<"header">) {
   const headerRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const [open, setOpen] = useState(false);
+  const t = useTranslations({ note: "home layout header" });
   const transparentMode = nav?.transparentMode ?? "none";
   const isTop = useIsScrollTop({ enabled: transparentMode === "top" }) ?? true;
   const isNavTransparent =
@@ -148,7 +149,7 @@ export function Header(props: ComponentProps<"header">) {
       <div className="ms-auto -me-1.5 flex flex-row items-center lg:hidden">
         {slots.searchTrigger && <MobileSearchTrigger />}
         <CollapsibleTrigger
-          aria-label={m.docs_toggle_menu()}
+          aria-label={t("Toggle Menu", { note: "aria-label" })}
           className={cn(
             buttonVariants({
               size: "icon",
@@ -272,6 +273,7 @@ export function Header(props: ComponentProps<"header">) {
 // stays a thin, exact reproduction of the packaged markup.
 function MobileSearchTrigger() {
   const { enabled, dialogHandle } = useSearchContext();
+  const t = useTranslations({ note: "search trigger" });
   if (!enabled) return null;
 
   return (
@@ -280,7 +282,7 @@ function MobileSearchTrigger() {
       type="button"
       className={cn(buttonVariants({ size: "icon-sm", color: "ghost" }), "p-2")}
       data-search=""
-      aria-label={m.docs_open_search()}
+      aria-label={t("Open Search", { note: "aria-label" })}
       suppressHydrationWarning
     >
       <Search />

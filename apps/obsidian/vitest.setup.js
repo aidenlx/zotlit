@@ -5,9 +5,15 @@
 // AGENTS.md → Obsidian guideline review) throws `ReferenceError: window is
 // not defined` under Vitest without this stub.
 globalThis.window ??= globalThis;
-// Obsidian's `activeWindow` names the window that last held focus and starts
-// out as the main window itself.
-globalThis.activeWindow ??= globalThis;
+
+// Obsidian's renderer also supplies `DOMParser`, which source code reads XML
+// and HTML with. The `node` test environment has none, so a test that runs
+// such code borrows happy-dom's — the same parser the `happy-dom` environment
+// installs, here without taking that whole environment on.
+if (typeof globalThis.DOMParser === "undefined") {
+  const { Window } = await import("happy-dom");
+  globalThis.DOMParser = new Window().DOMParser;
+}
 
 // Obsidian patches every window (main and popout alike, each patched by its
 // own copy of this same runtime script) with a `createEl()`/`createDiv()`/
@@ -83,13 +89,6 @@ if (typeof Window !== "undefined") {
 
 if (typeof Node !== "undefined") {
   const proto = Node.prototype;
-  proto.instanceOf ??= function (type) {
-    const localType = this.win?.[type.name];
-    return (
-      (typeof localType === "function" && this instanceof localType) ||
-      this instanceof type
-    );
-  };
   if (!Object.getOwnPropertyDescriptor(proto, "doc")) {
     Object.defineProperty(proto, "doc", {
       configurable: true,
@@ -136,25 +135,7 @@ if (typeof Element !== "undefined") {
   proto.addClasses ??= function (classes) {
     this.classList.add(...classes);
   };
-  proto.removeClass ??= function (...classes) {
-    this.classList.remove(...classes);
-  };
-  proto.toggleClass ??= function (classes, value) {
-    for (const cls of Array.isArray(classes) ? classes : [classes])
-      this.classList.toggle(cls, value);
-  };
-  proto.hasClass ??= function (cls) {
-    return this.classList.contains(cls);
-  };
   proto.empty ??= function () {
     while (this.firstChild) this.removeChild(this.firstChild);
-  };
-}
-
-if (typeof HTMLElement !== "undefined") {
-  // Test windows stay in one realm; migration tests supply their own event source.
-  HTMLElement.prototype.onWindowMigrated ??= () => () => {};
-  HTMLElement.prototype.toggle ??= function (visible) {
-    this.style.display = visible ? "" : "none";
   };
 }

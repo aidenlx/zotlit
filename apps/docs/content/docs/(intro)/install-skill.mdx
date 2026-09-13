@@ -5,9 +5,9 @@ introduced: "2.0.0"
 updated: "2.0.0"
 ---
 
+import { Callout } from "fumadocs-ui/components/callout";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
 
 The ZotLit skill helps an agent edit and test templates and configure managed frontmatter field templates in one vault.
 
@@ -22,7 +22,7 @@ You need:
 
 <Callout type="warn" title="Agent data access">
   The agent you select can receive Zotero metadata and annotation text returned
-  by the Template Workbench CLI. The agent's own data-handling policies apply.
+  by the Template Workbench. The agent's own data-handling policies apply.
 </Callout>
 
 ## Install the skill
@@ -69,7 +69,7 @@ Start one of the selected agents from the vault folder. Send this request:
 
 > Use the ZotLit skill to check my current template setup. Do not change any files.
 
-The agent should use the Template Workbench CLI and report the active vault and template setup. Your template files remain unchanged.
+The agent should use the Template Workbench and report the active vault and template setup. Your template files remain unchanged.
 
 ## Make your first template request
 
@@ -83,7 +83,7 @@ The agent inspects the current template and relevant Zotero data. It then edits 
 
 <Cards>
   <Card
-    title="Template Workbench CLI"
+    title="Template Workbench"
     description="How the skill, CLI, and safety boundaries fit together."
     href="/docs/concepts/template-workbench"
   />

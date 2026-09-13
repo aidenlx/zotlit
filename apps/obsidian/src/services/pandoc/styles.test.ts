@@ -1,4 +1,3 @@
-import "@mock/dom-parser";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -196,13 +195,13 @@ describe("listInstalledStyles", () => {
     await expect(listInstalledStyles(library.dataDir)).resolves.toEqual([]);
   });
 
-  it("decodes entities in a title and falls back to the style ID", async () => {
+  it("decodes entities in a title and falls back to the filename", async () => {
     await using library = await installStyles();
     await library.writeStyle("ampersand.csl", {
       id: "http://www.zotero.org/styles/ampersand",
       title: "Alcohol &amp; Drug Education",
     });
-    await library.writeStyle("my-private-draft.csl", {
+    await library.writeStyle("untitled.csl", {
       id: "http://www.zotero.org/styles/untitled",
     });
 
@@ -211,10 +210,7 @@ describe("listInstalledStyles", () => {
         id: "http://www.zotero.org/styles/ampersand",
         title: "Alcohol & Drug Education",
       },
-      {
-        id: "http://www.zotero.org/styles/untitled",
-        title: "http://www.zotero.org/styles/untitled",
-      },
+      { id: "http://www.zotero.org/styles/untitled", title: "untitled" },
     ]);
   });
 

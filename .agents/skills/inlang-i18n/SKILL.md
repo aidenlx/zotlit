@@ -1,6 +1,7 @@
 ---
 name: inlang-i18n
 description: "Define ZotLit UI messages in the Inlang Message Format and consume them through the generated JSON Language Pack facade. Use when editing messages/*.json, adding interpolation or variants, changing locale resolution, or working with m.* calls."
+paths: "messages/*.json"
 ---
 
 # Inlang messages + JSON Language Packs
@@ -36,11 +37,6 @@ start and watches the message sources, project settings, and generator.
 
 1. Add or edit the key in `messages/en.json`. Use `snake_case`; keys prefixed
    `docs_` belong only to the docs site and are excluded from plugin artifacts.
-   Companion copy (Zotero preferences, menus, Database Status) goes under the
-   nested `zotero` object: read `apps/zotero/policies/localization.md` first for
-   the attribute shape, Title Case, and the Fluent ID mapping. The plugin carries
-   a `zotero.` message only when `apps/obsidian/vite.config.ts` names it in
-   `includeMessages`; the docs site carries every one.
 2. Regenerate the facade when running package tools directly.
 3. Import the facade and keep named-input call shapes:
 

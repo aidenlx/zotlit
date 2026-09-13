@@ -1,15 +1,14 @@
+// Current-version and compatibility ledger for the install pages.
 import type { ReactNode } from "react";
 
 import { useReleaseSnapshot } from "@/components/release-snapshot";
 import type { ReleaseChannel } from "@/lib/github-releases";
 import { formatReleaseInstant } from "@/lib/shared";
-// Current-version and compatibility ledger for the install pages.
-import * as m from "@/paraglide/messages.js";
 
 /** The channel label the ledger's first row carries. */
-const channelLabels: Record<ReleaseChannel, () => string> = {
-  "pre-release": m.docs_release_channel_prerelease,
-  stable: m.docs_release_channel_stable,
+const channelLabels: Record<ReleaseChannel, string> = {
+  "pre-release": "Pre-release",
+  stable: "Stable",
 };
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -43,7 +42,7 @@ export function VersionLedger({ app, channel }: VersionLedgerProps) {
   const ledger = useReleaseSnapshot()?.[app][channel];
   if (!ledger) return null;
 
-  const label = channelLabels[channel]();
+  const label = channelLabels[channel];
   if ("empty" in ledger) {
     return (
       <div className="not-prose mb-4 text-sm text-fd-foreground">
@@ -71,7 +70,7 @@ export function VersionLedger({ app, channel }: VersionLedgerProps) {
           </span>
         )}
       </Row>
-      <Row label={m.docs_release_requires()}>
+      <Row label="Requires">
         {ledger.requires}
         {ledger.note && (
           <span className="text-fd-muted-foreground"> · {ledger.note}</span>

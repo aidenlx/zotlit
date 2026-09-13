@@ -3,7 +3,6 @@ import type TurndownService from "turndown";
 import { highlightColorToName, textColorToName } from "@zotlit/db";
 
 import { renderColorMark, renderHighlight } from "./color-mark";
-import type { HighlightOptions } from "./color-mark";
 import { createObsidianTurndown } from "./obsidian-base";
 
 /**
@@ -121,7 +120,7 @@ function addZoteroRules(
               raw: backgroundColor,
               name: highlightColorToName(backgroundColor),
             },
-            options,
+            options.useColoredHighlightSyntax ?? false,
           )
         : renderColorMark("text", content, {
             raw: color,
@@ -168,7 +167,8 @@ function addZoteroRules(
   });
 }
 
-interface NoteTurndownOptions extends Partial<HighlightOptions> {
+interface NoteTurndownOptions {
+  useColoredHighlightSyntax?: boolean;
   /**
    * Replacement for the highlight/underline excerpt span (`span[data-annotation]`).
    * Defaults to raw-HTML passthrough — the standalone converter keeps the payload

@@ -1,4 +1,3 @@
-import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
 // Document Citation Text, the References Sidebar, the Citation Popover, the
 // Copied Bibliography, and the built-in export.
@@ -28,13 +27,12 @@ import {
   SettingsStub,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
-import { CitationPopover } from "@/services/citation-popover/service";
+import { createCitationPopover } from "@/services/citation-popover/service";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
-import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { Settings } from "@/services/settings/schema";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
 import { runPandocExport } from "@/views/pandoc-export/register";
@@ -171,14 +169,11 @@ export interface CitationVaultOptions {
   /** Every style Zotero has installed here, by the file name it carries. */
   styles: Record<string, string>;
   /** The vault settings every surface renders under. */
-  settings: Partial<Settings> &
-    Partial<ResolvedLiteratureNoteProfileBindings>;
+  settings: Partial<Settings>;
   /** The `zotlit-csl` property both notes carry; `undefined` writes none. */
   documentStyle?: unknown;
   /** The `lang` property both notes carry; `undefined` writes none. */
   documentLanguage?: unknown;
-  /** Other frontmatter properties both notes carry. */
-  documentProperties?: Record<string, unknown>;
   /**
    * Whether Zotero holds the works these notes cite; `false` leaves every
    * citation unresolved, so nothing reaches the bibliography.
@@ -254,7 +249,6 @@ export async function openCitationVault({
   settings: overrides,
   documentStyle,
   documentLanguage,
-  documentProperties = {},
   zoteroHoldsWork = true,
 }: CitationVaultOptions): Promise<CitationVault> {
   resetCitationSurfaceMocks();
@@ -291,7 +285,7 @@ export async function openCitationVault({
   };
   /** Those same properties as one record, the way a note carries them. */
   const properties = (): Record<string, unknown> => {
-    const record: Record<string, unknown> = { ...documentProperties };
+    const record: Record<string, unknown> = {};
     if (declared.style !== undefined) record["zotlit-csl"] = declared.style;
     if (declared.language !== undefined) record["lang"] = declared.language;
     return record;
@@ -324,7 +318,6 @@ export async function openCitationVault({
   );
   const cache = stack.use(
     new BibliographyRenderCache({
-      profile: { ...profileReader(), on: (_event, callback) => { let first = true; return settings.subscribe(() => { if (!first) callback(); first = false; }); } },
       db: harness.db,
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
@@ -345,7 +338,6 @@ export async function openCitationVault({
 
   const citationText = stack.use(
     new CitationText({
-      profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
       db: harness.db,
       citationIndex: harness.index,
@@ -359,7 +351,6 @@ export async function openCitationVault({
     {} as WorkspaceLeaf,
     {
       app: sidebarApp(harness),
-      profile: profileReader(() => settings.current, harness.metadataCache),
       db: harness.db,
       citationIndex: harness.index,
       citationText,
@@ -370,7 +361,6 @@ export async function openCitationVault({
         decline: () => undefined,
       },
       bibliographyRender: cache,
-      settings,
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
     } as unknown as ConstructorParameters<typeof TestReferencesView>[1],
@@ -382,8 +372,7 @@ export async function openCitationVault({
     document.body.replaceChildren();
   });
 
-  const popover = stack.use(new CitationPopover({
-    profile: profileReader(() => settings.current, harness.metadataCache),
+  const popover = createCitationPopover({
     app: {
       metadataCache: harness.metadataCache,
       vault: {
@@ -396,7 +385,7 @@ export async function openCitationVault({
     citationText,
     bibliographyRender: cache,
     libraryScope: harness.libraryScope,
-  }));
+  });
 
   const copyAction = (): HTMLElement =>
     view.contentEl.querySelector<HTMLElement>(
@@ -587,7 +576,6 @@ function exportAdapter({
   settings: SettingsStub;
 }): PandocExportDeps {
   return {
-    profile: profileReader(() => settings.current, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
       vault: {

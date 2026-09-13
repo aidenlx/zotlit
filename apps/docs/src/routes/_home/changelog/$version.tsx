@@ -1,5 +1,6 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import collections from "collections/browser";
 import { ArrowUpRight } from "lucide-react";
 
 import { BackCrumb } from "@/components/back-crumb";
@@ -7,7 +8,6 @@ import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
 import { betaFallbackUrl } from "@/lib/beta-fallback";
 import { cn } from "@/lib/cn";
-import { changelogs } from "@/lib/collections";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -22,7 +22,6 @@ import {
   breadcrumbListSchema,
   changelogArticleSchema,
 } from "@/lib/structured-data";
-import { m } from "@/paraglide/messages.js";
 
 const getRelease = createServerFn({ method: "GET" })
   .validator((version: string) => version)
@@ -48,11 +47,16 @@ const getRelease = createServerFn({ method: "GET" })
     };
   });
 
+const releaseBody = collections.changelogs.createClientLoader<object>({
+  id: "changelogs",
+  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
+});
+
 export const Route = createFileRoute("/_home/changelog/$version")({
   component: ChangelogVersion,
   loader: async ({ params }) => {
     const release = await getRelease({ data: params.version });
-    await changelogs.get(release.path)?.preload();
+    await releaseBody.preload(release.path);
     return release;
   },
   head: ({ loaderData: release }) =>
@@ -62,15 +66,12 @@ export const Route = createFileRoute("/_home/changelog/$version")({
           title: `v${release.version}`,
           description:
             release.description ??
-            m.docs_changelog_release_description({
-              version: release.version,
-              date: formatReleaseDate(release.date),
-            }),
+            `Changelog for ZotLit v${release.version} released on ${formatReleaseDate(release.date)}.`,
           path: release.url,
           card: {
             type: "changelog",
             slugs: release.slugs,
-            alt: m.docs_changelog_release_og_alt({ version: release.version }),
+            alt: `ZotLit v${release.version} release notes`,
           },
           article: { publishedTime: release.date },
           feeds: { "application/rss+xml": changelogFeedRoute },
@@ -83,7 +84,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },
-              { name: m.docs_nav_changelog(), url: changelogRoute },
+              { name: "Changelog", url: changelogRoute },
               { name: `v${release.version}`, url: release.url },
             ]),
           ],
@@ -92,20 +93,18 @@ export const Route = createFileRoute("/_home/changelog/$version")({
 
 function ChangelogVersion() {
   const release = Route.useLoaderData();
-  const page = changelogs.get(release.path);
-  if (!page) throw notFound();
-  const Body = page.body;
+  const Body = releaseBody.getComponent(release.path);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <BackCrumb to="/changelog" label={m.docs_nav_changelog()} />
+        <BackCrumb to="/changelog" label="Changelog" />
         <header className="pt-4.5 pb-2">
           <h1 className="mb-2.5 flex flex-wrap items-baseline gap-4 text-4xl font-medium">
             v{release.version}
             {release.latest && (
               <span className="border border-fd-primary px-2.5 py-0.5 font-mono text-xs tracking-[0.04em] text-fd-primary">
-                {m.docs_changelog_latest()}
+                latest
               </span>
             )}
           </h1>
@@ -125,7 +124,7 @@ function ChangelogVersion() {
             "mt-6 prose-h2:mt-10 prose-h2:mb-3 prose-h2:text-sm prose-h2:tracking-[0.18em] prose-h2:before:mr-2.5 prose-h2:before:h-3.5 prose-h3:mt-6 prose-h3:mb-1.5 prose-h3:text-lg prose-p:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-1 prose-li:leading-[1.6]",
           )}
         >
-          <Body components={getMDXComponents()} />
+          <Body />
         </div>
         <a
           href={`${repoUrl}/releases/tag/${release.version}`}
@@ -133,7 +132,7 @@ function ChangelogVersion() {
           rel="noreferrer noopener"
           className="mt-6.5 inline-flex items-center gap-2 border border-fd-border bg-fd-card px-4.5 py-2.25 text-[15px] hover:border-fd-primary hover:text-fd-primary"
         >
-          {m.docs_changelog_open_github()}
+          Open release on GitHub
           <ArrowUpRight aria-hidden className="size-[1.05em] shrink-0" />
         </a>
       </article>

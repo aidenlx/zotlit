@@ -1,67 +1,67 @@
-// A native Explorer owns its data and navigation; workspace values supply its authoring context.
-import { ItemView, setIcon } from "obsidian";
+// ItemView orchestrator for the Template Data Explorer: picks an item, fetches its note-root context through inert resolvers, and drives the display tree.
+import { ItemView } from "obsidian";
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { parseIndexedKey } from "@zotlit/db";
-import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
-  failedRender,
-  renderIdentity,
-  SAMPLE_ANNOTATIONS,
-} from "@zotlit/workbench/render";
-import {
-  explorerSectionIds,
-  visibleSectionIds,
-  WorkbenchHostProvider,
-  WorkbenchThemeProvider,
-} from "@zotlit/workbench/ui";
-import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
+  CollectionCache,
+  fetchNoteContext,
+  getZoteroIdentity,
+  getItemsByKey,
+  getLibraries,
+  isChildItemFields,
+  parseIndexedKey,
+  USER_LIBRARY_ID,
+} from "@zotlit/db";
+import type { Item, Library, NoteTemplateContext } from "@zotlit/db";
 
+import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
+import { itemSummary } from "@/lib/item-summary";
+import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
+import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { SettingsService } from "@/services/settings/service";
+import { loadTemplateData } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
+import {
+  buildInertNoteResolvers,
+  findExistingLitNote,
+  resolveExcerptImageContext,
+} from "@/services/template/inert-resolvers";
 import type { TemplateService } from "@/services/template/service";
-import {
-  activeTemplateWorkbench,
-  registerCompanionHistory,
-  onCompanionStateRestored,
-  subscribeActiveTemplateWorkbench,
-} from "@/views/note-preview/register";
-import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
-import {
-  chooseWorkbenchItem,
-  searchWorkbenchItem,
-  chooseWorkbenchAnnotation,
-  publishWorkbenchSelection,
-  subscribeWorkbenchSelection,
-  selectionViewTitle,
-  updateSelectionTitle,
-} from "@/views/template-workbench/selection";
-import { getSampleItem } from "@/views/template-workbench/selection-data";
-import { templateWorkbenchTheme } from "@/views/template-workbench/theme";
-import type {
-  TemplateAuthoringContext,
-  TemplateWorkbenchView,
-} from "@/views/template-workbench/view";
 
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
-import { Explorer } from "./Explorer";
-import { exportTemplateDataFile } from "./export-file";
-import { rememberTemplateItem } from "./item-memory";
 import {
-  annotationIndexedKey,
-  NativeExplorerSession,
-  ExplorerStoreProvider,
-} from "./store";
+  annotationKeyAtPath,
+  buildDisplayTree,
+  buildFilteredDisplayTree,
+  findAnnotationRoot,
+} from "./display-tree";
+import { Explorer } from "./Explorer";
+import { buildTemplateDataExport } from "./export";
+import { pickItem } from "./item-picker";
+import { createExplorerStore, ExplorerStoreProvider } from "./store";
+import type { ExplorerState } from "./store";
+import {
+  initialTreeState,
+  setAnchor,
+  setFilter,
+  toggleNode,
+} from "./tree-state";
+import type { TreeState } from "./tree-state";
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
+
+const logger = getLogger(["views", "template-data-explorer"]);
+
+/** Extends the Workbench loader's deps: the export rebuilds its data through it. */
 export interface ExplorerViewDeps extends TemplateDataDeps {
   db: Pick<
     DatabaseService,
@@ -71,667 +71,488 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
   settings: SettingsService;
   templates: Pick<
     TemplateService,
-    "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"
+    "javascriptTemplatesEnabled" | "ready" | "render"
   >;
+  /** Installed plugin version, stamped into the Template Data Export. */
   pluginVersion: string;
 }
+
+function resolveLibraryID(
+  groupID: number | null,
+  libraries: readonly Library[] | null,
+): number | null {
+  if (groupID === null) return USER_LIBRARY_ID;
+  if (!libraries) return null;
+  return libraries.find((l) => l.groupID === groupID)?.libraryID ?? null;
+}
+
 export class TemplateDataExplorerView extends ItemView {
-  readonly #session: NativeExplorerSession;
+  readonly #store = createExplorerStore();
   readonly #deps: ExplorerViewDeps;
   #root: Root | null = null;
-  #cleanup: DisposableStack | null = null;
-  #editor: TemplateWorkbenchView | null = null;
-  #host: ReturnType<typeof createTemplateWorkbenchHost> | null = null;
   #actions: ExplorerActions | null = null;
-  #closed = false;
-  #choiceGeneration = 0;
+  #context: NoteTemplateContext | null = null;
+  #item: Item | null = null;
+  #itemIndexedKey: string | null = null;
+  #treeState: TreeState = initialTreeState();
+  #pendingRestoreKey: string | null = null;
+  #pendingRestoreAnchor: string | null = null;
+  #didInitialLoad = false;
+
   constructor(leaf: WorkspaceLeaf, deps: ExplorerViewDeps) {
     super(leaf);
     this.contentEl.addClass("zt-root");
     this.#deps = deps;
-    this.#session = new NativeExplorerSession(deps);
   }
+
   override getViewType(): string {
     return EXPLORER_VIEW_TYPE;
   }
+
   override getDisplayText(): string {
-    const state = this.#session.state.getState();
-    const title =
-      state.root === "note" && typeof state.data?.title === "string"
-        ? state.data.title
-        : state.item?.title;
-    return selectionViewTitle({
-      item: state.item && { ...state.item, title: title ?? null },
-      annotation:
-        state.root === "annotation" && state.data && state.annotationId
-          ? { id: state.annotationId, root: state.data }
-          : null,
-      annotationMode: state.root === "annotation",
-      view: "fields",
-    });
+    return m.template_data_explorer_view_name();
   }
+
   override getIcon(): string {
     return "braces";
   }
+
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
-    menu.addItem((item) =>
-      item
-        .setSection("zotlit")
-        .setTitle(m.workbench_choose_item())
-        .setIcon("search")
-        .onClick(() => void this.#chooseItem()),
-    );
-    menu.addItem((item) =>
-      item
-        .setSection("zotlit")
-        .setTitle(m.workbench_choose_annotation())
-        .setIcon("highlighter")
-        .onClick(() => void this.#chooseAnnotation()),
-    );
-    menu.addItem((item) =>
-      item
-        .setSection("zotlit")
-        .setTitle(
-          this.#allSectionsCollapsed()
-            ? m.workbench_explorer_expand_all()
-            : m.workbench_explorer_collapse_all(),
-        )
-        .setIcon(
-          this.#allSectionsCollapsed()
-            ? "chevrons-up-down"
-            : "chevrons-down-up",
-        )
-        .onClick(() => this.#toggleSections()),
-    );
     this.#actions?.addCopyKeyMenuItem(menu);
     menu.addItem((item) =>
       item
         .setSection("zotlit")
-        .setTitle(m.workbench_refresh_item())
+        .setTitle(m.template_data_explorer_refresh_tooltip())
         .setIcon("refresh-cw")
-        .onClick(() => this.#session.refresh()),
+        .onClick(() => this.#refresh()),
     );
     this.#actions?.addExportMenuItem(menu);
   }
+
   override getState(): Record<string, unknown> {
-    const { item, annotationId, root, collapsedSections, sourcePath } =
-      this.#session.state.getState();
+    if (!this.#itemIndexedKey) return {};
     return {
-      itemIndexedKey: item?.id ?? null,
-      anchorAnnotationKey: annotationId,
-      root,
-      collapsedSections: [...collapsedSections],
-      sourceFile: sourcePath,
+      itemIndexedKey: this.#itemIndexedKey,
+      ...(this.#treeState.anchorKey !== null
+        ? { anchorAnnotationKey: this.#treeState.anchorKey }
+        : {}),
     };
   }
-  /** Judged on the sections the reader can see, so the action's label matches the pane. */
-  #allSectionsCollapsed(): boolean {
-    const host = this.#host;
-    if (!host) return false;
-    const { root, data, collapsedSections } = this.#session.state.getState();
-    const shown = visibleSectionIds(data, {
-      m: host.messages,
-      root,
-      locale: host.getLocale(),
-    });
-    return shown.length > 0 && shown.every((id) => collapsedSections.has(id));
-  }
-  /** Closes every section, or opens every section once all are closed. */
-  #toggleSections(): void {
-    const { root, setCollapsedSections } = this.#session.state.getState();
-    setCollapsedSections(
-      this.#allSectionsCollapsed()
-        ? new Set()
-        : new Set<string>(explorerSectionIds(root)),
-    );
-  }
+
   override async setState(
     state: unknown,
     result: ViewStateResult,
   ): Promise<void> {
-    const previous = JSON.stringify(this.getState());
-    const launch =
-      !!state &&
-      typeof state === "object" &&
-      "zotlitLaunch" in state &&
-      state.zotlitLaunch === true;
-    try {
-      await this.#restoreState(state, result);
-    } finally {
-      if (previous !== JSON.stringify(this.getState())) result.history = true;
-      if (!launch)
-        onCompanionStateRestored(this.app, result, () => {
-          if (!this.#cleanup) return;
-          this.#editor = activeTemplateWorkbench(
-            this.app,
-            this.leaf,
-            this.#editor,
-          );
-          if (this.#editor) this.#apply(this.#editor.authoringContext);
-          this.#mount();
-        });
-    }
-  }
-  async #restoreState(state: unknown, result: ViewStateResult): Promise<void> {
     await super.setState(state, result);
     if (!state || typeof state !== "object") return;
-    const value = state as Record<string, unknown>;
-    if (!Object.hasOwn(value, "itemIndexedKey")) return;
-    const annotationId =
-      typeof value.anchorAnnotationKey === "string"
-        ? value.anchorAnnotationKey
-        : null;
-    const root =
-      value.root === "filename" ||
-      value.root === "annotation" ||
-      value.root === "note"
-        ? value.root
-        : annotationId
-          ? "annotation"
-          : "note";
-    this.#session.state.setState({
-      collapsedSections: new Set(
-        Array.isArray(value.collapsedSections)
-          ? value.collapsedSections.filter(
-              (id): id is string => typeof id === "string",
-            )
-          : [],
-      ),
-      sourcePath:
-        typeof value.sourceFile === "string" ? value.sourceFile : null,
-    });
-    const item =
-      typeof value.itemIndexedKey === "string"
-        ? { id: value.itemIndexedKey, title: value.itemIndexedKey }
-        : null;
-    this.#session.state.setState({
-      context:
-        typeof value.sourceFile === "string"
-          ? {
-              leaf: this.leaf,
-              path: value.sourceFile,
-              item,
-              kind: "profile",
-              root,
-              annotationId,
-              tab:
-                root === "annotation"
-                  ? "annotation"
-                  : root === "filename"
-                    ? "name"
-                    : "note",
-              advanced: false,
-              // The workspace saves a Profile Explorer alone, which names no
-              // Citation set and no Shared Partial; the editor supplies both
-              // the moment it arrives.
-              citation: null,
-              partial: null,
-              canInsertField: false,
-            }
-          : null,
-    });
-    this.#session.setTarget(
-      typeof value.itemIndexedKey === "string"
-        ? { id: value.itemIndexedKey, title: value.itemIndexedKey }
-        : null,
-      root,
-      annotationId,
-    );
+    const s = state as Record<string, unknown>;
+    if (typeof s.itemIndexedKey !== "string") return;
+
+    const key = s.itemIndexedKey;
+    const anchorKey =
+      typeof s.anchorAnnotationKey === "string" ? s.anchorAnnotationKey : null;
+    if (this.#didInitialLoad && this.#deps.db.state === "ready") {
+      // Re-opening the already-shown target keeps the user's exploration;
+      // any item or anchor change starts from fresh navigation state.
+      const sameTarget =
+        key === this.#itemIndexedKey && anchorKey === this.#treeState.anchorKey;
+      this.#restoreItem(key);
+      if (!sameTarget) this.#treeState = initialTreeState(anchorKey);
+      this.#reload();
+    } else {
+      this.#pendingRestoreKey = key;
+      this.#pendingRestoreAnchor = anchorKey;
+    }
   }
-  #presentationContext(): string {
-    const { item, root, annotationId } = this.#session.state.getState();
-    return JSON.stringify([item?.id ?? null, root, annotationId]);
-  }
-  override getEphemeralState(): Record<string, unknown> {
-    const { navigation, presentation } = this.#session.state.getState();
-    return {
-      zotlitDataExplorer: {
-        context: this.#presentationContext(),
-        navigation: {
-          ...navigation,
-          expanded: [...navigation.expanded],
-          filterCollapsed: [...navigation.filterCollapsed],
-          noteRootExpanded: navigation.noteRootExpanded && [
-            ...navigation.noteRootExpanded,
-          ],
-          preFilterExpanded: navigation.preFilterExpanded && [
-            ...navigation.preFilterExpanded,
-          ],
-        },
-        presentation,
-      },
-    };
-  }
-  override setEphemeralState(input: unknown): void {
-    if (!input || typeof input !== "object") return;
-    const value = input as Record<string, unknown>;
-    const payload = value.zotlitDataExplorer;
-    if (!payload || typeof payload !== "object") return;
-    const state = payload as Record<string, unknown>;
-    if (state.context !== this.#presentationContext()) return;
-    const raw = state.navigation;
-    if (!raw || typeof raw !== "object") return;
-    const navigation = raw as Record<string, unknown>;
-    const strings = (input: unknown): ReadonlySet<string> =>
-      new Set(
-        Array.isArray(input)
-          ? input.filter((entry): entry is string => typeof entry === "string")
-          : [],
-      );
-    const rawPresentation = state.presentation as Record<
-      string,
-      unknown
-    > | null;
-    const presentation = {
-      top:
-        typeof rawPresentation?.top === "number" &&
-        Number.isFinite(rawPresentation.top)
-          ? Math.max(0, rawPresentation.top)
-          : 0,
-      left:
-        typeof rawPresentation?.left === "number" &&
-        Number.isFinite(rawPresentation.left)
-          ? Math.max(0, rawPresentation.left)
-          : 0,
-      field:
-        typeof rawPresentation?.field === "string"
-          ? rawPresentation.field
-          : null,
-    };
-    this.#session.state.setState({
-      navigation: {
-        anchorKey:
-          typeof navigation.anchorKey === "string"
-            ? navigation.anchorKey
-            : null,
-        filterQuery:
-          typeof navigation.filterQuery === "string"
-            ? navigation.filterQuery
-            : "",
-        expanded: strings(navigation.expanded),
-        filterCollapsed: strings(navigation.filterCollapsed),
-        noteRootExpanded:
-          navigation.noteRootExpanded === null
-            ? null
-            : strings(navigation.noteRootExpanded),
-        preFilterExpanded:
-          navigation.preFilterExpanded === null
-            ? null
-            : strings(navigation.preFilterExpanded),
-      },
-      presentation,
-      restore: { ...presentation, focus: value.focus === true },
-    });
-  }
+
   protected override async onOpen(): Promise<void> {
-    using cleanup = new DisposableStack();
-    cleanup.defer(registerCompanionHistory(this));
-    cleanup.use(this.#session);
-    // Swaps icon and label like the file explorer's collapse action: each
-    // names what the next press does.
-    const sectionsAction = this.addAction(
-      "chevrons-down-up",
-      m.workbench_explorer_collapse_all(),
-      () => this.#toggleSections(),
-    );
-    let syncedSections: boolean | null = null;
-    const syncSectionsAction = () => {
-      const collapsed = this.#allSectionsCollapsed();
-      if (collapsed === syncedSections) return;
-      syncedSections = collapsed;
-      setIcon(
-        sectionsAction,
-        collapsed ? "chevrons-up-down" : "chevrons-down-up",
-      );
-      sectionsAction.setAttribute(
-        "aria-label",
-        collapsed
-          ? m.workbench_explorer_expand_all()
-          : m.workbench_explorer_collapse_all(),
-      );
-    };
-    syncSectionsAction();
-    const chooseAction = this.addAction(
-      "search",
-      m.workbench_choose_item(),
-      () => {
-        if (this.#session.state.getState().root === "annotation")
-          void this.#chooseAnnotation();
-        else void this.#chooseItem();
-      },
-    );
-    cleanup.defer(
-      subscribeWorkbenchSelection(this, {
-        editor: () => this.#sourceEditor()?.leaf ?? null,
-        apply: (selection) => {
-          if (selection.kind === "item")
-            this.#selectItem(selection.item, false);
-          // The Citation set reaches this Explorer with the editor's authoring
-          // context, which is the one place its own data reads it from.
-          else if (selection.kind === "annotation") {
-            const state = this.#session.state.getState();
-            if (state.annotationId !== selection.annotationId)
-              this.#session.setTarget(
-                state.item,
-                state.root,
-                selection.annotationId,
-              );
-          }
-        },
-      }),
-    );
-    cleanup.defer(
-      this.#session.state.subscribe((state, previous) => {
-        updateSelectionTitle(this);
-        syncSectionsAction();
-        chooseAction.setAttribute(
-          "aria-label",
-          state.root === "annotation"
-            ? m.workbench_choose_annotation()
-            : m.workbench_choose_item(),
-        );
-        if (
-          state.item?.id !== previous.item?.id ||
-          state.root !== previous.root ||
-          state.annotationId !== previous.annotationId ||
-          state.collapsedSections !== previous.collapsedSections ||
-          state.sourcePath !== previous.sourcePath
-        )
-          this.app.workspace.requestSaveLayout();
-      }),
-    );
-    this.#host = cleanup.use(
-      createTemplateWorkbenchHost(this.app, {
-        render: (request) =>
-          Promise.resolve(
-            failedRender(renderIdentity(request), { code: "render-error" }),
-          ),
-        matchData: {
-          tags: async () => [],
-          collections: async () => [],
-          libraries: async () => [],
-        },
-        insertTarget: () => null,
-      }),
-    );
     this.#actions = createExplorerActions({
-      onChooseItem: () => void this.#chooseItem(),
-      onBackToNoteRoot: () => {
-        this.#session.setTarget(this.#session.state.getState().item, "note");
+      onChooseItem: () => this.#chooseItem(),
+      onToggle: (key) => this.#toggle(key),
+      onFilter: (query) => this.#setFilter(query),
+      annotationKeyAt: (node) => {
+        if (this.#treeState.anchorKey !== null || !this.#context) return null;
+        return annotationKeyAtPath(this.#context, node.path);
       },
-      onToggleSections: () => this.#toggleSections(),
-      onRefresh: () => this.#session.refresh(),
-      canExport: () => this.#exportTarget() !== null,
-      onExport: () => void this.#export(),
-      exportLabel: () =>
-        this.#session.state.getState().root === "annotation" &&
-        this.#exportTarget()?.root === "note"
-          ? m.template_data_explorer_export_selected_paper()
-          : m.template_data_explorer_menu_export_json(),
+      onAnchorAnnotation: (key) => this.#setAnchor(key),
+      onBackToNoteRoot: () => this.#setAnchor(null),
+      onRefresh: () => this.#refresh(),
+      isEtaEnabled: () => this.#deps.templates.javascriptTemplatesEnabled,
+      canExport: () => this.#context !== null && this.#item !== null,
+      onExport: () => void this.#exportTemplateData(),
       copyTarget: () => {
-        const target = this.#exportTarget();
-        return target
-          ? {
-              indexedKey: target.indexedKey,
-              kind: target.root === "annotation" ? "annotation" : "item",
-            }
-          : null;
+        const target = this.#anchoredTarget();
+        if (!target) return null;
+        return {
+          indexedKey: target.indexedKey,
+          kind: target.isAnnotation ? "annotation" : "item",
+        };
       },
     });
-    this.#root = cleanup.adopt(createRoot(this.contentEl), (root) =>
-      root.unmount(),
+
+    this.#root = createRoot(this.contentEl);
+    this.#root.render(
+      <ExplorerStoreProvider value={this.#store}>
+        <ExplorerActionsContext value={this.#actions}>
+          <Explorer />
+        </ExplorerActionsContext>
+      </ExplorerStoreProvider>,
     );
-    const event = this.app.workspace.on(
-      "zotlit:authoring-context",
-      (context) => {
-        if (context.leaf === this.#editor?.leaf) this.#apply(context);
-      },
+
+    this.register(
+      this.#deps.db.on("changed", () => {
+        logger.debug("DB changed, refreshing template data explorer");
+        this.#reload();
+      }),
     );
-    cleanup.defer(() => this.app.workspace.offref(event));
-    const rename = this.app.vault.on("rename", (file, oldPath) => {
-      const { context, sourcePath } = this.#session.state.getState();
-      if (sourcePath !== oldPath) return;
-      const editorContext = this.#editor?.authoringContext;
-      this.#session.state.setState({
-        sourcePath: file.path,
-        ...(context?.path === oldPath
-          ? {
-              context: {
-                ...context,
-                path: file.path,
-                canInsertField:
-                  editorContext?.path === file.path &&
-                  editorContext.canInsertField,
-              },
-            }
-          : {}),
-      });
-    });
-    cleanup.defer(() => this.app.vault.offref(rename));
-    cleanup.defer(
-      subscribeActiveTemplateWorkbench(
-        this.app,
-        (editor) => {
-          this.#editor = editor;
-          if (editor) this.#apply(editor.authoringContext);
-          else {
-            const context = this.#session.state.getState().context;
-            if (context)
-              this.#session.state.setState({
-                context: { ...context, canInsertField: false },
-              });
-          }
-        },
-        this.leaf,
-      ),
-    );
-    cleanup.defer(this.#deps.db.on("changed", () => this.#session.refresh()));
-    this.#mount();
-    this.#cleanup = cleanup.move();
-    updateSelectionTitle(this);
+
+    this.#syncDbReady();
     await this.#deps.db.ready;
-    if (this.#closed || this.#session.state.getState().context) return;
-    if (!this.#session.state.getState().item) {
-      const file = this.app.workspace.getActiveFile();
-      const key = file
-        ? itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file))
-        : null;
-      if (key) this.#session.setTarget({ id: key, title: key }, "note");
-    } else this.#session.refresh();
+    this.#syncDbReady();
+    this.#initialLoad();
   }
-  #apply(context: TemplateAuthoringContext, explicit = false): void {
-    const previous = this.#session.state.getState().context;
-    if (!explicit && this.leaf.pinned && previous) {
-      this.#session.state.setState({
-        context: {
-          ...previous,
-          canInsertField:
-            previous.path === context.path && context.canInsertField,
-        },
-      });
-      return;
+
+  protected override async onClose(): Promise<void> {
+    this.#root?.unmount();
+    this.#root = null;
+    this.#actions = null;
+  }
+
+  #syncDbReady(): void {
+    this.#store.setState({ dbReady: this.#deps.db.state === "ready" });
+  }
+
+  #initialLoad(): void {
+    if (this.#didInitialLoad) return;
+    if (this.#deps.db.state !== "ready") return;
+    this.#didInitialLoad = true;
+    if (this.#pendingRestoreKey) {
+      this.#restoreItem(this.#pendingRestoreKey);
+      this.#pendingRestoreKey = null;
+      this.#treeState = initialTreeState(this.#pendingRestoreAnchor);
+      this.#pendingRestoreAnchor = null;
+    } else if (this.#item === null) {
+      this.#seedFromActiveNote();
     }
-    this.#session.setContext(context);
+    this.#reload();
   }
-  #mount(): void {
-    if (!this.#host || !this.#actions) return;
-    this.#root?.render(
-      <WorkbenchHostProvider host={this.#host}>
-        <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
-          <ExplorerStoreProvider value={this.#session.state}>
-            <ExplorerActionsContext value={this.#actions}>
-              <Explorer
-                onSelectAnnotation={(id) => this.#selectAnnotation(id)}
-                onChooseAnnotation={() => void this.#chooseAnnotation()}
-                onSelectItem={(item) => this.#selectItem(item)}
-                onSearchItem={() => void this.#chooseItem(true)}
-                lookup={this.#deps.itemLookup}
-                explorer={{
-                  copy: (text) => navigator.clipboard.writeText(text),
-                  engines: () =>
-                    this.#deps.templates.javascriptTemplatesEnabled
-                      ? ["liquid", "eta"]
-                      : ["liquid"],
-                  onInsertNode: (node) => {
-                    const editor = activeTemplateWorkbench(
-                      this.app,
-                      this.leaf,
-                      this.#editor,
-                    );
-                    if (editor && editor === this.#sourceEditor())
-                      this.app.workspace.trigger(
-                        "zotlit:insert-template-field",
-                        { leaf: editor.leaf, node },
-                      );
-                  },
-                  canExploreAnnotation: (node) =>
-                    this.#annotationKey(node) !== null,
-                  onExploreAnnotation: (node) => {
-                    const key = this.#annotationKey(node);
-                    if (key) {
-                      this.#selectAnnotation(key);
-                    }
-                  },
-                }}
-              />
-            </ExplorerActionsContext>
-          </ExplorerStoreProvider>
-        </WorkbenchThemeProvider>
-      </WorkbenchHostProvider>,
-    );
+
+  #refresh(): void {
+    void toast.promise(this.#deps.db.refresh(), {
+      loading: m.template_data_explorer_refreshing(),
+      success: m.template_data_explorer_refreshed(),
+      error: m.template_data_explorer_refresh_failed(),
+    });
   }
-  #annotationKey(node: DisplayNode): string | null {
-    const { item, root } = this.#session.state.getState();
-    if (
-      !item ||
-      root !== "note" ||
-      node.path.length !== 2 ||
-      node.path[0] !== "annotations" ||
-      typeof node.path[1] !== "number" ||
-      node.kind !== "value" ||
-      !node.value ||
-      typeof node.value !== "object" ||
-      !("key" in node.value) ||
-      typeof node.value.key !== "string"
-    )
-      return null;
-    const parsed = parseIndexedKey(item.id);
-    if (getSampleItem(item.id)) return node.value.key;
-    return parsed
-      ? indexedKeyForClipboard({ key: node.value.key, groupID: parsed.groupID })
-      : null;
+
+  /** The object the pane is anchored at: the Item, or the Annotation once re-anchored. */
+  #anchoredTarget(): { indexedKey: string; isAnnotation: boolean } | null {
+    const item = this.#item;
+    if (!item) return null;
+    const anchorKey = this.#treeState.anchorKey;
+    if (anchorKey === null) {
+      return { indexedKey: item.indexedKey, isAnnotation: false };
+    }
+    return {
+      indexedKey: indexedKeyForClipboard({
+        key: anchorKey,
+        groupID: item.groupID,
+      }),
+      isAnnotation: true,
+    };
   }
-  #exportTarget() {
-    const { item, root, annotationId, status } = this.#session.state.getState();
-    if (
-      !item ||
-      getSampleItem(item.id) ||
-      (status !== "ready" && status !== "empty")
-    )
-      return null;
-    if (root !== "annotation") return { indexedKey: item.id, root };
-    if (
-      !annotationId ||
-      SAMPLE_ANNOTATIONS.some(({ id }) => id === annotationId)
-    )
-      return { indexedKey: item.id, root: "note" as const };
-    const key = annotationIndexedKey(item.id, annotationId);
-    return key ? { indexedKey: key, root } : null;
-  }
-  async #export(): Promise<void> {
-    const target = this.#exportTarget();
-    if (target)
-      await exportTemplateDataFile(this.#deps, {
-        ...target,
+
+  /**
+   * The anchor picks the root, so an anchored Annotation exports exactly what
+   * the `annotation` Template receives; the active filter never narrows it.
+   * The data is rebuilt through the Workbench loader rather than read off the
+   * displayed tree: the tree's anchored annotation is the note context's own
+   * `TemplateAnnotation`, whose `parentItem` back-references the note root,
+   * while the `annotation` contract root carries a resolved parent item and a
+   * `citation`. Rebuilding also makes the file reproducible by
+   * `zotlit:template-data` with the echoed `request`.
+   */
+  async #exportTemplateData(): Promise<void> {
+    const target = this.#anchoredTarget();
+    if (!target) return;
+    const contractRoot = target.isAnnotation ? "annotation" : "note";
+    const { indexedKey } = target;
+
+    try {
+      const result = await loadTemplateData(
+        this.#deps,
+        indexedKey,
+        contractRoot,
+      );
+      if (result.kind !== "data") {
+        logger.error("No template data to export for {indexedKey}: {reason}", {
+          indexedKey,
+          root: contractRoot,
+          reason: result.kind,
+        });
+        new BaseNotice(m.template_data_explorer_export_failed());
+        return;
+      }
+      const { filename, json } = buildTemplateDataExport({
+        root: result.data,
+        contractRoot,
+        indexedKey,
         pluginVersion: this.#deps.pluginVersion,
+        timestamp: exportTimestamp(),
       });
+      saveFile(new Blob([json], { type: "application/json" }), filename);
+      logger.debug("Exported template data to {filename}", {
+        filename,
+        root: contractRoot,
+      });
+    } catch (error) {
+      logger.error("Failed to export template data for {indexedKey}", {
+        indexedKey,
+        root: contractRoot,
+        error,
+      });
+      new BaseNotice(m.template_data_explorer_export_failed());
+    }
   }
-  #sourceEditor(): TemplateWorkbenchView | null {
-    return this.#editor &&
-      this.#session.state.getState().context?.path ===
-        this.#editor.authoringContext.path
-      ? this.#editor
-      : null;
-  }
-  async #chooseItem(searchAll = false): Promise<void> {
-    const editor = this.#sourceEditor();
-    if (editor && !searchAll) {
-      const selected = await editor.chooseItem();
-      if (selected && !this.#closed && editor === this.#sourceEditor())
-        this.#apply(editor.authoringContext, true);
+
+  #reload(): void {
+    this.#syncDbReady();
+    if (this.#deps.db.state !== "ready") return;
+    if (this.#itemIndexedKey === null) {
+      this.#clearItem();
       return;
     }
-    const host = this.#host;
-    if (!host) return;
-    const generation = ++this.#choiceGeneration;
-    const previous = this.#session.state.getState().item;
-    const deps = {
-      app: this.app,
+
+    const refreshed = this.#resolveItem(this.#itemIndexedKey);
+    if (!refreshed) {
+      logger.debug("Explored item {indexedKey} vanished from library", {
+        indexedKey: this.#itemIndexedKey,
+      });
+      this.#item = null;
+      this.#context = null;
+      this.#store.setState({
+        nodes: null,
+        anchor: null,
+        matchedKeys: null,
+        itemVanished: true,
+      });
+      return;
+    }
+    this.#item = refreshed;
+    this.#store.setState({ itemVanished: false });
+    void this.#buildTree();
+  }
+
+  async #buildTree(): Promise<void> {
+    const item = this.#item;
+    if (!item) return;
+    if (isChildItemFields(item.fields)) return;
+
+    const settings = await this.#deps.settings.loaded;
+    const litNote = findExistingLitNote(this.#deps.noteIndex, {
+      indexedKey: item.indexedKey,
+    });
+    const excerptImages = await resolveExcerptImageContext({
+      app: this.#deps.app,
+      settings,
+      litNotePath: litNote?.path ?? null,
+    });
+
+    // Stale guard: another #buildTree may have run (and won) while we awaited.
+    if (this.#item !== item) return;
+
+    const resolvers = buildInertNoteResolvers({
+      noteIndex: this.#deps.noteIndex,
+      fileManager: this.#deps.app.fileManager,
+      vault: this.#deps.app.vault,
+      zoteroPref: this.#deps.zoteroPref,
+      Turndown: TurndownService,
+      sourcePath: litNote?.path ?? "",
+      excerptImages,
+    });
+
+    try {
+      this.#context = fetchNoteContext(this.#deps.db.client, item, {
+        resolvers,
+        collectionCache: new CollectionCache(),
+        username: getZoteroIdentity(this.#deps.db.client).username,
+      });
+    } catch (err) {
+      logger.warn("Failed to build note context for {key}", {
+        key: item.key,
+        error: err,
+      });
+      this.#clearItem();
+      return;
+    }
+    const summary = itemSummary(item, item.fields);
+    this.#store.setState({
+      itemLabel: summary.formatted,
+      ...this.#render(),
+    });
+  }
+
+  #toggle(key: string): void {
+    this.#treeState = toggleNode(this.#treeState, key);
+    if (!this.#context) return;
+    this.#store.setState(this.#render());
+  }
+
+  #clearItem(): void {
+    this.#item = null;
+    this.#itemIndexedKey = null;
+    this.#context = null;
+    this.#resetNavigationState();
+    this.#store.setState({
+      itemLabel: null,
+      nodes: null,
+      itemVanished: false,
+    });
+  }
+
+  #resetNavigationState(): void {
+    this.#treeState = initialTreeState();
+    this.#store.setState({ anchor: null, filterQuery: "", matchedKeys: null });
+  }
+
+  /** Resolves `#treeState.anchorKey` exactly once: builds the anchored (or note-root) tree, and falls back to the note root when the anchored annotation has vanished. */
+  #render(): Pick<
+    ExplorerState,
+    "nodes" | "anchor" | "matchedKeys" | "filterQuery"
+  > {
+    if (!this.#context) {
+      return { nodes: [], anchor: null, matchedKeys: null, filterQuery: "" };
+    }
+
+    const root = this.#resolveRoot();
+    // Read after resolving: the vanish-fallback inside #resolveRoot may have
+    // reset #treeState (including filterQuery) via setAnchor.
+    const filterQuery = this.#treeState.filterQuery;
+    if (root === null) {
+      return { nodes: [], anchor: null, matchedKeys: null, filterQuery };
+    }
+
+    if (filterQuery) {
+      const { nodes, matchedKeys } = buildFilteredDisplayTree(
+        root.object,
+        filterQuery,
+        { collapsed: this.#treeState.filterCollapsed },
+      );
+      return { nodes, anchor: root.anchor, matchedKeys, filterQuery };
+    }
+
+    return {
+      nodes: buildDisplayTree(root.object, {
+        expanded: this.#treeState.expanded,
+      }),
+      anchor: root.anchor,
+      matchedKeys: null,
+      filterQuery,
+    };
+  }
+
+  #resolveRoot(): {
+    object: object;
+    anchor: ExplorerState["anchor"];
+  } | null {
+    if (!this.#context) return null;
+
+    if (this.#treeState.anchorKey !== null) {
+      const anchorKey = this.#treeState.anchorKey;
+      const annotation = findAnnotationRoot(this.#context, anchorKey);
+      if (annotation !== null) {
+        return {
+          object: annotation,
+          anchor: {
+            key: anchorKey,
+            label: this.#formatAnnotationLabel(annotation),
+          },
+        };
+      }
+      logger.debug(
+        "Anchored annotation {key} vanished; falling back to note root",
+        { key: anchorKey },
+      );
+      this.#treeState = setAnchor(this.#treeState, null);
+      this.#deps.app.workspace.requestSaveLayout();
+    }
+
+    return { object: this.#context, anchor: null };
+  }
+
+  #formatAnnotationLabel(annotation: {
+    text: string | null;
+    type: string;
+  }): string {
+    const text = annotation.text?.trim();
+    if (text) return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+    return annotation.type;
+  }
+
+  #setAnchor(key: string | null): void {
+    this.#treeState = setAnchor(this.#treeState, key);
+    this.#store.setState(this.#render());
+    this.#deps.app.workspace.requestSaveLayout();
+  }
+
+  #setFilter(query: string): void {
+    this.#treeState = setFilter(this.#treeState, query);
+    this.#store.setState(this.#render());
+  }
+
+  #chooseItem(): void {
+    void pickItem({
+      app: this.#deps.app,
       lookup: this.#deps.itemLookup,
       settings: this.#deps.settings,
-    };
-    const item = await (searchAll
-      ? searchWorkbenchItem(deps)
-      : chooseWorkbenchItem(host, deps, previous ?? undefined));
-    if (
-      !item ||
-      this.#closed ||
-      generation !== this.#choiceGeneration ||
-      this.#session.state.getState().item !== previous
-    )
-      return;
-    this.#selectItem(item);
+    }).then((hit) => {
+      if (!hit) return;
+      this.#item = hit.item;
+      this.#itemIndexedKey = hit.item.indexedKey;
+      this.#resetNavigationState();
+      this.#store.setState({ itemVanished: false });
+      this.#reload();
+      this.#deps.app.workspace.requestSaveLayout();
+    });
   }
-  #selectItem(item: WorkbenchItemChoice, notify = true): void {
-    const state = this.#session.state.getState();
-    if (this.#closed) return;
-    this.#session.setTarget(item, state.root, state.annotationId);
-    if (!getSampleItem(item.id)) rememberTemplateItem(this.app, item.id);
-    if (notify)
-      publishWorkbenchSelection(
-        this,
-        { kind: "item", item },
-        this.#sourceEditor()?.leaf ?? null,
+
+  #seedFromActiveNote(): void {
+    const activeFile = this.#deps.app.workspace.getActiveFile();
+    if (!activeFile) return;
+    const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
+    const indexedKey = itemKeyFromFrontmatter(cache);
+    if (!indexedKey) return;
+    const item = this.#resolveItem(indexedKey);
+    if (item) {
+      this.#item = item;
+      this.#itemIndexedKey = indexedKey;
+    }
+  }
+
+  #restoreItem(indexedKey: string): void {
+    this.#itemIndexedKey = indexedKey;
+    this.#item = this.#resolveItem(indexedKey);
+  }
+
+  #resolveItem(indexedKey: string): Item | null {
+    const parsed = parseIndexedKey(indexedKey);
+    if (!parsed) return null;
+    try {
+      const libraryID = resolveLibraryID(
+        parsed.groupID,
+        getLibraries(this.#deps.db.client),
       );
-  }
-  #selectAnnotation(id: string): void {
-    const state = this.#session.state.getState();
-    this.#session.setTarget(state.item, "annotation", id);
-    publishWorkbenchSelection(
-      this,
-      { kind: "annotation", annotationId: id },
-      this.#sourceEditor()?.leaf ?? null,
-    );
-  }
-  async #chooseAnnotation(): Promise<void> {
-    const host = this.#host;
-    if (!host) return;
-    const state = this.#session.state.getState();
-    const generation = ++this.#choiceGeneration;
-    const id = await chooseWorkbenchAnnotation(
-      host,
-      state.annotations ?? [],
-      state.item
-        ? (annotationIndexedKey(state.item.id, state.annotationId) ??
-            state.annotationId)
-        : state.annotationId,
-    );
-    if (
-      id !== null &&
-      !this.#closed &&
-      generation === this.#choiceGeneration &&
-      state.item === this.#session.state.getState().item
-    )
-      this.#selectAnnotation(id);
-  }
-  protected override async onClose(): Promise<void> {
-    this.#closed = true;
-    this.#cleanup?.dispose();
-    this.#cleanup = null;
-    this.#root = null;
-    this.#host = null;
-    this.#actions = null;
-    this.#editor = null;
+      if (libraryID === null) return null;
+      return (
+        getItemsByKey(this.#deps.db.client, libraryID, [parsed.key])[0] ?? null
+      );
+    } catch (err) {
+      logger.warn("Failed to resolve item for {indexedKey}", {
+        indexedKey,
+        error: err,
+      });
+      return null;
+    }
   }
 }

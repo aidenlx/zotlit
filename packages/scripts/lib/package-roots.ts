@@ -1,11 +1,9 @@
 import { findWorkspaceDir } from "@pnpm/find-workspace-dir";
-import { findPackageJSON } from "node:module";
 import { dirname } from "node:path";
 
-export function getPackageRoot(callerModulePath: string): string {
-  const packageJsonPath = findPackageJSON("./", callerModulePath);
-  if (!packageJsonPath)
-    throw new Error(`Could not find package.json above ${callerModulePath}.`);
+export function getPackageRoot(): string {
+  const packageJsonPath = process.env.npm_package_json;
+  if (!packageJsonPath) throw new Error("npm_package_json is not set.");
   return dirname(packageJsonPath);
 }
 

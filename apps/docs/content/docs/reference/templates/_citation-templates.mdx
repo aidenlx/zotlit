@@ -1,0 +1,75 @@
+{/* Hand-written partial inlined into data.mdx. Citation data is outside the Template Contract. */}
+
+Both citation templates (`zotlit-cite.liquid.md` and `zotlit-cite2.liquid.md`) receive the same `zt` object with two parallel arrays:
+
+| Property       | Type    | Description                                                               |
+| -------------- | ------- | ------------------------------------------------------------------------- |
+| `zt.citations` | `array` | Citation items: each pairs the cited item with citation-scoped properties |
+| `zt.items`     | `array` | The same cited items bare. `zt.items[i]` is `zt.citations[i].item`        |
+
+### Citation item [#citation-item]
+
+Each entry in `zt.citations`:
+
+| Property         | Type             | Description                                                                                                                                    |
+| ---------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `item`           | `object`         | The cited item's data (see [Cited item fields](#cited-item-fields)). Never `null`: unresolved references become a stub with every field `null` |
+| `locator`        | `string \| null` | Pinpoint reference (e.g. `"62"`); `null` when absent                                                                                           |
+| `label`          | `string \| null` | CSL locator label (e.g. `"page"`, `"chapter"`); `null` when absent                                                                             |
+| `labelShort`     | `string`         | Pandoc abbreviation of the label (e.g. `"p."`, `"chap."`). Absent or unrecognized labels (including `"page"`) yield `"p."`                     |
+| `suppressAuthor` | `boolean`        | Whether the author is suppressed; default `false`                                                                                              |
+| `prefix`         | `string \| null` | Text before the citation                                                                                                                       |
+| `suffix`         | `string \| null` | Text after the citation                                                                                                                        |
+
+### Cited item fields [#cited-item-fields]
+
+A cited item uses the same field vocabulary as the note template, narrowed to fields both a live Zotero item and an embedded-data snapshot can supply:
+
+| Property                  | Type                                |
+| ------------------------- | ----------------------------------- |
+| `item.itemType`           | `string \| null`                    |
+| `item.title`              | `string \| null`                    |
+| `item.creators`           | `array` (see [Creators](#creators)) |
+| `item.primaryCreatorType` | `string \| null`                    |
+| `item.date`               | `ItemDate \| null`                  |
+| `item.citationKey`        | `string \| null`                    |
+| `item.citekey`            | `string \| null`                    |
+| `item.abstract`           | `string \| null`                    |
+| `item.containerTitle`     | `string \| null`                    |
+| `item.shortTitle`         | `string \| null`                    |
+| `item.DOI`                | `string \| null`                    |
+| `item.url`                | `string \| null`                    |
+| `item.ISBN`               | `string \| null`                    |
+| `item.ISSN`               | `string \| null`                    |
+| `item.volume`             | `string \| null`                    |
+| `item.issue`              | `string \| null`                    |
+| `item.pages`              | `string \| null`                    |
+| `item.publisher`          | `string \| null`                    |
+| `item.place`              | `string \| null`                    |
+| `item.edition`            | `string \| null`                    |
+| `item.language`           | `string \| null`                    |
+| `item.extra`              | `ItemExtra \| null`                 |
+
+Note-tier fields (`key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, `noteLink`) are not available on cited items.
+
+### Locator label abbreviations [#locator-label-abbreviations]
+
+`labelShort` maps the CSL `label` to its Pandoc locator term. Any label not listed (including `"page"`) yields `"p."`.
+
+| `label`     | `labelShort` |
+| ----------- | ------------ |
+| `book`      | `bk.`        |
+| `chapter`   | `chap.`      |
+| `column`    | `col.`       |
+| `figure`    | `fig.`       |
+| `folio`     | `fol.`       |
+| `issue`     | `no.`        |
+| `line`      | `l.`         |
+| `note`      | `n.`         |
+| `opus`      | `op.`        |
+| `paragraph` | `para.`      |
+| `part`      | `pt.`        |
+| `section`   | `sec.`       |
+| `sub-verbo` | `s.v.`       |
+| `verse`     | `v.`         |
+| `volume`    | `vol.`       |

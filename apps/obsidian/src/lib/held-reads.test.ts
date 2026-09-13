@@ -3,10 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import type { Held } from "./held-reads";
 import { HeldReads } from "./held-reads";
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
 describe("HeldReads", () => {
   it("holds one first read and reports its commit", async () => {
     const reads = new HeldReads<string>({ limit: 2 });
-    const gate = Promise.withResolvers<string | null>();
+    const gate = deferred<string | null>();
     const read = vi.fn(() => gate.promise);
     const events: string[] = [];
     reads.on("changed", (key) => events.push(`changed:${key}`));
@@ -28,7 +39,7 @@ describe("HeldReads", () => {
     const reads = new HeldReads<string>({ limit: 2 });
     await reads.read("a", async () => "old");
     reads.invalidate("a");
-    const gate = Promise.withResolvers<string | null>();
+    const gate = deferred<string | null>();
 
     const reading = reads.read("a", () => gate.promise);
     const stale = reads.peek("a");
@@ -45,7 +56,7 @@ describe("HeldReads", () => {
 
   it("discards an unsettled record invalidated before its commit", async () => {
     const reads = new HeldReads<string>({ limit: 2 });
-    const first = Promise.withResolvers<string | null>();
+    const first = deferred<string | null>();
     const superseded = reads.read("a", () => first.promise);
 
     reads.invalidate("a");
@@ -62,13 +73,13 @@ describe("HeldReads", () => {
     const reads = new HeldReads<string>({ limit: 2 });
     await reads.read("a", async () => "v1");
     reads.invalidate("a");
-    const second = Promise.withResolvers<string | null>();
+    const second = deferred<string | null>();
     await reads.read("a", () => second.promise);
 
     reads.invalidate("a");
     second.resolve("v2");
     await reads.peek("a")?.settled;
-    const third = Promise.withResolvers<string | null>();
+    const third = deferred<string | null>();
     await reads.read("a", () => third.promise);
 
     expect(reads.peek("a")).toMatchObject({
@@ -111,7 +122,7 @@ describe("HeldReads", () => {
     expect(failed).toHaveBeenCalledOnce();
     expect(settlements).toEqual([null]);
 
-    const gate = Promise.withResolvers<string | null>();
+    const gate = deferred<string | null>();
     const retry = vi.fn(() => gate.promise);
     const second = reads.read("a", retry);
     const joined = reads.read("a", retry);

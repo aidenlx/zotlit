@@ -1,5 +1,5 @@
 import { createContext, runInContext } from "node:vm";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { evalAsync } from "./rdp-eval.js";
 import type { Packet } from "./rdp-eval.js";
@@ -16,12 +16,9 @@ function createEvaluator(): (source: string) => Promise<Packet> {
 }
 
 describe("evalAsync", () => {
-  afterEach(() => vi.useRealTimers());
-
   it("keeps concurrent evaluation results separate", async () => {
-    vi.useFakeTimers();
     const evaluate = createEvaluator();
-    const options = { pollAttempts: 100, pollMs: 1 };
+    const options = { pollAttempts: 100, pollMs: 1, resultTtlMs: 1 };
 
     const first = evalAsync(
       evaluate,
@@ -33,8 +30,6 @@ describe("evalAsync", () => {
       'new Promise((resolve) => setTimeout(() => resolve("second"), 5))',
       options,
     );
-
-    await vi.runAllTimersAsync();
 
     await expect(first).resolves.toMatchObject({
       result: JSON.stringify("first"),

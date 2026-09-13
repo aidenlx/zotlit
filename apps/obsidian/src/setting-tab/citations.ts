@@ -5,18 +5,16 @@ import type {
   SettingDefinitionPage,
 } from "obsidian";
 
-import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
-import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { HoverAction } from "@/services/settings/schema";
+import { RESET_SETTING } from "@/services/settings/service";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { pandocIntegrationDefinition } from "./pandoc-integration";
-import { citationTextItems } from "./templates";
 
 /** Items for the "Citations" sub-page. */
 export function citationsPageItems(
@@ -67,17 +65,6 @@ export function citationsPageItems(
     },
     {
       type: "group",
-      heading: m.settings_citation_graph_heading(),
-      items: [
-        {
-          name: m.settings_citation_graph_name(),
-          desc: graphCitationsDescription(ctx),
-          control: { type: "toggle", key: "citation.graph-citations" },
-        },
-      ],
-    },
-    {
-      type: "group",
       heading: m.settings_citation_editor_heading(),
       items: [
         {
@@ -113,6 +100,11 @@ export function citationsPageItems(
       heading: m.settings_citation_references_heading(),
       items: [
         {
+          name: m.settings_citation_references_style_name(),
+          desc: referencesStyleDescription(false),
+          render: (setting) => renderReferencesStyleRow(setting, ctx),
+        },
+        {
           name: m.settings_citation_locale_name(),
           desc: m.settings_citation_locale_desc(),
           control: {
@@ -127,31 +119,8 @@ export function citationsPageItems(
         pandocEngineDefinition(ctx),
       ],
     },
-    ...citationTextItems(ctx),
     pandocIntegrationDefinition(ctx),
   ];
-}
-
-/** The default Profile's Citation and References Style control. */
-export function referencesStyleDefinition(
-  ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey> {
-  return {
-    name: m.settings_citation_references_style_name(),
-    desc: referencesStyleDescription(false),
-    render: (setting) => renderReferencesStyleRow(setting, ctx),
-  };
-}
-
-/**
- * Names the Graph view core plugin while it is disabled, since the toggle
- * then changes nothing on screen. Read at build time: the page is rebuilt on
- * every open, which is when a core-plugin change can reach it.
- */
-function graphCitationsDescription(ctx: SettingTabContext): string {
-  return ctx.app.internalPlugins.getEnabledPluginById(GRAPH_CORE_PLUGIN_ID)
-    ? m.settings_citation_graph_desc()
-    : m.settings_citation_graph_desc_disabled();
 }
 
 /** The Hover Action choices, in the order the select offers them. */
@@ -163,7 +132,7 @@ function hoverActionOptions(): Record<HoverAction, string> {
   };
 }
 
-/** The Require Mod toggles for editing modes and graph views. */
+/** The Require Mod toggle of each editing mode, in editing-mode order. */
 const REQUIRE_MOD_KEYS = [
   [
     "citation.hover-require-mod-source",
@@ -177,17 +146,13 @@ const REQUIRE_MOD_KEYS = [
     "citation.hover-require-mod-reading",
     m.settings_citation_hover_mod_reading_name,
   ],
-  [
-    "citation.hover-require-mod-graph",
-    m.settings_citation_hover_mod_graph_name,
-  ],
 ] as const satisfies readonly (readonly [SettingsKey, () => string])[];
 
 /**
- * The Require Mod toggles, on a sub-page of their own that lists one hover
- * surface per row, like the Page preview plugin lists one hover source per row.
+ * The Require Mod toggles, on a sub-page of their own that lists one editing
+ * mode per row, like the Page preview plugin lists one hover source per row.
  * The page's own title names the list, so the rows carry the requirement in the
- * page description instead of repeating it on each row.
+ * page description instead of repeating it three times.
  *
  * The toggles gate the Citation Popover alone — under Page preview the Page
  * preview plugin's own settings own that gate, and under Off there is nothing
@@ -219,6 +184,42 @@ export function citationLocaleError(locale: string): string | undefined {
   return m.settings_citation_locale_invalid();
 }
 
+/** Dropdown sentinel for the embedded default style; a style ID is never empty. */
+export const STYLE_DEFAULT = "";
+
+/** One entry of the Citation and References Style picker. */
+export interface ReferencesStyleOption {
+  value: string;
+  label: string;
+  /** An entry the picker shows and refuses to take as a selection of its own. */
+  disabled?: boolean;
+}
+
+/**
+ * The picker entries: the embedded default first, then the installed styles.
+ * A selection Zotero no longer has keeps an entry of its own, so it stays
+ * selected and visible until the user picks another style.
+ */
+export function referencesStyleOptions(
+  styles: readonly InstalledCslStyle[],
+  selected: string,
+): ReferencesStyleOption[] {
+  const options: ReferencesStyleOption[] = [
+    {
+      value: STYLE_DEFAULT,
+      label: m.settings_citation_references_style_default(),
+    },
+    ...styles.map((style) => ({ value: style.id, label: style.title })),
+  ];
+  if (selected !== STYLE_DEFAULT && !styles.some((s) => s.id === selected)) {
+    options.push({
+      value: selected,
+      label: m.settings_citation_references_style_missing({ id: selected }),
+    });
+  }
+  return options;
+}
+
 /**
  * Citation and References Style picker, listing the styles installed in the Zotero data
  * directory. Zotero owns style installation, so the list is read-only, and the
@@ -240,9 +241,7 @@ function renderReferencesStyleRow(
   });
 
   const selectedValue = (): string =>
-    ctx.settings.current?.["note.default-profile"].bindings[
-      "citation.references-style"
-    ] ?? STYLE_DEFAULT;
+    ctx.settings.current?.["citation.references-style"] ?? STYLE_DEFAULT;
 
   const repopulate = (): void => {
     if (!dropdown) return;
@@ -288,8 +287,9 @@ function renderReferencesStyleRow(
   setting.addDropdown((d) => {
     dropdown = d;
     d.onChange((value) => {
-      ctx.settings.updateDefaultLiteratureNoteProfileBindings({
-        "citation.references-style": value === STYLE_DEFAULT ? null : value,
+      ctx.settings.update({
+        "citation.references-style":
+          value === STYLE_DEFAULT ? RESET_SETTING : value,
       });
     });
     repopulate();

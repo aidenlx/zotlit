@@ -5,7 +5,6 @@ import type { ChildProcessByStdio } from "node:child_process";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
-import { setTimeout as delay } from "node:timers/promises";
 
 import type {
   DevelopmentSession,
@@ -13,7 +12,7 @@ import type {
   PairedRunReady,
 } from "./paired-run.ts";
 
-import { DEV_VAULT_CASE_ENV, getDevVaultDir } from "#dev-vault";
+import { getDevVaultDir } from "#dev-vault";
 import { LIVE_UPDATE_HOSTNAME } from "#fixture";
 import {
   getZoteroBinary,
@@ -24,17 +23,6 @@ import {
 type ManagedProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 const ZOTERO_READY_EVENT = "paired-zotero-ready";
-
-/** How long a Paired Zotero gets to close its database after each signal. */
-const ZOTERO_QUIT_TIMEOUT_MS = 20_000;
-const ZOTERO_KILL_TIMEOUT_MS = 5_000;
-const ZOTERO_EXIT_POLL_INTERVAL_MS = 250;
-
-/** A Zotero process that holds the Fixture database open. */
-export interface LivePairedZotero {
-  command: string;
-  pid: number;
-}
 
 export function createNodePairedRunPorts({
   workspaceRoot,
@@ -51,6 +39,7 @@ export function createNodePairedRunPorts({
     workspaceRoot,
     "apps/zotero/scripts/dev-server/open.ts",
   );
+  const vaultPath = getDevVaultDir(workspaceRoot);
 
   const zoteroEnvironment = async (): Promise<{
     applicationDir: string;
@@ -76,34 +65,31 @@ export function createNodePairedRunPorts({
       });
     },
 
-    async stopLivePairedZotero() {
-      const findLive = (): Promise<LivePairedZotero[]> =>
-        findLivePairedZotero(layout, workspaceRoot);
-      let live = await findLive();
-      if (live.length === 0) return;
+    async assertFixtureIdle() {
+      const databaseExists = await access(layout.databasePath).then(
+        () => true,
+        () => false,
+      );
+      if (!databaseExists) return;
 
-      console.log(`Closing the live Paired Zotero: ${describeLive(live)}`);
-      // SIGTERM lets Zotero close its database. SIGKILL is the fallback for an
-      // instance that never answers, because the rebuild that follows deletes
-      // the whole Fixture root under it.
-      for (const [signal, timeoutMs] of [
-        ["SIGTERM", ZOTERO_QUIT_TIMEOUT_MS],
-        ["SIGKILL", ZOTERO_KILL_TIMEOUT_MS],
-      ] as const) {
-        for (const { pid } of live) {
-          try {
-            process.kill(pid, signal);
-          } catch {
-            // The process exited between the scan and the signal.
-          }
-        }
-        live = await waitForFixtureRelease(findLive, timeoutMs);
-        if (live.length === 0) return;
+      if (process.platform === "win32") {
+        const pairedZotero = await findWindowsFixtureZoteroProcesses(
+          layout.dataDir,
+          workspaceRoot,
+        );
+        if (pairedZotero.length > 0) throwFixtureBusy(pairedZotero);
+        return;
       }
 
-      throw new Error(
-        `the Fixture database stays open by ${describeLive(live)}. Close Paired Zotero before starting a new Paired Run.`,
+      const result = await runCaptured(
+        "/usr/sbin/lsof",
+        ["-Fpc", "--", layout.databasePath],
+        { acceptExitCodes: [0, 1], cwd: workspaceRoot },
       );
+      const pairedZotero = findPairedZoteroProcesses(result.stdout);
+      if (result.code === 0 && pairedZotero.length > 0) {
+        throwFixtureBusy(pairedZotero);
+      }
     },
 
     allocateLiveUpdatePort() {
@@ -116,7 +102,6 @@ export function createNodePairedRunPorts({
 
     async prepareDevelopmentVault({
       scopeCase,
-      vaultCase,
       purge,
       liveUpdatePort,
       zoteroHttpPort,
@@ -127,7 +112,6 @@ export function createNodePairedRunPorts({
           vaultScript,
           "open",
           `--scope-case=${scopeCase}`,
-          ...(vaultCase === undefined ? [] : [`--vault-case=${vaultCase}`]),
           `--live-update-port=${liveUpdatePort}`,
           `--zotero-http-port=${zoteroHttpPort}`,
           ...(purge ? ["--purge"] : []),
@@ -137,7 +121,7 @@ export function createNodePairedRunPorts({
       const id = result.stdout.trim().split("\n").at(-1);
       if (!id)
         throw new Error("Obsidian did not return a Development Vault id");
-      return { id, path: getDevVaultDir(workspaceRoot, vaultCase) };
+      return { id, path: vaultPath };
     },
 
     async openPairedZotero() {
@@ -154,14 +138,9 @@ export function createNodePairedRunPorts({
       return { applicationDir, pid: report.pid };
     },
 
-    async startDevelopmentSession({ vaultCase }) {
+    async startDevelopmentSession() {
       const { applicationDir, env } = await zoteroEnvironment();
-      return startDevelopmentSession({
-        applicationDir,
-        env,
-        workspaceRoot,
-        vaultCase,
-      });
+      return startDevelopmentSession({ applicationDir, env, workspaceRoot });
     },
 
     reportReady(result) {
@@ -182,12 +161,12 @@ function allocatePort(): Promise<number> {
 async function findWindowsFixtureZoteroProcesses(
   dataDir: string,
   cwd: string,
-): Promise<LivePairedZotero[]> {
+): Promise<string[]> {
   const script =
     "$target = [IO.Path]::GetFullPath($env:ZT_FIXTURE_DATA_DIR); " +
     `Get-CimInstance Win32_Process -Filter "Name = 'zotero.exe'" | ` +
     "Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($target, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | " +
-    'ForEach-Object { "$($_.ProcessId) $($_.Name)" }';
+    'ForEach-Object { "$($_.Name) (pid $($_.ProcessId))" }';
   const result = await runCaptured(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-Command", script],
@@ -196,94 +175,31 @@ async function findWindowsFixtureZoteroProcesses(
       env: { ...process.env, ZT_FIXTURE_DATA_DIR: dataDir },
     },
   );
-  return findWindowsPairedZoteroProcesses(result.stdout);
+  return result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
-/** Reads the `<pid> <name>` rows the Windows scan above writes. */
-export function findWindowsPairedZoteroProcesses(
-  output: string,
-): LivePairedZotero[] {
-  const processes: LivePairedZotero[] = [];
-  for (const line of output.split("\n")) {
-    const [rawPid, ...rest] = line.trim().split(" ");
-    const pid = Number(rawPid);
-    if (Number.isInteger(pid) && rest.length > 0) {
-      processes.push({ command: rest.join(" "), pid });
-    }
-  }
-  return processes;
-}
-
-/**
- * The Zotero processes that hold this Fixture's database open, or none when the
- * Fixture has no database yet.
- */
-async function findLivePairedZotero(
-  layout: FixtureLayout,
-  cwd: string,
-): Promise<LivePairedZotero[]> {
-  const databaseExists = await access(layout.databasePath).then(
-    () => true,
-    () => false,
+function throwFixtureBusy(processes: string[]): never {
+  throw new Error(
+    `the Fixture database is open by ${processes.join(", ")}. Close Paired Zotero before starting a new Paired Run.`,
   );
-  if (!databaseExists) return [];
-
-  if (process.platform === "win32") {
-    return findWindowsFixtureZoteroProcesses(layout.dataDir, cwd);
-  }
-
-  const result = await runCaptured(
-    "/usr/sbin/lsof",
-    ["-Fpc", "--", layout.databasePath],
-    { acceptExitCodes: [0, 1], cwd },
-  );
-  // lsof answers 1 when nothing holds the file open.
-  return result.code === 0 ? findPairedZoteroProcesses(result.stdout) : [];
-}
-
-/** Polls until nothing holds the Fixture database, or the deadline passes. */
-async function waitForFixtureRelease(
-  findLive: () => Promise<LivePairedZotero[]>,
-  timeoutMs: number,
-): Promise<LivePairedZotero[]> {
-  const deadline = Date.now() + timeoutMs;
-  let live = await findLive();
-  while (live.length > 0 && Date.now() < deadline) {
-    await delay(ZOTERO_EXIT_POLL_INTERVAL_MS);
-    live = await findLive();
-  }
-  return live;
-}
-
-function describeLive(processes: readonly LivePairedZotero[]): string {
-  return processes
-    .map(({ command, pid }) => `${command} (pid ${pid})`)
-    .join(", ");
 }
 
 function startDevelopmentSession({
   applicationDir,
   env,
   workspaceRoot,
-  vaultCase,
 }: {
   applicationDir: string;
   env: NodeJS.ProcessEnv;
   workspaceRoot: string;
-  vaultCase?: string;
 }): DevelopmentSession {
-  // The Vite dev build copies each bundle into the Development Vault of this
-  // run's Vault Case, so hot reload reaches a case vault too.
   const obsidian = spawnWatcher(
     "Obsidian watcher",
     ["--filter", "@zotlit/obsidian", "dev"],
-    {
-      cwd: workspaceRoot,
-      env:
-        vaultCase === undefined
-          ? process.env
-          : { ...process.env, [DEV_VAULT_CASE_ENV]: vaultCase },
-    },
+    { cwd: workspaceRoot, env: process.env },
   );
   const zotero = spawnWatcher(
     "Zotero watcher",
@@ -420,18 +336,15 @@ function parseOpenReport(output: string): { pid?: unknown } {
   }
 }
 
-export function findPairedZoteroProcesses(output: string): LivePairedZotero[] {
-  const processes: LivePairedZotero[] = [];
-  let pid: number | undefined;
+export function findPairedZoteroProcesses(output: string): string[] {
+  const processes: string[] = [];
+  let pid: string | undefined;
   for (const line of output.split("\n")) {
-    if (line.startsWith("p")) {
-      const parsed = Number(line.slice(1));
-      pid = Number.isInteger(parsed) ? parsed : undefined;
-    }
+    if (line.startsWith("p")) pid = line.slice(1);
     if (line.startsWith("c")) {
       const command = line.slice(1);
-      if (command.toLowerCase() === "zotero" && pid !== undefined) {
-        processes.push({ command, pid });
+      if (command.toLowerCase() === "zotero") {
+        processes.push(`${command}${pid ? ` (pid ${pid})` : ""}`);
       }
     }
   }

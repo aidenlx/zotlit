@@ -7,19 +7,12 @@ import {
   section,
   SECTION_OPEN_MAX,
   setRowIcon,
-  profileChoiceControl,
-  profileListGroup,
 } from "./dom";
-import type { BatchRow } from "./dom";
-import type {
-  BatchCounts,
-  BatchManifest,
-  BatchListControls,
-  BatchProfileChoice,
-} from "./types";
+import type { BatchCounts, BatchManifest } from "./types";
 
-export interface FlatTask extends BatchRow {
+export interface FlatTask {
   id: number;
+  label: string;
   /** Group key; one of the {@link FlatManifestOptions.groups} kinds. */
   kind: string;
 }
@@ -28,7 +21,6 @@ export interface FlatTask extends BatchRow {
 export interface FlatGroupDef {
   kind: string;
   header: (args: { count: number }) => string;
-  profileChoice?: BatchProfileChoice;
 }
 
 export interface FlatManifestOptions {
@@ -36,13 +28,9 @@ export interface FlatManifestOptions {
   notFound: readonly { label: string }[];
   /** Ordered group definitions; tasks are bucketed by `kind`. */
   groups: readonly FlatGroupDef[];
-  /** Choices for the whole batch, above its per-Library groups. */
-  profileChoices?: readonly BatchProfileChoice[];
   /** Items classified as up-to-date; shown as a static informational group. */
-  upToDate?: readonly BatchRow[];
+  upToDate?: readonly { label: string }[];
   upToDateHeader?: (args: { count: number }) => string;
-  kept?: readonly BatchRow[];
-  keptHeader?: (args: { count: number }) => string;
   notFoundHeader: (args: { count: number }) => string;
   /** Header for items that ran but had nothing to write (e.g. vanished note). */
   skippedHeader?: (args: { count: number }) => string;
@@ -71,15 +59,8 @@ export class FlatManifest implements BatchManifest {
     };
   }
 
-  renderList(parent: HTMLElement, controls?: BatchListControls): void {
+  renderList(parent: HTMLElement): void {
     this.#rowIcons.clear();
-    if (this.#options.profileChoices?.length) {
-      const choices = parent.createDiv({
-        cls: "zt:mb-6 zt:flex zt:flex-col zt:gap-4",
-      });
-      for (const choice of this.#options.profileChoices)
-        profileChoiceControl(choices, choice, controls);
-    }
     const byKind = Object.groupBy(this.#options.tasks, (task) => task.kind);
     for (const group of this.#options.groups) {
       const tasks = byKind[group.kind] ?? [];
@@ -89,19 +70,13 @@ export class FlatManifest implements BatchManifest {
         group.header({ count: tasks.length }),
         tasks.length <= SECTION_OPEN_MAX,
       );
-      if (group.profileChoice)
-        profileChoiceControl(
-          ul.previousElementSibling as HTMLElement,
-          group.profileChoice,
-          controls,
-        );
       for (const task of tasks) {
-        const icon = row(ul, task.label, task);
+        const icon = row(ul, task.label);
         setRowIcon(icon, "pending");
         this.#rowIcons.set(task.id, icon);
       }
     }
-    this.#renderStatic(parent);
+    this.#renderUpToDate(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,
@@ -112,15 +87,7 @@ export class FlatManifest implements BatchManifest {
     });
   }
 
-  #renderStatic(parent: HTMLElement): void {
-    if (this.#options.kept?.length && this.#options.keptHeader) {
-      listGroup(parent, {
-        header: this.#options.keptHeader({ count: this.#options.kept.length }),
-        items: this.#options.kept,
-        icon: "minus",
-        colorCls: "zt:text-(--text-muted)",
-      });
-    }
+  #renderUpToDate(parent: HTMLElement): void {
     const items = this.#options.upToDate;
     if (!items?.length || !this.#options.upToDateHeader) return;
     listGroup(parent, {
@@ -146,15 +113,14 @@ export class FlatManifest implements BatchManifest {
     );
     const byKind = Object.groupBy(done, (task) => task.kind);
     for (const group of this.#options.groups) {
-      profileListGroup(parent, {
-        profileHeader: group.header,
+      listGroup(parent, {
         header: group.header({ count: (byKind[group.kind] ?? []).length }),
         items: byKind[group.kind] ?? [],
         icon: ROW_ICON.done,
         colorCls: ROW_ICON_CLASS.done,
       });
     }
-    this.#renderStatic(parent);
+    this.#renderUpToDate(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,

@@ -12,7 +12,6 @@ import { useMemo } from "react";
 import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
-import * as m from "@/paraglide/messages.js";
 
 type Item = Pick<PageTree.Item, "name" | "url">;
 
@@ -96,11 +95,11 @@ function FooterCard({
       >
         {next ? (
           <>
-            {m.docs_next()} <ArrowRight className="size-3" />
+            Next <ArrowRight className="size-3" />
           </>
         ) : (
           <>
-            <ArrowLeft className="size-3" /> {m.docs_previous()}
+            <ArrowLeft className="size-3" /> Previous
           </>
         )}
       </p>

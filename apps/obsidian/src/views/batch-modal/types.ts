@@ -7,7 +7,6 @@ import type {
   BatchRunControls,
   BatchRunResult,
 } from "@/services/batch-run";
-import type { CreationProfileSource } from "@/services/note-feature";
 
 export type {
   BatchClassifyControls,
@@ -25,26 +24,6 @@ export interface BatchCounts {
   notFound: number;
 }
 
-/** The new rows one batch Profile choice governs. */
-export type BatchProfileChoiceScope = "all-new" | "unresolved" | "affected";
-
-/** One creation destination the runner owns; `scope` limits the rows it governs. */
-export interface BatchProfileChoice {
-  /** Absent until the rows share a destination: an affected or all-new choice not yet made. */
-  readonly label?: string;
-  readonly source: CreationProfileSource;
-  /** Absent: every new row shares this one destination. */
-  readonly scope?: BatchProfileChoiceScope;
-  /** How many new rows the choice governs. */
-  readonly count?: number;
-  choose(): Promise<void>;
-}
-
-/** Only the confirm phase supplies controls; progress rows remain read-only. */
-export interface BatchListControls {
-  chooseProfile(choice: BatchProfileChoice): Promise<void>;
-}
-
 /**
  * The variable body of a batch modal. The shell owns the loading → confirm →
  * progress → summary lifecycle, the bar, the buttons, and the live failures
@@ -58,7 +37,7 @@ export interface BatchManifest {
    * shows the list (confirm body, then the progress disclosure), rebuilding the
    * row-icon registry each time since the prior phase's DOM was discarded.
    */
-  renderList(parent: HTMLElement, controls?: BatchListControls): void;
+  renderList(parent: HTMLElement): void;
   /** Flip a row's terminal status in place; no-op if the row isn't mounted. */
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void;
   /**
@@ -89,7 +68,7 @@ export interface BatchModalText {
   /** Notice shown when the run phase throws before or during execution. A
    * function receives the thrown error, letting operations surface a typed
    * error's own message instead of generic copy. */
-  runFailed: string | ((error: unknown) => string | DocumentFragment);
+  runFailed: string | ((error: unknown) => string);
   /** Run-phase headline over the determinate progress bar. */
   progressLabel: string;
   /** Confirm-phase intro line; receives the manifest's counts. */

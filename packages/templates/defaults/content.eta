@@ -9,6 +9,6 @@
 ## Annotations
 
 <% for (const annotation of zt.annotations) { %>
-<%~ renderAnnotation(annotation) %>
+<%~ include("annotation", annotation) %>
 <% } %>
 <% } %>

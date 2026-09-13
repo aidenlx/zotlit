@@ -16,10 +16,6 @@ export class NoteIndexStub {
     return this.#notes[indexedKey] ?? [];
   }
 
-  getIndexedItemKeys(): string[] {
-    return Object.keys(this.#notes);
-  }
-
   whenIndexed(): Promise<void> {
     return Promise.resolve();
   }

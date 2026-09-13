@@ -55,8 +55,6 @@ export interface LibraryScopeEvents {
    * Libraries under the same names — emit nothing.
    */
   changed: (scope: ResolvedLibraryScope | null) => void;
-  /** All available Libraries changed, including Libraries outside the saved scope. */
-  "libraries-changed": () => void;
 }
 
 export interface LibraryScopeDeps {
@@ -73,7 +71,6 @@ export class LibraryScopeService extends Service<void> {
 
   #current: ResolvedLibraryScope | null = null;
   #lastInvalid = false;
-  #all: ResolvedLibraryScope | null = null;
 
   ready: Promise<void>;
 
@@ -109,7 +106,7 @@ export class LibraryScopeService extends Service<void> {
    * database is unreadable.
    */
   get libraries(): readonly AvailableLibrary[] {
-    return this.#all?.available ?? [];
+    return this.#resolveNow(DEFAULT_LIBRARY_SCOPE)?.available ?? [];
   }
 
   /**
@@ -164,11 +161,6 @@ export class LibraryScopeService extends Service<void> {
   }
 
   #recompute(): void {
-    const all = this.#resolveNow(DEFAULT_LIBRARY_SCOPE);
-    if (!sameResolution(all, this.#all)) {
-      this.#all = all;
-      this.#emitter.emit("libraries-changed");
-    }
     const invalid = this.invalid;
     const next = this.#resolveNow(this.#savedScope());
     if (invalid === this.#lastInvalid && sameResolution(next, this.#current)) {

@@ -84,10 +84,7 @@ async function settleManualRefresh(
         ] as const);
   const [title, message] = await Promise.all([
     formatValue(titleId),
-    formatValue(
-      messageId,
-      outcome.ok ? { count: outcome.keys.length } : undefined,
-    ),
+    formatValue(messageId, outcome.ok ? { count: outcome.keys.length } : {}),
   ]);
   progress.changeHeadline(title ?? "");
   progress.addDescription(message ?? "");

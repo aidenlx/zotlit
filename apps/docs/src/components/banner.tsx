@@ -4,13 +4,13 @@
 // local encodeBase32 and rainbow flow; everything else stays on package entry
 // points. Re-diff on bumps.
 
+import { useTranslations } from "@fuma-translate/react";
 import { buttonVariants } from "fumadocs-ui/components/ui/button";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { HTMLAttributes } from "react";
 
 import { cn } from "@/lib/cn";
-import * as m from "@/paraglide/messages.js";
 
 type BannerVariant = "rainbow" | "normal";
 
@@ -49,6 +49,7 @@ export function Banner({
    */
   changeLayout?: boolean;
 }) {
+  const t = useTranslations({ note: "banner" });
   const [open, setOpen] = useState(true);
   const globalKey = id ? `nd-banner-${encodeBase32(id)}` : null;
   const ref = useRef<HTMLDivElement>(null);
@@ -125,7 +126,7 @@ export function Banner({
       {id ? (
         <button
           type="button"
-          aria-label={m.docs_close_banner()}
+          aria-label={t("Close Banner", { note: "aria-label" })}
           onClick={onClose}
           className={cn(
             buttonVariants({

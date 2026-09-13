@@ -9,6 +9,7 @@
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { env } from "cloudflare:workers";
+import collections from "collections/browser";
 import { getBreadcrumbItems } from "fumadocs-core/breadcrumb";
 import {
   DocsBody,
@@ -18,15 +19,12 @@ import {
   MarkdownCopyButton,
   ViewOptionsPopover,
 } from "fumadocs-ui/layouts/docs/page";
-import { use } from "react";
 
 import { DocsAvailability } from "@/components/docs-availability";
-import { DocsLastUpdated } from "@/components/docs-last-updated";
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { getMDXComponents } from "@/components/mdx";
 import { RedirectNotice } from "@/components/redirect-notice";
 import { ReleaseSnapshotProvider } from "@/components/release-snapshot";
-import { docs } from "@/lib/collections";
 import { getDocsAvailability } from "@/lib/docs-availability";
 import type { DocsAvailability as Availability } from "@/lib/docs-availability";
 import { installPageSlugs } from "@/lib/github-releases";
@@ -39,7 +37,6 @@ import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
 import { changelog, source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
-import * as m from "@/paraglide/messages.js";
 
 /** Resolves a docs URL to the collection file the client loader compiles, plus what the head needs. */
 export const resolveDocsPage = createServerFn({ method: "GET" })
@@ -86,24 +83,22 @@ interface DocsBodyProps {
   markdownUrl: string;
 }
 
-function DocsPageContent({
-  path,
-  availability,
-  changelogUrl,
-  githubUrl,
-  markdownUrl,
-}: DocsBodyProps & { path: string }) {
-  const page = docs.getPage(path);
-  if (!page) throw notFound();
-  const { toc, lastModified } = use(page.load());
-  const MDX = page.body;
-  return (
-    <DocsPage toc={toc} full={page.full} slots={{ footer: DocsPageFooter }}>
+export const docsBody = collections.docs.createClientLoader<DocsBodyProps>({
+  id: "docs",
+  component: (
+    { toc, frontmatter, default: MDX },
+    { availability, changelogUrl, githubUrl, markdownUrl },
+  ) => (
+    <DocsPage
+      toc={toc}
+      full={frontmatter.full}
+      slots={{ footer: DocsPageFooter }}
+    >
       <DocsTitle className="font-serif text-4xl leading-[1.16] font-medium text-balance">
-        {page.title}
+        {frontmatter.title}
       </DocsTitle>
       <DocsDescription className="mb-0 font-serif text-lg italic">
-        {page.description}
+        {frontmatter.description}
       </DocsDescription>
       <DocsAvailability
         availability={availability}
@@ -117,15 +112,14 @@ function DocsPageContent({
       <DocsBody className={ztProse}>
         <MDX components={getMDXComponents()} />
       </DocsBody>
-      <DocsLastUpdated date={lastModified} />
     </DocsPage>
-  );
-}
+  ),
+});
 
 /** Loader shared by both docs routes: resolve the file, then compile it. */
 export async function loadDocsPage(splat: string) {
   const page = await resolveDocsPage({ data: splat });
-  await docs.getPage(page.path)?.preload();
+  await docsBody.preload(page.path);
   return page;
 }
 
@@ -140,7 +134,7 @@ export function docsPageHead(page: DocsPageData | undefined) {
   const seen = new Set<string>();
   const crumbs = [
     { name: appName, url: "/" },
-    { name: m.docs_documentation(), url: docsRoute },
+    { name: "Documentation", url: docsRoute },
     ...page.trail,
   ].filter((crumb) => !seen.has(crumb.url) && seen.add(crumb.url));
 
@@ -151,7 +145,7 @@ export function docsPageHead(page: DocsPageData | undefined) {
     card: {
       type: "docs",
       slugs: page.slugs,
-      alt: m.docs_documentation_card_alt({ title: page.title }),
+      alt: `${page.title} — ZotLit documentation`,
     },
     schemas: page.trail.length > 0 ? [breadcrumbListSchema(crumbs)] : [],
   });
@@ -168,10 +162,10 @@ export function DocsPageView({
   path: string;
   snapshot: ReleaseSnapshot | null;
 }) {
+  const Body = docsBody.getComponent(path);
   return (
     <ReleaseSnapshotProvider snapshot={snapshot}>
-      <DocsPageContent
-        path={path}
+      <Body
         availability={availability}
         changelogUrl={changelogUrl}
         githubUrl={githubUrl}

@@ -8,17 +8,13 @@
 
 import type { Thing, WithContext } from "schema-dts";
 
-import * as m from "@/paraglide/messages.js";
-
 import { appName, baseURL, ogImageUrl } from "./shared";
 import type { OgType } from "./shared";
 import { absoluteUrl, serializeJsonLd } from "./structured-data";
 
 const OG_IMAGE_DIMENSIONS = { width: "1200", height: "630" } as const;
 
-export const appDescription = m.docs_site_description;
-
-export const HOME_OG_ALT = m.docs_og_home_alt;
+export const HOME_OG_ALT = "ZotLit — Zotero × Obsidian";
 
 export interface PageSeo {
   /** Document `<title>`, rendered as "<title> | ZotLit". Omit for the bare site name. */
@@ -30,11 +26,7 @@ export interface PageSeo {
   path: string;
   card: { type: OgType; slugs?: string[]; alt: string };
   /** Present → og:type "article" with these fields; absent → og:type "website". */
-  article?: {
-    publishedTime: string;
-    modifiedTime?: string;
-    authors?: string[];
-  };
+  article?: { publishedTime: string; authors?: string[] };
   /** Extra `rel="alternate"` links, e.g. { "application/rss+xml": "/changelog/rss.xml" }. */
   feeds?: Record<string, string>;
   /** schema.org objects to publish as JSON-LD script tags in the head. */
@@ -79,14 +71,6 @@ export function pageHead(seo: PageSeo) {
               property: "article:published_time",
               content: seo.article.publishedTime,
             },
-            ...(seo.article.modifiedTime === undefined
-              ? []
-              : [
-                  {
-                    property: "article:modified_time",
-                    content: seo.article.modifiedTime,
-                  },
-                ]),
             ...(seo.article.authors ?? []).map((author) => ({
               property: "article:author",
               content: author,

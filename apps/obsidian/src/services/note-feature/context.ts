@@ -1,4 +1,4 @@
-import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
+import type { FileManager, TFile, Vault } from "obsidian";
 
 import { buildFilenameContext } from "@zotlit/db";
 import type {
@@ -24,13 +24,9 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
-import { getProfileBinding } from "@/services/profile/bindings";
-import type { ProfileBindingSettings } from "@/services/profile/bindings";
-import type { ProfileService } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
-import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { resolveFreeNotePath } from "./filename";
@@ -43,11 +39,7 @@ interface NoteVaultApp {
     Vault,
     "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
   >;
-  fileManager: Pick<
-    FileManager,
-    "generateMarkdownLink" | "processFrontMatter" | "renameFile"
-  >;
-  metadataCache: Pick<MetadataCache, "getFileCache">;
+  fileManager: Pick<FileManager, "generateMarkdownLink" | "processFrontMatter">;
 }
 
 /**
@@ -58,21 +50,10 @@ interface NoteVaultApp {
  * template artifacts live in {@link TemplateService}.
  */
 export interface NoteFeatureDeps {
-  profile: Pick<
-    ProfileService,
-    "ready" | "loaded" | "profiles" | "resolveProfile" | "profileOf"
-  >;
   app: NoteVaultApp;
   template: Pick<
     TemplateService,
-    | "ready"
-    | "loaded"
-    | "render"
-    | "renderCitation"
-    | "renderProfileAnnotation"
-    | "renderFilename"
-    | "frontmatterFields"
-    | "getLiteratureNoteTemplate"
+    "ready" | "loaded" | "render" | "renderFilename" | "frontmatterFields"
   >;
   /**
    * Lease-only. The sync `state`/`client` accessors are omitted so async
@@ -81,12 +62,9 @@ export interface NoteFeatureDeps {
    * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
    */
   db: Pick<DatabaseService, "acquireRead">;
-  noteIndex: Pick<
-    NoteIndex,
-    "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
-  >;
+  noteIndex: Pick<NoteIndex, "ready" | "whenIndexed" | "getNotesByItemKey">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<SettingsService, "current" | "loaded" | "update">;
+  settings: Pick<SettingsService, "loaded">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   noteImport: Pick<NoteImporter, "prepare">;
 }
@@ -128,31 +106,26 @@ export function resolveNotePath(
   options: {
     itemTags: readonly ItemTag[];
     itemCollections: readonly TemplateCollection[];
-    settings: ProfileBindingSettings;
+    settings: Readonly<Settings>;
     forceSuffix?: boolean;
-    document?: Pick<ResolvedLiteratureNoteTemplate, "renderFilename">;
-    reservedPaths?: ReadonlySet<string>;
   },
 ): { path: string; canSuffix: boolean } {
-  const folderSetting = getProfileBinding(
-    options.settings,
-    "note.literature-folder",
-  );
+  const folderSetting = options.settings["note.literature-folder"];
   const data = buildFilenameContext({
     item,
     tags: options.itemTags,
     collections: options.itemCollections,
     authorsShort: creatorSummary,
   });
-  const rendered = options.document
-    ? options.document.renderFilename(data)
-    : ctx.template.renderFilename(data);
-  return resolveRenderedNotePath(folderSetting, rendered, {
-    exists: (path) =>
-      options.reservedPaths?.has(path) === true ||
-      ctx.app.vault.getAbstractFileByPath(path) !== null,
+  const rendered = ctx.template.renderFilename(data);
+  const rel = resolveRenderedRelPath(folderSetting, rendered, {
+    exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
     forceSuffix: options.forceSuffix,
   });
+  return {
+    path: literatureNotePath(folderSetting, rel),
+    canSuffix: hasSuffixMarker(rendered),
+  };
 }
 
 /**
@@ -165,7 +138,7 @@ export function buildNoteResolvers(
   options: {
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     noteImport: Pick<NoteImport, "resolveChildNote">;
-    settings: ProfileBindingSettings | null;
+    settings: Readonly<Settings> | null;
     sourcePath: string;
   },
 ): NoteResolvers {
@@ -216,18 +189,6 @@ export function buildNoteResolvers(
   };
 }
 
-export function resolveRenderedNotePath(
-  folder: string,
-  rendered: string,
-  options: { exists: (path: string) => boolean; forceSuffix?: boolean },
-): { path: string; canSuffix: boolean } {
-  const rel = resolveRenderedRelPath(folder, rendered, options);
-  return {
-    path: literatureNotePath(folder, rel),
-    canSuffix: hasSuffixMarker(rendered),
-  };
-}
-
 /** Join a rendered relative note path under the literature-note folder. */
 function literatureNotePath(folderSetting: string, rel: string): string {
   const folder = normalizeFolderPath(folderSetting);
@@ -272,7 +233,7 @@ function resolveNoteTarget(
   }
   resolvingFallback.add(item.indexedKey);
   try {
-    const folderSetting = getProfileBinding(settings, "note.literature-folder");
+    const folderSetting = settings["note.literature-folder"];
     // A synthetic link target must be deterministic, so drop any `suffix()`
     // marker to the base name (`() => false` = never apply a random suffix).
     const rel = resolveRenderedRelPath(

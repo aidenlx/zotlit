@@ -27,63 +27,44 @@ export interface CitationPopoverActions {
   onOpenAttachment: (block: CitationEntryBlock, event: MouseEvent) => void;
   /** Every action leaves the popover closed over what it just opened. */
   onDone: () => void;
-  onSwitchProfile: (path: string) => void;
 }
 
 export interface CitationPopoverActionDeps {
   /** The open-or-create flow the hovering surface carries. */
-  open: (block: CitationEntryBlock, pane: NavigationPane) => void;
+  open: (citekey: string, pane: NavigationPane) => void;
   /** Hide the popover the entries are shown in. */
   hide: () => void;
-  switchProfile: (path: string) => void;
-  /** Refresh source-less Item availability before any action. */
-  prepare?: (block: CitationEntryBlock) => CitationEntryBlock | null;
 }
 
 export function createCitationPopoverActions({
   open,
   hide,
-  switchProfile,
-  prepare,
 }: CitationPopoverActionDeps): CitationPopoverActions {
-  let completed = true;
-  const read = (block: CitationEntryBlock): CitationEntryBlock | null => {
-    const current = prepare ? prepare(block) : block;
-    completed = current !== null;
-    return current;
-  };
   return {
     onOpenNote(block, event) {
-      const current = read(block);
-      if (!current) return;
       const pane = navigationPaneOf(event);
       logger.debug("Citation popover opens note", {
         citekey: block.citekey,
         pane,
       });
-      open(current, pane);
+      open(block.citekey, pane);
     },
     onOpenInZotero(block) {
-      const current = read(block);
-      if (!current) return;
+      // No reachability guard: the entry only shows because the Item resolved,
+      // and a Zotero-side deletion in between fails soft inside Zotero.
       logger.debug("Citation popover selects in Zotero", {
         itemKey: block.itemKey,
       });
-      window.open(itemSelectUri(current.itemKey, current.groupID));
+      window.open(itemSelectUri(block.itemKey, block.groupID));
     },
     onOpenAttachment(block, event) {
-      const current = read(block);
-      if (!current) return;
       logger.debug("Citation popover opens an attachment", {
         itemKey: block.itemKey,
         attachments: block.attachments.length,
       });
-      openAttachments(current.attachments, event);
+      openAttachments(block.attachments, event);
     },
-    onDone: () => {
-      if (completed) hide();
-    },
-    onSwitchProfile: switchProfile,
+    onDone: hide,
   };
 }
 

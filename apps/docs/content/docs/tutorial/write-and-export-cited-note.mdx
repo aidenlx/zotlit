@@ -5,13 +5,10 @@ introduced: "2.1.0"
 updated: "2.1.0"
 ---
 
+import { Callout } from "fumadocs-ui/components/callout";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
-import { SettingsPath } from "@/components/settings-path";
-import { UiLabel } from "@/components/ui-label";
-import { m } from "@/paraglide/messages.js";
 
 This tutorial takes you from one Zotero item to a cited Word document.
 
@@ -35,7 +32,7 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
   <Step>
     ### Install the Pandoc engine
 
-    In Obsidian, open <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />. Find <UiLabel name={m.settings_citation_engine_name()} />, then select <UiLabel name={m.settings_citation_engine_install()} />.
+    In Obsidian, open **Settings > ZotLit > Citations > Formatting**. Find **Pandoc engine**, then select **Install**.
 
     Wait until the row says that Pandoc is installed. The engine formats citations, references, and the exported document.
 
@@ -59,15 +56,15 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
 
     Open the command palette and run:
 
-    <Command name={m.command_open_references_view_name()} />
+    <Command>ZotLit: Open references</Command>
 
-    The <UiLabel name={m.references_view_name()} /> Sidebar shows the formatted bibliography entry for your citation.
+    The References Sidebar shows the formatted bibliography entry for your citation.
 
   </Step>
   <Step>
     ### Preview the citation
 
-    Hover over the formatted citation in Live Preview. The <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the complete bibliography entry.
+    Hover over the formatted citation in Live Preview. The Citation Popover shows the complete bibliography entry.
 
     The default hover settings show this popover without a modifier key in Live Preview.
 
@@ -75,7 +72,7 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
   <Step>
     ### Copy the bibliography
 
-    In the <UiLabel name={m.references_view_name()} /> Sidebar toolbar, select <UiLabel name={m.references_copy_bibliography()} />. Paste it into a text editor or word processor.
+    In the References Sidebar toolbar, select **Copy bibliography**. Paste it into a text editor or word processor.
 
     ZotLit places rich text and plain text on the clipboard. The destination uses the representation it supports.
 
@@ -85,9 +82,9 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
 
     Keep the note active. Open the command palette and run:
 
-    <Command name={m.command_pandoc_export_name()} />
+    <Command>ZotLit: Export note with citations</Command>
 
-    Leave <UiLabel name={m.pandoc_export_format_name()} /> set to <UiLabel name={m.pandoc_export_format_docx()} />. Choose a destination, then select <UiLabel name={m.pandoc_export_confirm()} />.
+    Leave **Format** set to **Word document**. Choose a destination, then select **Export**.
 
     Open the resulting `.docx` file. It contains your formatted citation and a bibliography.
 

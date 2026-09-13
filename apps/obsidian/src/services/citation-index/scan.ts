@@ -3,10 +3,9 @@
 import { parseLinktext } from "obsidian";
 import type { LinkCache, Loc, Pos } from "obsidian";
 
-import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
-
 import { parseCitationFragment } from "@/lib/citation-fragment";
-import type { ScannedCitation } from "@/lib/citation-source";
+import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
+import type { CitationSpan } from "@/lib/citation-grammar";
 
 /** Which syntax wrote a Citation Occurrence. */
 export type CitationSyntax = "citekey" | "wikilink";
@@ -38,17 +37,15 @@ export interface MalformedWikilinkCitation {
 export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
   const lineStarts = lineStartsOf(text);
   const occurrences: CitationOccurrence[] = [];
-  for (const citation of scanPandocCitations(maskExclusions(text))) {
-    for (const { citationKey, start, end } of citation.items) {
-      occurrences.push({
-        kind: "citekey",
-        raw: citationKey,
-        position: {
-          start: locAt(lineStarts, start),
-          end: locAt(lineStarts, end),
-        },
-      });
-    }
+  for (const { citekey, start, end } of scanCitekeys(maskExclusions(text))) {
+    occurrences.push({
+      kind: "citekey",
+      raw: citekey,
+      position: {
+        start: locAt(lineStarts, start),
+        end: locAt(lineStarts, end),
+      },
+    });
   }
   return occurrences;
 }
@@ -60,18 +57,8 @@ export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
  *
  * @returns the citations of `text`, in document order.
  */
-export function scanDocumentCitations(text: string): ScannedCitation[] {
-  return scanPandocCitations(maskExclusions(text)).map(
-    ({ start, end, items }) => ({
-      start,
-      end,
-      keys: items.map((item) => ({
-        citekey: item.citationKey,
-        start: item.start,
-        end: item.end,
-      })),
-    }),
-  );
+export function scanDocumentCitations(text: string): CitationSpan[] {
+  return scanCitations(maskExclusions(text));
 }
 
 /**
@@ -154,7 +141,7 @@ const CODE_INDENT = 4;
  * Blank every region the Citation Index must not read, keeping each character's
  * offset and every line break so the grammar still sees the document's shape.
  */
-export function maskExclusions(text: string): string {
+function maskExclusions(text: string): string {
   const body = text.split("");
   maskBlocks(text, body);
   maskInline(body);

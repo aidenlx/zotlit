@@ -2,9 +2,6 @@ packages:
   - apps/*
   - packages/*
 
-patchedDependencies:
-  "@codemirror/lang-liquid@6.3.2": patches/@codemirror__lang-liquid@6.3.2.patch
-
 allowBuilds:
   agent-browser: false
   core-js: false
@@ -16,21 +13,6 @@ allowBuilds:
   workerd: true
 
 catalog:
-  "@inlang/plugin-message-format": 4.4.1
-  nanoid: ^5.1.16
-  "@hono/node-server": ^2.0.10
-  "@codemirror/autocomplete": 6.20.3
-  "@codemirror/commands": 6.11.0
-  "@codemirror/language": 6.12.3
-  "@codemirror/state": 6.5.0
-  "@codemirror/view": 6.38.6
-  "@lezer/common": 1.5.2
-  "@lezer/highlight": 1.2.3
-  "@lezer/lr": 1.4.10
-  "@js-temporal/polyfill": ^0.5.1
-  happy-dom: ^20.9.0
-  hono: ^4.13.0
-  yaml: ^2.9.0
   "@logtape/logtape": ^2.0.7
   "@pnpm/find-workspace-dir": ^1000.1.5
   "@std/collections": jsr:1.2.0
@@ -52,7 +34,6 @@ catalog:
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0
-  preact: ^10.29.7
   react: ^19.2.0
   react-dom: ^19.2.0
   semver: ^7.7.2
@@ -62,20 +43,12 @@ catalog:
   valibot: ^1.0.0
   vite: ^8.1.5
   vitest: ^4.0.13
-  zustand: ^5.0.14
   zx: ^8.8.5
 
 # zotero-types declares two transitive deps as GitHub specs, which
 # blockExoticSubdeps refuses. Scope overrides to zotero-types only so we
 # don't shadow these names anywhere else in the graph.
 overrides:
-  # Obsidian and every Workbench host must share CodeMirror class identities.
-  "@codemirror/autocomplete": 6.20.3
-  "@codemirror/language": 6.12.3
-  # The last lint release built for the pinned view; newer ones need view 6.42.
-  "@codemirror/lint": 6.9.5
-  "@codemirror/state": 6.5.0
-  "@codemirror/view": 6.38.6
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
   # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).

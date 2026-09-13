@@ -5,10 +5,7 @@ introduced: "2.1.0"
 updated: "2.1.2"
 ---
 
-import { UiLabel } from "@/components/ui-label";
-import { m } from "@/paraglide/messages.js";
-
-This reference lists ZotLit's public CSS classes: the citation classes and their activation rules, and the template editor classes. It also lists the custom properties that color ZotLit's nodes and edges in the graph views.
+This reference lists ZotLit's public citation CSS classes and their activation rules.
 
 ## Hooks [#hooks]
 
@@ -44,9 +41,9 @@ ZotLit adds a public class only when both conditions apply:
 1. The source belongs to the active note's Document Citation Set.
 2. ZotLit supplies formatted rendering or navigation for that source.
 
-`zt-citation-key` and its state classes identify active literal Pandoc sources. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> controls their membership. <UiLabel name={m.settings_citation_show_formatted_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> control the two features that can activate their hooks.
+`zt-citation-key` and its state classes identify active literal Pandoc sources. **Pandoc citations** controls their membership. **Show formatted citations** and **Open citations as links** control the two features that can activate their hooks.
 
-`zt-literature-note-link` identifies active Wikilink Citation sources. <UiLabel name={m.settings_citation_wikilink_citations_name()} /> controls their membership. ZotLit applies the hook when <UiLabel name={m.settings_citation_show_formatted_name()} /> supplies their rendering. Obsidian supplies wikilink navigation while <UiLabel name={m.settings_citation_open_as_links_name()} /> is on; when it is off, a plain click on a rendered wikilink citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Mod+click still opens the note.
+`zt-literature-note-link` identifies active Wikilink Citation sources. **Wikilink citations** controls their membership. ZotLit applies the hook when **Show formatted citations** supplies their rendering. Obsidian supplies wikilink navigation while **Open citations as links** is on; when it is off, a plain click on a rendered wikilink citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Mod+click still opens the note.
 
 One citation key states one resolution state. Before the first Citation Key Resolution Snapshot settles, it receives `zt-citation-key-pending`. A key that matches several Zotero items receives `zt-citation-key-ambiguous` in Source mode, Live Preview, and reading view. Inside a Citation Cluster, an unresolved key outranks an ambiguous one: a cluster that holds both receives `zt-citation-key-unresolved`, or `zt-citation-key-partially-unresolved` when it also holds a resolved key, and no ambiguous class.
 
@@ -58,7 +55,7 @@ A source also receives no public ZotLit class when both applicable features are 
 
 `zt-entry-serial` appears inside a rendered Citation, on the element that holds its Entry Serials. ZotLit adds it only when the selected Citation and References Style writes the Citation as a footnote, which no Obsidian view can show. ZotLit then shows the position of each cited entry in the References Sidebar instead: one number per cited work, separated by commas, and `⚠` for a work the bibliography rendered no entry for. A style that writes its Citations inline — an author-date or a numeric style — activates this class nowhere.
 
-The class appears once more in the <UiLabel name={m.settings_citation_hover_action_popover()} /> of such a Citation, on the element that labels each cited item's button row with that item's serial. The same `⚠` stands there for a work the bibliography rendered no entry for.
+The class appears once more in the citation popover of such a Citation, on the element that labels each cited item's button row with that item's serial. The same `⚠` stands there for a work the bibliography rendered no entry for.
 
 ## Default appearance [#defaults]
 
@@ -68,90 +65,9 @@ Pending citation keys have no ZotLit default style. They keep the host view's ne
 
 ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit adds no style to a native Literature Note wikilink.
 
-Ambiguous citation keys keep the resolved link color and take the `--link-unresolved-decoration-*` variables, so the key reads as reachable — the <UiLabel name={m.settings_citation_hover_action_popover()} /> names its candidates — while stating that it matches more than one item.
+Ambiguous citation keys keep the resolved link color and take the `--link-unresolved-decoration-*` variables, so the key reads as reachable — the citation popover names its candidates — while stating that it matches more than one item.
 
-ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the <UiLabel name={m.settings_citation_hover_action_popover()} />, and take their appearance from the theme.
-
-## Graph view colors [#graph]
-
-The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. ZotLit reads each property off `body`, so set it on `body`. A property set on the view itself, such as on `.graph-view`, changes nothing.
-
-| Custom property                    | Meaning                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `--zt-graph-literature-note-color` | The starting color of a new literature notes group.                      |
-| `--zt-graph-cited-work-node-color` | The fill color of a cited work that has no Literature Note in the vault. |
-| `--zt-graph-citation-link-color`   | The line color of an edge that a citation draws.                         |
-
-ZotLit accepts any color syntax the app itself accepts, `oklch()` and `color-mix()` included.
-
-### Default appearance [#graph-defaults]
-
-Literature Notes use native node colors. A new literature notes group starts with ZotLit orange: `#E8622C` in light mode or `#F0793F` in dark mode. ZotLit reads `--zt-graph-literature-note-color` when it creates the group through the graph button or a Citation Graph command.
-
-Existing groups keep their saved color across theme changes. Removing the group returns its nodes to the remaining native groups and native colors.
-
-A cited work with no Literature Note takes `--text-faint`, unless a native color group matches it. Citation edges use native colors by default. Enabling <UiLabel name={m.graph_option_color_citation_links_name()} /> applies `--zt-graph-citation-link-color`, which defaults to `--color-purple`.
-
-An edge keeps Obsidian's own highlight color while the pointer rests on one of its nodes.
-
-```css
-body.theme-light {
-  --zt-graph-literature-note-color: #e8622c;
-}
-
-body.theme-dark {
-  --zt-graph-literature-note-color: #f0793f;
-}
-
-body {
-  --zt-graph-cited-work-node-color: oklch(0.6 0.02 250);
-  --zt-graph-citation-link-color: var(--color-cyan);
-}
-```
-
-## Template editor hooks [#template-editor]
-
-The Template Workbench View styles frontmatter and colors template source and Markdown markers through one set of classes, in every pane that holds template code: the note body, the annotation format, a property expression, the note name, and the whole file in Source. The Template Workbench on this site emits the same classes.
-
-Liquid tokens keep their own colors inside YAML values and Markdown code spans and fences. Eta highlighting covers tag delimiters. Markdown hints mark headings, lists, and quotes in the note and annotation bodies, with normal text size and weight.
-
-| Class                              | Meaning                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| `zt-template-editor`               | The element that holds one template editor pane.                         |
-| `zt-template-delimiter`            | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
-| `zt-template-keyword`              | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
-| `zt-template-variable`             | A variable or root name: `zt`, `it`.                                     |
-| `zt-template-property`             | A property name after a dot, or a JSON key.                              |
-| `zt-template-filter`               | A Liquid filter or a function call: `map`, `note_links`.                 |
-| `zt-template-string`               | A string literal.                                                        |
-| `zt-template-value`                | A number, boolean, or null.                                              |
-| `zt-template-operator`             | An operator: `.`, `>`, `\|`.                                             |
-| `zt-template-punctuation`          | Other punctuation: `,`, `:`, brackets.                                   |
-| `zt-template-comment`              | Template comment text.                                                   |
-| `zt-template-invalid`              | Source the parser refuses.                                               |
-| `zt-template-frontmatter`          | A frontmatter line, including its opening and closing boundaries.        |
-| `zt-template-markdown-marker`      | A Markdown heading, list, or quote marker in a body.                     |
-| `zt-template-markdown-list-marker` | An additional class on a Markdown list marker.                           |
-| `zt-template-hover`                | The popover that explains the token under the pointer, in Obsidian only. |
-
-### Default appearance [#template-defaults]
-
-The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
-
-Frontmatter takes `--text-muted`. Template tokens keep their colors inside frontmatter. Heading and quote markers take `--text-faint`; list markers take `--list-marker-color`. These roles change color only. All Profile Editor panes keep their existing monospace font, code size, spacing, and background.
-
-Set a custom property on the editor hook to recolor one kind of token in every pane, or style a token class directly:
-
-```css
-.zt-template-editor {
-  --zt-template-keyword: var(--color-purple);
-  --zt-template-filter: var(--color-cyan);
-}
-
-.zt-template-comment {
-  font-style: normal;
-}
-```
+ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the citation popover, and take their appearance from the theme.
 
 ## CSS examples [#examples]
 

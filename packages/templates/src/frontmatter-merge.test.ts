@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  FRONTMATTER_ABSENT,
-  mergeFrontmatterFields,
-} from "./frontmatter-merge";
+import { mergeFrontmatterFields } from "./frontmatter-merge";
 
 describe("mergeFrontmatterFields", () => {
-  it("exposes an explicit absent operation", () => {
-    expect(typeof FRONTMATTER_ABSENT).toBe("symbol");
-  });
-
   it("replaces values wholesale", () => {
     expect(
       mergeFrontmatterFields(
@@ -34,55 +27,6 @@ describe("mergeFrontmatterFields", () => {
     ).toEqual({});
   });
 
-  describe.each(["replace", "append", "keep"] as const)(
-    "%s generated states",
-    (merge) => {
-      const fields = [{ key: "value", merge }] as const;
-
-      it("merges a generated value", () => {
-        expect(
-          mergeFrontmatterFields(fields, { value: "new" }, { current: {} }),
-        ).toEqual({ value: "new" });
-      });
-
-      it("keeps explicit null as a generated value", () => {
-        expect(
-          mergeFrontmatterFields(fields, { value: null }, { current: {} }),
-        ).toEqual({ value: null });
-      });
-
-      it("leaves undefined untouched", () => {
-        expect(
-          mergeFrontmatterFields(
-            fields,
-            { value: undefined },
-            { current: { value: "old" } },
-          ),
-        ).toEqual({});
-      });
-
-      it("omits an absent value on create", () => {
-        expect(
-          mergeFrontmatterFields(
-            fields,
-            { value: FRONTMATTER_ABSENT },
-            { current: {} },
-          ),
-        ).toEqual({});
-      });
-
-      it(`${merge === "replace" ? "deletes" : "preserves"} an absent value on update`, () => {
-        expect(
-          mergeFrontmatterFields(
-            fields,
-            { value: FRONTMATTER_ABSENT },
-            { current: { value: "old" } },
-          ),
-        ).toEqual(merge === "replace" ? { value: FRONTMATTER_ABSENT } : {});
-      });
-    },
-  );
-
   it("ignores evaluated keys absent from the field list", () => {
     expect(
       mergeFrontmatterFields(
@@ -100,25 +44,6 @@ describe("mergeFrontmatterFields", () => {
       }),
     ).toEqual({ title: "New" });
   });
-
-  it.each(["replace", "append", "keep"] as const)(
-    "treats inherited object names as absent under %s",
-    (merge) => {
-      const evaluated: Record<string, unknown> = Object.create(null);
-      Object.defineProperty(evaluated, "constructor", {
-        value: "safe",
-        enumerable: true,
-      });
-
-      const patch = mergeFrontmatterFields(
-        [{ key: "constructor", merge }],
-        evaluated,
-      );
-
-      expect(Object.hasOwn(patch, "constructor")).toBe(true);
-      expect(patch.constructor).toBe("safe");
-    },
-  );
 
   it("appends arrays with strict identity de-duplication", () => {
     const shared = { key: "A" };

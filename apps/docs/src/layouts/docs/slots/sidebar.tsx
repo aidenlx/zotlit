@@ -40,7 +40,6 @@ import type {
   DocsSidebarBadge,
 } from "@/lib/docs-availability";
 import { mergeRefs } from "@/lib/merge-refs";
-import * as m from "@/paraglide/messages.js";
 
 const itemVariants = cva(
   "relative flex flex-row items-center gap-2 rounded-lg p-2 text-start text-fd-muted-foreground wrap-anywhere [&_svg]:size-4 [&_svg]:shrink-0",
@@ -410,8 +409,8 @@ function AvailabilityBadge({ status }: { status: DocsSidebarBadge }) {
     <span
       aria-label={
         {
-          new: m.docs_badge_new_label(),
-          updated: m.docs_badge_updated_label(),
+          new: "New feature",
+          updated: "Updated page",
         }[status]
       }
       data-availability={status}
@@ -422,7 +421,7 @@ function AvailabilityBadge({ status }: { status: DocsSidebarBadge }) {
           "bg-fd-primary/8 text-fd-primary ring-1 ring-fd-primary/30 ring-inset",
       )}
     >
-      {status === "new" ? m.docs_badge_new() : m.docs_badge_updated()}
+      {status}
     </span>
   );
 }

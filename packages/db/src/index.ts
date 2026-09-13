@@ -58,7 +58,6 @@ export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
   getAnnotationsByItemId,
-  getAnnotationsByParent,
 } from "./queries/annotations";
 export {
   getAttachmentByKey,
@@ -82,11 +81,6 @@ export {
 export { resolveItemTags, type TagMemo } from "./queries/tags";
 export { getRelatedKeysByItemID } from "./queries/item-relations";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
-export {
-  getCollectionIDsByItem,
-  getCollectionNodesByLibrary,
-  type CollectionNode,
-} from "./queries/collections";
 export {
   getAnnotViewAnnotations,
   getAnnotViewAttachments,
@@ -112,7 +106,6 @@ export {
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
 export { parseItemExtra, type ExtraLine, type ItemExtra } from "./lib/zt-extra";
 export {
-  annotationHasCacheImage,
   annotationTypeToName,
   type Annotation,
   type AnnotationType,
@@ -133,18 +126,12 @@ export {
   type TemplateParentItemData,
 } from "./lib/context/zt-template-item";
 export {
-  CITATION_VARIANTS,
   citekeysToCiteTemplateData,
-  DEFAULT_CITATION_VARIANT,
   DEFAULT_LOCATOR_LABEL_SHORT,
-  isCitationVariant,
   narrowBaseDataToCiteItemData,
   resolveCitedItem,
-  type CitationTemplateData,
-  type CitationVariant,
   type CiteRef,
   type ResolvedCiteRef,
-  type TemplateCiteItemData,
 } from "./lib/context/zt-template-cite";
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {

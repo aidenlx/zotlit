@@ -28,7 +28,7 @@ describe("copyAttachments", () => {
     const source = join(dir, "source.png");
     const dest = join(dir, "dest.png");
     await writeFile(source, "image");
-    const mtime = 1_704_067_200;
+    const mtime = new Date("2024-01-01T00:00:00.000Z");
     await utimes(source, mtime, mtime);
 
     await expect(
