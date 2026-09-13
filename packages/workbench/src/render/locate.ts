@@ -41,27 +41,28 @@ export function currentCallSite(
 }
 
 /**
- * The text one entry failure points at, as offsets into the expression the
- * reader edits now. The engine named a place inside the value it ran, and this
- * finds that place again in the current text: a JSON-e rule by walking its
- * keys and indexes, a Liquid expression by the text the token covered. Either
- * way the place has to still hold what the attempt read there, so a repaired
- * or rewritten expression carries no mark, and an unfound place stays unmarked
- * rather than moving the mark somewhere it never was.
+ * The text one surface failure points at, as offsets into the text the reader
+ * edits now. The engine named a place inside the source it ran, and this finds
+ * that place again in the current text: a JSON-e rule by walking its keys and
+ * indexes, a Liquid template by the text the token covered. Either way the
+ * place has to still hold what the attempt read there, so a repaired or
+ * rewritten source carries no mark, and an unfound place stays unmarked rather
+ * than moving the mark somewhere it never was.
  */
-export function currentEntrySite(
+export function currentSliceSite(
   diagnostic: RenderDiagnostic,
-  expression: string,
+  /** The pane's own text, which the site's offsets are read against. */
+  text: string,
 ): { from: number; to: number } | undefined {
-  const site = diagnostic.entrySite;
+  const site = diagnostic.sliceSite;
   if (site === undefined) return undefined;
   if (site.kind === "span") {
-    const offset = expression.indexOf(site.source);
-    if (offset < 0 || expression.indexOf(site.source, offset + 1) !== -1)
+    const offset = text.indexOf(site.source);
+    if (offset < 0 || text.indexOf(site.source, offset + 1) !== -1)
       return undefined;
     return { from: offset + site.from, to: offset + site.to };
   }
-  const root = parseTree(expression, [], {
+  const root = parseTree(text, [], {
     disallowComments: true,
     allowTrailingComma: false,
   });

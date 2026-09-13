@@ -168,7 +168,7 @@ it("underlines the expression a property rule failed on, in the row's own editor
         params: { key: "citekey", detail: 'object has no property "nope"' },
         part: "properties",
         position: 4,
-        entrySite: {
+        sliceSite: {
           kind: "path",
           path: [],
           source: '{"$eval":"zt.citationKey"}',
@@ -207,7 +207,7 @@ it("leaves a property failure unmarked in another row's editor", () => {
         params: { key: "citekey" },
         part: "properties",
         position: 4,
-        entrySite: {
+        sliceSite: {
           kind: "path",
           path: [],
           source: '{"$eval":"zt.citationKey"}',

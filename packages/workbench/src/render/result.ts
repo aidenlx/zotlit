@@ -47,13 +47,13 @@ export interface RenderEngineLocation {
 }
 
 /**
- * The failing place inside one Managed Frontmatter entry, named the way the
- * engine that ran it names places: a JSON-e rule reports the keys and indexes
- * it walked, and a Liquid expression reports a span of the text it tokenized.
- * Both carry what the attempt read there, so a host marks a place only where
- * the expression it shows now still spells the same thing.
+ * The failing place inside one pane's own text, named the way the engine that
+ * ran it names places: a JSON-e rule reports the keys and indexes it walked,
+ * and a Liquid expression reports a span of the text it tokenized. Both carry
+ * what the attempt read there, so a host marks a place only where the text it
+ * shows now still spells the same thing.
  */
-export type EntrySite =
+export type SliceSite =
   | {
       readonly kind: "path";
       readonly path: readonly (string | number)[];
@@ -117,12 +117,13 @@ export interface RenderDiagnostic {
     readonly offset: number;
   };
   /**
-   * Where inside {@link RenderDiagnostic.position}'s entry the engine stopped,
-   * in the entry's own terms rather than the document's. Only the open source
-   * knows where that entry sits, so a host resolves this against the text it
-   * shows and leaves it unmarked where the text no longer holds it.
+   * Where inside the failing surface — a Managed Frontmatter entry, the note
+   * name — the engine stopped, in that text's own terms rather than the
+   * document's. Only the open source knows where the surface sits, so a host
+   * resolves this against the text it shows and leaves it unmarked where that
+   * text no longer holds it.
    */
-  readonly entrySite?: EntrySite;
+  readonly sliceSite?: SliceSite;
   /**
    * What the engine said before this diagnostic reduced it to `message`,
    * captured at the boundary that catches the error. Absent where the failure
