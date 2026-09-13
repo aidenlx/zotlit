@@ -31,6 +31,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -309,10 +310,26 @@ export function ProblemsFooter({
     resolved,
   } = problems;
   const select = problems.select;
+  const scroll = useRef<HTMLDivElement | null>(null);
+  const focusReadingAfterCommit = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusReadingAfterCommit.current) return;
+    focusReadingAfterCommit.current = false;
+    scroll.current?.focus();
+  }, [expanded, open, selected?.id]);
+  /** Focus the stable explanation region after its trigger disappears. */
+  function focusReading(): void {
+    focusReadingAfterCommit.current = true;
+    scroll.current?.focus();
+  }
   /** Reading is over: the source takes its space back and the caret with it. */
   function returnToTemplate(): void {
     setOpen(false);
     onReturn?.();
+  }
+  function toggleOpen(): void {
+    if (open) returnToTemplate();
+    else setOpen(true);
   }
   // One text, shown and copied. Building it once keeps Technical details and
   // the clipboard from ever disagreeing about what was reported.
@@ -441,7 +458,10 @@ export function ProblemsFooter({
           {open && !expanded && (
             <button
               type="button"
-              onClick={() => setExpanded(true)}
+              onClick={() => {
+                focusReading();
+                setExpanded(true);
+              }}
               {...part("problems-expand")}
             >
               {m.workbench_problems_expand()}
@@ -451,7 +471,7 @@ export function ProblemsFooter({
             type="button"
             aria-expanded={open}
             aria-controls={open ? bodyId : undefined}
-            onClick={() => setOpen(!open)}
+            onClick={toggleOpen}
             {...part("problems-toggle")}
           >
             {open
@@ -464,7 +484,7 @@ export function ProblemsFooter({
         <div id={bodyId} {...part("problems-body")}>
           {/* The explanation is what scrolls. A reader with no pointer scrolls
               it from here, and the controls below stay where they were. */}
-          <div tabIndex={0} {...part("problems-scroll")}>
+          <div ref={scroll} tabIndex={0} {...part("problems-scroll")}>
             {several ? (
               <div {...part("problems-select")}>
                 <WorkbenchSelect
@@ -507,7 +527,7 @@ export function ProblemsFooter({
                 // The reading gives the pane back before the caret moves:
                 // an explanation holding the whole editor would otherwise
                 // send the reader to source it hides.
-                setExpanded(false);
+                setOpen(false);
                 onOpen(selected);
               }}
               {...part("problems-open")}
@@ -525,7 +545,7 @@ export function ProblemsFooter({
           // The repair succeeded, and the failure the reader was reading is
           // still here to report. It is the last one inspected, not a history.
           <div id={bodyId} {...part("problems-body")}>
-            <div tabIndex={0} {...part("problems-scroll")}>
+            <div ref={scroll} tabIndex={0} {...part("problems-scroll")}>
               {next !== null &&
                 inspected !== null && (
                   // Others were found, so this says which one went rather than
@@ -545,7 +565,10 @@ export function ProblemsFooter({
               {next !== null && (
                 <button
                   type="button"
-                  onClick={() => select(next.id)}
+                  onClick={() => {
+                    focusReading();
+                    select(next.id);
+                  }}
                   {...part("problems-next")}
                 >
                   {m.workbench_problems_next()}

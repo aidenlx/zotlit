@@ -642,20 +642,37 @@ describe("the Problems area", () => {
     );
     expect(area.textContent).toContain("Later");
     expect(area.textContent).not.toContain(m.workbench_problems_resolved());
+    expect(document.activeElement).toBe(
+      area.querySelector("[data-part=problems-scroll]"),
+    );
   });
 
   it("hands the editor over on Expand and takes the reader back to the source", () => {
     let returned = 0;
+    let editor: HTMLButtonElement | null = null;
     using mounted = mount(
-      <Problems
-        diagnoses={workbenchDiagnoses(
-          [],
-          [{ code: "render-error", message: "Unclosed tag" }],
-        )}
-        onOpen={() => {}}
-        onReturn={() => (returned += 1)}
-        open
-      />,
+      <>
+        <button
+          ref={(element) => {
+            editor = element;
+          }}
+          type="button"
+        >
+          editor
+        </button>
+        <Problems
+          diagnoses={workbenchDiagnoses(
+            [],
+            [{ code: "render-error", message: "Unclosed tag" }],
+          )}
+          onOpen={() => {}}
+          onReturn={() => {
+            returned += 1;
+            editor?.focus();
+          }}
+          open
+        />
+      </>,
     );
     const { ui } = mounted;
     render(ui);
@@ -684,6 +701,9 @@ describe("the Problems area", () => {
       screen.getByRole("button", { name: m.workbench_problems_expand() }),
     );
     expect(area.dataset.state).toBe("full");
+    expect(document.activeElement).toBe(
+      area.querySelector("[data-part=problems-scroll]"),
+    );
     // Nothing left to expand into, so the control that asked for it goes.
     expect(
       screen.queryByRole("button", { name: m.workbench_problems_expand() }),
@@ -694,6 +714,7 @@ describe("the Problems area", () => {
     );
     expect(returned).toBe(1);
     expect(area.dataset.state).toBe("compact");
+    expect(document.activeElement).toBe(editor);
     // The next reading starts from the split, not from the space the last took.
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_problem_show() }),
@@ -703,15 +724,29 @@ describe("the Problems area", () => {
 
   it("gives the source back its share of the pane before navigating to it", () => {
     const opened: string[] = [];
+    let editor: HTMLButtonElement | null = null;
     using mounted = mount(
-      <Problems
-        diagnoses={workbenchDiagnoses(
-          [{ code: "invalid-document", slice: "advanced" }],
-          [],
-        )}
-        onOpen={({ id }) => opened.push(id)}
-        open
-      />,
+      <>
+        <button
+          ref={(element) => {
+            editor = element;
+          }}
+          type="button"
+        >
+          editor
+        </button>
+        <Problems
+          diagnoses={workbenchDiagnoses(
+            [{ code: "invalid-document", slice: "advanced" }],
+            [],
+          )}
+          onOpen={({ id }) => {
+            opened.push(id);
+            editor?.focus();
+          }}
+          open
+        />
+      </>,
     );
     const { ui } = mounted;
     render(ui);
@@ -731,7 +766,8 @@ describe("the Problems area", () => {
       }),
     );
     expect(opened).toHaveLength(1);
-    expect(area.dataset.state).toBe("open");
+    expect(area.dataset.state).toBe("compact");
+    expect(document.activeElement).toBe(editor);
   });
 
   it("follows the problem still there once a compact area's own is repaired", () => {
@@ -801,6 +837,7 @@ describe("the Problems area", () => {
   });
 
   it("keeps an open area after a check finds nothing, and gives its space back on Collapse", () => {
+    let editor: HTMLButtonElement | null = null;
     function Harness(): ReactNode {
       const [failing, setFailing] = useState(true);
       const problems = useWorkbenchProblems({
@@ -816,10 +853,22 @@ describe("the Problems area", () => {
       }, [setOpen]);
       return (
         <>
+          <button
+            ref={(element) => {
+              editor = element;
+            }}
+            type="button"
+          >
+            editor
+          </button>
           <button type="button" onClick={() => setFailing(false)}>
             repair
           </button>
-          <ProblemsFooter problems={problems} onOpen={() => {}} />
+          <ProblemsFooter
+            problems={problems}
+            onOpen={() => {}}
+            onReturn={() => editor?.focus()}
+          />
         </>
       );
     }
@@ -842,6 +891,7 @@ describe("the Problems area", () => {
     expect(
       screen.queryByRole("region", { name: m.workbench_problems_heading() }),
     ).toBeNull();
+    expect(document.activeElement).toBe(editor);
   });
 
   it("keeps the reader's choice through an automatic check and opens on a failed Run", () => {

@@ -422,16 +422,16 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     problemsFooter: {
       // Three sizes the editor pane itself decides between. The summary is
-      // whatever one row of it needs; a reading takes a fixed share of the pane,
+      // whatever one row of it needs; a reading takes a settled share of the pane,
       // so a repair that empties the explanation leaves the source where it
       // stands; and the whole pane is what Expand and a pane with no room for
-      // the split both arrive at. `PROBLEMS_SPLIT_FITS` and its complement are
-      // the same measurement written twice, so exactly one of them applies.
+      // the split both arrive at. The height and width conditions reserve room
+      // for the summary and wrapped controls before the split is used.
       problems: cn(
         "flex min-h-0 flex-col gap-2 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
         "data-[state=compact]:shrink-0",
-        "[@container_workbench-editor_((height>=28rem)_and_(width>=20rem))]:data-[state=open]:[flex:0_0_45%]",
-        "[@container_workbench-editor_((height<28rem)_or_(width<20rem))]:data-[state=open]:[flex:1_1_100%]",
+        "[@container_workbench-editor_((height>=36rem)_and_(width>=24rem))]:data-[state=open]:[flex:0_0_55%]",
+        "[@container_workbench-editor_((height<36rem)_or_(width<24rem))]:data-[state=open]:[flex:1_1_100%]",
         "data-[state=full]:[flex:1_1_100%]",
       ),
       "problems-summary":
@@ -450,7 +450,7 @@ export const WEB_THEME: WorkbenchTheme = {
       // that already gave the explanation everything it has.
       "problems-expand": cn(
         buttonVariants({ variant: "ghost", size: "xs" }),
-        "[@container_workbench-editor_((height<28rem)_or_(width<20rem))]:hidden",
+        "[@container_workbench-editor_((height<36rem)_or_(width<24rem))]:hidden",
       ),
       "problems-toggle": cn(buttonVariants({ variant: "outline", size: "xs" })),
       "problems-body": "flex min-h-0 min-w-0 flex-1 flex-col gap-1",

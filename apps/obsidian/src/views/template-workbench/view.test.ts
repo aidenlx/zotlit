@@ -1323,6 +1323,8 @@ language: liquid
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
     await act(async () => view.open());
     await act(async () =>
       view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
@@ -1330,6 +1332,9 @@ language: liquid
 
     const area = view.contentEl.querySelector<HTMLElement>(
       '[data-part="problems"]',
+    )!;
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
     )!;
     // An automatic check stays compact until the reader asks for the rest.
     expect(area.textContent).toContain(
@@ -1357,12 +1362,15 @@ language: liquid
       m.workbench_problem_missing_annotation_section_recovery(),
     );
     expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
+    expect(editor.contentDOM).toBe(document.activeElement);
   });
 
   it("returns the reader to the place in the source the reading left", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
     await act(async () => view.open());
     await act(async () =>
       view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
@@ -1393,6 +1401,9 @@ language: liquid
     await press(m.workbench_problem_show());
     await press(m.workbench_problems_expand());
     expect(area.dataset.state).toBe("full");
+    expect(area.querySelector('[data-part="problems-scroll"]')).toBe(
+      document.activeElement,
+    );
 
     await press(m.workbench_problems_return());
     // The area gives the editor back whole, and the caret is where it was.
@@ -1403,6 +1414,44 @@ language: liquid
       slice: left.slice,
     });
     expect(editor.state.selection.main.head).toBe(4);
+    expect(editor.contentDOM).toBe(document.activeElement);
+  });
+
+  it("reclaims the reading space before navigating to a source problem", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
+    await act(async () => view.open());
+    await act(async () =>
+      view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
+    );
+
+    const area = view.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    const press = (selector: string) =>
+      act(async () =>
+        view.contentEl.querySelector<HTMLElement>(selector)!.click(),
+      );
+    await press('[data-part="problems-toggle"]');
+    await press('[data-part="problems-expand"]');
+    expect(area.dataset.state).toBe("full");
+
+    await press('[data-part="problems-open"]');
+    expect(area.dataset.state).toBe("compact");
+    expect(view.store.getState().advanced).toBe(true);
+    const editor = [
+      ...view.contentEl.querySelectorAll<HTMLElement>(".cm-editor"),
+    ]
+      .map((element) => EditorView.findFromDOM(element)!)
+      .find(
+        (candidate) =>
+          candidate.state.doc.toString() ===
+          view.controller.sliceText("advanced"),
+      )!;
+    expect(editor.contentDOM).toBe(document.activeElement);
   });
 
   it("keeps a Profile document on its six tabs, titled by its name", async () => {

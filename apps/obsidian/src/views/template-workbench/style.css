@@ -241,13 +241,13 @@
 .view-content.zt-template-workbench [data-part="problems"][data-state="full"] {
   flex: 1 1 100%;
 }
-@container workbench-editor ((height >= 28rem) and (width >= 20rem)) {
+@container workbench-editor ((height >= 36rem) and (width >= 24rem)) {
   .view-content.zt-template-workbench
     [data-part="problems"][data-state="open"] {
-    flex: 0 0 45%;
+    flex: 0 0 55%;
   }
 }
-@container workbench-editor ((height < 28rem) or (width < 20rem)) {
+@container workbench-editor ((height < 36rem) or (width < 24rem)) {
   .view-content.zt-template-workbench
     [data-part="problems"][data-state="open"] {
     flex: 1 1 100%;
@@ -261,5 +261,8 @@
    reader has to reach; the report block keeps its own unbroken lines. */
 .view-content.zt-template-workbench [data-part="problems-controls"] > button,
 .view-content.zt-template-workbench [data-part="problems-space"] > button {
+  block-size: auto;
+  min-block-size: var(--size-4-6);
+  overflow-wrap: anywhere;
   white-space: normal;
 }
