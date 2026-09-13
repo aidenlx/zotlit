@@ -244,6 +244,8 @@ Start each independent trial once, with its case ID:
 pnpm fixture open --vault-case <case> --purge
 ```
 
+After the ready report, run `obsidian vault=<id> command id=app:reload` with the reported vault ID. This reload makes Obsidian rebuild its file index from the generated seed, including files removed by a purge.
+
 For close, reload, restart, and resume checks, reopen the same Development Vault in Obsidian. Fixture open, build, dev, and vault sync commands restore generated state. Run them again only to start a new trial. Wait for saved changes before closing an editor.
 
 #### Review and postpone
