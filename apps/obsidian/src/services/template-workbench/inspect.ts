@@ -14,7 +14,7 @@ import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
 import { DEFAULT_PROFILE_DOCUMENT } from "@/services/profile/service";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
-import { citationPath } from "@/services/template/defaults";
+import { citationPath, partialNameRefusal } from "@/services/template/defaults";
 import type { TemplateService } from "@/services/template/service";
 
 import { CONTRACT_VERSION } from "./envelope";
@@ -326,6 +326,7 @@ export function selectInspectionNote(
 export function createInspectHandler(
   deps: InspectDeps,
   draft?: { source: string; path: string },
+  replacedDependency?: string,
 ): CliHandler {
   return async (params) => {
     const identity = await deps.identity();
@@ -371,7 +372,30 @@ export function createInspectHandler(
     )
       return fail("TARGET_MISMATCH");
     await Promise.all([deps.templates.ready, deps.profile.ready]);
-    let inventory = inspectInventory(deps);
+    const draftDocument: InspectDocument | undefined =
+      draft &&
+      typeof params.document === "string" &&
+      params.document.startsWith("partial:")
+        ? {
+            kind: "partial",
+            id: params.document,
+            label: params.document.slice("partial:".length),
+            path: null,
+            problems: [],
+          }
+        : undefined;
+    if (draftDocument && partialNameRefusal(draftDocument.label, new Set()))
+      return fail("INVALID_SELECTOR");
+    const inventoryWithDraft = () => {
+      const documents = inspectInventory(deps);
+      if (
+        draftDocument &&
+        !documents.some((document) => document.id === draftDocument.id)
+      )
+        documents.push(draftDocument);
+      return documents;
+    };
+    let inventory = inventoryWithDraft();
     if (selectors.length === 0) {
       if (params.editor !== undefined) return fail("INVALID_SELECTOR");
       return answer({
@@ -400,8 +424,9 @@ export function createInspectHandler(
     // and the Citation Template so a selected Profile cannot hide an old dependency.
     const isDependency = (entry: InspectDocument) =>
       entry.id !== document.id &&
+      entry.id !== replacedDependency &&
       (entry.kind === "partial" ||
-        (document.kind === "profile" && entry.kind === "citation"));
+        (document.kind !== "citation" && entry.kind === "citation"));
     let dependencies = inventory.filter(isDependency);
     const editor = params.editor !== undefined;
     const builtinPaths = [...(draft ? [] : [document]), ...dependencies]
@@ -436,7 +461,7 @@ export function createInspectHandler(
           : "SOURCE_NOT_LOADED",
         { document, note, freshness },
       );
-    inventory = inspectInventory(deps);
+    inventory = inventoryWithDraft();
     matches = selectInspectDocument(inventory, selection, selectionOptions);
     if (matches.length !== 1 || matches[0]!.path !== document.path)
       return fail("SOURCE_SUPERSEDED", { freshness });

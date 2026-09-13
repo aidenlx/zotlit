@@ -4,13 +4,21 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { CliFlags, CliHandler } from "obsidian";
 
-import type { NoteTemplateContext } from "@zotlit/db";
-import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
+import type { CitationVariant, NoteTemplateContext } from "@zotlit/db";
+import {
+  parseLiteratureNoteTemplate,
+  parsePlainTemplateDocument,
+} from "@zotlit/templates/facade";
 import { serializeTemplateData } from "@zotlit/workbench/explorer";
-import { captureRenderReport, renderIdentity } from "@zotlit/workbench/render";
+import {
+  captureRenderReport,
+  renderIdentity,
+  isCitationExampleId,
+} from "@zotlit/workbench/render";
 import type {
   RenderCallerSource,
   RenderDiagnostic,
+  PartialContext,
 } from "@zotlit/workbench/render";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
@@ -23,7 +31,7 @@ import {
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import { selectCheckBaseline } from "./check-baseline";
-import { loadTemplateData } from "./data";
+import { loadTemplateData, loadCitationData } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
@@ -31,6 +39,18 @@ import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
 
 export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
 export const checkFlags = {
+  root: {
+    value: "<note|annotation|citation>",
+    description: "Shared Partial caller root; required for partial rendering",
+  },
+  example: {
+    value: "<example-id>",
+    description: "Built-in Citation example instead of key",
+  },
+  variant: {
+    value: "<main|alt>",
+    description: "Citation Variant; defaults to main",
+  },
   mode: {
     value: "<create|update>",
     description: "Operation to check; defaults to create",
@@ -50,7 +70,8 @@ export const checkFlags = {
   },
   document: {
     value: "<path-or-reference>",
-    description: "Saved Profile document",
+    description:
+      "Profile, citation, or partial:<name>; also identifies a plain draft",
   },
   draft: {
     value: "<absolute-path>",
@@ -62,7 +83,7 @@ export const checkFlags = {
     description: "Real item to render; omit for structural validation only",
   },
   output: {
-    value: `<${PROFILE_OUTPUTS.join(",")}|all>`,
+    value: `<${PROFILE_OUTPUTS.join(",")},citation,partial|all>`,
     description:
       "Comma-separated complete outputs to disclose; default compact",
   },
@@ -101,6 +122,12 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   No check writes notes, changes Profiles, or imports attachments.
   Omit key for structural validation; rendering is explicitly not checked.
   Every response includes every component status. output changes disclosure only.
+  Citation Templates use document=citation with key or example and variant=main|alt.
+  Shared Partials use document=partial:<name> and root=note|annotation|citation.
+  Note and Annotation callers select key. Citation callers select key or example.
+  Direct partial checks use the selected Profile's bindings, or Default. Partials
+  called by a Profile draft use that draft's bindings. Supply document with draft
+  to identify plain draft source, which stays uninstalled.
   An empty rendered string is a successful output. Any component failure fails the check.
   Each run receives a new attempt ID. The last 32 attempts remain available until
   plugin reload. Reading an expired attempt reports ATTEMPT_NOT_FOUND.
@@ -184,10 +211,18 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           output.some(
             (name) =>
               name !== "all" &&
-              !(PROFILE_OUTPUTS as readonly string[]).includes(name),
+              ![...PROFILE_OUTPUTS, "citation", "partial"].includes(name),
           ))) ||
       (params.evidence !== undefined && params.evidence !== "full") ||
-      (params.draft !== undefined && params.document !== undefined) ||
+      (params.example !== undefined &&
+        (typeof params.example !== "string" ||
+          !isCitationExampleId(params.example) ||
+          params.key !== undefined)) ||
+      (params.variant !== undefined &&
+        params.variant !== "main" &&
+        params.variant !== "alt") ||
+      (params.root !== undefined &&
+        !["note", "annotation", "citation"].includes(params.root as string)) ||
       (params.mode !== undefined &&
         params.mode !== "create" &&
         params.mode !== "update") ||
@@ -222,6 +257,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         params.mode !== undefined ||
         params.note !== undefined ||
         params.existing !== undefined ||
+        params.root !== undefined ||
+        params.variant !== undefined ||
+        params.example !== undefined ||
         params["expect-source"] !== undefined
       )
         return fail(
@@ -243,6 +281,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     let dataRevision = "";
     let reportLanguage: string | undefined;
     let reportDocument: string | undefined;
+    let reportRoot = "note";
+    let reportPartial = false;
+    let reportProfile: string | undefined;
     let itemKey = params.key as string;
     let baseline:
       | Extract<Awaited<ReturnType<typeof selectCheckBaseline>>, { ok: true }>
@@ -251,8 +292,11 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     const reportContext = () => ({
       document: reportDocument,
       language: reportLanguage,
-      root: "note",
-      selection: typeof params.key === "string" ? params.key : undefined,
+      root: reportRoot,
+      selection:
+        typeof params.key === "string"
+          ? params.key
+          : (params.example as string | undefined),
       zotlitVersion: deps.pluginVersion,
       hostVersion: deps.hostVersion,
     });
@@ -272,6 +316,21 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             snapshot: dataRevision ? { revision: dataRevision } : null,
             mode,
           }),
+          ...(reportRoot === "citation"
+            ? {
+                citationVariant: (params.variant ?? "main") as CitationVariant,
+                ...(typeof params.example === "string" &&
+                isCitationExampleId(params.example)
+                  ? { citationExample: params.example }
+                  : {}),
+              }
+            : {}),
+          ...(reportPartial
+            ? {
+                partialContext: reportRoot as PartialContext,
+                partialProfile: reportProfile ?? params.profile ?? "default",
+              }
+            : {}),
           ...(diagnostic.annotation
             ? {
                 annotationId: diagnostic.annotation.key,
@@ -343,6 +402,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           document: params.document,
           draft: params.draft,
           key: params.key,
+          root: params.root,
+          variant: params.variant,
+          example: params.example,
           mode,
           note: params.note,
         },
@@ -440,9 +502,6 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
               params.profile ??
               (draft ? "default" : (baseline?.stamp?.id ?? "default")),
           }),
-      ...(params.profile !== undefined && params.document !== undefined
-        ? { profile: params.profile }
-        : {}),
       ...(params["expect-source"] !== undefined
         ? { "expect-source": params["expect-source"] }
         : {}),
@@ -452,7 +511,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       (await inspect(inspectRequest)) as string,
     ) as InspectedSource;
     const { source, ...context } = inspected;
-    if (draft) {
+    if (draft && inspected.document?.kind === "profile") {
       context.input = {
         origin: "draft",
         path: draft.path,
@@ -472,6 +531,268 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     reportDocument =
       draft?.path ?? inspected.document?.path ?? inspected.document?.id;
     if (!inspected.ok) return finish(context);
+    if (
+      inspected.document?.kind === "profile" &&
+      params.document !== undefined &&
+      params.profile !== undefined
+    )
+      return finish({
+        ...context,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "Select a Profile with profile or document, one at a time.",
+          recovery: "Omit profile when selecting a Profile document.",
+        },
+      });
+    if (source !== undefined && inspected.document?.kind !== "profile") {
+      const document = inspected.document!;
+      const root = document.kind === "citation" ? "citation" : params.root;
+      reportRoot = (root as string | undefined) ?? "note";
+      reportPartial = document.kind === "partial";
+      if (
+        mode !== "create" ||
+        (document.kind === "citation" && params.root !== undefined) ||
+        (root !== "citation" &&
+          (params.example !== undefined || params.variant !== undefined)) ||
+        (document.kind === "partial" &&
+          root === undefined &&
+          (params.key !== undefined || params.example !== undefined))
+      )
+        return finish({
+          ...context,
+          ok: false,
+          diagnostic: {
+            code: "INVALID_SELECTOR",
+            message:
+              "Select a partial caller root and applicable data; plain documents use create mode.",
+          },
+        });
+      const checks: Record<string, ProfileCheck> = {
+        structure: { status: "not-checked", diagnostics: [] },
+        [document.kind]: { status: "not-checked", diagnostics: [] },
+      };
+      let caller: RenderCallerSource = { source, language: "liquid" };
+      try {
+        const parsed = parsePlainTemplateDocument(source);
+        reportLanguage = parsed.manifest.language;
+        caller = { source, language: parsed.manifest.language };
+        if (
+          reportLanguage === "eta" &&
+          !deps.templates.javascriptTemplatesEnabled
+        )
+          return finish({
+            ...context,
+            ok: false,
+            checks,
+            rendering: "not-checked",
+            diagnostic: {
+              ...attachReport({
+                code: "render-error",
+                part: "render",
+                message: "JavaScript Templates are disabled on this device.",
+                recovery:
+                  "Enable JavaScript Templates on this device or use a Liquid document.",
+              }),
+              code: "ETA_OPT_IN_REQUIRED",
+              message: "JavaScript Templates are disabled on this device.",
+              evidence: {
+                kind: "javascript-gate",
+                enabled: false,
+                source: inspected.input,
+                language: reportLanguage,
+              },
+            },
+          });
+        const inspectBindings = createInspectHandler(
+          deps,
+          undefined,
+          draft ? document.id : undefined,
+        );
+        const profileInspection = JSON.parse(
+          (await inspectBindings({
+            profile: params.profile ?? "default",
+            source: "full",
+          })) as string,
+        ) as InspectedSource;
+        if (!profileInspection.ok)
+          return finish({
+            ...context,
+            ok: false,
+            checks,
+            diagnostic: profileInspection.diagnostic,
+            bindingContext: {
+              document: profileInspection.document,
+              input: profileInspection.input,
+              freshness: profileInspection.freshness,
+            },
+          });
+        const profileId =
+          profileInspection.document?.profile?.id ??
+          profileInspection.document?.profileIdentity?.id ??
+          "default";
+        const selector = parseProfileSelector(profileId);
+        const profile =
+          selector === undefined
+            ? undefined
+            : deps.profile.resolveProfile(selector);
+        if (!profile) throw new Error("The selected Profile does not resolve.");
+        reportProfile = profile.selector;
+        context.selectedProfile = {
+          id: profile.selector,
+          bindings: profile.bindings,
+        };
+        context.bindingContext = {
+          input: profileInspection.input,
+          freshness: profileInspection.freshness,
+        };
+        checks.structure = { status: "passed", diagnostics: [] };
+        if (params.key === undefined && params.example === undefined)
+          return finish({
+            ...context,
+            ok: true,
+            checks,
+            rendering: "not-checked",
+            reason: "Provide key or a Citation example to check rendering.",
+          });
+        const data = {
+          ...deps.data,
+          settings: { loaded: Promise.resolve(profile.settings) },
+        };
+        const loaded =
+          root === "citation"
+            ? await loadCitationData(
+                data,
+                typeof params.example === "string" &&
+                  isCitationExampleId(params.example)
+                  ? { example: params.example }
+                  : { key: params.key as string },
+                (params.variant ?? "main") as CitationVariant,
+              )
+            : await loadTemplateData(
+                data,
+                params.key as string,
+                root as "note" | "annotation",
+              );
+        if (loaded.kind !== "data")
+          return finish({
+            ...context,
+            ok: false,
+            checks,
+            diagnostic: {
+              code: "INVALID_SELECTOR",
+              message: `The selected data is unavailable: ${loaded.kind}.`,
+              recovery:
+                root === "annotation"
+                  ? "Select an existing annotation key with a readable parent attachment."
+                  : "Select an existing item key, or use a built-in example for the Citation root.",
+            },
+          });
+        const { citation: _citation, ...annotationDescriptors } =
+          Object.getOwnPropertyDescriptors(loaded.data);
+        dataRevision = sourceRevision(
+          JSON.stringify(
+            serializeTemplateData(
+              root === "annotation"
+                ? Object.defineProperties({}, annotationDescriptors)
+                : loaded.data,
+              root as "note" | "annotation" | "citation",
+            ),
+          ),
+        );
+        try {
+          const rendered =
+            document.kind === "citation"
+              ? deps.templates.renderCitationSource(
+                  source,
+                  loaded.data as import("@zotlit/db").CitationTemplateData,
+                )
+              : deps.templates.renderPartialSource(source, loaded.data, {
+                  name: document.label,
+                });
+          checks[document.kind] = {
+            status: "passed",
+            diagnostics: [],
+            output: rendered,
+          };
+        } catch (error) {
+          checks[document.kind] = {
+            status: "failed",
+            diagnostics: [checkDiagnostic(error, caller)],
+          };
+        }
+        const after = JSON.parse(
+          (await inspect(inspectRequest)) as string,
+        ) as InspectedSource;
+        const profileAfter = JSON.parse(
+          (await inspectBindings({
+            profile: params.profile ?? "default",
+            source: "full",
+          })) as string,
+        ) as InspectedSource;
+        if (
+          !after.ok ||
+          after.input?.revision !== inspected.input?.revision ||
+          JSON.stringify(after.freshness?.versions) !==
+            JSON.stringify(inspected.freshness?.versions) ||
+          !profileAfter.ok ||
+          profileAfter.input?.revision !== profileInspection.input?.revision ||
+          JSON.stringify(profileAfter.freshness?.versions) !==
+            JSON.stringify(profileInspection.freshness?.versions)
+        )
+          return finish({
+            ...context,
+            ok: false,
+            rendering: "checked",
+            freshness: {
+              ...inspected.freshness,
+              state: "superseded",
+              after: after.freshness,
+            },
+            bindingContext: {
+              before: context.bindingContext,
+              after: {
+                input: profileAfter.input,
+                freshness: profileAfter.freshness,
+                diagnostic: profileAfter.diagnostic,
+              },
+            },
+            diagnostic: {
+              code: "SOURCE_SUPERSEDED",
+              message: "Source changed during this attempt. Run a new check.",
+            },
+          });
+        return finish({
+          ...context,
+          checks,
+          ok: Object.values(checks).every((check) => check.status === "passed"),
+          rendering: "checked",
+        });
+      } catch (error) {
+        const diagnostic = checkDiagnostic(error, caller);
+        checks.structure = { status: "failed", diagnostics: [diagnostic] };
+        return finish({
+          ...context,
+          ok: false,
+          checks,
+          diagnostic: attachReport(diagnostic),
+        });
+      }
+    }
+    if (
+      params.root !== undefined ||
+      params.variant !== undefined ||
+      params.example !== undefined ||
+      (params.draft !== undefined && params.document !== undefined)
+    )
+      return finish({
+        ...context,
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          message: "Profile checks select item data with key.",
+        },
+      });
     if (inspected.document?.kind !== "profile" || source === undefined)
       return finish({
         ...context,

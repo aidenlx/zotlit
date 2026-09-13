@@ -171,6 +171,10 @@ ${TEMPLATE_SLOT_NAMES.map(rootRow).join("\n")}
   ${"citation".padEnd(12)} citation
 
 CITATIONS
+  Check saved or scratch source with zotlit:template-check document=citation
+  example=two-items variant=alt output=citation. Add draft=<absolute-path> to
+  check a complete scratch document without installing it. Output disclosure
+  preserves the same checks and failed-attempt evidence in every mode.
   variant=<${CITATION_VARIANT_NAMES.join("|")}> names the Citation Variant, default main. The
   suggester passes main on Enter and alt on Shift+Enter or a trailing slash;
   the template reads it as zt.variant and decides what each variant renders.
@@ -553,6 +557,10 @@ INSPECTION
   identity and bindings, plus document validation and exclusion diagnostics.
 
 SHARED PARTIALS
+  Verify with zotlit:template-check document=partial:<name> root=note
+  key=<indexed-key> profile=<id-or-label> output=partial. Select root=annotation
+  with an annotation key, or root=citation with key or example. Omit profile
+  to use Default bindings. Add draft=<absolute-path> to check scratch source.
   A Shared Partial is a zotlit-partial.<name>.md document directly inside the
   template folder, vault-global and reachable from every Template by name. The
   name is letters, digits, and hyphens, unique in the vault, and never one of

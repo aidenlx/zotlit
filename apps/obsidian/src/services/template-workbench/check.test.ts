@@ -118,6 +118,276 @@ async function fixture(
   };
 }
 
+describe("plain document checks", () => {
+  it("preserves an unreadable binding Profile path in dependency failure evidence", async () => {
+    await using f = await fixture();
+    const draft = await f.draft("Scratch");
+    const read = f.app.vault.adapter.read.bind(f.app.vault.adapter);
+    vi.spyOn(f.app.vault.adapter, "read").mockImplementation(async (path) => {
+      if (path === PATH) throw new Error("Unavailable Profile");
+      return read(path);
+    });
+    const result = await f.check({
+      document: "partial:new",
+      draft,
+      profile: "Books",
+      root: "note",
+      key: "ABCD2345",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostic: { code: "SOURCE_READ_FAILED" },
+      bindingContext: {
+        freshness: { errors: [{ path: PATH, message: "Unavailable Profile" }] },
+      },
+    });
+  });
+
+  it("omits superseded partial output from responses and retained attempts", async () => {
+    await using f = await fixture();
+    await f.template.createPartial("changing", { source: "Before" });
+    const original = f.template.renderPartialSource.bind(f.template);
+    vi.spyOn(f.template, "renderPartialSource").mockImplementationOnce(
+      (...args) => {
+        const output = original(...args);
+        f.vault.modifyFile("templates/zotlit-partial.changing.md", "After");
+        return output;
+      },
+    );
+    const result = await f.check({
+      document: "partial:changing",
+      root: "note",
+      key: "ABCD2345",
+      output: "all",
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostic: { code: "SOURCE_SUPERSEDED" },
+    });
+    expect(result.outputs).toBeUndefined();
+    expect(
+      (await f.check({ attempt: result.attempt, output: "all" })).outputs,
+    ).toBeUndefined();
+  });
+
+  it("checks a draft without reading the replaced installed partial", async () => {
+    await using f = await fixture();
+    await f.template.createPartial("replaced", { source: "Installed" });
+    const path = "templates/zotlit-partial.replaced.md";
+    f.vault.contents.set(path, "Saved but not reconciled");
+    const draft = await f.draft("Scratch");
+    const result = await f.check({
+      document: "partial:replaced",
+      draft,
+      root: "note",
+      key: "ABCD2345",
+      output: "all",
+    });
+    expect(result).toMatchObject({ ok: true, outputs: { partial: "Scratch" } });
+    expect(
+      result.bindingContext.freshness.versions.map(
+        (entry: { path: string }) => entry.path,
+      ),
+    ).not.toContain(path);
+  });
+
+  it("keeps an unused annotation Citation lazy and records caller identity on failure", async () => {
+    await using f = await fixture();
+    const citation = vi.fn(() => {
+      throw new Error("Broken derived citation");
+    });
+    vi.mocked(loadTemplateData).mockResolvedValue({
+      kind: "data",
+      data: Object.defineProperty(
+        { comment: "Selected annotation" },
+        "citation",
+        { get: citation, enumerable: true },
+      ),
+    });
+    const draft = await f.draft("{{ zt.comment }}");
+    expect(
+      await f.check({
+        document: "partial:lazy",
+        draft,
+        root: "annotation",
+        key: "ANNO2345",
+        output: "all",
+      }),
+    ).toMatchObject({ ok: true, outputs: { partial: "Selected annotation" } });
+    expect(citation).not.toHaveBeenCalled();
+    await f.draft("{{ zt.citation }}");
+    const failed = await f.check({
+      document: "partial:lazy",
+      draft,
+      root: "annotation",
+      key: "ANNO2345",
+      profile: "Books",
+      evidence: "full",
+    });
+    expect(failed.checks.partial.diagnostics[0].report.identity).toMatchObject({
+      partialContext: "annotation",
+      partialProfile: "Bk3Qn7XvT2Lp",
+    });
+  });
+
+  it("rejects conflicting Profile selectors and supplies gate recovery with Citation identity", async () => {
+    await using f = await fixture();
+    expect(await f.check({ document: PATH, profile: "default" })).toMatchObject(
+      { ok: false, diagnostic: { code: "INVALID_SELECTOR" } },
+    );
+    const draft = await f.draft("---\nlanguage: eta\n---\n<%= zt.variant %>");
+    const result = await f.check({
+      document: "citation",
+      draft,
+      example: "two-items",
+      variant: "alt",
+      evidence: "full",
+    });
+    expect(result.diagnostic).toMatchObject({
+      recovery: expect.any(String),
+      evidence: { kind: "javascript-gate" },
+      report: {
+        identity: { citationVariant: "alt", citationExample: "two-items" },
+      },
+    });
+  });
+
+  it("checks a new partial draft with selected Profile bindings and retains failed dependency evidence", async () => {
+    await using f = await fixture(
+      SOURCE.replace("name: Books", "name: Books\nfolder: Selected folder"),
+    );
+    const before = new Map(f.vault.contents);
+    const draft = await f.draft("---\nlanguage: liquid\n---\n{{ zt.title }}");
+    const result = await f.check({
+      document: "partial:new",
+      draft,
+      profile: "Books",
+      root: "note",
+      key: "ABCD2345",
+      output: "all",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      input: { origin: "draft" },
+      selectedProfile: { id: "Bk3Qn7XvT2Lp" },
+      outputs: { partial: "Paper" },
+    });
+    await expect(
+      vi.mocked(loadTemplateData).mock.calls.at(-1)?.[0].settings.loaded,
+    ).resolves.toMatchObject({ "note.literature-folder": "Selected folder" });
+    await f.draft("---\nlanguage: liquid\n---\n{% render 'missing' %}");
+    const failed = await f.check({
+      document: "partial:new",
+      draft,
+      root: "note",
+      key: "ABCD2345",
+    });
+    expect(failed.ok).toBe(false);
+    expect(failed.checks.partial.status).toBe("failed");
+    const evidence = await f.check({
+      attempt: failed.attempt,
+      evidence: "full",
+    });
+    expect(evidence.checks.partial.diagnostics[0].report).toBeDefined();
+    expect(f.vault.contents).toEqual(before);
+  });
+
+  it("refuses Eta drafts and invalid caller selectors", async () => {
+    await using f = await fixture();
+    const draft = await f.draft("---\nlanguage: eta\n---\n<%= zt.variant %>");
+    expect(
+      await f.check({ document: "citation", draft, example: "one-item" }),
+    ).toMatchObject({ ok: false, diagnostic: { code: "ETA_OPT_IN_REQUIRED" } });
+    expect(
+      await f.check({ document: "citation", example: "bad" }),
+    ).toMatchObject({ ok: false, diagnostic: { code: "INVALID_SELECTOR" } });
+    expect(
+      await f.check({ document: "citation", root: "note", key: "ABCD2345" }),
+    ).toMatchObject({ ok: false, diagnostic: { code: "INVALID_SELECTOR" } });
+  });
+
+  it.each([
+    { variant: "main", saved: "Saved primary: 2", draft: "Draft primary: 1" },
+    {
+      variant: "alt",
+      saved: "Saved alternate: 2",
+      draft: "Draft alternate: 1",
+    },
+  ])(
+    "checks a saved Citation and a scratch draft with variant $variant",
+    async ({ variant, saved: savedOutput, draft: draftOutput }) => {
+      await using f = await fixture();
+      f.vault.createFile(
+        "templates/zotlit-citation.md",
+        "---\nlanguage: liquid\n---\nSaved {% if zt.variant == 'alt' %}alternate{% else %}primary{% endif %}: {{ zt.citations.size }}",
+      );
+      await f.template.waitUntilSettled(1000);
+      const before = new Map(f.vault.contents);
+      const saved = await f.check({
+        document: "citation",
+        example: "two-items",
+        variant,
+        output: "citation",
+      });
+      expect(saved.ok).toBe(true);
+      expect(saved.checks.citation.status).toBe("passed");
+      expect(saved.outputs.citation).toBe(savedOutput);
+      const draft = await f.draft(
+        "---\nlanguage: liquid\n---\nDraft {% if zt.variant == 'alt' %}alternate{% else %}primary{% endif %}: {{ zt.citations.size }}",
+      );
+      const checked = await f.check({
+        document: "citation",
+        draft,
+        example: "one-item",
+        variant,
+        output: "all",
+      });
+      expect(checked.ok).toBe(true);
+      expect(checked.input.origin).toBe("draft");
+      expect(checked.outputs.citation).toBe(draftOutput);
+      expect(f.vault.contents).toEqual(before);
+    },
+  );
+
+  it.each(["note", "annotation", "citation"])(
+    "checks a Shared Partial from the %s root",
+    async (root) => {
+      await using f = await fixture();
+      await f.template.createPartial("example", {
+        source: "Partial",
+        language: "liquid",
+      });
+      const selection: Record<string, string> =
+        root === "citation"
+          ? { example: "one-item" }
+          : { key: root === "annotation" ? "ANNO2345" : "ABCD2345" };
+      const compact = await f.check({
+        document: "partial:example",
+        root,
+        ...selection,
+      });
+      expect(compact, JSON.stringify(compact)).toMatchObject({ ok: true });
+      expect(compact.checks.partial.status).toBe("passed");
+      expect(compact.outputs).toBeUndefined();
+      const full = await f.check({
+        attempt: compact.attempt,
+        output: "partial",
+      });
+      expect(full.outputs.partial).toBe("Partial");
+      const draft = await f.draft("---\nlanguage: liquid\n---\n");
+      const empty = await f.check({
+        document: "partial:example",
+        draft,
+        root,
+        ...selection,
+        output: "all",
+      });
+      expect(empty.ok).toBe(true);
+      expect(empty.outputs.partial).toBe("");
+    },
+  );
+});
+
 beforeEach(() => {
   vi.mocked(loadTemplateData).mockImplementation(async (_deps, _key, root) => ({
     kind: "data",
