@@ -1543,9 +1543,17 @@ export type FixtureLegacyTemplate = FixtureTemplateEdit & {
   );
 
 export interface FixtureVaultCase {
-  id: "configured" | "fresh" | "upgrader";
+  id:
+    | "configured"
+    | "fresh"
+    | "upgrader"
+    | "upgrader-field-error"
+    | "upgrader-layout-error"
+    | "upgrader-frontmatter-only";
   /** One line for the maintainer choosing a case. */
   summary: string;
+  /** The released v2.1 input this case prepares for conversion. */
+  upgrade?: "supported" | "field-error" | "layout-error" | "frontmatter-only";
 }
 
 /**
@@ -1566,8 +1574,27 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   },
   {
     id: "upgrader",
+    upgrade: "supported",
     summary:
       "A ZotLit v2.1 vault: version-9 settings, an edited Managed Frontmatter list, and ejected Legacy Template Files with visible edits: the note slots, a mixed-language citation pair, and one bare partial.",
+  },
+  {
+    id: "upgrader-field-error",
+    upgrade: "field-error",
+    summary:
+      "The v2.1 upgrade with a fixture-repair field whose Liquid expression is invalid. Repair its Conversion Copy, then close and resume before acceptance.",
+  },
+  {
+    id: "upgrader-layout-error",
+    upgrade: "layout-error",
+    summary:
+      "The v2.1 upgrade with the content insertion removed from the note template. Repair the copied source before a Profile can be synthesized.",
+  },
+  {
+    id: "upgrader-frontmatter-only",
+    upgrade: "frontmatter-only",
+    summary:
+      "Version-9 settings with the edited Managed Frontmatter list and no Legacy Template Files. Check the Customize route preserves the fields.",
   },
 ];
 
@@ -1615,6 +1642,23 @@ export const UPGRADER_FRONTMATTER_FIELDS: readonly FixtureFrontmatterField[] = [
   },
   { key: "year", expr: "zt.date.year", merge: "replace", language: "liquid" },
 ];
+
+/** Invalid input and a distinctive correction for the saved-field repair trial. */
+export const UPGRADER_FIELD_REPAIR = {
+  field: {
+    key: "fixture-repair",
+    expr: "1 +",
+    merge: "replace",
+    language: "liquid",
+  } satisfies FixtureFrontmatterField,
+  correction: '"REPAIRED-FIELD"',
+} as const;
+
+/** Remove the required insertion to make Profile synthesis refuse this source. */
+export const UPGRADER_LAYOUT_REPAIR = {
+  find: '{% render "content" with zt as zt %}',
+  replace: "<!-- Restore the content insertion in the Conversion Copy. -->",
+} satisfies FixtureTemplateEdit;
 
 /**
  * Legacy Template Files the Upgrader vault ejects into its template folder:
