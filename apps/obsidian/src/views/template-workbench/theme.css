@@ -1,0 +1,44 @@
+/* Show problem sits inside the sentence that reports the failure, so it reads
+   as link text in that sentence rather than as a native button box dropped
+   mid-line. `button` is styled unlayered — its box, height, font, wrapping and
+   hover outrank every `zt:` utility — so those declarations are taken back
+   here. */
+.zt-root button.zt-workbench-problem-open {
+  /* button { display: inline-flex; height: var(--input-height) } */
+  display: inline;
+  height: auto;
+  /* button { padding: var(--size-4-1) var(--size-4-3) } */
+  padding: 0;
+  /* button:not(.clickable-icon) { background-color; box-shadow } */
+  background: none;
+  box-shadow: none;
+  /* button { font-size: var(--font-ui-small); font-weight: var(--input-font-weight) } */
+  font-size: inherit;
+  font-weight: inherit;
+  /* button { white-space: nowrap } — the label wraps with the sentence, and
+     a label long enough to wrap keeps the sentence's own alignment. */
+  white-space: normal;
+  text-align: inherit;
+  border-radius: var(--radius-s);
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: var(--cursor-link);
+}
+/* `button:hover` restores the native surface, and is unlayered too. */
+.zt-root button.zt-workbench-problem-open:hover {
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent-hover);
+}
+/* The ring Obsidian draws on a button is its `box-shadow`, which the rules
+   above clear, so the control keeps one of its own. */
+.zt-root button.zt-workbench-problem-open:focus-visible {
+  box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+/* A preview with no editor to reach states the failure and offers nothing:
+   the control reads as the text it sits in. */
+.zt-root button.zt-workbench-problem-open:disabled {
+  color: inherit;
+  text-decoration: none;
+}

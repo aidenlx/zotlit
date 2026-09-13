@@ -83,75 +83,46 @@ function textOf(markup: string): string {
     .replaceAll("&amp;", "&");
 }
 
+// The fixtures are immutable: render and parse each sample once for all checks.
+const renderedSamples = SAMPLE_ITEMS.map((sample) => {
+  const result = renderProfile(DEFAULT_PROFILE_SOURCE, sample);
+  return { sample, result, tree: parseNote(result.creationBody!) };
+});
+
 describe("parseNote over the default Profile", () => {
-  for (const snapshot of SAMPLE_ITEMS) {
-    it(`renders the note for ${snapshot.item.itemType}`, () => {
-      const result = renderProfile(DEFAULT_PROFILE_SOURCE, snapshot);
-
+  for (const { sample, result, tree } of renderedSamples) {
+    it(`renders the note for ${sample.item.itemType}`, () => {
       expect(result.diagnostics).toEqual([]);
-      expect(
-        withoutPositions(parseNote(result.creationBody!)),
-      ).toMatchSnapshot();
-    });
-  }
-
-  it("leaves no navigable target anywhere in the corpus", () => {
-    for (const snapshot of SAMPLE_ITEMS) {
-      const { creationBody } = renderProfile(DEFAULT_PROFILE_SOURCE, snapshot);
-
-      for (const node of elements(parseNote(creationBody!))) {
+      expect(withoutPositions(tree)).toMatchSnapshot();
+      const nodes = elements(tree);
+      for (const node of nodes) {
         expect(node.tagName).not.toBe("a");
         expect(node.properties).not.toHaveProperty("href");
         expect(node.properties).not.toHaveProperty("src");
       }
-    }
-  });
-
-  it("marks each link, tag, and embed the default templates emit", () => {
-    for (const snapshot of SAMPLE_ITEMS) {
-      const { creationBody, properties } = renderProfile(
-        DEFAULT_PROFILE_SOURCE,
-        snapshot,
-      );
-      const marks = elements(parseNote(creationBody!)).filter(
-        (node) => node.properties["data-zt"],
-      );
+      const marks = nodes.filter((node) => node.properties["data-zt"]);
       const text = textOf(
         renderToStaticMarkup(
           <ResultSheet
-            markdown={creationBody!}
-            properties={properties}
+            markdown={result.creationBody!}
+            properties={result.properties}
             showMarkdown={false}
           />,
         ),
       );
-
       expect(marks.length).toBeGreaterThan(0);
       for (const mark of marks) {
         expect(mark.properties["data-target"]).toEqual(expect.any(String));
-        expect(mark.properties).not.toHaveProperty("href");
-        expect(mark.properties).not.toHaveProperty("src");
-
         if (mark.properties["data-zt"] !== "embed") continue;
         expect(text).toContain(
           UNAVAILABLE_LABEL[String(mark.properties["data-embed"])],
         );
         expect(text).toContain(String(mark.properties["data-target"]));
       }
-    }
-  });
-
-  it("hides the managed-region comment markers the way Obsidian does", () => {
-    const { creationBody } = renderProfile(
-      DEFAULT_PROFILE_SOURCE,
-      SAMPLE_ITEMS[1]!,
-    );
-
-    expect(creationBody).toContain("%%zt-managed%%");
-    expect(JSON.stringify(parseNote(creationBody!))).not.toContain(
-      "zt-managed",
-    );
-  });
+      expect(result.creationBody).toContain("%%zt-managed%%");
+      expect(JSON.stringify(tree)).not.toContain("zt-managed");
+    });
+  }
 });
 
 describe("inert marks", () => {
@@ -352,10 +323,7 @@ describe("an empty note preview", () => {
 });
 
 describe("the Markdown toggle", () => {
-  const { creationBody, properties } = renderProfile(
-    DEFAULT_PROFILE_SOURCE,
-    SAMPLE_ITEMS[1]!,
-  );
+  const { creationBody, properties } = renderedSamples[1]!.result;
 
   it("shows the generated Markdown byte for byte", () => {
     const markup = renderToStaticMarkup(

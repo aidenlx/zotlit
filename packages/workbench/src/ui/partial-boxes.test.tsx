@@ -27,10 +27,9 @@ function placeholders(
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(source);
   const actions = {
-    names: ["authors", "venue-line"],
     missing: [],
     onEdit: vi.fn<(name: string) => void>(),
-    onCreate: vi.fn<(name: string) => void>(),
+    onShowProblem: vi.fn<(name: string) => void>(),
     onRender: vi.fn<(name: string) => Promise<string>>(() =>
       Promise.resolve("Smith, J., Doe, A."),
     ),
@@ -126,90 +125,25 @@ it("names the failure a partial preview came back with", async () => {
   expect(await screen.findByText("Unexpected tag")).toBeTruthy();
 });
 
-it("offers Create and Pick another for a partial the last render could not find", () => {
+it("marks a partial the last render could not find and leads to its problem", () => {
   const { container, actions } = placeholders(withCalls(), {
     missing: ["venue-line"],
   });
   const missing = container.querySelectorAll("[data-partial-box]")[1]!;
 
-  expect(missing.textContent).toContain(
+  expect(missing.textContent).toContain(m.workbench_partial_missing());
+  expect(missing.textContent).not.toContain(
     m.workbench_diagnostic_missing_partial({ name: "venue-line" }),
   );
   expect(
     missing.querySelector(`[aria-label="${m.workbench_partial_preview()}"]`),
   ).toBeNull();
   fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_partial_create() }),
-  );
-  expect(actions.onCreate).toHaveBeenCalledWith("venue-line");
-});
-
-it("writes the partial Pick another chose into that call alone", async () => {
-  const { host, controller } = placeholders(withCalls(), {
-    missing: ["venue-line"],
-  });
-  host.suggester = (request) => {
-    host.calls.suggesters.push(request);
-    return Promise.resolve("authors");
-  };
-
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_partial_pick() }),
-  );
-  await vi.waitFor(() =>
-    expect(controller.source).toContain("{% include 'authors' %}"),
-  );
-  expect(host.calls.suggesters[0]?.groups[0]?.options).toEqual([
-    { id: "authors", label: "authors" },
-    { id: "venue-line", label: "venue-line" },
-  ]);
-  expect(controller.source).toContain('{% render "authors" %}');
-});
-
-it("follows the call an edit moved while Pick another was open", async () => {
-  const { host, controller } = placeholders(withCalls(), {
-    missing: ["venue-line"],
-  });
-  const decision = Promise.withResolvers<string | null>();
-  host.suggester = () => decision.promise;
-
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_partial_pick() }),
-  );
-  // An external edit above the call, which moves every offset below it.
-  act(() =>
-    controller.dispatch({ changes: { from: 0, insert: "<!-- note -->\n" } }),
-  );
-  decision.resolve("authors");
-  await vi.waitFor(() =>
-    expect(controller.source).toContain("{% include 'authors' %}"),
-  );
-  expect(controller.source.startsWith("<!-- note -->\n")).toBe(true);
-  expect(controller.source).toContain('{% render "authors" %}');
-  expect(controller.source).toContain("{% render partial_name %}");
-});
-
-it("leaves the document alone when the edit took the name Pick another chose for", async () => {
-  const { host, controller } = placeholders(withCalls(), {
-    missing: ["venue-line"],
-  });
-  const decision = Promise.withResolvers<string | null>();
-  host.suggester = () => decision.promise;
-
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_partial_pick() }),
-  );
-  const call = controller.source.indexOf("{% include 'venue-line' %}");
-  act(() =>
-    controller.dispatch({
-      changes: { from: call, to: call + "{% include 'venue-line' %}".length },
+    screen.getByRole("button", {
+      name: m.workbench_partial_missing_show({ name: "venue-line" }),
     }),
   );
-  decision.resolve("authors");
-  const after = controller.source;
-  await vi.waitFor(() => expect(host.calls.notices).toEqual([]));
-  expect(controller.source).toBe(after);
-  expect(controller.source).not.toContain("authors' %}");
+  expect(actions.onShowProblem).toHaveBeenCalledWith("venue-line");
 });
 
 it("renders the open preview again when the caller data changes", async () => {
@@ -227,11 +161,10 @@ it("renders the open preview again when the caller data changes", async () => {
         formatProblem={null}
         onOpenAnnotation={() => {}}
         partials={{
-          names: ["authors", "venue-line"],
           missing: [],
           dataRevision,
           onEdit: () => {},
-          onCreate: () => {},
+          onShowProblem: () => {},
           onRender,
         }}
       />
@@ -267,10 +200,9 @@ it("boxes the calls inside the Annotation Section too", async () => {
         controller={controller}
         problem={null}
         partials={{
-          names: ["authors"],
           missing: [],
           onEdit: () => {},
-          onCreate: () => {},
+          onShowProblem: () => {},
           onRender,
         }}
       />

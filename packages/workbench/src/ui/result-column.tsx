@@ -1,10 +1,11 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
-import type { TemplateRenderResult } from "#/render/result";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
 import { HiddenName, useWorkbenchHost, useTooltip } from "./host";
+import type { WorkbenchMarkdownProps } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
@@ -83,21 +84,31 @@ export function ResultRegion({
 }
 
 /** Which of the four outputs a preview shows, which picks its heading and body. */
-export type ResultMode = "note" | "annotation" | "citation" | "partial";
+export type ResultMode = WorkbenchMarkdownProps["surface"];
 
 export interface ResultBodyProps {
   result: TemplateRenderResult | null;
   annotationResult?: TemplateRenderResult | null;
+  /**
+   * The last successful output kept for this document and preview selection,
+   * which a failed attempt is read against. Null where no matching success
+   * stands, which is what an unavailable preview says.
+   */
+  retained?: TemplateRenderResult | null;
   mode: ResultMode;
   stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
-  staleReason: "hold" | "demand" | "live" | null;
+  staleReason: "hold" | "invalid" | "demand" | "live" | null;
   showMarkdown: boolean;
   showManaged: boolean;
   sourceAvailable?: boolean;
-  openAnnotation: () => void;
-  goToEntry: (position: number) => void;
-  openSource: () => void;
+  /**
+   * Reads the failure behind this preview in the editor's Problems area. A
+   * preview with no editor to reach leaves it out, and Show problem is absent.
+   * A document the parser refuses reached no render and names no diagnostic,
+   * so the reading opens on whatever the editor's own checks found.
+   */
+  onShowProblem?: (diagnostic: RenderDiagnostic | null) => void;
   /** Runs a render now; on demand, this is how the stale-behind notice offers Run. */
   onRun?: () => void;
   busy?: boolean;
@@ -107,21 +118,19 @@ export interface ResultBodyProps {
 export function ResultBody({
   result,
   annotationResult,
+  retained = null,
   mode,
   staleReason,
   showMarkdown,
   showManaged,
   sourceAvailable = true,
-  openAnnotation,
-  goToEntry,
-  openSource,
+  onShowProblem,
   onRun,
   busy,
 }: ResultBodyProps) {
   const m = useWorkbenchMessages();
   const part = useParts("resultColumn");
   const Markdown = useWorkbenchHost().markdown;
-  const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
   const showCitation = mode === "citation";
@@ -133,7 +142,50 @@ export function ResultBody({
     : result?.diagnostics.find(
         ({ part }) => part !== "annotation" || result.creationBody === null,
       );
+  // What this mode shows. A render that failed produced nothing at all, which
+  // is not the same as a template that produced an empty result, so the
+  // failure reads as a failure rather than as empty content.
+  const outputOf = (source: TemplateRenderResult | null | undefined) =>
+    (showPartial
+      ? source?.partial
+      : showCitation
+        ? source?.citation
+        : showAnnotation
+          ? source?.annotation
+          : showManaged
+            ? source?.managedRegion
+            : source?.creationBody) ?? null;
+  const output = outputOf(showAnnotation ? annotationResult : result);
+  // A document the parser refuses never reached a render, and its explanation
+  // is the editor's; the result on screen is as far behind as a failed one.
+  const failed =
+    staleReason === "invalid" ||
+    (showNote &&
+      result?.diagnostics.some(({ code }) => code === "property-error")) ||
+    (previewProblem !== undefined && output === null);
+  // A failure leaves the last successful output standing, so the reader
+  // repairs the source against working output rather than an empty pane.
+  const kept =
+    failed && retained !== null && outputOf(retained) !== null
+      ? retained
+      : null;
+  // What the region paints: retained output wherever a failure kept some.
+  const shown = kept ?? result;
+  const annotationShown = kept ?? annotationResult ?? null;
+  const filenameTooltip = useTooltip(shown?.filename ?? "");
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
+  /** Show problem, which every failure this preview reports offers. */
+  const showProblem = (diagnostic: RenderDiagnostic | null) =>
+    onShowProblem && (
+      <button
+        type="button"
+        disabled={!sourceAvailable}
+        onClick={() => onShowProblem(diagnostic)}
+        {...part("problem-open")}
+      >
+        {m.workbench_problem_show()}
+      </button>
+    );
   // "Rendering…" is honest only while a render is on its way: on demand the
   // notice below says Run starts one, and a hold shows its own problem.
   const showPending = staleReason === "live";
@@ -162,97 +214,99 @@ export function ResultBody({
         </div>
       )}
       <ResultRegion emphasis={false}>
-        {result ? (
-          <Suspense fallback={pending}>
-            {showNote && (
+        {shown || failed ? (
+          // The notice and the note's name are this pane's own words, so they
+          // stand while the host's Markdown renderer is still on its way: what
+          // waits is the output, and a reader is never left reading
+          // "Rendering…" in place of the failure it replaced.
+          <>
+            {showNote && !failed && shown && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
                     {m.workbench_result_filename()}:{" "}
                   </span>
-                  {result.filename}
+                  {shown.filename}
                 </p>
               </header>
             )}
-            {previewProblem && (
-              <p {...part("problem")}>
-                <strong {...part("problem-heading")}>
-                  {m.workbench_preview_problem()}
-                </strong>{" "}
-                {diagnosticText(m, previewProblem)}{" "}
-                {previewProblem.part === "annotation" && (
-                  <button
-                    type="button"
-                    disabled={!sourceAvailable}
-                    onClick={openAnnotation}
-                    {...part("problem-open")}
-                  >
-                    {m.workbench_annotation_edit_format()}
-                  </button>
+            {(previewProblem || failed) && (
+              <div role="status" {...part("problem")}>
+                {previewProblem && (
+                  <p {...part("problem-text")}>
+                    <strong {...part("problem-heading")}>
+                      {m.workbench_preview_problem()}
+                    </strong>{" "}
+                    {diagnosticText(m, previewProblem)}{" "}
+                    {showProblem(previewProblem)}
+                  </p>
                 )}
-                {previewProblem.part !== "annotation" &&
-                  previewProblem.position === undefined && (
-                    <button
-                      type="button"
-                      disabled={!sourceAvailable}
-                      onClick={openSource}
-                      {...part("problem-open")}
-                    >
-                      {m.workbench_problems_where_advanced()}
-                    </button>
-                  )}
-                {previewProblem.position !== undefined && (
-                  <button
-                    type="button"
-                    disabled={!sourceAvailable}
-                    onClick={() => goToEntry(previewProblem.position!)}
-                    {...part("problem-open")}
+                {failed && (
+                  <p
+                    {...part(
+                      "problem-output",
+                      kept === null ? "unavailable" : "retained",
+                    )}
                   >
-                    {m.workbench_problems_where_entry()}
-                  </button>
+                    {kept === null
+                      ? m.workbench_preview_unavailable()
+                      : m.workbench_preview_retained()}{" "}
+                    {/* A document the parser refuses produced no diagnostic to
+                        name, and the reading it leads to is the editor's own
+                        check — the same one control, on the sentence that
+                        reports the failure. */}
+                    {previewProblem ? null : showProblem(null)}
+                  </p>
                 )}
-              </p>
+              </div>
             )}
-            {showCitation || showPartial ? (
-              <Markdown
-                markdown={
-                  (showPartial ? result.partial : result.citation) ?? ""
-                }
-                properties={[]}
-                showMarkdown={showMarkdown}
-              />
-            ) : showAnnotation ? (
-              annotationResult ? (
+            <Suspense fallback={pending}>
+              {(failed && kept === null) ||
+              shown === null ? null : showCitation || showPartial ? (
                 <Markdown
-                  markdown={annotationResult.annotation ?? ""}
+                  surface={showPartial ? "partial" : "citation"}
+                  markdown={
+                    (showPartial ? shown.partial : shown.citation) ?? ""
+                  }
                   properties={[]}
                   showMarkdown={showMarkdown}
                 />
-              ) : (
-                pending
-              )
-            ) : showNote && showManaged ? (
-              result.managedRegion === null ? (
-                <p {...part("empty")}>{m.workbench_result_managed_none()}</p>
+              ) : showAnnotation ? (
+                annotationShown ? (
+                  <Markdown
+                    surface="annotation"
+                    markdown={annotationShown.annotation ?? ""}
+                    properties={[]}
+                    showMarkdown={showMarkdown}
+                  />
+                ) : (
+                  pending
+                )
+              ) : showNote && showManaged ? (
+                shown.managedRegion === null ? (
+                  <p {...part("empty")}>{m.workbench_result_managed_none()}</p>
+                ) : (
+                  <Markdown
+                    surface="note"
+                    markdown={shown.managedRegion}
+                    properties={[]}
+                    showMarkdown={showMarkdown}
+                  />
+                )
               ) : (
                 <Markdown
-                  markdown={result.managedRegion}
-                  properties={[]}
+                  surface="note"
+                  markdown={shown.creationBody ?? ""}
+                  // The sheet is the note, so its list is the fold every
+                  // entry merged into, not each entry's own contribution.
+                  properties={shown.fold}
+                  frontmatterBlock={shown.frontmatterBlock}
                   showMarkdown={showMarkdown}
+                  marks={shown.annotationRanges}
                 />
-              )
-            ) : (
-              <Markdown
-                markdown={result.creationBody ?? ""}
-                // The sheet is the note, so its list is the fold every
-                // entry merged into, not each entry's own contribution.
-                properties={result.fold}
-                frontmatterBlock={result.frontmatterBlock}
-                showMarkdown={showMarkdown}
-                marks={result.annotationRanges}
-              />
-            )}
-          </Suspense>
+              )}
+            </Suspense>
+          </>
         ) : showPending ? (
           pending
         ) : null}
@@ -272,6 +326,7 @@ export interface ResultColumnProps extends ResultBodyProps {
 export function ResultColumn({
   result,
   annotationResult,
+  retained,
   mode,
   stale,
   staleReason,
@@ -280,9 +335,7 @@ export function ResultColumn({
   showManaged,
   onShowManaged,
   sourceAvailable = true,
-  openAnnotation,
-  goToEntry,
-  openSource,
+  onShowProblem,
   onRun,
   busy,
   help,
@@ -332,15 +385,14 @@ export function ResultColumn({
       <ResultBody
         result={result}
         annotationResult={annotationResult}
+        retained={retained}
         mode={mode}
         stale={stale}
         staleReason={staleReason}
         showMarkdown={showMarkdown}
         showManaged={showManaged}
         sourceAvailable={sourceAvailable}
-        openAnnotation={openAnnotation}
-        goToEntry={goToEntry}
-        openSource={openSource}
+        onShowProblem={onShowProblem}
         onRun={onRun}
         busy={busy}
       />

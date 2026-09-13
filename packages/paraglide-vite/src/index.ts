@@ -36,6 +36,7 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
   let paths: CompilerOptions;
   let outputStructure: CompilerOptions["outputStructure"];
   let production = false;
+  let closed = false;
 
   function track(path: fs.PathLike | number): void {
     reads.add(
@@ -158,6 +159,7 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
       for (const path of watchPaths()) this.addWatchFile(path);
     },
     async watchChange(path) {
+      if (closed) return;
       const changed = resolve(path);
       if (
         ignored(changed) ||
@@ -177,6 +179,10 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
       } finally {
         for (const input of watchPaths()) this.addWatchFile(input);
       }
+    },
+    async closeBundle() {
+      closed = true;
+      await compilation;
     },
   };
 }

@@ -6,12 +6,14 @@ import { act } from "preact/test-utils";
 import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { emptyRender } from "@zotlit/workbench/render";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { isDraftMarkdown } from "@/lib/reading-view";
 
 import { NativeMarkdown } from "./markdown";
+import type { NativeRenderResult } from "./render";
 
 const renderer = vi.hoisted(() => ({ render: vi.fn() }));
 vi.mock("obsidian", async (original) => ({
@@ -22,6 +24,59 @@ afterEach(() => {
   vi.restoreAllMocks();
   document.body.replaceChildren();
 });
+
+it.each([
+  ["note", "notes/current.md"],
+  ["annotation", "notes/previous.md"],
+] as const)(
+  "renders identical %s text with its own source path",
+  async (surface, sourcePath) => {
+    const markdown = "Identical note and highlight";
+    renderer.render.mockImplementation(async (_app, text, target) => {
+      target.textContent = text;
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    using _mounted = {
+      [Symbol.dispose]() {
+        render(null, container);
+        container.remove();
+      },
+    };
+    const result: NativeRenderResult = {
+      ...emptyRender({ sourceRevision: "second", snapshotRevision: "paper" }),
+      creationBody: markdown,
+      annotation: markdown,
+      sourcePath: "notes/current.md",
+      annotationSourcePath: "notes/previous.md",
+      citations: [],
+      annotationCitations: [],
+    };
+    await act(async () => {
+      render(
+        h(NativeMarkdown, {
+          app: { vault: { getConfig: () => false } } as unknown as App,
+          markdown,
+          surface,
+          result,
+        }),
+        container,
+      );
+    });
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector("[data-zotlit-preview-pending]"),
+      ).toBeNull(),
+    );
+    expect(renderer.render).toHaveBeenCalledWith(
+      expect.anything(),
+      markdown,
+      expect.anything(),
+      sourcePath,
+      expect.anything(),
+    );
+  },
+);
 
 it("keeps native Markdown outside the plugin preflight and preserves its footer boundary", async () => {
   renderer.render.mockImplementation(
@@ -53,7 +108,7 @@ it("keeps native Markdown outside the plugin preflight and preserves its footer 
   expect(draft?.nextElementSibling?.className).toBe("mod-footer mod-ui");
 });
 
-it("keeps original Markdown, marks its managed text, and unloads children when replaced or closed", async () => {
+it("keeps managed Markdown free of extra borders and unloads children when replaced or closed", async () => {
   const unloaded = vi.fn();
   const calls: string[] = [];
   class RenderChild extends Component {
@@ -92,10 +147,14 @@ it("keeps original Markdown, marks its managed text, and unloads children when r
     );
   });
   await vi.waitFor(() =>
-    expect(
-      container.querySelectorAll("p")[1]?.classList.contains("zt:border-l-2"),
-    ).toBe(true),
+    expect(container.textContent).toBe("OutsideManaged textAfter"),
   );
+  await vi.waitFor(() =>
+    expect(container.querySelector("[data-zotlit-preview-pending]")).toBeNull(),
+  );
+  expect(
+    [...container.querySelectorAll("p")].map((element) => element.className),
+  ).toEqual(["", "", ""]);
   expect(calls[0]).toBe(source);
   expect(container.textContent).toBe("OutsideManaged textAfter");
   expect(container.querySelector("p")?.className).toBe("");

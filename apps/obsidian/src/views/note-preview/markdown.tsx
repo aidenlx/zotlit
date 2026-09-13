@@ -3,9 +3,9 @@ import { Component, MarkdownRenderer } from "obsidian";
 import type { App } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 
-import { MARKER_START, MARKER_END } from "@zotlit/templates/obsidian";
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
 import { PropertyList } from "@zotlit/workbench/ui";
+import type { WorkbenchMarkdownProps } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
@@ -26,6 +26,7 @@ const NO_MARKS: readonly RenderedRange[] = [];
 export function NativeMarkdown({
   app,
   markdown,
+  surface = "note",
   result,
   marks = NO_MARKS,
   properties = [],
@@ -36,6 +37,7 @@ export function NativeMarkdown({
 }: {
   app: App;
   markdown: string;
+  surface?: WorkbenchMarkdownProps["surface"];
   result: NativeRenderResult | null;
   marks?: readonly RenderedRange[];
   properties?: readonly RenderedProperty[];
@@ -69,7 +71,10 @@ export function NativeMarkdown({
     const lifecycle = new Component();
     let disposed = false;
     lifecycle.load();
-    const sourcePath = result?.sourcePath ?? "";
+    const sourcePath =
+      (surface === "annotation"
+        ? (result?.annotationSourcePath ?? result?.sourcePath)
+        : result?.sourcePath) ?? "";
     void (async () => {
       await MarkdownRenderer.render(
         app,
@@ -79,20 +84,10 @@ export function NativeMarkdown({
         lifecycle,
       );
       if (disposed) return;
-      const start = markdown.indexOf(MARKER_START);
-      const end = markdown.indexOf(MARKER_END, start);
-      const ranges = [
-        ...(start >= 0 && end >= start
-          ? [
-              {
-                from: start + MARKER_START.length,
-                to: end,
-                className: "zt:border-l-2 zt:border-accent-foreground zt:ps-2",
-              },
-            ]
-          : []),
-        ...marks.map((range) => ({ ...range, className: "zt:bg-accent" })),
-      ];
+      const ranges = marks.map((range) => ({
+        ...range,
+        className: "zt:bg-accent",
+      }));
       // Native rendering keeps all source bytes. Prefix renders locate the
       // visible range without inserting tokens into headings or callouts.
       const text = visibleText(target);
@@ -122,12 +117,12 @@ export function NativeMarkdown({
         });
       }
       let citations =
-        markdown === result?.annotation
-          ? result.annotationCitations
+        surface === "annotation"
+          ? (result?.annotationCitations ?? [])
           : (result?.citations ?? []);
       if (
         result &&
-        markdown !== result.annotation &&
+        surface !== "annotation" &&
         markdown !== result.creationBody
       ) {
         const offset = result.creationBody?.indexOf(markdown) ?? -1;
@@ -163,7 +158,7 @@ export function NativeMarkdown({
       target.remove();
       footer.remove();
     };
-  }, [app, markdown, result, marks, showMarkdown, onRendered]);
+  }, [app, markdown, surface, result, marks, showMarkdown, onRendered]);
   const present = properties.filter(({ missing }) => !missing);
   const blank = markdown.trim() === "";
   if (showMarkdown) {

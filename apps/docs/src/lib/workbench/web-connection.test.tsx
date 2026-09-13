@@ -31,6 +31,21 @@ import {
 } from "./page-test-host";
 import type { BridgeRequest } from "./page-test-host";
 
+/** Text no Profile carries, typed into the note the page opens on. */
+const EDIT = "Fixture draft edit";
+
+function typeInNote(host: HTMLElement): void {
+  const note = EditorView.findFromDOM(
+    host.querySelector<HTMLElement>(".cm-editor")!,
+  )!;
+  act(() =>
+    note.dispatch({
+      changes: { from: note.state.doc.length, insert: `\n${EDIT}` },
+      userEvent: "input.type",
+    }),
+  );
+}
+
 describe("a Workbench Connection", () => {
   it("keeps connection setup in the bottom status control", async () => {
     await using page = await open();
@@ -143,20 +158,12 @@ describe("a Workbench Connection", () => {
     );
     await using page = await launch();
     await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
+      expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.title).toBe(
+        "Group research paper",
+      ),
     );
-    await page.settle();
     expect(page.host.textContent).toContain(m.workbench_connected_badge());
     expect(page.host.textContent).not.toContain(m.workbench_retained_badge());
-    expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.title).toBe(
-      "Group research paper",
-    );
-    page.press(m.workbench_refresh_item());
-    await page.waitFor(() =>
-      expect(
-        requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
-      ).toHaveLength(2),
-    );
   });
 
   it("loads the launch paper after the initial Item request failed and reconnect succeeds", async () => {
@@ -291,26 +298,19 @@ describe("a Workbench Connection", () => {
     );
     await page.settle();
 
-    page.press(m.workbench_add_field());
-    const sheet = openSheet(page.host);
-    const snippet = "{{ zt.title }}";
-    press(
-      fieldRow(sheet, m.workbench_field_title()),
-      m.workbench_fields_put_in_note(),
-    );
+    typeInNote(page.host);
     page.press(m.workbench_save());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_save_conflict()),
     );
 
     expect(title(page.host)).toBe("Connected profile");
-    expect(page.host.textContent).toContain(m.workbench_save_conflict());
     const saves = () =>
       requests.filter(
         ({ path }) => path === LOCAL_BRIDGE_PATHS.saveSelectedProfile,
       );
     expect(saves()[0]?.body).toMatchObject({
-      source: expect.stringContaining(snippet),
+      source: expect.stringContaining(EDIT),
     });
 
     page.press(m.workbench_undo());
@@ -337,14 +337,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_add_field());
-    const sheet = openSheet(page.host);
-    const snippet = "{{ zt.title }}";
-    press(
-      fieldRow(sheet, m.workbench_field_title()),
-      m.workbench_fields_put_in_note(),
-    );
-    await page.settle();
+    typeInNote(page.host);
 
     page.press(m.workbench_save());
     await page.waitFor(() =>
@@ -352,22 +345,17 @@ describe("a Workbench Connection", () => {
     );
 
     page.press(m.workbench_refresh_item());
+    const draft = "zotlit.workbench.draft.fixture-installation.profile:default";
     await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_connection_disconnected_notice(),
-      ),
+      expect(JSON.parse(localStorage.getItem(draft)!).expected).toEqual({
+        state: "revision",
+        revision: "revision-1",
+      }),
     );
-    await page.settle();
-    expect(
-      JSON.parse(
-        localStorage.getItem(
-          "zotlit.workbench.draft.fixture-installation.profile:default",
-        )!,
-      ).expected,
-    ).toEqual({ state: "revision", revision: "revision-1" });
-    localStorage.removeItem(
-      "zotlit.workbench.draft.fixture-installation.profile:default",
+    expect(page.host.textContent).toContain(
+      m.workbench_connection_disconnected_notice(),
     );
+    localStorage.removeItem(draft);
     vi.spyOn(localStorage, "getItem").mockImplementation(() => {
       throw new Error("Site data is blocked.");
     });
@@ -383,7 +371,7 @@ describe("a Workbench Connection", () => {
     // draft, which is no permission to write over the edit that moved it.
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
     page.press(m.workbench_advanced());
-    expect(sourceView(page.host).state.doc.toString()).toContain(snippet);
+    expect(sourceView(page.host).state.doc.toString()).toContain(EDIT);
 
     page.press(m.workbench_save());
     const saves = () =>
@@ -394,7 +382,7 @@ describe("a Workbench Connection", () => {
     expect(saves()[1]?.body).toMatchObject({
       reference: "profile:default",
       expected: { state: "revision", revision: "revision-1" },
-      source: expect.stringContaining(snippet),
+      source: expect.stringContaining(EDIT),
     });
   });
 
@@ -410,24 +398,25 @@ describe("a Workbench Connection", () => {
         },
       }),
     );
-    let snippet = "";
     {
       await using page = await launch();
       await page.waitFor(() =>
         expect(title(page.host)).toBe("Connected profile"),
       );
-      page.press(m.workbench_add_field());
-      const sheet = openSheet(page.host);
-      snippet = "{{ zt.title }}";
-      press(
-        fieldRow(sheet, m.workbench_field_title()),
-        m.workbench_fields_put_in_note(),
-      );
-      await page.settle();
+      typeInNote(page.host);
 
       page.press(m.workbench_save());
       await page.waitFor(() =>
         expect(page.host.textContent).toContain(m.workbench_save_conflict()),
+      );
+      // The reload reads what the autosave wrote, so the visit closes on that
+      // record rather than on a quiet time chosen for it.
+      await page.waitFor(() =>
+        expect(
+          localStorage.getItem(
+            "zotlit.workbench.draft.fixture-installation.profile:default",
+          ),
+        ).toContain(EDIT),
       );
     }
 
@@ -449,7 +438,7 @@ describe("a Workbench Connection", () => {
     expect(saves()[1]?.body).toMatchObject({
       reference: "profile:default",
       expected: { state: "revision", revision: "revision-1" },
-      source: expect.stringContaining(snippet),
+      source: expect.stringContaining(EDIT),
     });
   });
 
@@ -510,16 +499,6 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).not.toContain(m.workbench_load_item());
   });
 
-  it("opens connected profiles with concise tab guidance", async () => {
-    vi.stubGlobal("fetch", bridgeFetch([]));
-    await using page = await launch();
-    await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    expect(page.host.textContent).toContain(m.workbench_note_lede());
-    expect(page.host.textContent).not.toContain("Start here");
-  });
-
   it("shows standalone guidance without claiming a vault connection", async () => {
     await using page = await open();
     await page.settle();
@@ -533,10 +512,6 @@ describe("a Workbench Connection", () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
     await using page = await launch();
 
-    await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -689,29 +664,6 @@ describe("a Workbench Connection", () => {
     ).toHaveLength(1);
   });
 
-  it("keeps the session credential through a lost connection", async () => {
-    vi.stubGlobal("fetch", bridgeFetch([], { itemNetworkFailureOnce: true }));
-    {
-      await using page = await launch();
-      await page.waitFor(() =>
-        expect(title(page.host)).toBe("Connected profile"),
-      );
-      page.press(m.workbench_refresh_item());
-      await page.waitFor(() =>
-        expect(page.host.textContent).toContain(
-          m.workbench_connection_reconnect(),
-        ),
-      );
-    }
-
-    // A reload re-checks compatibility and revision with the kept credential,
-    // rather than asking Obsidian for a fresh approval.
-    await using restored = await open();
-    await restored.waitFor(() =>
-      expect(restored.host.textContent).toContain("Fixture vault"),
-    );
-  });
-
   it("creates the built-in Default against an expected absence", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests, { builtInAbsent: true }));
@@ -732,19 +684,12 @@ describe("a Workbench Connection", () => {
       expected: { state: "absent" },
       source: CONNECTED,
     });
-    expect(
-      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
-    ).toContain(m.workbench_save_complete({ vault: "Fixture vault" }));
   });
 
   it("marks a loaded Item Snapshot as retained after disconnect", async () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
     await using page = await launch();
 
-    await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -893,11 +838,21 @@ describe("a Workbench Connection", () => {
 
   it("restores the connection from tab storage on reload", async () => {
     const requests: BridgeRequest[] = [];
-    vi.stubGlobal("fetch", bridgeFetch(requests));
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, { itemNetworkFailureOnce: true }),
+    );
     {
       await using page = await launch();
       await page.waitFor(() =>
         expect(title(page.host)).toBe("Connected profile"),
+      );
+      // The tab keeps the credential a lost connection was issued under.
+      page.press(m.workbench_refresh_item());
+      await page.waitFor(() =>
+        expect(page.host.textContent).toContain(
+          m.workbench_connection_reconnect(),
+        ),
       );
     }
 

@@ -13,6 +13,7 @@ import type { ManagedEntrySource } from "@zotlit/workbench/document";
 import {
   CITATION_EXAMPLE_ITEM,
   DEFAULT_CITATION_EXAMPLE,
+  engineEvidence,
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import type {
@@ -164,7 +165,12 @@ export class NativePreviewSession implements Disposable {
       sourceProblem = error instanceof Error ? error.message : String(error);
     }
     this.state.setState({ source, sourceProblem, entries });
-    this.#scheduler.setInput({ source, hold: sourceProblem !== null });
+    // A document the parser refuses is a failure, not a wait: the preview
+    // names the output it kept and leads to the explanation.
+    this.#scheduler.setInput({
+      source,
+      hold: sourceProblem !== null && "invalid",
+    });
   }
   setItem(item: WorkbenchItemChoice | null): void {
     if (this.#closed || item?.id === this.state.getState().item?.id) return;
@@ -287,6 +293,9 @@ export class NativePreviewSession implements Disposable {
     // Item; the paper it cites still stamps the result the scheduler compares.
     const citation = citationSet ? { variant, example: citationExample } : null;
     this.#scheduler.setInput({
+      // The editor this preview follows can hand it another Template Document,
+      // and output kept for the one before it is another preview's.
+      document: context?.path ?? undefined,
       citation,
       partial: context?.partial ?? null,
       snapshot: previewSnapshot(
@@ -374,6 +383,7 @@ export class NativePreviewSession implements Disposable {
       this.#scheduler.fail({
         code: "render-error",
         message: error instanceof Error ? error.message : String(error),
+        evidence: engineEvidence(error),
       });
     }
   }

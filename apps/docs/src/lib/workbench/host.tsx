@@ -50,6 +50,8 @@ import { ResultSheet } from "./result-sheet";
 import { WEB_THEME } from "./theme";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
+/** This site's own community page, which Ask the community opens. */
+const COMMUNITY_URL = "/community";
 
 /** A request kept open until the reader answers it. */
 interface Pending<Request, Answer> {
@@ -143,6 +145,8 @@ export function useWebHost({
         new Promise((answer) => setSuggester({ request, answer })),
       tooltip: (text) => ({ title: text }),
       notice: (text) => latest.current.notice(text),
+      copy: (text) => navigator.clipboard.writeText(text),
+      communityUrl: COMMUNITY_URL,
       render: renderInThread,
       markdown: ResultSheet,
       editorPopups: (read) => [webCompletion(read), webHover(read)],

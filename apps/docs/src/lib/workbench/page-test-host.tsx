@@ -50,6 +50,9 @@ export async function launch(
 /** Virtual time covering the render debounce and draft autosave. */
 const SETTLE_MS = 700;
 
+/** The virtual time a wait gives the page before it reports the assertion. */
+const WAIT_MS = 1_000;
+
 /** The width this environment opens on, which every test starts from. */
 export const DEFAULT_WIDTH = window.innerWidth;
 
@@ -175,18 +178,23 @@ export async function open({
     },
     async waitFor(assertion) {
       // Vitest's waitFor advances fake timers outside act. Own the virtual
-      // clock here so debounce callbacks and their React updates settle together.
-      for (let elapsed = 0; elapsed <= 1_000; elapsed += 50) {
+      // clock here so debounce callbacks and their React updates settle
+      // together. Each step doubles, so a wait still reads the page before any
+      // time passes and a long quiet time costs a few flushes rather than one
+      // for every 50 ms of it.
+      for (let elapsed = 0, step = 0; ; ) {
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(elapsed === 0 ? 0 : 50);
+          await vi.advanceTimersByTimeAsync(step);
           await vi.dynamicImportSettled();
         });
+        elapsed += step;
         try {
           assertion();
           return;
         } catch (error) {
-          if (elapsed === 1_000) throw error;
+          if (elapsed >= WAIT_MS) throw error;
         }
+        step = Math.min(step === 0 ? 25 : step * 2, WAIT_MS - elapsed);
       }
     },
     async [Symbol.asyncDispose]() {

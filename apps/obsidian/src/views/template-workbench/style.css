@@ -224,3 +224,25 @@
   align-items: flex-start;
   height: auto;
 }
+
+/* The open area's chosen size lives on its element; the closed strip follows
+   its content. Error text uses the theme's error role in both color schemes. */
+.view-content.zt-template-workbench
+  [data-part="problems"][data-state="compact"] {
+  flex: 0 0 auto;
+}
+.view-content.zt-template-workbench
+  [data-part="problems"][data-error]
+  [data-part="problems-text"] {
+  color: color-mix(in srgb, var(--text-error) 90%, var(--text-normal));
+}
+/* `button { white-space: nowrap }` is unlayered, so a long translated label
+   only wraps where a rule declared here says so. Both rows are controls the
+   reader has to reach; the report block keeps its own unbroken lines. */
+.view-content.zt-template-workbench [data-part="problems-controls"] > button,
+.view-content.zt-template-workbench [data-part="problems-space"] > button {
+  block-size: auto;
+  min-block-size: var(--size-4-6);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}

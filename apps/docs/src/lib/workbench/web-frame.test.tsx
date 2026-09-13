@@ -13,6 +13,7 @@ import {
   resize,
   openSheet,
   chosenView,
+  sourceView,
 } from "./page-test-host";
 
 describe("the narrow layout", () => {
@@ -25,6 +26,40 @@ describe("the narrow layout", () => {
     expect(chosenView(page.host)).toBe(m.workbench_view_result());
     // The tabs the wide layout offers stay where they were.
     expect(page.host.textContent).toContain(m.workbench_tab_properties());
+  });
+
+  it("hands the reader to the editor's explanation from the result", async () => {
+    await using page = await open();
+    await page.settle();
+
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const broken = view.state.doc
+      .toString()
+      .replace("{% render", "{% render_missing");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+
+    page.press(m.workbench_view_result());
+    const pane = page.host.querySelector<HTMLElement>(
+      "#workbench-result-pane",
+    )!;
+    await page.settle();
+    press(pane, m.workbench_problem_show());
+
+    // The explanation belongs to the editor, so the result hands the reader
+    // over rather than leaving them on a tab its answer is not on.
+    expect(chosenView(page.host)).toBe(m.workbench_view_editor());
+    expect(
+      page.host
+        .querySelector('#workbench-edit-pane [data-part="problems"]')
+        ?.getAttribute("data-state"),
+    ).toBe("open");
   });
 
   it("inserts from the field sheet where the column would, then closes", async () => {

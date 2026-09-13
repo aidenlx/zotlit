@@ -2,6 +2,7 @@
 // Companion views consume source values through their own render owners.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
+import type { WorkbenchReportContext } from "#/render/report";
 import type { TemplateRenderResult } from "#/render/result";
 import {
   createContext,
@@ -38,25 +39,31 @@ interface WorkbenchEditorOptions {
   state?: Partial<WorkbenchViewState>;
   /** A host may initialize its pure view store before acquiring render resources. */
   store?: WorkbenchStore;
+  /** What names this editor in the report a failed example is copied as. */
+  reportContext?: () => WorkbenchReportContext;
 }
 
 /** Own one editor's view state and rendering through its host adapter. */
 export function createWorkbenchEditor<R extends TemplateRenderResult>(
   options: WorkbenchEditorOptions & {
     mapResult: (result: TemplateRenderResult) => R;
+    retain?: (kept: R, result: R) => R;
   },
 ): WorkbenchEditorInstance<R>;
 export function createWorkbenchEditor(
   options: WorkbenchEditorOptions,
 ): WorkbenchEditorInstance;
-export function createWorkbenchEditor({
+export function createWorkbenchEditor<R extends TemplateRenderResult>({
   controller,
   host,
   state,
   store: providedStore,
+  reportContext,
   mapResult,
+  retain,
 }: WorkbenchEditorOptions & {
-  mapResult?: (result: TemplateRenderResult) => TemplateRenderResult;
+  mapResult?: (result: TemplateRenderResult) => R;
+  retain?: (kept: R, result: R) => R;
 }): WorkbenchEditorInstance {
   const store =
     providedStore ??
@@ -65,6 +72,8 @@ export function createWorkbenchEditor({
         ? { ...state, tab: "note" }
         : state,
     );
+  const asHostResult =
+    mapResult ?? ((result: TemplateRenderResult) => result as R);
   const scheduler = createRenderScheduler({
     input: {
       source: controller.source,
@@ -74,9 +83,11 @@ export function createWorkbenchEditor({
     },
     render: (request) => {
       const result = host.render(request);
-      return mapResult ? result.then(mapResult) : result;
+      return mapResult ? result.then(mapResult) : (result as Promise<R>);
     },
-    failed: mapResult ?? ((result) => result),
+    failed: asHostResult,
+    ...(retain ? { retain } : {}),
+    ...(reportContext ? { reportContext } : {}),
   });
   function follow(next: WorkbenchDocumentController) {
     scheduler.setInput({ source: next.source });
@@ -115,9 +126,12 @@ const INERT_STORE = createWorkbenchStore();
 
 const INERT_STATE: RenderSchedulerState = {
   result: null,
+  retained: null,
   busy: false,
   stale: false,
   staleReason: null,
+  trigger: null,
+  attempt: 0,
 };
 
 /** Never renders: what the tree reads where no editor is in context. */

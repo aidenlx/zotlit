@@ -42,5 +42,6 @@ above the body, so one writer produces the YAML the reader sees.
   in the Markdown view.
 - The Obsidian sheet takes `expandProperties`, derived from the editor's
   authoring context.
-- WORKBENCH-DESIGN.md records the rule under Obsidian panes; ADR 0048's
+- WORKBENCH-DESIGN.md records the rule under "Native chrome carries rare
+  choices"; ADR 0048's
   "Final properties" heading is superseded here.

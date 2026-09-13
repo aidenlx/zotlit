@@ -6,6 +6,21 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 export const editorTheme = [
   templateHighlighting,
   EditorView.theme({
+    ".cm-problem-button": { color: "var(--color-destructive)" },
+    ".cm-lintRange-error": {
+      backgroundImage: "none",
+      textDecoration: "underline wavy var(--color-destructive)",
+      textUnderlineOffset: "0.2em",
+    },
+    ".cm-diagnostic-error": {
+      borderInlineStartColor: "var(--color-destructive)",
+    },
+    ".cm-tooltip-lint": {
+      backgroundColor: "var(--color-fd-background)",
+      color: "inherit",
+    },
+  }),
+  EditorView.theme({
     ".cm-scroller": {
       fontFamily: "var(--font-mono)",
       fontSize: "1rem",

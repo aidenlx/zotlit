@@ -15,6 +15,7 @@ import {
 } from "./index";
 
 import { WorkbenchDocumentController } from "#/document/index";
+import { workbenchDiagnoses } from "#/ui/problems";
 
 /** The default Profile with the annotation section printing `zt.citation`. */
 const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
@@ -23,6 +24,43 @@ const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
 );
 
 describe("Sample Items", () => {
+  it("locates a runtime error's traced expression for highlighting", () => {
+    const expression = '{{ "bad" | pandoc_cite }}';
+    const source = DEFAULT_PROFILE_SOURCE.replace("## Annotations", expression);
+    const result = renderProfile(source, SAMPLE_ITEMS[1]!);
+    expect(result.diagnostics[0]).toMatchObject({
+      code: "render-error",
+      sourceSite: {
+        from: source.indexOf(expression),
+        to: source.indexOf(expression) + expression.length,
+      },
+    });
+  });
+
+  it("reports malformed Liquid syntax at the Profile source token", () => {
+    const tag = "{% for annotation i zt.annotations %}";
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{% for annotation in zt.annotations %}",
+      tag,
+    );
+    expect(source).not.toBe(DEFAULT_PROFILE_SOURCE);
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!);
+    const failure = result.diagnostics.find(
+      ({ code }) => code === "liquid-syntax-error",
+    );
+    expect(failure).toMatchObject({
+      code: "liquid-syntax-error",
+      engine: { template: "default:managed" },
+      sourceSite: {
+        from: source.indexOf(tag),
+        to: source.indexOf(tag) + tag.length,
+      },
+      evidence: { name: "ParseError" },
+    });
+    expect(failure?.evidence?.context).toContain(tag);
+    expect(failure?.evidence?.causes).toContain(`illegal tag: ${tag}`);
+  });
+
   it("renders a selected annotation with its own parent while the note keeps its paper", () => {
     const source = SAMPLE_WITH_CITATION;
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
@@ -212,9 +250,93 @@ describe("Sample Items", () => {
     expect(result.creationBody).toBeNull();
     expect(result.annotation).toBeNull();
     expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
-      ["render-error", "annotation"],
+      ["liquid-syntax-error", "annotation"],
+      ["liquid-syntax-error", "annotation"],
     ]);
-    expect(result.diagnostics[0]!.message).toContain("annotation");
+    expect(
+      result.diagnostics.every(({ message }) =>
+        message?.includes("annotation"),
+      ),
+    ).toBe(true);
+  });
+
+  it("reports note and annotation failures as occurrences of one missing partial", () => {
+    // The engine could not resolve the same partial in either attempt, so both
+    // failures reach the Problems area and can be grouped there by cause.
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{{ zt.imgLink | embed }}{{ zt.text }}",
+      "{% render 'book-details' %}{{ zt.text }}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[1]!);
+
+    expect(result.creationBody).toBeNull();
+    // The web reads the same attribution Obsidian does: the partial the engine
+    // could not resolve is named, and the call to it is the repair target.
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "annotation"],
+      ["missing-partial", "annotation"],
+    ]);
+    expect(result.diagnostics.map(({ params }) => params)).toEqual([
+      { name: "book-details" },
+      { name: "book-details" },
+    ]);
+    expect(result.diagnostics.map(({ evidence }) => evidence?.message)).toEqual(
+      [expect.any(String), expect.any(String)],
+    );
+    expect(result.diagnostics[0]!.callSite).toEqual({
+      from: source.indexOf("{% render 'book-details' %}"),
+      to:
+        source.indexOf("{% render 'book-details' %}") +
+        "{% render 'book-details' %}".length,
+    });
+    expect(result.diagnostics[1]!.callSite).toEqual(
+      result.diagnostics[0]!.callSite,
+    );
+    const diagnosis = workbenchDiagnoses([], result.diagnostics)[0]!;
+    if (diagnosis.kind !== "render")
+      throw new Error("Expected a render diagnosis");
+    expect(diagnosis.occurrences).toHaveLength(2);
+    expect(
+      diagnosis.occurrences.every(({ evidence }) => evidence !== undefined),
+    ).toBe(true);
+  });
+
+  it("repairs a blamed template at its one call, and names none where two spell it", () => {
+    // A partial the engine refuses: it reports the failure inside the partial,
+    // and the reader repairs it where that partial was called.
+    const withPartial = (body: string) =>
+      DEFAULT_PROFILE_SOURCE.replace(
+        "filename:",
+        [
+          "partials:",
+          "  - name: venue-line",
+          "    language: liquid",
+          "    source: '{{ zt.title | bogus_filter }}'",
+          "filename:",
+        ].join("\n"),
+      ).replace("# {{ zt.title }}", body);
+    const call = "{% render 'venue-line' %}";
+    const one = withPartial(call);
+
+    const single = renderProfile(one, SAMPLE_ITEMS[0]!).diagnostics[0]!;
+    expect(single.engine).toEqual({
+      template: "venue-line",
+      line: 1,
+      column: 1,
+    });
+    expect(single.callSite).toEqual({
+      from: one.indexOf(call),
+      to: one.indexOf(call) + call.length,
+    });
+
+    // Two calls, and nothing says which one this render took: the location
+    // stays absent rather than pointing at whichever comes first.
+    const several = renderProfile(
+      withPartial(`${call}\n${call}`),
+      SAMPLE_ITEMS[0]!,
+    ).diagnostics[0]!;
+    expect(several.engine).toEqual(single.engine);
+    expect(several.callSite).toBeUndefined();
   });
 
   it("keeps the note preview when a broken format is never called", () => {
@@ -261,8 +383,10 @@ describe("Sample Items", () => {
       "Clear methods make research easier to reproduce.",
     );
     expect(result.creationBody).toBeNull();
-    expect(result.diagnostics.map(({ part }) => part)).toEqual(["render"]);
-    expect(result.diagnostics[0]!.message).toContain("missing-note");
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "render"],
+    ]);
+    expect(result.diagnostics[0]!.params).toEqual({ name: "missing-note" });
   });
 
   it("identifies a format error in a note call while the selected example succeeds", () => {
@@ -277,8 +401,12 @@ describe("Sample Items", () => {
       "Compare these findings with the replication study.",
     );
     expect(result.creationBody).toBeNull();
-    expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
-    expect(result.diagnostics[0]!.message).toContain("missing-for-highlight");
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "annotation"],
+    ]);
+    expect(result.diagnostics[0]!.params).toEqual({
+      name: "missing-for-highlight",
+    });
   });
 
   it("reports both a selected-example error and an unrelated note error", () => {
@@ -292,12 +420,14 @@ describe("Sample Items", () => {
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
       annotation: SAMPLE_ANNOTATIONS[0]!,
     });
-    expect(result.diagnostics.map(({ part }) => part)).toEqual([
-      "annotation",
-      "render",
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["missing-partial", "annotation"],
+      ["missing-partial", "render"],
     ]);
-    expect(result.diagnostics[0]!.message).toContain("missing-example");
-    expect(result.diagnostics[1]!.message).toContain("missing-note");
+    expect(result.diagnostics.map(({ params }) => params?.name)).toEqual([
+      "missing-example",
+      "missing-note",
+    ]);
   });
 
   it("locates no highlight when the note calls the format nowhere", () => {

@@ -118,11 +118,14 @@ declare module "obsidian" {
       ctx?: any,
     ): EventRef;
 
-    /** `document` is the vault path of the Template Document holding the call
-     *  that refused; the Default Profile stands in when there is none. */
+    /** `request.document` is the vault path of the Template Document holding
+     *  the call that refused, and `request.problem` the failure to explain on
+     *  arrival; the Default Profile stands in when there is no document. */
     on(
       name: "zotlit:open-template-workbench",
-      callback: (document?: string) => void,
+      callback: (
+        request: import("@/lib/workbench-recovery").TemplateWorkbenchRequest,
+      ) => void,
       ctx?: any,
     ): EventRef;
   }

@@ -6,6 +6,7 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { SuggestionSource } from "#/language/index";
+import { linter, setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
@@ -17,6 +18,12 @@ import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { partialSuggestions } from "./partial-suggestions";
+import {
+  sourceDiagnostics,
+  sourceProblemGutter,
+  useSourceDiagnoses,
+  useRevealSourceDiagnosis,
+} from "./source-diagnostics";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
@@ -96,7 +103,9 @@ export function SliceEditor({
   onSelection,
   onFocus,
 }: SliceEditorProps) {
-  useDocumentRevision(controller);
+  const revision = useDocumentRevision(controller);
+  const diagnoses = useSourceDiagnoses();
+  const revealDiagnosis = useRevealSourceDiagnosis();
   const readOnly = controller.readOnly;
   const engine = controller.templateLanguage;
   const m = useWorkbenchMessages();
@@ -126,6 +135,7 @@ export function SliceEditor({
   // a ref instead of being rebuilt whenever the host passes new ones.
   const report = useRef({
     onSelection,
+    revealDiagnosis,
     onFocus,
     suggest,
     adapter,
@@ -135,6 +145,7 @@ export function SliceEditor({
   });
   report.current = {
     onSelection,
+    revealDiagnosis,
     onFocus,
     suggest,
     adapter,
@@ -250,6 +261,13 @@ export function SliceEditor({
               ]
             : []),
           EditorView.lineWrapping,
+          linter(null, { tooltipFilter: () => [] }),
+          // CodeMirror still mounts an empty filtered tooltip.
+          EditorView.theme({ ".cm-tooltip-lint": { display: "none" } }),
+          sourceProblemGutter(
+            (id) => report.current.revealDiagnosis?.(id),
+            () => report.current.m.workbench_problem_show(),
+          ),
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
           ...(slice === "advanced" ? [lineNumbers()] : []),
@@ -290,6 +308,39 @@ export function SliceEditor({
   }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
 
   useEffect(() => {
+    const view = editor.current;
+    if (!view) return;
+    const diagnostics = sourceDiagnostics({
+      controller,
+      slice,
+      source: view.state.doc.toString(),
+      diagnoses,
+      messages: m,
+      json: language === "json-e",
+    });
+    view.dispatch(setDiagnostics(view.state, diagnostics));
+    view.contentDOM.setAttribute(
+      "aria-invalid",
+      String(invalid || diagnostics.length > 0),
+    );
+    if (describedBy)
+      view.contentDOM.setAttribute("aria-describedby", describedBy);
+    else view.contentDOM.removeAttribute("aria-describedby");
+  }, [
+    controller,
+    slice,
+    revision,
+    diagnoses,
+    m,
+    language,
+    invalid,
+    describedBy,
+    extensions,
+    readOnly,
+    singleLine,
+  ]);
+
+  useEffect(() => {
     editor.current?.dispatch({
       effects: syntaxSlot.current.reconfigure(syntax),
     });
@@ -321,14 +372,6 @@ export function SliceEditor({
     });
     if (reveal.focus !== false) view.focus();
   }, [controller, slice, reveal, language]);
-
-  useEffect(() => {
-    const content = editor.current?.contentDOM;
-    if (!content) return;
-    content.setAttribute("aria-invalid", String(invalid));
-    if (describedBy) content.setAttribute("aria-describedby", describedBy);
-    else content.removeAttribute("aria-describedby");
-  }, [invalid, describedBy]);
 
   // The host is the scroll container and the editor grows to its content, so
   // the browser's own scroll anchoring holds the pane in place when a block

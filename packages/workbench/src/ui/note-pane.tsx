@@ -243,7 +243,12 @@ function AnnotationPreview({
         <Suspense
           fallback={<p {...part("pending")}>{m.workbench_result_pending()}</p>}
         >
-          <Markdown markdown={preview} properties={[]} showMarkdown={false} />
+          <Markdown
+            surface="annotation"
+            markdown={preview}
+            properties={[]}
+            showMarkdown={false}
+          />
         </Suspense>
       ) : (
         formatProblem === null && (
