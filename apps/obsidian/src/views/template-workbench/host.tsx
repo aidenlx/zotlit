@@ -45,6 +45,7 @@ import {
   appendTrailingFlair,
   FLAIR_ROW_CLASS,
 } from "@/services/item-lookup/render-hit";
+import { COMMUNITY } from "@/views/welcome/links";
 
 import { extractPartialMenu } from "./extract-partial";
 import type { ExtractPartial } from "./extract-partial";
@@ -381,6 +382,8 @@ export function createTemplateWorkbenchHost(
     notice: (text) => {
       new BaseNotice(text);
     },
+    copy: (text) => navigator.clipboard.writeText(text),
+    communityUrl: COMMUNITY,
     persistence: {
       read(scope, key) {
         const value: unknown = app.loadLocalStorage(

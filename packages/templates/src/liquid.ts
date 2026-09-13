@@ -18,6 +18,8 @@ import { filenameSuffix } from "./filename-suffix";
 import { normalizeObsidianTag } from "./obsidian-tag";
 import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
 
+export { ParseError, TokenizationError } from "liquidjs";
+
 /**
  * Minimal structural view of a Zotero multipart date, duck-typed so this
  * package doesn't depend on `@zotlit/db`.

@@ -47,9 +47,8 @@
       "outputs": ["content/docs/reference/templates/data.mdx"],
       "outputLogs": "errors-only"
     },
-    // `src/http.test.ts` fetches the built Worker, so the build runs first.
     "test": {
-      "dependsOn": ["^build", "transit", "build"]
+      "dependsOn": ["^build", "transit", "generate:messages"]
     }
   }
 }

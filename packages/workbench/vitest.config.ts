@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+import { testDefaults } from "@zotlit/config/vitest";
+
 /** The shared Workbench UI suite, run once per React runtime below. */
 const UI_TESTS = ["src/ui/**/*.test.tsx"];
 
@@ -8,6 +10,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   test: {
+    ...testDefaults,
     // `include` lives on the projects: Vite merges a root `include` into each
     // project's own, which would widen every project back to everything.
     environment: "node",

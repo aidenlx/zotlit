@@ -33,7 +33,7 @@ export type {
   ManagedFrontmatterList,
   ManifestScalar,
 } from "./manifest-patch";
-export { noteRegions, partialCalls } from "./regions";
+export { noteRegions, partialCalls, templateCalls } from "./regions";
 export type {
   AnnotationRenderSite,
   ManagedBlockRegion,

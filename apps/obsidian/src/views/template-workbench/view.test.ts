@@ -16,6 +16,13 @@ import {
   formatPlainTemplateDocument,
   parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
+import {
+  captureRenderReport,
+  emptyRender,
+  formatRenderReport,
+  renderIdentity,
+  SAMPLE_ITEMS,
+} from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { renderNativeTemplate } from "@/views/note-preview/render";
@@ -140,6 +147,196 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
 }
 
 describe("TemplateWorkbenchView", () => {
+  it.each([false, true])(
+    "clears an arrival after a fresh matching success and retains its report (unrelated preview: %s)",
+    async (unrelatedPreview) => {
+      await using cleanup = new AsyncDisposableStack();
+      const copy = vi
+        .spyOn(navigator.clipboard, "writeText")
+        .mockResolvedValue();
+      cleanup.defer(() => copy.mockRestore());
+      const { view } = setup({
+        render: async (request) => ({
+          ...emptyRender(renderIdentity(request)),
+          creationBody: "Repaired note",
+        }),
+      });
+      const file = new TFile();
+      file.path = "templates/paper.md";
+      view.file = file;
+      cleanup.defer(() => act(async () => view.close()));
+      await act(async () => view.open());
+      await act(async () =>
+        view.scheduler.setInput({
+          snapshot: SAMPLE_ITEMS[0]!,
+          live: false,
+          hold: false,
+        }),
+      );
+      const run = async () => {
+        const attempt = view.scheduler.getState().attempt;
+        await act(async () => {
+          view.scheduler.run();
+          await vi.waitFor(() =>
+            expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+          );
+        });
+      };
+      await run();
+      const diagnostic = {
+        code: "missing-partial" as const,
+        params: { name: "venue-line" },
+        part: "render" as const,
+      };
+      const report = captureRenderReport({
+        diagnostic,
+        identity: {
+          sourceRevision: "",
+          snapshotRevision: SAMPLE_ITEMS[0]!.revision,
+        },
+        trigger: "explicit",
+        sequence: 0,
+        capturedAt: "2026-09-13T00:00:00Z",
+        context: { document: file.path },
+      });
+      await act(async () =>
+        view.explainArrival({ diagnostic: { ...diagnostic, report } }),
+      );
+      expect(view.contentEl.textContent).toContain(
+        m.workbench_problems_object_partial({ name: "venue-line" }),
+      );
+      // A result from before arrival does not prove a repair.
+      expect(view.contentEl.textContent).not.toContain(
+        m.workbench_problems_none(),
+      );
+      await act(async () =>
+        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[1]! }),
+      );
+      await run();
+      expect(view.contentEl.textContent).toContain(
+        m.workbench_problems_object_partial({ name: "venue-line" }),
+      );
+      await act(async () =>
+        view.scheduler.setInput({ snapshot: SAMPLE_ITEMS[0]! }),
+      );
+      if (unrelatedPreview) {
+        await act(async () =>
+          view.publishPreviewProblems("pinned-B", [
+            {
+              code: "missing-partial",
+              part: "render",
+              params: { name: "other-partial" },
+            },
+          ]),
+        );
+      }
+      await run();
+      expect(view.contentEl.textContent).toContain(
+        unrelatedPreview
+          ? m.workbench_problems_resolved()
+          : m.workbench_problems_none(),
+      );
+      expect(view.contentEl.textContent).toContain(
+        m.workbench_problems_copy_last(),
+      );
+      const copyLast = [...view.contentEl.querySelectorAll("button")].find(
+        (button) => button.textContent === m.workbench_problems_copy_last(),
+      )!;
+      await act(async () => copyLast.click());
+      expect(copy).toHaveBeenCalledExactlyOnceWith(formatRenderReport(report));
+    },
+  );
+
+  it("clears a repaired Annotation arrival while a Property failure remains", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      render: async (request) => ({
+        ...emptyRender(renderIdentity(request)),
+        annotation: "Repaired annotation",
+        diagnostics: [
+          {
+            code: "property-error",
+            part: "properties",
+            params: { key: "title" },
+            position: 1,
+          },
+        ],
+      }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => {
+      view.scheduler.setInput({
+        snapshot: SAMPLE_ITEMS[0]!,
+        live: false,
+        hold: false,
+      });
+      view.explainArrival({
+        diagnostic: {
+          code: "render-error",
+          part: "annotation",
+          message: "Old format failure",
+        },
+      });
+    });
+    const attempt = view.scheduler.getState().attempt;
+    await act(async () => {
+      view.scheduler.run();
+      await vi.waitFor(() =>
+        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_resolved(),
+    );
+    const next = [...view.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_next(),
+    )!;
+    await act(async () => next.click());
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_property({ key: "title" }),
+    );
+  });
+
+  it("keeps a Note arrival when its render_annotation call still prevents note output", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup({
+      render: async (request) => ({
+        ...emptyRender(renderIdentity(request)),
+        diagnostics: [{ code: "render-error", part: "annotation" }],
+      }),
+    });
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => {
+      view.scheduler.setInput({
+        snapshot: SAMPLE_ITEMS[0]!,
+        live: false,
+        hold: false,
+      });
+      view.explainArrival({
+        diagnostic: {
+          code: "missing-partial",
+          part: "render",
+          params: { name: "venue-line" },
+        },
+      });
+    });
+    const attempt = view.scheduler.getState().attempt;
+    await act(async () => {
+      view.scheduler.run();
+      await vi.waitFor(() =>
+        expect(view.scheduler.getState().attempt).toBeGreaterThan(attempt),
+      );
+    });
+    expect(view.contentEl.textContent).not.toContain(
+      m.workbench_problems_resolved(),
+    );
+    expect(view.contentEl.textContent).toContain(
+      m.workbench_problems_object_partial({ name: "venue-line" }),
+    );
+  });
+
   it("shows only Markdown marker hints alongside Liquid tokens", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
@@ -1319,6 +1516,142 @@ language: liquid
     expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
   });
 
+  it("explains a document problem with no preview companion, and keeps the source in place", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
+    await act(async () => view.open());
+    await act(async () =>
+      view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
+    );
+
+    const area = view.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    // An automatic check stays compact until the reader asks for the rest.
+    expect(area.textContent).toContain(
+      m.workbench_problem_missing_annotation_section(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_missing_annotation_section_recovery(),
+    );
+
+    const show = [...area.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_problem_show(),
+    )!;
+    await act(async () => show.click());
+    expect(area.textContent).toContain(m.workbench_annotation_label());
+    expect(area.textContent).toContain(
+      m.workbench_problem_missing_annotation_section_recovery(),
+    );
+    expect(area.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
+
+    const collapse = [...area.querySelectorAll("button")].find(
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_problems_return(),
+    )!;
+    await act(async () => collapse.click());
+    expect(area.textContent).not.toContain(
+      m.workbench_problem_missing_annotation_section_recovery(),
+    );
+    expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
+    expect(editor.contentDOM).toBe(document.activeElement);
+  });
+
+  it("returns the reader to the place in the source the reading left", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
+    await act(async () => view.open());
+    await act(async () =>
+      view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
+    );
+
+    // Where the reader was editing, which every pane reports as it moves.
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    await act(async () => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 4 } });
+    });
+    const left = view.insertTarget!;
+    // The pane reports master offsets, so the caret's own slice places it.
+    const caret = view.controller.sliceRange(left.slice).from + 4;
+    expect(left.range).toMatchObject({ from: caret, to: caret });
+
+    const area = view.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    const press = (label: string) =>
+      act(async () =>
+        [...area.querySelectorAll("button")]
+          .find(
+            (button) =>
+              (button.getAttribute("aria-label") ?? button.textContent) ===
+              label,
+          )!
+          .click(),
+      );
+    await press(m.workbench_problem_show());
+    expect(area.dataset.state).toBe("open");
+
+    await press(m.workbench_problems_return());
+    // The area gives the editor back whole, and the caret is where it was.
+    expect(area.dataset.state).toBe("compact");
+    expect(view.store.getState().presentation.reveal).toMatchObject({
+      from: caret,
+      to: caret,
+      slice: left.slice,
+    });
+    expect(editor.state.selection.main.head).toBe(4);
+    expect(editor.contentDOM).toBe(document.activeElement);
+  });
+
+  it("reclaims the reading space before navigating to a source problem", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
+    await act(async () => view.open());
+    await act(async () =>
+      view.setViewData(SOURCE.replace("--- zotlit:annotation ---", ""), false),
+    );
+
+    const area = view.contentEl.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    const press = (selector: string) =>
+      act(async () =>
+        view.contentEl.querySelector<HTMLElement>(selector)!.click(),
+      );
+    await press('[data-part="problems-toggle"]');
+    expect(area.dataset.state).toBe("open");
+
+    await press('[data-part="problems-open"]');
+    expect(area.dataset.state).toBe("compact");
+    expect(view.store.getState().advanced).toBe(true);
+    const editor = [
+      ...view.contentEl.querySelectorAll<HTMLElement>(".cm-editor"),
+    ]
+      .map((element) => EditorView.findFromDOM(element)!)
+      .find(
+        (candidate) =>
+          candidate.state.doc.toString() ===
+          view.controller.sliceText("advanced"),
+      )!;
+    expect(editor.contentDOM).toBe(document.activeElement);
+  });
+
   it("keeps a Profile document on its six tabs, titled by its name", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = openKind("templates/zotlit-profile.paper.md", SOURCE);
@@ -1489,6 +1822,19 @@ language: liquid
       params: { names: "authors, venue-line" },
     });
 
+    // Unpacking writes files, so the reader reaches it among the ordinary
+    // partial operations rather than inside the reading of a problem
+    // (ADR 0056). It is offered only while this document carries any.
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    const partials = menu.items.find(
+      (item) => item.title === m.template_workbench_partials(),
+    )!;
+    expect(partials.submenu?.items.map((item) => item.title)).toEqual([
+      m.workbench_partial_new(),
+      m.workbench_problem_bundled_partial_unpack(),
+    ]);
+
     // Both entries go — the written one and the one the reader's own file
     // answers — so the problem clears and neither name has two homes left.
     expect(await view.unpackBundledPartials()).toBe(true);
@@ -1496,6 +1842,14 @@ language: liquid
     expect(view.getViewData()).not.toContain("partials:");
     expect(view.getViewData()).toContain("filename: paper");
     expect(view.controller.problems).toEqual([]);
+
+    const repaired = new Menu();
+    view.onPaneMenu(repaired as never, "more-options");
+    expect(
+      repaired.items
+        .find((item) => item.title === m.template_workbench_partials())!
+        .submenu?.items.map((item) => item.title),
+    ).toEqual([m.workbench_partial_new()]);
   });
 
   it("names no partial while the template service is still scanning the folder", () => {

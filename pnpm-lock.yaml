@@ -1208,6 +1208,9 @@ importers:
       '@codemirror/lang-liquid':
         specifier: 6.3.2
         version: 6.3.2(patch_hash=c08dbf9b3ed9c6dd75099907aa4647734830c442605d86a0c79eae41046e0c84)
+      '@codemirror/lint':
+        specifier: 6.9.5
+        version: 6.9.5
       '@lezer/common':
         specifier: 'catalog:'
         version: 1.5.2

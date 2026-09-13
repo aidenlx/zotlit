@@ -156,7 +156,7 @@ A partial has no data of its own, so its own editor asks you which caller to ren
 
 ### Rename or delete a partial [#rename-a-partial]
 
-Renaming is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no calls, so every template that called the old name then reports a missing partial on its placeholder, with <UiLabel name={m.workbench_partial_create()} /> and <UiLabel name={m.workbench_partial_pick()} /> to fix that one call.
+Renaming is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no calls, so every template that called the old name then marks its placeholder <UiLabel name={m.workbench_partial_missing()} />. Select that marker to read the problem in the editor's <UiLabel name={m.workbench_problems_heading()} /> area, then edit the call or create the partial yourself.
 
 To delete, open the partial's row at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />, open its <UiLabel name={m.workbench_more_actions()} /> menu, and select <UiLabel name={m.settings_partial_delete()} />. ZotLit moves the file to Obsidian's configured trash and rewrites no callers.
 

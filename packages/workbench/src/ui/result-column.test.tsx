@@ -1,4 +1,4 @@
-import type { TemplateRenderResult } from "#/render/result";
+import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -42,16 +42,21 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
     onShowMarkdown: vi.fn<(show: boolean) => void>(),
     showManaged: false,
     onShowManaged: vi.fn<(show: boolean) => void>(),
-    openAnnotation: vi.fn<() => void>(),
-    goToEntry: vi.fn<(position: number) => void>(),
-    openSource: vi.fn<() => void>(),
+    onShowProblem: vi.fn<(diagnostic: RenderDiagnostic | null) => void>(),
     ...overrides,
   };
   const mounted = mount(<ResultColumn {...props} />);
-  mounted.host.markdown = ({ markdown, properties, showMarkdown, marks }) => (
+  mounted.host.markdown = ({
+    markdown,
+    surface,
+    properties,
+    showMarkdown,
+    marks,
+  }) => (
     <div
       data-testid="markdown"
       data-source={showMarkdown}
+      data-surface={surface}
       data-marks={JSON.stringify(marks)}
     >
       {markdown}
@@ -61,6 +66,25 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
   render(mounted.ui);
   return Object.assign(mounted, { props });
 }
+
+it.each(["note", "annotation"] as const)(
+  "identifies the %s surface when note and Annotation text match",
+  (mode) => {
+    const identical = {
+      ...result,
+      creationBody: "Shared text",
+      annotation: "Shared text",
+    };
+    using _mounted = column({
+      mode,
+      result: identical,
+      annotationResult: identical,
+    });
+    expect(screen.getByTestId("markdown").getAttribute("data-surface")).toBe(
+      mode,
+    );
+  },
+);
 
 it("passes the complete note and folded properties to the host renderer", () => {
   using mounted = column({ stale: true, staleReason: "hold" });
@@ -113,7 +137,7 @@ it("shows a single annotation with no complete-note properties", () => {
   expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
 });
 
-it("links the first property error to its one-based entry", () => {
+it("names the failure and leads to its explanation", () => {
   using mounted = column({
     result: {
       ...result,
@@ -123,21 +147,188 @@ it("links the first property error to its one-based entry", () => {
     },
   });
   const { props } = mounted;
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_problems_where_entry() }),
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_problem(),
   );
-  expect(props.goToEntry).toHaveBeenCalledWith(2);
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_problem_show() }),
+  );
+  expect(props.onShowProblem).toHaveBeenCalledWith({
+    code: "property-error",
+    position: 2,
+    message: "Invalid property",
+  });
 });
 
-it("links a profile error to source", () => {
-  using mounted = column({
-    result: { ...result, diagnostics: [{ code: "render-error" }] },
-  });
-  const { props } = mounted;
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_problems_where_advanced() }),
+it("retains the note when a Property evaluation fails", () => {
+  const propertyFailure: TemplateRenderResult = {
+    ...result,
+    creationBody: "Incomplete note",
+    fold: [],
+    frontmatterBlock: null,
+    diagnostics: [
+      {
+        code: "property-error",
+        part: "properties",
+        position: 1,
+        message: "Invalid property",
+      },
+    ],
+  };
+  using mounted = column({ result: propertyFailure, retained: result });
+  const status = screen.getByRole("status");
+  expect(status.textContent).toContain(m.workbench_preview_retained());
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
   );
-  expect(props.openSource).toHaveBeenCalledOnce();
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_problem_show() }),
+  );
+  expect(mounted.props.onShowProblem).toHaveBeenCalledWith(
+    propertyFailure.diagnostics[0],
+  );
+});
+
+it("tells a failed render from a template that produced nothing", () => {
+  using _failed = column({
+    result: {
+      ...result,
+      creationBody: null,
+      diagnostics: [{ code: "render-error", message: "Unclosed tag" }],
+    },
+  });
+  expect(screen.queryByTestId("markdown")).toBeNull();
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+  // A failure the engine named nothing about reads as a plain sentence; its
+  // own words are the editor's evidence, not the preview's notice.
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_diagnostic_render_error(),
+  );
+  expect(screen.getByRole("status").textContent).not.toContain("Unclosed tag");
+});
+
+it("reads a template that produced an empty note as a result", () => {
+  using _empty = column({ result: { ...result, creationBody: "" } });
+  expect(screen.getByTestId("markdown")).toBeDefined();
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+const broken: TemplateRenderResult = {
+  ...result,
+  filename: null,
+  creationBody: null,
+  managedRegion: null,
+  annotation: null,
+  diagnostics: [{ code: "render-error", message: "Unclosed tag" }],
+};
+
+it("reads a failure against the last successful preview", () => {
+  using _kept = column({ result: broken, retained: result });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_retained(),
+  );
+  // The working output stands beside the failure for the repair to be read
+  // against; the note name belongs to the attempt that produced it.
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  expect(screen.queryByText("Papers/Reading.md")).toBeNull();
+});
+
+it("names no preview when nothing successful stands for this selection", () => {
+  using _none = column({ result: broken });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_unavailable(),
+  );
+  expect(screen.queryByTestId("markdown")).toBeNull();
+});
+
+it("shows the note that worked while the annotation beside it renders", () => {
+  // One attempt, two surfaces: the note failed and the annotation did not, so
+  // each reader reads the newest output their own surface has.
+  const half: TemplateRenderResult = {
+    ...broken,
+    annotation: "One highlight",
+  };
+  using _note = column({ result: half, retained: result, mode: "note" });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_retained(),
+  );
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  cleanup();
+
+  using _annotation = column({
+    result: half,
+    annotationResult: half,
+    retained: result,
+    mode: "annotation",
+  });
+  expect(screen.queryByText(m.workbench_preview_retained())).toBeNull();
+  expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
+});
+
+it("keeps Annotation output successful beside a failed Note Property", () => {
+  const propertyFailure: TemplateRenderResult = {
+    ...result,
+    creationBody: "Incomplete note",
+    diagnostics: [
+      {
+        code: "property-error",
+        part: "properties",
+        position: 1,
+        message: "Invalid property",
+      },
+    ],
+  };
+  using _mounted = column({
+    result: propertyFailure,
+    annotationResult: propertyFailure,
+    retained: result,
+    mode: "annotation",
+  });
+  expect(screen.queryByText(m.workbench_preview_retained())).toBeNull();
+  expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
+});
+
+it("keeps the hold notice its own sentence while the last result stands", () => {
+  using _mounted = column({ stale: true, staleReason: "hold" });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_stale(),
+  );
+  expect(screen.queryByText(m.workbench_preview_retained())).toBeNull();
+});
+
+it("reads a document the parser refuses as a failure, not as a wait", () => {
+  using mounted = column({
+    stale: true,
+    staleReason: "invalid",
+    retained: result,
+  });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_retained(),
+  );
+  expect(screen.queryByText(m.workbench_preview_stale())).toBeNull();
+  expect(screen.getByTestId("markdown").textContent).toBe(
+    "Created notetagsreadingscience",
+  );
+  // A document that never parsed reached no render and names no diagnostic,
+  // so Show problem leads to whatever the editor's own checks found.
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_problem_show() }),
+  );
+  expect(mounted.props.onShowProblem).toHaveBeenCalledWith(null);
+});
+
+it("names no preview for a refused document with nothing kept", () => {
+  // Nothing successful stands for this selection, so the preview says so even
+  // before any attempt has run.
+  using _none = column({ result: null, stale: true, staleReason: "invalid" });
+  expect(screen.getByRole("status").textContent).toContain(
+    m.workbench_preview_unavailable(),
+  );
+  expect(screen.queryByTestId("markdown")).toBeNull();
 });
 
 it("changes preview mode, runs on demand, and pauses future work", () => {
@@ -241,9 +432,6 @@ it("renders ResultBody with no heading", () => {
       staleReason={null}
       showMarkdown={false}
       showManaged={false}
-      openAnnotation={vi.fn<() => void>()}
-      goToEntry={vi.fn<(position: number) => void>()}
-      openSource={vi.fn<() => void>()}
     />,
   );
   render(mounted.ui);

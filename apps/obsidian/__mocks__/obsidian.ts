@@ -754,6 +754,9 @@ export function requireApiVersion(_version: string): boolean {
   return true;
 }
 
+/** The version an error report names its host by. */
+export const apiVersion = "1.0.0-test";
+
 /** Minimal stand-in for `MenuItem`; only the builder methods the plugin
  * chains off `Menu.addItem` plus a test-only `click()` to invoke the
  * registered handler. */

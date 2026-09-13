@@ -3,9 +3,16 @@
 
 import type { CitationVariant } from "@zotlit/db";
 
-import type { CitationExampleId } from "./citation-examples";
-import type { PartialContext } from "./partial-preview";
-import type { RenderRequest } from "./request";
+import type {
+  CitationExampleId,
+  CitationPreviewSelection,
+} from "./citation-examples";
+import type {
+  PartialContext,
+  PartialPreviewSelection,
+} from "./partial-preview";
+import type { EngineEvidence, RenderReport } from "./report";
+import type { AnnotationExample } from "./sample-annotations";
 
 /**
  * What went wrong, in the vocabulary a host writes its own wording against. One
@@ -13,9 +20,11 @@ import type { RenderRequest } from "./request";
  * English this package would otherwise author.
  */
 export type RenderDiagnosticCode =
+  | "citation-data-mismatch"
   | "citation-style-error"
   | "contract-version-mismatch"
   | "invalid-profile"
+  | "liquid-syntax-error"
   | "missing-dependency"
   | "missing-partial"
   | "property-append-conflict"
@@ -23,6 +32,27 @@ export type RenderDiagnosticCode =
   | "property-javascript"
   | "render-error"
   | "unsupported-dependency";
+
+/**
+ * Where the template engine itself said a failure happened. `template` is the
+ * name the engine renders that source under, and a `line` counts lines of that
+ * template's own source — never of whichever document the reader has open.
+ */
+export interface RenderEngineLocation {
+  readonly template: string;
+  /** 1-based, in the named template's own source. */
+  readonly line?: number;
+  /** 1-based, in that line. */
+  readonly column?: number;
+}
+
+/** The Template Document whose own call reached the failing template. */
+export interface RenderCaller {
+  /** Its vault path, when the failure named one. */
+  readonly document?: string;
+  /** The name the engine renders it under, when the failure named one. */
+  readonly template?: string;
+}
 
 export interface RenderDiagnostic {
   readonly code: RenderDiagnosticCode;
@@ -42,6 +72,41 @@ export interface RenderDiagnostic {
    * which is what sends the reader to Advanced instead.
    */
   readonly position?: number;
+  /**
+   * What the engine reported, kept apart from {@link RenderDiagnostic.callSite}
+   * because the two are different places: a failure inside a called template is
+   * reported there and repaired at the call.
+   */
+  readonly engine?: RenderEngineLocation;
+  readonly caller?: RenderCaller;
+  /**
+   * The call in the source this render read that reached the failing template,
+   * which is the one place the reader repairs it. Set only when that source
+   * actually holds such a call; absent means the location is unknown, and a
+   * host says so rather than sending the reader to a guessed line.
+   */
+  readonly callSite?: { readonly from: number; readonly to: number };
+  /** Stable text for the verified call, independent of its source offset. */
+  readonly callIdentity?: string;
+  /** A Liquid token verified in this document, with the source used to locate it. */
+  readonly sourceSite?: {
+    readonly from: number;
+    readonly to: number;
+    readonly source: string;
+    readonly offset: number;
+  };
+  /**
+   * What the engine said before this diagnostic reduced it to `message`,
+   * captured at the boundary that catches the error. Absent where the failure
+   * was composed rather than thrown.
+   */
+  readonly evidence?: EngineEvidence;
+  /**
+   * The failed attempt this diagnostic came from, frozen when that attempt
+   * landed. The Problems area inspects and copies it, so later edits,
+   * selection changes, and other previews leave it as it was captured.
+   */
+  readonly report?: RenderReport;
 }
 
 export interface RenderedProperty {
@@ -68,6 +133,11 @@ export interface RenderIdentity {
   readonly partialProfile?: string;
 }
 
+/**
+ * The stamp one render is known by. Takes a request, and equally the
+ * selections a scheduler composes a result of its own from — a failure the
+ * host reports carries the same dimensions, so it is matched the same way.
+ */
 export function renderIdentity({
   source,
   snapshot,
@@ -75,11 +145,19 @@ export function renderIdentity({
   citation,
   partial,
   mode,
-}: RenderRequest): RenderIdentity {
+}: {
+  readonly source: string;
+  /** `null` where no paper is loaded, which leaves the revision unnamed. */
+  readonly snapshot: { readonly revision: string } | null;
+  readonly mode?: "create" | "update";
+  readonly annotation?: AnnotationExample | null;
+  readonly citation?: CitationPreviewSelection | null;
+  readonly partial?: PartialPreviewSelection | null;
+}): RenderIdentity {
   return {
     ...(mode ? { previewMode: mode } : {}),
     sourceRevision: templateSourceRevision(source),
-    snapshotRevision: snapshot.revision,
+    snapshotRevision: snapshot?.revision ?? "",
     ...(annotation
       ? { annotationId: annotation.id, annotationRevision: annotation.revision }
       : {}),
@@ -173,4 +251,90 @@ export function failedRender(
   diagnostic: RenderDiagnostic,
 ): TemplateRenderResult {
   return { ...emptyRender(identity), diagnostics: [diagnostic] };
+}
+
+/**
+ * Whether two results describe the same paper, example, caller, and mode. The
+ * source is left out: an edit makes a result stale without making it another
+ * preview's, which is what keeps a retained output readable through a repair.
+ */
+export function sameRenderSelection(
+  kept: RenderIdentity,
+  result: RenderIdentity,
+): boolean {
+  return (
+    kept.previewMode === result.previewMode &&
+    kept.snapshotRevision === result.snapshotRevision &&
+    kept.annotationId === result.annotationId &&
+    kept.annotationRevision === result.annotationRevision &&
+    kept.citationVariant === result.citationVariant &&
+    kept.citationExample === result.citationExample &&
+    kept.partialContext === result.partialContext &&
+    kept.partialProfile === result.partialProfile
+  );
+}
+
+/**
+ * `result` with the outputs it produced none of taken from `kept`, so an
+ * attempt where one preview surface failed and another succeeded leaves each
+ * reader the newest output their own surface has. The note's name, properties,
+ * and marks travel with the output they describe; a surface
+ * whose output is null either failed or is not this document's to produce, and
+ * either way the last one that worked is what a reader compares against.
+ *
+ * A result for another paper, example, caller, or mode replaces what was kept
+ * rather than filling in from it: another preview's output is no comparison.
+ */
+export function retainOutputs<R extends TemplateRenderResult>(
+  kept: R,
+  result: R,
+): R {
+  if (!sameRenderSelection(kept, result)) return result;
+  const surfaces = [
+    result.creationBody === null && kept.creationBody !== null
+      ? {
+          filename: kept.filename,
+          properties: kept.properties,
+          fold: kept.fold,
+          frontmatterBlock: kept.frontmatterBlock,
+          creationBody: kept.creationBody,
+          managedRegion: kept.managedRegion,
+          annotationRanges: kept.annotationRanges,
+        }
+      : null,
+    result.annotation === null && kept.annotation !== null
+      ? {
+          annotation: kept.annotation,
+          annotationCitation: kept.annotationCitation,
+        }
+      : null,
+    result.citation === null && kept.citation !== null
+      ? { citation: kept.citation }
+      : null,
+    result.partial === null && kept.partial !== null
+      ? { partial: kept.partial }
+      : null,
+  ].filter((outputs) => outputs !== null);
+  // A result that produced every surface is the whole of what is kept, and it
+  // is kept as itself: a copy would read as a new result to everything
+  // comparing what this scheduler published last.
+  if (surfaces.length === 0) return result;
+  return Object.assign({ ...result }, ...surfaces) as R;
+}
+
+/**
+ * Whether an attempt produced nothing at all. A template that renders empty
+ * text still produced it, so a valid empty result stays apart from a failure,
+ * and only a failure sends a reader to the last preview that worked.
+ */
+export function renderFailed(result: TemplateRenderResult): boolean {
+  return (
+    result.diagnostics.length > 0 &&
+    result.filename === null &&
+    result.creationBody === null &&
+    result.managedRegion === null &&
+    result.annotation === null &&
+    result.citation === null &&
+    result.partial === null
+  );
 }

@@ -141,6 +141,24 @@ export function partialCalls(
   region: WorkbenchSliceRange,
   language: TemplateLanguage = "liquid",
 ): readonly PartialRenderSite[] {
+  return templateCalls(source, region, language).filter(
+    ({ name }) => !RESERVED_CALL_NAMES.includes(name),
+  );
+}
+
+/**
+ * Every call inside `region` naming the template it renders, in source order
+ * and in the offsets `source` is read in — {@link RESERVED_CALL_NAMES} included,
+ * because a call to the Citation Template or to a Legacy Template File slot is
+ * a real call even though no Shared Partial may take those names. A render
+ * failure the engine attributes to a named template is repaired at whichever
+ * of these calls reached it.
+ */
+export function templateCalls(
+  source: string,
+  region: WorkbenchSliceRange,
+  language: TemplateLanguage = "liquid",
+): readonly PartialRenderSite[] {
   const body = source.slice(region.from, region.to);
   const shift = ({ from, to }: WorkbenchSliceRange) => ({
     from: region.from + from,
@@ -181,9 +199,9 @@ function callTags(body: string): readonly LiquidRange[] {
 }
 
 /**
- * The partial one tag names, and the arguments it passes it, or null when the
- * tag renders something else: another tag name, a name held in a variable, or
- * the Annotation Section's own reserved name.
+ * The template one tag names, and the arguments it passes it, or null when the
+ * tag renders something else: another tag name, or a name held in a variable.
+ * {@link partialCalls} drops the reserved names from what this reads.
  */
 function partialCall(
   body: string,
@@ -197,8 +215,7 @@ function partialCall(
   const end = argument.indexOf(quote, 1);
   if (end === -1) return null;
   const partial = argument.slice(1, end);
-  if (partial.length === 0 || RESERVED_CALL_NAMES.includes(partial))
-    return null;
+  if (partial.length === 0) return null;
   // The opening quote sits where the trimmed argument starts, so the name
   // begins one character after it.
   const open = from + tag.length - argument.length;
@@ -210,7 +227,7 @@ function partialCall(
 }
 
 /**
- * Every Eta Shared Partial call in `body`, in source order and in `body`'s own
+ * Every Eta template call in `body`, in source order and in `body`'s own
  * offsets. The Eta parser splices the tag's JavaScript in, so the tree names
  * the callee and its first argument outright: a name held in a variable, a
  * member call such as `it.include(…)`, a tag the author has not closed, and a
@@ -238,7 +255,7 @@ function etaPartialCalls(body: string): PartialRenderSite[] {
 }
 
 /**
- * The partial one Eta tag's content names, and what the call passes after it,
+ * The template one Eta tag's content names, and what the call passes after it,
  * or null when the tag holds anything but a single `include("name", …)` call.
  * The grammar tokenizes a tag's quoted strings and block comments, so the name
  * and the paren that closes the call are read off the tag's own nodes: a name
@@ -262,7 +279,7 @@ function etaIncludeCall(
   if (close === null || body.slice(close + 1, content.to).trim().length > 0)
     return null;
   const name = body.slice(quoted.from + 1, quoted.to - 1);
-  if (name.length === 0 || RESERVED_CALL_NAMES.includes(name)) return null;
+  if (name.length === 0) return null;
   const rest = body.slice(quoted.to, close).trim();
   return {
     name,

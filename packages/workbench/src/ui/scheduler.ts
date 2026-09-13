@@ -1,6 +1,7 @@
 // A view-owned scheduler consumes values and rejects work for superseded inputs.
 import type { CitationPreviewSelection } from "#/render/citation-examples";
 import type { PartialPreviewSelection } from "#/render/partial-preview";
+import type { WorkbenchReportContext } from "#/render/report";
 import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -12,14 +13,24 @@ import type { ItemSnapshot } from "#/snapshot/index";
 
 import type { PreviewMode } from "./store";
 
+import { captureRenderReport, engineEvidence } from "#/render/report";
 import {
   failedRender,
+  renderFailed,
+  retainOutputs,
   templateSourceRevision,
   renderIdentity,
 } from "#/render/result";
 
 export interface RenderSchedulerInput {
   readonly source: string;
+  /**
+   * The Template Document this preview reads — a vault path or a draft
+   * reference. Output kept from another document is another preview's, so a
+   * scheduler that follows the reader from one document to the next names the
+   * one it is on. A host with one document all along leaves it out.
+   */
+  readonly document?: string;
   readonly mode: PreviewMode;
   readonly live: boolean;
   /** The paper a render is shown against; `null` while the host loads one. */
@@ -40,20 +51,48 @@ export interface RenderSchedulerInput {
    * Holds rendering while the host cannot answer for this draft — a Profile it
    * refuses, or a dependency bundle read for another one. Unlike Stop, a render
    * in flight is dropped, and the result still shown reads as stale.
+   *
+   * `"invalid"` names the one hold that is a failure rather than a wait: a
+   * document the parser refuses. The preview reads it the way it reads a
+   * render that failed, and names the output it kept.
    */
-  readonly hold?: boolean;
+  readonly hold?: boolean | "invalid";
 }
+
+/**
+ * How an attempt started. Run and the quiet time after an edit reach the same
+ * entry point, so the result names which one asked for it: a deliberate
+ * failure deserves an explanation at once, a failure while typing does not.
+ */
+export type RenderTrigger = "explicit" | "automatic";
 
 export interface RenderSchedulerState<
   R extends TemplateRenderResult = TemplateRenderResult,
 > {
   readonly result: R | null;
+  /**
+   * The newest output each preview surface produced, kept while `result` is a
+   * failed attempt the reader can still compare against it. A note that failed
+   * beside an annotation that rendered keeps the last note that worked. Null
+   * once the retained output describes a document, paper, example, caller, or
+   * mode the reader has left, which is what keeps another preview's result out
+   * of this one.
+   */
+  readonly retained: R | null;
   /** Set from the moment a render starts until its result lands or is dropped. */
   readonly busy: boolean;
   /** Whether `result` describes a draft, paper, or mode the reader has left. */
   readonly stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while the shown result is current. */
-  readonly staleReason: "hold" | "demand" | "live" | null;
+  readonly staleReason: "hold" | "invalid" | "demand" | "live" | null;
+  /** How the attempt behind `result` started; `null` while none has landed. */
+  readonly trigger: RenderTrigger | null;
+  /**
+   * Counts the results this scheduler has published. Two attempts over the
+   * same bytes are still two attempts, which is what tells a reader's second
+   * deliberate failure from the first.
+   */
+  readonly attempt: number;
 }
 
 export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
@@ -64,7 +103,15 @@ export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
    * failure reads like every other result the host publishes.
    */
   readonly failed: (result: TemplateRenderResult) => R;
+  /** Retain outputs together with the host metadata that describes them. */
+  readonly retain?: (kept: R, result: R) => R;
   readonly input: RenderSchedulerInput;
+  /**
+   * What names this Workbench in the report a failed attempt is copied as,
+   * read once per landed result. A scheduler with none reports those fields
+   * unavailable.
+   */
+  readonly reportContext?: () => WorkbenchReportContext;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
 }
@@ -91,24 +138,40 @@ function staleReasonFor(
   input: Pick<RenderSchedulerInput, "hold" | "live">,
   current: boolean,
 ): RenderSchedulerState["staleReason"] {
+  if (input.hold === "invalid") return "invalid";
   if (input.hold === true) return "hold";
   if (current) return null;
   return input.live ? "live" : "demand";
 }
 
+/** Whether nothing may render, for either reason a host gives. */
+function held(input: Pick<RenderSchedulerInput, "hold">): boolean {
+  return input.hold === true || input.hold === "invalid";
+}
+
 export function createRenderScheduler<R extends TemplateRenderResult>({
   render,
   failed,
+  retain = retainOutputs,
   input: initial,
+  reportContext,
   debounceMs = 300,
 }: RenderSchedulerOptions<R>): RenderScheduler<R> {
   let input = initial;
   let state: RenderSchedulerState<R> = {
     result: null,
+    retained: null,
     busy: false,
     stale: false,
     staleReason: staleReasonFor(initial, false),
+    trigger: null,
+    attempt: 0,
   };
+  // The last output each preview surface produced, whatever has failed since.
+  let produced: R | null = null;
+  // The Template Document `produced` was rendered from, so output kept for one
+  // document is never read against another.
+  let producedDocument = initial.document;
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
   // A host may reach a disposed scheduler from a continuation it started while
@@ -119,48 +182,156 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
   cleanup.defer(() => listeners.clear());
   cleanup.defer(abandon);
 
-  function publish(next: { result?: R | null; busy?: boolean }): void {
+  /**
+   * Whether a result describes the paper, example, caller, and mode the reader
+   * is on now. A result already on screen describes the example it was
+   * rendered for, so a reader who chooses another one has moved past it. The
+   * source is left out: an edit makes a result stale without making it
+   * another preview's.
+   */
+  function sameSelection(result: RenderIdentity): boolean {
+    return !(
+      (input.snapshot !== null &&
+        result.snapshotRevision !== input.snapshot.revision) ||
+      (input.annotation != null &&
+        (result.annotationId !== input.annotation.id ||
+          result.annotationRevision !== input.annotation.revision)) ||
+      (input.citation != null &&
+        (result.citationVariant !== input.citation.variant ||
+          (result.citationExample ?? null) !== input.citation.example)) ||
+      (input.partial != null &&
+        (result.partialContext !== input.partial.context ||
+          (result.partialProfile ?? null) !== input.partial.profile)) ||
+      result.previewMode !== input.mode
+    );
+  }
+
+  /**
+   * Pairs each of a landed result's diagnostics with the attempt behind it,
+   * once. From here on the report describes that attempt: a later edit,
+   * selection, or preview has no way back into it.
+   */
+  function stamp(result: R, trigger: RenderTrigger, sequence: number): R {
+    if (result.diagnostics.every(({ report }) => report !== undefined)) {
+      return result;
+    }
+    const capturedAt = Temporal.Now.instant().toString();
+    const context = reportContext?.() ?? {};
+    return {
+      ...result,
+      diagnostics: result.diagnostics.map((diagnostic) =>
+        diagnostic.report === undefined
+          ? {
+              ...diagnostic,
+              report: captureRenderReport({
+                diagnostic,
+                identity: result,
+                trigger,
+                sequence,
+                capturedAt,
+                context,
+              }),
+            }
+          : diagnostic,
+      ),
+    };
+  }
+
+  function publish(next: {
+    result?: R | null;
+    busy?: boolean;
+    trigger?: RenderTrigger;
+  }): void {
     if (closed) return;
-    const result = next.result === undefined ? state.result : next.result;
+    const { trigger } = next;
+    const landed = trigger !== undefined;
+    const attempt = landed ? state.attempt + 1 : state.attempt;
+    const published = next.result === undefined ? state.result : next.result;
+    // Stamped before anything else reads it, so the result the reader keeps
+    // comparing against carries the same report the shown one does.
+    const result =
+      trigger !== undefined && published !== null
+        ? stamp(published, trigger, attempt)
+        : published;
     const busy = next.busy ?? state.busy;
+    // A Property failure makes the note surface unsuccessful even when the
+    // renderer returned its partial body; independent surfaces still land.
+    const resultForRetention =
+      result !== null &&
+      result.diagnostics.some(({ code }) => code === "property-error")
+        ? ({
+            ...result,
+            filename: null,
+            properties: [],
+            fold: [],
+            frontmatterBlock: null,
+            creationBody: null,
+            managedRegion: null,
+            annotationRanges: [],
+          } as R)
+        : result;
+    // Each surface keeps the newest output it produced, so a note that failed
+    // beside an annotation that rendered leaves the last good note standing.
+    if (
+      landed &&
+      resultForRetention !== null &&
+      !renderFailed(resultForRetention)
+    ) {
+      produced =
+        produced !== null && producedDocument === input.document
+          ? retain(produced, resultForRetention)
+          : resultForRetention;
+      producedDocument = input.document;
+    }
+    // Only a failure sends the reader back to working output, and only where
+    // that output still answers for the document and the selection they are
+    // reading now. A document the parser refuses is such a failure: no attempt
+    // ever ran.
+    const broken =
+      input.hold === "invalid" ||
+      (result !== null && result.diagnostics.length > 0);
+    const retained =
+      broken &&
+      produced !== null &&
+      producedDocument === input.document &&
+      sameSelection(produced)
+        ? produced
+        : null;
     const identityMismatch =
       result !== null &&
       (result.sourceRevision !== templateSourceRevision(input.source) ||
-        (input.snapshot !== null &&
-          result.snapshotRevision !== input.snapshot.revision) ||
-        // A result already on screen describes the example it was rendered
-        // for, so a reader who chooses another one has moved past it.
-        (input.annotation != null &&
-          (result.annotationId !== input.annotation.id ||
-            result.annotationRevision !== input.annotation.revision)) ||
-        (input.citation != null &&
-          (result.citationVariant !== input.citation.variant ||
-            (result.citationExample ?? null) !== input.citation.example)) ||
-        (input.partial != null &&
-          (result.partialContext !== input.partial.context ||
-            (result.partialProfile ?? null) !== input.partial.profile)) ||
-        result.previewMode !== input.mode);
-    const stale = input.hold === true || identityMismatch;
+        !sameSelection(result));
+    const stale = held(input) || identityMismatch;
     const staleReason = staleReasonFor(
       input,
       result !== null && !identityMismatch,
     );
     if (
+      !landed &&
       result === state.result &&
+      retained === state.retained &&
       busy === state.busy &&
       stale === state.stale &&
       staleReason === state.staleReason
     ) {
       return;
     }
-    state = { result, busy, stale, staleReason };
+    state = {
+      result,
+      retained,
+      busy,
+      stale,
+      staleReason,
+      trigger: trigger ?? state.trigger,
+      attempt,
+    };
     for (const listener of listeners) listener();
   }
 
   /** What a render would be asked for now, or `null` while nothing may run. */
   function nextRequest(): RenderRequest | null {
-    const { snapshot, annotation, citation, partial, resources, hold } = input;
-    if (closed || hold === true || snapshot === null) return null;
+    const { snapshot, annotation, citation, partial, resources } = input;
+    if (closed || held(input) || snapshot === null) return null;
     return {
       mode: input.mode,
       source: input.source,
@@ -184,7 +355,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     pending = undefined;
   }
 
-  function start(request: RenderRequest): void {
+  function start(request: RenderRequest, trigger: RenderTrigger): void {
     // The stamp doubles as this start's token: whatever replaces it leaves the
     // render it belonged to answering into a scheduler that has moved on.
     const identity = renderIdentity(request);
@@ -195,7 +366,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       (result) => {
         if (current !== identity) return;
         current = undefined;
-        publish({ result, busy: false });
+        publish({ result, busy: false, trigger });
       },
       // A template that throws stops this render, not the host around it.
       (error: unknown) => {
@@ -206,10 +377,15 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
             failedRender(identity, {
               code: "render-error",
               message: error instanceof Error ? error.message : String(error),
+              // Taken here, where the engine's error is still whole: the
+              // message alone loses the name, the chain, and the excerpt a
+              // reader needs to report the failure.
+              evidence: engineEvidence(error),
               part: "render",
             }),
           ),
           busy: false,
+          trigger,
         });
       },
     );
@@ -222,7 +398,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     abandon();
     const request = nextRequest();
     if (request !== null && input.live) {
-      pending = setTimeout(() => start(request), debounceMs);
+      pending = setTimeout(() => start(request, "automatic"), debounceMs);
     }
     publish({ busy: false });
   }
@@ -248,6 +424,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       }
       const sameRenderInput =
         input.source === previous.source &&
+        input.document === previous.document &&
         input.mode === previous.mode &&
         input.snapshot === previous.snapshot &&
         input.annotation === previous.annotation &&
@@ -270,29 +447,18 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       const request = nextRequest();
       if (request === null) return;
       abandon();
-      start(request);
+      start(request, "explicit");
     },
     pause,
     fail(diagnostic) {
       abandon();
+      // The failure names every selection a render reads, so a Citation or
+      // Shared Partial preview matches it against its own input rather than
+      // reading it as another preview's result.
       publish({
-        result: failed(
-          failedRender(
-            {
-              previewMode: input.mode,
-              sourceRevision: templateSourceRevision(input.source),
-              snapshotRevision: input.snapshot?.revision ?? "",
-              ...(input.annotation
-                ? {
-                    annotationId: input.annotation.id,
-                    annotationRevision: input.annotation.revision,
-                  }
-                : {}),
-            },
-            diagnostic,
-          ),
-        ),
+        result: failed(failedRender(renderIdentity(input), diagnostic)),
         busy: false,
+        trigger: "automatic",
       });
     },
     [Symbol.dispose]() {

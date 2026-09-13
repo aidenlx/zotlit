@@ -1,6 +1,6 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { EditorView } from "@codemirror/view";
-import { Scope, TextFileView } from "obsidian";
+import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
   Menu,
   TFile,
@@ -42,6 +42,7 @@ import type {
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   DEFAULT_PARTIAL_CONTEXT,
+  currentCallSite,
   failedRender,
   isPartialContext,
   renderIdentity,
@@ -50,8 +51,11 @@ import type {
   CitationExampleId,
   PartialChoice,
   PartialContext,
+  RenderDiagnostic,
+  WorkbenchReportContext,
 } from "@zotlit/workbench/render";
 import { fieldSnippet } from "@zotlit/workbench/ui";
+import type { WorkbenchDiagnosis } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
   diagnosticText,
@@ -59,11 +63,16 @@ import {
   useWorkbenchHost,
   createWorkbenchEditor,
   BUILT_IN_BINDING_DEFAULTS,
+  diagnosisForOccurrence,
   NameFolderPane,
   NotePane,
   PropertiesPane,
   ProblemsFooter,
+  WorkbenchDiagnosticsProvider,
   problemText,
+  useWorkbenchProblems,
+  workbenchDiagnoses,
+  renderDiagnosis,
   SliceEditor,
   usePartialBoxes,
   TabBar,
@@ -75,6 +84,7 @@ import {
   WorkbenchThemeProvider,
   useDocumentRevision,
   useRenderState,
+  useParts,
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
 import type {
@@ -97,6 +107,7 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -110,6 +121,7 @@ import type {
 } from "@/views/note-preview/render";
 import {
   nativeResult,
+  retainNativeOutputs,
   renderNativeTemplate,
 } from "@/views/note-preview/render";
 import { NativePreviewSession } from "@/views/note-preview/session";
@@ -219,6 +231,25 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
+  /**
+   * What each linked preview's last applicable render found, by preview. The
+   * editor owns the Problems area, so a Note Preview that renders a failure
+   * hands it here rather than explaining it beside its own empty result. A
+   * preview that closes or succeeds publishes an empty list, so nothing a
+   * superseded or closed context found stays visible.
+   */
+  readonly #previewProblems = new Map<string, readonly RenderDiagnostic[]>();
+  /** The flattened list, rebuilt only on publish so readers can compare it. */
+  #previewProblemList: readonly RenderDiagnostic[] = [];
+  readonly #previewProblemListeners = new Set<() => void>();
+  readonly #showProblemListeners = new Set<
+    (id: string | null, occurrence?: RenderDiagnostic) => void
+  >();
+  /**
+   * The captured failure a refused note operation asked this editor to explain.
+   * Its report remains available even when this editor's own check differs.
+   */
+  #arrival: ArrivingProblem | null = null;
   get matchDatabase() {
     return this.#deps.db;
   }
@@ -295,7 +326,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#editor = createWorkbenchEditor({
       host: this.#host,
       controller: this.#controller,
+      reportContext: () => this.reportContext(this.#defaultRoot),
       mapResult: nativeResult,
+      retain: retainNativeOutputs,
     });
     this.store = this.#editor.store;
     this.scheduler = this.#editor.scheduler;
@@ -420,6 +453,30 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The Template Document this view holds, which picks its tabs and its root. */
   get documentKind(): WorkbenchDocumentKind {
     return templateDocumentKind(this.file, this.#templateFolder);
+  }
+  /**
+   * What names this Workbench in a copied error report. Read once per failed
+   * attempt, so the report keeps the document, root, and Item that attempt
+   * ran against however the reader moves on afterwards.
+   *
+   * `selection` is the Item the attempt read, which a linked preview answers
+   * for itself: a pinned one keeps the Item it was pinned on while this editor
+   * moves to another. Left out, this editor's own choice answers.
+   */
+  reportContext(
+    root: TemplateRoot,
+    selection: string | null = this.store.getState().item?.id ?? null,
+  ): WorkbenchReportContext {
+    const path = this.file?.path;
+    const version = this.#deps.pluginVersion;
+    return {
+      ...(path === undefined ? {} : { document: path }),
+      language: this.#controller.language,
+      root,
+      ...(selection === null ? {} : { selection }),
+      ...(version === undefined ? {} : { zotlitVersion: version }),
+      hostVersion: `Obsidian ${apiVersion}`,
+    };
   }
   /** The folder a filename has to sit in to name a Template Document. */
   get #templateFolder(): string {
@@ -555,6 +612,75 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return () => {
       this.#revealListeners.delete(listener);
     };
+  }
+  /**
+   * What every linked preview has found, as one list. Read through
+   * `subscribePreviewProblems`, which changes whenever a preview publishes.
+   */
+  get previewProblems(): readonly RenderDiagnostic[] {
+    return this.#previewProblemList;
+  }
+  publishPreviewProblems(
+    preview: string,
+    diagnostics: readonly RenderDiagnostic[],
+  ): void {
+    if (diagnostics.length === 0) {
+      if (!this.#previewProblems.delete(preview)) return;
+    } else {
+      const held = this.#previewProblems.get(preview);
+      if (
+        held?.length === diagnostics.length &&
+        held.every((entry, index) => entry === diagnostics[index])
+      ) {
+        return;
+      }
+      this.#previewProblems.set(preview, diagnostics);
+    }
+    this.#previewProblemList = [...this.#previewProblems.values()].flat();
+    for (const listener of this.#previewProblemListeners) listener();
+  }
+  subscribePreviewProblems(listener: () => void): () => void {
+    this.#previewProblemListeners.add(listener);
+    return () => {
+      this.#previewProblemListeners.delete(listener);
+    };
+  }
+  /**
+   * Reads one problem in the Problems area, which is what a preview's Show
+   * problem and a failed deliberate Run ask for. A null id opens the area on
+   * whatever it already has selected.
+   */
+  showProblem(
+    id: string | null,
+    reveal = true,
+    occurrence?: RenderDiagnostic,
+  ): void {
+    for (const listener of this.#showProblemListeners) listener(id, occurrence);
+    // A deliberate request brings this editor forward; a failed automatic or
+    // Run attempt leaves the reader's pane where they put it.
+    if (reveal) void this.app.workspace.revealLeaf(this.leaf);
+  }
+  subscribeShowProblem(
+    listener: (id: string | null, occurrence?: RenderDiagnostic) => void,
+  ): () => void {
+    this.#showProblemListeners.add(listener);
+    return () => {
+      this.#showProblemListeners.delete(listener);
+    };
+  }
+  /** Records the captured failure that brought the reader here, and opens Problems. */
+  explainArrival(arrival: ArrivingProblem): void {
+    this.#arrival = arrival;
+    this.showProblem(null, false);
+  }
+  /** Takes one arrival so it opens one explanation. */
+  takeArrival(): ArrivingProblem | null {
+    const held = this.#arrival;
+    this.#arrival = null;
+    return held;
+  }
+  get arrival(): ArrivingProblem | null {
+    return this.#arrival;
   }
   revealSlice(slice: "advanced" | "annotation" | `entry:${number}`): void {
     const range = this.#controller.sliceRange(slice);
@@ -1262,6 +1388,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #addPartialsMenu(menu: Menu): void {
     const templates = this.#deps.templates;
     if (!templates.loaded) return;
+    // The partials this document still carries from the Profile it was shared
+    // with. Unpacking writes them into files, which is an ordinary partial
+    // operation and belongs beside the rest of them rather than inside the
+    // reading of a problem (ADR 0056).
+    const bundled = this.#controller.document?.manifest.partials ?? [];
     menu.addItem((item) => {
       item
         .setSection("zotlit")
@@ -1287,6 +1418,13 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("plus")
           .onClick(() => void this.createPartial()),
       );
+      if (bundled.length > 0 && !this.#controller.readOnly)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(m.workbench_problem_bundled_partial_unpack())
+            .setIcon("package-open")
+            .onClick(() => void this.unpackBundledPartials()),
+        );
     });
   }
 
@@ -1371,8 +1509,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return this.#defaultDraft;
   }
   /**
-   * Every Shared Partial the vault registers, which Pick another chooses from.
-   * Read during render, so it answers empty until the folder scan has run.
+   * Every Shared Partial the vault registers. Read during render, so it
+   * answers empty until the folder scan has run.
    */
   get partialNames(): readonly string[] {
     const templates = this.#deps.templates;
@@ -1780,10 +1918,16 @@ function EditorContent({
 }) {
   const controller = view.controller;
   const host = useWorkbenchHost();
+  const resultPart = useParts("resultColumn");
   useDocumentRevision(controller);
-  const { result } = useRenderState();
-  const formatProblem = result?.diagnostics.find(
-    ({ part }) => part === "annotation",
+  const { result, trigger, attempt, busy, stale } = useRenderState();
+  const previewProblems = usePreviewProblems(view);
+  const formatProblem = [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+  ].find(
+    ({ part, engine }) =>
+      part === "annotation" || engine?.template === "annotation",
   );
   // A render reads the selected example, so the inline preview waits on a
   // choice rather than on a render while the reader has made none.
@@ -1844,12 +1988,20 @@ function EditorContent({
     const preview = view.preview;
     if (!preview) return undefined;
     return {
-      names: view.partialNames,
       missing: missingPartials,
       revision: templateRevision,
       dataRevision,
       onEdit: (name) => view.openPartial(name),
-      onCreate: (name) => void view.createPartial(name),
+      onShowProblem: (name) => {
+        const found = diagnoses.find(
+          (diagnosis) =>
+            diagnosis.kind === "render" &&
+            diagnosis.diagnostic.code === "missing-partial" &&
+            String(diagnosis.diagnostic.params?.name) === name,
+        );
+        if (found) problems.select(found.id);
+        else problems.setOpen(true);
+      },
       onRender: (name) => preview.renderPartial(name, partialContext),
     };
   };
@@ -1862,11 +2014,153 @@ function EditorContent({
           kind === "citation" ? "citation" : controller.partialContext,
         ),
   );
-  const firstProblem = controller.problems[0] ?? null;
-  const problem =
-    firstProblem?.slice === "details" && manifest.current === null
-      ? { ...firstProblem, slice: "advanced" as const }
-      : firstProblem;
+  // A manifest the parser never read has no field pane to open, so its
+  // problems are repaired in the source the reader can still see.
+  const documentProblems = controller.problems.map((entry) =>
+    entry.slice === "details" && manifest.current === null
+      ? { ...entry, slice: "advanced" as const }
+      : entry,
+  );
+  const [arrival, setArrival] = useState<ArrivingProblem | null>(null);
+  const arrivalAttempt = useRef(0);
+  const pendingArrival = view.arrival;
+  const arrivalDiagnostic = arrival?.diagnostic;
+  const diagnoses = workbenchDiagnoses(documentProblems, [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+    ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
+  ]);
+  const [requestedOccurrence, setRequestedOccurrence] = useState<{
+    readonly id: string;
+    readonly occurrence: RenderDiagnostic;
+  } | null>(null);
+  const selectedDiagnoses = diagnoses.map((diagnosis) =>
+    requestedOccurrence?.id === diagnosis.id
+      ? diagnosisForOccurrence(diagnosis, requestedOccurrence.occurrence)
+      : diagnosis,
+  );
+  const problems = useWorkbenchProblems({
+    diagnoses: selectedDiagnoses,
+    trigger,
+    attempt,
+    // A parser problem never reached a render, so the area captures its report
+    // itself, naming this Workbench the way a failed render's report does.
+    capture: {
+      messages: workbenchM,
+      source: controller.source,
+      context: () => view.reportContext(view.store.getState().root),
+    },
+  });
+  const selectProblem = problems.select;
+  const openProblems = problems.setOpen;
+  useEffect(
+    () =>
+      view.subscribeShowProblem((id, occurrence) => {
+        if (id === null) {
+          setRequestedOccurrence(null);
+          openProblems(true);
+        } else {
+          setRequestedOccurrence(
+            occurrence === undefined ? null : { id, occurrence },
+          );
+          selectProblem(id);
+        }
+      }),
+    [view, selectProblem, openProblems],
+  );
+  // A refused note operation brings its own captured diagnosis here. Consume
+  // the arrival once, then keep its report available even when this editor's
+  // own check finds no matching failure.
+  useEffect(() => {
+    if (!pendingArrival) return;
+    arrivalAttempt.current = attempt;
+    setArrival(pendingArrival);
+    view.takeArrival();
+    openProblems(true);
+  }, [view, pendingArrival, openProblems, attempt]);
+  const arrivalSelection = useRef<ArrivingProblem | null>(null);
+  const detected = diagnoses.map(({ id }) => id).join("\n");
+  useEffect(() => {
+    if (!arrival || arrivalSelection.current === arrival) return;
+    const match = diagnoses.find(
+      (diagnosis) =>
+        diagnosis.kind === "render" &&
+        diagnosis.diagnostic.code === arrival.diagnostic.code &&
+        String(diagnosis.diagnostic.params?.name ?? "") ===
+          String(arrival.diagnostic.params?.name ?? ""),
+    );
+    if (!match) return;
+    arrivalSelection.current = arrival;
+    selectProblem(match.id);
+  }, [arrival, detected, diagnoses, selectProblem]);
+  useEffect(() => {
+    if (
+      !arrival ||
+      attempt <= arrivalAttempt.current ||
+      busy ||
+      stale ||
+      !result ||
+      documentProblems.length > 0
+    )
+      return;
+    const { report, part } = arrival.diagnostic;
+    const annotationCheck =
+      kind === "profile" &&
+      (part === "annotation" || report?.context.root === "annotation");
+    const output = annotationCheck
+      ? result.annotation
+      : kind === "profile"
+        ? result.creationBody
+        : kind === "citation"
+          ? result.citation
+          : result.partial;
+    if (output === null) return;
+    if (
+      result.diagnostics.some((diagnostic) =>
+        annotationCheck
+          ? diagnostic.part === "annotation"
+          : diagnostic.part !== "annotation",
+      )
+    )
+      return;
+    const context = view.reportContext(
+      kind === "profile"
+        ? "note"
+        : kind === "citation"
+          ? "citation"
+          : view.partialContext,
+    );
+    if (
+      (report?.context.document !== undefined &&
+        report.context.document !== context.document) ||
+      (report?.context.selection !== undefined &&
+        report.context.selection !== context.selection) ||
+      (report?.context.root !== undefined &&
+        report.context.root !== context.root &&
+        !(
+          report.context.root === "annotation" && result.annotation !== null
+        )) ||
+      (report?.context.selection === undefined &&
+        report?.identity.snapshotRevision &&
+        report.identity.snapshotRevision !== result.snapshotRevision) ||
+      (report?.identity.annotationId !== undefined &&
+        report.identity.annotationId !== result.annotationId) ||
+      (annotationCheck && result.annotation === null)
+    )
+      return;
+    // The Problems area already holds the inspected report. A fresh applicable
+    // success clears its active failure while that report remains available.
+    setArrival(null);
+  }, [
+    arrival,
+    attempt,
+    busy,
+    stale,
+    result,
+    documentProblems.length,
+    view,
+    kind,
+  ]);
   const state = view.store.getState();
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
@@ -1913,6 +2207,58 @@ function EditorContent({
         : null,
     );
   }
+  /**
+   * The pane whose own region holds `from`, which is where a verified call is
+   * repaired. Advanced holds whatever no editing pane covers.
+   */
+  function sliceHolding(from: number): WorkbenchProblem["slice"] {
+    if (kind !== "profile") return "source";
+    for (const slice of ["note", "annotation", "filename"] as const) {
+      const region = controller.sliceRange(slice);
+      if (region.from <= from && from < region.to) return slice;
+    }
+    return "advanced";
+  }
+  /** The pane one selected problem is repaired in, whichever kind it is. */
+  function openDiagnosis(diagnosis: WorkbenchDiagnosis) {
+    if (diagnosis.kind === "document") {
+      openProblem(diagnosis.problem);
+      return;
+    }
+    const { part, position, callSite, sourceSite } = diagnosis.diagnostic;
+    // A verified call outranks the part the engine reported the failure under:
+    // a failure inside a called template is repaired where it was called.
+    if (callSite || sourceSite) {
+      const current = currentCallSite(diagnosis.diagnostic, controller);
+      if (current === undefined) {
+        new BaseNotice(m.workbench_problems_location_unknown());
+        return;
+      }
+      openProblem({ slice: sliceHolding(current.from), range: current });
+      return;
+    }
+    const slice: WorkbenchProblem["slice"] =
+      position === undefined
+        ? part === "annotation"
+          ? "annotation"
+          : kind === "profile"
+            ? "advanced"
+            : "source"
+        : `entry:${position}`;
+    const range = controller.sliceRange(slice);
+    openProblem({ slice, ...(range ? { range } : {}) });
+  }
+  /**
+   * Hands the reader the template back where they left it. The selection each
+   * pane reports as the reader moves through it is that place, so returning is
+   * revealing it again — with the caret and the focus that go with it.
+   */
+  function returnToTemplate(): void {
+    const target = view.insertTarget;
+    setReveal(
+      target ? { ...target.range, slice: target.slice } : { from: 0, to: 0 },
+    );
+  }
   const revealHandler = useRef(openProblem);
   revealHandler.current = openProblem;
   useEffect(
@@ -1922,8 +2268,11 @@ function EditorContent({
   const selection =
     (slice: WorkbenchInsertTarget["slice"]) => (range: WorkbenchSliceRange) =>
       onSelection({ slice, range });
-  return (
-    <div className="zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
+  const content = (
+    // The pane the source and the Problems area share. It measures itself, so
+    // whether a reading fits beside the source is the pane's own question
+    // rather than the window's.
+    <div className="zt:@container-[size]/workbench-editor zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
       {/* A Citation Template renders an example set, not the note of an Item,
           so its selection is the preview pane's own. */}
       {kind === "profile" && <EditorHeader view={view} />}
@@ -2119,6 +2468,18 @@ function EditorContent({
               tab="annotation"
               keepMounted={mountedTabs.has("annotation")}
             >
+              {formatProblem && (
+                <button
+                  type="button"
+                  {...resultPart("problem-open")}
+                  className={templateWorkbenchButton}
+                  onClick={() =>
+                    problems.select(renderDiagnosis(formatProblem).id)
+                  }
+                >
+                  {m.workbench_problem_show()}
+                </button>
+              )}
               <AnnotationPane
                 controller={controller}
                 problem={
@@ -2160,11 +2521,35 @@ function EditorContent({
         )}
       </div>
       <ProblemsFooter
-        problem={problem}
-        onOpen={openProblem}
-        onAction={() => void view.unpackBundledPartials()}
+        problems={problems}
+        onOpen={openDiagnosis}
+        onReturn={returnToTemplate}
       />
     </div>
+  );
+  return (
+    <WorkbenchDiagnosticsProvider
+      value={selectedDiagnoses}
+      onReveal={selectProblem}
+    >
+      {content}
+    </WorkbenchDiagnosticsProvider>
+  );
+}
+
+/**
+ * What every linked preview has found, so the editor's Problems area explains
+ * a Note render failure the reader saw in another pane.
+ */
+function usePreviewProblems(
+  view: TemplateWorkbenchView,
+): readonly RenderDiagnostic[] {
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => view.subscribePreviewProblems(listener),
+      [view],
+    ),
+    useCallback(() => view.previewProblems, [view]),
   );
 }
 

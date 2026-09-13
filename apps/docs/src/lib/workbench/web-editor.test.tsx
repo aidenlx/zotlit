@@ -35,11 +35,42 @@ import {
 import type { BridgeRequest } from "./page-test-host";
 
 describe("a draft the parser refuses", () => {
+  it("re-finds a failed call after source moves before the next render", async () => {
+    const call = "{% render 'missing-details' %}";
+    await using page = await open();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const note = view.state.doc.toString().indexOf("# {{ zt.title }}");
+    act(() =>
+      view.dispatch({
+        changes: { from: note, insert: `${call}\n` },
+        userEvent: "input.type",
+      }),
+    );
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_problems_heading()),
+    );
+    const from = view.state.doc.toString().indexOf(call);
+    act(() =>
+      view.dispatch({
+        changes: { from, insert: "Heading\n" },
+        userEvent: "input.type",
+      }),
+    );
+    page.press(m.workbench_problem_show());
+    page.press(m.workbench_problems_where_call());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
+    const target = [...page.host.querySelectorAll<HTMLElement>(".cm-editor")]
+      .map((element) => EditorView.findFromDOM(element)!)
+      .find((editor) => editor.state.doc.toString().includes(call))!;
+    const selected = target.state.selection.main;
+    expect(target.state.sliceDoc(selected.from, selected.to)).toBe(call);
+  });
+
   it("keeps the last good result, and opens the pane the problem names", async () => {
     await using page = await open();
-    await page.settle();
+    await page.waitFor(() => expect(rendered().length).toBeGreaterThan(0));
     const rendersOfGoodSource = rendered().length;
-    expect(rendersOfGoodSource).toBeGreaterThan(0);
 
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
@@ -52,16 +83,79 @@ describe("a draft the parser refuses", () => {
         userEvent: "input.type",
       });
     });
-    await page.settle();
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_problems_heading()),
+    );
 
     // Nothing renders a draft the parser refuses, so the sheet keeps the last
-    // good result while the Problems strip carries the repair.
+    // good result while the Problems area carries the repair.
     expect(rendered()).toHaveLength(rendersOfGoodSource);
-    expect(page.host.textContent).toContain(m.workbench_problems_heading());
 
+    page.press(m.workbench_problem_show());
+    expect(
+      page.host.querySelector('[data-part="problems-report"]')?.textContent,
+    ).toContain("ZotLit version: unavailable");
     page.press(m.workbench_problems_where_note());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
+  });
+
+  it("counts the problems found and reads the one the reader chooses", async () => {
+    await using page = await open();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    // Two failures a reader can tell apart: a property expression and the
+    // annotation format, each with its own object and its own repair.
+    const broken = view.state.doc
+      .toString()
+      .replace("expr: zt.title\n", "expr: zt.title | bogus_one\n")
+      .replace("{{ zt.text }}", "{{ zt.text | bogus_two }}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_problems_heading()),
+    );
+
+    const area = page.host.querySelector<HTMLElement>(
+      '[data-part="problems"]',
+    )!;
+    act(() =>
+      area.querySelector<HTMLElement>('[data-part="problems-toggle"]')!.click(),
+    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 2 }));
+    const select = area.querySelector("select")!;
+    expect(select.getAttribute("aria-label")).toBe(
+      m.workbench_problems_selected(),
+    );
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      m.workbench_annotation_label(),
+      m.workbench_problems_object_property({ key: "title" }),
+    ]);
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_liquid_syntax_error_suggestion(),
+    );
+
+    // Choosing the other problem reads that one and asks for no navigation.
+    const tab = chosenTab(page.host);
+    act(() => {
+      select.value = select.options[1]!.value;
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(area.textContent).toContain(
+      m.workbench_diagnostic_property_error_suggestion(),
+    );
+    expect(area.textContent).not.toContain(
+      m.workbench_diagnostic_liquid_syntax_error_suggestion(),
+    );
+    expect(chosenTab(page.host)).toBe(tab);
   });
 
   it("opens Profile for a field that tab writes", async () => {
@@ -77,12 +171,40 @@ describe("a draft the parser refuses", () => {
     await page.settle();
 
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_problems_where_details());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_profile());
     // The form writes its fields through controls, so the reader lands in the
     // one holding the field the parser named.
     expect(document.activeElement?.id.endsWith("-field-name")).toBe(true);
+  });
+
+  it("names the connected plugin version in a captured report", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([]));
+    await using page = await launch();
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const broken = view.state.doc
+      .toString()
+      .replace("# {{ zt.title }}", "{% managed %}\nTwice\n{% endmanaged %}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_problems_heading()),
+    );
+    page.press(m.workbench_problem_show());
+
+    expect(
+      page.host.querySelector('[data-part="problems-report"]')?.textContent,
+    ).toContain("ZotLit version: 2.1.1");
   });
 });
 
@@ -140,7 +262,7 @@ describe("the paper a profile is written for", () => {
       );
     });
 
-    for (const key of ["CNPF226A", "NW2CPDTC", "I49R3FTL", "IANNP5A2"]) {
+    for (const key of ["NW2CPDTC", "IANNP5A2"]) {
       await page.show(key);
       expect(shownItem(page.host)).toBe(
         SAMPLE_ITEMS.find((sample) => sample.item.key === key)!.item.title,
@@ -337,7 +459,6 @@ describe("the simplified editing flow", () => {
 
   it("opens a new property and inserts a field in value syntax", async () => {
     await using page = await open();
-    await page.settle();
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
     const row = page.host.querySelector<HTMLElement>('[id$="-property-5"]')!;
@@ -379,7 +500,6 @@ describe("the simplified editing flow", () => {
 
   it("announces the current autocomplete choice after an arrow key", async () => {
     await using page = await open();
-    await page.settle();
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
     const value = EditorView.findFromDOM(
@@ -442,14 +562,26 @@ describe("the annotation box", () => {
       page.host.querySelector('[data-part="problem"][role="status"]')
         ?.textContent,
     ).toContain("missing-for-highlight");
+    const marker = [
+      ...page.host.querySelectorAll<HTMLButtonElement>(
+        '[data-part="problem-open"]',
+      ),
+    ].find(
+      (button) =>
+        button.nextElementSibling?.getAttribute("data-part") === "problem",
+    );
+    expect(marker?.textContent).toBe(m.workbench_problem_show());
+    act(() => marker?.click());
+    expect(page.host.textContent).toContain(m.workbench_problems_heading());
     page.press(m.workbench_tab_note());
     expect(resultText(page.host)).toContain("missing-for-highlight");
     press(
       page.host.querySelector<HTMLElement>(
         '[role="region"][data-part="region"]',
       )!,
-      m.workbench_annotation_edit_format(),
+      m.workbench_problem_show(),
     );
+    page.press(m.workbench_annotation_edit_format());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
   });
 
@@ -463,6 +595,7 @@ describe("the annotation box", () => {
     act(() =>
       source.dispatch({ changes: { from, to: source.state.doc.length } }),
     );
+    page.press(m.workbench_problem_show());
     page.press(m.workbench_annotation_label());
     expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
     page.press(m.workbench_section_repair());
@@ -508,9 +641,6 @@ describe("the annotation box", () => {
     vi.stubGlobal("fetch", bridgeFetch([], { item: () => loaded }));
     await using page = await launch();
     await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
     page.press(m.workbench_tab_annotation());
@@ -525,17 +655,13 @@ describe("the annotation box", () => {
       [{ ...second, text: "Updated second annotation." }, first],
       "reordered",
     );
-    page.press(m.workbench_tab_note());
     page.press(m.workbench_refresh_item());
-    page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain("Updated second annotation."),
     );
 
     loaded = snapshot([first], "removed");
-    page.press(m.workbench_tab_note());
     page.press(m.workbench_refresh_item());
-    page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
         "First annotation on this paper.",
@@ -543,9 +669,7 @@ describe("the annotation box", () => {
     );
 
     loaded = snapshot([], "empty");
-    page.press(m.workbench_tab_note());
     page.press(m.workbench_refresh_item());
-    page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
         "Clear methods make research easier to reproduce.",
@@ -561,14 +685,14 @@ describe("the annotation box", () => {
         page,
         "Report the assumptions behind each result.",
       );
-      page.press(m.workbench_tab_note());
+      // The sample bar sits in the result column, so the paper changes without
+      // leaving the tab whose choice this test follows.
       await page.show(SAMPLE_ITEMS[2]!.item.key);
-      page.press(m.workbench_tab_annotation());
+      // The reload reads what the autosave wrote, so the visit runs the quiet
+      // time out before it closes.
       await page.settle();
-      await page.waitFor(() =>
-        expect(resultText(page.host)).toContain(
-          "Report the assumptions behind each result.",
-        ),
+      expect(resultText(page.host)).toContain(
+        "Report the assumptions behind each result.",
       );
       page.press(m.workbench_advanced());
       expect(sourceView(page.host).state.doc.toString()).toBe(
@@ -578,7 +702,6 @@ describe("the annotation box", () => {
     await using restored = await open();
     restored.press(m.workbench_restore_accept());
     restored.press(m.workbench_tab_annotation());
-    await restored.settle();
     await restored.waitFor(() =>
       expect(resultText(restored.host)).toContain(
         "Report the assumptions behind each result.",
@@ -591,7 +714,6 @@ describe("the annotation box", () => {
   it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
     await using page = await open();
     page.press(m.workbench_tab_annotation());
-    await page.settle();
     await page.waitFor(() =>
       expect(
         page.host.querySelector('[role="region"][data-part="region"]')

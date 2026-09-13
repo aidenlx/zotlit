@@ -26,6 +26,9 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
+import { renderFailureDiagnostic } from "./attribution";
+import type { RenderCallerSource } from "./attribution";
+import { engineEvidence } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
@@ -65,18 +68,38 @@ export type {
   PartialPreviewSelection,
 } from "./partial-preview";
 export {
+  captureProblemReport,
+  captureRenderReport,
+  engineEvidence,
+  formatRenderReport,
+  REPORT_UNAVAILABLE,
+} from "./report";
+export type {
+  EngineEvidence,
+  RenderReport,
+  WorkbenchReportContext,
+} from "./report";
+export {
   emptyRender,
   failedRender,
+  renderFailed,
+  retainOutputs,
   templateSourceRevision,
   renderIdentity,
 } from "./result";
 export type {
   TemplateRenderResult,
+  RenderCaller,
   RenderDiagnostic,
+  RenderDiagnosticCode,
   RenderedProperty,
   RenderedRange,
+  RenderEngineLocation,
   RenderIdentity,
 } from "./result";
+export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
+export { currentCallSite } from "./locate";
+export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
 export { SAMPLE_ANNOTATIONS } from "./sample-annotations";
@@ -111,6 +134,7 @@ export function renderProfile(
     return failedRender(identity, {
       code: "invalid-profile",
       message: errorMessage(error),
+      evidence: engineEvidence(error),
       part: "profile",
     });
   }
@@ -138,6 +162,14 @@ export function renderProfile(
       })),
     ...citationStyleDiagnostics(resources?.citationStyle),
   ];
+  // The draft this render reads, which a repair location is an offset into:
+  // both hosts name the partial the engine could not resolve and the call to
+  // repair it at, rather than leaving the web with the engine's bare words.
+  const caller: RenderCallerSource = {
+    source,
+    profileId: document.manifest.id,
+    language: document.manifest.language ?? "liquid",
+  };
   let preview: string | null = null;
   let annotationCitation: string | null = null;
   let formatFailure: RenderDiagnostic | null = null;
@@ -171,7 +203,7 @@ export function renderProfile(
     // The format is rendered on its own first, so a failure inside it is named
     // as the format's and a host can show it where the format is edited. The
     // note goes on rendering: one that never calls the format keeps its
-    // preview, and one that does fails on the same fault, reported once.
+    // preview, and one that does retains its own occurrence of the fault.
     try {
       const selected = example
         ? withRenderedCitation(
@@ -190,8 +222,8 @@ export function renderProfile(
     } catch (error) {
       preview = null;
       formatFailure = {
-        code: "render-error",
-        message: errorMessage(error),
+        ...withCallIdentity(renderFailureDiagnostic(error, caller), caller),
+        evidence: engineEvidence(error),
         part: "annotation",
       };
     }
@@ -254,17 +286,10 @@ export function renderProfile(
     };
   } catch (error) {
     const failure = failedRender(identity, {
-      code: "render-error",
-      message: errorMessage(error),
+      ...withCallIdentity(renderFailureDiagnostic(error, caller), caller),
+      evidence: engineEvidence(error),
       part: isAnnotationError(error) ? "annotation" : "render",
     });
-    // Direct format renders use a profile-qualified name; note calls use the
-    // registered partial name. Match those names to report the same fault once.
-    const sameFormatFailure =
-      formatFailure?.message?.replace(
-        `file:${document.manifest.id}:annotation,`,
-        "file:annotation,",
-      ) === errorMessage(error);
     return {
       ...failure,
       annotation: preview,
@@ -272,10 +297,24 @@ export function renderProfile(
       diagnostics: [
         ...resourceDiagnostics,
         ...(formatFailure ? [formatFailure] : []),
-        ...(sameFormatFailure ? [] : failure.diagnostics),
+        ...failure.diagnostics,
       ],
     };
   }
+}
+
+/** Preserve which verified call failed without making its source offset an ID. */
+function withCallIdentity(
+  diagnostic: Omit<RenderDiagnostic, "part">,
+  caller: RenderCallerSource,
+): Omit<RenderDiagnostic, "part"> {
+  const site = diagnostic.callSite;
+  return site === undefined
+    ? diagnostic
+    : {
+        ...diagnostic,
+        callIdentity: caller.source.slice(site.from, site.to),
+      };
 }
 
 /** The Citation Template name an annotation's page-pinned citation renders through. */
@@ -434,6 +473,7 @@ function evaluateFrontmatter(
     ...errors.map(({ key, position, error }) => ({
       code: "property-error" as const,
       message: errorMessage(error),
+      evidence: engineEvidence(error),
       params: { key },
       part: "properties" as const,
       position,

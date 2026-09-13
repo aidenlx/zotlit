@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { noteRegions, partialCalls } from "./regions";
+import { noteRegions, partialCalls, templateCalls } from "./regions";
 
 /** The whole body is the note, which is what a Profile without a manifest is. */
 function regions(body: string) {
@@ -146,6 +146,19 @@ describe("partialCalls", () => {
       .join("\n");
 
     expect(calls(body)).toEqual([]);
+  });
+
+  it("reads a reserved name as a call, which is where that render is repaired", () => {
+    const body = '{% render "citation" %}\n{% render "authors" %}';
+
+    expect(
+      templateCalls(body, { from: 0, to: body.length }).map(
+        ({ name, call }) => [name, body.slice(call.from, call.to)] as const,
+      ),
+    ).toEqual([
+      ["citation", '{% render "citation" %}'],
+      ["authors", '{% render "authors" %}'],
+    ]);
   });
 
   it("summarizes what a call passes after the name", () => {

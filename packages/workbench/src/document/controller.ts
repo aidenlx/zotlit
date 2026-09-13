@@ -122,6 +122,8 @@ export interface WorkbenchProblem {
   readonly code: WorkbenchProblemCode;
   /** The values a host's own message for `code` reads. */
   readonly params?: Readonly<Record<string, string>>;
+  /** The parser exception that supplied this validation problem, when one exists. */
+  readonly error?: Error;
   /** Where the reader repairs it. */
   readonly slice: WorkbenchSliceId;
   /** The responsible text in master offsets, when the check can name it. */
@@ -909,6 +911,7 @@ export class WorkbenchDocumentController {
       this.#problems = [
         {
           code: error.code,
+          error,
           ...(error.manifestPath
             ? { params: { field: error.manifestPath.join(".") } }
             : {}),
@@ -954,6 +957,7 @@ export class WorkbenchDocumentController {
       this.#problems = [
         {
           code: error.code,
+          error,
           slice: "source",
           range: this.#lineAround(error.offset),
         },

@@ -45,9 +45,18 @@ describe("missingPartialNotice", () => {
     );
 
     (button as ButtonComponent).click();
+    // The route carries the refusal itself, so the Workbench explains this
+    // failure rather than whichever problem its own check happens to select.
     expect(trigger).toHaveBeenCalledExactlyOnceWith(
       "zotlit:open-template-workbench",
-      undefined,
+      expect.objectContaining({
+        problem: expect.objectContaining({
+          diagnostic: expect.objectContaining({
+            code: "missing-partial",
+            params: { name: "venue-line" },
+          }),
+        }),
+      }),
     );
   });
 
@@ -67,8 +76,54 @@ describe("missingPartialNotice", () => {
 
     expect(trigger).toHaveBeenCalledExactlyOnceWith(
       "zotlit:open-template-workbench",
-      "templates/zotlit-profile.reading.md",
+      {
+        document: "templates/zotlit-profile.reading.md",
+        problem: expect.objectContaining({
+          diagnostic: expect.objectContaining({
+            code: "missing-partial",
+            params: { name: "venue-line" },
+          }),
+        }),
+      },
     );
+  });
+
+  it("carries refused engine evidence in the Workbench arrival", () => {
+    const { app, trigger } = makeApp();
+    const error = new MissingPartialError(
+      "templates/zotlit-profile.reading.md",
+      "venue-line",
+      new Error("the note render refused this attempt"),
+    );
+
+    const fragment = missingPartialNotice(error, { app }) as DocumentFragment;
+    const [button] = controlsOf(
+      fragment.querySelector<HTMLElement>(".zt-notice-actions")!,
+    );
+    (button as ButtonComponent).click();
+
+    const request = trigger.mock.calls[0]?.[1] as {
+      problem: {
+        diagnostic: {
+          evidence?: { message?: string; causes?: readonly string[] };
+          report?: {
+            evidence?: { message?: string; causes?: readonly string[] };
+          };
+        };
+      };
+    };
+    expect(request.problem.diagnostic.evidence).toMatchObject({
+      message: 'Template "venue-line" not found',
+      causes: ["the note render refused this attempt"],
+    });
+    expect(request.problem.diagnostic.report).toMatchObject({
+      code: "missing-partial",
+      evidence: {
+        message: 'Template "venue-line" not found',
+        causes: ["the note render refused this attempt"],
+      },
+      context: { document: "templates/zotlit-profile.reading.md" },
+    });
   });
 
   it("returns undefined for every other failure, which the caller words itself", () => {

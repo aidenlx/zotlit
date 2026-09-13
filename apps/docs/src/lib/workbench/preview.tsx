@@ -1,16 +1,22 @@
 // The web Preview owns its display choices and render lifetime.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { RenderResources } from "@zotlit/workbench/render";
+import type {
+  RenderDiagnostic,
+  RenderResources,
+  WorkbenchReportContext,
+} from "@zotlit/workbench/render";
 import {
   AnnotationSampleBar,
   annotationSamples,
   createRenderScheduler,
   PreviewControls,
+  renderDiagnosis,
   ResultColumn,
+  usePublishedProblems,
   useRenderState,
   useWorkbenchHost,
 } from "@zotlit/workbench/ui";
@@ -35,6 +41,7 @@ interface PreviewState {
 
 export function WebPreview({
   source,
+  document,
   sample,
   resources,
   hold,
@@ -42,21 +49,29 @@ export function WebPreview({
   sampleBar,
   annotationChoice,
   onAnnotationChoice,
-  openAnnotation,
-  goToEntry,
-  openSource,
+  onShowProblem,
+  publishProblems,
+  reportContext,
 }: {
   source: string;
+  /** The Template Document this preview reads, which its retained output belongs to. */
+  document: string;
   sample: SampleItem;
   resources: RenderResources | undefined;
-  hold: boolean;
+  hold: boolean | "invalid";
   mode: ResultColumnProps["mode"];
   sampleBar: ReactNode;
   annotationChoice: string;
   onAnnotationChoice: (choice: string) => void;
-  openAnnotation: () => void;
-  goToEntry: (position: number) => void;
-  openSource: () => void;
+  /**
+   * Reads one problem in the editor's Problems area; a null id opens the area
+   * on whatever the editor's own checks found.
+   */
+  onShowProblem: (id: string | null) => void;
+  /** Hands what this render found to the editor that explains it. */
+  publishProblems: (diagnostics: readonly RenderDiagnostic[]) => void;
+  /** What names this preview in the report a failed attempt is copied as. */
+  reportContext: () => WorkbenchReportContext;
 }) {
   const host = useWorkbenchHost();
   const [store] = useState(() =>
@@ -90,11 +105,14 @@ export function WebPreview({
     onAnnotationChoice,
   ]);
   const [scheduler, setScheduler] = useState<RenderScheduler | null>(null);
+  const named = useRef(reportContext);
+  named.current = reportContext;
   useEffect(() => {
     const owner = createRenderScheduler({
       input: { source: "", snapshot: null, mode: "create", live: true },
       render: (request) => host.render(request),
       failed: (result) => result,
+      reportContext: () => named.current(),
     });
     setScheduler(owner);
     return () => owner[Symbol.dispose]();
@@ -102,6 +120,7 @@ export function WebPreview({
   useEffect(() => {
     scheduler?.setInput({
       source,
+      document,
       snapshot: sample,
       annotation: example,
       resources,
@@ -112,6 +131,7 @@ export function WebPreview({
   }, [
     scheduler,
     source,
+    document,
     sample,
     example,
     resources,
@@ -119,7 +139,17 @@ export function WebPreview({
     state.mode,
     state.live,
   ]);
-  const { result, busy, stale, staleReason } = useRenderState(scheduler);
+  const { result, retained, busy, stale, staleReason, trigger, attempt } =
+    useRenderState(scheduler);
+  // The editor owns the explanation, so this preview publishes what its render
+  // found and takes it back when it closes.
+  usePublishedProblems({
+    result,
+    trigger,
+    attempt,
+    publish: publishProblems,
+    showProblem: onShowProblem,
+  });
   const annotationResult =
     result?.annotationId === example.id &&
     result.annotationRevision === example.revision
@@ -144,12 +174,13 @@ export function WebPreview({
         preview={{ mode: state.mode, live: state.live }}
         onChange={(next) => store.setState(next)}
         busy={busy}
-        disabled={hold || scheduler === null}
+        disabled={hold !== false || scheduler === null}
         onRun={() => scheduler?.run()}
       />
       <ResultColumn
         result={result}
         annotationResult={annotationResult}
+        retained={retained}
         mode={mode}
         stale={stale}
         staleReason={staleReason}
@@ -157,9 +188,11 @@ export function WebPreview({
         onShowMarkdown={(showMarkdown) => store.setState({ showMarkdown })}
         showManaged={state.showManaged}
         onShowManaged={(showManaged) => store.setState({ showManaged })}
-        openAnnotation={openAnnotation}
-        goToEntry={goToEntry}
-        openSource={openSource}
+        onShowProblem={(diagnostic) =>
+          onShowProblem(
+            diagnostic === null ? null : renderDiagnosis(diagnostic).id,
+          )
+        }
         help={
           <WorkbenchHelp title={m.workbench_result_heading()}>
             {mode === "annotation"

@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
 
+import { testDefaults } from "@zotlit/config/vitest";
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -7,6 +9,7 @@ export default defineConfig({
     },
   },
   test: {
+    ...testDefaults,
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "node",
   },

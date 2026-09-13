@@ -9,7 +9,7 @@ import type {
 } from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
-import { MissingTemplateError } from "@zotlit/templates/facade";
+import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
 import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
@@ -17,14 +17,18 @@ import { restoreTemplateData } from "@zotlit/workbench/render";
 import {
   citationExampleData,
   emptyRender,
+  engineEvidence,
   failedRender,
+  renderFailureDiagnostic,
   renderIdentity,
+  retainOutputs,
   sampleItemCitation,
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import type {
   PartialContext,
   PartialPreviewSelection,
+  RenderCallerSource,
   TemplateRenderResult,
   RenderRequest,
   RenderDiagnostic,
@@ -77,8 +81,31 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
 }
 export interface NativeRenderResult extends TemplateRenderResult {
   readonly sourcePath: string;
+  /** A retained Annotation can come from a different note path than the body. */
+  readonly annotationSourcePath?: string;
   readonly citations: readonly PreviewCitation[];
   readonly annotationCitations: readonly PreviewCitation[];
+}
+
+/** Retain each preview's paths and citation spans with its rendered output. */
+export function retainNativeOutputs(
+  kept: NativeRenderResult,
+  result: NativeRenderResult,
+): NativeRenderResult {
+  const retained = retainOutputs(kept, result);
+  if (retained === result) return result;
+  const note =
+    result.creationBody === null && kept.creationBody !== null ? kept : result;
+  const annotation =
+    result.annotation === null && kept.annotation !== null ? kept : result;
+  return {
+    ...retained,
+    sourcePath: note.sourcePath,
+    citations: note.citations,
+    annotationSourcePath:
+      annotation.annotationSourcePath ?? annotation.sourcePath,
+    annotationCitations: annotation.annotationCitations,
+  };
 }
 
 /** A result composed outside this renderer, in the shape the preview reads. */
@@ -135,7 +162,12 @@ async function renderNativePartial(
       }),
     };
   } catch (error) {
-    return nativeResult(failedRender(identity, renderFault(error, "render")));
+    return nativeResult(
+      failedRender(
+        identity,
+        renderFault(error, "render", callerSource(deps, request.source)),
+      ),
+    );
   }
 }
 
@@ -145,8 +177,8 @@ async function renderNativePartial(
  * draft in the editor. This is what one Partial Placeholder's preview shows,
  * so the reader sees the partial their call actually renders.
  *
- * @throws whatever the render raises, a {@link MissingTemplateError} for a
- *   partial the vault holds no document for included.
+ * @throws whatever the render raises, a `MissingTemplateError` for a partial
+ *   the vault holds no document for included.
  */
 export async function renderRegisteredPartial(
   deps: NativeRenderDeps,
@@ -317,7 +349,12 @@ async function renderNativeCitation(
       citation: deps.templates.renderCitationSource(request.source, data.data),
     };
   } catch (error) {
-    return nativeResult(failedRender(identity, renderFault(error, "render")));
+    return nativeResult(
+      failedRender(
+        identity,
+        renderFault(error, "render", callerSource(deps, request.source)),
+      ),
+    );
   }
 }
 
@@ -459,6 +496,7 @@ export async function renderNativeProfile(
           position: error.position,
           params: { key: error.key },
           message: errorText(error.error),
+          evidence: engineEvidence(error.error),
         });
     manifest.frontmatter?.forEach((entry, index) => {
       if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
@@ -538,7 +576,9 @@ export async function renderNativeProfile(
             ? root.citation
             : null;
       } catch (error) {
-        diagnostics.push(renderFault(error, "annotation"));
+        diagnostics.push(
+          renderFault(error, "annotation", callerSource(deps, request.source)),
+        );
       }
     }
     const annotationRanges: { from: number; to: number }[] = [];
@@ -622,7 +662,10 @@ export async function renderNativeProfile(
     };
   } catch (error) {
     return {
-      ...failedRender(identity, renderFault(error, "render")),
+      ...failedRender(
+        identity,
+        renderFault(error, "render", callerSource(deps, request.source)),
+      ),
       sourcePath,
       citations: [],
       annotationCitations: [],
@@ -635,17 +678,56 @@ function errorText(error: unknown): string {
 }
 
 /**
- * The diagnostic one render failure reads as. A call to a Shared Partial the
- * vault holds no document for is the engine's own missing-partial report,
- * which the Partial Placeholder, the Problems strip, and a refused Literature
- * Note all read by code; every other failure carries the engine's own words.
- * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
+ * The diagnostic one render failure reads as, attributed against the draft the
+ * render read: what the engine reported, whose call reached it, and the one
+ * call a reader repairs it at.
+ * @see packages/workbench/src/render/attribution.ts renderFailureDiagnostic
  */
 function renderFault(
   error: unknown,
   part: RenderDiagnostic["part"],
+  caller: RenderCallerSource,
 ): RenderDiagnostic {
-  return error instanceof MissingTemplateError
-    ? { code: "missing-partial", params: { name: error.templateName }, part }
-    : { code: "render-error", message: errorText(error), part };
+  // The engine's own account is taken here, where the error is still whole:
+  // below this line the failure is a code and a message, and a reader who
+  // copies the report would otherwise get neither the stack nor the excerpt.
+  const evidence = engineEvidence(error);
+  const diagnostic = renderFailureDiagnostic(error, caller);
+  return {
+    ...diagnostic,
+    evidence,
+    part: diagnostic.engine?.template === "annotation" ? "annotation" : part,
+  };
+}
+
+/**
+ * The draft one render read, in the form a repair location is an offset into.
+ * The language decides the call form the scan reads; Liquid stands in for a
+ * draft no parser could read, which is the language every default document is
+ * written in.
+ */
+function callerSource(
+  deps: NativeRenderDeps,
+  source: string,
+): RenderCallerSource {
+  try {
+    const { manifest } =
+      deps.templates.prepareLiteratureNoteTemplateSource(source);
+    return {
+      source,
+      language: manifest.language ?? "liquid",
+      profileId: manifest.id,
+    };
+  } catch {
+    // Plain templates declare their language independently of a Profile.
+  }
+  try {
+    return {
+      source,
+      language:
+        parsePlainTemplateDocument(source).manifest.language ?? "liquid",
+    };
+  } catch {
+    return { source, language: "liquid" };
+  }
 }

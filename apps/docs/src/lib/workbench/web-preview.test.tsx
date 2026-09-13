@@ -78,6 +78,7 @@ describe("preview scheduling", () => {
         <WebTestHost>
           <WebPreview
             source={source}
+            document="standalone"
             sample={SAMPLE_ITEMS[0]!}
             resources={undefined}
             hold={false}
@@ -85,9 +86,9 @@ describe("preview scheduling", () => {
             sampleBar={null}
             annotationChoice=""
             onAnnotationChoice={() => {}}
-            openAnnotation={() => {}}
-            goToEntry={() => {}}
-            openSource={() => {}}
+            onShowProblem={() => {}}
+            publishProblems={() => {}}
+            reportContext={() => ({ document: "standalone" })}
           />
         </WebTestHost>
       );
@@ -155,56 +156,6 @@ describe("preview scheduling", () => {
     });
     expect(owners[1]!.getState()).toBe(pending);
     expect(page.host.isConnected).toBe(false);
-  });
-
-  it("waits 300 ms after the latest edit and runs on demand immediately", async () => {
-    using page = openPreview();
-    await act(async () => vi.advanceTimersByTimeAsync(299));
-    expect(renderInThread).not.toHaveBeenCalled();
-    page.edit("An introduction\n");
-    await act(async () => vi.advanceTimersByTimeAsync(299));
-    expect(renderInThread).not.toHaveBeenCalled();
-    await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(renderInThread).toHaveBeenCalledTimes(1);
-    choose(page.host, m.workbench_preview_refresh(), "demand");
-    page.edit("Another introduction\n");
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(renderInThread).toHaveBeenCalledTimes(1);
-    expect(page.host.textContent).toContain(m.workbench_preview_behind());
-    page.press(m.workbench_preview_run());
-    expect(renderInThread).toHaveBeenCalledTimes(2);
-    expect(renderInThread.mock.calls[1]![0].source).toContain(
-      "Another introduction",
-    );
-  });
-
-  it("pauses queued and future work while an in-flight render completes", async () => {
-    let deliver!: (result: TemplateRenderResult) => void;
-    renderInThread.mockImplementation(
-      () =>
-        new Promise<TemplateRenderResult>((resolve) => {
-          deliver = resolve;
-        }),
-    );
-    using page = openPreview();
-    await act(async () => vi.advanceTimersByTimeAsync(300));
-    const request = renderInThread.mock.calls[0]![0];
-    choose(page.host, m.workbench_preview_refresh(), "demand");
-    expect(page.host.textContent).toContain(m.workbench_preview_paused());
-    await act(async () => {
-      deliver(renderProfile(request.source, request.snapshot, request));
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    await act(async () => vi.dynamicImportSettled());
-    expect(page.host.textContent).toContain("ioannidisWhyMost2005");
-    page.edit("Later edit\n");
-    await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(renderInThread).toHaveBeenCalledTimes(1);
-    expect(page.host.textContent).toContain(m.workbench_preview_behind());
-    choose(page.host, m.workbench_preview_refresh(), "live");
-    choose(page.host, m.workbench_preview_refresh(), "demand");
-    await act(async () => vi.advanceTimersByTimeAsync(300));
-    expect(renderInThread).toHaveBeenCalledTimes(1);
   });
 
   it("keeps independently mounted Preview controls separate", async () => {

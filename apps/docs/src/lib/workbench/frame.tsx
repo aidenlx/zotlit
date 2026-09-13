@@ -59,8 +59,8 @@ export function WorkbenchFrame({
   onView,
   fields,
   editor,
+  problems,
   result,
-  footer,
   busy = false,
   children,
 }: {
@@ -80,9 +80,9 @@ export function WorkbenchFrame({
   onView?: (view: WorkbenchView) => void;
   fields: ReactNode;
   editor: ReactNode;
+  /** The Problems area, which shares the editor pane with the source. */
+  problems?: ReactNode;
   result: ReactNode;
-  /** The strip under the grid. */
-  footer?: ReactNode;
   /** Whether the page is still filling in. */
   busy?: boolean;
   /** Hidden helpers: the file input and the dialogs. */
@@ -153,11 +153,15 @@ export function WorkbenchFrame({
           {fields}
         </div>
 
+        {/* The pane the source and the Problems area share. It measures
+            itself, so whether a reading fits beside the source is the pane's
+            own question rather than the window's. */}
         <section
           id="workbench-edit-pane"
-          className={paneClass(view === "edit")}
+          className={`@container-[size]/workbench-editor ${paneClass(view === "edit")}`}
         >
           {editor}
+          {problems}
         </section>
 
         <section
@@ -172,7 +176,6 @@ export function WorkbenchFrame({
         className="sticky bottom-0 z-20 shrink-0 border-t border-fd-border bg-fd-background"
       >
         <div className="max-h-[min(12rem,30dvh)] overflow-y-auto overscroll-contain">
-          {footer}
           {notifications}
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-1">

@@ -70,8 +70,8 @@ and gains only the corrected stale wording.
   sentence is chosen by reason, on both hosts.
 - The Obsidian mock records disabled menu items and stamps `data-icon`, so
   pane tests drive the pane menu and header actions rather than selects.
-- WORKBENCH-DESIGN.md records the resulting rules under Obsidian panes, and
-  names "Select stack", "Setting as status", and "Card in a pane" as
-  patterns to avoid.
+- WORKBENCH-DESIGN.md records the resulting rules under "Native chrome
+  carries rare choices", and names "Select stack", "Setting as status", and
+  "Card in a pane" as recognizable design failures.
 - The web Workbench still shows "Live preview paused" in its own controls
   beside the new notice; retiring it is a web-side follow-up.
