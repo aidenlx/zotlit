@@ -56,6 +56,8 @@ import {
   diagnosticText,
   fieldSnippet,
   problemText,
+  renderDiagnosis,
+  useParts,
   useWorkbenchProblems,
   workbenchDiagnoses,
   AnnotationPane,
@@ -258,8 +260,11 @@ export function Workbench() {
       language: controller.language,
       root,
       selection: sample.item.indexedKey,
+      ...(connection.state === "connected"
+        ? { zotlitVersion: connection.pluginVersion }
+        : {}),
     }),
-    [drafts.location.reference, controller, sample],
+    [connection, drafts.location.reference, controller, sample],
   );
   named.current = () => reportContext("note");
 
@@ -1160,15 +1165,25 @@ export function Workbench() {
                       vocabularyRevision={sample.revision}
                     />
                   ) : tab === "annotation" ? (
-                    <AnnotationPane
-                      controller={controller}
-                      reveal={reveal}
-                      suggest={suggest}
-                      problem={
-                        formatProblem ? diagnosticText(m, formatProblem) : null
-                      }
-                      onSelection={trackSelection}
-                    />
+                    <>
+                      {formatProblem && (
+                        <AnnotationProblemMarker
+                          diagnostic={formatProblem}
+                          onShow={showProblem}
+                        />
+                      )}
+                      <AnnotationPane
+                        controller={controller}
+                        reveal={reveal}
+                        suggest={suggest}
+                        problem={
+                          formatProblem
+                            ? diagnosticText(m, formatProblem)
+                            : null
+                        }
+                        onSelection={trackSelection}
+                      />
+                    </>
                   ) : tab === "properties" ? (
                     <>
                       {entries === null ? (
@@ -1284,5 +1299,24 @@ export function Workbench() {
     <WorkbenchThemeProvider theme={WEB_THEME}>
       <WorkbenchHostProvider host={host}>{page}</WorkbenchHostProvider>
     </WorkbenchThemeProvider>
+  );
+}
+
+function AnnotationProblemMarker({
+  diagnostic,
+  onShow,
+}: {
+  diagnostic: RenderDiagnostic;
+  onShow: (id: string) => void;
+}) {
+  const part = useParts("resultColumn");
+  return (
+    <button
+      type="button"
+      {...part("problem-open")}
+      onClick={() => onShow(renderDiagnosis(diagnostic).id)}
+    >
+      {m.workbench_problem_show()}
+    </button>
   );
 }

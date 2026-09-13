@@ -6,6 +6,10 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey } from "@zotlit/db";
+import {
+  parsePlainTemplateDocument,
+  TemplateFacade,
+} from "@zotlit/templates/facade";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
@@ -1179,6 +1183,31 @@ Annotation`,
     expect(test.editor.store.getState().presentation.reveal).toEqual(at);
   });
 
+  it("offers an Annotation failure marker that selects its problem", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace("value: [review]", 'value: ["review"]').replace(
+        "{{ zt.text }}",
+        "{{ zt.text | bogus_filter }}",
+      ),
+    );
+    await act(async () => test.editor.store.getState().setTab("annotation"));
+
+    const marker = test.editor.contentEl.querySelector<HTMLButtonElement>(
+      '[data-part="problem-open"]',
+    );
+    expect(marker?.textContent).toBe(m.workbench_problem_show());
+    await act(async () => marker?.click());
+    expect(problemsArea(test.editor).textContent).toContain(
+      m.workbench_diagnostic_render_error_suggestion(),
+    );
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_problem(),
+    );
+  });
+
   it("opens the property row a failed managed field came from", async () => {
     await using test = await setup();
     vi.useFakeTimers();
@@ -1344,6 +1373,44 @@ Annotation`,
     expect(preview.contentEl.textContent).not.toContain("Personal space.");
   });
 
+  it("uses retained citation metadata when a later render fails", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const source = PROFILE_SOURCE.replace(
+      "value: [review]",
+      'value: ["review"]',
+    ).replace("Personal space.", "See [@figures2014].");
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    test.editor.setViewData(source, true);
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+    await act(async () => {});
+    expect(preview.contentEl.textContent).toContain("See [1].");
+
+    await act(async () =>
+      test.editor.setViewData(
+        source.replace(
+          "See [@figures2014].",
+          'See [@figures2014]. {% render "book-details" %}',
+        ),
+        false,
+      ),
+    );
+    await advance();
+
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_preview_retained(),
+    );
+    expect(preview.contentEl.textContent).toContain("See [1].");
+    expect(preview.contentEl.textContent).not.toContain("[@figures2014]");
+  });
+
   it("copies the engine evidence from the failed attempt, and keeps it through a repair", async () => {
     const copied = stubClipboard();
     // The fixture's own manifest carries a value the rows cannot parse, which
@@ -1495,6 +1562,55 @@ Annotation`,
 
     expect(reportFields(copied.at(-1)!)["Selection"]).toContain(
       "item=MAIN2345",
+    );
+  });
+
+  it("selects and copies the occurrence requested by a second Preview", async () => {
+    const copied = stubClipboard();
+    const source = PROFILE_SOURCE.replace(
+      "value: [review]",
+      'value: ["review"]',
+    );
+    const broken = source.replace(
+      "Personal space.",
+      '{% render "book-details" %}',
+    );
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const first = await test.open();
+    await advance();
+    first.leaf.pinned = true;
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "sample:book", title: "Thinking, fast and slow" }),
+    );
+    const second = await test.open();
+    await advance();
+    await act(async () => test.editor.setViewData(broken, false));
+    await advance();
+
+    await act(async () => previewButton(first, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    const report = () =>
+      area.querySelector<HTMLElement>('[data-part="problems-report"]')!
+        .textContent!;
+    expect(reportFields(report())["Selection"]).toContain("item=MAIN2345");
+
+    await act(async () => previewButton(second, m.workbench_problem_show()));
+    expect(reportFields(report())["Selection"]).toContain("item=sample:book");
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_copy()),
+    );
+    expect(reportFields(copied.at(-1)!)["Selection"]).toContain(
+      "item=sample:book",
     );
   });
 
@@ -2308,6 +2424,53 @@ language: liquid
     expect(preview.contentEl.textContent).toContain(
       "[|Use readable figures.|]",
     );
+  });
+
+  it("keeps Shared Partial engine location and caret evidence in its report", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const source = `---
+language: liquid
+---
+Before
+{% render "book-details" %}
+After
+`;
+    const file = test.fixture.vault.addFile(
+      "templates/zotlit-partial.authors.md",
+      source,
+    );
+    vi.spyOn(
+      test.fixture.deps.templates,
+      "renderPartialSource",
+    ).mockImplementation((rawSource, data, options) => {
+      const parsed = parsePlainTemplateDocument(rawSource);
+      return new TemplateFacade().render(options.name, data, {
+        source: parsed.source,
+        language: parsed.manifest.language,
+      });
+    });
+    test.editor.file = file;
+    test.editor.setViewData(source, true);
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    document.body.append(test.editor.contentEl);
+    await act(async () => test.editor.open());
+    const preview = await test.open();
+    await advance();
+
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const report = reportFields(
+      problemsArea(test.editor).querySelector<HTMLElement>(
+        '[data-part="problems-report"]',
+      )!.textContent!,
+    );
+    expect(report["Engine location"]).toMatch(/authors:\d+/);
+    expect(report["Source excerpt"]).toContain("^");
+    expect(report.Stack).toContain("Liquid");
   });
 
   it("re-renders an open Profile preview when a partial it calls is saved", async () => {

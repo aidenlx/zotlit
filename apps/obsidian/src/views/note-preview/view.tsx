@@ -116,6 +116,31 @@ function propertiesTabOpen(context: TemplateAuthoringContext | null): boolean {
   return context !== null && !context.advanced && context.tab === "properties";
 }
 
+/** Supplies the metadata for the output the retained preview is actually showing. */
+function nativeResultForMarkdown(
+  session: NativePreviewSession,
+  scheduler: RenderScheduler<NativeRenderResult>,
+  markdown: string,
+): NativeRenderResult | null {
+  const state = scheduler.getState();
+  const retained = state.retained;
+  if (retained === null) return state.result;
+  const context = session.state.getState().context;
+  const mode = context ? resultMode(context) : "note";
+  const output =
+    mode === "partial"
+      ? retained.partial
+      : mode === "citation"
+        ? retained.citation
+        : mode === "annotation"
+          ? retained.annotation
+          : retained.creationBody === markdown ||
+              retained.managedRegion === markdown
+            ? markdown
+            : null;
+  return output === markdown ? retained : state.result;
+}
+
 /** The host sheet, which opens its Properties block while the editor is on Properties. */
 function PreviewSheet({
   session,
@@ -462,7 +487,7 @@ export class NotePreviewView extends ItemView {
             {...props}
             app={this.app}
             session={session}
-            result={scheduler.getState().result}
+            result={nativeResultForMarkdown(session, scheduler, props.markdown)}
             onRendered={this.#rendered}
           />
         ),
@@ -1100,8 +1125,8 @@ export class NotePreviewView extends ItemView {
               publishProblems={(diagnostics) =>
                 this.#publishProblems(diagnostics)
               }
-              showProblem={(id, reveal) =>
-                this.#sourceEditor()?.showProblem(id, reveal)
+              showProblem={(id, reveal, occurrence) =>
+                this.#sourceEditor()?.showProblem(id, reveal, occurrence)
               }
             />
           </WorkbenchHostProvider>
@@ -1152,7 +1177,11 @@ function PreviewContent({
   /** Hands what this render found to the editor that explains it. */
   publishProblems: (diagnostics: readonly RenderDiagnostic[]) => void;
   /** Reads one problem in the editor's Problems area. */
-  showProblem: (id: string | null, reveal: boolean) => void;
+  showProblem: (
+    id: string | null,
+    reveal: boolean,
+    occurrence?: RenderDiagnostic,
+  ) => void;
 }) {
   const { result, retained, busy, stale, staleReason, trigger, attempt } =
     useRenderState(scheduler);
@@ -1327,6 +1356,7 @@ function PreviewContent({
               showProblem(
                 diagnostic === null ? null : renderDiagnosis(diagnostic).id,
                 true,
+                diagnostic ?? undefined,
               )
             }
             onRun={() => scheduler.run()}

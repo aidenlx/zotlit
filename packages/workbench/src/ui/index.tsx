@@ -52,6 +52,7 @@ export {
   documentDiagnosis,
   problemText,
   renderDiagnosis,
+  diagnosisForOccurrence,
   workbenchDiagnoses,
 } from "./problems";
 export type {

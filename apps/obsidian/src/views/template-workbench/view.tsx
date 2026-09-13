@@ -63,6 +63,7 @@ import {
   useWorkbenchHost,
   createWorkbenchEditor,
   BUILT_IN_BINDING_DEFAULTS,
+  diagnosisForOccurrence,
   NameFolderPane,
   NotePane,
   PropertiesPane,
@@ -70,6 +71,7 @@ import {
   problemText,
   useWorkbenchProblems,
   workbenchDiagnoses,
+  renderDiagnosis,
   SliceEditor,
   usePartialBoxes,
   TabBar,
@@ -81,6 +83,7 @@ import {
   WorkbenchThemeProvider,
   useDocumentRevision,
   useRenderState,
+  useParts,
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
 import type {
@@ -237,7 +240,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The flattened list, rebuilt only on publish so readers can compare it. */
   #previewProblemList: readonly RenderDiagnostic[] = [];
   readonly #previewProblemListeners = new Set<() => void>();
-  readonly #showProblemListeners = new Set<(id: string | null) => void>();
+  readonly #showProblemListeners = new Set<
+    (id: string | null, occurrence?: RenderDiagnostic) => void
+  >();
   /**
    * The captured failure a refused note operation asked this editor to explain.
    * Its report remains available even when this editor's own check differs.
@@ -642,13 +647,19 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * problem and a failed deliberate Run ask for. A null id opens the area on
    * whatever it already has selected.
    */
-  showProblem(id: string | null, reveal = true): void {
-    for (const listener of this.#showProblemListeners) listener(id);
+  showProblem(
+    id: string | null,
+    reveal = true,
+    occurrence?: RenderDiagnostic,
+  ): void {
+    for (const listener of this.#showProblemListeners) listener(id, occurrence);
     // A deliberate request brings this editor forward; a failed automatic or
     // Run attempt leaves the reader's pane where they put it.
     if (reveal) void this.app.workspace.revealLeaf(this.leaf);
   }
-  subscribeShowProblem(listener: (id: string | null) => void): () => void {
+  subscribeShowProblem(
+    listener: (id: string | null, occurrence?: RenderDiagnostic) => void,
+  ): () => void {
     this.#showProblemListeners.add(listener);
     return () => {
       this.#showProblemListeners.delete(listener);
@@ -1904,11 +1915,16 @@ function EditorContent({
 }) {
   const controller = view.controller;
   const host = useWorkbenchHost();
+  const resultPart = useParts("resultColumn");
   useDocumentRevision(controller);
   const { result, trigger, attempt } = useRenderState();
   const previewProblems = usePreviewProblems(view);
-  const formatProblem = result?.diagnostics.find(
-    ({ part }) => part === "annotation",
+  const formatProblem = [
+    ...(result?.diagnostics ?? []),
+    ...previewProblems,
+  ].find(
+    ({ part, engine }) =>
+      part === "annotation" || engine?.template === "annotation",
   );
   // A render reads the selected example, so the inline preview waits on a
   // choice rather than on a render while the reader has made none.
@@ -2010,8 +2026,17 @@ function EditorContent({
     ...previewProblems,
     ...(arrivalDiagnostic === undefined ? [] : [arrivalDiagnostic]),
   ]);
+  const [requestedOccurrence, setRequestedOccurrence] = useState<{
+    readonly id: string;
+    readonly occurrence: RenderDiagnostic;
+  } | null>(null);
+  const selectedDiagnoses = diagnoses.map((diagnosis) =>
+    requestedOccurrence?.id === diagnosis.id
+      ? diagnosisForOccurrence(diagnosis, requestedOccurrence.occurrence)
+      : diagnosis,
+  );
   const problems = useWorkbenchProblems({
-    diagnoses,
+    diagnoses: selectedDiagnoses,
     trigger,
     attempt,
     // A parser problem never reached a render, so the area captures its report
@@ -2026,9 +2051,17 @@ function EditorContent({
   const openProblems = problems.setOpen;
   useEffect(
     () =>
-      view.subscribeShowProblem((id) =>
-        id === null ? openProblems(true) : selectProblem(id),
-      ),
+      view.subscribeShowProblem((id, occurrence) => {
+        if (id === null) {
+          setRequestedOccurrence(null);
+          openProblems(true);
+        } else {
+          setRequestedOccurrence(
+            occurrence === undefined ? null : { id, occurrence },
+          );
+          selectProblem(id);
+        }
+      }),
     [view, selectProblem, openProblems],
   );
   // A refused note operation brings its own captured diagnosis here. Consume
@@ -2378,6 +2411,18 @@ function EditorContent({
               tab="annotation"
               keepMounted={mountedTabs.has("annotation")}
             >
+              {formatProblem && (
+                <button
+                  type="button"
+                  {...resultPart("problem-open")}
+                  className={templateWorkbenchButton}
+                  onClick={() =>
+                    problems.select(renderDiagnosis(formatProblem).id)
+                  }
+                >
+                  {m.workbench_problem_show()}
+                </button>
+              )}
               <AnnotationPane
                 controller={controller}
                 problem={

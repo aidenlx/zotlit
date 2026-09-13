@@ -668,9 +668,11 @@ function renderFault(
   // The engine's own account is taken here, where the error is still whole:
   // below this line the failure is a code and a message, and a reader who
   // copies the report would otherwise get neither the stack nor the excerpt.
+  const evidence = engineEvidence(error);
+  const diagnostic = renderFailureDiagnostic(error, caller);
   return {
-    ...renderFailureDiagnostic(error, caller),
-    evidence: engineEvidence(error),
+    ...diagnostic,
+    evidence,
     part,
   };
 }

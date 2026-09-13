@@ -141,6 +141,51 @@ describe("a draft the parser refuses", () => {
     // one holding the field the parser named.
     expect(document.activeElement?.id.endsWith("-field-name")).toBe(true);
   });
+
+  it("names the connected plugin version in a captured report", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([]));
+    await using page = await launch();
+    await page.settle();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const broken = view.state.doc
+      .toString()
+      .replace("# {{ zt.title }}", "{% managed %}\nTwice\n{% endmanaged %}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+    page.press(m.workbench_problem_show());
+
+    expect(
+      page.host.querySelector('[data-part="problems-report"]')?.textContent,
+    ).toContain("ZotLit version: 2.1.1");
+  });
+
+  it("marks the plugin version unavailable in a disconnected report", async () => {
+    await using page = await open();
+    await page.settle();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const broken = view.state.doc
+      .toString()
+      .replace("# {{ zt.title }}", "{% managed %}\nTwice\n{% endmanaged %}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+    page.press(m.workbench_problem_show());
+
+    expect(
+      page.host.querySelector('[data-part="problems-report"]')?.textContent,
+    ).toContain("ZotLit version: unavailable");
+  });
 });
 
 describe("the paper a profile is written for", () => {
@@ -499,6 +544,17 @@ describe("the annotation box", () => {
       page.host.querySelector('[data-part="problem"][role="status"]')
         ?.textContent,
     ).toContain("missing-for-highlight");
+    const marker = [
+      ...page.host.querySelectorAll<HTMLButtonElement>(
+        '[data-part="problem-open"]',
+      ),
+    ].find(
+      (button) =>
+        button.nextElementSibling?.getAttribute("data-part") === "problem",
+    );
+    expect(marker?.textContent).toBe(m.workbench_problem_show());
+    act(() => marker?.click());
+    expect(page.host.textContent).toContain(m.workbench_problems_heading());
     page.press(m.workbench_tab_note());
     expect(resultText(page.host)).toContain("missing-for-highlight");
     press(
