@@ -8,6 +8,7 @@ import { inlineCitation } from "@zotlit/templates";
 import {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
   parseLiteratureNoteTemplate,
+  parsePlainTemplateDocument,
 } from "@zotlit/templates/facade";
 import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
 import { mergeManagedFrontmatterEntries } from "@zotlit/templates/frontmatter-merge";
@@ -21,6 +22,7 @@ import {
   classifyTemplateFolderFile,
   inTemplateFolder,
   partialPath,
+  partialNameRefusal,
 } from "./defaults";
 import type { MigrationVerificationData } from "./migration";
 import { TemplateService } from "./service";
@@ -49,6 +51,8 @@ const diagnosticSchema = v.object({
     "evaluation-failed",
     "copied-inputs-changed",
     "input-language-occupied",
+    "support-document-changed",
+    "invalid-copy-output",
   ]),
   fields: v.optional(v.array(v.string())),
   detail: v.optional(v.string()),
@@ -70,16 +74,33 @@ export function conversionRepairDiagnostic(
     : { code: "evaluation-failed", detail: errorText(error) };
 }
 
-const rawInputSchema = v.object({
-  originalPath: v.string(),
-  filename: v.string(),
-  slot: v.picklist(["note", "content", "filename", "annotation"]),
-  language: v.picklist(["liquid", "eta"]),
-});
-export type ConversionRawInput = Omit<
-  v.InferOutput<typeof rawInputSchema>,
-  "filename"
-> & { readonly path: string };
+const rawSourceFields = { language: v.picklist(["liquid", "eta"]) };
+const rawSourceSchema = v.variant("kind", [
+  v.object({
+    ...rawSourceFields,
+    kind: v.literal("profile"),
+    slot: v.picklist(["note", "content", "filename", "annotation"]),
+  }),
+  v.object({
+    ...rawSourceFields,
+    kind: v.literal("citation"),
+    slot: v.picklist(["cite", "cite2"]),
+  }),
+  v.object({
+    ...rawSourceFields,
+    kind: v.literal("partial"),
+    slot: v.string(),
+  }),
+]);
+export type ConversionRawSource = v.InferOutput<typeof rawSourceSchema>;
+const rawInputSchema = v.intersect([
+  rawSourceSchema,
+  v.object({ originalPath: v.string(), filename: v.string() }),
+]);
+export type ConversionRawInput = ConversionRawSource & {
+  readonly originalPath: string;
+  readonly path: string;
+};
 const copySchema = v.object({
   version: v.literal(1),
   itemKey: v.optional(v.string()),
@@ -125,6 +146,8 @@ export interface ConversionRepairReview {
   readonly diagnostic: ConversionRepairDiagnostic | null;
   readonly documents: readonly { path: string; source: string }[];
   readonly inputs?: readonly ConversionRawInput[];
+  readonly kept?: readonly string[];
+  readonly validatedPartials?: readonly string[];
 }
 
 export interface ConversionCopyEditorScope {
@@ -245,17 +268,8 @@ export class ConversionCopy implements AsyncDisposable {
       javascript,
       originals,
       inputs: originals.flatMap(({ path }) => {
-        const input = classifyTemplateFolderFile(path);
-        return input?.kind === "legacy-slot"
-          ? [
-              {
-                originalPath: path,
-                filename: basename(path),
-                slot: input.name,
-                language: input.language,
-              },
-            ]
-          : [];
+        const input = rawInputFromPath(path);
+        return input ? [input] : [];
       }),
       synthesizedInputs: null,
       documents: [],
@@ -320,7 +334,11 @@ export class ConversionCopy implements AsyncDisposable {
       else continue;
       legacyPaths.add(input.path);
     }
-    if (state.documents.some((name) => !outputs.has(name)))
+    if (
+      state.documents.some(
+        (name) => !outputs.has(name) && !isNewRepairDocument(name),
+      )
+    )
       throw new ConversionRepairError({ code: "copy-invalid" });
     if (
       [...state.legacyFiles, ...state.kept].some(
@@ -341,10 +359,11 @@ export class ConversionCopy implements AsyncDisposable {
       const original = state.originals.find(
         ({ path }) => path === input.originalPath,
       );
-      const kind = original && classifyTemplateFolderFile(original.path);
+      const expected = original && rawInputFromPath(original.path);
       if (
-        kind?.kind !== "legacy-slot" ||
-        kind.name !== input.slot ||
+        !expected ||
+        expected.kind !== input.kind ||
+        expected.slot !== input.slot ||
         input.filename !== `zotlit-${input.slot}.${input.language}.md`
       )
         throw new ConversionRepairError({ code: "copy-invalid" });
@@ -368,7 +387,10 @@ export class ConversionCopy implements AsyncDisposable {
           changeLanguage: (language) =>
             this.changeInputLanguage(path, language),
         }
-      : null;
+      : inTemplateFolder(path, this.#inputEditor.folder) &&
+          isNewRepairDocument(basename(path))
+        ? this.#inputEditor
+        : null;
   }
 
   async changeInputLanguage(
@@ -413,7 +435,15 @@ export class ConversionCopy implements AsyncDisposable {
 
   async #inputFingerprint(): Promise<string> {
     return JSON.stringify({
-      inputs: this.#state.inputs,
+      inputs: this.#state.inputs.map(
+        ({ originalPath, filename, kind, slot, language }) => ({
+          originalPath,
+          filename,
+          kind,
+          slot,
+          language,
+        }),
+      ),
       sources: await captureConversionOriginals(
         this.#app,
         join(this.folder, "inputs"),
@@ -483,6 +513,10 @@ export class ConversionCopy implements AsyncDisposable {
     javascript: boolean,
     data: MigrationVerificationData | null,
   ): Promise<ConversionCopy> {
+    const documents = await this.documentSnapshot();
+    const inputsPending =
+      documents.length > 0 &&
+      this.#state.synthesizedInputs !== (await this.#inputFingerprint());
     const replacement = await ConversionCopy.create(this.#app, {
       settings,
       javascript,
@@ -506,14 +540,36 @@ export class ConversionCopy implements AsyncDisposable {
             await this.#app.vault.cachedRead(held),
           );
       }
+      for (const input of await captureConversionOriginals(
+        this.#app,
+        this.#inputEditor.folder,
+      )) {
+        const name = basename(input.path);
+        if (
+          !isNewRepairDocument(name) ||
+          this.#state.originals.some(({ path }) => basename(path) === name)
+        )
+          continue;
+        const path = join(replacement.#inputEditor.folder, name);
+        const file = this.#app.vault.getFileByPath(path);
+        if (file) await this.#app.vault.modify(file, input.source);
+        else await this.#app.vault.create(path, input.source);
+      }
       if (data) await replacement.regenerate(data);
-      for (const document of await this.documentSnapshot()) {
+      for (const document of documents) {
         const name = basename(document.path);
-        if (!replacement.#state.documents.includes(name)) continue;
-        const file = this.#app.vault.getFileByPath(
-          join(replacement.editor.folder, name),
-        );
+        const path = join(replacement.editor.folder, name);
+        const file = this.#app.vault.getFileByPath(path);
         if (file) await this.#app.vault.modify(file, document.source);
+        else if (
+          classifyTemplateFolderFile(name)?.kind === "partial" ||
+          name === "zotlit-citation.md"
+        )
+          await this.#app.vault.create(path, document.source);
+      }
+      if (inputsPending) {
+        replacement.#state.synthesizedInputs = null;
+        await replacement.#save();
       }
       return replacement;
     } catch (error) {
@@ -529,7 +585,7 @@ export class ConversionCopy implements AsyncDisposable {
     const writes: { path: string; source: string; previous: string | null }[] =
       [];
     try {
-      if (this.#state.inputs.length) {
+      if (this.#state.inputs.some(({ kind }) => kind === "profile")) {
         let source =
           await this.#inputs.synthesizeLegacyLiteratureNoteTemplate();
         const path = join(
@@ -557,8 +613,43 @@ export class ConversionCopy implements AsyncDisposable {
       );
       for (const document of converted.documents) {
         const path = join(this.editor.folder, basename(document.path));
-        if (!this.#app.vault.getFileByPath(path))
-          writes.push({ path, source: document.source, previous: null });
+        const file = this.#app.vault.getFileByPath(path);
+        writes.push({
+          path,
+          source: document.source,
+          previous: file ? await this.#app.vault.cachedRead(file) : null,
+        });
+      }
+      // Native operations on a copied raw source write canonical documents
+      // beside that source. Explicit regeneration promotes them to the output set.
+      for (const input of await captureConversionOriginals(
+        this.#app,
+        this.#inputEditor.folder,
+      )) {
+        const name = basename(input.path);
+        if (!isNewRepairDocument(name)) continue;
+        const original = this.#state.originals.find(
+          ({ path }) => basename(path) === name,
+        );
+        if (original) {
+          if (input.source !== original.source)
+            throw new ConversionRepairError({
+              code: "support-document-changed",
+              detail: name,
+            });
+          continue;
+        }
+        const path = join(this.editor.folder, name);
+        const planned = writes.find((write) => write.path === path);
+        if (planned) planned.source = input.source;
+        else {
+          const file = this.#app.vault.getFileByPath(path);
+          writes.push({
+            path,
+            source: input.source,
+            previous: file ? await this.#app.vault.cachedRead(file) : null,
+          });
+        }
       }
       this.#state.diagnostic = null;
       this.#state.documents = [
@@ -569,14 +660,14 @@ export class ConversionCopy implements AsyncDisposable {
       ];
       this.#state.legacyFiles = [
         ...new Set([
-          ...this.#state.inputs.map(({ originalPath }) => originalPath),
-          ...converted.trashed.map((path) =>
-            join(this.#state.settings["template.folder"], basename(path)),
-          ),
+          ...this.#state.inputs
+            .filter(({ kind }) => kind !== "citation")
+            .map(({ originalPath }) => originalPath),
+          ...converted.trashed.map((path) => this.#originalInputPath(path)),
         ]),
       ];
       this.#state.kept = converted.kept.map((path) =>
-        join(this.#state.settings["template.folder"], basename(path)),
+        this.#originalInputPath(path),
       );
       this.#state.synthesizedInputs = await this.#inputFingerprint();
     } catch (error) {
@@ -614,24 +705,71 @@ export class ConversionCopy implements AsyncDisposable {
     });
   }
 
+  #originalInputPath(path: string): string {
+    return (
+      this.#state.inputs.find(({ filename }) => filename === basename(path))
+        ?.originalPath ??
+      join(this.#state.settings["template.folder"], basename(path))
+    );
+  }
+
+  /** Include new repair documents while keeping existing support documents unchanged. */
   async documentSnapshot(): Promise<
     readonly { path: string; source: string }[]
   > {
-    return Promise.all(
-      this.#state.documents.map(async (name) => {
-        const path = join(this.editor.folder, name);
-        const file = this.#app.vault.getFileByPath(path);
-        if (!file)
+    const supports = new Map(
+      this.#state.originals
+        .filter(({ path }) => {
+          const kind = classifyTemplateFolderFile(path)?.kind;
+          return kind === "partial" || kind === "citation";
+        })
+        .map(({ path, source }) => [basename(path), source]),
+    );
+    const files = this.#app.vault
+      .getMarkdownFiles()
+      .filter(({ path }) => inTemplateFolder(path, this.editor.folder));
+    const inventory = new Map(files.map((file) => [basename(file.path), file]));
+    for (const name of [...this.#state.documents, ...supports.keys()]) {
+      if (!inventory.has(name))
+        throw new ConversionRepairError({
+          code: "copy-document-missing",
+          detail: name,
+        });
+    }
+    const documents: { path: string; source: string }[] = [];
+    const names = new Set([
+      ...this.#state.documents,
+      ...[...inventory.keys()].sort(),
+    ]);
+    for (const name of names) {
+      const file = inventory.get(name)!;
+      const source = await this.#app.vault.cachedRead(file);
+      if (supports.has(name)) {
+        if (source !== supports.get(name))
           throw new ConversionRepairError({
-            code: "copy-document-missing",
+            code: "support-document-changed",
             detail: name,
           });
-        return {
-          path: join(this.#state.settings["template.folder"], name),
-          source: await this.#app.vault.cachedRead(file),
-        };
-      }),
-    );
+        continue;
+      }
+      if (
+        !(
+          isNewRepairDocument(name) ||
+          (name === CONVERTED_DEFAULT_PROFILE_DOCUMENT &&
+            this.#state.documents.includes(name))
+        )
+      ) {
+        throw new ConversionRepairError({
+          code: "invalid-copy-output",
+          detail: name,
+        });
+      }
+      documents.push({
+        path: join(this.#state.settings["template.folder"], name),
+        source,
+      });
+    }
+    return documents;
   }
 
   async review(
@@ -655,7 +793,21 @@ export class ConversionCopy implements AsyncDisposable {
       )
     )
       throw new ConversionRepairError({ code: "baseline-changed" });
-    const documents = await this.documentSnapshot();
+    let documents: readonly { path: string; source: string }[];
+    try {
+      documents = await this.documentSnapshot();
+    } catch (error) {
+      return {
+        copy: this.path,
+        inputs: this.rawInputs,
+        comparisons: [],
+        valid: false,
+        requiresAcceptance: false,
+        diagnostic: conversionRepairDiagnostic(error),
+        documents: [],
+        kept: this.kept,
+      };
+    }
     if (this.#state.synthesizedInputs !== (await this.#inputFingerprint()))
       return {
         copy: this.path,
@@ -710,6 +862,27 @@ export class ConversionCopy implements AsyncDisposable {
       ({ path }) => basename(path) === CONVERTED_DEFAULT_PROFILE_DOCUMENT,
     );
     let diagnostic = this.#state.diagnostic;
+    const validatedPartials: string[] = [];
+    for (const document of documents) {
+      const kind = classifyTemplateFolderFile(document.path);
+      if (kind?.kind !== "partial") continue;
+      try {
+        const parsed = parsePlainTemplateDocument(document.source);
+        if (
+          parsed.manifest.language === "eta" &&
+          !this.editor.templates.javascriptTemplatesEnabled
+        )
+          throw new ConversionRepairError({
+            code: "javascript-required",
+            fields: [kind.name],
+          });
+        const error = this.editor.templates.compileErrors.get(kind.name);
+        if (error) throw new Error(error.message);
+        validatedPartials.push(kind.name);
+      } catch (error) {
+        diagnostic = conversionRepairDiagnostic(error);
+      }
+    }
     if (profile) {
       try {
         const candidate =
@@ -816,18 +989,22 @@ export class ConversionCopy implements AsyncDisposable {
     return {
       copy: this.path,
       inputs: this.rawInputs,
+      kept: this.kept,
+      validatedPartials,
       itemKey: data.itemKey,
       annotationKey: data.annotationKey,
       citation: data.citation.map(({ citationKey }) => citationKey ?? "—"),
       comparisons,
       valid:
         diagnostic === null &&
-        comparisons.length > 0 &&
+        documents.length > 0 &&
         comparisons.every(({ outcome }) => outcome !== "candidate-failed"),
-      requiresAcceptance: comparisons.some(
-        ({ outcome }) =>
-          outcome === "changed" || outcome === "original-unavailable",
-      ),
+      requiresAcceptance:
+        comparisons.length === 0 ||
+        comparisons.some(
+          ({ outcome }) =>
+            outcome === "changed" || outcome === "original-unavailable",
+        ),
       diagnostic,
       documents,
     };
@@ -873,19 +1050,52 @@ export class ConversionCopy implements AsyncDisposable {
           this.#state.documents.push(name);
         }
         this.#state.legacyFiles.push(
-          ...converted.trashed.map((path) =>
-            join(this.#state.settings["template.folder"], basename(path)),
-          ),
+          ...converted.trashed.map((path) => this.#originalInputPath(path)),
         );
         this.#state.kept.push(
-          ...converted.kept.map((path) =>
-            join(this.#state.settings["template.folder"], basename(path)),
-          ),
+          ...converted.kept.map((path) => this.#originalInputPath(path)),
         );
       }
     } catch (error) {
       this.#state.diagnostic = conversionRepairDiagnostic(error);
     }
+  }
+}
+
+function isNewRepairDocument(name: string): boolean {
+  if (basename(name) !== name) return false;
+  const kind = classifyTemplateFolderFile(name);
+  return (
+    kind?.kind === "citation" ||
+    (kind?.kind === "partial" && partialNameRefusal(kind.name, []) === null)
+  );
+}
+
+function rawInputFromPath(
+  path: string,
+): v.InferOutput<typeof rawInputSchema> | null {
+  const input = classifyTemplateFolderFile(path);
+  if (
+    !input ||
+    !(
+      input.kind === "legacy-slot" ||
+      input.kind === "legacy-citation" ||
+      input.kind === "legacy-partial"
+    )
+  )
+    return null;
+  const common = {
+    originalPath: path,
+    filename: basename(path),
+    language: input.language,
+  };
+  switch (input.kind) {
+    case "legacy-slot":
+      return { ...common, kind: "profile", slot: input.name };
+    case "legacy-citation":
+      return { ...common, kind: "citation", slot: input.name };
+    case "legacy-partial":
+      return { ...common, kind: "partial", slot: input.name };
   }
 }
 

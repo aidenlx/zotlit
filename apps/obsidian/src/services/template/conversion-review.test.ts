@@ -7,6 +7,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ConversionCopy, ConversionRepairReview } from "./conversion-copy";
 import { TemplateConversionReviewModal } from "./conversion-review";
 import type { LiteratureNoteTemplateConversionReview } from "./migration";
+import { MockVault } from "./test-vault";
 
 vi.mock("obsidian", async (importOriginal) => {
   const original = await importOriginal<typeof import("obsidian")>();
@@ -254,6 +255,14 @@ it("distinguishes unavailable original evaluation and sends explicit repaired ac
 
 it.each([
   [
+    { code: "support-document-changed" as const },
+    () => m.conversion_repair_support_changed(),
+  ],
+  [
+    { code: "invalid-copy-output" as const },
+    () => m.conversion_repair_invalid_output(),
+  ],
+  [
     { code: "no-verification-item" as const },
     () => m.notice_literature_note_template_conversion_no_item(),
   ],
@@ -311,6 +320,7 @@ it("offers raw source repair and explicit regeneration before a Profile exists",
     documents: [],
     inputs: [
       {
+        kind: "profile",
         originalPath: "templates/zotlit-note.liquid.md",
         path: "templates/conversion-copy-raw/inputs/zotlit-note.liquid.md",
         slot: "note",
@@ -369,5 +379,118 @@ it("offers raw source repair and explicit regeneration before a Profile exists",
   expect(modal.modalEl.textContent).toContain(
     m.conversion_repair_accept_changes(),
   );
+  modal.close();
+});
+
+it("shows retained sources and compile-only partial evidence, then opens the copied candidate", async () => {
+  const vault = new MockVault();
+  const candidateFolder = "templates/conversion-copy-1100/documents";
+  const target = vault.addFile(
+    `${candidateFolder}/zotlit-partial.callout.md`,
+    "REPAIR-PARTIAL-1100",
+  );
+  const setViewState = vi.fn(async () => {});
+  const app = {
+    vault,
+    workspace: {
+      getLeavesOfType: () => [],
+      getLeaf: () => ({
+        setViewState,
+        getContainer: () => document.createElement("div"),
+      }),
+      revealLeaf: vi.fn(async () => {}),
+    },
+  } as unknown as App;
+  const review: ConversionRepairReview = {
+    copy: "templates/conversion-copy-1100/conversion.json",
+    comparisons: [],
+    valid: true,
+    requiresAcceptance: true,
+    diagnostic: null,
+    documents: [
+      {
+        path: "templates/zotlit-partial.callout.md",
+        source: "REPAIR-PARTIAL-1100",
+      },
+    ],
+    kept: ["templates/zotlit-cite2.eta.md"],
+    validatedPartials: ["templates/zotlit-partial.callout.md"],
+    inputs: [
+      {
+        kind: "citation",
+        slot: "cite",
+        language: "liquid",
+        originalPath: "templates/zotlit-cite.liquid.md",
+        path: "templates/conversion-copy-1100/inputs/zotlit-cite.liquid.md",
+      },
+      {
+        kind: "partial",
+        slot: "callout",
+        language: "liquid",
+        originalPath: "templates/zotlit-callout.liquid.md",
+        path: "templates/conversion-copy-1100/inputs/zotlit-callout.liquid.md",
+      },
+    ],
+  };
+  const migration = {
+    prepare: vi.fn(),
+    activate: vi.fn(),
+    startRepair: vi.fn(),
+    resumeRepair: async () =>
+      ({ editor: { folder: candidateFolder } }) as ConversionCopy,
+    reviewRepair: async () => review,
+    regenerateRepair: vi.fn(),
+    acceptRepair: vi.fn(),
+    discardRepair: vi.fn(),
+    refreshRepairOriginals: vi.fn(),
+  };
+  const modal = new TemplateConversionReviewModal(app, {
+    migration,
+    completed: vi.fn(),
+  });
+  modal.open();
+  await vi.waitFor(() =>
+    expect(modal.contentEl.textContent).toContain(
+      m.conversion_repair_partials_validated(),
+    ),
+  );
+  expect(modal.contentEl.textContent).toContain(
+    m.conversion_review_retained_file({
+      path: "templates/zotlit-cite2.eta.md",
+    }),
+  );
+  expect(modal.contentEl.textContent).not.toContain(
+    m.conversion_repair_matching(),
+  );
+  expect(modal.contentEl.textContent).not.toContain(
+    m.conversion_review_matching(),
+  );
+  expect(modal.contentEl.textContent).toContain(
+    m.conversion_repair_edit_source({ file: "zotlit-cite.liquid.md" }),
+  );
+  expect(modal.contentEl.textContent).toContain(
+    m.conversion_repair_edit_source({ file: "zotlit-callout.liquid.md" }),
+  );
+  const buttons = [...modal.modalEl.querySelectorAll("button")];
+  expect(
+    buttons.some(
+      (button) => button.textContent === m.conversion_repair_accept_changes(),
+    ),
+  ).toBe(true);
+  buttons
+    .find(
+      (button) =>
+        button.textContent ===
+        m.conversion_repair_edit_source({ file: "zotlit-partial.callout.md" }),
+    )!
+    .click();
+  await vi.waitFor(() =>
+    expect(setViewState).toHaveBeenCalledWith({
+      type: "zotlit-template-workbench",
+      state: { file: target.path },
+      active: true,
+    }),
+  );
+  expect(migration.acceptRepair).not.toHaveBeenCalled();
   modal.close();
 });

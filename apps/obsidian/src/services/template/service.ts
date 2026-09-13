@@ -1451,7 +1451,7 @@ export class TemplateService extends Service<void> {
     source: string,
     data: T,
     options: {
-      name: "note" | "content" | "filename" | "annotation";
+      name: string;
       language: TemplateLanguage;
     },
   ): string {

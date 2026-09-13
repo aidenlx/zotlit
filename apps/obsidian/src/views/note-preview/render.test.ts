@@ -732,7 +732,10 @@ describe("native raw legacy repair rendering", () => {
     await using fixture = await createRenderFixture({ javascript: true });
     const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
     const result = await renderNativeTemplate(
-      { ...fixture.deps, rawInput: { slot: "filename", language: "eta" } },
+      {
+        ...fixture.deps,
+        rawInput: { kind: "profile", slot: "filename", language: "eta" },
+      },
       {
         source: "REPAIRED-<%= zt.title %>",
         snapshot,
@@ -747,7 +750,10 @@ describe("native raw legacy repair rendering", () => {
     await using fixture = await createRenderFixture({ javascript: true });
     const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
     const result = await renderNativeTemplate(
-      { ...fixture.deps, rawInput: { slot: "note", language: "eta" } },
+      {
+        ...fixture.deps,
+        rawInput: { kind: "profile", slot: "note", language: "eta" },
+      },
       { source: '<% throw new Error("RAW-ETA-1099") %>', snapshot },
     );
     expect(result.creationBody).toBeNull();
@@ -766,7 +772,11 @@ describe("native raw legacy repair rendering", () => {
     const annotation = annotationSamples(snapshot, null).example;
     const deps = {
       ...fixture.deps,
-      rawInput: { slot: "annotation" as const, language: "liquid" as const },
+      rawInput: {
+        kind: "profile" as const,
+        slot: "annotation" as const,
+        language: "liquid" as const,
+      },
     };
     const result = await renderNativeTemplate(deps, {
       source: '{% render "callout" with zt as zt %}',
@@ -785,3 +795,60 @@ describe("native raw legacy repair rendering", () => {
     ]);
   });
 });
+
+it.each([
+  ["cite", "main"],
+  ["cite2", "alt"],
+] as const)(
+  "renders raw %s under its citation root and selected %s variant",
+  async (slot, variant) => {
+    await using fixture = await createRenderFixture({ javascript: true });
+    const result = await renderNativeTemplate(
+      {
+        ...fixture.deps,
+        rawInput: { kind: "citation", slot, language: "eta" },
+      },
+      {
+        source: "REPAIR-CITE-1100 <%= zt.items[0].citationKey %>",
+        snapshot: fixture.snapshot,
+        citation: { variant, example: null },
+      },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.citation).toBe("REPAIR-CITE-1100 figures2014");
+    expect(result.creationBody).toBeNull();
+  },
+);
+
+it.each([
+  ["note", "{{ zt.title }}", "Better figures"],
+  ["annotation", "{{ zt.text }}", "Use readable figures."],
+  ["citation", "{{ zt.items[0].citationKey }}", "figures2014"],
+] as const)(
+  "renders a raw partial with %s caller data and scoped dependencies",
+  async (context, source, expected) => {
+    await using fixture = await createRenderFixture({
+      partials: { shared: `REPAIR-PARTIAL-1100 ${source}` },
+    });
+    const { example } = annotationSamples(fixture.snapshot, null);
+    const result = await renderNativeTemplate(
+      {
+        ...fixture.deps,
+        rawInput: { kind: "partial", slot: "outer", language: "liquid" },
+      },
+      {
+        source: '{% render "shared" with zt as zt %}',
+        snapshot: fixture.snapshot,
+        annotation: example,
+        citation:
+          context === "citation"
+            ? { variant: "main", example: null }
+            : undefined,
+        partial: { name: "outer", context, profile: null },
+      },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.partial).toBe(`REPAIR-PARTIAL-1100 ${expected}`);
+    expect(result.creationBody).toBeNull();
+  },
+);

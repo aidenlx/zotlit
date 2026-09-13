@@ -1755,3 +1755,367 @@ describe("raw legacy source repair", () => {
     );
   });
 });
+
+describe("Citation and Shared Partial conversion repair", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("repairs both raw citation slots and partials while preserving unavailable original evidence", async () => {
+    const originals = {
+      "templates/zotlit-cite.liquid.md": "{% broken %}",
+      "templates/zotlit-cite2.liquid.md": "ALT-ORIGINAL",
+      "templates/zotlit-badge.liquid.md": "BADGE-ORIGINAL",
+    };
+    await using harness = await makeVaultHarness(originals);
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(copy.rawInputs.map(({ kind, slot }) => [kind, slot])).toEqual([
+      ["partial", "badge"],
+      ["citation", "cite"],
+      ["citation", "cite2"],
+    ]);
+    for (const input of copy.rawInputs)
+      harness.vault.modifyFile(
+        input.path,
+        input.slot === "badge"
+          ? "PARTIAL-1100"
+          : `${input.slot}-1100 {% render 'badge' %}`,
+      );
+    const review = await harness.service.regenerateRepair();
+    expect(review.valid).toBe(true);
+    expect(review.comparisons).toMatchObject([
+      {
+        output: "main-citation",
+        outcome: "original-unavailable",
+        candidate: "cite-1100 PARTIAL-1100",
+      },
+      {
+        output: "alternate-citation",
+        outcome: "changed",
+        original: "ALT-ORIGINAL",
+        candidate: "cite2-1100 PARTIAL-1100",
+      },
+    ]);
+    for (const [path, source] of Object.entries(originals))
+      expect(harness.vault.contents.get(path)).toBe(source);
+    expect(
+      await harness.service.acceptRepair(review, "matching"),
+    ).toMatchObject({ outcome: "refused" });
+    expect(
+      await harness.service.acceptRepair(review, "reviewed-changes"),
+    ).toMatchObject({ outcome: "converted" });
+    expect(
+      harness.template.renderCitation([{ citationKey: "smith2024" }], "main"),
+    ).toBe("cite-1100 PARTIAL-1100");
+    expect(
+      harness.template.renderCitation([{ citationKey: "smith2024" }], "alt"),
+    ).toBe("cite2-1100 PARTIAL-1100");
+  });
+
+  it("accepts newly created repair partials after restart with the citation that calls them", async () => {
+    let saved: unknown;
+    let files: Record<string, string>;
+    {
+      await using harness = await makeVaultHarness({
+        "templates/zotlit-cite.liquid.md": "ORIGINAL-1100",
+      });
+      const copy = await harness.service.startRepair();
+      await vi.advanceTimersByTimeAsync(500);
+      const created = copy.editor.templates.createPartial("new-badge", {
+        source: "DYNAMIC-1100",
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      await created;
+      harness.vault.modifyFile(
+        `${copy.editor.folder}/zotlit-citation.md`,
+        "REPAIR {% render 'new-badge' %}",
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      expect(harness.template.render("cite", {})).toBe("ORIGINAL-1100");
+      expect(
+        harness.vault.contents.has("templates/zotlit-partial.new-badge.md"),
+      ).toBe(false);
+      files = Object.fromEntries(harness.vault.contents);
+      saved = harness.storedSettings();
+    }
+    await using resumed = await makeVaultHarness(files!, {
+      storedSettings: saved,
+    });
+    const review = await resumed.service.reviewRepair();
+    expect(review.valid).toBe(true);
+    expect(review.documents.map(({ path }) => path)).toEqual([
+      "templates/zotlit-citation.md",
+      "templates/zotlit-partial.new-badge.md",
+    ]);
+    expect(
+      await resumed.service.acceptRepair(review, "reviewed-changes"),
+    ).toMatchObject({ outcome: "converted" });
+    expect(
+      resumed.template.renderCitation([{ citationKey: "smith2024" }], "main"),
+    ).toBe("REPAIR DYNAMIC-1100");
+    expect(
+      resumed.template.renderCitation([{ citationKey: "smith2024" }], "alt"),
+    ).toBe("REPAIR DYNAMIC-1100");
+  });
+
+  it("regenerates citation and partial bodies explicitly after raw edits", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-cite.liquid.md": "BEFORE {% render 'badge' %}",
+      "templates/zotlit-badge.liquid.md": "BEFORE-PARTIAL",
+    });
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    for (const input of copy.rawInputs)
+      harness.vault.modifyFile(
+        input.path,
+        input.kind === "partial"
+          ? "AFTER-PARTIAL"
+          : "AFTER {% render 'badge' %}",
+      );
+    expect((await harness.service.reviewRepair()).diagnostic?.code).toBe(
+      "copied-inputs-changed",
+    );
+    const review = await harness.service.regenerateRepair();
+    expect(review.comparisons[0]?.candidate).toBe("AFTER AFTER-PARTIAL");
+    expect(harness.template.render("cite", {})).toBe("BEFORE BEFORE-PARTIAL");
+  });
+
+  it("validates partial-only repair without claiming a caller output comparison", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-badge.liquid.md": "PARTIAL-ONLY",
+    });
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await harness.service.reviewRepair()).toMatchObject({
+      valid: true,
+      comparisons: [],
+      validatedPartials: ["badge"],
+    });
+    harness.vault.modifyFile(
+      `${copy.editor.folder}/zotlit-partial.badge.md`,
+      "{% if true %}",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await harness.service.reviewRepair()).toMatchObject({
+      valid: false,
+      diagnostic: { code: "evaluation-failed" },
+    });
+    harness.vault.modifyFile(
+      `${copy.editor.folder}/zotlit-partial.badge.md`,
+      "REPAIRED-PARTIAL-ONLY",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(
+      await harness.service.acceptRepair(
+        await harness.service.reviewRepair(),
+        "reviewed-changes",
+      ),
+    ).toMatchObject({ outcome: "converted" });
+    expect(harness.template.render("badge", {})).toBe("REPAIRED-PARTIAL-ONLY");
+  });
+
+  it("keeps support documents out of activation and refuses altered support or extra Profile outputs", async () => {
+    const support = "SUPPORT-ORIGINAL";
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-cite.liquid.md": "{% render 'badge' %}",
+      "templates/zotlit-partial.badge.md": support,
+    });
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(
+      (await harness.service.reviewRepair()).documents.map(({ path }) => path),
+    ).toEqual(["templates/zotlit-citation.md"]);
+    harness.vault.modifyFile(
+      `${copy.editor.folder}/zotlit-partial.badge.md`,
+      "SUPPORT-EDIT",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await harness.service.reviewRepair()).toMatchObject({
+      valid: false,
+      diagnostic: { code: "support-document-changed" },
+    });
+    expect(harness.template.render("badge", {})).toBe(support);
+    harness.vault.modifyFile(
+      `${copy.editor.folder}/zotlit-partial.badge.md`,
+      support,
+    );
+    await harness.vault.create(
+      `${copy.editor.folder}/zotlit-profile.injected.md`,
+      "INJECTED",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await harness.service.reviewRepair()).toMatchObject({
+      valid: false,
+      diagnostic: { code: "invalid-copy-output" },
+    });
+  });
+
+  it("promotes partials created beside raw inputs through regeneration and restart", async () => {
+    let saved: unknown;
+    let files: Record<string, string>;
+    {
+      await using harness = await makeVaultHarness({
+        "templates/zotlit-cite.liquid.md": "ORIGINAL",
+      });
+      const copy = await harness.service.startRepair();
+      await vi.advanceTimersByTimeAsync(500);
+      const input = copy.rawInputs[0]!;
+      const scope = copy.inputEditor(input.path)!;
+      const creating = scope.templates.createPartial("raw-created", {
+        source: "RAW-PARTIAL-1100",
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      const partial = await creating;
+      expect(copy.inputEditor(partial.path)?.folder).toBe(scope.folder);
+      harness.vault.modifyFile(input.path, "{% render 'raw-created' %}");
+      const review = await harness.service.regenerateRepair();
+      expect(review.valid).toBe(true);
+      expect(review.documents.map(({ path }) => path)).toContain(
+        "templates/zotlit-partial.raw-created.md",
+      );
+      files = Object.fromEntries(harness.vault.contents);
+      saved = harness.storedSettings();
+    }
+    await using resumed = await makeVaultHarness(files!, {
+      storedSettings: saved,
+    });
+    expect(
+      await resumed.service.acceptRepair(
+        await resumed.service.reviewRepair(),
+        "reviewed-changes",
+      ),
+    ).toMatchObject({ outcome: "converted" });
+    expect(
+      resumed.template.renderCitation([{ citationKey: "smith2024" }], "main"),
+    ).toBe("RAW-PARTIAL-1100");
+  });
+
+  it.each([false, true])(
+    "keeps canonical input partials through a baseline refresh after promotion=%s",
+    async (promoted) => {
+      await using harness = await makeVaultHarness({
+        "templates/zotlit-cite.liquid.md": "BEFORE-BASELINE",
+      });
+      const copy = await harness.service.startRepair();
+      await vi.advanceTimersByTimeAsync(500);
+      const input = copy.rawInputs[0]!;
+      const scope = copy.inputEditor(input.path)!;
+      const creating = scope.templates.createPartial("refresh-held", {
+        source: "BEFORE-PROMOTION",
+      });
+      await vi.advanceTimersByTimeAsync(500);
+      const partial = await creating;
+      harness.vault.modifyFile(input.path, "{% render 'refresh-held' %}");
+      if (promoted) await harness.service.regenerateRepair();
+      harness.vault.modifyFile(partial.path, "HELD-INPUT-1100");
+      harness.vault.modifyFile(
+        "templates/zotlit-cite.liquid.md",
+        "AFTER-BASELINE",
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      const refreshing = harness.service.refreshRepairOriginals();
+      await vi.advanceTimersByTimeAsync(500);
+      const refreshed = await refreshing;
+      expect(refreshed).toMatchObject({
+        valid: false,
+        diagnostic: { code: "copied-inputs-changed" },
+      });
+      const replacement = (await harness.service.resumeRepair())!;
+      expect(
+        harness.vault.contents.get(
+          `${replacement.folder}/inputs/zotlit-partial.refresh-held.md`,
+        ),
+      ).toBe("HELD-INPUT-1100");
+      expect(harness.vault.contents.has(copy.path)).toBe(false);
+      const reviewed = await harness.service.regenerateRepair();
+      expect(reviewed.valid).toBe(true);
+      expect(reviewed.comparisons[0]).toMatchObject({
+        original: "AFTER-BASELINE",
+        candidate: "HELD-INPUT-1100",
+        outcome: "changed",
+      });
+    },
+  );
+
+  it("invalidates edited dynamic outputs and rolls back the complete set when a new partial cannot be created", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-cite.liquid.md": "ORIGINAL-ROLLBACK",
+    });
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    const creating = copy.editor.templates.createPartial("rollback-added", {
+      source: "FIRST",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    const added = await creating;
+    harness.vault.modifyFile(
+      `${copy.editor.folder}/zotlit-citation.md`,
+      "{% render 'rollback-added' %}",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    const stale = await harness.service.reviewRepair();
+    harness.vault.modifyFile(added.path, "SECOND");
+    expect(
+      await harness.service.acceptRepair(stale, "reviewed-changes"),
+    ).toMatchObject({
+      outcome: "refused",
+      diagnostic: { code: "originals-changed" },
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    const review = await harness.service.reviewRepair();
+    const create = harness.vault.create.bind(harness.vault);
+    using _fail = vi
+      .spyOn(harness.vault, "create")
+      .mockImplementation(async (path, source) => {
+        if (path === "templates/zotlit-partial.rollback-added.md")
+          throw new Error("Destination unavailable");
+        return create(path, source);
+      });
+    await expect(
+      harness.service.acceptRepair(review, "reviewed-changes"),
+    ).rejects.toThrow("Destination unavailable");
+    expect(harness.vault.contents.has("templates/zotlit-citation.md")).toBe(
+      false,
+    );
+    expect(harness.vault.contents.has(copy.path)).toBe(true);
+    expect(harness.template.render("cite", {})).toBe("ORIGINAL-ROLLBACK");
+  });
+
+  it("preserves kept mixed-language sources and cleans up their original paths after a language repair", async () => {
+    const originals = {
+      "templates/zotlit-cite.liquid.md": "MAIN",
+      "templates/zotlit-cite2.eta.md": "ALT-ETA",
+    };
+    await using harness = await makeVaultHarness(originals, {
+      javascriptTemplates: true,
+    });
+    const copy = await harness.service.startRepair();
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await harness.service.reviewRepair()).kept).toEqual([
+      "templates/zotlit-cite2.eta.md",
+    ]);
+    const alt = copy.rawInputs.find(({ slot }) => slot === "cite2")!;
+    harness.vault.modifyFile(alt.path, "ALT-REPAIRED");
+    await copy.changeInputLanguage(alt.path, "liquid");
+    const review = await harness.service.regenerateRepair();
+    expect(review.valid).toBe(true);
+    expect(review.kept).toEqual([]);
+    expect(
+      review.comparisons.find(({ output }) => output === "alternate-citation"),
+    ).toMatchObject({
+      original: "ALT-ETA",
+      candidate: "ALT-REPAIRED",
+      outcome: "changed",
+    });
+    expect(
+      await harness.service.acceptRepair(review, "reviewed-changes"),
+    ).toMatchObject({
+      outcome: "converted",
+      trashed: expect.arrayContaining(["templates/zotlit-cite2.eta.md"]),
+      kept: [],
+    });
+    expect(harness.vault.contents.has("templates/zotlit-cite2.eta.md")).toBe(
+      false,
+    );
+  });
+});

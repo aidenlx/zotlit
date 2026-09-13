@@ -45,8 +45,10 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
+import { bindProfile } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import {
@@ -73,6 +75,7 @@ import {
 } from "@/views/template-workbench/theme";
 import type {
   TemplateWorkbenchView,
+  TemplateWorkbenchDeps,
   TemplateAuthoringContext,
 } from "@/views/template-workbench/view";
 
@@ -94,6 +97,7 @@ import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: SettingsService;
+  resolveCopyEditor?: TemplateWorkbenchDeps["resolveCopyEditor"];
   itemLookup: Pick<ItemLookup, "search">;
   profile: Pick<
     ProfileService,
@@ -155,6 +159,8 @@ function PreviewSheet({
     <NativeMarkdown {...props} expandProperties={propertiesTabOpen(context)} />
   );
 }
+
+const logger = getLogger(["views", "note-preview"]);
 
 export const NOTE_PREVIEW_VIEW_TYPE = "zotlit-note-preview";
 /** Distinguishes the previews one editor explains for. */
@@ -463,7 +469,6 @@ export class NotePreviewView extends ItemView {
       this.#sourceGeneration++;
     });
     const resources = cleanup.use(new DisposableStack());
-    const deps = this.#deps;
     const scheduler = resources.use(
       createRenderScheduler({
         input: {
@@ -478,7 +483,9 @@ export class NotePreviewView extends ItemView {
       }),
     );
     const session = resources.use(
-      new NativePreviewSession(deps, scheduler, { state: this.state }),
+      new NativePreviewSession(this.#renderDeps, scheduler, {
+        state: this.state,
+      }),
     );
     const host = resources.use(
       createTemplateWorkbenchHost(this.app, {
@@ -726,6 +733,32 @@ export class NotePreviewView extends ItemView {
       } | null;
       const path =
         source && typeof source.path === "string" ? source.path : null;
+      const generation = ++this.#sourceGeneration;
+      const scope = path ? await this.#deps.resolveCopyEditor?.(path) : null;
+      if (generation !== this.#sourceGeneration) return;
+      this.#renderDeps = scope
+        ? {
+            ...this.#deps,
+            settings: scope.settings,
+            templates: scope.templates,
+            rawInput: scope.rawInput,
+            profile: {
+              resolveProfile: () =>
+                bindProfile(scope.settings.current!, { selector: "default" }),
+            },
+          }
+        : this.#deps;
+      this.#session?.setScope(this.#renderDeps);
+      logger.debug("Restored preview template scope", {
+        path,
+        folder: scope?.folder ?? templateFolderOf(this.#deps.settings),
+        rawInput: scope?.rawInput?.slot ?? null,
+      });
+      const kind =
+        scope?.rawInput?.kind ??
+        (value["kind"] === "citation" || value["kind"] === "partial"
+          ? value["kind"]
+          : "profile");
       const item =
         typeof value["item"] === "string"
           ? { id: value["item"], title: null }
@@ -754,19 +787,24 @@ export class NotePreviewView extends ItemView {
       const partialName =
         path === null
           ? null
-          : templatePartialName(path, templateFolderOf(this.#deps.settings));
+          : scope?.rawInput?.kind === "partial"
+            ? scope.rawInput.slot
+            : templatePartialName(
+                path,
+                scope?.folder ?? templateFolderOf(this.#deps.settings),
+              );
       const context: TemplateAuthoringContext | null =
         source && (path !== null || source.builtin === true)
           ? {
               leaf: this.leaf,
               path,
               item,
-              kind:
-                value["kind"] === "citation" || value["kind"] === "partial"
-                  ? value["kind"]
-                  : "profile",
+              kind,
               root,
-              tab: TABS.find((tab) => tab === value["tab"]) ?? "note",
+              tab:
+                kind === "profile"
+                  ? (TABS.find((tab) => tab === value["tab"]) ?? "note")
+                  : kind,
               advanced: value["advanced"] === true,
               annotationId:
                 typeof value["annotationId"] === "string"
@@ -780,7 +818,7 @@ export class NotePreviewView extends ItemView {
                     }
                   : null,
               partial:
-                value["kind"] === "partial" && partialName !== null
+                kind === "partial" && partialName !== null
                   ? {
                       name: partialName,
                       context: isPartialContext(root)
@@ -965,6 +1003,16 @@ export class NotePreviewView extends ItemView {
         presentation: { scrollTop: 0, reveal: null, pending: false },
       });
     session.setContext(context);
+    if (
+      previous?.leaf === context.leaf &&
+      context.citation &&
+      (previous.citation?.variant !== context.citation.variant ||
+        previous.citation?.example !== context.citation.example)
+    )
+      session.setCitation({
+        variant: context.citation.variant,
+        citationExample: context.citation.example,
+      });
     session.setItem(context.item);
     // An Item the reader picked is the Citation set they asked to see, so the
     // built-in example that outranks it stands down.

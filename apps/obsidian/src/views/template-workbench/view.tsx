@@ -109,6 +109,7 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
 import { listInstalledStyles } from "@/services/pandoc/styles";
+import { bindProfile } from "@/services/profile/bindings";
 import type { ProfileService } from "@/services/profile/service";
 import { openCitationTemplate } from "@/services/template/actions";
 import type { TemplateService } from "@/services/template/service";
@@ -273,6 +274,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     | import("@/services/template/conversion-copy").ConversionCopyEditorScope
     | null = null;
   #settingsUnsubscribe: (() => void) | undefined;
+  #previewUnsubscribe: (() => void) | undefined;
   readonly #host: ReturnType<typeof createTemplateWorkbenchHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
@@ -395,21 +397,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           this.#publishAuthoringContext();
       }),
     );
-    if (this.preview)
-      this.register(
-        this.preview.state.subscribe((state, previous) => {
-          if (
-            state.example !== previous.example ||
-            state.annotationId !== previous.annotationId ||
-            state.variant !== previous.variant ||
-            state.citationExample !== previous.citationExample
-          )
-            this.#publishAuthoringContext();
-          if (state.annotationId !== previous.annotationId)
-            this.app.workspace.requestSaveLayout();
-          if (state.status !== previous.status) this.#mount();
-        }),
-      );
+    this.#watchPreview();
+    this.register(() => this.#previewUnsubscribe?.());
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
     this.scope.register(["Mod", "Shift"], "z", (event) =>
@@ -474,6 +463,24 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     });
   }
 
+  #watchPreview(): void {
+    this.#previewUnsubscribe?.();
+    this.#previewUnsubscribe = this.preview?.state.subscribe(
+      (state, previous) => {
+        if (
+          state.example !== previous.example ||
+          state.annotationId !== previous.annotationId ||
+          state.variant !== previous.variant ||
+          state.citationExample !== previous.citationExample
+        )
+          this.#publishAuthoringContext();
+        if (state.annotationId !== previous.annotationId)
+          this.app.workspace.requestSaveLayout();
+        if (state.status !== previous.status) this.#mount();
+      },
+    );
+  }
+
   async #resolveCopyScope(path: string): Promise<void> {
     const scope = await this.#baseDeps.resolveCopyEditor?.(path);
     if (
@@ -483,6 +490,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     )
       return;
     this.#copyScope = scope ?? null;
+    this.#previewUnsubscribe?.();
+    this.#previewUnsubscribe = undefined;
     this.preview?.[Symbol.dispose]();
     this.#copyFolder = scope?.folder ?? null;
     this.#deps = scope
@@ -497,6 +506,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
                 settings: scope.settings,
                 templates: scope.templates,
                 rawInput: scope.rawInput,
+                profile: {
+                  resolveProfile: () =>
+                    bindProfile(scope.settings.current!, {
+                      selector: "default",
+                    }),
+                },
               }
             : undefined,
         }
@@ -506,6 +521,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           item: this.store.getState().item,
         })
       : null;
+    this.#watchPreview();
     this.#watchSettings();
   }
 
@@ -514,7 +530,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The Template Document this view holds, which picks its tabs and its root. */
   get documentKind(): WorkbenchDocumentKind {
-    if (this.#copyScope?.rawInput) return "profile";
+    if (this.#copyScope?.rawInput) return this.#copyScope.rawInput.kind;
     return templateDocumentKind(this.file, this.#templateFolder);
   }
   /**
@@ -550,7 +566,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     return this.#copyScope?.rawInput;
   }
   get #defaultRoot(): TemplateRoot {
-    if (this.rawInput)
+    if (this.rawInput?.kind === "profile")
       return this.rawInput.slot === "content" ? "note" : this.rawInput.slot;
     if (this.documentKind === "citation") return "citation";
     return this.documentKind === "partial" ? this.partialContext : "note";
@@ -593,10 +609,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   get authoringContext(): TemplateAuthoringContext {
     const { item, root, tab, advanced } = this.store.getState();
-    const partialName = templatePartialName(
-      this.file?.path ?? "",
-      this.#templateFolder,
-    );
+    const partialName =
+      this.rawInput?.kind === "partial"
+        ? this.rawInput.slot
+        : templatePartialName(this.file?.path ?? "", this.#templateFolder);
     return {
       leaf: this.leaf,
       path: this.file?.path ?? null,
@@ -910,7 +926,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         context: this.partialContext,
         rawSource: this.rawInput
           ? {
-              root: this.#defaultRoot as "note" | "filename" | "annotation",
+              root: this.#defaultRoot as
+                | "note"
+                | "filename"
+                | "annotation"
+                | "citation",
               language: this.rawInput.language,
             }
           : undefined,
@@ -1270,7 +1290,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #applyKindDefaults(): boolean {
     const store = this.store.getState();
     const kind = this.documentKind;
-    if (this.rawInput) {
+    if (this.rawInput?.kind === "profile") {
       store.setTab("note");
       store.setRoot(this.#defaultRoot);
       store.setAdvanced(true);
@@ -1568,6 +1588,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The language this document renders in; a document with no manifest is Liquid. */
   get #documentLanguage(): TemplateLanguage {
     return (
+      this.rawInput?.language ??
       this.#controller.document?.manifest.language ??
       this.#controller.plainDocument?.manifest.language ??
       "liquid"

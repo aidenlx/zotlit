@@ -399,6 +399,8 @@ export default class ZotLitPlugin extends Plugin {
 
     registerNotePreview(this, {
       app: this.app,
+      resolveCopyEditor: (path) =>
+        services.templateMigration.resolveCopyEditor(path),
       itemLookup: services.itemLookup,
       profile: services.profile,
       db: services.db,

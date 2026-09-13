@@ -188,7 +188,7 @@ export class WorkbenchDocumentController {
       context?: PartialContext;
       /** A legacy source has no document manifest or structured panes. */
       rawSource?: {
-        root: "note" | "filename" | "annotation";
+        root: "note" | "filename" | "annotation" | "citation";
         language: "liquid" | "eta";
       };
     } = {},
@@ -395,6 +395,7 @@ export class WorkbenchDocumentController {
         {
           ...this.sliceRange("advanced"),
           ...this.#rawSource,
+          root: this.#kind === "partial" ? this.#context : this.#rawSource.root,
           expression: false,
         },
       ];
@@ -881,6 +882,8 @@ export class WorkbenchDocumentController {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
     if (this.#rawSource) {
+      if (this.#kind !== "profile")
+        this.#ranges.set("source", { from: 0, to: source.length });
       this.#language = this.#rawSource.language;
       this.#problems = [];
       return;

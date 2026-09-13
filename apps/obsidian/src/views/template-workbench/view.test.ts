@@ -1,6 +1,13 @@
 import { forceParsing } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
-import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
+import {
+  ButtonComponent,
+  controlsOf,
+  Menu,
+  Modal,
+  TextComponent,
+  TextFileView as MockTextFileView,
+} from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
   Scope as MockScope,
@@ -29,6 +36,7 @@ import { SettingsService } from "@/services/settings/service";
 import { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import { TemplateService } from "@/services/template/service";
 import { MockVault, PluginStub } from "@/services/template/test-vault";
+import { createRenderFixture } from "@/views/note-preview/__fixtures__/render";
 import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
@@ -2611,6 +2619,7 @@ it("restores raw repair bytes and changes roots between inputs in the same copy"
       templates,
       settings,
       rawInput: {
+        kind: "profile" as const,
         path,
         originalPath:
           path === note.path
@@ -2681,4 +2690,348 @@ it("restores raw repair bytes and changes roots between inputs in the same copy"
     await act(async () => restored.view.close());
   }
   await act(async () => base.view.close());
+});
+
+it("repairs citation and partial documents through native editing and scoped create, extract, unpack, and reopen flows", async () => {
+  await using fixture = await createRenderFixture({
+    javascript: true,
+    partials: { existing: "ACTIVE-SUPPORT" },
+  });
+  const { vault, deps: native } = fixture;
+  const app = native.app;
+  const templates = native.templates as TemplateService;
+  const settings = native.settings as SettingsService;
+  const originals = {
+    "templates/zotlit-note.liquid.md": '{% render "content" with zt as zt %}',
+    "templates/zotlit-content.liquid.md": "ORIGINAL-NOTE",
+    "templates/zotlit-filename.liquid.md": "paper",
+    "templates/zotlit-cite.liquid.md": "ORIGINAL-CITE",
+    "templates/zotlit-cite2.liquid.md": "ORIGINAL-ALT",
+    "templates/zotlit-callout.liquid.md": "ORIGINAL-PARTIAL {{ zt.title }}",
+  };
+  for (const [path, source] of Object.entries(originals))
+    vault.addFile(path, source);
+  await templates.refresh();
+  const leaves: WorkspaceLeaf[] = [];
+  const publishAuthoringContext = vi.fn();
+  Object.assign(app.workspace, {
+    requestSaveLayout: vi.fn(),
+    trigger: publishAuthoringContext,
+    on: vi.fn(() => ({})),
+    offref: vi.fn(),
+    iterateAllLeaves: vi.fn(),
+    revealLeaf: vi.fn(async () => {}),
+    getActiveFile: () => null,
+    getLeavesOfType: () => leaves,
+    onLayoutReady: vi.fn(),
+  });
+  Object.assign(app.fileManager, {
+    trashFile: async (file: TFile) => vault.deleteFile(file.path),
+  });
+  await using migration = new LiteratureNoteTemplateMigrationService({
+    app,
+    settings,
+    template: templates,
+    loadVerificationData: async () => ({
+      note: { title: "Paper" },
+      filename: { citationKey: "figures2014" },
+      annotation: null,
+      citation: [{ citationKey: "figures2014" }],
+    }),
+    openPrompt: () => {},
+  });
+  const copy = await migration.startRepair();
+  const activeResolver = vi.fn(() => {
+    throw new Error("Active Profile escaped into repair");
+  });
+  const viewDeps = {
+    settings,
+    templates,
+    nativePreview: { ...native, profile: { resolveProfile: activeResolver } },
+    resolveCopyEditor: (path: string) => migration.resolveCopyEditor(path),
+  };
+  const originalCreate =
+    await vi.importActual<typeof import("./new-partial")>("./new-partial");
+  vi.mocked(createSharedPartial).mockImplementation(
+    originalCreate.createSharedPartial,
+  );
+  const originalRender = await vi.importActual<
+    typeof import("@/views/note-preview/render")
+  >("@/views/note-preview/render");
+  vi.mocked(renderNativeTemplate).mockImplementation(
+    originalRender.renderNativeTemplate,
+  );
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.mocked(createSharedPartial).mockReset();
+  });
+  cleanup.defer(() => {
+    vi.mocked(renderNativeTemplate).mockReset();
+  });
+  const makeView = () => {
+    const fixtureView = setup(viewDeps, app);
+    const { view, leaf } = fixtureView;
+    leaves.push(leaf);
+    Object.assign(leaf, {
+      getContainer: () => view.contentEl,
+      setViewState: async ({ state }: { state: { file: string } }) => {
+        view.file = vault.getFileByPath(state.file)!;
+        await view.loadFileInternal(view.file, true);
+        await view.setState(state, { history: false });
+      },
+      detach: () => {},
+    });
+    view.save = async () => {
+      if (view.getViewData() === view.lastSavedData) return;
+      await vault.modify(view.file!, view.getViewData());
+      view.lastSavedData = view.getViewData();
+      view.dirty = false;
+    };
+    cleanup.defer(() => act(async () => view.close()));
+    return fixtureView;
+  };
+  const first = makeView();
+  const opened = makeView();
+  Object.assign(app.workspace, { getLeaf: () => opened.leaf });
+  await act(async () => {
+    await first.view.open();
+    await opened.view.open();
+  });
+  const open = async (path: string) => {
+    await act(async () =>
+      first.leaf.setViewState({
+        type: "zotlit-template-workbench",
+        state: { file: path },
+      }),
+    );
+  };
+  const replace = async (source: string) => {
+    await act(() =>
+      first.view.controller.dispatch({
+        changes: {
+          from: 0,
+          to: first.view.controller.state.doc.length,
+          insert: source,
+        },
+      }),
+    );
+    await first.view.save();
+  };
+  const chooseName = async (name: string) => {
+    await vi.waitFor(() =>
+      expect(Modal.instances.some((modal) => modal.isOpen)).toBe(true),
+    );
+    const modal = Modal.instances.find((modal) => modal.isOpen)!;
+    modal.onOpen();
+    const field = [...modal.contentEl.querySelectorAll<HTMLElement>("label")]
+      .flatMap((label) => controlsOf(label.lastElementChild as HTMLElement))
+      .find((control) => control instanceof TextComponent)! as TextComponent;
+    field.type(name);
+    const button = controlsOf(
+      modal.modalEl.querySelector<HTMLElement>(".modal-button-container")!,
+    ).find(
+      (control) =>
+        control instanceof ButtonComponent &&
+        control.text === m.partial_new_action(),
+    ) as ButtonComponent;
+    await act(async () => button.click());
+  };
+  const originalCitation = templates.renderCitation(
+    [{ citationKey: "figures2014" }],
+    "main",
+  );
+  expect(originalCitation).toBe("[@figures2014]");
+  await open(`${copy.editor.folder}/zotlit-citation.md`);
+  expect(first.view.documentKind).toBe("citation");
+  await replace("REPAIR-CITE-1100 {{ zt.items[0].citationKey }}");
+  for (const variant of ["main", "alt"] as const) {
+    const rendered = await originalRender.renderNativeTemplate(
+      first.view.nativeRenderDeps!,
+      {
+        source: first.view.getViewData(),
+        snapshot: fixture.snapshot,
+        citation: { variant, example: null },
+      },
+    );
+    expect(rendered.diagnostics).toEqual([]);
+    expect(rendered.citation).toBe("REPAIR-CITE-1100 figures2014");
+  }
+  const state = first.view.getState();
+  await open(`${copy.editor.folder}/zotlit-partial.callout.md`);
+  await act(() =>
+    first.view.setPartialSelection({
+      context: "note",
+      profile: "active-added-profile",
+    }),
+  );
+  await replace("REPAIR-PARTIAL-1100 {{ zt.title }}");
+  const partial = await originalRender.renderNativeTemplate(
+    first.view.nativeRenderDeps!,
+    {
+      source: first.view.getViewData(),
+      snapshot: fixture.snapshot,
+      partial: first.view.authoringContext.partial!,
+    },
+  );
+  expect(partial.diagnostics).toEqual([]);
+  expect(partial.partial).toBe("REPAIR-PARTIAL-1100 Better figures");
+  expect(activeResolver).not.toHaveBeenCalled();
+  expect(templates.render("callout", { title: "Paper" })).toBe(
+    "ORIGINAL-PARTIAL Paper",
+  );
+  expect(
+    templates.renderCitation([{ citationKey: "figures2014" }], "main"),
+  ).toBe(originalCitation);
+
+  Modal.instances.length = 0;
+  const creating = first.view.createPartial();
+  await chooseName("Native added");
+  await expect(creating).resolves.toBe("native-added");
+  expect(opened.view.file?.path).toBe(
+    `${copy.editor.folder}/zotlit-partial.native-added.md`,
+  );
+  expect(opened.view.documentKind).toBe("partial");
+  expect(
+    vault.getFileByPath("templates/zotlit-partial.native-added.md"),
+  ).toBeNull();
+
+  const rawCitation = copy.rawInputs.find((input) => input.slot === "cite")!;
+  const rawPath = await copy.changeInputLanguage(rawCitation.path, "eta");
+  await open(rawPath);
+  expect(first.view.documentKind).toBe("citation");
+  expect(first.view.controller.language).toBe("eta");
+  expect(first.view.store.getState().root).toBe("citation");
+  await act(() => {
+    first.view.store
+      .getState()
+      .setItem({ id: "FIGURES1", title: "Better figures" });
+    first.view.preview!.setCitation({ citationExample: "one-item" });
+  });
+  publishAuthoringContext.mockClear();
+  await act(() => first.view.selectItem(first.view.store.getState().item!));
+  expect(first.view.preview!.state.getState().citationExample).toBeNull();
+  expect(publishAuthoringContext).toHaveBeenCalledWith(
+    "zotlit:authoring-context",
+    expect.objectContaining({ citation: { variant: "main", example: null } }),
+  );
+  Modal.instances.length = 0;
+  const extracting = first.view.extractPartial(
+    "REPAIR-EXTRACT-1100 <%= zt.citationKey %>",
+  );
+  await chooseName("Native extracted");
+  await expect(extracting).resolves.toBe(
+    '<%~ include("native-extracted", zt) %>',
+  );
+  const extracted = vault.contents.get(
+    `${copy.folder}/inputs/zotlit-partial.native-extracted.md`,
+  )!;
+  expect(parsePlainTemplateDocument(extracted)).toMatchObject({
+    manifest: { language: "eta" },
+    source: "REPAIR-EXTRACT-1100 <%= zt.citationKey %>",
+  });
+  expect(opened.view.controller.language).toBe("eta");
+  expect(opened.view.file?.path).toBe(
+    `${copy.folder}/inputs/zotlit-partial.native-extracted.md`,
+  );
+
+  await replace(
+    'REPAIR-RAW-CITE-1100 <%~ include("native-extracted", zt.items[0]) %>',
+  );
+  await copy.changeInputLanguage(
+    copy.rawInputs.find((input) => input.slot === "cite2")!.path,
+    "eta",
+  );
+  const rawPartial = copy.rawInputs.find((input) => input.slot === "callout")!;
+  await open(rawPartial.path);
+  await act(() =>
+    first.view.setPartialSelection({ context: "annotation", profile: null }),
+  );
+  await replace("REPAIR-RAW-PARTIAL-1100 {{ zt.text }}");
+  expect(first.view.controller.templateRegions[0]?.root).toBe("annotation");
+  const partialState = first.view.getState();
+  await act(async () =>
+    opened.leaf.setViewState({
+      type: "zotlit-template-workbench",
+      state: partialState,
+    }),
+  );
+  expect(opened.view.documentKind).toBe("partial");
+  expect(opened.view.authoringContext.partial).toMatchObject({
+    name: "callout",
+    context: "annotation",
+  });
+  expect(opened.view.getViewData()).toBe(
+    "REPAIR-RAW-PARTIAL-1100 {{ zt.text }}",
+  );
+
+  await open(copy.profilePath!);
+  await replace(
+    first.view
+      .getViewData()
+      .replace(
+        "---\n",
+        [
+          "---",
+          "partials:",
+          "  - name: existing",
+          "    language: liquid",
+          "    source: BUNDLE-MUST-KEEP-SUPPORT",
+          "  - name: native-unpacked",
+          "    language: liquid",
+          "    source: REPAIR-UNPACK-1100",
+          "",
+        ].join("\n"),
+      ),
+  );
+  await act(async () => {
+    await first.view.unpackBundledPartials();
+  });
+  await first.view.save();
+  expect(
+    vault.contents.get(`${copy.editor.folder}/zotlit-partial.existing.md`),
+  ).toBe("ACTIVE-SUPPORT");
+  expect(
+    vault.contents.get(
+      `${copy.editor.folder}/zotlit-partial.native-unpacked.md`,
+    ),
+  ).toContain("REPAIR-UNPACK-1100");
+  expect(
+    vault.getFileByPath("templates/zotlit-partial.native-unpacked.md"),
+  ).toBeNull();
+  await act(async () => {
+    first.view.openPartial("native-unpacked");
+    await vi.waitFor(() =>
+      expect(opened.view.file?.path).toBe(
+        `${copy.editor.folder}/zotlit-partial.native-unpacked.md`,
+      ),
+    );
+  });
+
+  await act(async () =>
+    opened.leaf.setViewState({ type: "zotlit-template-workbench", state }),
+  );
+  expect(opened.view.documentKind).toBe("citation");
+  expect(opened.view.getViewData()).toBe(
+    "REPAIR-CITE-1100 {{ zt.items[0].citationKey }}",
+  );
+  const regenerated = await migration.regenerateRepair();
+  expect(regenerated.documents).toContainEqual({
+    path: "templates/zotlit-partial.native-extracted.md",
+    source: extracted,
+  });
+  for (const [path, source] of Object.entries(originals))
+    expect(vault.contents.get(path)).toBe(source);
+  expect(regenerated.valid).toBe(true);
+  expect(
+    (await migration.acceptRepair(regenerated, "reviewed-changes")).outcome,
+  ).toBe("converted");
+  expect(
+    templates.renderCitation([{ citationKey: "figures2014" }], "main"),
+  ).toBe("REPAIR-RAW-CITE-1100 REPAIR-EXTRACT-1100 figures2014");
+  expect(templates.render("callout", { text: "Accepted" })).toBe(
+    "REPAIR-RAW-PARTIAL-1100 Accepted",
+  );
+  expect(
+    vault.contents.get("templates/zotlit-partial.native-extracted.md"),
+  ).toBe(extracted);
 });

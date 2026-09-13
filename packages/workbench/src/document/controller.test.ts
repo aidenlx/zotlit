@@ -773,3 +773,28 @@ describe("raw legacy repair source", () => {
     expect(controller.source).toBe(source);
   });
 });
+
+it("keeps raw citation and partial source editable under their selected caller root", () => {
+  for (const kind of ["citation", "partial"] as const) {
+    const controller = new WorkbenchDocumentController("<%= zt.title", {
+      kind,
+      runtime: "native",
+      rawSource: { root: "citation", language: "eta" },
+    });
+    if (kind === "partial") controller.setPartialContext("annotation");
+    controller.dispatch({ changes: { from: 0, insert: "REPAIR-1100 " } });
+    expect(controller.sliceText("source")).toBe("REPAIR-1100 <%= zt.title");
+    expect(controller.templateRegions).toEqual([
+      {
+        from: 0,
+        to: 24,
+        root: kind === "citation" ? "citation" : "annotation",
+        language: "eta",
+        expression: false,
+      },
+    ]);
+    expect(controller.problems).toEqual([]);
+    controller.undo();
+    expect(controller.source).toBe("<%= zt.title");
+  }
+});

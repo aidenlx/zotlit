@@ -17,6 +17,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import type { SettingsService } from "@/services/settings/service";
+import { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
+import type { TemplateService } from "@/services/template/service";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import { TemplateWorkbenchView } from "@/views/template-workbench/view";
 import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
@@ -121,7 +123,10 @@ const NO_PROFILES: PreviewViewDeps["profile"] = {
   resolveProfile: () => undefined,
 };
 
-async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
+async function setup(
+  profile: PreviewViewDeps["profile"] = NO_PROFILES,
+  previewOverrides: Partial<PreviewViewDeps> = {},
+) {
   const fixture = await createRenderFixture();
   const { app } = fixture.deps;
   const events = new Map<
@@ -162,6 +167,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     templates: fixture.deps.templates,
     nativePreview: fixture.deps,
+    resolveCopyEditor: previewOverrides.resolveCopyEditor,
   } as unknown as TemplateWorkbenchDeps);
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
   editor.file = file;
@@ -193,6 +199,7 @@ async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
       settings: fixture.deps.settings as SettingsService,
       profile,
       itemLookup: { search: vi.fn() },
+      ...previewOverrides,
     });
     // The lightweight ItemView mock leaves this native base property to its test.
     Object.defineProperty(preview, "app", { value: app });
@@ -2585,3 +2592,113 @@ it("follows a raw copy editor with its scoped partial registry", async () => {
   expect(preview.contentEl.textContent).toContain("COPIED Better figures");
   expect(preview.state.getState().sourceProblem).toBeNull();
 });
+
+it.each(["raw", "canonical"])(
+  "restores a %s copied partial preview while its editor is deferred",
+  async (kind) => {
+    let migration: LiteratureNoteTemplateMigrationService;
+    await using test = await setup(NO_PROFILES, {
+      resolveCopyEditor: (path: string) => migration.resolveCopyEditor(path),
+    });
+    const { vault, deps } = test.fixture;
+    vault.addFile(
+      "templates/zotlit-annotation-callout.liquid.md",
+      '{% render "dependency" with zt as zt %}',
+    );
+    vault.addFile(
+      "templates/zotlit-dependency.liquid.md",
+      "ACTIVE {{ zt.text }}",
+    );
+    const templates = deps.templates as TemplateService;
+    await templates.refresh();
+    Object.assign(deps.app.workspace, { getLeavesOfType: () => [] });
+    await using ownedMigration = new LiteratureNoteTemplateMigrationService({
+      app: deps.app,
+      settings: deps.settings as SettingsService,
+      template: templates,
+      loadVerificationData: async () => ({
+        note: {},
+        filename: {},
+        annotation: null,
+        citation: [],
+      }),
+      openPrompt: () => {},
+    });
+    migration = ownedMigration;
+    const copy = await migration.startRepair();
+    const path =
+      kind === "raw"
+        ? copy.rawInputs.find((input) => input.slot === "annotation-callout")!
+            .path
+        : `${copy.editor.folder}/zotlit-partial.annotation-callout.md`;
+    const dependency =
+      kind === "raw"
+        ? copy.rawInputs.find((input) => input.slot === "dependency")!.path
+        : `${copy.editor.folder}/zotlit-partial.dependency.md`;
+    vault.modifyFile(dependency, "DEFERRED-COPY-1100 {{ zt.text }}");
+    await (await migration.resolveCopyEditor(path))!.templates.refresh();
+    let editorLoaded: (editor: TemplateWorkbenchView) => void = () => {};
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
+      (_app, listener) => {
+        editorLoaded = listener;
+        listener(null);
+        return () => {};
+      },
+    );
+    vi.useFakeTimers();
+    const preview = await test.open({
+      source: { path },
+      kind: "partial",
+      root: "annotation",
+      tab: "partial",
+      item: "MAIN2345",
+      partialProfile: null,
+    });
+    await advance();
+    expect(preview.state.getState().context?.partial).toMatchObject({
+      name: "annotation-callout",
+      context: "annotation",
+    });
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_partial_context_annotation(),
+    );
+    expect(preview.contentEl.textContent).toContain(
+      "DEFERRED-COPY-1100 Use readable figures.",
+    );
+    expect(preview.state.getState().sourceProblem).toBeNull();
+    expect(templates.render("dependency", { text: "Original" })).toBe(
+      "ACTIVE Original",
+    );
+    await act(async () => {
+      await test.editor.open();
+      test.editor.file = vault.getFileByPath(path)!;
+      await test.editor.loadFileInternal(test.editor.file, true);
+      await test.editor.setState(
+        { file: path, itemIndexedKey: "MAIN2345", partialContext: "citation" },
+        { history: false },
+      );
+      test.editor.controller.dispatch({
+        changes: {
+          from: 0,
+          to: test.editor.controller.state.doc.length,
+          insert: "CITATION-1100 {{ zt.items[0].citationKey }}",
+        },
+      });
+      test.editor.preview!.setCitation({ citationExample: "one-item" });
+      editorLoaded(test.editor);
+    });
+    await advance();
+    expect(preview.contentEl.textContent).toContain(
+      "CITATION-1100 ioannidisWhyMost2005",
+    );
+    await act(async () =>
+      test.editor.selectItem(test.editor.store.getState().item!),
+    );
+    await advance();
+    expect(preview.getState()["citationExample"]).toBeNull();
+    expect(preview.contentEl.textContent).toContain(
+      "CITATION-1100 figures2014",
+    );
+    await act(async () => preview.close());
+  },
+);

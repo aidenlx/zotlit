@@ -276,6 +276,43 @@ export class TemplateConversionReviewModal extends Modal {
         sources,
       );
     }
+    if (review.kept?.length) {
+      this.#text("p", m.conversion_review_retained_citation());
+      for (const path of review.kept)
+        this.#text("p", m.conversion_review_retained_file({ path }));
+    }
+    if (review.validatedPartials?.length) {
+      this.#text("p", m.conversion_repair_partials_validated());
+      for (const path of review.validatedPartials) this.#text("p", path);
+    }
+    if (review.documents.length) {
+      this.#text("h3", m.conversion_repair_documents());
+      for (const document of review.documents) {
+        const details = this.#text("details", "");
+        this.#text("summary", document.path, details);
+        this.#text("pre", document.source, details);
+        this.#button(
+          m.conversion_repair_edit_source({
+            file: document.path.split("/").at(-1)!,
+          }),
+          async () => {
+            const copy = await this.#migration.resumeRepair();
+            const file = copy
+              ? this.app.vault.getFileByPath(
+                  `${copy.editor.folder}/${document.path.split("/").at(-1)!}`,
+                )
+              : null;
+            if (!file) throw new Error(m.conversion_repair_no_document());
+            await openTemplateWorkbench(this.app, file, {
+              itemIndexedKey: review.itemKey,
+              explainUnsupported: false,
+            });
+            this.close();
+          },
+          details,
+        );
+      }
+    }
     for (const comparison of review.comparisons) {
       const details = this.#text("details", "");
       this.#text(
@@ -462,6 +499,12 @@ function repairDiagnostic(diagnostic: ConversionRepairDiagnostic): string {
       break;
     case "input-language-occupied":
       message = m.conversion_repair_language_occupied();
+      break;
+    case "support-document-changed":
+      message = m.conversion_repair_support_changed();
+      break;
+    case "invalid-copy-output":
+      message = m.conversion_repair_invalid_output();
       break;
     case "evaluation-failed":
       message = m.conversion_repair_evaluation_failed();
