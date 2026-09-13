@@ -286,6 +286,7 @@ export type WorkbenchClassMap = {
 /** The icons the tree asks for, named by role so each host picks the glyph. */
 export type WorkbenchIcon =
   | "copy"
+  | "help"
   | "confirm"
   | "add"
   | "remove"

@@ -31,12 +31,12 @@ the reader can do next, in terms of the template and its result.
 
 ## Guide the first annotation edit
 
-Annotation offers one **Help** toggle in the same row as the task. Its bounded
-inline guide keeps the source visible and the editor mounted, preserving
-selection, scroll, and history. The same toggle opens and closes the guide.
-Place the toggle directly after the task text. Present the guide as quiet text
-on the pane surface. Keyboard users can also close it with Escape and return
-focus to Help.
+Annotation offers one **Help** icon toggle in the same row as the task. Its
+bounded inline guide keeps the source visible and the editor mounted,
+preserving selection, scroll, and history. The same toggle opens and closes
+the guide. Place the toggle directly after the task text. Present the guide as
+quiet text on the pane surface. Keyboard users can also close it with Escape
+and return focus to Help.
 
 Teach one edit: replace `[!note]` with `[!quote]` in the built-in annotation format
 and keep the rest of the line. Ask the researcher to inspect a real annotation

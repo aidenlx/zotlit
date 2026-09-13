@@ -27,6 +27,7 @@ import {
   SquareCheck,
   Calendar,
   Clock,
+  CircleHelp,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -44,6 +45,7 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
   more: Ellipsis,
   copy: Copy,
+  help: CircleHelp,
   confirm: Check,
   add: Plus,
   remove: Trash2,
@@ -283,7 +285,7 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     annotation: {
       "help-bar": "mb-3 shrink-0 leading-normal",
-      "help-button": buttonVariants({ variant: "ghost", size: "xs" }),
+      "help-button": buttonVariants({ variant: "ghost", size: "icon-xs" }),
       "help-lede": "text-xs text-pretty text-fd-muted-foreground",
       "help-toggle": "ms-1 inline-block align-baseline",
       help: "mb-3 flex max-h-40 shrink-0 flex-col gap-1 overflow-auto text-xs leading-normal text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-fd-ring",

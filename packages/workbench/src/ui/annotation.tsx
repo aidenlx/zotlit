@@ -160,6 +160,7 @@ export function AnnotationPane({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
+  const icon = useIcon();
   const problemId = useId();
   const helpId = useId();
   const helpButton = useRef<HTMLButtonElement>(null);
@@ -192,11 +193,12 @@ export function AnnotationPane({
             ref={helpButton}
             type="button"
             {...part("help-button")}
+            aria-label={m.workbench_help()}
             aria-expanded={helpOpen}
             aria-controls={helpId}
             onClick={() => setHelpOpen(!helpOpen)}
           >
-            {m.workbench_help()}
+            {icon("help")}
           </button>
         </span>
       </p>

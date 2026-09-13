@@ -12,6 +12,7 @@ import { codePane } from "./editor-extension";
 
 export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
+  help: "circle-help",
   confirm: "check",
   add: "plus",
   remove: "trash-2",
@@ -469,7 +470,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     annotation: {
       "help-bar": "zt:mb-3 zt:shrink-0 zt:leading-normal",
-      "help-button": "clickable-icon zt:text-xs zt:text-muted-foreground",
+      "help-button": cn("clickable-icon", captionIcon),
       "help-lede": hint,
       "help-toggle": "zt:ms-1 zt:inline-block zt:align-baseline",
       help: "zt:mb-3 zt:flex zt:max-h-40 zt:shrink-0 zt:flex-col zt:gap-1 zt:overflow-auto zt:text-xs zt:leading-normal zt:text-muted-foreground zt:focus-visible:outline-2 zt:focus-visible:outline-ring",

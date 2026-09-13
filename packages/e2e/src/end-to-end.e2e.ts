@@ -433,13 +433,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(
           await obEvalUntil(
             freshId,
-            `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
+            `(function(){const view=${editor};const help=view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]');if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
             { expected: "true" },
           ),
         ).toBe(true);
         await obEval(
           freshId,
-          `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())}).click();return true;})()`,
+          `(function(){const view=${editor};view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]').click();return true;})()`,
         );
         expect(
           await obEvalUntil(
@@ -455,7 +455,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(
           await obEvalUntil(
             freshId,
-            `(function(){const view=${editor};const help=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.workbench_help())});return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
+            `(function(){const view=${editor};const help=view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]');return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
             { expected: "true" },
           ),
         ).toBe(true);
