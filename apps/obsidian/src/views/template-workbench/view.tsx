@@ -68,6 +68,7 @@ import {
   NotePane,
   PropertiesPane,
   ProblemsFooter,
+  WorkbenchDiagnosticsProvider,
   problemText,
   useWorkbenchProblems,
   workbenchDiagnoses,
@@ -2267,7 +2268,7 @@ function EditorContent({
   const selection =
     (slice: WorkbenchInsertTarget["slice"]) => (range: WorkbenchSliceRange) =>
       onSelection({ slice, range });
-  return (
+  const content = (
     // The pane the source and the Problems area share. It measures itself, so
     // whether a reading fits beside the source is the pane's own question
     // rather than the window's.
@@ -2525,6 +2526,11 @@ function EditorContent({
         onReturn={returnToTemplate}
       />
     </div>
+  );
+  return (
+    <WorkbenchDiagnosticsProvider value={selectedDiagnoses}>
+      {content}
+    </WorkbenchDiagnosticsProvider>
   );
 }
 

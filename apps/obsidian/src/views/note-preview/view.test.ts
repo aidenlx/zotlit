@@ -238,7 +238,8 @@ const advance = (ms = 300) =>
 /** Presses the preview's own button whose text is `label`. */
 function previewButton(view: Preview, label: string): void {
   const button = Array.from(view.contentEl.querySelectorAll("button")).find(
-    (element) => element.textContent === label,
+    (element) =>
+      (element.getAttribute("aria-label") ?? element.textContent) === label,
   );
   if (!button) throw new Error(`Missing preview action: ${label}`);
   button.click();
@@ -256,7 +257,8 @@ function problemsArea(view: Editor): HTMLElement {
 /** Presses the Problems area's own button whose text is `label`. */
 function problemsButton(view: Editor, label: string): void {
   const button = Array.from(problemsArea(view).querySelectorAll("button")).find(
-    (element) => element.textContent === label,
+    (element) =>
+      (element.getAttribute("aria-label") ?? element.textContent) === label,
   );
   if (!button) throw new Error(`Missing Problems action: ${label}`);
   button.click();
@@ -1300,11 +1302,13 @@ Annotation`,
     expect(test.editor.arrival).toBeNull();
 
     await act(async () =>
-      problemsButton(test.editor, m.workbench_problems_collapse()),
+      problemsButton(test.editor, m.workbench_problems_return()),
     );
     expect(area.querySelector('[data-part="problems-body"]')).toBeNull();
     expect(
-      area.querySelector('[data-part="problems-toggle"]')?.textContent,
+      area
+        .querySelector('[data-part="problems-toggle"]')
+        ?.getAttribute("aria-label"),
     ).toBe(m.workbench_problem_show());
 
     await act(async () =>
@@ -1314,7 +1318,9 @@ Annotation`,
       ),
     );
     expect(
-      area.querySelector('[data-part="problems-toggle"]')?.textContent,
+      area
+        .querySelector('[data-part="problems-toggle"]')
+        ?.getAttribute("aria-label"),
     ).toBe(m.workbench_problem_show());
     expect(test.fixture.writes.create).not.toHaveBeenCalled();
     expect(test.fixture.writes.modify).not.toHaveBeenCalled();
@@ -1726,9 +1732,11 @@ Annotation`,
     const partial = m.workbench_problems_object_partial({
       name: "book-details",
     });
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 2 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 2 }));
 
     // Show problem reads the preview's own failure in full. One explanation
     // is shown at a time, so the other problem's guidance is not on screen.
@@ -1770,9 +1778,11 @@ Annotation`,
     // The remaining problem keeps the area from reporting success, and the
     // reader is offered the next explanation rather than moved to it.
     expect(area.textContent).toContain(m.workbench_problems_resolved());
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 1 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 1 }));
     expect(area.textContent).not.toContain(m.workbench_problems_none());
     expect(area.textContent).not.toContain(
       m.workbench_problem_invalid_manifest_recovery(),
@@ -1822,9 +1832,11 @@ Annotation`,
     await act(async () => previewButton(preview, m.workbench_problem_show()));
 
     const area = problemsArea(test.editor);
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 1 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 1 }));
     // The one it stopped at, explained; the second fault is undiscovered and
     // the count makes no claim about it.
     expect(area.textContent).toContain("undefined filter: bogus_one");

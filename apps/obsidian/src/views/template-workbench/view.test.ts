@@ -1542,7 +1542,8 @@ language: liquid
     );
 
     const show = [...area.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_problem_show(),
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_problem_show(),
     )!;
     await act(async () => show.click());
     expect(area.textContent).toContain(m.workbench_annotation_label());
@@ -1552,7 +1553,8 @@ language: liquid
     expect(area.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
 
     const collapse = [...area.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_problems_collapse(),
+      (button) =>
+        button.getAttribute("aria-label") === m.workbench_problems_return(),
     )!;
     await act(async () => collapse.click());
     expect(area.textContent).not.toContain(
@@ -1592,15 +1594,15 @@ language: liquid
     const press = (label: string) =>
       act(async () =>
         [...area.querySelectorAll("button")]
-          .find((button) => button.textContent === label)!
+          .find(
+            (button) =>
+              (button.getAttribute("aria-label") ?? button.textContent) ===
+              label,
+          )!
           .click(),
       );
     await press(m.workbench_problem_show());
-    await press(m.workbench_problems_expand());
-    expect(area.dataset.state).toBe("full");
-    expect(area.querySelector('[data-part="problems-scroll"]')).toBe(
-      document.activeElement,
-    );
+    expect(area.dataset.state).toBe("open");
 
     await press(m.workbench_problems_return());
     // The area gives the editor back whole, and the caret is where it was.
@@ -1633,8 +1635,7 @@ language: liquid
         view.contentEl.querySelector<HTMLElement>(selector)!.click(),
       );
     await press('[data-part="problems-toggle"]');
-    await press('[data-part="problems-expand"]');
-    expect(area.dataset.state).toBe("full");
+    expect(area.dataset.state).toBe("open");
 
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");

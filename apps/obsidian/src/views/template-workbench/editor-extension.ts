@@ -17,6 +17,18 @@ const popoutCopy = EditorView.domEventHandlers({
 });
 
 export const codePane: Extension = [
+  EditorView.theme({
+    ".cm-lintRange-error": {
+      backgroundImage: "none",
+      textDecoration: "underline wavy var(--text-error)",
+      textUnderlineOffset: "0.2em",
+    },
+    ".cm-diagnostic-error": { borderInlineStartColor: "var(--text-error)" },
+    ".cm-tooltip-lint": {
+      backgroundColor: "var(--background-primary)",
+      color: "inherit",
+    },
+  }),
   EditorView.editorAttributes.of({ class: CODE_PANE_CLASS }),
   popoutCopy,
   ViewPlugin.define((view) => {

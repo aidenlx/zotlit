@@ -47,6 +47,7 @@ import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
   ProblemsFooter,
+  WorkbenchDiagnosticsProvider,
   tabLabel,
   tabLede,
   TabBar,
@@ -1309,7 +1310,11 @@ export function Workbench() {
   );
   return (
     <WorkbenchThemeProvider theme={WEB_THEME}>
-      <WorkbenchHostProvider host={host}>{page}</WorkbenchHostProvider>
+      <WorkbenchHostProvider host={host}>
+        <WorkbenchDiagnosticsProvider value={problems.diagnoses}>
+          {page}
+        </WorkbenchDiagnosticsProvider>
+      </WorkbenchHostProvider>
     </WorkbenchThemeProvider>
   );
 }

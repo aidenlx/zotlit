@@ -65,6 +65,17 @@ describe("problemText", () => {
     expect(text).toContain(failure.evidence!.stack);
   });
 
+  it("shows an unclassified engine error instead of replacing its cause", () => {
+    const diagnosis = renderDiagnosis({
+      code: "render-error",
+      message:
+        "Cannot read properties of undefined (reading 'title')\n    at template:4",
+    });
+    expect(diagnosisExplanation(m, diagnosis).condition).toBe(
+      "Cannot read properties of undefined (reading 'title')",
+    );
+  });
+
   it("writes the web host's own codes in the reader's catalog", () => {
     const controller = new WorkbenchDocumentController(
       DEFAULT_PROFILE_SOURCE.replace("language: liquid", "language: eta"),
@@ -210,7 +221,7 @@ describe("diagnosticText", () => {
     ).toBe(m.workbench_diagnostic_missing_partial({ name: "venue-line" }));
   });
 
-  it("reads an unclassified engine failure as a plain sentence", () => {
+  it("keeps a short preview notice and exposes the cause in Problems", () => {
     const failure = {
       code: "render-error",
       message: "Unexpected tag",
@@ -220,11 +231,10 @@ describe("diagnosticText", () => {
     expect(diagnosticText(m, failure)).toBe(
       m.workbench_diagnostic_render_error(),
     );
-    // The engine's own words are evidence, and Technical details is where the
-    // reader finds them.
+    // Problems shows the cause without requiring a second disclosure.
     expect(diagnosisExplanation(m, renderDiagnosis(failure))).toEqual({
       object: m.workbench_problems_object_profile(),
-      condition: m.workbench_diagnostic_render_error(),
+      condition: "Unexpected tag",
       suggestion: m.workbench_diagnostic_render_error_suggestion(),
       evidence: "Unexpected tag",
     });
@@ -308,7 +318,7 @@ describe("attribution", () => {
     expect(diagnostic.code).toBe("render-error");
     expect(diagnosisExplanation(m, found)).toEqual({
       object: m.workbench_problems_object_profile(),
-      condition: m.workbench_diagnostic_render_error(),
+      condition: "pandoc_cite requires a Citation Item array",
       suggestion: m.workbench_diagnostic_render_error_suggestion(),
       evidence: "pandoc_cite requires a Citation Item array",
     });

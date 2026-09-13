@@ -248,7 +248,8 @@ export interface WorkbenchParts {
     | "problems-count"
     | "problems-text"
     | "problems-space"
-    | "problems-expand"
+    | "problems-resize"
+    | "problems-error-icon"
     | "problems-toggle"
     | "problems-body"
     | "problems-scroll"
@@ -265,7 +266,6 @@ export interface WorkbenchParts {
     | "problems-controls"
     | "problems-copy"
     | "problems-community"
-    | "problems-return"
     | "problems-open";
 }
 
@@ -295,6 +295,8 @@ export type WorkbenchIcon =
   | "redo"
   | "preview"
   | "edit"
+  | "chevron-up"
+  | "error"
   | "chevron-down"
   | "chevron-right"
   | "more"

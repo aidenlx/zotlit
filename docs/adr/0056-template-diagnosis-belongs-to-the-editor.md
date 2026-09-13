@@ -148,9 +148,11 @@ including when a parser can only report its first error. Automatic checks
 preserve the selected problem. If it resolves while others remain, its resolved
 state offers Next problem so the reader controls the change of explanation.
 
-Source and Problems share the editor while both remain readable, with Expand
-available on request. CSS container rules give Problems the full editor in
-short or narrow panes. Return to template restores the source position.
+Source and Problems share the editor. A draggable, keyboard-accessible divider
+sets the open area’s share and retains it through checks and reopening. One
+ghost chevron opens the area or closes it and restores source focus. Verified
+source ranges carry persistent CodeMirror lint markers, independent of the
+explanation’s disclosure state.
 Reporting controls stay outside the scrolling explanation, and long labels
 wrap to keep them reachable.
 

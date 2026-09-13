@@ -26,6 +26,8 @@ export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   redo: "redo-2",
   preview: "eye",
   edit: "pencil",
+  "chevron-up": "chevron-up",
+  error: "circle-alert",
   "chevron-down": "chevron-down",
   "chevron-right": "chevron-right",
   more: "ellipsis",
@@ -304,7 +306,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       ),
       "problem-text": "zt:min-w-0 zt:text-pretty",
       "problem-heading": "zt:font-semibold zt:text-(--text-error)",
-      "problem-output": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
+      "problem-output":
+        "zt:min-w-0 zt:text-pretty zt:font-medium zt:text-foreground",
       // Show problem reads inside the sentence that reports the failure, so
       // it wears link text rather than the native button box; the box, font
       // and hover Obsidian styles unlayered are taken back in `theme.css`.
@@ -487,25 +490,27 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
-      "problems-return": templateWorkbenchButton,
-      // How much editor each of its three sizes takes is a container rule in
-      // `style.css`, where an unlayered `button` rule can be outranked.
+      // The divider sets the area's share; the host supplies native colors.
       problems:
-        "zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal",
+        "zt:relative zt:flex zt:min-h-0 zt:flex-col zt:gap-2 zt:border-t zt:border-border zt:p-3 zt:text-xs zt:leading-normal zt:data-[error]:border-s-2 zt:data-[error]:border-s-(--text-error)",
       "problems-summary":
-        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-3 zt:gap-y-1",
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1",
       "problems-heading": "zt:font-semibold",
       // A value that changes as problems are repaired, so its digits hold
       // their width and it keeps its own line rather than wrapping mid-count.
       "problems-count":
-        "zt:shrink-0 zt:text-muted-foreground zt:tabular-nums zt:whitespace-nowrap",
-      "problems-text": "zt:min-w-0 zt:text-pretty zt:text-muted-foreground",
+        "zt:shrink-0 zt:rounded-sm zt:bg-(--background-modifier-error)/10 zt:text-foreground zt:px-1.5 zt:font-medium zt:tabular-nums zt:whitespace-nowrap",
+      "problems-text":
+        "zt:min-w-0 zt:text-pretty zt:font-medium zt:text-foreground",
       // Each control is capped at the row, so a long translated label wraps
       // inside its own box instead of running past the pane.
       "problems-space":
         "zt:ms-auto zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:[&>*]:max-w-full zt:[&>*]:min-w-0",
-      "problems-expand": cn(templateWorkbenchButton, "zt:px-1.5 zt:py-1"),
-      "problems-toggle": cn(templateWorkbenchButton, "zt:px-1.5 zt:py-1"),
+      "problems-resize":
+        "zt:absolute zt:inset-x-0 zt:-top-1 zt:h-2 zt:cursor-row-resize zt:touch-none zt:select-none zt:hover:bg-(--background-modifier-border-hover) zt:focus-visible:bg-(--background-modifier-border-focus)",
+      "problems-error-icon":
+        "zt:flex zt:shrink-0 zt:items-center zt:text-(--text-error) zt:[&_svg]:size-4",
+      "problems-toggle": selectionControl({ kind: "icon" }),
       "problems-body":
         "zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-1",
       // The explanation, and only the explanation, scrolls. It takes whatever
@@ -523,7 +528,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "problems-select": "zt:min-w-0 zt:max-w-full zt:self-start",
       "problems-next": templateWorkbenchButton,
       "problems-object": "zt:font-semibold zt:[overflow-wrap:anywhere]",
-      "problems-recovery": "zt:text-pretty zt:text-muted-foreground",
+      "problems-recovery":
+        "zt:max-w-[75ch] zt:text-pretty zt:leading-normal zt:text-foreground",
       // A reported location names the engine's own template, which is one
       // unbroken machine-written token in a pane the reader can narrow.
       "problems-location":

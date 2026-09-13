@@ -177,3 +177,5 @@ export type {
 } from "./explorer-sections";
 export { DataExplorer } from "./data-explorer";
 export type { DataExplorerProps, ExplorerPresentation } from "./data-explorer";
+
+export { WorkbenchDiagnosticsProvider } from "./source-diagnostics";

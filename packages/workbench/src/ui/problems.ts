@@ -533,7 +533,18 @@ export function diagnosisExplanation(
   const { diagnostic } = diagnosis;
   return {
     object: diagnosticObject(m, diagnostic),
-    condition: diagnosticText(m, diagnostic),
+    // An unclassified failure still has evidence. Keep its first message line
+    // visible; stack traces and source excerpts stay in the complete report.
+    condition:
+      (diagnostic.code === "render-error"
+        ? (
+            diagnostic.evidence?.message ??
+            diagnostic.report?.evidence?.message ??
+            diagnostic.message
+          )
+            ?.trim()
+            .split("\n", 1)[0]
+        : undefined) || diagnosticText(m, diagnostic),
     suggestion: diagnosticSuggestion(m, diagnostic),
     ...(diagnostic.message === undefined
       ? {}

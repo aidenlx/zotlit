@@ -17,13 +17,8 @@
 // render failure with its attempt, and this area stamps a parser problem with
 // the check that found it.
 //
-// Source and explanation share the editor while both fit, and Expand hands the
-// whole editor over on request. The area states which of the three sizes it is
-// in and the hosts size it from CSS, so a pane too short or too narrow for the
-// split reaches the same full-editor reading without this tree measuring
-// anything. The explanation scrolls inside the area; the controls sit under
-// that scroll, where a long explanation and an open disclosure leave every one
-// of them where the reader last saw it.
+// Source and explanation share the pane. The divider adjusts that share;
+// the chevron closes the explanation and returns focus to the source.
 
 import type { RenderReport, WorkbenchReportContext } from "#/render/report";
 import type { RenderDiagnostic, TemplateRenderResult } from "#/render/result";
@@ -53,7 +48,7 @@ import {
 } from "./problems";
 import type { RenderTrigger } from "./scheduler";
 import { WorkbenchOption, WorkbenchSelect } from "./select";
-import { useParts } from "./theme";
+import { useParts, useIcon } from "./theme";
 
 import { captureProblemReport, formatRenderReport } from "#/render/report";
 
@@ -72,12 +67,6 @@ export interface WorkbenchProblemsState {
   /** The reader's own open-or-collapsed choice, which checks never change. */
   readonly open: boolean;
   /**
-   * Whether the reader asked for the whole editor to read in. A pane with no
-   * room for the split reaches the same reading from CSS, so this says what was
-   * asked for rather than what the pane ended up giving.
-   */
-  readonly expanded: boolean;
-  /**
    * The selected problem's captured report, or the last one read once that
    * problem is resolved. Bounded to what is being inspected: one repair does
    * not build a history, and a later problem brings its own report.
@@ -95,7 +84,6 @@ export interface WorkbenchProblemsState {
   readonly select: (id: string) => void;
   /** Opens or reclaims the area; reclaiming it also gives back the editor. */
   readonly setOpen: (open: boolean) => void;
-  readonly setExpanded: (expanded: boolean) => void;
 }
 
 /**
@@ -127,7 +115,6 @@ export function useWorkbenchProblems({
 }): WorkbenchProblemsState {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   // Reclaiming the area hands the editor back whole, so the next Show problem
   // starts from the split rather than from the space the last reading took.
   // The reading is over with it: a compact area follows the first problem
@@ -137,7 +124,6 @@ export function useWorkbenchProblems({
   const openArea = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) {
-      setExpanded(false);
       setSelectedId(null);
     }
   }, []);
@@ -220,7 +206,6 @@ export function useWorkbenchProblems({
     selected,
     inspected: selected ?? reading.current,
     open,
-    expanded,
     report: current ?? (selected === null ? inspected : null),
     resolved: current === null,
     // Offered rather than taken: a check that resolves the selected problem
@@ -231,7 +216,6 @@ export function useWorkbenchProblems({
       setOpen(true);
     },
     setOpen: openArea,
-    setExpanded,
   };
 }
 
@@ -302,6 +286,10 @@ export function ProblemsFooter({
   const m = useWorkbenchMessages();
   const host = useOptionalHost();
   const part = useParts("problemsFooter");
+  const icon = useIcon();
+  const panel = useRef<HTMLElement>(null);
+  const [size, setSize] = useState(55);
+  const drag = useRef<{ y: number; size: number; height: number } | null>(null);
   const headingId = useId();
   const bodyId = useId();
   const {
@@ -310,9 +298,7 @@ export function ProblemsFooter({
     inspected,
     next,
     open,
-    expanded,
     setOpen,
-    setExpanded,
     report,
     resolved,
   } = problems;
@@ -323,7 +309,7 @@ export function ProblemsFooter({
     if (!focusReadingAfterCommit.current) return;
     focusReadingAfterCommit.current = false;
     scroll.current?.focus();
-  }, [expanded, open, selected?.id]);
+  }, [open, selected?.id]);
   /** Focus the stable explanation region after its trigger disappears. */
   function focusReading(): void {
     focusReadingAfterCommit.current = true;
@@ -414,18 +400,6 @@ export function ProblemsFooter({
       </>
     );
   }
-  /** Leaves the reader the template again, from wherever the reading got to. */
-  function returnControl() {
-    return (
-      <button
-        type="button"
-        onClick={returnToTemplate}
-        {...part("problems-return")}
-      >
-        {m.workbench_problems_return()}
-      </button>
-    );
-  }
   // Nothing found and nothing open: the area gives its space back to the
   // source rather than reporting its own emptiness.
   if (selected === null && !open) return null;
@@ -437,13 +411,74 @@ export function ProblemsFooter({
   const several = diagnoses.length > 1;
   return (
     <section
+      ref={panel}
+      style={open ? { flex: `0 0 ${size}%` } : undefined}
+      data-error={diagnoses.length > 0 || undefined}
       aria-labelledby={headingId}
-      // Three sizes, stated rather than measured: the summary alone, the split
-      // with the source, and the whole editor. A pane with no room for the
-      // split reads "open" and the host's container rules give it the editor.
-      {...part("problems", open ? (expanded ? "full" : "open") : "compact")}
+      // The reader's chosen share survives checks, repairs, and reopening.
+      {...part("problems", open ? "open" : "compact")}
     >
+      {open && (
+        <div
+          role="separator"
+          tabIndex={0}
+          aria-label={m.workbench_problems_heading()}
+          aria-orientation="horizontal"
+          aria-valuemin={20}
+          aria-valuemax={85}
+          aria-valuenow={Math.round(size)}
+          aria-controls={selected || reportText || next ? bodyId : undefined}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            const height =
+              panel.current!.parentElement!.getBoundingClientRect().height;
+            drag.current = { y: event.clientY, size, height };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            event.preventDefault();
+          }}
+          onPointerMove={(event) => {
+            const start = drag.current;
+            if (start)
+              setSize(
+                Math.max(
+                  20,
+                  Math.min(
+                    85,
+                    start.size +
+                      ((start.y - event.clientY) / start.height) * 100,
+                  ),
+                ),
+              );
+          }}
+          onPointerUp={(event) => {
+            drag.current = null;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onLostPointerCapture={() => {
+            drag.current = null;
+          }}
+          onKeyDown={(event) => {
+            const next =
+              event.key === "ArrowUp"
+                ? size + 5
+                : event.key === "ArrowDown"
+                  ? size - 5
+                  : event.key === "Home"
+                    ? 20
+                    : event.key === "End"
+                      ? 85
+                      : null;
+            if (next === null) return;
+            event.preventDefault();
+            setSize(Math.max(20, Math.min(85, next)));
+          }}
+          {...part("problems-resize")}
+        />
+      )}
       <div {...part("problems-summary")}>
+        {diagnoses.length > 0 && (
+          <span {...part("problems-error-icon")}>{icon("error")}</span>
+        )}
         <p id={headingId} {...part("problems-heading")}>
           {m.workbench_problems_heading()}
         </p>
@@ -452,8 +487,12 @@ export function ProblemsFooter({
         {diagnoses.length === 0 ? (
           <p {...part("problems-text")}>{m.workbench_problems_none()}</p>
         ) : (
-          <p {...part("problems-count")}>
-            {m.workbench_problems_count({ count: diagnoses.length })}
+          <p
+            role="status"
+            aria-label={m.workbench_problems_count({ count: diagnoses.length })}
+            {...part("problems-count")}
+          >
+            {diagnoses.length}
           </p>
         )}
         {!open && explanation !== null && (
@@ -462,28 +501,20 @@ export function ProblemsFooter({
         {/* How much of the editor this reading takes, on the trailing edge and
             together: one grows the area, the other gives it all back. */}
         <div {...part("problems-space")}>
-          {open && !expanded && (
-            <button
-              type="button"
-              onClick={() => {
-                focusReading();
-                setExpanded(true);
-              }}
-              {...part("problems-expand")}
-            >
-              {m.workbench_problems_expand()}
-            </button>
-          )}
           <button
             type="button"
+            aria-label={
+              open ? m.workbench_problems_return() : m.workbench_problem_show()
+            }
+            title={
+              open ? m.workbench_problems_return() : m.workbench_problem_show()
+            }
             aria-expanded={open}
             aria-controls={open ? bodyId : undefined}
             onClick={toggleOpen}
             {...part("problems-toggle")}
           >
-            {open
-              ? m.workbench_problems_collapse()
-              : m.workbench_problem_show()}
+            {icon(open ? "chevron-down" : "chevron-up")}
           </button>
         </div>
       </div>
@@ -541,7 +572,6 @@ export function ProblemsFooter({
             >
               {diagnosisWhere(m, selected)}
             </button>
-            {returnControl()}
             {reportControls(reportText)}
           </div>
         </div>
@@ -581,7 +611,6 @@ export function ProblemsFooter({
                   {m.workbench_problems_next()}
                 </button>
               )}
-              {returnControl()}
               {reportControls(reportText)}
             </div>
           </div>

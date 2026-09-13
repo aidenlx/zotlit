@@ -225,36 +225,16 @@
   height: auto;
 }
 
-/* How much editor a reading takes. The summary is whatever one row of it needs.
-   A reading takes a fixed share of the pane, so a repair that empties the
-   explanation leaves the source where it stands. Expand, and a pane with no
-   room left for the split, both give the explanation the whole pane — the
-   source keeps its flexible basis, so it gives its height up and comes back
-   with it. The two container conditions are one measurement written twice, so
-   exactly one of them ever applies, and a pane that already gave everything
-   has nothing left for Expand to do. Declared here because `button` and
-   `.clickable-icon` are styled unlayered, which no `zt:` utility outranks. */
+/* The open area's chosen size lives on its element; the closed strip follows
+   its content. Error text uses the theme's error role in both color schemes. */
 .view-content.zt-template-workbench
   [data-part="problems"][data-state="compact"] {
   flex: 0 0 auto;
 }
-.view-content.zt-template-workbench [data-part="problems"][data-state="full"] {
-  flex: 1 1 100%;
-}
-@container workbench-editor ((height >= 36rem) and (width >= 24rem)) {
-  .view-content.zt-template-workbench
-    [data-part="problems"][data-state="open"] {
-    flex: 0 0 55%;
-  }
-}
-@container workbench-editor ((height < 36rem) or (width < 24rem)) {
-  .view-content.zt-template-workbench
-    [data-part="problems"][data-state="open"] {
-    flex: 1 1 100%;
-  }
-  .view-content.zt-template-workbench [data-part="problems-expand"] {
-    display: none;
-  }
+.view-content.zt-template-workbench
+  [data-part="problems"][data-error]
+  [data-part="problems-text"] {
+  color: color-mix(in srgb, var(--text-error) 90%, var(--text-normal));
 }
 /* `button { white-space: nowrap }` is unlayered, so a long translated label
    only wraps where a rule declared here says so. Both rows are controls the

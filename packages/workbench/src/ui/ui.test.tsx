@@ -370,7 +370,7 @@ describe("the edit toolbar", () => {
     open area carries whatever problem it explains. */
 const SPACE_CONTROLS = new Set([
   m.workbench_problems_expand(),
-  m.workbench_problems_collapse(),
+  m.workbench_problems_return(),
   m.workbench_problems_return(),
 ]);
 
@@ -451,7 +451,9 @@ describe("the Problems area", () => {
     expect(
       screen
         .getAllByRole("button")
-        .map((button) => button.textContent)
+        .map(
+          (button) => button.getAttribute("aria-label") ?? button.textContent,
+        )
         .filter((label) => !SPACE_CONTROLS.has(label ?? "")),
     ).toEqual([m.workbench_problems_where_advanced()]);
   });
@@ -483,7 +485,9 @@ describe("the Problems area", () => {
     expect(
       screen
         .getAllByRole("button")
-        .map((button) => button.textContent)
+        .map(
+          (button) => button.getAttribute("aria-label") ?? button.textContent,
+        )
         .filter((label) => !SPACE_CONTROLS.has(label ?? "")),
     ).toEqual([
       m.workbench_problems_where_entry(),
@@ -565,9 +569,11 @@ describe("the Problems area", () => {
     const area = screen.getByRole("region", {
       name: m.workbench_problems_heading(),
     });
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 3 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 3 }));
     expect(
       screen.getAllByRole("option").map((option) => option.textContent),
     ).toEqual([
@@ -626,9 +632,11 @@ describe("the Problems area", () => {
     const area = screen.getByRole("region", {
       name: m.workbench_problems_heading(),
     });
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 2 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 2 }));
     expect(area.textContent).toContain("First");
 
     fireEvent.click(screen.getByText("repair"));
@@ -636,9 +644,11 @@ describe("the Problems area", () => {
     // offered, so nothing reads as success and nothing moves on its own.
     expect(area.textContent).toContain(m.workbench_problems_resolved());
     expect(area.textContent).not.toContain(m.workbench_problems_none());
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 1 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 1 }));
     expect(area.textContent).not.toContain("Later");
 
     fireEvent.click(
@@ -651,7 +661,7 @@ describe("the Problems area", () => {
     );
   });
 
-  it("hands the editor over on Expand and takes the reader back to the source", () => {
+  it("resizes the explanation and returns focus through one chevron", () => {
     let returned = 0;
     let editor: HTMLButtonElement | null = null;
     using mounted = mount(
@@ -693,7 +703,6 @@ describe("the Problems area", () => {
     expect(scroll?.querySelector("details")).not.toBeNull();
     for (const label of [
       m.workbench_problems_where_advanced(),
-      m.workbench_problems_return(),
       m.workbench_problems_community(),
     ])
       expect(
@@ -701,17 +710,16 @@ describe("the Problems area", () => {
         `${label} is under the scroll`,
       ).toBe(true);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_problems_expand() }),
-    );
-    expect(area.dataset.state).toBe("full");
-    expect(document.activeElement).toBe(
-      area.querySelector("[data-part=problems-scroll]"),
-    );
-    // Nothing left to expand into, so the control that asked for it goes.
-    expect(
-      screen.queryByRole("button", { name: m.workbench_problems_expand() }),
-    ).toBeNull();
+    const divider = screen.getByRole("separator");
+    expect(divider.getAttribute("aria-valuenow")).toBe("55");
+    fireEvent.keyDown(divider, { key: "ArrowUp" });
+    expect(area.style.flexBasis).toBe("60%");
+    fireEvent.keyDown(divider, { key: "End" });
+    expect(area.style.flexBasis).toBe("85%");
+    fireEvent.keyDown(divider, { key: "ArrowUp" });
+    expect(divider.getAttribute("aria-valuenow")).toBe("85");
+    fireEvent.keyDown(divider, { key: "Home" });
+    expect(area.style.flexBasis).toBe("20%");
 
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_problems_return() }),
@@ -757,10 +765,8 @@ describe("the Problems area", () => {
     const area = screen.getByRole("region", {
       name: m.workbench_problems_heading(),
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_problems_expand() }),
-    );
-    expect(area.dataset.state).toBe("full");
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "End" });
+    expect(area.style.flexBasis).toBe("85%");
 
     // An explanation holding the whole editor would send the reader to source
     // it hides, so the reading gives the pane back before the caret moves.
@@ -821,7 +827,7 @@ describe("the Problems area", () => {
       m.workbench_diagnostic_missing_partial_suggestion(),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_problems_collapse() }),
+      screen.getByRole("button", { name: m.workbench_problems_return() }),
     );
     expect(area.dataset.state).toBe("compact");
 
@@ -829,9 +835,11 @@ describe("the Problems area", () => {
     // A compact area follows the first problem found, so the repair leaves the
     // summary on the one still there rather than on nothing at all.
     expect(area.dataset.state).toBe("compact");
-    expect(area.textContent).toContain(
-      m.workbench_problems_count({ count: 1 }),
-    );
+    expect(
+      area
+        .querySelector('[data-part="problems-count"]')
+        ?.getAttribute("aria-label"),
+    ).toBe(m.workbench_problems_count({ count: 1 }));
     expect(area.textContent).toContain(
       m.workbench_diagnostic_property_error({
         key: "tags",
@@ -878,18 +886,15 @@ describe("the Problems area", () => {
     using mounted = mount(<Harness />);
     const { ui } = mounted;
     render(ui);
-    // The explanation reads the plain condition; the engine's own words stay
-    // under Technical details.
     expect(
-      screen.getByText(m.workbench_diagnostic_render_error()),
+      screen.getByText("Late", { selector: '[data-part="problems-text"]' }),
     ).toBeDefined();
-    expect(screen.getByText("Late")).toBeDefined();
 
     fireEvent.click(screen.getByText("repair"));
     expect(screen.getByText(m.workbench_problems_none())).toBeDefined();
 
     fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_problems_collapse() }),
+      screen.getByRole("button", { name: m.workbench_problems_return() }),
     );
     expect(
       screen.queryByRole("region", { name: m.workbench_problems_heading() }),
@@ -952,7 +957,7 @@ describe("the Problems area", () => {
     fireEvent.click(screen.getByText("run"));
     expect(shown()).toBe(true);
     fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_problems_collapse() }),
+      screen.getByRole("button", { name: m.workbench_problems_return() }),
     );
     fireEvent.click(screen.getByText("check"));
     expect(shown()).toBe(false);

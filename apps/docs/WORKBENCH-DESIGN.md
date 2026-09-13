@@ -85,11 +85,15 @@ distinct wording and a relevant next action. Name the Note name result
 
 Give detailed diagnosis a stable reading surface in the editor's Problems
 area, with room for source and explanation while both remain readable.
-Keep source markers short. The preview names the effect on its result and
+Show verified source errors as persistent CodeMirror lint underlines and gutter
+markers. Keep their hover hints short, with a condition and a next step. Error
+icons and semantic error colors distinguish failures from ordinary hints. The preview names the effect on its result and
 offers **Show problem**, leading to the same explanation.
 
 Lead with the affected object, a plain explanation, and a short text suggestion
-for what to check or change. A location the engine reported inside another
+for what to check or change. For an unclassified failure, show the first line
+of the engine’s error and offer the report-sharing path for help identifying
+the cause. Keep its full evidence in Technical details. A location the engine reported inside another
 template reads as its own quiet line, apart from the control that navigates, so
 a reported location is never mistaken for a repair target. Keep technical
 evidence behind a collapsed disclosure. Group **Copy error report** and **Ask the community** beside it,
@@ -133,12 +137,11 @@ editor and result views. These folds protect useful source width. A short,
 narrow viewport scrolls the page while preserving several lines of editor
 space.
 
-Source and Problems share the editor pane. An open Problems area takes a
-settled share of that pane, so a repair that empties the explanation leaves
-the source where it stands. **Expand** hands the explanation the whole pane,
-and a pane with no room left for the split reaches the same reading on its
-own. **Return to template** gives the space back and returns the reader to
-the source they left.
+Source and Problems share the editor pane. An open Problems area keeps the share the reader chooses by dragging its top
+divider. Arrow keys adjust the focused divider; Home and End select its size
+limits. Keep source visible above it. One ghost chevron opens the area or
+closes it and returns focus to the source. Its accessible label names that
+action. A repair that empties the explanation keeps the chosen size.
 
 Use logical direction properties. Keep Help, sheets, menus, and source markers
 reachable by keyboard, with visible focus and returned focus after overlays
