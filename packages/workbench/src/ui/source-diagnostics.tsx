@@ -6,6 +6,7 @@ import type {
 } from "#/document/index";
 import type { Diagnostic } from "@codemirror/lint";
 import { forEachDiagnostic, setDiagnosticsEffect } from "@codemirror/lint";
+import { Compartment } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
@@ -89,7 +90,12 @@ export function sourceDiagnostics({
   });
 }
 
-/** An explicit, keyboard-accessible control beside each affected source line. */
+/**
+ * An explicit, keyboard-accessible control beside each affected source line.
+ * The column is mounted while the pane holds a problem and dropped once it is
+ * clean, so a pane with nothing wrong keeps its full width. The pane owns that
+ * switch: it calls `show` whenever it sets the diagnostics the column reads.
+ */
 export function sourceProblemGutter(
   reveal: (id: string) => void,
   label: () => string,
@@ -110,7 +116,8 @@ export function sourceProblemGutter(
       return button;
     }
   }
-  return [
+  const slot = new Compartment();
+  const column = [
     gutter({
       class: "cm-problem-gutter",
       lineMarker(view, line) {
@@ -171,4 +178,9 @@ export function sourceProblemGutter(
       },
     }),
   ];
+  return {
+    extension: slot.of([]),
+    /** Mount the column while `present`, and drop it once nothing is wrong. */
+    show: (present: boolean) => slot.reconfigure(present ? column : []),
+  };
 }
