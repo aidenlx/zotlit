@@ -62,16 +62,23 @@ export function sourceDiagnostics({
   // The row this pane edits, when it edits one. A property failure names the
   // place inside that row's own expression, which no other pane can place.
   const position = entryPosition(slice);
-  const inEntry = (site: { from: number; to: number } | undefined) =>
+  const inSlice = (site: { from: number; to: number } | undefined) =>
     site && { from: bounds.from + site.from, to: bounds.from + site.to };
+  // Whether a failure's own place is one this pane holds. A site is read
+  // against the text the pane shows, so one fault marks one place: the row it
+  // names, or the note-name pane a note-name failure names.
+  const ownSite = (diagnostic: { part?: string; position?: number }) =>
+    position !== null
+      ? diagnostic.position === position
+      : slice === "filename" && diagnostic.part === "filename";
   return diagnoses.flatMap((diagnosis) => {
     const explanation = diagnosisExplanation(messages, diagnosis);
     const ranges =
       diagnosis.kind === "document"
         ? diagnosis.occurrences.map((problem) => problem.range)
         : diagnosis.occurrences.map((diagnostic) =>
-            position !== null && diagnostic.position === position
-              ? inEntry(
+            ownSite(diagnostic)
+              ? inSlice(
                   currentSliceSite(diagnostic, controller.sliceText(slice)),
                 )
               : currentCallSite(diagnostic, controller),

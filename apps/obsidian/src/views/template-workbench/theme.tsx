@@ -464,6 +464,8 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "filename-editor": editorBox,
       "filename-result":
         "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:text-xs zt:leading-normal",
+      "filename-status":
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-2 zt:gap-y-0.5 zt:data-[state=failed]:text-(--text-error)",
       "filename-output": "zt:min-w-0 zt:[overflow-wrap:anywhere]",
       defaults: "zt:flex zt:flex-col zt:gap-2",
       "default-label": "zt:min-w-0 zt:flex-1",

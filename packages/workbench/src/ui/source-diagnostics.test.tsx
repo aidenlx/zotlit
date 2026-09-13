@@ -226,3 +226,71 @@ it("leaves a property failure unmarked in another row's editor", () => {
   );
   expect(mounted.container.querySelector(".cm-lintRange-error")).toBeNull();
 });
+
+it("underlines the failing text in the note-name editor", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const source = controller.sliceText("filename");
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "liquid-syntax-error",
+        message: "illegal tag",
+        part: "filename",
+        sliceSite: {
+          kind: "span",
+          from: source.indexOf("zt.citationKey"),
+          to: source.indexOf("zt.citationKey") + "zt.citationKey".length,
+          source,
+        },
+      },
+    ],
+  );
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={diagnoses}>
+      <SliceEditor
+        controller={controller}
+        slice="filename"
+        label="Note name"
+        singleLine
+      />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  const editor = EditorView.findFromDOM(
+    mounted.container.querySelector(".cm-editor")!,
+  )!;
+  const marked: string[] = [];
+  forEachDiagnostic(editor.state, (_diagnostic, start, end) => {
+    marked.push(editor.state.sliceDoc(start, end));
+  });
+  expect(marked).toEqual(["zt.citationKey"]);
+  expect(editor.contentDOM.getAttribute("aria-invalid")).toBe("true");
+});
+
+it("leaves the note-name editor unmarked for a note-body failure", () => {
+  const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+  const note = controller.sliceText("note");
+  const offset = controller.sliceRange("note").from;
+  const diagnoses = workbenchDiagnoses(
+    [],
+    [
+      {
+        code: "render-error",
+        message: "Broken template",
+        part: "render",
+        sourceSite: { source: note, offset, from: offset + 2, to: offset + 4 },
+      },
+    ],
+  );
+  const mounted = render(
+    <WorkbenchDiagnosticsProvider value={diagnoses}>
+      <SliceEditor
+        controller={controller}
+        slice="filename"
+        label="Note name"
+        singleLine
+      />
+    </WorkbenchDiagnosticsProvider>,
+  );
+  expect(mounted.container.querySelector(".cm-lintRange-error")).toBeNull();
+});

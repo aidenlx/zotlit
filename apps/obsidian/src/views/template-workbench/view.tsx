@@ -2403,9 +2403,13 @@ function EditorContent({
       position === undefined
         ? part === "annotation"
           ? "annotation"
-          : kind === "profile"
-            ? "advanced"
-            : "source"
+          : // The note name is repaired in its own tab, whether or not the
+            // failure named a place inside it.
+            part === "filename" && kind === "profile"
+            ? "filename"
+            : kind === "profile"
+              ? "advanced"
+              : "source"
         : `entry:${position}`;
     const range = controller.sliceRange(slice);
     openProblem({ slice, ...(range ? { range } : {}) });
@@ -2705,6 +2709,7 @@ function EditorContent({
                 focus={fieldFocus}
                 filename={result?.filename ?? null}
                 onOpenSource={() => state.setAdvanced(true)}
+                onShowProblem={(id) => problems.select(id)}
                 reveal={advanced ? null : reveal}
                 onSelection={selection("filename")}
               />

@@ -26,6 +26,7 @@ import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
+import { renderDiagnosis } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
@@ -157,6 +158,11 @@ export interface NameFolderPaneProps {
   suggest?: SuggestionSource;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
+  /**
+   * Reads the explanation for a note-name failure, named by its diagnosis. The
+   * tab offers the route only while the note name is the surface that failed.
+   */
+  onShowProblem?: (id: string) => void;
 }
 
 export function NameFolderPane({
@@ -174,10 +180,17 @@ export function NameFolderPane({
   suggest,
   reveal,
   onSelection,
+  onShowProblem,
 }: NameFolderPaneProps) {
   const m = useWorkbenchMessages();
   const example = useExampleState("filename");
   const prefix = useId();
+  const statusId = useId();
+  // The note name on screen: this attempt's own, or the last that worked while
+  // the Filename Template is under repair. Anything else the tab cannot show,
+  // and its condition is read in place of a name.
+  const shown =
+    example.message === null ? filename : (example.retained?.filename ?? null);
   const container = useRef<HTMLDivElement>(null);
   const icon = useIcon();
   const part = useParts("nameFolder");
@@ -229,6 +242,8 @@ export function NameFolderPane({
                     slice="filename"
                     label={m.workbench_name_filename_label()}
                     singleLine
+                    invalid={example.kind === "failed"}
+                    describedBy={statusId}
                     reveal={reveal}
                     suggest={suggest}
                     onSelection={onSelection}
@@ -252,9 +267,25 @@ export function NameFolderPane({
                 <span {...part("muted")}>
                   {m.workbench_name_filename_result()}
                 </span>
-                <output {...part("filename-output", example.kind)}>
-                  {example.message ?? filename ?? m.workbench_property_unset()}
-                </output>
+                <span id={statusId} {...part("filename-status", example.kind)}>
+                  <output {...part("filename-output", example.kind)}>
+                    {shown ?? example.message ?? m.workbench_property_unset()}
+                  </output>
+                  {shown !== null && example.message !== null && (
+                    <span {...part("secondary")}>{example.message}</span>
+                  )}
+                </span>
+                {example.failure !== null && onShowProblem && (
+                  <button
+                    type="button"
+                    {...part("source-button")}
+                    onClick={() =>
+                      onShowProblem(renderDiagnosis(example.failure!).id)
+                    }
+                  >
+                    {m.workbench_problem_show()}
+                  </button>
+                )}
                 <ExampleActions
                   chooseLabel={m.workbench_choose_preview_item()}
                   onChooseItem={onChooseItem}

@@ -19,6 +19,7 @@ import type {
   RenderCaller,
   RenderDiagnostic,
   RenderEngineLocation,
+  SliceSite,
 } from "./result";
 
 import { templateCalls } from "#/document/regions";
@@ -104,6 +105,29 @@ export function renderFailureDiagnostic(
     message: errorText(error),
     ...attribution,
   };
+}
+
+/**
+ * The span of template text the engine tokenized when it failed, as offsets
+ * into that text itself. A pane showing exactly that text marks the place
+ * without reading the document around it, which keeps the mark clear of
+ * whatever quoting the manifest wrote the value under.
+ */
+export function renderFailureSpan(error: unknown): SliceSite | undefined {
+  for (const link of errorChain(error)) {
+    const token = (link as { token?: unknown }).token;
+    if (token === null || typeof token !== "object") continue;
+    const { input, begin, end } = token as Record<string, unknown>;
+    if (
+      typeof input === "string" &&
+      typeof begin === "number" &&
+      typeof end === "number" &&
+      begin < end
+    ) {
+      return { kind: "span", from: begin, to: end, source: input };
+    }
+  }
+  return undefined;
 }
 
 /** Map an unchanged section's token to the unique source the Profile owns. */

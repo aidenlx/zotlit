@@ -30,7 +30,7 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { renderFailureDiagnostic } from "./attribution";
+import { renderFailureDiagnostic, renderFailureSpan } from "./attribution";
 import type { RenderCallerSource } from "./attribution";
 import { engineEvidence, errorChain } from "./report";
 import type { RenderOptions } from "./request";
@@ -103,7 +103,11 @@ export type {
   RenderEngineLocation,
   RenderIdentity,
 } from "./result";
-export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
+export {
+  renderFailureCause,
+  renderFailureDiagnostic,
+  renderFailureSpan,
+} from "./attribution";
 export { currentCallSite, currentSliceSite } from "./locate";
 export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
@@ -207,11 +211,7 @@ export function renderProfile(
         () => "",
       );
     } catch (error) {
-      filenameFailure = {
-        ...withCallIdentity(renderFailureDiagnostic(error, caller), caller),
-        evidence: engineEvidence(error),
-        part: "filename",
-      };
+      filenameFailure = filenameErrorDiagnostic(error, caller);
     }
     const annotations = snapshot.roots.annotations.map((annotation, index) => {
       const descriptors = snapshot.descriptors.annotations[index];
@@ -324,6 +324,31 @@ export function renderProfile(
       ],
     };
   }
+}
+
+/**
+ * What one failed note-name render reads as, wherever it ran. The place is
+ * named inside the note-name template's own text rather than in the document
+ * that holds it: the pane the reader edits shows exactly that text, so the
+ * mark lands there without reading whatever quoting the manifest wrote the
+ * value under. Both hosts render the note name apart from the note, so both
+ * name the fault the same way; this is where that answer is written, once.
+ */
+export function filenameErrorDiagnostic(
+  error: unknown,
+  caller: RenderCallerSource,
+): RenderDiagnostic {
+  const { sourceSite: _document, ...attributed } = renderFailureDiagnostic(
+    error,
+    caller,
+  );
+  const site = renderFailureSpan(error);
+  return {
+    ...withCallIdentity(attributed, caller),
+    ...(site === undefined ? {} : { sliceSite: site }),
+    evidence: engineEvidence(error),
+    part: "filename",
+  };
 }
 
 /** Preserve which verified call failed without making its source offset an ID. */
@@ -592,20 +617,7 @@ function entrySite(
     const source = authoredAt(authored.value, path);
     if (source !== undefined) return { kind: "path", path, source };
   }
-  for (const link of chain) {
-    const token = (link as { token?: unknown }).token;
-    if (token === null || typeof token !== "object") continue;
-    const { input, begin, end } = token as Record<string, unknown>;
-    if (
-      typeof input === "string" &&
-      typeof begin === "number" &&
-      typeof end === "number" &&
-      begin < end
-    ) {
-      return { kind: "span", from: begin, to: end, source: input };
-    }
-  }
-  return undefined;
+  return renderFailureSpan(error);
 }
 
 /**
