@@ -125,6 +125,20 @@ function parseLiveVaults(
   return vaults;
 }
 
+function selectOpenHost(
+  vaults: Array<ObsidianHost & { open?: boolean }>,
+  selected: string,
+): ObsidianHost | undefined {
+  const exact = vaults.filter((vault) => vault.id === selected);
+  const matches =
+    exact.length > 0
+      ? exact
+      : vaults.filter((vault) => basename(vault.path) === selected);
+  return matches.length === 1 && matches[0]!.open === true
+    ? matches[0]
+    : undefined;
+}
+
 export function createObsidianHostReadiness(
   effects: HostReadinessEffects,
   {
@@ -156,44 +170,51 @@ export function createObsidianHostReadiness(
       return output.slice(3);
     };
 
-    const focused = parseHost(await evaluate(HOST_PROBE));
-    if (!focused) {
-      return fail(
-        "Obsidian answered, but it did not return a valid vault ID and base path.",
-      );
-    }
-    if (!(await effects.pathExists(focused.path))) {
-      return fail(
-        `Obsidian vault ${focused.id} answered, but its base path is missing: ${focused.path}`,
-      );
-    }
-
     const selected = environment[OBSIDIAN_HOST_VAULT_ENV];
-    if (
-      !selected ||
-      selected === focused.id ||
-      selected === basename(focused.path)
-    ) {
+    if (!selected) {
+      const focused = parseHost(await evaluate(HOST_PROBE));
+      if (!focused) {
+        return fail(
+          "Obsidian answered, but it did not return a valid vault ID and base path.",
+        );
+      }
+      if (!(await effects.pathExists(focused.path))) {
+        return fail(
+          `Obsidian vault ${focused.id} answered, but its base path is missing: ${focused.path}`,
+        );
+      }
       return focused;
     }
 
-    const liveVaults = parseLiveVaults(
-      await evaluate(LIVE_VAULTS_PROBE, focused.id),
-    );
-    if (!liveVaults) {
-      return fail("Obsidian answered, but its live vault list was invalid.");
+    let registry: Record<string, RegistryVaultEntry>;
+    try {
+      registry = await effects.readRegistry();
+    } catch {
+      return fail(
+        `Cannot read the Obsidian vault registry to select ${selected}.`,
+      );
     }
-    const exact = liveVaults.filter((vault) => vault.id === selected);
-    const matches =
-      exact.length > 0
-        ? exact
-        : liveVaults.filter((vault) => basename(vault.path) === selected);
-    if (matches.length !== 1 || matches[0]!.open !== true) {
+    const registeredVaults = Object.entries(registry).map(([id, vault]) => ({
+      ...vault,
+      id,
+    }));
+    const host = selectOpenHost(registeredVaults, selected);
+    if (!host) {
       return fail(
         `${OBSIDIAN_HOST_VAULT_ENV} does not identify one open vault: ${selected}`,
       );
     }
-    const host = matches[0]!;
+    // Obsidian resolves IDs and case-insensitive folder names in one pass.
+    const collision = registeredVaults.find(
+      (vault) =>
+        vault.id !== host.id &&
+        basename(vault.path).toLowerCase() === host.id.toLowerCase(),
+    );
+    if (collision) {
+      return fail(
+        `Selected Obsidian vault ${host.id} conflicts with vault ${collision.id}: its folder name can select a different vault. Select a different host vault or remove the conflicting registration from Obsidian.`,
+      );
+    }
     if (!(await effects.pathExists(host.path))) {
       return fail(
         `Selected Obsidian vault ${host.id} has a missing base path: ${host.path}`,
@@ -212,6 +233,23 @@ export function createObsidianHostReadiness(
     if (!(await effects.pathExists(responding.path))) {
       return fail(
         `Selected Obsidian vault ${responding.id} has a missing base path: ${responding.path}`,
+      );
+    }
+    const liveVaults = parseLiveVaults(
+      await evaluate(LIVE_VAULTS_PROBE, host.id),
+    );
+    if (!liveVaults) {
+      return fail("Obsidian answered, but its live vault list was invalid.");
+    }
+    const liveHost = selectOpenHost(liveVaults, selected);
+    if (!liveHost) {
+      return fail(
+        `${OBSIDIAN_HOST_VAULT_ENV} does not identify one open vault: ${selected}`,
+      );
+    }
+    if (liveHost.id !== host.id || liveHost.path !== host.path) {
+      return fail(
+        `Selected Obsidian vault ${host.id} returned a different vault ID or base path.`,
       );
     }
     return responding;
