@@ -50,7 +50,6 @@ export {
   confirmProfileDeletion,
   type ProfileDeletionConsent,
 } from "./delete-profile-modal";
-import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
 import { shareProfile } from "./share-profile-modal";
 import { partialItems } from "./templates";
@@ -85,9 +84,10 @@ const bindingKeys = {
 } as const;
 
 /**
- * The main-page rows of the default Profile: its Literature Note bindings and
- * document actions, then the Imported Note bindings as their own group. No
- * heading names the default Profile here — that happens on the Profiles page.
+ * The main-page rows of the default Profile: both note folders it binds, then
+ * its citation style and document actions. No heading names the default Profile
+ * here — that happens on the Profiles page. Its other Imported Note bindings
+ * sit on the Imported notes page.
  */
 export function literatureNoteItems(
   ctx: SettingTabContext,
@@ -102,45 +102,17 @@ export function literatureNoteItems(
         placeholder: defaultProfileBindingPlaceholder("note.literature-folder"),
       },
     },
+    {
+      name: m.settings_note_import_folder_name(),
+      desc: m.settings_note_import_folder_desc(),
+      control: {
+        type: "folder",
+        key: profileControlKey("default", "import-folder"),
+        placeholder: defaultProfileBindingPlaceholder("note.import-folder"),
+      },
+    },
     referencesStyleDefinition(ctx),
     defaultDocumentItem(ctx),
-    {
-      type: "group",
-      heading: m.settings_imported_notes_heading(),
-      items: [
-        {
-          name: m.settings_note_import_folder_name(),
-          desc: m.settings_note_import_folder_desc(),
-          control: {
-            type: "folder",
-            key: profileControlKey("default", "import-folder"),
-            placeholder: defaultProfileBindingPlaceholder("note.import-folder"),
-          },
-        },
-        {
-          name: m.settings_note_import_colored_highlights_name(),
-          desc: m.settings_note_import_colored_highlights_desc(),
-          control: {
-            type: "toggle",
-            key: profileControlKey("default", "colored-highlights"),
-          },
-        },
-        {
-          type: "page",
-          name: m.settings_note_import_highlight_mappings_name(),
-          desc: m.settings_note_import_highlight_mappings_desc(),
-          items: highlightMappingItems(ctx),
-        },
-        {
-          name: m.settings_note_import_annotations_template_name(),
-          desc: m.settings_note_import_annotations_template_desc(),
-          control: {
-            type: "toggle",
-            key: profileControlKey("default", "annotations-as-template"),
-          },
-        },
-      ],
-    },
   ];
 }
 

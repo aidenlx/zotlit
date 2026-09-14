@@ -1,4 +1,5 @@
-// Shared highlight output mappings, used by every Profile.
+// The Imported notes page: how imported notes render, and the shared highlight
+// output mappings every Profile uses.
 import type { SettingDefinitionItem } from "obsidian";
 
 import type { AnnotationColorName } from "@zotlit/db";
@@ -12,7 +13,12 @@ import {
 import type { HighlightMapping } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 
-import type { SettingsKey, SettingTabContext } from "./context";
+import type {
+  SettingsControlKey,
+  SettingsKey,
+  SettingTabContext,
+} from "./context";
+import { profileControlKey } from "./profiles";
 
 const colorLabels = {
   red: m.annot_view_color_red,
@@ -25,6 +31,39 @@ const colorLabels = {
   gray: m.annot_view_color_gray,
   plum: m.annot_view_color_plum,
 } satisfies Record<AnnotationColorName, () => string>;
+
+/**
+ * The Imported notes page: the default Profile's rendering bindings, with the
+ * shared mappings one page deeper.
+ */
+export function noteImportPageItems(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsControlKey>[] {
+  return [
+    {
+      name: m.settings_note_import_colored_highlights_name(),
+      desc: m.settings_note_import_colored_highlights_desc(),
+      control: {
+        type: "toggle",
+        key: profileControlKey("default", "colored-highlights"),
+      },
+    },
+    {
+      type: "page",
+      name: m.settings_note_import_highlight_mappings_name(),
+      desc: m.settings_note_import_highlight_mappings_desc(),
+      items: highlightMappingItems(ctx),
+    },
+    {
+      name: m.settings_note_import_annotations_template_name(),
+      desc: m.settings_note_import_annotations_template_desc(),
+      control: {
+        type: "toggle",
+        key: profileControlKey("default", "annotations-as-template"),
+      },
+    },
+  ];
+}
 
 export function highlightMappingItems(
   ctx: SettingTabContext,
