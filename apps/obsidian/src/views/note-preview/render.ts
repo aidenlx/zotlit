@@ -47,7 +47,7 @@ import {
   prepareLiteratureNote,
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
-import { bindDraftProfile } from "@/services/profile/service";
+import { bindUnvalidatedDraftProfile } from "@/services/profile/service";
 import type { ProfileService } from "@/services/profile/service";
 import {
   loadCitationData,
@@ -217,7 +217,7 @@ async function partialRootData(
   const profile =
     chosen ??
     (draft
-      ? bindDraftProfile(settings, draft)
+      ? bindUnvalidatedDraftProfile(settings, draft)
       : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
     { ...deps, settings: { loaded: Promise.resolve(profile.settings) } },
@@ -390,7 +390,7 @@ export async function renderNativeProfile(
     );
     const settings = await deps.settings.loaded;
     const manifest = document.manifest;
-    const profile = bindDraftProfile(settings, manifest);
+    const profile = bindUnvalidatedDraftProfile(settings, manifest);
     const dataDeps = {
       ...deps,
       settings: { loaded: Promise.resolve(profile.settings) },

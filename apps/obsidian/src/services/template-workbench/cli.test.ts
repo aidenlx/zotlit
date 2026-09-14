@@ -607,6 +607,15 @@ describe("Template Workbench CLI", () => {
         "omit expect-source",
         "attempt=<id> evidence=full output=all",
         "original source identity",
+        // The create-mode note boundary, so a passing create check is not read
+        // as an answer about a second note of the same item.
+        "renders a complete new note and reads no existing note as a baseline",
+        "its first indexed note supplies zt.notePath",
+        "A second note of the same item is never read",
+        // The two refusal answer shapes, each named by the codes that carry it.
+        "A refused document identity is not a failed check",
+        "RESERVED_PARTIAL_NAME is raised before the source is parsed and carries no checks",
+        "INVALID_PROFILE_ID and PROFILE_ID_MISMATCH are raised from parsing and carry the checks map",
       ],
     ],
     ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
@@ -621,6 +630,7 @@ describe("Template Workbench CLI", () => {
         // Every reserved name, so the guide cannot drift from defaults.ts.
         "'filename', 'note', 'annotation', 'content', or 'citation'",
         "caller bindings",
+        "Reserved Partial Name is refused before any check runs, draft source included",
       ],
     ],
     [
@@ -676,7 +686,8 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic });
 
     expect(() => JSON.parse(output)).toThrow();
-    for (const fact of facts) expect(output).toContain(fact);
+    // One scan of the guide names every missing fact at once.
+    expect(facts.filter((fact) => !output.includes(fact))).toEqual([]);
   });
 
   it("rejects an invalid guide topic", async () => {

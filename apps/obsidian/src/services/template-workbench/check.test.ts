@@ -11,6 +11,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { TemplateError } from "@zotlit/templates/facade";
 
+import { PROFILE_ID_LENGTH, PROFILE_ID_PATTERN } from "@/lib/profile-stamp";
 import type { DatabaseService } from "@/services/database/service";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -519,6 +520,27 @@ describe("registered template-check", () => {
     expect(loadTemplateData).not.toHaveBeenCalled();
   });
 
+  it("states the Profile ID length the pattern enforces", async () => {
+    const candidate = "a".repeat(PROFILE_ID_LENGTH);
+    expect(PROFILE_ID_PATTERN.test(candidate)).toBe(true);
+    expect(PROFILE_ID_PATTERN.test(candidate.slice(1))).toBe(false);
+
+    await using f = await fixture();
+    const draft = await f.draft(SOURCE.replace("Bk3Qn7XvT2Lp", "x"));
+
+    expect(await f.check({ draft, key: "1:ABCD2345" })).toMatchObject({
+      diagnostic: {
+        code: "INVALID_PROFILE_ID",
+        message: expect.stringContaining(
+          `${PROFILE_ID_LENGTH} letters or digits`,
+        ),
+        recovery: expect.stringContaining(
+          `Profile ID of ${PROFILE_ID_LENGTH} letters or digits`,
+        ),
+      },
+    });
+  });
+
   it("refuses a saved Shared Partial whose filename is a reserved name", async () => {
     await using f = await fixture();
     f.vault.createFile(
@@ -527,18 +549,19 @@ describe("registered template-check", () => {
     );
     await f.template.waitUntilSettled(1000);
 
-    expect(
-      await f.check({
-        document: "partial:note",
-        root: "note",
-        key: "ABCD2345",
-        output: "all",
-      }),
-    ).toMatchObject({
+    const answer = await f.check({
+      document: "partial:note",
+      root: "note",
+      key: "ABCD2345",
+      output: "all",
+    });
+
+    expect(answer).toMatchObject({
       ok: false,
       document: { id: "partial:note" },
       diagnostic: { code: "RESERVED_PARTIAL_NAME" },
     });
+    expect(answer).not.toHaveProperty("checks");
   });
 
   it("binds changed and removed draft overrides against current Default settings", async () => {
