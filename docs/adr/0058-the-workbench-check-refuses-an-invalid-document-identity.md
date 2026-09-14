@@ -3,8 +3,8 @@
 `zotlit:template-check` answers one question: what happens when this source is
 used. A document whose identity the vault rejects can never be used, so the
 check refuses it instead of reporting a check that passed. Two identities are
-refused. A Template Draft whose manifest ID is neither `default` nor a
-12-character Profile ID returns `INVALID_PROFILE_ID`, the same rule the
+refused. A Template Draft whose manifest ID is neither `default` nor a Profile
+ID of 12 letters or digits returns `INVALID_PROFILE_ID`, the same rule the
 saved Profile scan applies. A saved Shared Partial whose filename is a Reserved
 Partial Name returns `RESERVED_PARTIAL_NAME`, the same rule partial
 reconciliation applies. Before this decision both cases reported success, so an
@@ -34,9 +34,10 @@ shapes stand and the `check` guide topic states the rule.
 
 ## Consequences
 
-- The 12-character rule stays an Obsidian-app rule in `lib/profile-stamp.ts`,
-  not a Template Document schema rule. The manifest schema still accepts any
-  non-empty ID, so the rule applies where Profiles are resolved.
+- The 12-letters-or-digits rule stays an Obsidian-app rule in
+  `lib/profile-stamp.ts`, not a Template Document schema rule. The manifest
+  schema still accepts any non-empty ID, so the rule applies where Profiles are
+  resolved.
 - The Note Preview keeps rendering a draft whose ID fails the rule, with the
   draft's own bindings. It is a human surface, so ADR 0031 and ADR 0039 apply
   there: an invalid document is diagnosed where it lives and blocks nothing.

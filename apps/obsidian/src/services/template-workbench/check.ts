@@ -26,6 +26,7 @@ import {
 import {
   checkProfileDocument,
   INVALID_PROFILE_ID,
+  PROFILE_ID_MISMATCH,
 } from "./check-profile-document";
 import { loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
@@ -141,7 +142,7 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   An empty rendered string is a successful output. Any component failure fails the check.
   A refused document identity is not a failed check, and the answer says which one it is.
   ${RESERVED_PARTIAL_NAME} is raised before the source is parsed and carries no checks; none ran.
-  ${INVALID_PROFILE_ID} is raised from parsing and carries the checks map with the failed check.
+  ${INVALID_PROFILE_ID} and ${PROFILE_ID_MISMATCH} are raised from parsing and carry the checks map with the failed check.
   Each run receives a new attempt ID. The last ${RETAINED_ATTEMPTS} attempts remain available until
   plugin reload. Reading an expired attempt reports ATTEMPT_NOT_FOUND.
 
@@ -446,13 +447,29 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       }),
     });
     const finish = (context: CheckContext, result: object) => {
-      const answered: object = { ...context.answer, ...result };
-      const checked = answered as { checks?: Record<string, ProfileCheck> };
-      for (const check of Object.values(checked.checks ?? {}))
-        check.diagnostics = check.diagnostics.map((diagnostic) => ({
-          ...diagnostic,
-          ...attachReport(context, diagnostic),
-        }));
+      const merged: object = { ...context.answer, ...result };
+      const { checks } = merged as { checks?: Record<string, ProfileCheck> };
+      // The checks map a branch passes stays the branch's own record, so the
+      // attempt reports go into a copy. A branch that answers twice — the
+      // Profile branch's catch around its own finish — then reads the map it
+      // built, not the report the first answer attached.
+      const answered: object = checks
+        ? {
+            ...merged,
+            checks: Object.fromEntries(
+              Object.entries(checks).map(([name, check]) => [
+                name,
+                {
+                  ...check,
+                  diagnostics: check.diagnostics.map((diagnostic) => ({
+                    ...diagnostic,
+                    ...attachReport(context, diagnostic),
+                  })),
+                },
+              ]),
+            ),
+          }
+        : merged;
       const { baseline, selectedProfile } = context;
       const retained = {
         ...answered,

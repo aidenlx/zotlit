@@ -688,16 +688,16 @@ describe("Template Workbench CLI", () => {
         "renders a complete new note and reads no existing note as a baseline",
         "its first indexed note supplies zt.notePath",
         "A second note of the same item is never read",
-        // The two refusal answer shapes, each named by the code that carries it.
+        // The two refusal answer shapes, each named by the codes that carry it.
         "A refused document identity is not a failed check",
         "RESERVED_PARTIAL_NAME is raised before the source is parsed and carries no checks",
-        "INVALID_PROFILE_ID is raised from parsing and carries the checks map",
+        "INVALID_PROFILE_ID and PROFILE_ID_MISMATCH are raised from parsing and carry the checks map",
       ],
     ],
     [
       "partials",
       [
-        "A saved Shared Partial whose filename is a Reserved Partial Name is refused",
+        "Reserved Partial Name is refused before any check runs, draft source included",
       ],
     ],
   ] as const)(

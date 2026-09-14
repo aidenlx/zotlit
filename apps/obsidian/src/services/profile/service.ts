@@ -34,6 +34,7 @@ import { profileRevision } from "@/lib/profile-revision";
 import {
   DEFAULT_PROFILE,
   isProfileId,
+  PROFILE_ID_LENGTH,
   PROFILE_ID_RULE,
   readProfileStamp,
 } from "@/lib/profile-stamp";
@@ -65,7 +66,7 @@ import type {
 
 const mintId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-  12,
+  PROFILE_ID_LENGTH,
 );
 const logger = getLogger(["profile"]);
 

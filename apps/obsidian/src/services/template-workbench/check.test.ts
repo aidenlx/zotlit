@@ -535,7 +535,7 @@ describe("registered template-check", () => {
           `${PROFILE_ID_LENGTH} letters or digits`,
         ),
         recovery: expect.stringContaining(
-          `${PROFILE_ID_LENGTH}-character Profile ID`,
+          `Profile ID of ${PROFILE_ID_LENGTH} letters or digits`,
         ),
       },
     });

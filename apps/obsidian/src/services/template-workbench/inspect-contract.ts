@@ -1,6 +1,10 @@
 // Shared facts for inspection parsing, registered flags, and generated help.
 import type { CliFlags } from "obsidian";
 
+import { RESERVED_PARTIAL_NAME_LIST } from "@/services/template/defaults";
+
+import { quotedList } from "./vocabulary";
+
 export const TEMPLATE_INSPECT_COMMAND = "zotlit:template-inspect";
 export const INSPECT_SOURCE_FULL = "full";
 export const INSPECT_TIMEOUT_MS = 1_000;
@@ -86,8 +90,7 @@ export const INSPECT_DIAGNOSTICS = {
   },
   RESERVED_PARTIAL_NAME: {
     message: "The Shared Partial filename uses a reserved template name.",
-    recovery:
-      "Rename this Shared Partial to a non-reserved name and update its callers.",
+    recovery: `Rename this Shared Partial to a name outside the reserved names ${quotedList(RESERVED_PARTIAL_NAME_LIST)}, and update its callers.`,
   },
 } as const;
 

@@ -88,7 +88,7 @@ const PROFILES_SECTION = `LITERATURE NOTE PROFILES
 
 SOURCE
   A Profile is a zotlit-profile.<slug>.md document directly in the template folder.
-  Its manifest id is a stable ${PROFILE_ID_LENGTH}-character Profile ID; name is the label.
+  Its manifest id is a stable Profile ID of ${PROFILE_ID_LENGTH} letters or digits; name is the label.
   Keep id and bindings when changing output. template-inspect reports selectable
   Profiles, paths, source revisions, validation, and the built-in Default.
   Default can use built-in source with no installed file and no existing note.
@@ -128,8 +128,8 @@ const PARTIALS_SECTION = `SHARED PARTIAL CALLERS
   A Shared Partial lives in zotlit-partial.<name>.md in the template folder.
   Names contain letters, digits, and hyphens. Reserved names:
   ${quotedList(RESERVED_PARTIAL_NAME_LIST)}.
-  A saved Shared Partial whose filename is a Reserved Partial Name is refused
-  before any check runs.
+  A partial:<name> reference that resolves to a saved file whose filename is a
+  Reserved Partial Name is refused before any check runs, draft source included.
   Optional YAML sets language; the remaining source is the body. Default is Liquid.
   A partial has no data root of its own. Select the caller root explicitly:
   ${quotedList(PARTIAL_CONTEXT_NAMES)}. annotation requires an Annotation key;

@@ -27,6 +27,9 @@ import { sourceRevision } from "./inspect";
 /** The refusal a Template Draft identity that fails the Profile ID rule carries. */
 export const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
 
+/** The refusal a Template Draft whose manifest ID names another Profile carries. */
+export const PROFILE_ID_MISMATCH = "PROFILE_ID_MISMATCH";
+
 /** Checks a Profile document or Profile draft, and answers the attempt. */
 export async function checkProfileDocument({
   deps,
@@ -64,7 +67,7 @@ export async function checkProfileDocument({
           structure: { status: "failed", diagnostics: [] },
         },
         diagnostic: {
-          code: "PROFILE_ID_MISMATCH",
+          code: PROFILE_ID_MISMATCH,
           message: "The draft manifest ID does not match the selected Profile.",
           recovery:
             "Keep the selected Profile ID in the draft, or omit profile to check a standalone identity.",
@@ -144,7 +147,7 @@ export async function checkProfileDocument({
         diagnostic: {
           code: INVALID_PROFILE_ID,
           message: PROFILE_ID_RULE,
-          recovery: `Set the draft manifest id to 'default' or to a ${PROFILE_ID_LENGTH}-character Profile ID, then check the draft again.`,
+          recovery: `Set the draft manifest id to 'default' or to a Profile ID of ${PROFILE_ID_LENGTH} letters or digits, then check the draft again.`,
         },
       });
     const profile =
