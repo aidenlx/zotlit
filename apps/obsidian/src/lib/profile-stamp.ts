@@ -11,6 +11,9 @@ import type { MetadataCache, TFile } from "obsidian";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "./constants";
 
+/** Character count of a Profile ID, as `mintId` mints it. */
+export const PROFILE_ID_LENGTH = 12;
+
 /**
  * Character shape of a Literature Note Profile ID, the sole source both the
  * Profile registry and the stamp parse read it from. It mirrors the Nano ID
@@ -18,7 +21,7 @@ import { FIELD_LITERATURE_NOTE_PROFILE } from "./constants";
  *
  * @see docs/adr/0030-profile-stamp-carries-a-label-hint-beside-the-id.md
  */
-const PROFILE_ID_SOURCE = "[A-Za-z0-9]{12}";
+const PROFILE_ID_SOURCE = `[A-Za-z0-9]{${PROFILE_ID_LENGTH}}`;
 
 /**
  * Whole-value Profile ID match, validating one configured Profile's id. Built
@@ -26,6 +29,13 @@ const PROFILE_ID_SOURCE = "[A-Za-z0-9]{12}";
  * shape stays one string the stamp parse shares.
  */
 export const PROFILE_ID_PATTERN = new RegExp(`^${PROFILE_ID_SOURCE}$`);
+
+/**
+ * The Profile ID rule as one sentence, for every surface that states it to a
+ * caller. It reads its length from {@link PROFILE_ID_LENGTH}, so the number it
+ * states cannot drift from the pattern that enforces it.
+ */
+export const PROFILE_ID_RULE = `The Profile ID must contain ${PROFILE_ID_LENGTH} letters or digits.`;
 
 /**
  * Parenthesised Profile ID at the end of a stamp. Matching from the end is

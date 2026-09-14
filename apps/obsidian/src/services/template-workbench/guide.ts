@@ -6,6 +6,7 @@ import {
 } from "@zotlit/templates/liquid";
 
 import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
+import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
 import { RESERVED_PARTIAL_NAME_LIST } from "@/services/template/defaults";
 
 import { CHECK_GUIDE } from "./check";
@@ -87,7 +88,7 @@ const PROFILES_SECTION = `LITERATURE NOTE PROFILES
 
 SOURCE
   A Profile is a zotlit-profile.<slug>.md document directly in the template folder.
-  Its manifest id is a stable twelve-character Profile ID; name is the label.
+  Its manifest id is a stable ${PROFILE_ID_LENGTH}-character Profile ID; name is the label.
   Keep id and bindings when changing output. template-inspect reports selectable
   Profiles, paths, source revisions, validation, and the built-in Default.
   Default can use built-in source with no installed file and no existing note.

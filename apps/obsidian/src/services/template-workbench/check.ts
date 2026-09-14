@@ -21,7 +21,11 @@ import type {
   PartialContext,
 } from "@zotlit/workbench/render";
 
-import { parseProfileSelector } from "@/lib/profile-stamp";
+import {
+  parseProfileSelector,
+  PROFILE_ID_LENGTH,
+  PROFILE_ID_RULE,
+} from "@/lib/profile-stamp";
 import { bindDraftProfile } from "@/services/profile/service";
 import {
   checkDiagnostic,
@@ -940,16 +944,20 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           },
           diagnostic: {
             code: "INVALID_PROFILE_ID",
-            message: "The Profile ID must contain twelve letters or digits.",
-            recovery:
-              "Set the draft manifest id to 'default' or to a twelve-character Profile ID, then check the draft again.",
+            message: PROFILE_ID_RULE,
+            recovery: `Set the draft manifest id to 'default' or to a ${PROFILE_ID_LENGTH}-character Profile ID, then check the draft again.`,
           },
         });
-      const profile = draft
-        ? bindDraftProfile(await deps.data.settings.loaded, document.manifest)
-        : selector === undefined
+      const profile =
+        selector === undefined
           ? undefined
-          : deps.profile.resolveProfile(selector);
+          : draft
+            ? bindDraftProfile(
+                await deps.data.settings.loaded,
+                selector,
+                document.manifest,
+              )
+            : deps.profile.resolveProfile(selector);
       if (!profile) throw new Error("The saved Profile does not resolve.");
       if (draft)
         context.document = {
