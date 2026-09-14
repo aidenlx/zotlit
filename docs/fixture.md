@@ -278,6 +278,33 @@ and differ only in the task they name. Each is declared in `VAULT_CASES` in
 `packages/scripts/lib/fixture/spec.ts`; that entry's `summary` carries the case
 definition.
 
+## Reset a Vault Case between runs
+
+Reset a case vault before each run of a task against it:
+
+```sh
+packages/scripts/scripts/obsidian-vault.ts reset --vault-case workbench-spread
+```
+
+The command rebuilds the seed, opens the case vault with a purge, then gates on
+what the vault answers. The purge is the reset: it rewrites the vault-scoped
+Device Overrides that point ZotLit at the Fixture. A plain sync leaves those
+overrides in place, so a vault that lost them keeps reading this machine's own
+Zotero library.
+
+The gate is what finds that state. It fails closed on each of three answers:
+
+- `zotlit:template-status` reports `identity.source.databasePath`, which must be
+  the Fixture database.
+- `zotlit:library-scope` reports the available Libraries, which must be the
+  count the Scope Case puts in scope.
+- `zotlit:template-data` must resolve each of the Fixture Items the gate probes.
+
+Every call the reset makes, the gate included, has the bounded Obsidian CLI
+limit, so no stage waits on a vault window that has stopped answering. A window
+that is gone while the registry still reports it open is reported as
+unreachable; restart Obsidian and run the reset again.
+
 ## Run the Paired Zotero
 
 Paired Zotero is a real Zotero 10 instance that opens the Fixture profile and data directory. Build the Fixture first, then launch it:
