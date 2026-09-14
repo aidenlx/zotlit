@@ -32,9 +32,14 @@ import type { RenderTemplate } from "./vocabulary";
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
  * commands, versioned on its own (ADR 0026). Version 5 reports each Profile
  * row's `id` as a `ProfileSelector` (`"default"` for the built-in default
- * Profile) instead of `null`.
+ * Profile) instead of `null`. Version 6 adds complete Profile checking and
+ * retained attempt evidence with disclosure-independent component statuses.
+ * Version 7 retires legacy authoring commands in favor of document checks, and
+ * carries the refused document identities and the two refusal answer shapes
+ * that ADR 0058 added to it while it was still unreleased. A refusal added to a
+ * published contract moves the version instead.
  */
-export const CONTRACT_VERSION = 5;
+export const CONTRACT_VERSION = 7;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -55,6 +60,8 @@ export interface WorkbenchIdentity {
  * of both, so a new code arrives with its own hint.
  */
 export const DIAGNOSTIC_HINTS = {
+  COMMAND_RETIRED:
+    "Use ZotLit's legacy template conversion in settings, then edit the Template Document directly. Use template-inspect to select it, template-data for optional field discovery, and template-check to verify the result. Retained legacy records are managed by the conversion workflow.",
   INVALID_SELECTOR:
     "Correct the parameter named in details.parameter, then run the command again.",
   TARGET_MISMATCH:
@@ -223,6 +230,7 @@ export type EnvelopeTail =
       documents?: readonly LiteratureNoteDocumentRow[];
       /** The object a Template reads as `zt`. */
       zt?: unknown;
+      discovery?: object;
       markdown?: string;
       render?: { create: string; update: string | null };
       language?: TemplateLanguage;

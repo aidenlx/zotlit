@@ -40,6 +40,7 @@ import type {
   CitationSelector,
   TemplateDataLoadResult,
 } from "./data";
+import { discoverTemplateData } from "./discovery";
 import {
   dataLoadDiagnostic,
   diagnostic,
@@ -58,6 +59,8 @@ import type {
   WorkbenchIdentity,
 } from "./envelope";
 import { renderGuide } from "./guide";
+import type { selectInspectionNote } from "./inspect";
+import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import {
   parseDataRequest,
   parseDocumentRenderRequest,
@@ -124,9 +127,13 @@ interface TemplateWorkbenchDeps {
   /** The installed ZotLit version, reported by the status command. */
   pluginVersion: string;
   getIdentity: () => WorkbenchIdentity | Promise<WorkbenchIdentity>;
+  selectNote: (
+    name: string,
+  ) => Promise<ReturnType<typeof selectInspectionNote>>;
   loadData: (
     indexedKey: string,
     root: ContractRoot,
+    options?: { note?: string },
   ) => Promise<TemplateDataLoadResult>;
   /** Citation Template data for one example set or one chosen Item. */
   loadCitation: (
@@ -473,21 +480,78 @@ export function createTemplateWorkbenchHandlers(
       TEMPLATE_DATA_COMMAND,
       parseDataRequest,
       async (request, identity) => {
-        const echoed = { request, identity };
+        let selector: CitationSelector;
+        let noteContext: { note: string; profile: string } | undefined;
+        if ("note" in request) {
+          const selected = await deps.selectNote(request.note);
+          if (selected.error) {
+            const problem = INSPECT_DIAGNOSTICS[selected.error];
+            return envelope(TEMPLATE_DATA_COMMAND, {
+              ok: false,
+              request,
+              identity,
+              diagnostic: diagnostic(
+                "INVALID_SELECTOR",
+                `${problem.message} ${problem.recovery}`,
+                { parameter: "note" },
+              ),
+            });
+          }
+          selector = { key: selected.note.key };
+          noteContext = { note: selected.note.path, profile: selected.profile };
+        } else {
+          selector =
+            "example" in request
+              ? { example: request.example }
+              : { key: request.key };
+        }
+        const echoed = {
+          request,
+          identity,
+          selection: {
+            ...selector,
+            root: request.root,
+            ...noteContext,
+          },
+        };
         const result =
-          "example" in request || request.root === "citation"
-            ? await deps.loadCitation(request, "main")
-            : await deps.loadData(request.key, request.root);
+          "example" in selector || request.root === "citation"
+            ? await deps.loadCitation(selector, "main")
+            : await deps.loadData(
+                selector.key,
+                request.root,
+                noteContext ? { note: noteContext.note } : undefined,
+              );
         if (result.kind !== "data") {
           return envelope(TEMPLATE_DATA_COMMAND, {
             ok: false,
             ...echoed,
-            diagnostic: dataLoadDiagnostic(result, selectedObject(request)),
+            diagnostic: dataLoadDiagnostic(result, selectedObject(selector)),
           });
         }
 
         let data: unknown;
         try {
+          if (!request.full) {
+            const discovery = discoverTemplateData(
+              result.data,
+              request.root,
+              request,
+            );
+            if ("error" in discovery)
+              return envelope(TEMPLATE_DATA_COMMAND, {
+                ok: false,
+                ...echoed,
+                diagnostic: diagnostic("INVALID_SELECTOR", discovery.error!, {
+                  parameter: "path",
+                }),
+              });
+            return envelope(TEMPLATE_DATA_COMMAND, {
+              ok: true,
+              ...echoed,
+              discovery,
+            });
+          }
           data = serializeTemplateData(result.data, request.root);
         } catch (error) {
           // A missing contract entry means the committed IR no longer matches
@@ -497,7 +561,7 @@ export function createTemplateWorkbenchHandlers(
             logger.error("Template data contract metadata is missing", {
               error,
               command: TEMPLATE_DATA_COMMAND,
-              selected: selectedObject(request),
+              selected: selectedObject(selector),
               root: request.root,
             });
             throw error;

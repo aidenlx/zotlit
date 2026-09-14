@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { PROFILE_ID_LENGTH } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 
 import { profileServiceFixture as harness } from "./__fixtures__/service";
@@ -432,6 +433,14 @@ describe("ProfileService", () => {
     await expect(f.profile.prepareImport(document("default"))).rejects.toThrow(
       m.profile_import_default(),
     );
+    // The catalog states the length as its own literal, so hold it to the
+    // pattern PROFILE_ID_LENGTH builds rather than letting the copy drift.
+    expect(m.settings_profile_id_invalid()).toContain(
+      String(PROFILE_ID_LENGTH),
+    );
+    await expect(
+      f.profile.prepareImport(document("my-profile-1")),
+    ).rejects.toThrow(m.settings_profile_id_invalid());
     f.vault.createFile("templates/zotlit-profile.one.md", document());
     f.vault.createFile("templates/zotlit-profile.two.md", document());
     await vi.advanceTimersByTimeAsync(500);

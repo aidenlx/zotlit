@@ -34,6 +34,8 @@ import { profileRevision } from "@/lib/profile-revision";
 import {
   DEFAULT_PROFILE,
   isProfileId,
+  PROFILE_ID_LENGTH,
+  PROFILE_ID_RULE,
   readProfileStamp,
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
@@ -50,6 +52,7 @@ import type {
   ResolvedLiteratureNoteProfileBindings,
 } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
+import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import {
   DEFAULT_FRONTMATTER_FIELDS,
@@ -63,7 +66,7 @@ import type {
 
 const mintId = customAlphabet(
   "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-  12,
+  PROFILE_ID_LENGTH,
 );
 const logger = getLogger(["profile"]);
 
@@ -1097,7 +1100,7 @@ export class ProfileService extends Service {
           message:
             validation.state === "invalid"
               ? validation.error.message
-              : "The Profile ID must contain twelve letters or digits.",
+              : PROFILE_ID_RULE,
         });
         logger.debug("Excluded invalid Profile document {path}", {
           path: status.path,
@@ -1161,6 +1164,48 @@ export class ProfileService extends Service {
     );
     if (this.#loaded) this.#events.emit("changed");
   }
+}
+
+/**
+ * Resolve a draft from its manifest and current Default settings, without
+ * installing it. `selector` is the draft's identity after it passed the Profile
+ * ID rule, so a caller that refuses an invalid identity states the rule itself.
+ * The seeded entry carries that same identity, so the Profile a draft is bound
+ * as and the Profile it resolves against are one value.
+ */
+export function bindDraftProfile(
+  settings: Readonly<Settings>,
+  selector: ProfileSelector,
+  manifest: LiteratureNoteTemplateManifest,
+): ResolvedProfile {
+  return selector === DEFAULT_PROFILE
+    ? bindProfile(settings, { selector: DEFAULT_PROFILE })
+    : bindProfile(settings, {
+        selector,
+        entry: {
+          ...seedProfileEntry(manifest, {
+            document: "",
+            path: "",
+            libraries: [],
+          }),
+          id: selector,
+        },
+      });
+}
+
+/**
+ * Bind a draft on the identity its manifest carries, whatever that text is. The
+ * Note Preview reads a Profile document the author is still editing, where an
+ * identity that fails the Profile ID rule is diagnosed in place and blocks
+ * nothing, so the preview still renders with the draft's own bindings.
+ *
+ * @see docs/adr/0058-the-workbench-check-refuses-an-invalid-document-identity.md
+ */
+export function bindUnvalidatedDraftProfile(
+  settings: Readonly<Settings>,
+  manifest: LiteratureNoteTemplateManifest,
+): ResolvedProfile {
+  return bindDraftProfile(settings, manifest.id as ProfileSelector, manifest);
 }
 
 /**

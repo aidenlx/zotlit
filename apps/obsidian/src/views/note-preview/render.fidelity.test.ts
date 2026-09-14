@@ -240,6 +240,10 @@ describe("Note Preview fidelity against the real create path", () => {
     });
   });
 
+  // The fixture manifest ID `paper` fails the Profile ID rule on purpose: this
+  // is the one test proving the Note Preview still renders a draft the check
+  // refuses, with that draft's own bindings. A realistic 12-character ID here
+  // would retire the guard silently.
   it("carries a draft manifest's label and citation style into the preview through the shared resolver", async () => {
     await using fixture = await createRenderFixture({
       defaultStyle: "numeric",

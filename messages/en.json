@@ -413,7 +413,7 @@
   "settings_profile_numbered_name": "Profile {number}",
   "settings_profile_delete_move_desc": "The profile document goes to Obsidian’s configured trash after all affected notes have switched.",
   "settings_profile_citation_style_none": "No citation style",
-  "settings_profile_id_invalid": "The profile ID must contain twelve letters or digits.",
+  "settings_profile_id_invalid": "The profile ID must contain 12 letters or digits.",
   "settings_profile_new_name": "New profile",
   "settings_profile_create_differences": "What’s different from Default?",
   "settings_profile_same_as_default": "Same as Default — {value}",

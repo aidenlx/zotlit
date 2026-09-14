@@ -70,6 +70,10 @@ function makeHandlers(options?: {
       : undefined,
   );
   const handlers = createTemplateWorkbenchHandlers({
+    selectNote: async () => ({
+      error: "TARGET_NOT_FOUND" as const,
+      matches: [],
+    }),
     pluginVersion: "1.2.3",
     getIdentity: () => IDENTITY,
     loadCitation: async () => ({ kind: "not-found" }) as const,
