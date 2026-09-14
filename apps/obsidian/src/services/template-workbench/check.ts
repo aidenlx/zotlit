@@ -4,44 +4,34 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import type { CliFlags, CliHandler } from "obsidian";
 
-import type { CitationVariant, NoteTemplateContext } from "@zotlit/db";
-import {
-  parseLiteratureNoteTemplate,
-  parsePlainTemplateDocument,
-} from "@zotlit/templates/facade";
-import { serializeTemplateData } from "@zotlit/workbench/explorer";
+import type { CitationVariant } from "@zotlit/db";
 import {
   captureRenderReport,
   renderIdentity,
   isCitationExampleId,
 } from "@zotlit/workbench/render";
 import type {
-  RenderCallerSource,
   RenderDiagnostic,
   PartialContext,
 } from "@zotlit/workbench/render";
 
-import {
-  parseProfileSelector,
-  PROFILE_ID_LENGTH,
-  PROFILE_ID_RULE,
-} from "@/lib/profile-stamp";
-import { bindDraftProfile } from "@/services/profile/service";
-import {
-  checkDiagnostic,
-  checkNativeProfile,
-  PROFILE_OUTPUTS,
-} from "@/views/note-preview/check-profile";
+import { PROFILE_OUTPUTS } from "@/views/note-preview/check-profile";
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import { selectCheckBaseline } from "./check-baseline";
-import { loadTemplateData, loadCitationData, withSelectedNote } from "./data";
+import {
+  checkPlainDocument,
+  RESERVED_PARTIAL_NAME,
+} from "./check-plain-document";
+import {
+  checkProfileDocument,
+  INVALID_PROFILE_ID,
+} from "./check-profile-document";
+import { loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
-import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
-import type { InspectDiagnosticCode } from "./inspect-contract";
 import {
   choices,
   CITATION_VARIANT_NAMES,
@@ -49,11 +39,6 @@ import {
 } from "./vocabulary";
 
 export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
-/** The refusal a Template Draft identity that fails the Profile ID rule carries. */
-const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
-/** The refusal a Reserved Partial Name carries, as the inspection registry names it. */
-const RESERVED_PARTIAL_NAME =
-  "RESERVED_PARTIAL_NAME" satisfies InspectDiagnosticCode;
 /** How many finished attempts stay readable; the oldest is evicted beyond it. */
 const RETAINED_ATTEMPTS = 32;
 const ATTEMPT_LOOKUP_HELP =
@@ -169,7 +154,7 @@ ${Object.entries(checkFlags)
   .join("\n")}`;
 
 /** The inspection fields a check answer repeats, beside the source itself. */
-interface InspectedAnswer {
+export interface InspectedAnswer {
   ok?: boolean;
   document?: InspectDocument;
   input?: { revision: string; path: string | null; origin: string };
@@ -177,7 +162,7 @@ interface InspectedAnswer {
   [key: string]: unknown;
 }
 
-interface InspectedSource extends InspectedAnswer {
+export interface InspectedSource extends InspectedAnswer {
   source?: string;
 }
 
@@ -187,7 +172,7 @@ interface InspectedSource extends InspectedAnswer {
  * phase extends it by value and passes the extension on, so the answer never
  * reads state a distant branch wrote.
  */
-interface CheckContext {
+export interface CheckContext {
   readonly answer: Readonly<InspectedAnswer>;
   /** Checked source text the render report fingerprints. */
   readonly source: string;
@@ -217,6 +202,45 @@ export interface CheckDeps extends InspectDeps {
   data: TemplateDataDeps;
   pluginVersion: string;
   hostVersion: string;
+}
+
+/** Attaches the attempt's render report to one diagnostic the branch raises. */
+type AttachReport = <
+  T extends RenderDiagnostic & {
+    annotation?: { key: string; revision?: string };
+  },
+>(
+  context: CheckContext,
+  diagnostic: T,
+) => T & { report: ReturnType<typeof captureRenderReport> };
+
+/**
+ * What the entry module hands one document branch: the parsed request, the
+ * acquired source with its inspection, and the two closures the entry module
+ * owns — render-report attachment and Check Attempt retention.
+ */
+export interface CheckBranch {
+  deps: CheckDeps;
+  params: Parameters<CliHandler>[0];
+  mode: "create" | "update";
+  draft: { source: string; path: string } | undefined;
+  /** Reruns the source inspection to detect a superseded source. */
+  inspect: CliHandler;
+  inspectRequest: Parameters<CliHandler>[0];
+  inspected: InspectedSource;
+  /** Checked source text, acquired before the branch runs. */
+  source: string;
+  context: CheckContext;
+  attachReport: AttachReport;
+  finish: (context: CheckContext, result: object) => string;
+}
+
+/**
+ * A {@link CheckBranch} carrying the inspected document the entry module's kind
+ * guard established, so the Profile branch reads it without asserting it.
+ */
+export interface ProfileCheckBranch extends CheckBranch {
+  inspectedDocument: InspectDocument;
 }
 
 export function createCheckHandler(deps: CheckDeps): CliHandler {
@@ -637,259 +661,20 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           recovery: "Omit profile when selecting a Profile document.",
         },
       });
-    if (source !== undefined && inspected.document?.kind !== "profile") {
-      const document = inspected.document!;
-      const root = document.kind === "citation" ? "citation" : params.root;
-      let documentContext: CheckContext = {
-        ...inspectedContext,
-        root: (root as string | undefined) ?? "note",
-        partial: document.kind === "partial",
-      };
-      if (
-        mode !== "create" ||
-        (document.kind === "citation" && params.root !== undefined) ||
-        (root !== "citation" &&
-          (params.example !== undefined || params.variant !== undefined)) ||
-        (document.kind === "partial" &&
-          root === undefined &&
-          (params.key !== undefined || params.example !== undefined))
-      )
-        return finish(documentContext, {
-          ok: false,
-          diagnostic: {
-            code: "INVALID_SELECTOR",
-            message:
-              "Select a partial caller root and applicable data; plain documents use create mode.",
-          },
-        });
-      if (
-        document.problems.some(
-          (problem) => problem.code === RESERVED_PARTIAL_NAME,
-        )
-      )
-        return finish(documentContext, {
-          ok: false,
-          diagnostic: {
-            code: RESERVED_PARTIAL_NAME,
-            ...INSPECT_DIAGNOSTICS.RESERVED_PARTIAL_NAME,
-          },
-        });
-      const checks: Record<string, ProfileCheck> = {
-        structure: { status: "not-checked", diagnostics: [] },
-        [document.kind]: { status: "not-checked", diagnostics: [] },
-      };
-      let caller: RenderCallerSource = { source, language: "liquid" };
-      try {
-        const parsed = parsePlainTemplateDocument(source);
-        documentContext = {
-          ...documentContext,
-          language: parsed.manifest.language,
-        };
-        caller = { source, language: parsed.manifest.language };
-        if (
-          documentContext.language === "eta" &&
-          !deps.templates.javascriptTemplatesEnabled
-        )
-          return finish(documentContext, {
-            ok: false,
-            checks,
-            rendering: "not-checked",
-            diagnostic: {
-              ...attachReport(documentContext, {
-                code: "render-error",
-                part: "render",
-                message: "JavaScript Templates are disabled on this device.",
-                recovery:
-                  "Enable JavaScript Templates on this device or use a Liquid document.",
-              }),
-              code: "ETA_OPT_IN_REQUIRED",
-              message: "JavaScript Templates are disabled on this device.",
-              evidence: {
-                kind: "javascript-gate",
-                enabled: false,
-                source: inspected.input,
-                language: documentContext.language,
-              },
-            },
-          });
-        const inspectBindings = createInspectHandler(
-          deps,
-          undefined,
-          draft ? document.id : undefined,
-        );
-        const profileInspection = JSON.parse(
-          (await inspectBindings({
-            profile: params.profile ?? "default",
-            source: "full",
-          })) as string,
-        ) as InspectedSource;
-        if (!profileInspection.ok)
-          return finish(documentContext, {
-            ok: false,
-            checks,
-            diagnostic: profileInspection.diagnostic,
-            bindingContext: {
-              document: profileInspection.document,
-              input: profileInspection.input,
-              freshness: profileInspection.freshness,
-            },
-          });
-        const profileId =
-          profileInspection.document?.profile?.id ??
-          profileInspection.document?.profileIdentity?.id ??
-          "default";
-        const selector = parseProfileSelector(profileId);
-        const profile =
-          selector === undefined
-            ? undefined
-            : deps.profile.resolveProfile(selector);
-        if (!profile) throw new Error("The selected Profile does not resolve.");
-        documentContext = {
-          ...documentContext,
-          answer: {
-            ...documentContext.answer,
-            selectedProfile: {
-              id: profile.selector,
-              bindings: profile.bindings,
-            },
-            bindingContext: {
-              input: profileInspection.input,
-              freshness: profileInspection.freshness,
-            },
-          },
-          profileSelector: profile.selector,
-        };
-        checks.structure = { status: "passed", diagnostics: [] };
-        if (params.key === undefined && params.example === undefined)
-          return finish(documentContext, {
-            ok: true,
-            checks,
-            rendering: "not-checked",
-            reason: "Provide key or a Citation example to check rendering.",
-          });
-        const data = {
-          ...deps.data,
-          settings: { loaded: Promise.resolve(profile.settings) },
-        };
-        const loaded =
-          root === "citation"
-            ? await loadCitationData(
-                data,
-                typeof params.example === "string" &&
-                  isCitationExampleId(params.example)
-                  ? { example: params.example }
-                  : { key: params.key as string },
-                (params.variant ?? "main") as CitationVariant,
-              )
-            : await loadTemplateData(
-                data,
-                params.key as string,
-                root as "note" | "annotation",
-              );
-        if (loaded.kind !== "data")
-          return finish(documentContext, {
-            ok: false,
-            checks,
-            diagnostic: {
-              code: "INVALID_SELECTOR",
-              message: `The selected data is unavailable: ${loaded.kind}.`,
-              recovery:
-                root === "annotation"
-                  ? "Select an existing annotation key with a readable parent attachment."
-                  : "Select an existing item key, or use a built-in example for the Citation root.",
-            },
-          });
-        const { citation: _citation, ...annotationDescriptors } =
-          Object.getOwnPropertyDescriptors(loaded.data);
-        documentContext = {
-          ...documentContext,
-          dataRevision: sourceRevision(
-            JSON.stringify(
-              serializeTemplateData(
-                root === "annotation"
-                  ? Object.defineProperties({}, annotationDescriptors)
-                  : loaded.data,
-                root as "note" | "annotation" | "citation",
-              ),
-            ),
-          ),
-        };
-        try {
-          const rendered =
-            document.kind === "citation"
-              ? deps.templates.renderCitationSource(
-                  source,
-                  loaded.data as import("@zotlit/db").CitationTemplateData,
-                )
-              : deps.templates.renderPartialSource(source, loaded.data, {
-                  name: document.label,
-                });
-          checks[document.kind] = {
-            status: "passed",
-            diagnostics: [],
-            output: rendered,
-          };
-        } catch (error) {
-          checks[document.kind] = {
-            status: "failed",
-            diagnostics: [checkDiagnostic(error, caller)],
-          };
-        }
-        const after = JSON.parse(
-          (await inspect(inspectRequest)) as string,
-        ) as InspectedSource;
-        const profileAfter = JSON.parse(
-          (await inspectBindings({
-            profile: params.profile ?? "default",
-            source: "full",
-          })) as string,
-        ) as InspectedSource;
-        if (
-          !after.ok ||
-          after.input?.revision !== inspected.input?.revision ||
-          JSON.stringify(after.freshness?.versions) !==
-            JSON.stringify(inspected.freshness?.versions) ||
-          !profileAfter.ok ||
-          profileAfter.input?.revision !== profileInspection.input?.revision ||
-          JSON.stringify(profileAfter.freshness?.versions) !==
-            JSON.stringify(profileInspection.freshness?.versions)
-        )
-          return finish(documentContext, {
-            ok: false,
-            rendering: "checked",
-            freshness: {
-              ...inspected.freshness,
-              state: "superseded",
-              after: after.freshness,
-            },
-            bindingContext: {
-              before: documentContext.answer.bindingContext,
-              after: {
-                input: profileAfter.input,
-                freshness: profileAfter.freshness,
-                diagnostic: profileAfter.diagnostic,
-              },
-            },
-            diagnostic: {
-              code: "SOURCE_SUPERSEDED",
-              message: "Source changed during this attempt. Run a new check.",
-            },
-          });
-        return finish(documentContext, {
-          checks,
-          ok: Object.values(checks).every((check) => check.status === "passed"),
-          rendering: "checked",
-        });
-      } catch (error) {
-        const diagnostic = checkDiagnostic(error, caller);
-        checks.structure = { status: "failed", diagnostics: [diagnostic] };
-        return finish(documentContext, {
-          ok: false,
-          checks,
-          diagnostic: attachReport(documentContext, diagnostic),
-        });
-      }
-    }
+    if (source !== undefined && inspected.document?.kind !== "profile")
+      return checkPlainDocument({
+        deps,
+        params,
+        mode,
+        draft,
+        inspect,
+        inspectRequest,
+        inspected,
+        source,
+        context: inspectedContext,
+        attachReport,
+        finish,
+      });
     if (
       params.root !== undefined ||
       params.variant !== undefined ||
@@ -913,277 +698,19 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           message: "Select a saved Profile document.",
         },
       });
-    let profileContext = inspectedContext;
-    const checks: Record<string, ProfileCheck> = Object.fromEntries(
-      ["structure", ...PROFILE_OUTPUTS].map((name) => [
-        name,
-        { status: "not-checked", diagnostics: [] },
-      ]),
-    );
-    let caller: RenderCallerSource = { source, language: "liquid" };
-    try {
-      const parsed = parseLiteratureNoteTemplate(source);
-      if (
-        draft &&
-        params.profile !== undefined &&
-        parsed.manifest.id !==
-          (inspected.document.profile?.id ??
-            inspected.document.profileIdentity?.id)
-      )
-        return finish(profileContext, {
-          ok: false,
-          checks: {
-            ...checks,
-            structure: { status: "failed", diagnostics: [] },
-          },
-          diagnostic: {
-            code: "PROFILE_ID_MISMATCH",
-            message:
-              "The draft manifest ID does not match the selected Profile.",
-            recovery:
-              "Keep the selected Profile ID in the draft, or omit profile to check a standalone identity.",
-          },
-        });
-      profileContext = {
-        ...profileContext,
-        language: parsed.manifest.language ?? "liquid",
-      };
-      caller = {
-        source,
-        language: parsed.manifest.language ?? "liquid",
-        profileId: parsed.manifest.id,
-      };
-      if (
-        !deps.templates.javascriptTemplatesEnabled &&
-        (parsed.manifest.language === "eta" ||
-          parsed.manifest.frontmatter?.some((entry) => "js" in entry))
-      ) {
-        const entries =
-          parsed.manifest.frontmatter?.flatMap((entry, index) =>
-            "js" in entry
-              ? [
-                  {
-                    position: index + 1,
-                    ...("key" in entry ? { key: entry.key } : {}),
-                    expression: entry.js,
-                  },
-                ]
-              : [],
-          ) ?? [];
-        if (entries.length)
-          checks.properties = {
-            status: "failed",
-            entries: entries.map(({ position, key }) => ({
-              position,
-              key,
-              status: "failed",
-            })),
-            diagnostics: entries.map(({ position, key }) => ({
-              code: "property-javascript",
-              part: "properties",
-              position,
-              ...(key ? { key } : {}),
-              message: "JavaScript Templates are disabled on this device.",
-              recovery:
-                "Enable JavaScript Templates or replace this entry with a JSON-e value.",
-            })),
-          };
-        return finish(profileContext, {
-          ok: false,
-          checks,
-          diagnostic: {
-            code: "ETA_OPT_IN_REQUIRED",
-            message:
-              "JavaScript Templates are disabled on this device. Enable the gate or use Liquid and JSON-e entries.",
-            evidence: {
-              kind: "javascript-gate",
-              enabled: false,
-              source: inspected.input,
-              language: parsed.manifest.language ?? "liquid",
-              entries,
-            },
-          },
-          rendering: "not-checked",
-        });
-      }
-      const document =
-        deps.templates.prepareLiteratureNoteTemplateSource(source);
-      const selector = parseProfileSelector(document.manifest.id ?? "default");
-      if (draft && selector === undefined)
-        return finish(profileContext, {
-          ok: false,
-          checks: {
-            ...checks,
-            structure: { status: "failed", diagnostics: [] },
-          },
-          diagnostic: {
-            code: INVALID_PROFILE_ID,
-            message: PROFILE_ID_RULE,
-            recovery: `Set the draft manifest id to 'default' or to a ${PROFILE_ID_LENGTH}-character Profile ID, then check the draft again.`,
-          },
-        });
-      const profile =
-        selector === undefined
-          ? undefined
-          : draft
-            ? bindDraftProfile(
-                await deps.data.settings.loaded,
-                selector,
-                document.manifest,
-              )
-            : deps.profile.resolveProfile(selector);
-      if (!profile) throw new Error("The saved Profile does not resolve.");
-      if (draft)
-        profileContext = {
-          ...profileContext,
-          answer: {
-            ...profileContext.answer,
-            document: {
-              kind: "profile",
-              id: profile.selector,
-              label: profile.label ?? "Default",
-              path: draft.path,
-              profile: {
-                id: profile.selector,
-                label: profile.label ?? "Default",
-                bindings: profile.bindings,
-              },
-              problems: [],
-            },
-          },
-        };
-      checks.structure = { status: "passed", diagnostics: [] };
-      if (params.key === undefined)
-        return finish(profileContext, {
-          ok: true,
-          checks,
-          rendering: "not-checked",
-          reason:
-            "Structural validation only; provide key to check rendering with real item data.",
-        });
-      profileContext = {
-        ...profileContext,
-        selectedProfile: {
-          id: profile.selector,
-          label: profile.label ?? "Default",
-        },
-      };
-      const profileData = {
-        ...deps.data,
-        settings: { loaded: Promise.resolve(profile.settings) },
-      };
-      const baseline = profileContext.baseline;
-      const data = baseline
-        ? withSelectedNote(profileData, {
-            key: profileContext.itemKey,
-            path: baseline.path,
-          })
-        : profileData;
-      const [note, filename] = await Promise.all([
-        loadTemplateData(data, params.key as string, "note"),
-        loadTemplateData(data, params.key as string, "filename"),
-      ]);
-      if (note.kind !== "data" || filename.kind !== "data")
-        throw new Error("The selected Zotero item is unavailable.");
-      profileContext = {
-        ...profileContext,
-        dataRevision: sourceRevision(
-          JSON.stringify({
-            note: serializeTemplateData(note.data, "note"),
-            filename: serializeTemplateData(filename.data, "filename"),
-          }),
-        ),
-      };
-      const annotations = await Promise.all(
-        (note.data as NoteTemplateContext).annotations.map(
-          async (annotation) => {
-            const key = annotation.indexedKey;
-            try {
-              const loaded = await loadTemplateData(data, key, "annotation");
-              if (loaded.kind !== "data")
-                return {
-                  key,
-                  error: new Error("The selected annotation is unavailable."),
-                };
-              // Citation is derived from a separately verified Template source;
-              // fingerprint the loaded annotation data without invoking that getter.
-              const { citation: _citation, ...descriptors } =
-                Object.getOwnPropertyDescriptors(loaded.data);
-              const revision = sourceRevision(
-                JSON.stringify(
-                  serializeTemplateData(
-                    Object.defineProperties({}, descriptors),
-                    "annotation",
-                  ),
-                ),
-              );
-              return { key, data: loaded.data, revision };
-            } catch (error) {
-              return { key, error };
-            }
-          },
-        ),
-      );
-      Object.assign(
-        checks,
-        checkNativeProfile(deps.templates, {
-          document,
-          profile,
-          source,
-          note: note.data as NoteTemplateContext,
-          filename: filename.data,
-          annotations,
-          ...(baseline ? { existing: baseline.source } : {}),
-        }),
-      );
-      const after = JSON.parse(
-        (await inspect(inspectRequest)) as string,
-      ) as InspectedSource;
-      if (baseline?.kind === "real") {
-        const file = deps.app.vault.getFileByPath(baseline.path!);
-        if (!file || (await deps.app.vault.read(file)) !== baseline.source)
-          return finish(profileContext, {
-            ok: false,
-            rendering: "checked",
-            diagnostic: {
-              code: "BASELINE_SUPERSEDED",
-              message:
-                "The Literature Note changed during this attempt. Run a new check.",
-            },
-          });
-      }
-      if (
-        !after.ok ||
-        sourceRevision(after.source ?? "") !== inspected.input?.revision ||
-        JSON.stringify(after.freshness?.versions) !==
-          JSON.stringify(inspected.freshness?.versions)
-      )
-        return finish(profileContext, {
-          ok: false,
-          diagnostic: {
-            code: "SOURCE_SUPERSEDED",
-            message: "Source changed during this attempt. Run a new check.",
-          },
-          freshness: {
-            ...inspected.freshness,
-            state: "superseded",
-            after: after.freshness,
-          },
-          rendering: "checked",
-        });
-      return finish(profileContext, {
-        ok: Object.values(checks).every((check) => check.status === "passed"),
-        checks,
-        rendering: "checked",
-      });
-    } catch (error) {
-      const diagnostic = attachReport(
-        profileContext,
-        checkDiagnostic(error, caller),
-      );
-      if (checks.structure?.status !== "passed")
-        checks.structure = { status: "failed", diagnostics: [diagnostic] };
-      return finish(profileContext, { ok: false, checks, diagnostic });
-    }
+    return checkProfileDocument({
+      deps,
+      params,
+      mode,
+      draft,
+      inspect,
+      inspectRequest,
+      inspected,
+      inspectedDocument: inspected.document,
+      source,
+      context: inspectedContext,
+      attachReport,
+      finish,
+    });
   };
 }
