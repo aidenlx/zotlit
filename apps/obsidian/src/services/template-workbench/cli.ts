@@ -133,6 +133,7 @@ interface TemplateWorkbenchDeps {
   loadData: (
     indexedKey: string,
     root: ContractRoot,
+    options?: { note?: string },
   ) => Promise<TemplateDataLoadResult>;
   /** Citation Template data for one example set or one chosen Item. */
   loadCitation: (
@@ -516,7 +517,11 @@ export function createTemplateWorkbenchHandlers(
         const result =
           "example" in selector || request.root === "citation"
             ? await deps.loadCitation(selector, "main")
-            : await deps.loadData(selector.key, request.root);
+            : await deps.loadData(
+                selector.key,
+                request.root,
+                noteContext ? { note: noteContext.note } : undefined,
+              );
         if (result.kind !== "data") {
           return envelope(TEMPLATE_DATA_COMMAND, {
             ok: false,

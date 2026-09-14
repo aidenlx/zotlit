@@ -39,7 +39,7 @@ import {
   TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
-import { loadCitationData, loadTemplateData } from "./data";
+import { loadCitationData, loadTemplateData, withSelectedNote } from "./data";
 import { diagnostic, envelope } from "./envelope";
 import type { WorkbenchCommand } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
@@ -341,7 +341,14 @@ export function registerTemplateWorkbench(
       await deps.profile.ready;
       return selectInspectionNote(deps, name);
     },
-    loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
+    loadData: (indexedKey, root, options) =>
+      loadTemplateData(
+        options?.note === undefined
+          ? deps
+          : withSelectedNote(deps, { key: indexedKey, path: options.note }),
+        indexedKey,
+        root,
+      ),
     loadCitation: (selector, variant) =>
       loadCitationData(deps, selector, variant),
     templates: deps.templates,

@@ -31,7 +31,7 @@ import {
 import type { ProfileCheck } from "@/views/note-preview/check-profile";
 
 import { selectCheckBaseline } from "./check-baseline";
-import { loadTemplateData, loadCitationData } from "./data";
+import { loadTemplateData, loadCitationData, withSelectedNote } from "./data";
 import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
@@ -980,25 +980,13 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         id: profile.selector,
         label: profile.label ?? "Default",
       };
-      const data = {
+      const profileData = {
         ...deps.data,
         settings: { loaded: Promise.resolve(profile.settings) },
-        ...(baseline
-          ? {
-              noteIndex: {
-                whenIndexed: () => deps.data.noteIndex.whenIndexed(),
-                getImportedNoteByNoteKey: (key: string) =>
-                  deps.data.noteIndex.getImportedNoteByNoteKey(key),
-                getNotesByItemKey: (key: string) => {
-                  const notes = deps.data.noteIndex.getNotesByItemKey(key);
-                  return key === itemKey
-                    ? notes.filter((file) => file.path === baseline!.path)
-                    : notes;
-                },
-              },
-            }
-          : {}),
       };
+      const data = baseline
+        ? withSelectedNote(profileData, { key: itemKey, path: baseline.path })
+        : profileData;
       const [note, filename] = await Promise.all([
         loadTemplateData(data, params.key as string, "note"),
         loadTemplateData(data, params.key as string, "filename"),

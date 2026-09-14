@@ -99,6 +99,35 @@ describe("registered field discovery", () => {
     expect(fixture.writeCalls).toEqual([]);
   });
 
+  it("builds data from the selected note when an item has several", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    // A resolved note makes the excerpt-image context read the attachment
+    // folder, which the base fixture's FileManager does not answer.
+    Object.assign(fixture.deps.app.fileManager, {
+      getAvailablePathForAttachment: async (name: string) =>
+        `attachments/${name}`,
+    });
+    const notes = [
+      { path: "Notes/One.md", basename: "One" },
+      { path: "Notes/Two.md", basename: "Two" },
+    ];
+    fixture.deps.app.vault.getMarkdownFiles = () => notes as never;
+    fixture.deps.noteIndex.getNotesByItemKey = () => notes as never;
+
+    const result = await run({
+      note: "Notes/Two.md",
+      root: "note",
+      path: "zt.notePath",
+    });
+
+    expect(result.selection).toMatchObject({ note: "Notes/Two.md" });
+    expect(result.discovery.matches[0]).toMatchObject({
+      path: "zt.notePath",
+      value: "Notes/Two.md",
+    });
+  });
+
   it("inspects nested annotations and preserves empty arrays and absent fields", async () => {
     using fixture = createFixture();
     const run = registeredData(fixture.deps);

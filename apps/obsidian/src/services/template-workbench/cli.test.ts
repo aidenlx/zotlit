@@ -358,7 +358,7 @@ describe("Template Workbench CLI", () => {
         annotations: [{ parentItem: { $ref: "zt" } }],
       },
     });
-    expect(loadData).toHaveBeenCalledWith("ITEM2345", "note");
+    expect(loadData).toHaveBeenCalledWith("ITEM2345", "note", undefined);
     expect(wouldWrite).not.toHaveBeenCalled();
   });
 
