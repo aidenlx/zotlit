@@ -3,9 +3,13 @@
 This manifest defines reset-isolated evaluation cases for the fixed Template
 Workbench tasks. It is additive: the historical benchmark and evidence under
 `skills/zotlit-template-workspace/iteration-2/` are unchanged, and the three
-original trials remain the comparison benchmark. Nothing here claims a
-measurement, a grade, or a completed run — every execution status below is
-`pending/unverified` until a real Luna trial runs it.
+original trials remain the comparison benchmark.
+
+All nine cases have now been executed under reset isolation. The measured
+record is [results.md](results.md), the environment and subject configuration
+is [run-config.md](run-config.md), and the scripts that reset, snapshot, and
+gate each run are under [harness/](harness/). Read those for grades; this file
+stays the case definition.
 
 ## Vocabulary
 
@@ -167,13 +171,19 @@ Case; they are not additional Vault Case ids.
 - **Caller identity / root**: Books Profile caller, `root=note`.
 - **Target Item**: `BKPUBLR4` (`weiBookPublisher2017`, book "A book whose
   Venue is its publisher").
-- **User task**: "Make one visible requested text change to the book-details
-  Shared Partial. Keep the caller identity, the supported root, and every
-  unrelated file unchanged, then check the partial and its Books caller."
+- **User task**: "In the book-details Shared Partial, change the callout title
+  from `Book details` to `Book summary`. Keep the caller identity, the
+  supported root, and every unrelated file unchanged, then check the partial
+  and its Books caller."
 - **Controller setup**: none; the seed carries the original partial text.
-- **Grading**: the changed text is visible in the checked partial output; the
-  Books caller and `root=note` are explicit; unrelated templates/notes are
+- **Grading**: the checked partial output contains `> [!info] Book summary`;
+  the Books caller and `root=note` are explicit; unrelated templates/notes are
   byte-identical; the partial's saved revision matches disk.
+
+  The requested edit is named so an independent oracle exists. `Book details`
+  is chosen over the `Type:` label deliberately: `Type` -> `Kind` is the
+  controller's external edit in `workbench-external-edit`, and reusing it here
+  would blur two cases that must stay distinguishable.
 
 ## 4. workbench-citation-variants
 
@@ -225,7 +235,10 @@ Case; they are not additional Vault Case ids.
   completes `template-inspect` and reports the baseline revision, the
   controller edits the Shared Partial file on disk (changes its visible
   `Type` label to `Kind`) using a file tool that Obsidian observes. The subject is
-  then told to run the check immediately. State preparation (the baseline) is
+  then told to run the check immediately. Phase one captures a **render** as
+  well as an inspect, so the before/after of the visible label is provable:
+  with only an inspect, a subject can prove the new revision loaded but cannot
+  say which visible text changed, and one run guessed wrong. State preparation (the baseline) is
   separated from runtime orchestration (the external edit). Completion is
   signalled by the check's own bounded reconciliation of the
   `compile-status-changed` event — no sleep, and no watcher race is promised.
@@ -253,8 +266,11 @@ Case; they are not additional Vault Case ids.
 
 ## 8. workbench-default-no-note
 
-- **Base semantics**: `fresh`; no settings file, no notes, no ejected
-  templates. Only the built-in Default is readable.
+- **Base semantics**: `fresh`; the seed writes no settings file, no notes, and
+  no ejected templates. Only the built-in Default is readable. Plugin startup
+  then creates `.obsidian/plugins/zotlit/data.json` holding a version marker
+  only (`__VERSION__` and `release.previous-version`), with no user settings
+  and no Profile configuration.
 - **Target Item**: `NW2CPDTC` (`Kahneman2011`) for create and synthetic-update
   checks.
 - **User task**: "In this fresh vault with no settings or notes, check a
@@ -262,9 +278,10 @@ Case; they are not additional Vault Case ids.
   Default Profile. Do not create a note or a custom Profile."
 - **Controller setup**: none; the seed has no note or custom Profile.
 - **Repeats**: 3 independent repeats.
-- **Grading**: the vault holds no settings file, notes, or templates at start
-  and end; the create check uses the built-in Default; the synthetic-update
-  baseline is reported as synthetic; no file is written.
+- **Grading**: the vault holds no notes and no `templates/` folder at start
+  and end, and the only settings file is the startup version marker above; the
+  create check uses the built-in Default; the synthetic-update baseline is
+  reported as synthetic; no file is written.
 
 ## 9. workbench-error-recovery
 
@@ -284,12 +301,25 @@ Case; they are not additional Vault Case ids.
 - **Repeats**: 3 independent repeats.
 - **Grading**: the failing attempt is retained and retrievable by its attempt
   id with `evidence=full`; the original failure evidence survives the repair;
-  the repaired check passes with the restored partial; the repaired partial is
-  byte-identical to the configured reference.
+  the repaired check passes with the restored partial; the restored partial
+  renders the same visible output for an Item that carries a citation key, and
+  the subject states any fallback behaviour it could not recover.
+
+  The assertion is behavioural because the case deletes the partial, so its
+  original bytes survive nowhere in the vault. Three subjects produced three
+  variants and the product accepted all of them; the only surviving trace, the
+  rendered copy in `books/books-duplicateWithin2020.md`, reads the same under
+  every variant.
 
 ## Status
 
-All nine cases are **pending/unverified**. The seeds and generated snapshots
-are implemented and validated by `packages/scripts/lib/fixture/build.test.ts`,
-but no Luna trial, repeat, held-out variation, measurement, or grade has been
-run or recorded. Historical evaluation artifacts are untouched.
+All nine cases are **executed and graded**. Twenty-three subject runs were
+dispatched: 20 graded, and 3 discarded and re-run after harness defects were
+found. Every grade reads disk bytes and command output directly, never the
+subject's own report. The failure-sensitive repeats and the held-out Item
+variation all ran.
+
+Per-case verdicts, findings, harness defects, and the post-refinement
+regression set are in [results.md](results.md). The seeds and generated
+snapshots stay validated by `packages/scripts/lib/fixture/build.test.ts`.
+Historical evaluation artifacts are untouched.

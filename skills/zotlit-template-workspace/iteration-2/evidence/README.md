@@ -8,9 +8,15 @@ A [fresh Luna xhigh recovery trial](final-recovery-luna3/transcript.md) on
 the same final bundle records four commands and exact stdout: status plus
 three recovery commands. It succeeds after applying the omission hint.
 It is one supplemental trial, bringing retained Luna trials to four while
-the original comparison benchmark remains three. The broader fixed-case
-and fresh-Vault-Case evaluation gap remains open. This transcript has no
+the original comparison benchmark remains three. This transcript has no
 reset snapshot, elapsed durations, or token totals.
+
+The broader fixed-case and fresh-Vault-Case evaluation gap these trials left
+open is now closed by the reset-isolated matrix in
+[../fresh-cases/results.md](../fresh-cases/results.md), which runs all nine
+Workbench Vault Cases with a rebuilt seed and a purged Development Vault
+before every run. The records below stay the historical three-trial
+benchmark; they are not part of that matrix.
 
 The files here preserve the recorded Luna trials. The original scratch paths
 remain in command text as historical inputs. Reviewers can read all cited
