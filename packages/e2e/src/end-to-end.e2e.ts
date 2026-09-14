@@ -98,6 +98,50 @@ async function openProfilesSettings(vaultId: string, pageName: string) {
   );
 }
 
+/** Shared native editing steps; Help can be inspected after selection and before typing. */
+async function changeNativeAnnotationCallout(
+  vaultId: string,
+  options: {
+    view: string;
+    vaultPath: string;
+    tabLabel: string;
+    beforeEdit?: () => Promise<void>;
+  },
+): Promise<void> {
+  const { view, vaultPath, tabLabel } = options;
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `(function(){const view=${view};const tab=Array.from(view?.contentEl.querySelectorAll('[role=tab]')??[]).find(element=>element.textContent.trim()===${JSON.stringify(tabLabel)});if(!tab)return false;tab.click();return true;})()`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  const annotationEditor = `Array.from((${view})?.contentEl.querySelectorAll('.cm-content')??[]).find(element=>element.textContent.includes('[!note]'))?.cmTile?.root?.view`;
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `String(!!(${annotationEditor})?.state.doc.toString().includes('[!note]'))`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  await options.beforeEdit?.();
+  const templatePath = await obEval(vaultId, `(${view}).file.path`);
+  // CodeMirror's mounted view receives the same transaction as typed text.
+  expect(
+    await obEval(
+      vaultId,
+      `(function(){const editor=${annotationEditor};const from=editor.state.doc.toString().indexOf('[!note]');editor.dispatch({changes:{from,to:from+7,insert:'[!quote]'},userEvent:'input.type'});return true;})()`,
+    ),
+  ).toBe("true");
+  expect(
+    await waitFor(async () =>
+      (await readFile(join(vaultPath, templatePath), "utf-8")).includes(
+        "[!quote]",
+      ),
+    ),
+  ).toBe(true);
+}
+
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
   let booksNotePath = "";
@@ -242,28 +286,31 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   }
 
-  async function quickSwitchCreate(item: { title: string }) {
+  async function quickSwitchCreate(
+    item: { title: string },
+    targetVaultId = vaultId,
+  ) {
     expect(
       await obEvalUntil(
-        vaultId,
+        targetVaultId,
         "app.commands.executeCommandById('zotlit:note-quick-switcher')",
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
-        vaultId,
+        targetVaultId,
         "String(!!document.querySelector('.prompt input'))",
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
-      vaultId,
+      targetVaultId,
       `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
-    await selectSuggestion(vaultId, item.title);
+    await selectSuggestion(targetVaultId, item.title);
     await obEval(
-      vaultId,
+      targetVaultId,
       "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
   }
@@ -321,6 +368,163 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
+    const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
+    const freshPath = join(workspaceRoot, "tmp", "e2e-first-note-vault");
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await runVaultScript(["remove", freshPath, "--purge"]);
+    });
+    const created = await runVaultScript([
+      "open",
+      freshPath,
+      "--vault-case",
+      "fresh",
+    ]);
+    const freshId = created.stdout.trim().split("\n")[0]!.trim();
+    expect(
+      await obEval(
+        freshId,
+        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+      ),
+    ).toBe("0");
+    await quickSwitchCreate(annotatedItem, freshId);
+    expect(
+      await obEvalUntil(
+        freshId,
+        "String(!!app.workspace.getActiveFile()&&app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey('RUGIER24').length===1)",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const note = await indexedNote(freshId, annotatedItem.itemID);
+    expect(note.path).not.toBeNull();
+    const personal = "\nMy own research question stays here.\n";
+    await obEval(
+      freshId,
+      `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(note.path)});await app.vault.append(file,${JSON.stringify(personal)});await app.workspace.getLeaf(false).openFile(file);return true;})()`,
+    );
+    const before = await readFile(join(freshPath, note.path!), "utf-8");
+    expect(before).toContain("[!note]");
+    expect(before.split("[!note]").length - 1).toBe(7);
+    expect(
+      await obEval(
+        freshId,
+        "app.commands.executeCommandById('zotlit:customize-note-template')",
+      ),
+    ).toBe("true");
+    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})?.view`;
+    expect(
+      await obEvalUntil(freshId, `String(!!(${editor})?.file)`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    expect(
+      await obEval(
+        freshId,
+        `(function(){const view=${editor};return String(view.contentEl.textContent.includes(${JSON.stringify(m.template_workbench_shared_template({ name: "zotlit-profile.default" }))})&&view.store.getState().item?.id==='RUGIER24');})()`,
+      ),
+    ).toBe("true");
+    await changeNativeAnnotationCallout(freshId, {
+      view: editor,
+      vaultPath: freshPath,
+      tabLabel: m.workbench_tab_annotation(),
+      beforeEdit: async () => {
+        expect(
+          await obEvalUntil(
+            freshId,
+            `(function(){const view=${editor};const help=view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]');if(!help)return false;view.leaf.getContainer().focus();help.focus();return String(help===view.contentEl.ownerDocument.activeElement&&help.getAttribute('aria-expanded')==='false');})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          freshId,
+          `(function(){const view=${editor};view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]').click();return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            freshId,
+            `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(m.workbench_annotation_help_title())}]');const source=Array.from(view.contentEl.querySelectorAll('.cm-content')).find(element=>element.textContent.includes('[!note]'));return String(!!guide&&guide.textContent.includes('[!quote]')&&guide.textContent.includes(${JSON.stringify(m.template_workbench_update_this_note())})&&guide.getBoundingClientRect().height>0&&source.getBoundingClientRect().height>0);})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          freshId,
+          `(function(){const view=${editor};const guide=view.contentEl.querySelector('section[aria-label=${JSON.stringify(m.workbench_annotation_help_title())}]');guide.focus();guide.dispatchEvent(new view.contentEl.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            freshId,
+            `(function(){const view=${editor};const help=view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.workbench_help())}]');return String(help.getAttribute('aria-expanded')==='false'&&help===view.contentEl.ownerDocument.activeElement&&Array.from(view.contentEl.querySelectorAll('.cm-content')).some(element=>element.textContent.includes('[!note]')));})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+      },
+    });
+    // The linked Preview belongs to the editor's native window, which can differ from the CLI window.
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};return String(!!view.contentEl.ownerDocument.querySelector('.callout[data-callout="quote"]'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(await readFile(join(freshPath, note.path!), "utf-8")).toBe(before);
+    const other = await createFixtureNote(freshId, createTargetItem.itemID);
+    expect(other.outcome).toBe("created");
+    if (other.outcome !== "created")
+      throw new Error("Second note was not created");
+    const otherBefore = await readFile(join(freshPath, other.path), "utf-8");
+    await obEval(
+      freshId,
+      `(async()=>{await app.workspace.getLeaf('tab').openFile(app.vault.getFileByPath(${JSON.stringify(other.path)}));app.workspace.rootSplit.focus();return true;})()`,
+    );
+    await obEval(
+      freshId,
+      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.leaf.getContainer().focus();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        freshId,
+        `String(activeWindow===(${editor}).contentEl.ownerDocument.defaultView)`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        freshId,
+        `(function(){const view=${editor};const button=Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())});button.focus();return String(view.contentEl.ownerDocument.activeElement===button&&!button.disabled);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      freshId,
+      `(function(){const view=${editor};Array.from(view.contentEl.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.template_workbench_update_this_note())}).click();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(freshId, `String(!(${editor}).updatingNote)`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    expect(
+      await waitFor(
+        async () =>
+          (await readFile(join(freshPath, note.path!), "utf-8")).split(
+            "[!quote]",
+          ).length -
+            1 ===
+          7,
+      ),
+    ).toBe(true);
+    const after = await readFile(join(freshPath, note.path!), "utf-8");
+    expect(noteBody(after).replace(managedRegion(after), "")).toBe(
+      noteBody(before).replace(managedRegion(before), ""),
+    );
+    expect(after).toContain(personal);
+    expect(await readFile(join(freshPath, other.path), "utf-8")).toBe(
+      otherBefore,
+    );
+  }, 180000);
 
   it("keeps one Literature Note when create runs twice for one Item", async () => {
     const noteName =
@@ -1514,6 +1718,208 @@ interface LibraryScopeReport {
   available?: { selector: unknown; libraryID: number; name: string | null }[];
   unavailable?: unknown[];
 }
+
+describe.skipIf(!reachable)("Fresh destination flow", () => {
+  const vaultPath = join(workspaceRoot, "tmp", "e2e-destination-vault");
+  let vaultId = "";
+  let m: typeof import("@obsidian-messages");
+
+  beforeAll(async () => {
+    m = await import("@obsidian-messages");
+    const pluginDir = join(vaultPath, ".obsidian", "plugins", "zotlit");
+    await mkdir(pluginDir, { recursive: true });
+    await cp(join(workspaceRoot, "apps", "obsidian", "dist-dev"), pluginDir, {
+      recursive: true,
+    });
+    const created = await runVaultScript([
+      "open",
+      vaultPath,
+      "--vault-case",
+      "fresh",
+    ]);
+    vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+    );
+  }, 180000);
+
+  afterAll(async () => {
+    await runVaultScript(["remove", vaultPath, "--purge"]);
+  }, 120000);
+
+  it("creates Books from the edited Default appearance after cancelling a destination", async () => {
+    const first = await createFixtureNote(vaultId, 46, "default");
+    expect(first.outcome, JSON.stringify(first)).toBe("created");
+    if (first.outcome !== "created")
+      throw new Error("First Literature Note was not created");
+    expect(first.path).toBe("literatures/rougierTenSimpleRules2014.md");
+    const original = await readFile(join(vaultPath, first.path), "utf-8");
+    expect(original).toContain("[!note]");
+    await obEval(
+      vaultId,
+      `(async function(){await app.workspace.getLeaf(false).openFile(app.vault.getFileByPath(${JSON.stringify(first.path)}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.commands.executeCommandById('zotlit:customize-note-template')",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const defaultView =
+      "app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===app.plugins.plugins.zotlit.services.profile.defaultDocumentPath)?.view";
+    await changeNativeAnnotationCallout(vaultId, {
+      view: defaultView,
+      vaultPath,
+      tabLabel: m.workbench_tab_annotation(),
+    });
+    expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
+
+    const openAdd = async () => {
+      await obEval(
+        vaultId,
+        `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
+      );
+      await openProfilesSettings(vaultId, m.settings_page_profiles());
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(function(){var button=Array.from(document.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(Array.from(document.querySelectorAll('.modal-title')).some(el=>el.textContent===${JSON.stringify(m.settings_profile_add())}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    };
+    await openAdd();
+    expect(await clickModalButton(vaultId, m.modal_cancel())).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        "String(app.plugins.plugins.zotlit.services.profile.profiles.length)",
+      ),
+    ).toBe("0");
+    expect(
+      (await readdir(vaultPath, { recursive: true })).filter(
+        (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
+      ),
+    ).toEqual(["templates/zotlit-profile.default.md"]);
+
+    await openAdd();
+    // The native label wraps each input, so keyboard focus and its accessible name share the same control.
+    expect(
+      await obEval(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('label'));var name=labels.find(el=>el.textContent===${JSON.stringify(m.settings_profile_name_name())})?.querySelector('input');var folder=labels.find(el=>el.textContent===${JSON.stringify(m.settings_profile_folder_name())})?.querySelector('input');return String(!!name&&!!folder&&name.tabIndex===0&&folder.tabIndex===0&&name===name.ownerDocument.activeElement);})()`,
+      ),
+    ).toBe("true");
+    const fill = async (name: string, folder: string) => {
+      await obEval(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var values=${JSON.stringify([name, folder])};Array.from(modal.querySelectorAll('input')).forEach((input,i)=>{input.value=values[i];input.dispatchEvent(new Event('input',{bubbles:true}));});return true;})()`,
+      );
+    };
+    await fill("Default", "books");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var status=modal?.querySelector('[role=status]');var button=Array.from(modal?.querySelectorAll('button')??[]).find(el=>el.textContent===${JSON.stringify(m.settings_profile_add())});return String(status?.textContent===${JSON.stringify(m.settings_profile_name_invalid())}&&status.getBoundingClientRect().height>0&&button?.disabled);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await fill("Books", "books");
+    expect(await clickModalButton(vaultId, m.settings_profile_add())).toBe(
+      true,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.label==='Books'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const books = JSON.parse(
+      await obEval(
+        vaultId,
+        "JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.label==='Books'))",
+      ),
+    ) as { id: string; path: string };
+    const saved = await readFile(join(vaultPath, books.path), "utf-8");
+    expect(saved).toContain("[!quote]");
+    expect(saved).toContain("folder: books");
+    const booksView = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.file?.path===${JSON.stringify(books.path)})?.view`;
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var view=${booksView};return String(view?.contentEl.querySelector('[role=tab][aria-selected=true]')?.textContent.trim()===${JSON.stringify(m.workbench_tab_name_and_folder())}&&Array.from(view.contentEl.querySelectorAll('input')).some(el=>el.value==='books'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+
+    await obEval(
+      vaultId,
+      `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, "String(activeWindow===window)", {
+        expected: "true",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!document.querySelector('.prompt input'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "(function(){var input=document.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
+    );
+    await selectSuggestion(vaultId, "Thinking, fast and slow");
+    await obEval(
+      vaultId,
+      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
+    expect(choice).toContain("Books");
+    expect(choice).toContain("books/Kahneman2011.md");
+    await obEval(
+      vaultId,
+      "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    expect(
+      await waitFor(async () =>
+        (
+          await readFile(
+            join(vaultPath, "books/Kahneman2011.md"),
+            "utf-8",
+          ).catch(() => "")
+        ).includes("Thinking, fast and slow"),
+      ),
+    ).toBe(true);
+    const book = await readFile(
+      join(vaultPath, "books/Kahneman2011.md"),
+      "utf-8",
+    );
+    expect(book).toContain(`zotlit-profile: Books (${books.id})`);
+    expect(await readFile(join(vaultPath, first.path), "utf-8")).toBe(original);
+    expect(await indexedNote(vaultId, 46)).toEqual({
+      indexedKey: first.indexedKey,
+      path: first.path,
+    });
+  }, 180000);
+});
 
 interface ManagedFrontmatterReport {
   title?: unknown;

@@ -27,6 +27,7 @@ import {
   SquareCheck,
   Calendar,
   Clock,
+  CircleHelp,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -44,6 +45,7 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
   more: Ellipsis,
   copy: Copy,
+  help: CircleHelp,
   confirm: Check,
   add: Plus,
   remove: Trash2,
@@ -195,6 +197,8 @@ export const WEB_THEME: WorkbenchTheme = {
       "filename-result":
         "flex flex-wrap items-center gap-2 text-xs leading-normal",
       muted: "text-fd-muted-foreground",
+      "filename-status":
+        "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 data-[state=failed]:text-fd-destructive",
       "filename-output": "min-w-0 [overflow-wrap:anywhere]",
       defaults: "flex flex-col gap-1.5 text-xs",
       actions: "flex flex-wrap items-center gap-2",
@@ -249,7 +253,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "row-name":
         "col-start-1 row-start-1 flex min-h-7 min-w-0 items-center gap-2 pe-2",
       key: "min-w-0 flex-1 font-mono text-sm font-medium break-words",
-      label: "text-xs font-medium",
+      label: "text-xs font-medium data-[state=problem]:text-destructive",
       "row-actions":
         "z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start",
       edit: cn(
@@ -272,16 +276,22 @@ export const WEB_THEME: WorkbenchTheme = {
       "confirm-actions": "flex flex-wrap gap-2",
       "text-input": cn(nameInput, "bg-fd-background"),
       expression:
-        "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background",
+        "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background data-[state=problem]:border-destructive",
       diagnostics:
-        "flex flex-col gap-1 border-s-2 border-fd-foreground ps-3 text-xs leading-normal",
+        "flex flex-col gap-1 border-s-2 border-s-destructive ps-3 text-xs leading-normal text-pretty text-destructive",
       summary:
-        "col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground data-[state=closed]:line-clamp-2",
+        "col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground data-[state=closed]:line-clamp-2 data-[state=problem]:line-clamp-2 data-[state=problem]:text-destructive",
       "row-action": buttonVariants({ variant: "ghost", size: "icon-xs" }),
       "primary-action": buttonVariants({ variant: "outline", size: "xs" }),
       "secondary-action": buttonVariants({ variant: "ghost", size: "xs" }),
     },
     annotation: {
+      "help-bar": "mb-3 shrink-0 leading-normal",
+      "help-button": buttonVariants({ variant: "ghost", size: "icon-xs" }),
+      "help-lede": "text-xs text-pretty text-fd-muted-foreground",
+      "help-toggle": "ms-1 inline-block align-baseline",
+      help: "mb-3 flex max-h-40 shrink-0 flex-col gap-1 overflow-auto text-xs leading-normal text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-fd-ring",
+
       "sample-bar": "mb-2 flex shrink-0 items-center gap-2",
       problem:
         "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",

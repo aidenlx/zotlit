@@ -17,6 +17,8 @@ import {
   emptyRender,
   engineEvidence,
   failedRender,
+  filenameErrorDiagnostic,
+  propertyErrorDiagnostic,
   renderFailureDiagnostic,
   renderIdentity,
   retainOutputs,
@@ -376,6 +378,11 @@ export async function renderNativeProfile(
 ): Promise<NativeRenderResult> {
   const identity = renderIdentity(request);
   let sourcePath = "";
+  // The note name is produced apart from everything else, so a mistake in the
+  // Filename Template leaves the rest of this preview on screen and a mistake
+  // anywhere else leaves the name this attempt produced.
+  let noteName: string | null = null;
+  let noteNameFailure: RenderDiagnostic | null = null;
   try {
     await deps.templates.ready;
     const document = deps.templates.prepareLiteratureNoteTemplateSource(
@@ -409,6 +416,19 @@ export async function renderNativeProfile(
     const context = note.data as NoteTemplateContext;
     const composeDeps = { template: deps.templates };
     const diagnostics: RenderDiagnostic[] = [];
+    try {
+      // A preview assumes a free filename; the vault resolves collisions on save.
+      noteName = replaceSuffixMarkers(
+        document.renderFilename(filename.data),
+        () => "",
+      );
+    } catch (error) {
+      noteNameFailure = filenameErrorDiagnostic(
+        error,
+        callerSource(deps, request.source),
+      );
+      diagnostics.push(noteNameFailure);
+    }
     const onConflict: FrontmatterMergeConflictHandler = (key, detail) =>
       diagnostics.push({
         code: "property-append-conflict",
@@ -436,14 +456,14 @@ export async function renderNativeProfile(
       properties.push(...nativePropertyRows(prepared.fields));
     if (composed.outcome === "refused")
       for (const error of composed.evaluation.errors)
-        diagnostics.push({
-          code: "property-error",
-          part: "properties",
-          position: error.position,
-          params: { key: error.key },
-          message: errorText(error.error),
-          evidence: engineEvidence(error.error),
-        });
+        // The same answer the web renderer reads, so a row underlines the text
+        // that failed and reads the engine's own words in either host.
+        diagnostics.push(
+          propertyErrorDiagnostic(
+            error,
+            manifest.frontmatter?.[error.position - 1],
+          ),
+        );
     manifest.frontmatter?.forEach((entry, index) => {
       if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
         diagnostics.push({
@@ -585,10 +605,7 @@ export async function renderNativeProfile(
       sourcePath,
       citations: noteCitations.citations,
       annotationCitations: annotationCitations.citations,
-      filename: replaceSuffixMarkers(
-        document.renderFilename(filename.data),
-        () => "",
-      ),
+      filename: noteName,
       properties,
       fold: Object.entries(frontmatter).map(([key, value]) => ({
         key,
@@ -607,20 +624,22 @@ export async function renderNativeProfile(
       diagnostics,
     };
   } catch (error) {
+    const failure = failedRender(
+      identity,
+      renderFault(error, "render", callerSource(deps, request.source)),
+    );
     return {
-      ...failedRender(
-        identity,
-        renderFault(error, "render", callerSource(deps, request.source)),
-      ),
+      ...failure,
+      filename: noteName,
+      diagnostics: [
+        ...(noteNameFailure ? [noteNameFailure] : []),
+        ...failure.diagnostics,
+      ],
       sourcePath,
       citations: [],
       annotationCitations: [],
     };
   }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

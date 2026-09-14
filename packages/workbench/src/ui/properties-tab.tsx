@@ -8,7 +8,7 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { RenderedProperty } from "#/render/result";
-import { useEffect, useState, useId, useRef } from "react";
+import { useEffect, useState, useId, useRef, useMemo } from "react";
 
 import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
@@ -20,6 +20,7 @@ import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 import { useIcon, useParts } from "./theme";
+import { useRetention } from "./visited";
 
 import { entrySlice } from "#/document/index";
 
@@ -140,6 +141,27 @@ export function PropertiesPane({
     (diagnostic) => diagnostic.position,
   );
   const [newRow, setNewRow] = useState<number | null>(null);
+  // A row the reader has opened stays in the page, hidden, after it closes, so
+  // its editor keeps its view rather than rebuilding on every expand. The row
+  // is memory of the entry that was there; a list change that puts another
+  // entry at the position drops it.
+  const entriesByIdentity = useMemo(
+    () =>
+      new Map(
+        entries.map((entry) => [
+          entry.position,
+          `${entry.key ?? ""}:${entry.language}`,
+        ]),
+      ),
+    [entries],
+  );
+  const retention = useRetention(entriesByIdentity);
+  const openRow =
+    selected !== null && entriesByIdentity.has(selected) ? selected : null;
+  const { open: openRetained } = retention;
+  useEffect(() => {
+    if (openRow !== null) openRetained(openRow);
+  }, [openRow, openRetained]);
 
   function add(kind: "property" | "spread", after = entries.length) {
     if (controller.editManagedEntry({ action: "add", kind, after })) {
@@ -174,12 +196,20 @@ export function PropertiesPane({
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
           const open = selected === entry.position;
-          const summary = exampleMessage
-            ? controller.source.slice(
-                entry.expression.from,
-                entry.expression.to,
-              )
-            : summarize(m, { entry, produced: fields, fold });
+          // A folded row reads what went wrong instead of the value it failed
+          // to produce, which is the one place that says so while it is shut.
+          // The open row shows it beside the expression it belongs to instead,
+          // so the reader is told once either way.
+          const failure =
+            !open && raised.length > 0 ? raised[0]!.message : null;
+          const summary =
+            failure ??
+            (exampleMessage
+              ? controller.source.slice(
+                  entry.expression.from,
+                  entry.expression.to,
+                )
+              : summarize(m, { entry, produced: fields, fold }));
           return (
             <li key={entry.position} {...part("row")}>
               <div {...part("row-header")}>
@@ -195,17 +225,24 @@ export function PropertiesPane({
                       {entry.key ?? m.workbench_properties_spread()}
                     </span>
                     {raised.length > 0 && (
-                      <span {...part("label")}>
+                      <span {...part("label", "problem")}>
                         {m.workbench_properties_row_problem()}
                       </span>
                     )}
                   </span>
                   {summary && (
                     <span
-                      {...part("summary", open ? "open" : "closed")}
+                      {...part(
+                        "summary",
+                        failure ? "problem" : open ? "open" : "closed",
+                      )}
                       {...tooltip(summary)}
                     >
-                      {exampleMessage ? <code>{summary}</code> : summary}
+                      {exampleMessage && !failure ? (
+                        <code>{summary}</code>
+                      ) : (
+                        summary
+                      )}
                     </span>
                   )}
                 </button>
@@ -288,7 +325,7 @@ export function PropertiesPane({
                   </button>
                 </div>
               </div>
-              {open && (
+              {(open || retention.isRetained(entry.position)) && (
                 <EntryForm
                   key={`${entry.position}:${entry.language}`}
                   controller={controller}
@@ -302,6 +339,7 @@ export function PropertiesPane({
                   reveal={reveal}
                   onSelection={onSelection}
                   suggest={suggest}
+                  hidden={!open}
                 />
               )}
             </li>
@@ -344,6 +382,8 @@ interface EntryFormProps {
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
+  /** Whether this form is folded away while the pane keeps its editor alive. */
+  hidden?: boolean;
 }
 
 /** Edit the name, value, and update behavior of a property. */
@@ -359,6 +399,7 @@ function EntryForm({
   reveal,
   onSelection,
   suggest,
+  hidden = false,
 }: EntryFormProps) {
   const m = useWorkbenchMessages();
   const part = useParts("properties");
@@ -382,7 +423,11 @@ function EntryForm({
   const spread = entry.key === undefined;
   const errorId = `${instanceId}-property-${entry.position}-errors`;
   return (
-    <div id={`${instanceId}-property-${entry.position}`} {...part("form")}>
+    <div
+      id={`${instanceId}-property-${entry.position}`}
+      hidden={hidden}
+      {...part("form")}
+    >
       {entry.key !== undefined && (
         <label {...part("field")}>
           {m.workbench_properties_name()}
@@ -516,7 +561,9 @@ function EntryForm({
               {...part("text-input")}
             />
           ) : (
-            <div {...part("expression")}>
+            <div
+              {...part("expression", diagnostics.length > 0 ? "problem" : "ok")}
+            >
               <SliceEditor
                 controller={controller}
                 slice={entrySlice(entry.position)}
@@ -524,6 +571,7 @@ function EntryForm({
                 language={entry.language === "value" ? "json-e" : "expression"}
                 invalid={diagnostics.length > 0}
                 describedBy={diagnostics.length > 0 ? errorId : undefined}
+                visible={!hidden}
                 reveal={reveal}
                 onSelection={onSelection}
                 suggest={suggest}

@@ -607,6 +607,17 @@ export function Workbench() {
       openAnnotation();
       return;
     }
+    // The note name is repaired in its own tab, whether or not the failure
+    // named a place inside it. The pane takes the caret with the reveal, so
+    // the reader goes on typing where the Problems area left them.
+    if (part === "filename") {
+      setView("edit");
+      setAdvanced(false);
+      setTab("name");
+      const slice = controller.sliceRange("filename");
+      setReveal({ from: slice.from, to: slice.from });
+      return;
+    }
     setView("edit");
     setAdvanced(true);
   }
@@ -1122,7 +1133,7 @@ export function Workbench() {
                   {tabLede(m, tab)}
                 </WorkbenchHelp>
               </div>
-              <TabPanel tab="note" keepMounted description={!advanced}>
+              <TabPanel tab="note" description={!advanced}>
                 <h2 className="sr-only">{m.workbench_tab_note()}</h2>
                 <NotePane
                   controller={controller}
@@ -1150,85 +1161,82 @@ export function Workbench() {
                   <AnnotationPointer onInsert={insertAnnotations} />
                 )}
               </TabPanel>
-              {!advanced && tab !== "note" && (
-                <TabPanel tab={tab}>
-                  <h2 className="sr-only">{tabLabel(m, tab)}</h2>
-                  {tab === "name" || tab === "profile" ? (
-                    <>
-                      <NameFolderPane
-                        section={tab}
-                        onOpenSource={() => setAdvanced(true)}
-                        controller={controller}
-                        manifest={shownManifest}
-                        filename={result?.filename ?? null}
-                        citationStyles={citationStyles}
-                        focus={focusField}
-                        suggest={suggest}
-                        {...(connection.state === "connected"
-                          ? { defaults: connection.profileDefaults }
-                          : {})}
-                        reveal={reveal}
-                        onSelection={trackSelection}
-                      />
-                    </>
-                  ) : tab === "match" ? (
-                    <MatchPane
-                      controller={controller}
-                      facts={snapshotMatchFacts(sample)}
-                      vocabularyRevision={sample.revision}
-                    />
-                  ) : tab === "annotation" ? (
-                    <>
-                      {formatProblem && (
-                        <AnnotationProblemMarker
-                          diagnostic={formatProblem}
-                          onShow={showProblem}
-                        />
-                      )}
-                      <AnnotationPane
-                        controller={controller}
-                        reveal={reveal}
-                        suggest={suggest}
-                        problem={
-                          formatProblem
-                            ? diagnosticText(m, formatProblem)
-                            : null
-                        }
-                        onSelection={trackSelection}
-                      />
-                    </>
-                  ) : tab === "properties" ? (
-                    <>
-                      {entries === null ? (
-                        <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
-                          {m.workbench_properties_source_only()}
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            className="mt-2"
-                            onClick={() => setAdvanced(true)}
-                          >
-                            {m.workbench_open_source()}
-                          </Button>
-                        </p>
-                      ) : (
-                        <PropertiesPane
-                          suggest={suggest}
-                          controller={controller}
-                          entries={entries}
-                          properties={result?.properties ?? []}
-                          fold={result?.fold ?? []}
-                          diagnostics={rowProblems}
-                          selected={row}
-                          onSelect={setOpenRow}
-                          reveal={reveal}
-                          onSelection={trackSelection}
-                        />
-                      )}
-                    </>
-                  ) : null}
+              <TabPanel tab="match" modeActive={!advanced}>
+                <h2 className="sr-only">{tabLabel(m, "match")}</h2>
+                <MatchPane
+                  controller={controller}
+                  facts={snapshotMatchFacts(sample)}
+                  vocabularyRevision={sample.revision}
+                />
+              </TabPanel>
+              <TabPanel tab="annotation" modeActive={!advanced}>
+                <h2 className="sr-only">{tabLabel(m, "annotation")}</h2>
+                {formatProblem && (
+                  <AnnotationProblemMarker
+                    diagnostic={formatProblem}
+                    onShow={showProblem}
+                  />
+                )}
+                <AnnotationPane
+                  controller={controller}
+                  reveal={reveal}
+                  suggest={suggest}
+                  problem={
+                    formatProblem ? diagnosticText(m, formatProblem) : null
+                  }
+                  onSelection={trackSelection}
+                />
+              </TabPanel>
+              {(["name", "profile"] as const).map((section) => (
+                <TabPanel key={section} tab={section} modeActive={!advanced}>
+                  <h2 className="sr-only">{tabLabel(m, section)}</h2>
+                  <NameFolderPane
+                    section={section}
+                    onOpenSource={() => setAdvanced(true)}
+                    controller={controller}
+                    manifest={shownManifest}
+                    filename={result?.filename ?? null}
+                    citationStyles={citationStyles}
+                    focus={focusField}
+                    suggest={suggest}
+                    {...(connection.state === "connected"
+                      ? { defaults: connection.profileDefaults }
+                      : {})}
+                    reveal={reveal}
+                    onSelection={trackSelection}
+                    onShowProblem={showProblem}
+                  />
                 </TabPanel>
-              )}
+              ))}
+              <TabPanel tab="properties" modeActive={!advanced}>
+                <h2 className="sr-only">{tabLabel(m, "properties")}</h2>
+                {entries === null ? (
+                  <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
+                    {m.workbench_properties_source_only()}
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="mt-2"
+                      onClick={() => setAdvanced(true)}
+                    >
+                      {m.workbench_open_source()}
+                    </Button>
+                  </p>
+                ) : (
+                  <PropertiesPane
+                    suggest={suggest}
+                    controller={controller}
+                    entries={entries}
+                    properties={result?.properties ?? []}
+                    fold={result?.fold ?? []}
+                    diagnostics={rowProblems}
+                    selected={row}
+                    onSelect={setOpenRow}
+                    reveal={reveal}
+                    onSelection={trackSelection}
+                  />
+                )}
+              </TabPanel>
             </div>
           </div>
           <Dialog open={sheet} onOpenChange={setSheet}>

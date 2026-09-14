@@ -28,7 +28,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
-import { TemplateWorkbenchView } from "./view";
+import { TemplateWorkbenchView, originatingNoteUpdateNotice } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
@@ -147,6 +147,227 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
 }
 
 describe("TemplateWorkbenchView", () => {
+  function originHarness() {
+    const updateNote = vi.fn<
+      NonNullable<TemplateWorkbenchDeps["noteFeature"]>["updateNote"]
+    >(async () => ({
+      bodyUpdated: true,
+      duplicateRegionCount: 0,
+    }));
+    const waitUntilSettled = vi.fn(async () => "settled" as const);
+    const profileOf = vi.fn(() => ({
+      ok: true,
+      profile: { selector: "default" },
+    }));
+    const h = setup({
+      noteFeature: { updateNote },
+      profile: { profileOf },
+      templates: { waitUntilSettled, loaded: true, on: () => () => {} },
+    } as unknown as Partial<TemplateWorkbenchDeps>);
+    const file = Object.assign(new TFile(), {
+      path: "Literature/Original.md",
+      basename: "Original",
+    });
+    const template = Object.assign(new TFile(), {
+      path: "templates/paper.md",
+      basename: "paper",
+    });
+    const getFileByPath = vi.fn(() => file);
+    const getFileCache = vi.fn(() => ({
+      frontmatter: { "zotero-key": "AAAAAAAA" },
+    }));
+    const read = vi.fn(async () => h.view.getViewData());
+    Object.assign(h.app.vault, { getFileByPath, read });
+    Object.assign(h.app, { metadataCache: { getFileCache } });
+    h.view.file = template;
+    h.view.setOriginatingNote(file);
+    return {
+      ...h,
+      file,
+      template,
+      updateNote,
+      waitUntilSettled,
+      getFileByPath,
+      getFileCache,
+      read,
+    };
+  }
+
+  it("updates the originating note after saving, independent of focus and preview selection", async () => {
+    const h = originHarness();
+    const saved = Promise.withResolvers<void>();
+    using save = vi.spyOn(h.view, "save").mockReturnValue(saved.promise);
+    const other = Object.assign(new TFile(), { path: "Other.md" });
+    using _activeFile = vi
+      .spyOn(h.app.workspace, "getActiveFile")
+      .mockReturnValue(other);
+    h.view.store.getState().setItem({ id: "BBBBBBBB", title: "Other paper" });
+    const updating = h.view.updateOriginatingNote();
+    expect(h.view.updateOriginatingNote()).toBe(updating);
+    expect(save).toHaveBeenCalledOnce();
+    expect(h.updateNote).not.toHaveBeenCalled();
+    saved.resolve();
+    expect(await updating).toMatchObject({
+      outcome: "updated",
+      name: "Original",
+      result: { bodyUpdated: true },
+    });
+    expect(h.updateNote).toHaveBeenCalledExactlyOnceWith(h.file, {
+      indexedKey: "AAAAAAAA",
+      scope: "full",
+      profile: "default",
+      beforeWrite: expect.any(Function),
+    });
+  });
+
+  it("waits for an automatic save already in progress before applying the latest edit", async () => {
+    const h = originHarness();
+    const pending = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    using save = vi
+      .spyOn(MockTextFileView.prototype, "save")
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return pending.promise;
+      });
+    const automatic = h.view.save();
+    await started.promise;
+    const updating = h.view.updateOriginatingNote();
+    expect(h.updateNote).not.toHaveBeenCalled();
+    pending.resolve();
+    await automatic;
+    await updating;
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(h.updateNote).toHaveBeenCalledOnce();
+  });
+
+  it.each(["rejected", "not-written"])(
+    "reports a %s save without updating the note",
+    async (failure) => {
+      const h = originHarness();
+      using save = vi.spyOn(h.view, "save");
+      if (failure === "rejected")
+        save.mockRejectedValue(new Error("disk full"));
+      else h.read.mockResolvedValue("previously saved template");
+      expect(await h.view.updateOriginatingNote()).toEqual({
+        outcome: "save-failed",
+        name: "Original",
+      });
+      expect(h.updateNote).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["deleted", "replaced", "retargeted", "closed"])(
+    "refuses an origin that is %s while the template compiles",
+    async (change) => {
+      const h = originHarness();
+      const compilation = Promise.withResolvers<"settled">();
+      h.waitUntilSettled.mockReturnValue(compilation.promise);
+      const updating = h.view.updateOriginatingNote();
+      await vi.waitFor(() => expect(h.waitUntilSettled).toHaveBeenCalledOnce());
+      if (change === "closed") await h.view.close();
+      else if (change === "retargeted")
+        h.getFileCache.mockReturnValue({
+          frontmatter: { "zotero-key": "BBBBBBBB" },
+        });
+      else
+        h.getFileByPath.mockReturnValue(
+          change === "deleted"
+            ? null!
+            : Object.assign(new TFile(), { path: h.file.path }),
+        );
+      compilation.resolve("settled");
+      expect(await updating).toEqual({
+        outcome: "unavailable",
+        name: "Original",
+      });
+      expect(h.updateNote).not.toHaveBeenCalled();
+    },
+  );
+
+  it("names a successful metadata-only result and retains update failures", async () => {
+    const h = originHarness();
+    h.updateNote.mockResolvedValueOnce({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      noManagedBlock: true,
+    } as never);
+    const result = await h.view.updateOriginatingNote();
+    expect(result).toMatchObject({
+      outcome: "updated",
+      name: "Original",
+      result: { bodyUpdated: false, noManagedBlock: true },
+    });
+    expect(originatingNoteUpdateNotice(h.app, result)).toContain("Original");
+    expect(originatingNoteUpdateNotice(h.app, result)).toContain(
+      m.notice_updated_note_no_managed_block(),
+    );
+    const error = new Error("write failed");
+    h.updateNote.mockRejectedValueOnce(error);
+    expect(await h.view.updateOriginatingNote()).toEqual({
+      outcome: "failed",
+      name: "Original",
+      error,
+    });
+  });
+
+  it("keeps the existing template diagnostic on a refused update", async () => {
+    const h = originHarness();
+    const result = {
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "missing-literature-note-template" as const,
+        document: "missing.md",
+        hint: "Restore the template",
+      },
+    };
+    h.updateNote.mockResolvedValueOnce(result);
+    const outcome = await h.view.updateOriginatingNote();
+    expect(outcome).toEqual({ outcome: "refused", name: "Original", result });
+    expect(originatingNoteUpdateNotice(h.app, outcome)).toBe(
+      m.notice_literature_note_template_missing({ document: "missing.md" }),
+    );
+  });
+
+  it("rejects an edit saved during the final disk read after compilation settled", async () => {
+    const h = originHarness();
+    h.read
+      .mockImplementationOnce(async () => h.view.getViewData())
+      .mockImplementationOnce(async () => {
+        h.view.controller.setManifestKey("name", "New edit");
+        return h.view.getViewData();
+      });
+    expect(await h.view.updateOriginatingNote()).toEqual({
+      outcome: "not-ready",
+      name: "Original",
+    });
+    expect(h.updateNote).not.toHaveBeenCalled();
+  });
+
+  it("guards the originating target when the note operation reaches its write boundary", async () => {
+    const h = originHarness();
+    h.updateNote.mockImplementationOnce(async (_file, options) => {
+      h.getFileByPath.mockReturnValue(
+        Object.assign(new TFile(), { path: h.file.path }),
+      );
+      options.beforeWrite?.();
+      return { bodyUpdated: true, duplicateRegionCount: 0 };
+    });
+    expect(await h.view.updateOriginatingNote()).toEqual({
+      outcome: "unavailable",
+      name: "Original",
+    });
+  });
+
+  it("clears the action when the editor is opened without an originating note", async () => {
+    const h = originHarness();
+    h.view.setOriginatingNote(null);
+    await h.view.updateOriginatingNote();
+    expect(h.view.originatingNote).toBeNull();
+    expect(h.updateNote).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])(
     "clears an arrival after a fresh matching success and retains its report (unrelated preview: %s)",
     async (unrelatedPreview) => {
@@ -382,8 +603,9 @@ describe("TemplateWorkbenchView", () => {
       const tokens = (hook: string) =>
         [
           ...(
-            view.contentEl.querySelector('[role="tabpanel"]:not([hidden])') ??
-            view.contentEl
+            view.contentEl.querySelector(
+              '[data-workbench-mode="source"]:not([hidden]), [role="tabpanel"]:not([hidden])',
+            ) ?? view.contentEl
           ).querySelectorAll(`.${hook}`),
         ].map((node) => node.textContent);
       for (const tab of ["annotation", "name"] as const) {
@@ -423,6 +645,88 @@ describe("TemplateWorkbenchView", () => {
       note,
       annotation,
     ]);
+  });
+
+  it("retains visited Basic editors when switching through Source", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const note = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
+    await act(async () => view.store.getState().setTab("annotation"));
+    const annotation =
+      view.contentEl.querySelectorAll<HTMLElement>(".cm-editor")[1]!;
+
+    await act(async () => view.store.getState().setAdvanced(true));
+    const source = view.contentEl.querySelector<HTMLElement>(
+      '[data-workbench-mode="source"] .cm-editor',
+    )!;
+    const sourcePanel = source.closest<HTMLElement>("[data-workbench-mode]")!;
+    const annotationPanel =
+      annotation.closest<HTMLElement>('[role="tabpanel"]')!;
+    expect(sourcePanel.hidden).toBe(false);
+    expect(annotationPanel.hidden).toBe(true);
+    await act(async () => view.store.getState().setAdvanced(false));
+
+    expect(view.contentEl.contains(note)).toBe(true);
+    expect(view.contentEl.contains(annotation)).toBe(true);
+    expect(view.contentEl.contains(source)).toBe(true);
+    expect(sourcePanel.hidden).toBe(true);
+    expect(annotationPanel.hidden).toBe(false);
+
+    await act(async () => view.store.getState().setAdvanced(true));
+    expect(
+      view.contentEl.querySelector('[data-workbench-mode="source"] .cm-editor'),
+    ).toBe(source);
+  });
+
+  it("retains the Name and Properties editors across tab switches", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const source = `---
+id: paper
+name: Paper
+version: 1.0.0
+contract: 2
+language: liquid
+filename: paper
+frontmatter:
+  - key: title
+    expr: zt.title
+    merge: replace
+---
+A stable note.
+--- zotlit:annotation ---
+An annotation.
+`;
+    const { view } = setup();
+    view.setViewData(source, true);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    const filename = () =>
+      view.contentEl.querySelector<HTMLElement>(
+        '[data-part="filename-editor"] .cm-editor',
+      )!;
+    await act(async () => view.store.getState().setTab("name"));
+    const name = filename();
+    expect(name).not.toBeNull();
+    await act(async () => view.store.getState().setTab("note"));
+    await act(async () => view.store.getState().setTab("name"));
+    expect(filename()).toBe(name);
+
+    const expression = () =>
+      view.contentEl.querySelector<HTMLElement>(
+        '[data-part="expression"] .cm-editor',
+      )!;
+    await act(async () => view.store.getState().setTab("properties"));
+    await act(async () =>
+      view.setPresentation({ selected: 1, reveal: null, fieldFocus: null }),
+    );
+    const expr = expression();
+    expect(expr).not.toBeNull();
+    await act(async () => view.store.getState().setTab("note"));
+    await act(async () => view.store.getState().setTab("properties"));
+    expect(expression()).toBe(expr);
   });
 
   it("keeps Eta wrapping and undo when switching to Advanced", async () => {
@@ -1071,7 +1375,9 @@ describe("TemplateWorkbenchView", () => {
         await view.open();
       });
       const editor = EditorView.findFromDOM(
-        view.contentEl.querySelector(".cm-editor")!,
+        view.contentEl.querySelector(
+          '[role="tabpanel"]:not([hidden]) .cm-editor',
+        )!,
       )!;
       await act(() => {
         editor.focus();
@@ -1640,15 +1946,11 @@ language: liquid
     await press('[data-part="problems-open"]');
     expect(area.dataset.state).toBe("compact");
     expect(view.store.getState().advanced).toBe(true);
-    const editor = [
-      ...view.contentEl.querySelectorAll<HTMLElement>(".cm-editor"),
-    ]
-      .map((element) => EditorView.findFromDOM(element)!)
-      .find(
-        (candidate) =>
-          candidate.state.doc.toString() ===
-          view.controller.sliceText("advanced"),
-      )!;
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector<HTMLElement>(
+        '[data-workbench-mode="source"] .cm-editor',
+      )!,
+    )!;
     expect(editor.contentDOM).toBe(document.activeElement);
   });
 

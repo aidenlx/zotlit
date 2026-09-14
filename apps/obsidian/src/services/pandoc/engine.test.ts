@@ -13,7 +13,7 @@ import {
   CitationRequestSupersededError,
   createCitationEngine,
 } from "./engine";
-import type { CitationEngine } from "./engine";
+import type { CitationEngine, PrepareRequest, RenderRequest } from "./engine";
 
 /**
  * The binary the plugin pins, read straight out of `pandoc-wasm`. The package
@@ -237,6 +237,21 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     return () => engine[Symbol.asyncDispose]();
   });
 
+  /** The two conversions one exported document takes, as the export makes them. */
+  async function renderDocument({
+    markdown,
+    luaFilters,
+    files,
+    ...render
+  }: Omit<RenderRequest, "document"> & Omit<PrepareRequest, "supersedes">) {
+    const document = await engine.prepareDocument({
+      markdown,
+      luaFilters,
+      files,
+    });
+    return await engine.renderPrepared({ ...render, document });
+  }
+
   /** The cited document as standalone HTML, formatted in {@link LOCALE_STYLE}. */
   async function citedHtml({
     markdown = DOCUMENT,
@@ -245,7 +260,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     markdown?: string;
     locale?: string;
   }): Promise<string> {
-    const html = await engine.renderDocument({
+    const html = await renderDocument({
       markdown,
       format: "html",
       bibliography: [ZETA],
@@ -440,8 +455,39 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
     ).resolves.toEqual([]);
   });
 
+  it("reports every citation the document makes, body before metadata", async () => {
+    const document = await engine.prepareDocument({
+      markdown:
+        '---\nnocite: "[@uncited2019]"\n---\n\nCited [@zeta2020] and [@adams2018].\n',
+    });
+
+    // A `nocite` key is a citation of the document, so it reaches the
+    // bibliography; it takes no number the prose should have.
+    expect(document.citedIds).toEqual(["zeta2020", "adams2018", "uncited2019"]);
+  });
+
+  it("leaves text Pandoc reads as no citation out", async () => {
+    const document = await engine.prepareDocument({
+      markdown:
+        "Code `@zeta2020`, escaped \\@adams2018, and an email a@b.com.\n",
+    });
+
+    expect(document.citedIds).toEqual([]);
+  });
+
+  it("rewrites the ids a prepared document spells", async () => {
+    const document = await engine.prepareDocument({
+      markdown: "Cited [@zeta2020; @adams2018].\n",
+    });
+
+    const renamed = document.withCitedIds(new Map([["zeta2020", ZETA.id]]));
+    expect(renamed.citedIds).toEqual([ZETA.id, "adams2018"]);
+    // The prepared document is a value: renaming leaves it as it was read.
+    expect(document.citedIds).toEqual(["zeta2020", "adams2018"]);
+  });
+
   it("converts a document with a resolve map into docx bytes", async () => {
-    const docx = await engine.renderDocument({
+    const docx = await renderDocument({
       markdown: DOCUMENT,
       format: "docx",
       bibliography: [ZETA],
@@ -454,7 +500,7 @@ describe("createCitationEngine", { timeout: TIMEOUT }, () => {
   });
 
   it("converts a document with a resolve map into cited html bytes", async () => {
-    const html = await engine.renderDocument({
+    const html = await renderDocument({
       markdown: DOCUMENT,
       format: "html",
       bibliography: [ZETA],

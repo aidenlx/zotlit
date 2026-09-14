@@ -102,6 +102,42 @@ describe("native Profile rendering", () => {
     },
   );
 
+  it("names the note name as the part that failed and leaves the rest on screen", async () => {
+    await using fixture = await createRenderFixture();
+    const source = PROFILE_SOURCE.replace(
+      "filename: '{{ zt.title }}'",
+      "filename: '{% for tag i zt.tags %}{{ tag }}{% endfor %}'",
+    );
+    expect(source).not.toBe(PROFILE_SOURCE);
+    const result = await renderNativeProfile(fixture.deps, {
+      source,
+      snapshot: fixture.snapshot,
+    });
+    expect(result.filename).toBeNull();
+    expect(result.creationBody).not.toBeNull();
+    expect(result.managedRegion).not.toBeNull();
+    expect(result.properties.length).toBeGreaterThan(0);
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["liquid-syntax-error", "filename"],
+    ]);
+  });
+
+  it("keeps the note name when the note itself cannot render", async () => {
+    await using fixture = await createRenderFixture();
+    const source = PROFILE_SOURCE.replace(
+      "{% managed %}",
+      "{% render 'missing-note' %}{% managed %}",
+    );
+    expect(source).not.toBe(PROFILE_SOURCE);
+    const result = await renderNativeProfile(fixture.deps, {
+      source,
+      snapshot: fixture.snapshot,
+    });
+    expect(result.creationBody).toBeNull();
+    expect(result.filename).toBe(fixture.snapshot.roots.filename["title"]);
+    expect(result.diagnostics.map(({ part }) => part)).toEqual(["render"]);
+  });
+
   it("keeps a colliding sample key separate from an existing Literature Note in update mode", async () => {
     await using fixture = await createRenderFixture({ existing: SAVED_NOTE });
     const sample = getSampleItem("sample:conference-paper")!;

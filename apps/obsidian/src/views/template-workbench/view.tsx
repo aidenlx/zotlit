@@ -2,6 +2,7 @@
 import { EditorView } from "@codemirror/view";
 import { apiVersion, Scope, TextFileView } from "obsidian";
 import type {
+  App,
   Menu,
   TFile,
   HoverParent,
@@ -107,7 +108,14 @@ import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { ArrivingProblem } from "@/lib/workbench-recovery";
+import type {
+  NoteFeature,
+  UpdateResult,
+} from "@/services/note-feature/operations";
+import { updateNoteToast } from "@/services/note-feature/update-single";
+import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -153,6 +161,7 @@ import {
 import { getSampleItem } from "./selection-data";
 import { currentProfileSource } from "./source";
 import {
+  originatingNoteNotice,
   templateWorkbenchButton,
   templateWorkbenchTheme,
   selectionBar,
@@ -161,13 +170,53 @@ import {
 
 export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
 const logger = getLogger(["views", "template-workbench"]);
+export type OriginatingNoteUpdateOutcome =
+  | { outcome: "no-target" }
+  | { outcome: "unavailable" | "save-failed" | "not-ready"; name: string }
+  | { outcome: "updated" | "refused"; name: string; result: UpdateResult }
+  | { outcome: "failed"; name: string; error: unknown };
+
+/** The UI renders operation outcomes, keeping template saves separate from note updates. */
+export function originatingNoteUpdateNotice(
+  app: App,
+  result: OriginatingNoteUpdateOutcome,
+): string | DocumentFragment | null {
+  const feedback = updateNoteToast("full", { app });
+  switch (result.outcome) {
+    case "no-target":
+      return null;
+    case "unavailable":
+      return m.template_workbench_update_unavailable({ name: result.name });
+    case "save-failed":
+      return m.template_workbench_update_save_failed();
+    case "not-ready":
+      return m.template_workbench_update_not_ready();
+    case "failed":
+      return feedback.error("", result.error);
+    case "refused":
+    case "updated": {
+      if (result.result.bodyUpdated && !result.result.diagnostic)
+        return m.template_workbench_updated_note({ name: result.name });
+      const message = feedback.success(result.result);
+      return !result.result.diagnostic && typeof message === "string"
+        ? m.template_workbench_note_update_result({
+            name: result.name,
+            result: message,
+          })
+        : message;
+    }
+  }
+}
+
 export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
+  noteFeature?: Pick<NoteFeature, "updateNote">;
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
   templates: ExplorerViewDeps["templates"] &
     Pick<
       TemplateService,
+      | "waitUntilSettled"
       | "loaded"
       | "on"
       | "materializeCitationTemplate"
@@ -181,6 +230,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   profile?: Pick<
     ProfileService,
     | "getSource"
+    | "profileOf"
     | "getBuiltInSource"
     | "materializeDefault"
     | "restoreDefault"
@@ -287,6 +337,122 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #initialRead: number | null = null;
   #pendingSource: string | null = null;
   #clearing = false;
+  #originatingNote: {
+    file: TFile;
+    indexedKey: string;
+    template: TFile | null;
+    profile: ProfileSelector;
+  } | null = null;
+  #updatingNote: Promise<OriginatingNoteUpdateOutcome> | null = null;
+  #saving: Promise<void> = Promise.resolve();
+
+  /** Native save returns early during another save; serialize callers so updates await the write. */
+  override save(clear?: boolean): Promise<void> {
+    const saving = this.#saving.catch(() => {}).then(() => super.save(clear));
+    this.#saving = saving;
+    return saving;
+  }
+
+  get originatingNote(): TFile | null {
+    return this.#originatingNote?.file ?? null;
+  }
+  get updatingNote(): boolean {
+    return this.#updatingNote !== null;
+  }
+  /** A launch explicitly sets the target; focus and preview changes leave it intact. */
+  setOriginatingNote(file: TFile | null): void {
+    const indexedKey =
+      file && itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(file));
+    const resolved = file && this.#deps.profile?.profileOf(file);
+    if (file && (!indexedKey || !resolved?.ok))
+      new BaseNotice(
+        m.template_workbench_update_unavailable({ name: file.basename }),
+      );
+    this.#originatingNote =
+      file && indexedKey && resolved?.ok
+        ? {
+            file,
+            indexedKey,
+            template: this.file,
+            profile: resolved.profile.selector,
+          }
+        : null;
+    this.#mount();
+  }
+  updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
+    if (this.#updatingNote) return this.#updatingNote;
+    this.#updatingNote = this.#updateOriginatingNote().finally(() => {
+      this.#updatingNote = null;
+      this.#mount();
+    });
+    this.#mount();
+    return this.#updatingNote;
+  }
+  async #updateOriginatingNote(): Promise<OriginatingNoteUpdateOutcome> {
+    const origin = this.#originatingNote;
+    const update = this.#deps.noteFeature;
+    if (!origin || !update) return { outcome: "no-target" };
+    const available = () =>
+      !this.#closed &&
+      this.#originatingNote === origin &&
+      this.file === origin.template &&
+      this.app.vault.getFileByPath(origin.file.path) === origin.file &&
+      itemKeyFromFrontmatter(
+        this.app.metadataCache.getFileCache(origin.file),
+      ) === origin.indexedKey;
+    if (!available())
+      return { outcome: "unavailable", name: origin.file.basename };
+    try {
+      await this.save();
+      if (
+        !this.file ||
+        (await this.app.vault.read(this.file)) !== this.getViewData()
+      )
+        return { outcome: "save-failed", name: origin.file.basename };
+    } catch (error) {
+      logger.error("Failed to save template before note update", { error });
+      return { outcome: "save-failed", name: origin.file.basename };
+    }
+    // Settlement covers this revision. Later edits get their own update attempt.
+    const revision = this.#sourceRevision;
+    const unavailable = new Error("Originating note is unavailable");
+    const changed = new Error("Template changed during note update");
+    const beforeWrite = () => {
+      if (!available()) throw unavailable;
+      if (this.#sourceRevision !== revision) throw changed;
+    };
+    try {
+      if ((await this.#deps.templates.waitUntilSettled(10_000)) !== "settled")
+        return { outcome: "not-ready", name: origin.file.basename };
+      if (
+        !this.file ||
+        (await this.app.vault.read(this.file)) !== this.getViewData()
+      )
+        return { outcome: "save-failed", name: origin.file.basename };
+      beforeWrite();
+      const result = await update.updateNote(origin.file, {
+        indexedKey: origin.indexedKey,
+        scope: "full",
+        profile: origin.profile,
+        beforeWrite,
+      });
+      return {
+        outcome: result.diagnostic ? "refused" : "updated",
+        name: origin.file.basename,
+        result,
+      };
+    } catch (error) {
+      if (error === unavailable)
+        return { outcome: "unavailable", name: origin.file.basename };
+      if (error === changed)
+        return { outcome: "not-ready", name: origin.file.basename };
+      logger.error("Failed to update originating note at {path}", {
+        path: origin.file.path,
+        error,
+      });
+      return { outcome: "failed", name: origin.file.basename, error };
+    }
+  }
 
   constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
     super(leaf);
@@ -1933,14 +2099,10 @@ function EditorContent({
   // choice rather than on a render while the reader has made none.
   const annotation = useSelectedAnnotation(view);
   const advanced = useWorkbenchStore((state) => state.advanced);
-  const tab = useWorkbenchStore((state) => state.tab);
-  const [mountedTabs, setMountedTabs] = useState<
-    ReadonlySet<WorkbenchViewState["tab"]>
-  >(() => new Set([tab]));
+  const [sourceVisited, setSourceVisited] = useState(advanced);
   useEffect(() => {
-    if (mountedTabs.has(tab)) return;
-    setMountedTabs(new Set([...mountedTabs, tab]));
-  }, [mountedTabs, tab]);
+    if (advanced && !sourceVisited) setSourceVisited(true);
+  }, [advanced, sourceVisited]);
   const kind = controller.kind;
   const languageCaption =
     controller.plainDocument?.manifest.language === "eta"
@@ -2241,9 +2403,13 @@ function EditorContent({
       position === undefined
         ? part === "annotation"
           ? "annotation"
-          : kind === "profile"
-            ? "advanced"
-            : "source"
+          : // The note name is repaired in its own tab, whether or not the
+            // failure named a place inside it.
+            part === "filename" && kind === "profile"
+            ? "filename"
+            : kind === "profile"
+              ? "advanced"
+              : "source"
         : `entry:${position}`;
     const range = controller.sliceRange(slice);
     openProblem({ slice, ...(range ? { range } : {}) });
@@ -2276,6 +2442,41 @@ function EditorContent({
       {/* A Citation Template renders an example set, not the note of an Item,
           so its selection is the preview pane's own. */}
       {kind === "profile" && <EditorHeader view={view} />}
+      {view.originatingNote && (
+        <div
+          data-part="originating-note"
+          className={originatingNoteNotice.root}
+        >
+          <div className={originatingNoteNotice.guidance}>
+            <p className={originatingNoteNotice.scope}>
+              {m.template_workbench_shared_template({
+                name: view.file?.basename ?? m.settings_profile_default_name(),
+              })}
+            </p>
+            <p className={originatingNoteNotice.behavior}>
+              {m.template_workbench_auto_save_scope()}
+            </p>
+          </div>
+          <div className={originatingNoteNotice.action}>
+            <span className={originatingNoteNotice.note}>
+              {view.originatingNote.basename}
+            </span>
+            <button
+              className={originatingNoteNotice.button}
+              disabled={view.updatingNote}
+              onClick={async () => {
+                const result = await view.updateOriginatingNote();
+                const notice = originatingNoteUpdateNotice(view.app, result);
+                if (notice !== null) new BaseNotice(notice);
+              }}
+            >
+              {view.updatingNote
+                ? m.notice_updating_note()
+                : m.template_workbench_update_this_note()}
+            </button>
+          </div>
+        </div>
+      )}
       {view.isDefaultDraft && (
         <p
           role="status"
@@ -2352,17 +2553,20 @@ function EditorContent({
             />
             {sourceBoxes.boxes}
           </TabPanel>
-        ) : advanced ? (
-          <SliceEditor
-            controller={controller}
-            slice="advanced"
-            label={m.workbench_advanced()}
-            reveal={reveal}
-            onSelection={selection("advanced")}
-          />
         ) : (
           <>
-            <TabPanel tab="note" keepMounted={mountedTabs.has("note")}>
+            {(advanced || sourceVisited) && (
+              <div data-workbench-mode="source" hidden={!advanced}>
+                <SliceEditor
+                  controller={controller}
+                  slice="advanced"
+                  label={m.workbench_advanced()}
+                  reveal={advanced ? reveal : null}
+                  onSelection={selection("advanced")}
+                />
+              </div>
+            )}
+            <TabPanel tab="note" modeActive={!advanced}>
               <NotePane
                 controller={controller}
                 preview={result?.annotation ?? null}
@@ -2384,7 +2588,7 @@ function EditorContent({
                   state.setRoot("annotation");
                 }}
                 partials={partialsFor("note")}
-                reveal={reveal}
+                reveal={advanced ? null : reveal}
                 onSelection={(range) => {
                   selection("note")(range);
                 }}
@@ -2402,7 +2606,7 @@ function EditorContent({
                 />
               )}
             </TabPanel>
-            <TabPanel tab="properties">
+            <TabPanel tab="properties" modeActive={!advanced}>
               {controller.managedEntries === null ? (
                 <p>
                   {m.template_workbench_properties_advanced()}{" "}
@@ -2450,24 +2654,21 @@ function EditorContent({
                     state.setAdvanced(true);
                     setReveal(range);
                   }}
-                  reveal={reveal}
+                  reveal={advanced ? null : reveal}
                   onSelection={selection(
                     selected === null ? "advanced" : `entry:${selected}`,
                   )}
                 />
               )}
             </TabPanel>
-            <TabPanel tab="match">
+            <TabPanel tab="match" modeActive={!advanced}>
               <NativeMatchPane
                 onChooseItem={() => void view.chooseItem()}
                 controller={controller}
                 db={view.matchDatabase}
               />
             </TabPanel>
-            <TabPanel
-              tab="annotation"
-              keepMounted={mountedTabs.has("annotation")}
-            >
+            <TabPanel tab="annotation" modeActive={!advanced}>
               {formatProblem && (
                 <button
                   type="button"
@@ -2481,6 +2682,11 @@ function EditorContent({
                 </button>
               )}
               <AnnotationPane
+                finishHelp={
+                  view.originatingNote
+                    ? m.workbench_annotation_help_finish_note()
+                    : m.workbench_annotation_help_finish_native()
+                }
                 controller={controller}
                 problem={
                   formatProblem
@@ -2488,11 +2694,11 @@ function EditorContent({
                     : null
                 }
                 partials={partialsFor("annotation")}
-                reveal={reveal}
+                reveal={advanced ? null : reveal}
                 onSelection={selection("annotation")}
               />
             </TabPanel>
-            <TabPanel tab="name">
+            <TabPanel tab="name" modeActive={!advanced}>
               <NameFolderPane
                 onChooseItem={() => void view.chooseItem()}
                 onRetry={() => view.preview?.refresh()}
@@ -2503,11 +2709,12 @@ function EditorContent({
                 focus={fieldFocus}
                 filename={result?.filename ?? null}
                 onOpenSource={() => state.setAdvanced(true)}
-                reveal={reveal}
+                onShowProblem={(id) => problems.select(id)}
+                reveal={advanced ? null : reveal}
                 onSelection={selection("filename")}
               />
             </TabPanel>
-            <TabPanel tab="profile">
+            <TabPanel tab="profile" modeActive={!advanced}>
               <NameFolderPane
                 section="profile"
                 controller={controller}

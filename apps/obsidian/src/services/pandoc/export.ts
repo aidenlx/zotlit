@@ -1,11 +1,20 @@
-// The built-in export: one document's Citations resolved in-process, its
-// bibliography pulled live from Zotero, and both handed to the engine.
+// The built-in export: one document read once, its Citations resolved
+// in-process, its bibliography pulled live from Zotero, and that same read
+// document rendered.
+//
+// Pandoc reads the document before anything is resolved, so what the export
+// cites is what Pandoc itself found — one parser, not a second one that has to
+// agree with it. Both Citation Syntaxes arrive as Citations of that document:
+// a Literature Note wikilink through the sandbox filter, a literal
+// `@citation-key` through Pandoc's own reader.
 //
 // All-or-nothing, like the CLI path: an unresolved Citation or an incomplete
-// bibliography stops the export before Pandoc runs, so an exported document
+// bibliography stops the export before citeproc runs, so an exported document
 // never carries a silently incomplete bibliography.
 
 import type { CslItemData } from "@zotlit/db";
+
+import type { CitekeyResolution } from "@/services/citation-index/snapshot";
 
 import type {
   BibliographyFailure,
@@ -13,10 +22,14 @@ import type {
   BibliographyResult,
   BibliographySource,
 } from "./bibliography";
-import type { CitationEngine, DocumentFormat } from "./engine";
+import type {
+  CitationEngine,
+  DocumentFormat,
+  PreparedDocument,
+} from "./engine";
 import { PANDOC_RESOLVE_MAP_FILENAME, pandocSandboxFilter } from "./filter";
 import { collectCitationLinks } from "./resolve";
-import type { CitationLink, ResolveDocument } from "./resolve";
+import type { ResolveDocument } from "./resolve";
 
 /** Named by {@link ExportFailure}, so one import covers a failure's whole shape. */
 export { type BibliographySource } from "./bibliography";
@@ -43,6 +56,13 @@ export interface ExportPorts {
    */
   resolveIndexedKey: (linkpath: string, sourcePath: string) => string | null;
   /**
+   * What a literal `@citation-key` names in the current Library Scope, read
+   * through the same resolution snapshot every in-app surface reads, so an
+   * export cites what Live Preview shows. `null` means no snapshot, which only
+   * an unreadable Zotero database leaves behind.
+   */
+  resolveCitekey: (citekey: string) => CitekeyResolution | null;
+  /**
    * Zotero library addresses of the cited Indexed Keys, read under one lease.
    * A key the database cannot place is absent; `null` means no read lease.
    */
@@ -55,7 +75,7 @@ export interface ExportPorts {
   fetchBibliography: (
     refs: readonly BibliographyItemRef[],
   ) => Promise<BibliographyResult>;
-  engine: Pick<CitationEngine, "renderDocument">;
+  engine: Pick<CitationEngine, "prepareDocument" | "renderPrepared">;
 }
 
 /**
@@ -68,10 +88,14 @@ export type ExportFailure =
   | { kind: "citation-intent"; linkpaths: string[] }
   /** The Zotero database could not be read. */
   | { kind: "database-unavailable"; dataDir: string }
-  /** Cited Literature Notes no Zotero Item answers for. */
-  | { kind: "items-missing"; linkpaths: string[] }
-  /** Cited Literature Notes Better BibTeX holds no citation key for. */
-  | { kind: "citation-keys-missing"; linkpaths: string[] }
+  /** Citations no Zotero Item answers for, as the document writes them. */
+  | { kind: "items-missing"; sources: string[] }
+  /** Citations Better BibTeX holds no citation key for, as the document writes them. */
+  | { kind: "citation-keys-missing"; sources: string[] }
+  /** Literal citation keys naming no live Zotero Item in the Library Scope. */
+  | { kind: "citation-keys-unknown"; citekeys: string[] }
+  /** Literal citation keys several Zotero Items answer to. */
+  | { kind: "citation-keys-ambiguous"; citekeys: string[] }
   /** Zotero's profile requests an undiscoverable automatic HTTP port. */
   | { kind: "zotero-port-automatic"; pref: string }
   /** Nothing answered on the active profile's Zotero HTTP port. */
@@ -88,12 +112,18 @@ export type ExportResult = { output: Uint8Array } | { error: ExportFailure };
 /**
  * Render one Obsidian document as a cited `docx` or `html` file.
  *
- * Every Literature Note wikilink cites the CSL `id` its Item carries — the
- * native citation key when populated, the item URI otherwise — so wikilink
- * Citations need no citation-key setup. That linkpath-to-`id` map reaches the
- * sandbox filter as a virtual file, which is how the WASM engine resolves
- * Citations with no system command of its own. Literal `@citation-key` text
- * resolves against the same bibliography, so it needs a populated key.
+ * Pandoc reads the document first, with the sandbox filter turning every
+ * Literature Note wikilink into a Citation that names its Item by an Injected
+ * Id, which no literal citation key can spell.
+ * What comes back is the document's complete Citation set — wikilinks and
+ * literal `@citation-key` text alike — and every one of them is resolved to a
+ * Zotero Item before citeproc runs.
+ *
+ * Each cited Item then takes one canonical CSL id: the citation key the author
+ * wrote, where a literal Citation named it, and otherwise the id its
+ * bibliography source gave it. The document's ids are rewritten onto it, so an
+ * Item cited both ways collects one bibliography entry rather than two, and no
+ * Citation depends on which source answered for its data.
  */
 export async function exportCitedDocument(
   request: ExportRequest,
@@ -113,31 +143,186 @@ export async function exportCitedDocument(
     };
   }
 
-  const cited = await citeItems(links, ports);
+  /** The Injected Id the filter cites each Literature Note wikilink by. */
+  const wikilinked = new Map(
+    links.map(({ linkpath, indexedKey }) => [linkpath, injectedId(indexedKey)]),
+  );
+
+  let prepared: PreparedDocument;
+  try {
+    prepared = await ports.engine.prepareDocument({
+      markdown: request.markdown,
+      luaFilters: [pandocSandboxFilter],
+      files: {
+        [PANDOC_RESOLVE_MAP_FILENAME]: JSON.stringify({
+          citations: Object.fromEntries(wikilinked),
+        }),
+      },
+    });
+  } catch (error) {
+    return { error: { kind: "engine", detail: describeError(error) } };
+  }
+
+  const spelled = readCitations(prepared.citedIds, wikilinked, ports);
+  if ("error" in spelled) return spelled;
+
+  const cited = await citeItems(spelled.itemsByKey(), spelled.describe, ports);
   if ("error" in cited) return cited;
 
-  const citations: Record<string, string> = {};
-  for (const { linkpath, indexedKey } of links) {
-    // The source chain answers for every Item it was asked about, or fails.
-    citations[linkpath] = cited.items.get(indexedKey)!.id;
+  const canonical = spelled.canonicalIds(cited.items);
+  const bibliography = [...cited.items].map(([indexedKey, item]) => ({
+    ...item,
+    id: canonical.byIndexedKey.get(indexedKey)!,
+  }));
+  const document = prepared.withCitedIds(canonical.bySpelling);
+
+  // Every Citation of the rendered document has bibliography data, checked
+  // against the document itself rather than against what selected the data.
+  // Nothing above can leave a Citation uncovered, which is what makes this an
+  // invariant rather than a path: it fails only if that stops being true.
+  const covered = new Set(bibliography.map((item) => item.id));
+  const uncovered = document.citedIds.filter((id) => !covered.has(id));
+  if (uncovered.length > 0) {
+    return {
+      error: {
+        kind: "engine",
+        detail: `The bibliography covers no data for ${uncovered.join(", ")}`,
+      },
+    };
   }
 
   try {
-    const output = await ports.engine.renderDocument({
-      markdown: request.markdown,
+    const output = await ports.engine.renderPrepared({
+      document,
       format: request.format,
-      bibliography: [...cited.items.values()],
+      bibliography,
       styleXml: request.styleXml,
       locale: request.locale,
-      luaFilters: [pandocSandboxFilter],
-      files: {
-        [PANDOC_RESOLVE_MAP_FILENAME]: JSON.stringify({ citations }),
-      },
     });
     return { output };
   } catch (error) {
     return { error: { kind: "engine", detail: describeError(error) } };
   }
+}
+
+/** One document's Citations, each placed on the Zotero Item it names. */
+interface SpelledCitations {
+  /** Every cited Item, as Indexed Keys. */
+  itemsByKey: () => string[];
+  /** One Item as the document writes it, for a failure that must name it. */
+  describe: (indexedKey: string) => string;
+  /** The canonical CSL id of each cited Item, and of each id the source spells. */
+  canonicalIds: (items: ReadonlyMap<string, CslItemData>) => {
+    byIndexedKey: ReadonlyMap<string, string>;
+    bySpelling: ReadonlyMap<string, string>;
+  };
+}
+
+/**
+ * What the sandbox filter cites a wikilinked Item by.
+ *
+ * A Pandoc citation key starts with a letter, a digit, or an underscore, so
+ * this prefix puts every Injected Id outside the space a literal
+ * `@citation-key` can reach. One Item's Indexed Key can therefore never be read
+ * as another Item's citation key, whatever either of them spells.
+ */
+function injectedId(indexedKey: string): string {
+  return `#${indexedKey}`;
+}
+
+/**
+ * Place every id the prepared document spells on a Zotero Item: an Injected Id
+ * names its Item already, and anything else is a literal citation key for the
+ * resolution snapshot to answer.
+ *
+ * A citation key the snapshot cannot place stops the export. The alternative
+ * is Pandoc's own undefined-citation output — a bold key and a missing entry —
+ * inside a document the user is about to send somewhere.
+ */
+function readCitations(
+  citedIds: readonly string[],
+  wikilinked: ReadonlyMap<string, string>,
+  ports: ExportPorts,
+): SpelledCitations | { error: ExportFailure } {
+  /** Injected Id → the Indexed Key it names. */
+  const injected = new Map(
+    [...wikilinked.values()].map((id) => [id, id.slice(1)]),
+  );
+  /** Literal citation key → the Indexed Key it names. */
+  const literal = new Map<string, string>();
+  /** Cited Indexed Keys, first appearance first. */
+  const cited = new Set<string>();
+  const unknown: string[] = [];
+  const ambiguous: string[] = [];
+
+  for (const id of citedIds) {
+    const wikilinkedKey = injected.get(id);
+    if (wikilinkedKey !== undefined) {
+      cited.add(wikilinkedKey);
+      continue;
+    }
+    const resolution = ports.resolveCitekey(id);
+    if (!resolution) {
+      return {
+        error: { kind: "database-unavailable", dataDir: ports.dataDir() },
+      };
+    }
+    switch (resolution.kind) {
+      case "missing":
+        unknown.push(id);
+        break;
+      case "ambiguous":
+        ambiguous.push(id);
+        break;
+      case "unique":
+        literal.set(id, resolution.item.indexedKey);
+        cited.add(resolution.item.indexedKey);
+        break;
+    }
+  }
+  if (unknown.length > 0) {
+    return { error: { kind: "citation-keys-unknown", citekeys: unknown } };
+  }
+  if (ambiguous.length > 0) {
+    return { error: { kind: "citation-keys-ambiguous", citekeys: ambiguous } };
+  }
+
+  /** The first citation key each Item is literally cited by, where one is. */
+  const citekeyOf = new Map<string, string>();
+  for (const [citekey, indexedKey] of literal) {
+    if (!citekeyOf.has(indexedKey)) citekeyOf.set(indexedKey, citekey);
+  }
+  const linkpathOf = new Map<string, string>();
+  for (const [linkpath, id] of wikilinked) {
+    const indexedKey = injected.get(id)!;
+    if (!linkpathOf.has(indexedKey)) linkpathOf.set(indexedKey, linkpath);
+  }
+
+  return {
+    itemsByKey: () => [...cited],
+    describe: (indexedKey) => {
+      const citekey = citekeyOf.get(indexedKey);
+      return citekey === undefined
+        ? (linkpathOf.get(indexedKey) ?? indexedKey)
+        : `@${citekey}`;
+    },
+    canonicalIds: (items) => {
+      const byIndexedKey = new Map<string, string>();
+      for (const [indexedKey, item] of items) {
+        byIndexedKey.set(indexedKey, citekeyOf.get(indexedKey) ?? item.id);
+      }
+      const bySpelling = new Map<string, string>();
+      for (const [spelling, indexedKey] of injected) {
+        const id = byIndexedKey.get(indexedKey);
+        if (id !== undefined) bySpelling.set(spelling, id);
+      }
+      for (const [citekey, indexedKey] of literal) {
+        const id = byIndexedKey.get(indexedKey);
+        if (id !== undefined) bySpelling.set(citekey, id);
+      }
+      return { byIndexedKey, bySpelling };
+    },
+  };
 }
 
 /**
@@ -146,14 +331,15 @@ export async function exportCitedDocument(
  * Zotero itself supplies the data.
  */
 async function citeItems(
-  links: readonly CitationLink[],
+  indexedKeys: readonly string[],
+  describe: (indexedKey: string) => string,
   ports: ExportPorts,
 ): Promise<
   { items: ReadonlyMap<string, CslItemData> } | { error: ExportFailure }
 > {
-  if (links.length === 0) return { items: new Map() };
+  if (indexedKeys.length === 0) return { items: new Map() };
 
-  const placed = await ports.readItemRefs(links.map((link) => link.indexedKey));
+  const placed = await ports.readItemRefs(indexedKeys);
   if (!placed) {
     return {
       error: { kind: "database-unavailable", dataDir: ports.dataDir() },
@@ -162,36 +348,36 @@ async function citeItems(
 
   const unplaced: string[] = [];
   const refs: BibliographyItemRef[] = [];
-  for (const { linkpath, indexedKey } of links) {
+  for (const indexedKey of indexedKeys) {
     const ref = placed.get(indexedKey);
     if (ref) refs.push(ref);
-    else unplaced.push(linkpath);
+    else unplaced.push(describe(indexedKey));
   }
   if (unplaced.length > 0) {
-    return { error: { kind: "items-missing", linkpaths: unplaced } };
+    return { error: { kind: "items-missing", sources: unplaced } };
   }
 
   const bibliography = await ports.fetchBibliography(refs);
   return "error" in bibliography
-    ? { error: toExportFailure(bibliography.error, links) }
+    ? { error: toExportFailure(bibliography.error, describe) }
     : { items: bibliography.items };
 }
 
 /** Restates a source-chain failure in the export's own terms. */
 function toExportFailure(
   failure: BibliographyFailure,
-  links: readonly CitationLink[],
+  describe: (indexedKey: string) => string,
 ): ExportFailure {
   switch (failure.code) {
     case "items-missing":
       return {
         kind: "items-missing",
-        linkpaths: named(failure.indexedKeys, links),
+        sources: failure.indexedKeys.map(describe),
       };
     case "citation-key-missing":
       return {
         kind: "citation-keys-missing",
-        linkpaths: named(failure.indexedKeys, links),
+        sources: failure.indexedKeys.map(describe),
       };
     case "zotero-port-automatic":
       return { kind: "zotero-port-automatic", pref: failure.pref };
@@ -206,17 +392,6 @@ function toExportFailure(
         detail: failure.detail,
       };
   }
-}
-
-/** Indexed Keys back as the linkpaths the user wrote. */
-function named(
-  indexedKeys: readonly string[],
-  links: readonly CitationLink[],
-): string[] {
-  const wanted = new Set(indexedKeys);
-  return links
-    .filter((link) => wanted.has(link.indexedKey))
-    .map((link) => link.linkpath);
 }
 
 /** The `detail` every failure arm carries, from whatever was thrown. */
