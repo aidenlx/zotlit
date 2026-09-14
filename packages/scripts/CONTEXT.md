@@ -26,6 +26,10 @@ The per-worktree Obsidian vault seeded from the Fixture Vault for manual
 development and Paired Runs.
 _Avoid_: dev vault, test vault
 
+**Host Vault**:
+An open Obsidian vault that provides the application access needed to prepare
+a Development Vault.
+
 **Scope Case**:
 A named, saved Library Scope state (all, available, partial, unavailable).
 

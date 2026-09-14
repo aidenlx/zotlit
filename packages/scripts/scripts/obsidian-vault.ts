@@ -865,8 +865,16 @@ const vaultCaseOption = {
 } as const;
 
 const hostReadinessReference = `Host readiness:
-  Host-dependent commands require a vault window that answers within
-  ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. Run 'obsidian-vault.ts check' before changing the Fixture.
+  Host-dependent commands require a Host Vault that answers each CLI probe
+  within ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. The complete check can take longer.
+  Run 'obsidian-vault.ts check' before changing the Fixture.
+  Set ZT_HOST_VAULT=<vault-id-or-folder-name> to select the host directly.
+  An unset or empty value uses the focused window. Explicit selection errors stop.
+  An exact registered ID takes priority; a folder name must be unique across
+  all registered vaults, including closed vaults. Use an ID for duplicate names.
+  If another folder name matches that ID, ignoring case, select another Host Vault
+  or remove the conflicting registration. The selected path must exist and be recorded open.
+  Saved open state can be stale; Obsidian can still open a closed window.
   On failure, check lists existing registered paths and missing stale paths.
   Open the selected host vault yourself, then rerun the reported command.`;
 
