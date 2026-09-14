@@ -215,7 +215,7 @@ export async function checkProfileDocument({
       settings: { loaded: Promise.resolve(profile.settings) },
     };
     const baseline = profileContext.baseline;
-    const data = baseline
+    const data = baseline?.path
       ? withSelectedNote(profileData, {
           key: profileContext.itemKey,
           path: baseline.path,
