@@ -798,6 +798,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         diagnostic: {
           code: "INVALID_SELECTOR",
           message: "Profile checks select item data with key.",
+          recovery:
+            "Use key to select item data. Check the Citation Template with document=citation, and reserve root for template-data and Shared Partial checks.",
         },
       });
     if (inspected.document?.kind !== "profile" || source === undefined)
