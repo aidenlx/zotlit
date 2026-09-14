@@ -43,7 +43,6 @@ import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import {
   ANNOTATIONS,
   ATTACHMENTS,
-  brokenBooksProfileSource,
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
@@ -63,7 +62,6 @@ import {
   PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
   SCOPE_CASES,
   SCRATCH_DRAFT_RELATIVE_PATH,
-  scratchDraftSource,
   SEEDED_CITATION_KEYS,
   seededCitationKeyDrift,
   selectScopeCase,
@@ -71,7 +69,6 @@ import {
   UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
   VAULT_CASES,
-  YAML_REPAIR_PROFILE_EDIT,
 } from "./build.ts";
 import type { FixtureLayout, PersistedLibraryScope } from "./build.ts";
 import { renderGuide } from "./guide.ts";
@@ -1841,25 +1838,35 @@ describe("the generated Obsidian vault", () => {
   });
 });
 
-describe("a Vault Case", () => {
-  async function buildVaultCase(vaultCase: string): Promise<FixtureLayout> {
-    const caseLayout = getFixtureLayout(
-      await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
-    );
-    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
-    // A stale bundle folder stands in for a Development Vault's plugin folder,
-    // whose data.json holds whatever ZotLit last saved there.
-    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
-    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
-    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
-    await writeFile(
-      join(bundleDir, "data.json"),
-      JSON.stringify({ __VERSION__: 10, stale: true }),
-    );
-    await buildFixture(caseLayout, { vaultCase, pluginBundleDir: bundleDir });
-    return caseLayout;
-  }
+/**
+ * Build one Vault Case into its own throwaway layout. The stale bundle folder
+ * stands in for a Development Vault's plugin folder, whose data.json holds
+ * whatever ZotLit last saved there.
+ */
+async function buildVaultCase(
+  vaultCase: string,
+  scopeCase?: string,
+): Promise<FixtureLayout> {
+  const caseLayout = getFixtureLayout(
+    await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
+  );
+  fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+  const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
+  fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
+  await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
+  await writeFile(
+    join(bundleDir, "data.json"),
+    JSON.stringify({ __VERSION__: 10, stale: true }),
+  );
+  await buildFixture(caseLayout, {
+    vaultCase,
+    ...(scopeCase === undefined ? {} : { scopeCase }),
+    pluginBundleDir: bundleDir,
+  });
+  return caseLayout;
+}
 
+describe("a Vault Case", () => {
   it("names every base and Workbench Vault Case", () => {
     expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
       "configured",
@@ -2029,31 +2036,6 @@ describe("a Vault Case", () => {
 });
 
 describe("a Workbench Vault Case", () => {
-  async function buildWorkbenchCase(
-    vaultCase: string,
-    scopeCase?: string,
-  ): Promise<FixtureLayout> {
-    const caseLayout = getFixtureLayout(
-      await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
-    );
-    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
-    // A stale bundle folder stands in for a Development Vault's plugin folder,
-    // whose data.json holds whatever ZotLit last saved there.
-    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
-    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
-    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
-    await writeFile(
-      join(bundleDir, "data.json"),
-      JSON.stringify({ __VERSION__: 10, stale: true }),
-    );
-    await buildFixture(caseLayout, {
-      vaultCase,
-      ...(scopeCase === undefined ? {} : { scopeCase }),
-      pluginBundleDir: bundleDir,
-    });
-    return caseLayout;
-  }
-
   function booksProfilePath(caseLayout: FixtureLayout): string {
     return join(
       caseLayout.vaultDir,
@@ -2071,7 +2053,7 @@ describe("a Workbench Vault Case", () => {
 
   it("seeds the configured base unchanged for the task-only Workbench cases", async () => {
     for (const vaultCase of configuredTaskCases) {
-      const caseLayout = await buildWorkbenchCase(vaultCase);
+      const caseLayout = await buildVaultCase(vaultCase);
       const profile = await readFile(booksProfilePath(caseLayout), "utf-8");
       const citation = await readFile(
         join(caseLayout.vaultDir, "templates", "zotlit-citation.md"),
@@ -2104,18 +2086,17 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("seeds the deliberate YAML error and keeps the body and Annotation Section", async () => {
-    const caseLayout = await buildWorkbenchCase("workbench-yaml-repair");
+    const caseLayout = await buildVaultCase("workbench-yaml-repair");
     const broken = await readFile(booksProfilePath(caseLayout), "utf-8");
 
-    expect(broken).toBe(brokenBooksProfileSource());
-    expect(broken).toContain(YAML_REPAIR_PROFILE_EDIT.replace);
-    expect(broken).not.toContain(YAML_REPAIR_PROFILE_EDIT.find);
-    // The one error is in the manifest; everything after the delimiter survives.
-    expect(broken).toContain("# Book profile: {{ zt.title }}");
-    expect(broken).toContain("--- zotlit:annotation ---");
-    expect(broken).toContain(
-      `{% render "${FIXTURE_PARTIAL_NAME}" with zt as zt %}`,
-    );
+    // One manifest line carries the seeded error; every other line of the
+    // canonical document survives byte-for-byte.
+    const valid = LITERATURE_NOTE_DOCUMENTS[0]!.source.split("\n");
+    const seeded = broken.split("\n");
+    expect(seeded).toHaveLength(valid.length);
+    expect(seeded.filter((line, index) => line !== valid[index])).toEqual([
+      "name: 'Books",
+    ]);
     // The valid source parses; the seeded broken source does not.
     expect(() =>
       parseLiteratureNoteTemplate(LITERATURE_NOTE_DOCUMENTS[0]!.source),
@@ -2137,9 +2118,7 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("enriches the stamped Books note with prose and an unmanaged sentinel", async () => {
-    const caseLayout = await buildWorkbenchCase(
-      "workbench-update-preservation",
-    );
+    const caseLayout = await buildVaultCase("workbench-update-preservation");
     const item = ITEMS.find(({ key }) => key === PRESERVATION_NOTE_ITEM_KEY)!;
     const note = await readFile(
       join(
@@ -2168,14 +2147,19 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("seeds a complete valid scratch draft outside the template folder", async () => {
-    const caseLayout = await buildWorkbenchCase("workbench-scratch-draft");
+    const caseLayout = await buildVaultCase("workbench-scratch-draft");
     const draftPath = join(caseLayout.vaultDir, SCRATCH_DRAFT_RELATIVE_PATH);
     const draft = await readFile(draftPath, "utf-8");
     const installed = await readFile(booksProfilePath(caseLayout), "utf-8");
 
-    expect(draft).toBe(scratchDraftSource());
     expect(() => parseLiteratureNoteTemplate(draft)).not.toThrow();
-    expect(draft).toContain("# Draft Book profile: {{ zt.title }}");
+    // The draft is the canonical document with its body heading edited.
+    const valid = LITERATURE_NOTE_DOCUMENTS[0]!.source.split("\n");
+    const drafted = draft.split("\n");
+    expect(drafted).toHaveLength(valid.length);
+    expect(drafted.filter((line, index) => line !== valid[index])).toEqual([
+      "# Draft Book profile: {{ zt.title }}",
+    ]);
     expect(draft).toContain("id: V1StGXR8Z5jd");
     // The installed Profile is untouched by the draft's distinct body.
     expect(installed).toContain("# Book profile: {{ zt.title }}");
@@ -2183,7 +2167,7 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("keeps the default no-note Workbench case as empty as a fresh vault", async () => {
-    const caseLayout = await buildWorkbenchCase("workbench-default-no-note");
+    const caseLayout = await buildVaultCase("workbench-default-no-note");
 
     expect(await readdir(caseLayout.vaultDir)).toEqual([
       ".obsidian",
@@ -2210,7 +2194,7 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("removes the book-details partial while the Books caller stays intact", async () => {
-    const caseLayout = await buildWorkbenchCase("workbench-error-recovery");
+    const caseLayout = await buildVaultCase("workbench-error-recovery");
 
     await expect(
       readFile(
@@ -2230,13 +2214,14 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("restores the exact seed after mutating, adding, and removing files", async () => {
-    const caseLayout = await buildWorkbenchCase("workbench-scratch-draft");
+    const caseLayout = await buildVaultCase("workbench-scratch-draft");
     const draftPath = join(caseLayout.vaultDir, SCRATCH_DRAFT_RELATIVE_PATH);
     const citationPath = join(
       caseLayout.vaultDir,
       "templates",
       "zotlit-citation.md",
     );
+    const seededDraft = await readFile(draftPath, "utf-8");
 
     await writeFile(draftPath, "# tampered draft\n");
     await writeFile(join(caseLayout.vaultDir, "extra.md"), "# extra\n");
@@ -2246,7 +2231,7 @@ describe("a Workbench Vault Case", () => {
       vaultCase: "workbench-scratch-draft",
     });
 
-    expect(await readFile(draftPath, "utf-8")).toBe(scratchDraftSource());
+    expect(await readFile(draftPath, "utf-8")).toBe(seededDraft);
     await expect(
       readFile(join(caseLayout.vaultDir, "extra.md"), "utf-8"),
     ).rejects.toThrow("ENOENT");
@@ -2256,9 +2241,12 @@ describe("a Workbench Vault Case", () => {
   });
 
   it("lists every Workbench case in the generated CLI reference", () => {
-    const guide = renderGuide();
-    for (const vaultCase of VAULT_CASES) {
-      expect(guide).toContain(vaultCase.id);
-    }
+    const lines = renderGuide().split("\n");
+    const first = lines.indexOf("VAULT CASES") + 2;
+    const rows = lines.slice(first, lines.indexOf("", first));
+
+    expect(rows.map((row) => row.trim().split(" ")[0])).toEqual(
+      VAULT_CASES.map((vaultCase) => vaultCase.id),
+    );
   });
 });
