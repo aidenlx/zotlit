@@ -929,6 +929,46 @@ My conclusion.
     },
   );
 
+  it("resolves the item's Literature Note links under a supplied baseline", async () => {
+    using stack = new DisposableStack();
+    const client = stack.adopt(createClient(":memory:"), (value) =>
+      (value.$client as DatabaseSync).close(),
+    );
+    const sqlite = client.$client as DatabaseSync;
+    createFixtureSchema(sqlite);
+    sqlite.exec(`
+      insert into libraries (libraryID, type) values (1, 'user');
+      insert into itemTypes (itemTypeID, typeName) values (1, 'journalArticle');
+      insert into items (itemID, itemTypeID, libraryID, key) values (1, 1, 1, 'ABCD2345');
+      update items set dateAdded = '2024-01-01 00:00:00', dateModified = '2024-01-01 00:00:00';
+      PRAGMA query_only = ON;
+    `);
+    const actual = await vi.importActual<typeof import("./data")>("./data");
+    vi.mocked(loadTemplateData).mockImplementation(actual.loadTemplateData);
+    await using f = await fixture(
+      SOURCE.replace("%}Managed{%", "%}{{ zt.notePath }} {{ zt.noteLink }}{%"),
+      { "Notes/Paper.md": existing },
+      { acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never },
+    );
+    Object.assign(f.app.fileManager, {
+      generateMarkdownLink: (file: { path: string }) => `[[${file.path}]]`,
+      getAvailablePathForAttachment: async () => "images/probe.png",
+    });
+    const result = await f.check({
+      mode: "update",
+      key: "ABCD2345",
+      existing,
+      output: "body",
+    });
+    expect(result, JSON.stringify(result)).toMatchObject({
+      ok: true,
+      baseline: { kind: "supplied", path: null },
+    });
+    expect(result.outputs.body).toBe(
+      "My introduction.\n%%zt-managed%%\nNotes/Paper.md [[Notes/Paper.md]]\n%%/zt-managed%%\nMy conclusion.\n",
+    );
+  });
+
   it("retains the selected baseline identity and recovery when reading its bytes fails", async () => {
     await using f = await fixture(SOURCE, { "Notes/Unreadable.md": existing });
     vi.spyOn(f.app.vault, "read").mockRejectedValue(

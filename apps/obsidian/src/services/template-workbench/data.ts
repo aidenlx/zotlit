@@ -90,7 +90,7 @@ export interface TemplateDataDeps {
  */
 export function withSelectedNote(
   deps: TemplateDataDeps,
-  selection: { key: string; path: string | null },
+  selection: { key: string; path: string },
 ): TemplateDataDeps {
   return {
     ...deps,
