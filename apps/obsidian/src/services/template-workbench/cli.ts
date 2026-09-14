@@ -492,7 +492,7 @@ export function createTemplateWorkbenchHandlers(
               identity,
               diagnostic: diagnostic(
                 "INVALID_SELECTOR",
-                `${problem.message} ${problem.recovery}`,
+                `${problem.message} ${problem.hint}`,
                 { parameter: "note" },
               ),
             });

@@ -37,7 +37,7 @@ export interface ProfileCheck {
   behavior?: "static-body" | "managed-region";
   output?: unknown;
   diagnostics: (RenderDiagnostic & {
-    recovery: string;
+    hint: string;
     key?: string;
     annotation?: { key: string; revision?: string };
   })[];
@@ -69,8 +69,7 @@ export function checkDiagnostic(error: unknown, caller: RenderCallerSource) {
   return {
     ...renderFailureDiagnostic(error, caller),
     evidence: engineEvidence(error),
-    recovery:
-      "Repair the reported source, then run template-check again. Use attempt=<id> evidence=full to read this attempt's original engine report.",
+    hint: "Repair the reported source, then run template-check again. Use attempt=<id> evidence=full to read this attempt's original engine report.",
   };
 }
 
@@ -277,8 +276,7 @@ export function checkNativeProfile(
               code: "property-append-conflict",
               params: { key },
               position: detail.position,
-              recovery:
-                "Use compatible array values or change the entry's merge strategy.",
+              hint: "Use compatible array values or change the entry's merge strategy.",
             }),
         });
         return frontmatter;

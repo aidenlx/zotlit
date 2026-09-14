@@ -75,8 +75,7 @@ export async function checkProfileDocument({
             code: PROFILE_ID_MISMATCH,
             message:
               "The draft manifest ID does not match the selected Profile.",
-            recovery:
-              "Keep the selected Profile ID in the draft, or omit profile to check a standalone identity.",
+            hint: "Keep the selected Profile ID in the draft, or omit profile to check a standalone identity.",
           },
         },
       };
@@ -120,8 +119,7 @@ export async function checkProfileDocument({
             position,
             ...(key ? { key } : {}),
             message: "JavaScript Templates are disabled on this device.",
-            recovery:
-              "Enable JavaScript Templates or replace this entry with a JSON-e value.",
+            hint: "Enable JavaScript Templates or replace this entry with a JSON-e value.",
           })),
         };
       return {
@@ -131,8 +129,8 @@ export async function checkProfileDocument({
           checks,
           diagnostic: {
             code: "ETA_OPT_IN_REQUIRED",
-            message:
-              "JavaScript Templates are disabled on this device. Enable the gate or use Liquid and JSON-e entries.",
+            message: "JavaScript Templates are disabled on this device.",
+            hint: "Ask the user to enable JavaScript Templates in ZotLit settings, or use Liquid and JSON-e entries.",
             evidence: {
               kind: "javascript-gate",
               enabled: false,
@@ -159,7 +157,7 @@ export async function checkProfileDocument({
           diagnostic: {
             code: INVALID_PROFILE_ID,
             message: PROFILE_ID_RULE,
-            recovery: `Set the draft manifest id to 'default' or to a Profile ID of ${PROFILE_ID_LENGTH} letters or digits, then check the draft again.`,
+            hint: `Set the draft manifest id to 'default' or to a Profile ID of ${PROFILE_ID_LENGTH} letters or digits, then check the draft again.`,
           },
         },
       };
@@ -291,8 +289,8 @@ export async function checkProfileDocument({
             rendering: "checked",
             diagnostic: {
               code: "BASELINE_SUPERSEDED",
-              message:
-                "The Literature Note changed during this attempt. Run a new check.",
+              message: "The Literature Note changed during this attempt.",
+              hint: "Run a new check to read the current Literature Note.",
             },
           },
         };
@@ -309,7 +307,8 @@ export async function checkProfileDocument({
           ok: false,
           diagnostic: {
             code: "SOURCE_SUPERSEDED",
-            message: "Source changed during this attempt. Run a new check.",
+            message: "Source changed during this attempt.",
+            hint: "Run a new check to read the current source.",
           },
           freshness: {
             ...inspected.freshness,

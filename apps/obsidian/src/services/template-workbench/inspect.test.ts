@@ -68,10 +68,16 @@ async function fixture(
     read,
     readSignal,
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
-    inspect: async (params: Parameters<CliHandler>[0] = {}) =>
-      JSON.parse(
+    inspect: async (params: Parameters<CliHandler>[0] = {}) => {
+      const answer = JSON.parse(
         (await handlers.get(TEMPLATE_INSPECT_COMMAND)!(params)) as string,
-      ),
+      );
+      // The Workbench Guide tells a caller to follow `diagnostic.hint` on
+      // failure, so every refusal this suite reaches carries one.
+      if (answer.ok === false && answer.diagnostic)
+        expect(answer.diagnostic).toMatchObject({ hint: expect.any(String) });
+      return answer;
+    },
     guide: async () =>
       handlers.get("zotlit:template-guide")!({ topic: "inspect" }),
   };
@@ -507,7 +513,7 @@ describe("registered template-inspect", () => {
       Object.fromEntries(
         Object.entries(INSPECT_DIAGNOSTICS).map(([code, entry]) => [
           code,
-          `${entry.message} ${entry.recovery}`,
+          `${entry.message} ${entry.hint}`,
         ]),
       ),
     );
