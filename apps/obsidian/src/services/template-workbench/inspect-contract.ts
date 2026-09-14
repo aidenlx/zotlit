@@ -41,56 +41,51 @@ export const INSPECT_DIAGNOSTICS = {
   INVALID_SELECTOR: {
     message:
       "Select one note, Profile, or document. Editor source requires a target.",
-    recovery: `Run help ${TEMPLATE_INSPECT_COMMAND} for selectors and source=${INSPECT_SOURCE_FULL}.`,
+    hint: `Run help ${TEMPLATE_INSPECT_COMMAND} for selectors and source=${INSPECT_SOURCE_FULL}.`,
   },
   TARGET_MISMATCH: {
     message: "The connected Zotero source differs from expect-source.",
-    recovery: "Select the intended vault and Zotero source.",
+    hint: "Select the intended vault and Zotero source.",
   },
   AMBIGUOUS_TARGET: {
     message: "The target matches more than one document.",
-    recovery:
-      "Use an exact vault path or Profile ID from the inspection inventory.",
+    hint: "Use an exact vault path or Profile ID from the inspection inventory.",
   },
   TARGET_NOT_FOUND: {
     message: "The target does not select a document.",
-    recovery:
-      "Run template-inspect without selectors, then use an exact document path or Profile ID.",
+    hint: "Run template-inspect without selectors, then use an exact document path or Profile ID.",
   },
   NOT_LITERATURE_NOTE: {
     message: "The selected note has no Zotero item key.",
-    recovery: "Select an existing Literature Note.",
+    hint: "Select an existing Literature Note.",
   },
   UNKNOWN_PROFILE_STAMP: {
     message: "The note's Profile stamp does not resolve.",
-    recovery: "Restore the stamped Profile or correct the note's stamp.",
+    hint: "Restore the stamped Profile or correct the note's stamp.",
   },
   SOURCE_NOT_LOADED: {
     message: "The requested saved sources are not loaded.",
-    recovery:
-      "Check the affected paths, allow Obsidian to observe the edits, then inspect again.",
+    hint: "Check the affected paths, allow Obsidian to observe the edits, then inspect again.",
   },
   SOURCE_READ_FAILED: {
     message: "A saved source could not be read.",
-    recovery:
-      "Check the reported adapter error and file access, then inspect again.",
+    hint: "Check the reported adapter error and file access, then inspect again.",
   },
   SOURCE_SUPERSEDED: {
     message: "The selected document changed during inspection.",
-    recovery: "Inspect the target again.",
+    hint: "Inspect the target again.",
   },
   EDITOR_TARGET_MISMATCH: {
     message: "The active editor does not hold the selected document.",
-    recovery:
-      "Open the selected document or omit editor to inspect its saved source.",
+    hint: "Open the selected document or omit editor to inspect its saved source.",
   },
   DOCUMENT_NOT_FOUND: {
     message: "Configured document is missing.",
-    recovery: "Restore the configured document at the reported path.",
+    hint: "Restore the configured document at the reported path.",
   },
   RESERVED_PARTIAL_NAME: {
     message: "The Shared Partial filename uses a reserved template name.",
-    recovery: `Rename this Shared Partial to a name outside the reserved names ${quotedList(RESERVED_PARTIAL_NAME_LIST)}, and update its callers.`,
+    hint: `Rename this Shared Partial to a name outside the reserved names ${quotedList(RESERVED_PARTIAL_NAME_LIST)}, and update its callers.`,
   },
 } as const;
 
@@ -123,5 +118,5 @@ ${Object.entries(inspectFlags)
 
 DIAGNOSTICS
 ${Object.entries(INSPECT_DIAGNOSTICS)
-  .map(([code, entry]) => `  ${code}: ${entry.message} ${entry.recovery}`)
+  .map(([code, entry]) => `  ${code}: ${entry.message} ${entry.hint}`)
   .join("\n")}`;

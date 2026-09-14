@@ -161,7 +161,7 @@ export interface InspectDeps {
 export interface InspectDiagnostic {
   code: InspectDiagnosticCode;
   message: string;
-  recovery: string;
+  hint: string;
 }
 
 /** The manifest error an invalid Profile document reports. */

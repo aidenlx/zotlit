@@ -25,7 +25,7 @@ export async function selectCheckBaseline(
     diagnostic: {
       code: "BASELINE_READ_FAILED",
       message: error instanceof Error ? error.message : String(error),
-      recovery:
+      hint:
         kind === "supplied"
           ? "Correct the supplied existing=<text> frontmatter and run the check again."
           : `Restore access to '${path}' and correct its frontmatter, then run the check again with note=${path}.`,
@@ -39,8 +39,8 @@ export async function selectCheckBaseline(
         ok: false as const,
         diagnostic: {
           code: "duplicate-literature-notes",
-          message:
-            "Multiple Literature Notes match this item. Select one with note=<path>.",
+          message: "Multiple Literature Notes match this item.",
+          hint: "Select one of the reported candidates with note=<path>, then run the check again.",
           candidates: candidates.map((file) => file.path),
         },
       };
@@ -54,6 +54,7 @@ export async function selectCheckBaseline(
         diagnostic: {
           code: "TARGET_NOT_FOUND",
           message: "The selected path is not a Literature Note for this item.",
+          hint: "Select one of the reported candidates with note=<path>, or omit note to use the only match.",
           candidates: candidates.map((file) => file.path),
         },
       };

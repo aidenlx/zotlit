@@ -157,6 +157,8 @@ ${Object.entries(checkFlags)
 /** The inspection fields a check answer repeats, beside the source itself. */
 export interface InspectedAnswer {
   ok?: boolean;
+  /** The inspection's own refusal, which a check branch forwards unchanged. */
+  diagnostic?: FaultDiagnostic;
   document?: InspectDocument;
   input?: { revision: string; path: string | null; origin: string };
   freshness?: { state: string; versions: SourceVersion[] };
@@ -216,13 +218,44 @@ type AttachReport = <
 ) => T & { report: ReturnType<typeof captureRenderReport> };
 
 /**
+ * A refusal answer body. `hint` is required because the Workbench Guide tells a
+ * caller that a failed check answers with `diagnostic.hint`, so a branch that
+ * refuses without one loses the repair instruction the caller acts on.
+ */
+export interface CheckFault {
+  ok: false;
+  diagnostic: FaultDiagnostic;
+  [field: string]: unknown;
+}
+
+/** The fault a refusal reports. A promoted render diagnostic says the whole
+ *  thing through `code` and `params`, so only `hint` is unconditional. */
+export interface FaultDiagnostic {
+  code: string;
+  message?: string;
+  hint: string;
+  [field: string]: unknown;
+}
+
+/**
+ * One answer body: a refusal carrying its hint, or an answer that raises no
+ * top-level diagnostic at all — a passing check, or a failed check whose causes
+ * stay in the `checks` map. The second arm admits no `diagnostic`, so a branch
+ * that raises one reaches this type only through {@link CheckFault}, with its
+ * hint.
+ */
+export type CheckAnswerBody =
+  | CheckFault
+  | { diagnostic?: undefined; [field: string]: unknown };
+
+/**
  * What one document branch returns: the answer context it built, and the answer
  * body the entry module merges onto it. The entry module makes the single
  * `finish` call, so no branch can assemble an answer twice.
  */
 export interface CheckOutcome {
   context: CheckContext;
-  result: object;
+  result: CheckAnswerBody;
 }
 
 /**
@@ -307,12 +340,12 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         ...(Object.keys(outputs).length ? { outputs } : {}),
       });
     };
-    const fail = (code: string, message: string, hint?: string) =>
+    const fail = (code: string, message: string, hint: string) =>
       answer({
         contractVersion: CONTRACT_VERSION,
         command: TEMPLATE_CHECK_COMMAND,
         ok: false,
-        diagnostic: { code, message, ...(hint === undefined ? {} : { hint }) },
+        diagnostic: { code, message, hint },
       });
     if (
       Object.keys(params).some((key) => !(key in checkFlags)) ||
@@ -359,7 +392,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     )
       return fail(
         "INVALID_SELECTOR",
-        "Use help zotlit:template-check for accepted selectors and disclosure flags.",
+        "The request names an unknown flag, or a value this command does not accept.",
+        "Use help zotlit:template-check for accepted selectors and disclosure flags, then run the check again.",
       );
     if (params.attempt !== undefined) {
       if (
@@ -385,7 +419,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         ? answer(retained)
         : fail(
             "ATTEMPT_NOT_FOUND",
-            "This attempt is unavailable. Run a new check to obtain a new attempt ID.",
+            "This attempt is unavailable.",
+            "Run a new check to obtain a new attempt ID.",
           );
     }
     const attempt = randomUUID();
@@ -464,7 +499,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         },
       }),
     });
-    const finish = (context: CheckContext, result: object) => {
+    const finish = (context: CheckContext, result: CheckAnswerBody) => {
       const merged: object = { ...context.answer, ...result };
       const { checks } = merged as { checks?: Record<string, ProfileCheck> };
       // The checks map a branch returns stays the branch's own record, so the
@@ -566,8 +601,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           diagnostic: {
             code: "DRAFT_READ_FAILED",
             message: error instanceof Error ? error.message : String(error),
-            recovery:
-              "Write a complete Profile document to a readable scratch file and supply its absolute path as draft.",
+            hint: "Write a complete Profile document to a readable scratch file and supply its absolute path as draft.",
           },
         });
       }
@@ -590,8 +624,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             diagnostic: {
               code: "TARGET_NOT_FOUND",
               message: "The selected Zotero item is unavailable.",
-              recovery:
-                "Select an existing item, attachment, annotation, or child-note key and run the check again.",
+              hint: "Select an existing item, attachment, annotation, or child-note key and run the check again.",
             },
           });
         sourceContext = {
@@ -617,8 +650,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             ok: false,
             diagnostic: {
               code: "UNKNOWN_PROFILE_STAMP",
-              message:
-                "The baseline's Profile stamp does not resolve. Select an explicit Profile to preview a change.",
+              message: "The baseline's Profile stamp does not resolve.",
+              hint: "Select an explicit Profile with profile=<id-or-label> to preview a change, or restore the stamped Profile.",
               stamp: selected.stamp.stamp,
             },
           });
@@ -628,8 +661,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           diagnostic: {
             code: "BASELINE_READ_FAILED",
             message: error instanceof Error ? error.message : String(error),
-            recovery:
-              "Restore access to the selected Zotero source and run the update check again.",
+            hint: "Restore access to the selected Zotero source and run the update check again.",
           },
         });
       }
@@ -691,7 +723,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         diagnostic: {
           code: "INVALID_SELECTOR",
           message: "Select a Profile with profile or document, one at a time.",
-          recovery: "Omit profile when selecting a Profile document.",
+          hint: "Omit profile when selecting a Profile document.",
         },
       });
     if (source !== undefined && inspected.document?.kind !== "profile") {
@@ -719,7 +751,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           diagnostic: {
             code: "INVALID_SELECTOR",
             message:
-              "Select a partial caller root and applicable data; plain documents use create mode.",
+              "The request selects a caller root or data this document does not take.",
+            hint: "Select a partial caller root with root=<name> and applicable data; check a plain document in create mode.",
           },
         });
       const plain = await checkPlainDocument({
@@ -748,8 +781,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         diagnostic: {
           code: "INVALID_SELECTOR",
           message: "Profile checks select item data with key.",
-          recovery:
-            "Use key to select item data. Check the Citation Template with document=citation, and reserve root for template-data and Shared Partial checks.",
+          hint: "Use key to select item data. Check the Citation Template with document=citation, and reserve root for template-data and Shared Partial checks.",
         },
       });
     if (inspected.document?.kind !== "profile" || source === undefined)
@@ -757,7 +789,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
-          message: "Select a saved Profile document.",
+          message: "The request does not select a saved Profile document.",
+          hint: "Select a Profile with profile=<id-or-label>, or a Profile document with document=<path-or-reference>.",
         },
       });
     const profile = await checkProfileDocument({

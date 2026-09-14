@@ -111,10 +111,16 @@ async function fixture(
       await writeFile(path, text);
       return path;
     },
-    check: async (params: Parameters<CliHandler>[0] = {}) =>
-      JSON.parse(
+    check: async (params: Parameters<CliHandler>[0] = {}) => {
+      const answer = JSON.parse(
         (await handlers.get(TEMPLATE_CHECK_COMMAND)!({ ...params })) as string,
-      ),
+      );
+      // The Workbench Guide tells a caller that a failed check answers with
+      // `diagnostic.hint`, so every refusal this suite reaches carries one.
+      if (answer.ok === false && answer.diagnostic)
+        expect(answer.diagnostic).toMatchObject({ hint: expect.any(String) });
+      return answer;
+    },
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };
 }
@@ -277,7 +283,7 @@ describe("plain document checks", () => {
       evidence: "full",
     });
     expect(result.diagnostic).toMatchObject({
-      recovery: expect.any(String),
+      hint: expect.any(String),
       evidence: { kind: "javascript-gate" },
       report: {
         identity: { citationVariant: "alt", citationExample: "two-items" },
@@ -534,7 +540,7 @@ describe("registered template-check", () => {
         message: expect.stringContaining(
           `${PROFILE_ID_LENGTH} letters or digits`,
         ),
-        recovery: expect.stringContaining(
+        hint: expect.stringContaining(
           `Profile ID of ${PROFILE_ID_LENGTH} letters or digits`,
         ),
       },
@@ -668,7 +674,7 @@ describe("registered template-check", () => {
     expect(await f.check({ draft: missing })).toMatchObject({
       ok: false,
       input: { origin: "draft", path: missing, revision: null },
-      diagnostic: { code: "DRAFT_READ_FAILED", recovery: expect.any(String) },
+      diagnostic: { code: "DRAFT_READ_FAILED", hint: expect.any(String) },
     });
   });
 
@@ -939,8 +945,7 @@ My conclusion.
       },
       diagnostic: {
         code: "BASELINE_READ_FAILED",
-        recovery:
-          "Restore access to 'Notes/Unreadable.md' and correct its frontmatter, then run the check again with note=Notes/Unreadable.md.",
+        hint: "Restore access to 'Notes/Unreadable.md' and correct its frontmatter, then run the check again with note=Notes/Unreadable.md.",
       },
     });
   });
@@ -967,7 +972,7 @@ My conclusion.
         },
         diagnostic: {
           code: "BASELINE_READ_FAILED",
-          recovery:
+          hint:
             kind === "real"
               ? "Restore access to 'Notes/Broken.md' and correct its frontmatter, then run the check again with note=Notes/Broken.md."
               : "Correct the supplied existing=<text> frontmatter and run the check again.",

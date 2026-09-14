@@ -82,8 +82,7 @@ export async function checkPlainDocument({
               code: "render-error",
               part: "render",
               message: "JavaScript Templates are disabled on this device.",
-              recovery:
-                "Enable JavaScript Templates on this device or use a Liquid document.",
+              hint: "Enable JavaScript Templates on this device or use a Liquid document.",
             }),
             code: "ETA_OPT_IN_REQUIRED",
             message: "JavaScript Templates are disabled on this device.",
@@ -185,7 +184,7 @@ export async function checkPlainDocument({
           diagnostic: {
             code: "INVALID_SELECTOR",
             message: `The selected data is unavailable: ${loaded.kind}.`,
-            recovery:
+            hint:
               root === "annotation"
                 ? "Select an existing annotation key with a readable parent attachment."
                 : "Select an existing item key, or use a built-in example for the Citation root.",
@@ -267,7 +266,8 @@ export async function checkPlainDocument({
           },
           diagnostic: {
             code: "SOURCE_SUPERSEDED",
-            message: "Source changed during this attempt. Run a new check.",
+            message: "Source changed during this attempt.",
+            hint: "Run a new check to read the current source.",
           },
         },
       };
