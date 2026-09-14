@@ -262,9 +262,9 @@ top of the configured base:
   fails until the file is restored.
 
 The remaining `workbench-*` cases carry the configured or fresh seed unchanged
-and differ only in the task they name. Their run instructions, prompts,
-controller steps, and grading criteria are recorded in
-`skills/zotlit-template-workspace/iteration-2/fresh-cases/`.
+and differ only in the task they name. Each is declared in `VAULT_CASES` in
+`packages/scripts/lib/fixture/spec.ts`; that entry's `summary` carries the case
+definition.
 
 ## Run the Paired Zotero
 

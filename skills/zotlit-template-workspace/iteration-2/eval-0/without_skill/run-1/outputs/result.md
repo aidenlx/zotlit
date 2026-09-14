@@ -1,1 +1,0 @@
-Fresh Luna xhigh no-skill baseline. The same scratch JSON-e spread emitted fixture-reviewed=true; update output preserved the existing note body; freshness=current; installed vault unchanged. Full transcript: skills/zotlit-template-workspace/iteration-2/evidence/without_skill/transcript.md
