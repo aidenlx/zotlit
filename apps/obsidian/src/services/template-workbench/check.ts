@@ -168,13 +168,49 @@ ${Object.entries(checkFlags)
   .map(([name, flag]) => `  ${name}: ${flag.description}`)
   .join("\n")}`;
 
-interface InspectedSource {
-  ok: boolean;
-  source?: string;
+/** The inspection fields a check answer repeats, beside the source itself. */
+interface InspectedAnswer {
+  ok?: boolean;
   document?: InspectDocument;
   input?: { revision: string; path: string | null; origin: string };
   freshness?: { state: string; versions: SourceVersion[] };
   [key: string]: unknown;
+}
+
+interface InspectedSource extends InspectedAnswer {
+  source?: string;
+}
+
+/**
+ * What one check phase hands to the answer assembly: the inspection fields the
+ * answer repeats, and the evidence a Check Attempt and a render report read. A
+ * phase extends it by value and passes the extension on, so the answer never
+ * reads state a distant branch wrote.
+ */
+interface CheckContext {
+  readonly answer: Readonly<InspectedAnswer>;
+  /** Checked source text the render report fingerprints. */
+  readonly source: string;
+  /** Fingerprint of the data a render read; empty until data is loaded. */
+  readonly dataRevision: string;
+  /** Template language the report context names. */
+  readonly language?: string;
+  /** Document path or ID the report context names. */
+  readonly documentPath?: string;
+  /** Caller root the report context names. */
+  readonly root: string;
+  /** Whether the checked document is a Shared Partial. */
+  readonly partial: boolean;
+  /** Profile selector a partial render report names. */
+  readonly profileSelector?: string;
+  /** Indexed key the baseline block reports. */
+  readonly itemKey: string;
+  readonly baseline?: Extract<
+    Awaited<ReturnType<typeof selectCheckBaseline>>,
+    { ok: true }
+  >;
+  /** Profile the baseline block reports. */
+  readonly selectedProfile?: { id: string; label: string };
 }
 
 export interface CheckDeps extends InspectDeps {
@@ -312,22 +348,19 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     const attempt = randomUUID();
     const attemptSequence = ++sequence;
     const capturedAt = Temporal.Now.instant().toString();
-    let reportSource = "";
-    let dataRevision = "";
-    let reportLanguage: string | undefined;
-    let reportDocument: string | undefined;
-    let reportRoot = "note";
-    let reportPartial = false;
-    let reportProfile: string | undefined;
-    let itemKey = params.key as string;
-    let baseline:
-      | Extract<Awaited<ReturnType<typeof selectCheckBaseline>>, { ok: true }>
-      | undefined;
-    let selectedProfile: { id: string; label: string } | undefined;
-    const reportContext = () => ({
-      document: reportDocument,
-      language: reportLanguage,
-      root: reportRoot,
+    // Source acquisition extends this before either document branch takes over.
+    let sourceContext: CheckContext = {
+      answer: {},
+      source: "",
+      dataRevision: "",
+      root: "note",
+      partial: false,
+      itemKey: params.key as string,
+    };
+    const reportContext = (context: CheckContext) => ({
+      document: context.documentPath,
+      language: context.language,
+      root: context.root,
       selection:
         typeof params.key === "string"
           ? params.key
@@ -340,6 +373,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         annotation?: { key: string; revision?: string };
       },
     >(
+      context: CheckContext,
       diagnostic: T,
     ) => ({
       ...diagnostic,
@@ -347,11 +381,13 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         diagnostic,
         identity: {
           ...renderIdentity({
-            source: reportSource,
-            snapshot: dataRevision ? { revision: dataRevision } : null,
+            source: context.source,
+            snapshot: context.dataRevision
+              ? { revision: context.dataRevision }
+              : null,
             mode,
           }),
-          ...(reportRoot === "citation"
+          ...(context.root === "citation"
             ? {
                 citationVariant: (params.variant ?? "main") as CitationVariant,
                 ...(typeof params.example === "string" &&
@@ -360,10 +396,11 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
                   : {}),
               }
             : {}),
-          ...(reportPartial
+          ...(context.partial
             ? {
-                partialContext: reportRoot as PartialContext,
-                partialProfile: reportProfile ?? params.profile ?? "default",
+                partialContext: context.root as PartialContext,
+                partialProfile:
+                  context.profileSelector ?? params.profile ?? "default",
               }
             : {}),
           ...(diagnostic.annotation
@@ -377,22 +414,24 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         sequence: attemptSequence,
         capturedAt,
         context: {
-          ...reportContext(),
+          ...reportContext(context),
           ...(diagnostic.annotation
             ? { root: "annotation", selection: diagnostic.annotation.key }
             : {}),
         },
       }),
     });
-    const finish = (result: object) => {
-      const checked = result as { checks?: Record<string, ProfileCheck> };
+    const finish = (context: CheckContext, result: object) => {
+      const answered: object = { ...context.answer, ...result };
+      const checked = answered as { checks?: Record<string, ProfileCheck> };
       for (const check of Object.values(checked.checks ?? {}))
         check.diagnostics = check.diagnostics.map((diagnostic) => ({
           ...diagnostic,
-          ...attachReport(diagnostic),
+          ...attachReport(context, diagnostic),
         }));
+      const { baseline, selectedProfile } = context;
       const retained = {
-        ...result,
+        ...answered,
         command: TEMPLATE_CHECK_COMMAND,
         contractVersion: CONTRACT_VERSION,
         attempt,
@@ -400,15 +439,17 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           sequence: attemptSequence,
           capturedAt,
           mode,
-          sourceRevision: reportSource ? sourceRevision(reportSource) : null,
-          dataRevision: dataRevision || null,
-          ...reportContext(),
+          sourceRevision: context.source
+            ? sourceRevision(context.source)
+            : null,
+          dataRevision: context.dataRevision || null,
+          ...reportContext(context),
         },
         ...(baseline
           ? {
               baseline: {
                 kind: baseline.kind,
-                indexedKey: itemKey,
+                indexedKey: context.itemKey,
                 path: baseline.path,
                 revision:
                   baseline.source === null
@@ -426,7 +467,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
                 selectedProfile.id !==
                   (baseline.stamp?.id ?? (baseline.stamp ? null : "default")),
               operation: {
-                outcome: (result as { ok?: boolean }).ok
+                outcome: (answered as { ok?: boolean }).ok
                   ? "previewed"
                   : "refused",
               },
@@ -452,7 +493,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     let draft: { source: string; path: string } | undefined;
     if (typeof params.draft === "string") {
       const input = { origin: "draft", path: params.draft, revision: null };
-      reportDocument = params.draft;
+      sourceContext = { ...sourceContext, documentPath: params.draft };
       try {
         if (!isAbsolute(params.draft))
           throw new Error("Use an absolute scratch-file path for draft.");
@@ -460,9 +501,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           source: await readFile(params.draft, "utf8"),
           path: params.draft,
         };
-        reportSource = draft.source;
+        sourceContext = { ...sourceContext, source: draft.source };
       } catch (error) {
-        return finish({
+        return finish(sourceContext, {
           ok: false,
           input,
           diagnostic: {
@@ -477,13 +518,17 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     if (mode === "update") {
       try {
         await deps.profile.ready;
-        const parent = await loadTemplateData(deps.data, itemKey, "filename");
+        const parent = await loadTemplateData(
+          deps.data,
+          sourceContext.itemKey,
+          "filename",
+        );
         if (
           parent.kind !== "data" ||
           !("indexedKey" in parent.data) ||
           typeof parent.data.indexedKey !== "string"
         )
-          return finish({
+          return finish(sourceContext, {
             ok: false,
             diagnostic: {
               code: "TARGET_NOT_FOUND",
@@ -492,33 +537,36 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
                 "Select an existing item, attachment, annotation, or child-note key and run the check again.",
             },
           });
-        itemKey = parent.data.indexedKey;
+        sourceContext = {
+          ...sourceContext,
+          itemKey: parent.data.indexedKey,
+        };
         const selected = await selectCheckBaseline(deps.data, {
-          key: itemKey,
+          key: sourceContext.itemKey,
           note: params.note as string | undefined,
           existing: params.existing as string | undefined,
         });
-        if (!selected.ok) return finish(selected);
-        baseline = selected;
+        if (!selected.ok) return finish(sourceContext, selected);
+        sourceContext = { ...sourceContext, baseline: selected };
         if (
           params.profile === undefined &&
           params.document === undefined &&
           params.draft === undefined &&
-          baseline.stamp &&
-          (!baseline.stamp.id ||
-            !deps.profile.resolveProfile(baseline.stamp.id))
+          selected.stamp &&
+          (!selected.stamp.id ||
+            !deps.profile.resolveProfile(selected.stamp.id))
         )
-          return finish({
+          return finish(sourceContext, {
             ok: false,
             diagnostic: {
               code: "UNKNOWN_PROFILE_STAMP",
               message:
                 "The baseline's Profile stamp does not resolve. Select an explicit Profile to preview a change.",
-              stamp: baseline.stamp.stamp,
+              stamp: selected.stamp.stamp,
             },
           });
       } catch (error) {
-        return finish({
+        return finish(sourceContext, {
           ok: false,
           diagnostic: {
             code: "BASELINE_READ_FAILED",
@@ -536,7 +584,9 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         : {
             profile:
               params.profile ??
-              (draft ? "default" : (baseline?.stamp?.id ?? "default")),
+              (draft
+                ? "default"
+                : (sourceContext.baseline?.stamp?.id ?? "default")),
           }),
       ...(params["expect-source"] !== undefined
         ? { "expect-source": params["expect-source"] }
@@ -546,34 +596,40 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     const inspected = JSON.parse(
       (await inspect(inspectRequest)) as string,
     ) as InspectedSource;
-    const { source, ...context } = inspected;
-    if (draft && inspected.document?.kind === "profile") {
-      context.input = {
-        origin: "draft",
-        path: draft.path,
-        revision: sourceRevision(draft.source),
-      };
-      // Installed document diagnostics describe the saved version, not this draft.
-      context.problems = [];
-      context.document = {
-        kind: "profile",
-        id: "draft",
-        label: "Draft",
-        path: draft.path,
-        problems: [],
-      };
-    }
-    reportSource = source ?? draft?.source ?? "";
-    reportDocument =
-      draft?.path ?? inspected.document?.path ?? inspected.document?.id;
-    if (!inspected.ok) return finish(context);
+    const { source, ...inspectedAnswer } = inspected;
+    const inspectedContext: CheckContext = {
+      ...sourceContext,
+      answer:
+        draft && inspected.document?.kind === "profile"
+          ? {
+              ...inspectedAnswer,
+              input: {
+                origin: "draft",
+                path: draft.path,
+                revision: sourceRevision(draft.source),
+              },
+              // Installed document diagnostics describe the saved version, not this draft.
+              problems: [],
+              document: {
+                kind: "profile",
+                id: "draft",
+                label: "Draft",
+                path: draft.path,
+                problems: [],
+              },
+            }
+          : inspectedAnswer,
+      source: source ?? draft?.source ?? "",
+      documentPath:
+        draft?.path ?? inspected.document?.path ?? inspected.document?.id,
+    };
+    if (!inspected.ok) return finish(inspectedContext, {});
     if (
       inspected.document?.kind === "profile" &&
       params.document !== undefined &&
       params.profile !== undefined
     )
-      return finish({
-        ...context,
+      return finish(inspectedContext, {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
@@ -584,8 +640,11 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
     if (source !== undefined && inspected.document?.kind !== "profile") {
       const document = inspected.document!;
       const root = document.kind === "citation" ? "citation" : params.root;
-      reportRoot = (root as string | undefined) ?? "note";
-      reportPartial = document.kind === "partial";
+      let documentContext: CheckContext = {
+        ...inspectedContext,
+        root: (root as string | undefined) ?? "note",
+        partial: document.kind === "partial",
+      };
       if (
         mode !== "create" ||
         (document.kind === "citation" && params.root !== undefined) ||
@@ -595,8 +654,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           root === undefined &&
           (params.key !== undefined || params.example !== undefined))
       )
-        return finish({
-          ...context,
+        return finish(documentContext, {
           ok: false,
           diagnostic: {
             code: "INVALID_SELECTOR",
@@ -609,8 +667,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           (problem) => problem.code === RESERVED_PARTIAL_NAME,
         )
       )
-        return finish({
-          ...context,
+        return finish(documentContext, {
           ok: false,
           diagnostic: {
             code: RESERVED_PARTIAL_NAME,
@@ -624,19 +681,21 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       let caller: RenderCallerSource = { source, language: "liquid" };
       try {
         const parsed = parsePlainTemplateDocument(source);
-        reportLanguage = parsed.manifest.language;
+        documentContext = {
+          ...documentContext,
+          language: parsed.manifest.language,
+        };
         caller = { source, language: parsed.manifest.language };
         if (
-          reportLanguage === "eta" &&
+          documentContext.language === "eta" &&
           !deps.templates.javascriptTemplatesEnabled
         )
-          return finish({
-            ...context,
+          return finish(documentContext, {
             ok: false,
             checks,
             rendering: "not-checked",
             diagnostic: {
-              ...attachReport({
+              ...attachReport(documentContext, {
                 code: "render-error",
                 part: "render",
                 message: "JavaScript Templates are disabled on this device.",
@@ -649,7 +708,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
                 kind: "javascript-gate",
                 enabled: false,
                 source: inspected.input,
-                language: reportLanguage,
+                language: documentContext.language,
               },
             },
           });
@@ -665,8 +724,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           })) as string,
         ) as InspectedSource;
         if (!profileInspection.ok)
-          return finish({
-            ...context,
+          return finish(documentContext, {
             ok: false,
             checks,
             diagnostic: profileInspection.diagnostic,
@@ -686,19 +744,24 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             ? undefined
             : deps.profile.resolveProfile(selector);
         if (!profile) throw new Error("The selected Profile does not resolve.");
-        reportProfile = profile.selector;
-        context.selectedProfile = {
-          id: profile.selector,
-          bindings: profile.bindings,
-        };
-        context.bindingContext = {
-          input: profileInspection.input,
-          freshness: profileInspection.freshness,
+        documentContext = {
+          ...documentContext,
+          answer: {
+            ...documentContext.answer,
+            selectedProfile: {
+              id: profile.selector,
+              bindings: profile.bindings,
+            },
+            bindingContext: {
+              input: profileInspection.input,
+              freshness: profileInspection.freshness,
+            },
+          },
+          profileSelector: profile.selector,
         };
         checks.structure = { status: "passed", diagnostics: [] };
         if (params.key === undefined && params.example === undefined)
-          return finish({
-            ...context,
+          return finish(documentContext, {
             ok: true,
             checks,
             rendering: "not-checked",
@@ -724,8 +787,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
                 root as "note" | "annotation",
               );
         if (loaded.kind !== "data")
-          return finish({
-            ...context,
+          return finish(documentContext, {
             ok: false,
             checks,
             diagnostic: {
@@ -739,16 +801,19 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           });
         const { citation: _citation, ...annotationDescriptors } =
           Object.getOwnPropertyDescriptors(loaded.data);
-        dataRevision = sourceRevision(
-          JSON.stringify(
-            serializeTemplateData(
-              root === "annotation"
-                ? Object.defineProperties({}, annotationDescriptors)
-                : loaded.data,
-              root as "note" | "annotation" | "citation",
+        documentContext = {
+          ...documentContext,
+          dataRevision: sourceRevision(
+            JSON.stringify(
+              serializeTemplateData(
+                root === "annotation"
+                  ? Object.defineProperties({}, annotationDescriptors)
+                  : loaded.data,
+                root as "note" | "annotation" | "citation",
+              ),
             ),
           ),
-        );
+        };
         try {
           const rendered =
             document.kind === "citation"
@@ -789,8 +854,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           JSON.stringify(profileAfter.freshness?.versions) !==
             JSON.stringify(profileInspection.freshness?.versions)
         )
-          return finish({
-            ...context,
+          return finish(documentContext, {
             ok: false,
             rendering: "checked",
             freshness: {
@@ -799,7 +863,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
               after: after.freshness,
             },
             bindingContext: {
-              before: context.bindingContext,
+              before: documentContext.answer.bindingContext,
               after: {
                 input: profileAfter.input,
                 freshness: profileAfter.freshness,
@@ -811,8 +875,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
               message: "Source changed during this attempt. Run a new check.",
             },
           });
-        return finish({
-          ...context,
+        return finish(documentContext, {
           checks,
           ok: Object.values(checks).every((check) => check.status === "passed"),
           rendering: "checked",
@@ -820,11 +883,10 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       } catch (error) {
         const diagnostic = checkDiagnostic(error, caller);
         checks.structure = { status: "failed", diagnostics: [diagnostic] };
-        return finish({
-          ...context,
+        return finish(documentContext, {
           ok: false,
           checks,
-          diagnostic: attachReport(diagnostic),
+          diagnostic: attachReport(documentContext, diagnostic),
         });
       }
     }
@@ -834,8 +896,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       params.example !== undefined ||
       (params.draft !== undefined && params.document !== undefined)
     )
-      return finish({
-        ...context,
+      return finish(inspectedContext, {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
@@ -845,14 +906,14 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         },
       });
     if (inspected.document?.kind !== "profile" || source === undefined)
-      return finish({
-        ...context,
+      return finish(inspectedContext, {
         ok: false,
         diagnostic: {
           code: "INVALID_SELECTOR",
           message: "Select a saved Profile document.",
         },
       });
+    let profileContext = inspectedContext;
     const checks: Record<string, ProfileCheck> = Object.fromEntries(
       ["structure", ...PROFILE_OUTPUTS].map((name) => [
         name,
@@ -869,8 +930,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           (inspected.document.profile?.id ??
             inspected.document.profileIdentity?.id)
       )
-        return finish({
-          ...context,
+        return finish(profileContext, {
           ok: false,
           checks: {
             ...checks,
@@ -884,7 +944,10 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
               "Keep the selected Profile ID in the draft, or omit profile to check a standalone identity.",
           },
         });
-      reportLanguage = parsed.manifest.language ?? "liquid";
+      profileContext = {
+        ...profileContext,
+        language: parsed.manifest.language ?? "liquid",
+      };
       caller = {
         source,
         language: parsed.manifest.language ?? "liquid",
@@ -925,8 +988,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
                 "Enable JavaScript Templates or replace this entry with a JSON-e value.",
             })),
           };
-        return finish({
-          ...context,
+        return finish(profileContext, {
           ok: false,
           checks,
           diagnostic: {
@@ -948,8 +1010,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         deps.templates.prepareLiteratureNoteTemplateSource(source);
       const selector = parseProfileSelector(document.manifest.id ?? "default");
       if (draft && selector === undefined)
-        return finish({
-          ...context,
+        return finish(profileContext, {
           ok: false,
           checks: {
             ...checks,
@@ -973,38 +1034,50 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             : deps.profile.resolveProfile(selector);
       if (!profile) throw new Error("The saved Profile does not resolve.");
       if (draft)
-        context.document = {
-          kind: "profile",
-          id: profile.selector,
-          label: profile.label ?? "Default",
-          path: draft.path,
-          profile: {
-            id: profile.selector,
-            label: profile.label ?? "Default",
-            bindings: profile.bindings,
+        profileContext = {
+          ...profileContext,
+          answer: {
+            ...profileContext.answer,
+            document: {
+              kind: "profile",
+              id: profile.selector,
+              label: profile.label ?? "Default",
+              path: draft.path,
+              profile: {
+                id: profile.selector,
+                label: profile.label ?? "Default",
+                bindings: profile.bindings,
+              },
+              problems: [],
+            },
           },
-          problems: [],
         };
       checks.structure = { status: "passed", diagnostics: [] };
       if (params.key === undefined)
-        return finish({
-          ...context,
+        return finish(profileContext, {
           ok: true,
           checks,
           rendering: "not-checked",
           reason:
             "Structural validation only; provide key to check rendering with real item data.",
         });
-      selectedProfile = {
-        id: profile.selector,
-        label: profile.label ?? "Default",
+      profileContext = {
+        ...profileContext,
+        selectedProfile: {
+          id: profile.selector,
+          label: profile.label ?? "Default",
+        },
       };
       const profileData = {
         ...deps.data,
         settings: { loaded: Promise.resolve(profile.settings) },
       };
+      const baseline = profileContext.baseline;
       const data = baseline
-        ? withSelectedNote(profileData, { key: itemKey, path: baseline.path })
+        ? withSelectedNote(profileData, {
+            key: profileContext.itemKey,
+            path: baseline.path,
+          })
         : profileData;
       const [note, filename] = await Promise.all([
         loadTemplateData(data, params.key as string, "note"),
@@ -1012,12 +1085,15 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       ]);
       if (note.kind !== "data" || filename.kind !== "data")
         throw new Error("The selected Zotero item is unavailable.");
-      dataRevision = sourceRevision(
-        JSON.stringify({
-          note: serializeTemplateData(note.data, "note"),
-          filename: serializeTemplateData(filename.data, "filename"),
-        }),
-      );
+      profileContext = {
+        ...profileContext,
+        dataRevision: sourceRevision(
+          JSON.stringify({
+            note: serializeTemplateData(note.data, "note"),
+            filename: serializeTemplateData(filename.data, "filename"),
+          }),
+        ),
+      };
       const annotations = await Promise.all(
         (note.data as NoteTemplateContext).annotations.map(
           async (annotation) => {
@@ -1066,8 +1142,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       if (baseline?.kind === "real") {
         const file = deps.app.vault.getFileByPath(baseline.path!);
         if (!file || (await deps.app.vault.read(file)) !== baseline.source)
-          return finish({
-            ...context,
+          return finish(profileContext, {
             ok: false,
             rendering: "checked",
             diagnostic: {
@@ -1083,8 +1158,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         JSON.stringify(after.freshness?.versions) !==
           JSON.stringify(inspected.freshness?.versions)
       )
-        return finish({
-          ...context,
+        return finish(profileContext, {
           ok: false,
           diagnostic: {
             code: "SOURCE_SUPERSEDED",
@@ -1097,17 +1171,19 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           },
           rendering: "checked",
         });
-      return finish({
-        ...context,
+      return finish(profileContext, {
         ok: Object.values(checks).every((check) => check.status === "passed"),
         checks,
         rendering: "checked",
       });
     } catch (error) {
-      const diagnostic = attachReport(checkDiagnostic(error, caller));
+      const diagnostic = attachReport(
+        profileContext,
+        checkDiagnostic(error, caller),
+      );
       if (checks.structure?.status !== "passed")
         checks.structure = { status: "failed", diagnostics: [diagnostic] };
-      return finish({ ...context, ok: false, checks, diagnostic });
+      return finish(profileContext, { ok: false, checks, diagnostic });
     }
   };
 }
