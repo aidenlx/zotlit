@@ -1,0 +1,10 @@
+{
+  "eval_id": 0,
+  "eval_name": "json-e-spread",
+  "prompt": "Add one JSON-e Managed Frontmatter spread to the Books Profile that emits fixture-reviewed: true, preserve existing fields and Literature Note text, then verify the result.",
+  "assertions": [
+    "The Books Profile and connected source are identified before editing.",
+    "The result exposes the requested fixture-reviewed field.",
+    "The agent checks relevant output and reports preservation and freshness evidence."
+  ]
+}

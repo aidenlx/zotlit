@@ -1,0 +1,1 @@
+Fresh Luna xhigh held-out run. Both Citation Variants passed with distinct outputs; partial:book-details passed under profile=Books root=note key=NW2CPDTC; current source revisions and a recovered SOURCE_NOT_LOADED attempt are recorded. Full transcript: skills/zotlit-template-workspace/iteration-2/evidence/heldout_with_skill/transcript.md

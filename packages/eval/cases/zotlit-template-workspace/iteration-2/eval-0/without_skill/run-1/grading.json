@@ -1,0 +1,20 @@
+{
+  "expectations": [
+    {
+      "text": "The Books Profile and connected source are identified before editing.",
+      "passed": true,
+      "evidence": "Baseline transcript reports the vault and source 8a19f09e."
+    },
+    {
+      "text": "The result exposes the requested fixture-reviewed field.",
+      "passed": true,
+      "evidence": "Create/update output reports position-5 fixture-reviewed=true."
+    },
+    {
+      "text": "The agent checks relevant output and reports preservation and freshness evidence.",
+      "passed": true,
+      "evidence": "Condition results report current freshness, preserved note text, and no installed writes."
+    }
+  ],
+  "summary": { "passed": 3, "failed": 0, "total": 3, "pass_rate": 1 }
+}

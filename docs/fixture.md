@@ -195,6 +195,15 @@ A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the s
 | `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. It also seeds the graph's citation cases. The Fixture writes a Literature Note for My Library Items only, so `cited-work-node-test.md` cites three works without one — one key the `partial` Scope Case keeps, two it drops — and a fourth key that two Items hold, which stays ambiguous. `citation-only-test.md` carries its citation as its only link, and the `rougierTenSimpleRules2014` Literature Note cites a second Literature Note. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
 | `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
 | `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list. |
+| `workbench-spread` | The configured vault for the JSON-e spread task; the Books Profile and an unchanged stamped note are seeded, the solution is not. |
+| `workbench-yaml-repair` | The configured vault with one deliberate unclosed-quote YAML error in the Books Profile manifest; body and Annotation Section intact. |
+| `workbench-partial-edit` | The configured vault for the Shared Partial edit task; the Books caller and supported root are preserved. |
+| `workbench-citation-variants` | The configured vault whose Citation Template renders visibly distinct `main` and `alt` variants. |
+| `workbench-update-preservation` | The configured vault with hand-written prose and an unmanaged frontmatter sentinel outside the stamped Books note's Managed Region. |
+| `workbench-external-edit` | The configured vault for the external-edit task; a saved Profile and dependency baseline, edited by the controller after inspection. |
+| `workbench-scratch-draft` | The configured vault plus a complete valid scratch Books draft outside the template folder. |
+| `workbench-default-no-note` | The fresh vault: no settings, notes, or ejected templates; only the built-in Default is readable. |
+| `workbench-error-recovery` | The configured vault with the `book-details` Shared Partial removed, so a create or update check fails until it is restored. |
 
 The Configured vault's template folder carries the two Template Documents the Template Workbench opens beside a Profile:
 
@@ -232,7 +241,7 @@ Each Vault Case other than the default opens its own Development Vault, `tests/f
 ZT_VAULT_CASE=fresh pnpm --filter @zotlit/obsidian dev:vault
 ```
 
-The `fresh` case writes no settings file. It accepts only the default `all` Scope Case, and Live Updates stay off. The Paired Run still points ZotLit at the Fixture database through the Device Overrides, so the first Literature Note needs no Zotero setup.
+The `fresh` case writes no settings file. It accepts only the default `all` Scope Case, and Live Updates stay off. The Paired Run still points ZotLit at the Fixture database through the Device Overrides, so the first Literature Note needs no Zotero setup. The `workbench-default-no-note` case is fresh-based and behaves the same way.
 
 The `upgrader` case writes the ZotLit 2.1.0 shape:
 
@@ -242,6 +251,59 @@ The `upgrader` case writes the ZotLit 2.1.0 shape:
 - The four legacy slot files `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, and `zotlit-annotation.liquid.md` in the template folder. Each starts from the shipped Liquid default and carries one visible edit.
 
 On load, ZotLit migrates the settings to the current version, sets `note.template-conversion-pending`, and opens the conversion prompt. Run `pnpm fixture --help` for the exact field list and edits, which come from the Fixture Spec.
+
+## Workbench Cases
+
+The `workbench-*` Vault Cases name the fixed Template Workbench tasks from
+issue #1114, transferred from #1093. They reuse the `configured` or `fresh` base so every trial can be
+rebuilt and reset in isolation. Four of them apply a named seed variation on
+top of the configured base:
+
+- `workbench-yaml-repair` edits `name: Books` to `name: 'Books` in the Books
+  Profile manifest — one unclosed quote — leaving the body and Annotation
+  Section intact.
+- `workbench-update-preservation` enriches the stamped note
+  `books/books-duplicateWithin2020.md` with the unmanaged frontmatter
+  `reader-note: keep-this-sentinel` and hand-written prose outside its Managed
+  Region.
+- `workbench-scratch-draft` seeds `scratch/workbench-draft.md`, the Books
+  Profile with its body heading changed to `# Draft Book profile:
+  {{ zt.title }}`.
+- `workbench-error-recovery` removes `templates/zotlit-partial.book-details.md`
+  while the Books Profile body still calls it, so a create or update check
+  fails until the file is restored.
+
+The remaining `workbench-*` cases carry the configured or fresh seed unchanged
+and differ only in the task they name. Each is declared in `VAULT_CASES` in
+`packages/scripts/lib/fixture/spec.ts`; that entry's `summary` carries the case
+definition.
+
+## Reset a Vault Case between runs
+
+Reset a case vault before each run of a task against it:
+
+```sh
+packages/scripts/scripts/obsidian-vault.ts reset --vault-case workbench-spread
+```
+
+The command rebuilds the seed, opens the case vault with a purge, then gates on
+what the vault answers. The purge is the reset: it rewrites the vault-scoped
+Device Overrides that point ZotLit at the Fixture. A plain sync leaves those
+overrides in place, so a vault that lost them keeps reading this machine's own
+Zotero library.
+
+The gate is what finds that state. It fails closed on each of three answers:
+
+- `zotlit:template-status` reports `identity.source.databasePath`, which must be
+  the Fixture database.
+- `zotlit:library-scope` reports the available Libraries, which must be the
+  count the Scope Case puts in scope.
+- `zotlit:template-data` must resolve each of the Fixture Items the gate probes.
+
+Every call the reset makes, the gate included, has the bounded Obsidian CLI
+limit, so no stage waits on a vault window that has stopped answering. A window
+that is gone while the registry still reports it open is reported as
+unreachable; restart Obsidian and run the reset again.
 
 ## Run the Paired Zotero
 

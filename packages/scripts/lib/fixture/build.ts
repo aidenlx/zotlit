@@ -34,6 +34,7 @@ import {
   findScopeCase,
   findVaultCase,
   FIXTURE_ITEM_TYPES,
+  FIXTURE_PARTIAL_NAME,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -41,11 +42,17 @@ import {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  PRESERVATION_NOTE_HANDWRITTEN_PROSE,
+  PRESERVATION_NOTE_ITEM_KEY,
+  PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
+  SCRATCH_DRAFT_EDIT,
+  SCRATCH_DRAFT_RELATIVE_PATH,
   SHARED_PARTIAL_DOCUMENTS,
   UPGRADER_FRONTMATTER_FIELDS,
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
+  YAML_REPAIR_PROFILE_EDIT,
 } from "./spec.ts";
 import type {
   FixtureAttachment,
@@ -56,6 +63,7 @@ import type {
   FixtureNote,
   FixtureTemplateEdit,
   FixtureVaultCase,
+  FixtureVaultCaseSeed,
   PersistedLibraryScope,
 } from "./spec.ts";
 
@@ -81,7 +89,12 @@ export {
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   PERSONAL_SELECTOR,
+  PRESERVATION_NOTE_HANDWRITTEN_PROSE,
+  PRESERVATION_NOTE_ITEM_KEY,
+  PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
   SCOPE_CASES,
+  SCRATCH_DRAFT_EDIT,
+  SCRATCH_DRAFT_RELATIVE_PATH,
   SEEDED_CITATION_KEYS,
   seededCitationKeyDrift,
   UNAVAILABLE_GROUP_IDS,
@@ -91,6 +104,7 @@ export {
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
   VAULT_CASES,
+  YAML_REPAIR_PROFILE_EDIT,
 } from "./spec.ts";
 export {
   DEFAULT_STRESS_ITEM_COUNT,
@@ -109,6 +123,9 @@ export type {
   FixtureScopeCase,
   FixtureStyle,
   FixtureVaultCase,
+  FixtureVaultCaseBase,
+  FixtureVaultCaseId,
+  FixtureVaultCaseSeed,
   LibrarySelector,
   PersistedLibraryScope,
 } from "./spec.ts";
@@ -119,8 +136,8 @@ export interface BuildOptions {
   /** Scope case the fresh vault starts on. */
   scopeCase?: string;
   /**
-   * Vault case the vault is written in. `fresh` writes no settings file, so
-   * it accepts only the default Scope Case.
+   * Vault case the vault is written in. A case based on `fresh` writes no
+   * settings file, so it accepts only the default Scope Case.
    */
   vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
@@ -928,14 +945,15 @@ async function writeVault(
 ): Promise<void> {
   const vaultCase = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
   const scopeCase = findScopeCase(options.scopeCase ?? DEFAULT_SCOPE_CASE);
-  if (vaultCase.id === "fresh" && scopeCase.id !== DEFAULT_SCOPE_CASE) {
+  const base = vaultCase.base;
+  if (base === "fresh" && scopeCase.id !== DEFAULT_SCOPE_CASE) {
     throw new Error(
-      `the fresh Vault Case writes no settings file, so it cannot save the "${scopeCase.id}" Scope Case`,
+      `the ${vaultCase.id} Vault Case writes no settings file, so it cannot save the "${scopeCase.id}" Scope Case`,
     );
   }
 
   await writeVaultConfig(layout, options);
-  if (vaultCase.id === "fresh") {
+  if (base === "fresh") {
     // A Paired Run passes a Development Vault's plugin folder as the bundle,
     // and that folder carries the settings ZotLit last saved there. A fresh
     // vault promises no settings file at all.
@@ -944,21 +962,30 @@ async function writeVault(
   }
 
   // The v2.1 vault predates Profiles, so it seeds every note unstamped.
-  await writeVaultNotes(
-    layout,
-    options,
-    vaultCase.id === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
-  );
-  if (vaultCase.id === "upgrader") {
+  await writeVaultNotes(layout, options, {
+    profiles: base === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
+    seed: vaultCase.seed,
+  });
+  if (base === "upgrader") {
     await writeLegacyTemplates(layout);
   } else {
     for (const document of LITERATURE_NOTE_DOCUMENTS) {
+      const source =
+        vaultCase.seed === "broken-books-profile" &&
+        document.filename === LITERATURE_NOTE_PROFILES[0]!.document
+          ? brokenBooksProfileSource()
+          : document.source;
       await writeFile(
         join(layout.vaultDir, "templates", document.filename),
-        document.source,
+        source,
       );
     }
     for (const partial of SHARED_PARTIAL_DOCUMENTS) {
+      if (
+        vaultCase.seed === "missing-book-details" &&
+        partial.name === FIXTURE_PARTIAL_NAME
+      )
+        continue;
       await writeFile(
         join(layout.vaultDir, "templates", `zotlit-partial.${partial.name}.md`),
         formatPlainTemplateDocument(partial.source, partial.language),
@@ -967,6 +994,16 @@ async function writeVault(
     await writeFile(
       join(layout.vaultDir, "templates", "zotlit-citation.md"),
       formatPlainTemplateDocument(fixtureCitationSource(), "liquid"),
+    );
+  }
+
+  if (vaultCase.seed === "scratch-draft") {
+    await mkdir(join(layout.vaultDir, dirname(SCRATCH_DRAFT_RELATIVE_PATH)), {
+      recursive: true,
+    });
+    await writeFile(
+      join(layout.vaultDir, SCRATCH_DRAFT_RELATIVE_PATH),
+      scratchDraftSource(),
     );
   }
 
@@ -1025,7 +1062,13 @@ async function writeVaultConfig(
 async function writeVaultNotes(
   layout: FixtureLayout,
   options: BuildOptions,
-  profiles: readonly (typeof LITERATURE_NOTE_PROFILES)[number][],
+  {
+    profiles,
+    seed,
+  }: {
+    profiles: readonly (typeof LITERATURE_NOTE_PROFILES)[number][];
+    seed?: FixtureVaultCaseSeed;
+  },
 ): Promise<void> {
   await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
   await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
@@ -1046,6 +1089,8 @@ async function writeVaultNotes(
     const profile = profiles.find(
       ({ id }) => id === item.literatureNoteProfile,
     );
+    const preserve =
+      seed === "preservation-note" && item.key === PRESERVATION_NOTE_ITEM_KEY;
     await writeFile(
       join(
         layout.vaultDir,
@@ -1055,6 +1100,12 @@ async function writeVaultNotes(
       literatureNote(item, layout, {
         profile,
         linkedAttachmentVaultDir: options.linkedAttachmentVaultDir,
+        ...(preserve
+          ? {
+              extraFrontmatter: PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
+              trailingProse: PRESERVATION_NOTE_HANDWRITTEN_PROSE,
+            }
+          : {}),
       }),
     );
   }
@@ -1151,6 +1202,45 @@ export function fixtureCitationSource(): string {
   );
 }
 
+/** The Books Profile document source the seeded Workbench cases build from. */
+function booksProfileDocumentSource(): string {
+  const document = LITERATURE_NOTE_DOCUMENTS.find(
+    ({ filename }) => filename === LITERATURE_NOTE_PROFILES[0]!.document,
+  );
+  if (!document) {
+    throw new Error(
+      "the Books Profile document is missing from the Fixture Spec",
+    );
+  }
+  return document.source;
+}
+
+/**
+ * The Books Profile source the yaml-repair Vault Case seeds: the valid
+ * document with one deliberate unclosed-quote YAML error in the manifest.
+ * @throws when the valid document no longer holds the line the edit expects.
+ */
+export function brokenBooksProfileSource(): string {
+  return applyTemplateEdit(
+    booksProfileDocumentSource(),
+    YAML_REPAIR_PROFILE_EDIT,
+    "the Books Profile document",
+  );
+}
+
+/**
+ * The scratch draft the scratch-draft Vault Case seeds outside the template
+ * folder: the valid Books Profile source with a distinct body heading.
+ * @throws when the valid document no longer holds the line the edit expects.
+ */
+export function scratchDraftSource(): string {
+  return applyTemplateEdit(
+    booksProfileDocumentSource(),
+    SCRATCH_DRAFT_EDIT,
+    "the Books Profile document",
+  );
+}
+
 /**
  * One Fixture edit applied to the shipped default it names.
  * @throws when the default drifted away from the text the edit expects.
@@ -1178,7 +1268,7 @@ function vaultSettings(
     ...(liveUpdatePort === undefined ? {} : { "server.port": liveUpdatePort }),
     [LIBRARY_SCOPE_SETTING_KEY]: scope,
   };
-  if (vaultCase.id === "upgrader") {
+  if (vaultCase.base === "upgrader") {
     // The flat v2.1 shape: note bindings still vault-global, no Profiles, and
     // a recorded launch version so the release check sees a real upgrade.
     return {
@@ -1212,6 +1302,10 @@ function literatureNote(
     /** Profile the note is stamped with; absent leaves it on the default. */
     profile?: (typeof LITERATURE_NOTE_PROFILES)[number];
     linkedAttachmentVaultDir?: string;
+    /** Unmanaged frontmatter entries appended before the closing delimiter. */
+    extraFrontmatter?: Readonly<Record<string, string>>;
+    /** Prose appended after the Managed Region, outside ZotLit's control. */
+    trailingProse?: readonly string[];
   },
 ): string {
   const attachments = ATTACHMENTS.filter(
@@ -1237,6 +1331,11 @@ function literatureNote(
       : [`zotlit-profile: ${profile.label} (${profile.id})`]),
     // `citekey` is the compatibility frontmatter key ZotLit still reads.
     ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
+    ...(options.extraFrontmatter === undefined
+      ? []
+      : Object.entries(options.extraFrontmatter).map(
+          ([key, value]) => `${key}: ${value}`,
+        )),
     "---",
     `# ${item.title}`,
     "",
@@ -1254,6 +1353,8 @@ function literatureNote(
           "%%/zt-managed%%",
           "",
         ]),
+    ...(options.trailingProse ?? []),
+    ...(options.trailingProse?.length ? [""] : []),
     ...(item.literatureNoteCitations === undefined
       ? []
       : [

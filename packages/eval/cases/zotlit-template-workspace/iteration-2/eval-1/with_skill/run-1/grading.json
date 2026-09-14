@@ -1,0 +1,20 @@
+{
+  "expectations": [
+    {
+      "text": "Both main and alt variants are executed.",
+      "passed": true,
+      "evidence": "Held-out transcript records successful main and alt checks with distinct outputs."
+    },
+    {
+      "text": "The Shared Partial caller root and Profile context are explicit.",
+      "passed": true,
+      "evidence": "Partial check uses profile=Books root=note key=NW2CPDTC."
+    },
+    {
+      "text": "Source revisions and rendered output are inspected before completion.",
+      "passed": true,
+      "evidence": "Transcript reports current citation/profile/partial revisions and rendered outputs."
+    }
+  ],
+  "summary": { "passed": 3, "failed": 0, "total": 3, "pass_rate": 1 }
+}
