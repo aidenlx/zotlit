@@ -65,13 +65,25 @@ export function showExportFailure(failure: ExportProblem): void {
         case "items-missing":
           renderer.addList(
             m.pandoc_export_error_items_missing(),
-            failure.linkpaths,
+            failure.sources,
           );
           break;
         case "citation-keys-missing":
           renderer.addList(
             m.pandoc_export_error_citation_keys_missing(),
-            failure.linkpaths,
+            failure.sources,
+          );
+          break;
+        case "citation-keys-unknown":
+          renderer.addList(
+            m.pandoc_export_error_citekeys_unknown(),
+            failure.citekeys,
+          );
+          break;
+        case "citation-keys-ambiguous":
+          renderer.addList(
+            m.pandoc_export_error_citekeys_ambiguous(),
+            failure.citekeys,
           );
           break;
         case "zotero-unreachable":

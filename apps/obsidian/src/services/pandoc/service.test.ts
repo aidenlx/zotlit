@@ -2,7 +2,7 @@ import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import type { CitationEngine } from "./engine";
+import type { CitationEngine, PreparedDocument } from "./engine";
 import { PandocEngineService } from "./service";
 import type { PandocEnginePorts } from "./service";
 import type { EngineBinaryStore } from "./store";
@@ -76,11 +76,19 @@ function memoryConsent(): MemoryConsent {
   };
 }
 
+/** A prepared document that cites nothing, which no test here renders. */
+const fakeDocument: PreparedDocument = {
+  citedIds: [],
+  withCitedIds: () => fakeDocument,
+};
+
 function fakeEngine(dispose = vi.fn()): CitationEngine {
   return {
     renderBibliography: () => Promise.resolve([]),
     renderCitations: () => Promise.resolve([]),
-    renderDocument: () => Promise.resolve(new Uint8Array()),
+    prepareDocument: () =>
+      Promise.resolve({ citedIds: [], withCitedIds: () => fakeDocument }),
+    renderPrepared: () => Promise.resolve(new Uint8Array()),
     [Symbol.asyncDispose]: () => {
       dispose();
       return Promise.resolve();

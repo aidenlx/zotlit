@@ -19,8 +19,10 @@ import type {
   BibliographyRequest,
   CitationEngine,
   CitationRequest,
-  DocumentRequest,
+  PrepareRequest,
+  PreparedDocument,
   RenderedCitation,
+  RenderRequest,
 } from "./engine";
 import { BibliographyRenderCache } from "./render-cache";
 import type { CitationRenderOutcome } from "./render-cache";
@@ -67,7 +69,11 @@ class EngineStub implements CitationEngine {
     );
   }
 
-  renderDocument(_request: DocumentRequest): Promise<Uint8Array> {
+  prepareDocument(_request: PrepareRequest): Promise<PreparedDocument> {
+    throw new Error("not used");
+  }
+
+  renderPrepared(_request: RenderRequest): Promise<Uint8Array> {
     throw new Error("not used");
   }
 

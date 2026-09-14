@@ -602,6 +602,7 @@ function exportAdapter({
           [Symbol.dispose]: () => undefined,
         }),
     } as unknown as PandocExportDeps["db"],
+    citationIndex: harness.index,
     pandocEngine: {
       getStatus: () => ({ kind: "installed", version: "test" }),
       getEngine: () => Promise.resolve(engine),
