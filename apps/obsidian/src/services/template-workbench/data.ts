@@ -83,6 +83,31 @@ export interface TemplateDataDeps {
   >;
 }
 
+/**
+ * Scope one item's Literature Note lookups to the note the caller selected, so
+ * data built for an explicit note path reports that note rather than the first
+ * indexed note of the same item.
+ */
+export function withSelectedNote(
+  deps: TemplateDataDeps,
+  selection: { key: string; path: string | null },
+): TemplateDataDeps {
+  return {
+    ...deps,
+    noteIndex: {
+      whenIndexed: () => deps.noteIndex.whenIndexed(),
+      getImportedNoteByNoteKey: (key) =>
+        deps.noteIndex.getImportedNoteByNoteKey(key),
+      getNotesByItemKey: (key) => {
+        const notes = deps.noteIndex.getNotesByItemKey(key);
+        return key === selection.key
+          ? notes.filter((file) => file.path === selection.path)
+          : notes;
+      },
+    },
+  };
+}
+
 export async function loadTemplateData(
   deps: TemplateDataDeps,
   indexedKey: string,

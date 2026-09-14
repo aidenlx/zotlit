@@ -43,6 +43,10 @@ _Avoid_: template (bare, for the retired shape), slot file (in UI copy)
 Any file in the template folder that the Template Workbench edits: a Profile document, the Citation Template, or a Shared Partial. The filename prefix names the kind; a document carries an optional manifest and one source in one rendering language. One editor view opens every kind; the kind picks the tabs and the preview's root data.
 _Avoid_: template file (the retired per-slot files), slot
 
+**Template Draft**:
+Template Document source that is not the installed file at its path: a scratch file passed to a check, or the editor's current buffer. A draft carries its own manifest, so it can name an identity no installed Profile has; the draft's own source bypasses installation, while the dependencies it calls stay installed and subject to the source freshness barrier.
+_Avoid_: scratch file (the transport, not the source), unsaved template, preview source
+
 **Citation Template**:
 The one vault-global Template Document, `zotlit-citation.md`, that renders every in-text Citation: the citation suggester's insert, and an annotation's `zt.citation`. It receives the Citation Variant and renders both variants from one source. User-facing copy calls it **Citation text**.
 _Avoid_: cite template, cite2, alternate citation template (a variant, not a second template), citation format
@@ -54,6 +58,10 @@ _Avoid_: secondary citation, parenthetical / author-in-text (one possible mappin
 **Shared Partial**:
 A vault-global Template Document, `zotlit-partial.<name>.md`, that any template renders by name. Partials live in one flat namespace; a Profile, the Citation Template, or another partial calls one with a render or include tag. A partial has no root data of its own: it renders with the data of the template that calls it. User-facing copy says **partial**.
 _Avoid_: snippet, block, include file, annotation partial (the Annotation Section belongs to the Profile document), bundled partial (the manifest copy is a sharing transport, not the partial)
+
+**Reserved Partial Name**:
+A template name a Shared Partial cannot take: the Profile source names and the Citation Template name. A file that takes one is not a partial — reconciliation keeps it out of the partial registry and reports it by name instead, and the Template Workbench refuses it rather than checking or rendering it.
+_Avoid_: invalid partial, blocked name, shadowed partial (nothing is shadowed; the file never registers)
 
 **Partial Preview Context**:
 The caller a Shared Partial is previewed as called from — Note, Annotation, or Citation — which picks the root data the partial's own editor renders, completes, and explores against. It is the reader's choice, remembered per file twice — with the workspace, which carries it back with a restored leaf, and on this device, which carries it back when the partial is closed and opened again — and it opens on Note. ADR 0055 rules out reading it off the callers: a partial nothing calls yet names no caller, and one two roots call names two. User-facing copy says **Preview as called from Note**.
@@ -253,6 +261,10 @@ _Avoid_: token (the session credential the exchange returns), pairing code, logi
 **CLI Contract**:
 The wire format of one `zotlit:*` command namespace — its envelope, payload fields, and diagnostic codes. Each namespace versions its own, so a bump in one says nothing about another. Distinct from the Template Contract, which is a promise about `zt` data rather than about an answer's shape.
 _Avoid_: contract version (names the number, not the thing); protocol (that is the wire format for ZotLit Companion, the Zotero add-on)
+
+**Check Attempt**:
+One run of a Template Workbench check, identified apart from its source and its selection, so that the evidence it produced stays readable after either changes. A later rerun is a separate attempt, and a retained successful result never stands in for the current one.
+_Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 
 ### Annotation view
 

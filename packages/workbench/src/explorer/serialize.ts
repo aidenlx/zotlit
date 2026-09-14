@@ -44,6 +44,32 @@ export function serializeTemplateData(
   });
 }
 
+/** Serialize only the selected field, preserving helper metadata at its real path. */
+export function serializeTemplatePath(
+  root: object,
+  contractRoot: ContractRoot,
+  path: readonly TemplatePathSegment[],
+): unknown {
+  let value: unknown = root;
+  let contractType: ContractType = {
+    kind: "ref",
+    name: contractIR.roots[contractRoot]!.type,
+  };
+  for (const segment of path) {
+    contractType =
+      typeof segment === "number"
+        ? arrayItemContractType(contractType)
+        : memberContractType(contractType, segment);
+    value =
+      value !== null &&
+      typeof value === "object" &&
+      Object.hasOwn(value, segment)
+        ? (value as Record<string | number, unknown>)[segment]
+        : undefined;
+  }
+  return serializeValue(value, { path, active: new WeakMap(), contractType });
+}
+
 interface SerializeContext {
   path: readonly TemplatePathSegment[];
   active: WeakMap<object, readonly TemplatePathSegment[]>;
@@ -140,6 +166,7 @@ function findContractHelper(type: ContractType): ContractHelper | null {
 
 function memberContractType(type: ContractType, name: string): ContractType {
   const resolved = resolveContractType(type);
+  if (resolved.kind === "record") return resolved.values;
   if (resolved.kind === "object") {
     return (
       resolved.members.find((member) => member.name === name)?.type ??
