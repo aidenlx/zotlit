@@ -679,6 +679,64 @@ describe("Template Workbench CLI", () => {
     for (const fact of facts) expect(output).toContain(fact);
   });
 
+  it.each([
+    [
+      "check",
+      [
+        // The create-mode note boundary, so a passing create check is not read
+        // as an answer about a second note of the same item.
+        "renders a complete new note and reads no existing note as a baseline",
+        "its first indexed note supplies zt.notePath",
+        "A second note of the same item is never read",
+        // The two refusal answer shapes, each named by the code that carries it.
+        "A refused document identity is not a failed check",
+        "RESERVED_PARTIAL_NAME is raised before the source is parsed and carries no checks",
+        "INVALID_PROFILE_ID is raised from parsing and carries the checks map",
+      ],
+    ],
+    [
+      "partials",
+      [
+        "A saved Shared Partial whose filename is a Reserved Partial Name is refused",
+      ],
+    ],
+  ] as const)(
+    "states the identity refusals and the note boundary in the %s guide topic",
+    async (topic, facts) => {
+      const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
+        pluginVersion: PLUGIN_VERSION,
+        getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
+        loadData: async () => ({ kind: "not-found" }),
+        templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
+          javascriptTemplatesEnabled: false,
+          compileErrors: NO_COMPILE_ERRORS,
+          getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
+          render: EMPTY_RENDER,
+          renderFilename: EMPTY_RENDER,
+          analyzeRootVariables: NO_ROOT_VARIABLES,
+          getTemplateSource: EMPTY_SOURCE,
+          waitUntilSettled: async () => "settled" as const,
+        },
+        frontmatter: {
+          read: FRONTMATTER_READ_EMPTY,
+          evaluate: FRONTMATTER_EVALUATE_EMPTY,
+          validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+          write: FRONTMATTER_WRITE_NOOP,
+        },
+      });
+
+      const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic });
+
+      expect(() => JSON.parse(output)).toThrow();
+      for (const fact of facts) expect(output).toContain(fact);
+    },
+  );
+
   it("rejects an invalid guide topic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
       selectNote: noNoteSelection,

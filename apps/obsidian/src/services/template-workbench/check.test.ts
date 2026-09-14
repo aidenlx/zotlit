@@ -549,18 +549,19 @@ describe("registered template-check", () => {
     );
     await f.template.waitUntilSettled(1000);
 
-    expect(
-      await f.check({
-        document: "partial:note",
-        root: "note",
-        key: "ABCD2345",
-        output: "all",
-      }),
-    ).toMatchObject({
+    const answer = await f.check({
+      document: "partial:note",
+      root: "note",
+      key: "ABCD2345",
+      output: "all",
+    });
+
+    expect(answer).toMatchObject({
       ok: false,
       document: { id: "partial:note" },
       diagnostic: { code: "RESERVED_PARTIAL_NAME" },
     });
+    expect(answer).not.toHaveProperty("checks");
   });
 
   it("binds changed and removed draft overrides against current Default settings", async () => {

@@ -128,6 +128,8 @@ const PARTIALS_SECTION = `SHARED PARTIAL CALLERS
   A Shared Partial lives in zotlit-partial.<name>.md in the template folder.
   Names contain letters, digits, and hyphens. Reserved names:
   ${quotedList(RESERVED_PARTIAL_NAME_LIST)}.
+  A saved Shared Partial whose filename is a Reserved Partial Name is refused
+  before any check runs.
   Optional YAML sets language; the remaining source is the body. Default is Liquid.
   A partial has no data root of its own. Select the caller root explicitly:
   ${quotedList(PARTIAL_CONTEXT_NAMES)}. annotation requires an Annotation key;

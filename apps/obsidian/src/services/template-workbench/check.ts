@@ -41,6 +41,7 @@ import { CONTRACT_VERSION } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
 import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
+import type { InspectDiagnosticCode } from "./inspect-contract";
 import {
   choices,
   CITATION_VARIANT_NAMES,
@@ -48,6 +49,11 @@ import {
 } from "./vocabulary";
 
 export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
+/** The refusal a Template Draft identity that fails the Profile ID rule carries. */
+const INVALID_PROFILE_ID = "INVALID_PROFILE_ID";
+/** The refusal a Reserved Partial Name carries, as the inspection registry names it. */
+const RESERVED_PARTIAL_NAME =
+  "RESERVED_PARTIAL_NAME" satisfies InspectDiagnosticCode;
 /** How many finished attempts stay readable; the oldest is evicted beyond it. */
 const RETAINED_ATTEMPTS = 32;
 const ATTEMPT_LOOKUP_HELP =
@@ -127,6 +133,10 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   supplies a standalone identity. Draft bindings inherit current Default settings.
   Saved source is the default. Editor source is selected explicitly by template-inspect;
   to check unsaved edits, write them to a scratch file and supply draft.
+  Create mode renders a complete new note and reads no existing note as a baseline.
+  When the item has a Literature Note, its first indexed note supplies zt.notePath,
+  zt.noteLink, and the source path that resolves links and attachments.
+  A second note of the same item is never read.
   Use mode=update key=<indexed-key> to read the item's real Literature Note.
   Multiple notes require note=<vault-path>. existing=<text> supplies a controlled
   in-memory baseline. An item without a note uses a labeled synthetic baseline.
@@ -144,6 +154,9 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   called by a Profile draft use that draft's bindings. Supply document with draft
   to identify plain draft source, which stays uninstalled.
   An empty rendered string is a successful output. Any component failure fails the check.
+  A refused document identity is not a failed check, and the answer says which one it is.
+  ${RESERVED_PARTIAL_NAME} is raised before the source is parsed and carries no checks; none ran.
+  ${INVALID_PROFILE_ID} is raised from parsing and carries the checks map with the failed check.
   Each run receives a new attempt ID. The last ${RETAINED_ATTEMPTS} attempts remain available until
   plugin reload. Reading an expired attempt reports ATTEMPT_NOT_FOUND.
 
@@ -593,14 +606,14 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         });
       if (
         document.problems.some(
-          (problem) => problem.code === "RESERVED_PARTIAL_NAME",
+          (problem) => problem.code === RESERVED_PARTIAL_NAME,
         )
       )
         return finish({
           ...context,
           ok: false,
           diagnostic: {
-            code: "RESERVED_PARTIAL_NAME",
+            code: RESERVED_PARTIAL_NAME,
             ...INSPECT_DIAGNOSTICS.RESERVED_PARTIAL_NAME,
           },
         });
@@ -943,7 +956,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
             structure: { status: "failed", diagnostics: [] },
           },
           diagnostic: {
-            code: "INVALID_PROFILE_ID",
+            code: INVALID_PROFILE_ID,
             message: PROFILE_ID_RULE,
             recovery: `Set the draft manifest id to 'default' or to a ${PROFILE_ID_LENGTH}-character Profile ID, then check the draft again.`,
           },
