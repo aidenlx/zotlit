@@ -34,6 +34,7 @@ import type {
   SettingsKey,
   SettingTabContext,
 } from "./context";
+import { noteImportPageItems } from "./note-import";
 import {
   getProfileControlValue,
   isProfileControlKey,
@@ -243,8 +244,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
       resourcesGroup(ctx),
 
       // The main page is the default Profile: its Literature Note rows inline,
-      // no top-level heading (per Obsidian style), then the Imported notes
-      // group — see ADR 0036.
+      // no top-level heading (per Obsidian style) — see ADR 0036. Both note
+      // folders it binds read as one set, so the imported note folder sits
+      // here; the import rendering rows have their own page below.
       ...literatureNoteItems(ctx),
       // Everything else lives on navigable sub-pages, grouped apart from the
       // rows above so the page rows read as their own section. Profiles leads
@@ -253,6 +255,12 @@ export class ZotLitSettingTab extends PluginSettingTab {
         type: "group",
         items: [
           profilesPage(ctx),
+          {
+            type: "page",
+            name: m.settings_page_note_import(),
+            desc: m.settings_page_note_import_desc(),
+            items: noteImportPageItems(ctx),
+          },
           {
             type: "page",
             name: m.settings_page_citations(),
