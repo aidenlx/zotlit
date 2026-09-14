@@ -1506,43 +1506,6 @@ export interface FixtureTemplateEdit {
   readonly replace: string;
 }
 
-/** Relative vault path of the seeded scratch draft, outside the template folder. */
-export const SCRATCH_DRAFT_RELATIVE_PATH = "scratch/workbench-draft.md";
-
-/**
- * The distinct edit the scratch-draft Vault Case applies to the Books Profile
- * source: its body heading changes, so a check of the draft reports a draft
- * origin and a body the installed Profile does not render.
- */
-export const SCRATCH_DRAFT_EDIT: FixtureTemplateEdit = {
-  find: "# Book profile: {{ zt.title }}",
-  replace: "# Draft Book profile: {{ zt.title }}",
-};
-
-/**
- * The deliberate YAML syntax error the yaml-repair Vault Case seeds into the
- * Books Profile manifest: an unclosed single quote on the `name` line. The
- * body and Annotation Section stay byte-identical to the valid document.
- */
-export const YAML_REPAIR_PROFILE_EDIT: FixtureTemplateEdit = {
-  find: "name: Books",
-  replace: "name: 'Books",
-};
-
-/** The stamped Books Literature Note the update-preservation case enriches. */
-export const PRESERVATION_NOTE_ITEM_KEY = "BBBB2222";
-
-/** Distinctive prose outside the note's Managed Region, preserved verbatim. */
-export const PRESERVATION_NOTE_HANDWRITTEN_PROSE = [
-  "Hand-written margin reflections, keep untouched:",
-  "- The duplicate title is deliberate; do not deduplicate this note.",
-] as const;
-
-/** Unmanaged frontmatter sentinel the note carries beside its managed keys. */
-export const PRESERVATION_NOTE_UNMANAGED_FRONTMATTER: Readonly<
-  Record<string, string>
-> = { "reader-note": "keep-this-sentinel" };
-
 /**
  * Shipped default one ejected Legacy Template File starts from: a Literature
  * Note slot's default file, or one 2.1.x citation branch.
@@ -1579,128 +1542,32 @@ export type FixtureLegacyTemplate = FixtureTemplateEdit & {
       }
   );
 
-/** Every named Vault Case id, including the fixed-task Workbench cases. */
-export type FixtureVaultCaseId =
-  | "configured"
-  | "fresh"
-  | "upgrader"
-  | "workbench-spread"
-  | "workbench-yaml-repair"
-  | "workbench-partial-edit"
-  | "workbench-citation-variants"
-  | "workbench-update-preservation"
-  | "workbench-external-edit"
-  | "workbench-scratch-draft"
-  | "workbench-default-no-note"
-  | "workbench-error-recovery";
-
-/** The base vault a Vault Case starts from. */
-export type FixtureVaultCaseBase = "configured" | "fresh" | "upgrader";
-
-/** A seed variation a Vault Case applies on top of its base vault. */
-export type FixtureVaultCaseSeed =
-  | "broken-books-profile"
-  | "preservation-note"
-  | "scratch-draft"
-  | "missing-book-details";
-
 export interface FixtureVaultCase {
-  id: FixtureVaultCaseId;
+  id: "configured" | "fresh" | "upgrader";
   /** One line for the maintainer choosing a case. */
   summary: string;
-  /** The base vault the case seeds; every Workbench case reuses one. */
-  base: FixtureVaultCaseBase;
-  /** Optional seed variation applied on top of the base vault. */
-  seed?: FixtureVaultCaseSeed;
 }
 
 /**
  * A Vault Case is a named, saved Fixture Vault state. The Scope Case selects
  * the saved Library Scope; the Vault Case selects everything else the vault
  * holds: settings file, notes, Profiles, and template files.
- *
- * The Workbench cases name the fixed tasks from issue #1093. Each reuses one
- * base vault and, where a task needs a distinct starting state, applies one
- * named seed variation on top of it. Tasks that start from the unchanged
- * configured or fresh base still get their own case id so every trial can be
- * rebuilt and reset in isolation.
  */
 export const VAULT_CASES: readonly FixtureVaultCase[] = [
   {
     id: "configured",
     summary:
       "Current settings, the Books Profile, an edited Citation Template, the Shared Partial that Profile calls, Literature Notes (one stamped under the Books Profile), and Imported Notes. This is the default.",
-    base: "configured",
   },
   {
     id: "fresh",
     summary:
       "Vault with no notes, ZotLit installed, and no settings file: the new-user path.",
-    base: "fresh",
   },
   {
     id: "upgrader",
     summary:
       "A ZotLit v2.1 vault: version-9 settings, an edited Managed Frontmatter list, and ejected Legacy Template Files with visible edits: the note slots, a mixed-language citation pair, and one bare partial.",
-    base: "upgrader",
-  },
-  {
-    id: "workbench-spread",
-    summary:
-      "Configured vault for the JSON-e spread task: Books Profile with managed fields and an unchanged stamped note, with no solution seeded.",
-    base: "configured",
-  },
-  {
-    id: "workbench-yaml-repair",
-    summary:
-      "Configured vault with one deliberate unclosed-quote YAML error in the Books Profile manifest; body and Annotation Section intact.",
-    base: "configured",
-    seed: "broken-books-profile",
-  },
-  {
-    id: "workbench-partial-edit",
-    summary:
-      "Configured vault for the book-details Shared Partial edit task; the Books caller and supported root are preserved.",
-    base: "configured",
-  },
-  {
-    id: "workbench-citation-variants",
-    summary:
-      "Configured vault whose Citation Template renders visibly distinct main and alt variants.",
-    base: "configured",
-  },
-  {
-    id: "workbench-update-preservation",
-    summary:
-      "Configured vault with hand-written prose and an unmanaged frontmatter sentinel outside the stamped Books note's Managed Region.",
-    base: "configured",
-    seed: "preservation-note",
-  },
-  {
-    id: "workbench-external-edit",
-    summary:
-      "Configured vault for the external-edit task: saved Profile and dependency baseline; the controller edits after inspection.",
-    base: "configured",
-  },
-  {
-    id: "workbench-scratch-draft",
-    summary:
-      "Configured vault plus a complete valid scratch Books draft outside the template folder, with a distinct body heading.",
-    base: "configured",
-    seed: "scratch-draft",
-  },
-  {
-    id: "workbench-default-no-note",
-    summary:
-      "Fresh vault with no settings, notes, or ejected templates; only the built-in Default is readable.",
-    base: "fresh",
-  },
-  {
-    id: "workbench-error-recovery",
-    summary:
-      "Configured vault with the book-details Shared Partial removed, so a create or update check fails until it is repaired.",
-    base: "configured",
-    seed: "missing-book-details",
   },
 ];
 

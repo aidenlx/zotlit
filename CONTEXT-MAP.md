@@ -10,7 +10,6 @@
 - [ZotLit Documentation](./apps/docs/CONTEXT.md) — user-facing naming and framing rules for the docs site (zotlit.aidenlx.site)
 - [ZotLit Companion](./apps/zotero/CONTEXT.md) — the Zotero-side add-on: what it observes in Zotero, and how it keeps Zotero's database readable by the Obsidian plugin
 - [Fixture](./packages/scripts/CONTEXT.md) — the generated, disposable test environment (Zotero data + profile + vault) and its build vocabulary
-- [Agent Eval](./packages/eval/CONTEXT.md) — skill evaluation Cases, their run gradings, and the trigger probes that measure whether a skill loads
 
 ## Relationships
 
@@ -22,4 +21,3 @@
 - **obsidian → docs**: the docs site documents the plugin's user-facing surface using the Obsidian Plugin context's vocabulary verbatim; docs-only naming follows the global ZotLit Companion rule in `policies/vocabulary.md`
 - **db → fixture**: the Fixture instantiates the Zotero Data Model's concepts (Libraries, Collections, Items, Citation Keys, Child Notes, Standalone Notes) as concrete generated data; the Obsidian Plugin reads that data in End-to-end Runs
 - **zotero → obsidian**: the Companion keeps the main Zotero database file current so the Obsidian Plugin's Read Modes — Immutable Source above all — see recent edits; the two contexts share no code, only that file and the protocol
-- **fixture → agent eval**: an Agent Eval Case's reset procedure names a Vault Case and rebuilds the Fixture to it before each Run, so the graded surface starts from the same generated state every time

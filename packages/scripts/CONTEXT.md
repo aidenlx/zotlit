@@ -38,16 +38,6 @@ A named, saved Fixture Vault state beside the Library Scope — settings file,
 notes, Profiles, and template files (configured, fresh, upgrader).
 _Avoid_: vault preset, vault scenario
 
-**Vault Reset**:
-Returning a Vault Case to its seeded state between runs: rebuild the seed,
-open the Development Vault with a purge, then pass the Fixture Gate.
-_Avoid_: clean, wipe, reseed
-
-**Fixture Gate**:
-The fail-closed check that a reset Development Vault reads the Fixture — the
-Fixture database, the Scope Case's Libraries, and the probed Fixture Items.
-_Avoid_: sanity check, preflight
-
 **End-to-end Run**:
 The plugin running in a real Obsidian window, reading the Fixture's Zotero
 data directory from disk.

@@ -36,7 +36,6 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm quality[:fix]`              | Runs lint, then format.                                                                                                     |
 | `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `tmp/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
 | `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
-| `pnpm eval`                       | Agent evaluation platform (`packages/eval`): aggregates Case gradings into benchmarks, and probes skill triggering. See `packages/eval/AGENTS.md`. |
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 

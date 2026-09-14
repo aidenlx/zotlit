@@ -8,17 +8,12 @@ import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 import {
   COLLECTIONS,
   DEFAULT_STRESS_ITEM_COUNT,
-  FIXTURE_PARTIAL_NAME,
   ITEMS,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   PERSONAL_SELECTOR,
-  PRESERVATION_NOTE_ITEM_KEY,
-  PRESERVATION_NOTE_UNMANAGED_FRONTMATTER,
   SCOPE_CASES,
-  SCRATCH_DRAFT_EDIT,
-  SCRATCH_DRAFT_RELATIVE_PATH,
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
   UPGRADER_FRONTMATTER_FIELDS,
@@ -27,7 +22,6 @@ import {
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
   VAULT_CASES,
-  YAML_REPAIR_PROFILE_EDIT,
 } from "./spec.ts";
 import type { FixtureItem, FixtureNote } from "./spec.ts";
 
@@ -188,10 +182,10 @@ obsidian-vault.ts open at a case vault:
 
   ${DEV_VAULT_CASE_ENV}=fresh pnpm --filter @zotlit/obsidian dev:vault
 
-A fresh-based case (fresh, workbench-default-no-note) writes no settings
-file, so it accepts only the default Scope Case and leaves Live Updates off.
-The Paired Run still points ZotLit at the Fixture database through the Device
-Overrides, so the first Literature Note needs no Zotero setup.
+The fresh case writes no settings file, so it accepts only the default Scope
+Case and leaves Live Updates off. The Paired Run still points ZotLit at the
+Fixture database through the Device Overrides, so the first Literature Note
+needs no Zotero setup.
 
 The upgrader case writes the ZotLit ${UPGRADER_PLUGIN_VERSION} shape: settings version ${UPGRADER_SETTINGS_VERSION} with
 the note bindings vault-global, no Profiles, release.previous-version
@@ -210,28 +204,7 @@ zotlit-partial.${UPGRADER_LEGACY_PARTIAL_NAME}.md. It leaves the Eta cite2
 file in the vault and names it in its notice.
 
 On load, ZotLit migrates the settings to the current version, sets
-note.template-conversion-pending, and opens the conversion prompt.
-
-The Workbench cases name the fixed tasks from issue #1093. They reuse the
-configured or fresh base so every trial can be rebuilt and reset in isolation.
-Most carry the configured seed unchanged; these apply one named variation:
-
-  workbench-yaml-repair
-    The Books Profile manifest edits ${JSON.stringify(YAML_REPAIR_PROFILE_EDIT.find)} to
-    ${JSON.stringify(YAML_REPAIR_PROFILE_EDIT.replace)} — one unclosed quote — leaving the body and
-    Annotation Section intact.
-  workbench-update-preservation
-    The stamped note ${PRESERVATION_NOTE_ITEM_KEY} also carries the unmanaged
-    frontmatter ${JSON.stringify(PRESERVATION_NOTE_UNMANAGED_FRONTMATTER)} and hand-written prose
-    outside its Managed Region.
-  workbench-scratch-draft
-    Seeds ${SCRATCH_DRAFT_RELATIVE_PATH}, the Books Profile with its body heading
-    edited ${JSON.stringify(SCRATCH_DRAFT_EDIT.find)} -> ${JSON.stringify(SCRATCH_DRAFT_EDIT.replace)}.
-  workbench-error-recovery
-    Removes the ${FIXTURE_PARTIAL_NAME} Shared Partial, so a create or update check
-    fails until the file is restored.
-  workbench-default-no-note
-    The fresh base: no settings file, notes, or ejected templates.`;
+note.template-conversion-pending, and opens the conversion prompt.`;
 
 const PAIRED_RUN_SECTION = `PAIRED RUN
 

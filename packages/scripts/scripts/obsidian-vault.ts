@@ -38,14 +38,11 @@ import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
-  findScopeCase,
   getFixtureLayout,
   getFixtureRoot,
-  LIBRARIES,
   SCOPE_CASES,
   VAULT_CASES,
 } from "#fixture";
-import { runFixtureGate } from "#fixture-gate";
 import {
   createBoundedObsidianCall,
   isObsidianUnreachable,
@@ -598,63 +595,6 @@ async function open(
   console.error(`opened vault ${registered} at ${abs}`);
 }
 
-/** Libraries a Scope Case puts in scope, which the gate expects available. */
-function scopedLibraryCount(scopeCase: string): number {
-  const { scope } = findScopeCase(scopeCase);
-  if (scope.mode === "all") return LIBRARIES.length;
-  // A selector the Fixture creates no Library for reports as unavailable.
-  return scope.libraries.filter((selector) =>
-    LIBRARIES.some((library) =>
-      selector.type === "personal"
-        ? library.groupID === null
-        : library.groupID === selector.groupID,
-    ),
-  ).length;
-}
-
-/**
- * Reset a Vault Case: rebuild the seed, purge the Development Vault, then gate
- * on Fixture integrity before a run uses it. The purge is the reset — it is
- * what rewrites the vault-scoped Device Overrides that point ZotLit at the
- * Fixture. Every Obsidian call the reset makes goes through the bounded `cli`,
- * so no stage can wait on a window that has stopped answering.
- */
-async function reset({
-  scopeCase = DEFAULT_SCOPE_CASE,
-  vaultCase,
-  liveUpdatePort,
-  zoteroHttpPort,
-}: SeedOptions = {}): Promise<void> {
-  const abs = resolve(getDevVaultDir(workspaceRoot, vaultCase));
-  await open(abs, {
-    purge: true,
-    scopeCase,
-    vaultCase,
-    liveUpdatePort,
-    zoteroHttpPort,
-  });
-
-  const vaultId = findVaultId(await vaultList(await resolveHost()), abs);
-  if (!vaultId) {
-    throw new Error(`reset vault ${abs} is not registered`);
-  }
-
-  const report = await runFixtureGate(
-    {
-      runCommand: (command, params = []) =>
-        cli([`vault=${vaultId}`, command, ...params]),
-    },
-    {
-      databasePath: fixtureLayout.databasePath,
-      libraryCount: scopedLibraryCount(scopeCase),
-    },
-  );
-  console.error(`database ${report.databasePath}`);
-  console.error(`libraries ${report.libraries}`);
-  console.error(`items resolved ${report.items.join(" ")}`);
-  console.error(`gate passed for ${vaultId}`);
-}
-
 interface FixtureLinkReport {
   databasePath?: unknown;
   dbState?: unknown;
@@ -938,17 +878,10 @@ const hostReadinessReference = `Host readiness:
   On failure, check lists existing registered paths and missing stale paths.
   Open the selected host vault yourself, then rerun the reported command.`;
 
-const reference = `The open, reset, create, and sync commands rebuild the Fixture Vault first. Run
-the Obsidian dev build before them so its bundle is available to copy into the
+const reference = `The open, create, and sync commands rebuild the Fixture Vault first. Run the
+Obsidian dev build before them so its bundle is available to copy into the
 generated seed. Open and sync keep extra Development Vault files unless
 --purge is set. Remove keeps the folder unless --purge is set.
-
-Reset is the one valid reset of a Vault Case between runs: it opens with
---purge, which rewrites the vault-scoped Device Overrides that point ZotLit at
-the Fixture, then gates on what the vault answers — the Fixture database, the
-Scope Case's Libraries, and the Fixture Items a run renders. It fails closed on
-each, because a vault that reads this machine's own Zotero library otherwise
-looks healthy.
 
 Environment:
   ${OBSIDIAN_HOST_VAULT_ENV}  verified open vault name or id whose window hosts eval calls
@@ -990,24 +923,6 @@ const vaultCli = yargs(hideBin(process.argv))
           zoteroHttpPort: argv["zotero-http-port"],
         },
       );
-    },
-  )
-  .command(
-    "reset",
-    "rebuild and purge a Vault Case, then gate on Fixture integrity",
-    (y) =>
-      y
-        .option("scope-case", scopeCaseOption)
-        .option("vault-case", vaultCaseOption)
-        .option("live-update-port", liveUpdatePortOption)
-        .option("zotero-http-port", zoteroHttpPortOption),
-    async (argv) => {
-      await reset({
-        scopeCase: argv["scope-case"],
-        vaultCase: argv["vault-case"],
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
     },
   )
   .command(
