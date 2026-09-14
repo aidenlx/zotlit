@@ -11,14 +11,22 @@ import { getLogger } from "@/lib/log";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ResolvedProfile } from "@/services/profile/bindings";
-import type { ProfileService } from "@/services/profile/service";
+import type {
+  ProfileDiagnostic,
+  ProfileService,
+} from "@/services/profile/service";
 import { DEFAULT_PROFILE_DOCUMENT } from "@/services/profile/service";
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { citationPath, partialNameRefusal } from "@/services/template/defaults";
-import type { TemplateService } from "@/services/template/service";
+import type {
+  CompileError,
+  LiteratureNoteTemplateStatus,
+  TemplateService,
+} from "@/services/template/service";
 
 import { CONTRACT_VERSION } from "./envelope";
 import type { WorkbenchIdentity } from "./envelope";
+import type { InspectDiagnosticCode } from "./inspect-contract";
 import {
   INSPECT_DIAGNOSTICS,
   INSPECT_SELECTORS,
@@ -149,6 +157,28 @@ export interface InspectDeps {
   timeoutMs?: number;
 }
 
+/** One problem drawn from the inspection diagnostics registry. */
+export interface InspectDiagnostic {
+  code: InspectDiagnosticCode;
+  message: string;
+  recovery: string;
+}
+
+/** The manifest error an invalid Profile document reports. */
+type InvalidProfileDocumentError = Extract<
+  LiteratureNoteTemplateStatus["validation"],
+  { state: "invalid" }
+>["error"];
+
+/** What an inspected document reports. Four producers contribute: the inspection
+ *  diagnostics registry, the Profile scan, an invalid Profile document manifest,
+ *  and a template compile error, which carries no code. */
+export type InspectProblem =
+  | InspectDiagnostic
+  | ProfileDiagnostic
+  | InvalidProfileDocumentError
+  | (CompileError & { code?: undefined });
+
 export interface InspectDocument {
   kind: "profile" | "citation" | "partial";
   id: string;
@@ -160,7 +190,7 @@ export interface InspectDocument {
     label: string;
     bindings: ResolvedProfile["bindings"];
   };
-  problems: unknown[];
+  problems: InspectProblem[];
 }
 
 function profileRow(profile: ResolvedProfile) {
@@ -240,7 +270,7 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
     label: "Citation Template",
     path: citation.customized ? citation.path : null,
     problems: deps.templates.compileErrors.has("citation")
-      ? [deps.templates.compileErrors.get("citation")]
+      ? [deps.templates.compileErrors.get("citation")!]
       : [],
   });
   for (const partial of deps.templates.getPartialDocuments())
@@ -250,7 +280,7 @@ export function inspectInventory(deps: InspectDeps): InspectDocument[] {
       label: partial.name,
       path: partial.path,
       problems: deps.templates.compileErrors.has(partial.name)
-        ? [deps.templates.compileErrors.get(partial.name)]
+        ? [deps.templates.compileErrors.get(partial.name)!]
         : [],
     });
   for (const partial of deps.templates.getReservedPartialFiles())

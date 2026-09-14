@@ -91,6 +91,9 @@ export const INSPECT_DIAGNOSTICS = {
   },
 } as const;
 
+/** A diagnostic code the inspection registry enumerates. */
+export type InspectDiagnosticCode = keyof typeof INSPECT_DIAGNOSTICS;
+
 const argumentsText = Object.entries(inspectFlags).map(
   ([name, flag]) => `${name}${"value" in flag ? `=${flag.value}` : ""}`,
 );

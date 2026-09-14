@@ -589,9 +589,7 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         });
       if (
         document.problems.some(
-          (problem) =>
-            (problem as { code?: unknown } | null)?.code ===
-            "RESERVED_PARTIAL_NAME",
+          (problem) => problem.code === "RESERVED_PARTIAL_NAME",
         )
       )
         return finish({
