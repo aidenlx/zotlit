@@ -21,6 +21,13 @@ describe("getDevVaultDir", () => {
     expect(getDevVaultDir(workspaceRoot, "upgrader")).toBe(
       join(workspaceRoot, "tests", "fixture-vault-feature-branch-upgrader"),
     );
+    expect(getDevVaultDir(workspaceRoot, "workbench-yaml-repair")).toBe(
+      join(
+        workspaceRoot,
+        "tests",
+        "fixture-vault-feature-branch-workbench-yaml-repair",
+      ),
+    );
   });
 
   it("includes the Codex worktree id when repository folders repeat", () => {

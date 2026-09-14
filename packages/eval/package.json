@@ -1,0 +1,26 @@
+{
+  "name": "@zotlit/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#benchmark": "./lib/benchmark.ts",
+    "#case-store": "./lib/case-store.ts",
+    "#pi-run": "./lib/pi-run.ts",
+    "#skill": "./lib/skill.ts"
+  },
+  "scripts": {
+    "eval": "node scripts/eval.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/yargs": "^17.0.35",
+    "@zotlit/config": "workspace:*",
+    "@zotlit/scripts": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "yargs": "^18.1.0"
+  }
+}

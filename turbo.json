@@ -46,6 +46,10 @@
       ],
       "cache": false
     },
+    "eval": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "//#lint:repo:deps": {
       "dependsOn": [
         "@zotlit/db#build",

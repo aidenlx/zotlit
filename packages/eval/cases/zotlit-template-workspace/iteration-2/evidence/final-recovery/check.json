@@ -1,0 +1,160 @@
+{
+  "contractVersion": 7,
+  "command": "zotlit:template-check",
+  "identity": {
+    "vault": {
+      "name": "fixture-vault-zotlit-v2",
+      "path": "/Users/aidenlx/repo/zotlit-repo/zotlit-v2/tests/fixture-vault-zotlit-v2"
+    },
+    "source": {
+      "id": "8a19f09e",
+      "databasePath": "/Users/aidenlx/repo/zotlit-repo/zotlit-v2/tmp/acceptance-fixture/zotero-data/zotero.sqlite"
+    }
+  },
+  "profileDiagnostics": [],
+  "ok": true,
+  "document": {
+    "kind": "profile",
+    "id": "zotlit-profile.books.md",
+    "label": "Books",
+    "path": "templates/zotlit-profile.books.md",
+    "profileIdentity": {
+      "id": "V1StGXR8Z5jd",
+      "label": "Books"
+    },
+    "profile": {
+      "id": "V1StGXR8Z5jd",
+      "label": "Books",
+      "bindings": {
+        "note.literature-folder": "books",
+        "citation.references-style": "http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false
+      }
+    },
+    "problems": []
+  },
+  "dependencies": [
+    {
+      "kind": "citation",
+      "id": "citation",
+      "label": "Citation Template",
+      "path": "templates/zotlit-citation.md",
+      "problems": []
+    },
+    {
+      "kind": "partial",
+      "id": "partial:book-details",
+      "label": "book-details",
+      "path": "templates/zotlit-partial.book-details.md",
+      "problems": []
+    }
+  ],
+  "dependencyScope": "installed-partial-registry",
+  "freshness": {
+    "state": "current",
+    "versions": [
+      {
+        "path": "templates/zotlit-profile.books.md",
+        "requested": "99d3f5f5002545255ea5440eb51d2db264e2f3dd712d4f352457bc62e04d1543",
+        "disk": "99d3f5f5002545255ea5440eb51d2db264e2f3dd712d4f352457bc62e04d1543",
+        "loaded": "99d3f5f5002545255ea5440eb51d2db264e2f3dd712d4f352457bc62e04d1543"
+      },
+      {
+        "path": "templates/zotlit-citation.md",
+        "requested": "3316042624dbac5b27ccecccb5c427964223d4ca7e93dc646d89db61ac7e8b70",
+        "disk": "3316042624dbac5b27ccecccb5c427964223d4ca7e93dc646d89db61ac7e8b70",
+        "loaded": "3316042624dbac5b27ccecccb5c427964223d4ca7e93dc646d89db61ac7e8b70"
+      },
+      {
+        "path": "templates/zotlit-partial.book-details.md",
+        "requested": "9db8c823b54163890b1e87789817230d2fc83a7e625a6ceff4784d5d84c8c08f",
+        "disk": "9db8c823b54163890b1e87789817230d2fc83a7e625a6ceff4784d5d84c8c08f",
+        "loaded": "9db8c823b54163890b1e87789817230d2fc83a7e625a6ceff4784d5d84c8c08f"
+      }
+    ]
+  },
+  "input": {
+    "origin": "saved",
+    "path": "templates/zotlit-profile.books.md",
+    "revision": "99d3f5f5002545255ea5440eb51d2db264e2f3dd712d4f352457bc62e04d1543"
+  },
+  "problems": [],
+  "checks": {
+    "structure": {
+      "status": "passed",
+      "diagnostics": []
+    },
+    "filename": {
+      "status": "passed",
+      "diagnostics": []
+    },
+    "properties": {
+      "status": "passed",
+      "diagnostics": [],
+      "entries": [
+        {
+          "key": "fixture-title",
+          "position": 1,
+          "status": "passed"
+        },
+        {
+          "key": "fixture-kind",
+          "position": 2,
+          "status": "passed"
+        },
+        {
+          "key": "fixture-obsolete",
+          "position": 3,
+          "status": "passed"
+        },
+        {
+          "position": 4,
+          "status": "passed"
+        }
+      ]
+    },
+    "fold": {
+      "status": "passed",
+      "diagnostics": []
+    },
+    "frontmatter": {
+      "status": "passed",
+      "diagnostics": []
+    },
+    "body": {
+      "status": "passed",
+      "diagnostics": []
+    },
+    "managed": {
+      "status": "passed",
+      "diagnostics": []
+    },
+    "annotations": {
+      "status": "passed",
+      "entries": [],
+      "diagnostics": []
+    }
+  },
+  "rendering": "checked",
+  "attempt": "9d2a2e2e-9d56-4578-aa8f-ef187ad1373c",
+  "attemptContext": {
+    "sequence": 1,
+    "capturedAt": "2026-09-13T14:08:50.140215088Z",
+    "mode": "create",
+    "sourceRevision": "99d3f5f5002545255ea5440eb51d2db264e2f3dd712d4f352457bc62e04d1543",
+    "dataRevision": "2b4569ae0ab42a90d1efd9bc9cadebb7076a1b9b1590eb11b7870d38b27b19d3",
+    "document": "templates/zotlit-profile.books.md",
+    "language": "liquid",
+    "root": "note",
+    "selection": "BBBB2222",
+    "zotlitVersion": "2.1.4",
+    "hostVersion": "Obsidian 1.14.1"
+  },
+  "request": {
+    "profile": "Books",
+    "key": "BBBB2222",
+    "mode": "create"
+  }
+}

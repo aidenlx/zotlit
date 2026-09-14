@@ -1,0 +1,24 @@
+{
+  "expectations": [
+    {
+      "text": "The Books Profile and connected source are identified before editing.",
+      "passed": true,
+      "evidence": "Transcript steps 2–7 inspect the vault, source 8a19f09e, Books Profile, note, and dependencies."
+    },
+    {
+      "text": "The result exposes the requested fixture-reviewed field.",
+      "passed": true,
+      "evidence": "Step 11 returns a position-5 JSON-e spread and folded fixture-reviewed=true."
+    },
+    {
+      "text": "The agent checks relevant output and reports preservation and freshness evidence.",
+      "passed": true,
+      "evidence": "Step 11 reports current freshness and preserved update body; step 15 returns the retained attempt with the same output."
+    }
+  ],
+  "summary": { "passed": 3, "failed": 0, "total": 3, "pass_rate": 1 },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "Assertions check selection, requested output, preservation, freshness, and no-write completion."
+  }
+}
