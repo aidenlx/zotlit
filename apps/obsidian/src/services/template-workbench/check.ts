@@ -36,13 +36,20 @@ import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
+import {
+  choices,
+  CITATION_VARIANT_NAMES,
+  PARTIAL_CONTEXT_NAMES,
+} from "./vocabulary";
 
 export const TEMPLATE_CHECK_COMMAND = "zotlit:template-check";
+/** How many finished attempts stay readable; the oldest is evicted beyond it. */
+const RETAINED_ATTEMPTS = 32;
 const ATTEMPT_LOOKUP_HELP =
   "Keep the same vault prefix. Use only attempt, output, and evidence for a retained lookup; omit expect-source and all input selectors. Example: zotlit:template-check attempt=<id> evidence=full output=all. The retained result carries the original source identity.";
 export const checkFlags = {
   root: {
-    value: "<note|annotation|citation>",
+    value: choices(PARTIAL_CONTEXT_NAMES),
     description: "Shared Partial caller root; required for partial rendering",
   },
   example: {
@@ -50,7 +57,7 @@ export const checkFlags = {
     description: "Built-in Citation example instead of key",
   },
   variant: {
-    value: "<main|alt>",
+    value: choices(CITATION_VARIANT_NAMES),
     description: "Citation Variant; defaults to main",
   },
   mode: {
@@ -125,14 +132,14 @@ export const CHECK_GUIDE = `TEMPLATE CHECK
   No check writes notes, changes Profiles, or imports attachments.
   Omit key for structural validation; rendering is explicitly not checked.
   Every response includes every component status. output changes disclosure only.
-  Citation Templates use document=citation with key or example and variant=main|alt.
-  Shared Partials use document=partial:<name> and root=note|annotation|citation.
+  Citation Templates use document=citation with key or example and variant=${CITATION_VARIANT_NAMES.join("|")}.
+  Shared Partials use document=partial:<name> and root=${PARTIAL_CONTEXT_NAMES.join("|")}.
   Note and Annotation callers select key. Citation callers select key or example.
   Direct partial checks use the selected Profile's bindings, or Default. Partials
   called by a Profile draft use that draft's bindings. Supply document with draft
   to identify plain draft source, which stays uninstalled.
   An empty rendered string is a successful output. Any component failure fails the check.
-  Each run receives a new attempt ID. The last 32 attempts remain available until
+  Each run receives a new attempt ID. The last ${RETAINED_ATTEMPTS} attempts remain available until
   plugin reload. Reading an expired attempt reports ATTEMPT_NOT_FOUND.
 
 RETAINED ATTEMPTS
@@ -225,10 +232,13 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
           !isCitationExampleId(params.example) ||
           params.key !== undefined)) ||
       (params.variant !== undefined &&
-        params.variant !== "main" &&
-        params.variant !== "alt") ||
+        !(CITATION_VARIANT_NAMES as readonly string[]).includes(
+          params.variant as string,
+        )) ||
       (params.root !== undefined &&
-        !["note", "annotation", "citation"].includes(params.root as string)) ||
+        !(PARTIAL_CONTEXT_NAMES as readonly string[]).includes(
+          params.root as string,
+        )) ||
       (params.mode !== undefined &&
         params.mode !== "create" &&
         params.mode !== "update") ||
@@ -417,7 +427,8 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
         },
       };
       attempts.set(attempt, JSON.parse(JSON.stringify(retained)) as object);
-      if (attempts.size > 32) attempts.delete(attempts.keys().next().value!);
+      if (attempts.size > RETAINED_ATTEMPTS)
+        attempts.delete(attempts.keys().next().value!);
       return answer(retained);
     };
     let draft: { source: string; path: string } | undefined;
