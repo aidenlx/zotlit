@@ -108,6 +108,10 @@ function openVault({
         getEngine,
       },
       zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
+      citationIndex: {
+        whenResolved: () => Promise.resolve(),
+        resolveCitekey: () => ({ kind: "missing" }),
+      },
       settings: { current: resolvedSettings },
       profile: profileReader(resolvedSettings, {
         getFileCache: () => ({ frontmatter }),
