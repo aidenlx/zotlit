@@ -2,7 +2,7 @@
 // strip owns the keyboard: arrow keys move through the tabs and choose as they
 // go, Home and End jump to the ends. The chosen tab lives in the editor's store.
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useMemo, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
 import {
@@ -12,9 +12,11 @@ import {
 } from "./editor";
 import { HiddenName } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { SliceEditorVisibility } from "./slice-editor";
 import { TABS, tabLabel, tabLede } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
 import { useParts } from "./theme";
+import { useRetention } from "./visited";
 
 function tabId(prefix: string, tab: WorkbenchTab): string {
   return `${prefix}tab-${tab}`;
@@ -130,17 +132,18 @@ export function TabBar({
 }
 
 /**
- * The panel `tab` opens. An inactive panel is gone unless `keepMounted`
- * holds it in the page, hidden, so an editor inside keeps its state.
+ * The panel `tab` opens. A tab the reader has opened before stays in the page,
+ * hidden, so an editor inside keeps its view; one never opened is gone.
  */
 export function TabPanel({
   tab,
-  keepMounted = false,
+  modeActive = true,
   children,
   description = true,
 }: {
   tab: WorkbenchTab;
-  keepMounted?: boolean;
+  /** Whether the mode that owns this panel is visible. */
+  modeActive?: boolean;
   children?: ReactNode;
   description?: boolean;
 }) {
@@ -149,19 +152,29 @@ export function TabPanel({
   const active = useWorkbenchStore((state) => state.tab) === tab;
   const part = useParts("tabPanel");
   const prefix = editor?.id ?? "";
-  if (!active && !keepMounted) return null;
+  // A tab's occupant is the tab itself, so the list never changes and a visit
+  // is remembered for as long as the editor lives.
+  const occupants = useMemo(() => new Map([[tab, tab]]), [tab]);
+  const retention = useRetention(occupants);
+  const { open } = retention;
+  useEffect(() => {
+    if (active) open(tab);
+  }, [active, open, tab]);
+  if (!active && !retention.isRetained(tab)) return null;
+  const shown = active && modeActive;
   return (
     <div
       role="tabpanel"
       id={panelId(prefix, tab)}
       aria-labelledby={tabId(prefix, tab)}
-      hidden={!active}
-      {...part("tab-panel", active ? "active" : "inactive")}
+      hidden={!shown}
+      {...part("tab-panel", shown ? "active" : "inactive")}
     >
-      {description && tab !== "name" && tab !== "match" && (
-        <p {...part("description")}>{tabLede(m, tab)}</p>
-      )}
-      {children}
+      {description &&
+        tab !== "annotation" &&
+        tab !== "name" &&
+        tab !== "match" && <p {...part("description")}>{tabLede(m, tab)}</p>}
+      <SliceEditorVisibility visible={shown}>{children}</SliceEditorVisibility>
     </div>
   );
 }

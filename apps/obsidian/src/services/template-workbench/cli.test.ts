@@ -36,7 +36,6 @@ import {
 } from "./cli";
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
 import { GUIDE_TOPIC_NAMES } from "./guide";
-import { RENDER_TEMPLATE_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 
 const PLUGIN_VERSION = "1.2.3";
@@ -124,6 +123,7 @@ describe("Template Workbench CLI", () => {
   it("reports template and target state after compilation settles", async () => {
     const callOrder: string[] = [];
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
@@ -178,6 +178,7 @@ describe("Template Workbench CLI", () => {
     const getIdentity = vi.fn(() => IDENTITY);
     const getTemplateFileStatuses = vi.fn(() => TEMPLATE_FILES);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
@@ -207,7 +208,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers["zotlit:template-status"]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: "zotlit:template-status",
       ok: false,
       diagnostic: {
@@ -225,6 +226,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const waitUntilSettled = vi.fn(async () => "timeout" as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
       loadCitation: NO_CITATION,
@@ -258,7 +260,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: {
@@ -295,6 +297,7 @@ describe("Template Workbench CLI", () => {
     root.annotations = [{ parentItem: root }];
     const loadData = vi.fn(async () => ({ kind: "data", data: root }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -325,16 +328,19 @@ describe("Template Workbench CLI", () => {
       root: "note",
       format: "json",
       "expect-source": "a1b2c3d4",
+      full: "true",
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
+      selection: { key: "ITEM2345", root: "note" },
       request: {
         key: "ITEM2345",
         root: "note",
         format: "json",
+        full: true,
       },
       identity: IDENTITY,
       zt: {
@@ -352,12 +358,13 @@ describe("Template Workbench CLI", () => {
         annotations: [{ parentItem: { $ref: "zt" } }],
       },
     });
-    expect(loadData).toHaveBeenCalledWith("ITEM2345", "note");
+    expect(loadData).toHaveBeenCalledWith("ITEM2345", "note", undefined);
     expect(wouldWrite).not.toHaveBeenCalled();
   });
 
   it("preserves a helper evaluation error in its marker", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -394,6 +401,7 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       root: "note",
       format: "json",
+      full: "true",
     });
 
     expect(JSON.parse(output)).toMatchObject({
@@ -410,6 +418,7 @@ describe("Template Workbench CLI", () => {
 
   it("names no template for a note-root data fault", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -446,6 +455,7 @@ describe("Template Workbench CLI", () => {
       key: "ITEM2345",
       root: "note",
       format: "json",
+      full: "true",
     });
 
     expect(JSON.parse(output)).toMatchObject({
@@ -461,6 +471,7 @@ describe("Template Workbench CLI", () => {
 
   it("re-throws a stale contract IR instead of reporting a diagnostic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -494,12 +505,14 @@ describe("Template Workbench CLI", () => {
         key: "ITEM2345",
         root: "note",
         format: "json",
+        full: "true",
       }),
     ).rejects.toThrow(ContractMetadataError);
   });
 
   it("reports TEMPLATE_NOT_READY when template startup itself failed", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -528,7 +541,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_STATUS_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_STATUS_COMMAND,
       ok: false,
       diagnostic: {
@@ -541,6 +554,7 @@ describe("Template Workbench CLI", () => {
 
   it("prints the quickstart and topic index as literal text", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -569,68 +583,72 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({});
 
     expect(() => JSON.parse(output)).toThrow();
-    expect(output).toContain("test ok");
+    expect(output).toContain("template-check");
     expect(output).toContain("follow diagnostic.hint");
     expect(output).toContain("expect-source=<identity.source.id>");
-    expect(output).toContain("root=note and zt.annotations");
-    expect(output).toContain("can be very large");
-    expect(output).toContain("schemas.<root>.url");
+    expect(output).toContain("Omit expect-source for retained attempt lookups");
+    expect(output).toContain("optional focused field discovery");
+    expect(output).toContain("Edit the Template Document directly");
+    expect(output).toContain("Select and inspect the requested outputs");
     expect(output).toContain(
       "https://zotlit.aidenlx.site/docs/reference/templates",
     );
-    expect(output).toContain("frontmatter-status");
-    expect(output).toContain("frontmatter-eval");
-    expect(output).toContain("frontmatter-set");
-    expect(output).toContain("frontmatter-remove");
-    expect(output).toContain("frontmatter-reorder");
+    expect(output).not.toContain("frontmatter-set");
+    expect(output).not.toContain("template-source");
     // Every topic the index offers, read from the registry the guide renders
     // it from, so a topic added later cannot be left out of the index.
     for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
   });
 
   it.each([
-    ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
     [
-      "render",
+      "check",
       [
-        // Every form template-render accepts, the Citation Template and a
-        // Shared Partial among them, each with the row that explains it.
-        ...RENDER_TEMPLATE_NAMES,
-        "Renders zotlit-citation.md",
+        "omit expect-source",
+        "attempt=<id> evidence=full output=all",
+        "original source identity",
+        // The create-mode note boundary, so a passing create check is not read
+        // as an answer about a second note of the same item.
+        "renders a complete new note and reads no existing note as a baseline",
+        "its first indexed note supplies zt.notePath",
+        "A second note of the same item is never read",
+        // The two refusal answer shapes, each named by the codes that carry it.
+        "A refused document identity is not a failed check",
+        "RESERVED_PARTIAL_NAME is raised before the source is parsed and carries no checks",
+        "INVALID_PROFILE_ID and PROFILE_ID_MISMATCH are raised from parsing and carry the checks map",
+      ],
+    ],
+    ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
+    ["citations", ["variant=main", "zotlit-citation.md", "output=citation"]],
+    [
+      "partials",
+      [
+        "SHARED PARTIAL CALLERS",
         "zotlit-partial.<name>.md",
-        "root=<note|annotation|citation>",
+        "document=partial:<name>",
+        "root=note",
+        // Every reserved name, so the guide cannot drift from defaults.ts.
+        "'filename', 'note', 'annotation', 'content', or 'citation'",
+        "caller bindings",
+        "Reserved Partial Name is refused before any check runs, draft source included",
       ],
     ],
     [
       "profiles",
       [
-        "SHARED PARTIALS",
-        "zotlit-partial.<name>.md",
-        "template=partial:<name>",
-        "root=<note|annotation|citation>",
-        // Every reserved name, so the guide cannot drift from defaults.ts.
-        "'filename', 'note', 'annotation', 'content', or 'citation'",
-        "ADR 0055",
+        "mode=update",
+        "draft=<absolute-path>",
+        "preserving unrelated user text",
       ],
     ],
-    ["editing", ["editablePath", "shadowedFiles"]],
-    [
-      "eta",
-      ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED", "pandocCite"],
-    ],
-    ["liquid", ["liquidjs", "zt", "bq", "group_by", "pandoc_cite"]],
+    ["eta", ["JavaScript Templates", "recovery hint", "pandocCite"]],
+    ["liquid", ["zt", "bq", "group_by", "pandoc_cite"]],
     [
       "frontmatter",
       [
-        "frontmatter-status",
-        "frontmatter-eval",
-        "frontmatter-set",
-        "frontmatter-remove",
-        "frontmatter-reorder",
-        "field=",
-        "key=",
-        "'liquid'",
-        "'javascript'",
+        "SPREAD ENTRIES",
+        "JSON-e",
+        "output=frontmatter",
         "'replace'",
         "'append'",
         "'keep'",
@@ -639,6 +657,7 @@ describe("Template Workbench CLI", () => {
     ],
   ] as const)("prints the %s guide topic", async (topic, facts) => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -667,11 +686,13 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic });
 
     expect(() => JSON.parse(output)).toThrow();
-    for (const fact of facts) expect(output).toContain(fact);
+    // One scan of the guide names every missing fact at once.
+    expect(facts.filter((fact) => !output.includes(fact))).toEqual([]);
   });
 
   it("rejects an invalid guide topic", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -700,7 +721,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic: "bogus" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
@@ -746,6 +767,7 @@ describe("Template Workbench CLI", () => {
   ])("rejects an invalid selector %#", async (params, parameter) => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -774,7 +796,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_DATA_COMMAND](params);
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       diagnostic: {
@@ -789,6 +811,7 @@ describe("Template Workbench CLI", () => {
   it("defaults template-data format to json when absent", async () => {
     const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -828,6 +851,7 @@ describe("Template Workbench CLI", () => {
   it("ignores every --* token a CLI binary forwards", async () => {
     const loadData = vi.fn(async () => ({ kind: "data", data: {} }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -866,6 +890,7 @@ describe("Template Workbench CLI", () => {
   it("reports vault= placed after the command name as INVALID_SELECTOR", async () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -914,6 +939,7 @@ describe("Template Workbench CLI", () => {
   it("names the offending parameter and the accepted list for an unknown key", async () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -962,6 +988,7 @@ describe("Template Workbench CLI", () => {
 
   it("cross-references template= to root= on template-data", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1007,6 +1034,7 @@ describe("Template Workbench CLI", () => {
     ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1039,7 +1067,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: { key: "ITEM2345", root: "note", format: "json" },
@@ -1064,6 +1092,7 @@ describe("Template Workbench CLI", () => {
     async ({ argument, expected, target, actual }) => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1097,7 +1126,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         identity: IDENTITY,
@@ -1116,6 +1145,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const waitUntilSettled = vi.fn(async () => "settled" as const);
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
       loadCitation: NO_CITATION,
@@ -1144,7 +1174,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: true,
       pluginVersion: PLUGIN_VERSION,
@@ -1167,6 +1197,7 @@ describe("Template Workbench CLI", () => {
     "rejects a %s selector for template-schema",
     async (parameter) => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1197,7 +1228,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_SCHEMA_COMMAND,
         ok: false,
         diagnostic: {
@@ -1213,6 +1244,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an item selector for template-schema", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1243,7 +1275,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: false,
       diagnostic: {
@@ -1257,6 +1289,7 @@ describe("Template Workbench CLI", () => {
 
   it("rejects an unrecognized parameter for template-schema", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1308,6 +1341,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "data", data }) as const);
       const render = vi.fn(() => markdown);
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1350,6 +1384,7 @@ describe("Template Workbench CLI", () => {
     const render = vi.fn(() => "");
     const getTemplateSource = vi.fn(async () => "");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1406,6 +1441,7 @@ describe("Template Workbench CLI", () => {
       const render = vi.fn(() => "# multi\nline\n");
       const renderFilename = vi.fn(() => "Paper 2024");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1449,6 +1485,7 @@ describe("Template Workbench CLI", () => {
   it("wraps the same Markdown and active template identity as JSON", async () => {
     const markdown = "# Paper\n";
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1482,7 +1519,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: true,
       request: {
@@ -1513,6 +1550,7 @@ describe("Template Workbench CLI", () => {
     );
     templates.define("content", "BODY {{ zt.title }}", "liquid");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1551,6 +1589,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const render = vi.fn(() => "");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1584,7 +1623,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       request: {
@@ -1660,6 +1699,7 @@ describe("Template Workbench CLI", () => {
     "returns $code for a render failure",
     async ({ error, compileErrors, code, message, template }) => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1694,7 +1734,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1714,6 +1754,7 @@ describe("Template Workbench CLI", () => {
     ["annotation-attachment-missing", "ANNOTATION_ATTACHMENT_MISSING"],
   ] as const)("maps render data result %s to %s", async (kind, code) => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1746,7 +1787,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1761,6 +1802,7 @@ describe("Template Workbench CLI", () => {
     const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
     const render = vi.fn(() => "");
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1794,7 +1836,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1838,6 +1880,7 @@ describe("Template Workbench CLI", () => {
       const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
       const render = vi.fn(() => "");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -1866,7 +1909,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[TEMPLATE_RENDER_COMMAND](params);
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1882,6 +1925,7 @@ describe("Template Workbench CLI", () => {
 
   it("keeps template-render's explicit root rejection message", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1925,6 +1969,7 @@ describe("Template Workbench CLI", () => {
 
   it("defaults template-render format to json when absent", async () => {
     const handlers = createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: NO_CITATION,
@@ -1967,6 +2012,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2010,6 +2056,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ zt.title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2048,6 +2095,7 @@ describe("Template Workbench CLI", () => {
       const templates = new TemplateFacade();
       templates.define("note", "{{ zt.title }}", "liquid");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2087,6 +2135,7 @@ describe("Template Workbench CLI", () => {
     it("returns the winning vault file body", async () => {
       const getTemplateSource = vi.fn(async () => "vault body for note");
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2117,7 +2166,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2133,6 +2182,7 @@ describe("Template Workbench CLI", () => {
 
     it("returns the embedded default body when no vault file exists", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2169,6 +2219,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unknown template name", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2199,7 +2250,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2212,6 +2263,7 @@ describe("Template Workbench CLI", () => {
 
     it("cross-references root= to template= on template-source", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2251,6 +2303,7 @@ describe("Template Workbench CLI", () => {
   describe("template-status and template-guide selectors", () => {
     it("rejects any parameter for template-status", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2281,7 +2334,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2294,6 +2347,7 @@ describe("Template Workbench CLI", () => {
     it("tolerates --* tokens for template-status", async () => {
       const waitUntilSettled = vi.fn(async () => "settled" as const);
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2328,6 +2382,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unrecognized parameter for template-guide", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2358,7 +2413,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_GUIDE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2376,6 +2431,7 @@ describe("Template Workbench CLI", () => {
       };
       error.context = "1| {{ zt.title | bogus }}\n         ^^^^^";
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2421,6 +2477,7 @@ describe("Template Workbench CLI", () => {
     it("surfaces a recorded compile error's caret excerpt in details.context", async () => {
       const context = "1| {{ zt.title\n         ^";
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2485,6 +2542,7 @@ describe("Template Workbench CLI", () => {
 
     it("reports each configured field, the reserved keys, and the gate state", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2517,7 +2575,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2549,6 +2607,7 @@ describe("Template Workbench CLI", () => {
 
     it("flags no field inert once the JavaScript Templates gate is on", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2592,6 +2651,7 @@ describe("Template Workbench CLI", () => {
 
     it("rejects an unrecognized parameter", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2622,7 +2682,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2634,6 +2694,7 @@ describe("Template Workbench CLI", () => {
 
     it("tolerates --* tokens", async () => {
       const handlers = createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2702,6 +2763,7 @@ describe("Template Workbench CLI", () => {
       } = {},
     ) {
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -2756,7 +2818,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: { key: "ITEM2345", format: "json", adhoc: null },
@@ -2923,7 +2985,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: {
@@ -3134,6 +3196,7 @@ describe("Template Workbench CLI", () => {
         EXISTING_FIELD,
       ];
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3188,7 +3251,7 @@ describe("Template Workbench CLI", () => {
         },
       ]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_SET_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3563,6 +3626,7 @@ describe("Template Workbench CLI", () => {
         FIELD_B,
       ];
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3606,7 +3670,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_REMOVE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3756,6 +3820,7 @@ describe("Template Workbench CLI", () => {
         FIELD_C,
       ];
       return createTemplateWorkbenchHandlers({
+        selectNote: noNoteSelection,
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
         loadCitation: NO_CITATION,
@@ -3799,7 +3864,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: FRONTMATTER_REORDER_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3976,6 +4041,7 @@ describe("zotlit:template-render for the Citation Template", () => {
     const facade = new TemplateFacade();
     facade.define("citation", source, "liquid");
     return createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: async (selector, variant) =>
@@ -4244,6 +4310,7 @@ describe("zotlit:template-render for a Shared Partial", () => {
     const facade = new TemplateFacade();
     facade.define("authors", source, "liquid");
     return createTemplateWorkbenchHandlers({
+      selectNote: noNoteSelection,
       literatureNotes: {
         readProfiles: () => ({ defaultProfile: undefined, profiles: [] }),
         getDocumentStatuses: () => documents,
@@ -4462,3 +4529,7 @@ describe("zotlit:template-render for a Shared Partial", () => {
     });
   });
 });
+
+function noNoteSelection() {
+  return Promise.resolve({ error: "TARGET_NOT_FOUND" as const, matches: [] });
+}

@@ -230,7 +230,7 @@ export default class ZotLitPlugin extends Plugin {
       pluginVersion: this.manifest.version,
       confirmLaunch: createLaunchSheet(this.app),
       openExternal: (url) => window.open(url),
-      openNative: async ({ profileId, item }) => {
+      openNative: async ({ profileId, item, originatingNote }) => {
         const entry = services.profile.profiles.find(
           (profile) => profile.id === profileId,
         );
@@ -241,6 +241,7 @@ export default class ZotLitPlugin extends Plugin {
         if (target)
           await openNativeProfile(this.app, target, {
             ...(item ? { itemIndexedKey: item.key } : {}),
+            originatingNote,
             explainUnsupported: false,
             customize: true,
           });
@@ -364,6 +365,7 @@ export default class ZotLitPlugin extends Plugin {
     registerTemplateWorkbenchView(this, {
       resolveCopyEditor: (path) =>
         services.templateMigration.resolveCopyEditor(path),
+      noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,
@@ -473,6 +475,7 @@ export default class ZotLitPlugin extends Plugin {
       profile: services.profile,
       app: this.app,
       db: services.db,
+      citationIndex: services.citationIndex,
       pandocEngine: services.pandocEngine,
       zoteroPref: services.zoteroPref,
       settings: services.settings,

@@ -99,11 +99,47 @@ export interface CitationRequest extends SupersedableRequest {
 
 export type DocumentFormat = "docx" | "html";
 
-export interface DocumentRequest extends SupersedableRequest {
+export interface PrepareRequest extends SupersedableRequest {
   /** Obsidian-flavored Markdown of the document to convert. */
   markdown: string;
+  /** Lua filter sources, run in listed order over the parsed document. */
+  luaFilters?: readonly string[];
+  /** Further files the filters read, such as a resolve map. */
+  files?: VirtualFiles;
+}
+
+/**
+ * One document Pandoc has read, held between the two conversions of an export.
+ *
+ * Its citations are Pandoc's own: the reader's, plus whatever the filters made
+ * of the document. That is what makes it the single authority on what a
+ * document cites — no second parser has to agree with it.
+ *
+ * The document envelope stays inside the engine, so this is opaque by
+ * construction: a consumer reads the ids it spells and hands it back to render.
+ */
+export interface PreparedDocument {
+  /**
+   * Every work the document cites, by the id the source spells it with, first
+   * appearance first. Body citations come before metadata ones, so a `nocite`
+   * key never takes a number the prose should have.
+   *
+   * Pandoc's `nocite` wildcard names no work, so it is absent here and stays in
+   * the document untouched.
+   */
+  readonly citedIds: readonly string[];
+  /**
+   * The same document with every citation id replaced through `canonical`. An
+   * id the map does not name is left as the source spelled it.
+   */
+  withCitedIds(canonical: ReadonlyMap<string, string>): PreparedDocument;
+}
+
+export interface RenderRequest extends SupersedableRequest {
+  /** What {@link CitationEngine.prepareDocument} read, ids already canonical. */
+  document: PreparedDocument;
   format: DocumentFormat;
-  /** CSL-JSON the citations in `markdown` resolve against. */
+  /** CSL-JSON the document's citations resolve against. */
   bibliography: readonly CslItemData[];
   /** CSL style XML; the engine's embedded default style when omitted. */
   styleXml?: string;
@@ -114,10 +150,6 @@ export interface DocumentRequest extends SupersedableRequest {
    * keeps it, and one that declares none acquires none.
    */
   locale?: string;
-  /** Lua filter sources, run in listed order before citation processing. */
-  luaFilters?: readonly string[];
-  /** Further files the filters read, such as a resolve map. */
-  files?: VirtualFiles;
 }
 
 /**
@@ -145,7 +177,14 @@ export interface CitationEngine extends AsyncDisposable {
   renderCitations(
     request: CitationRequest,
   ): Promise<readonly RenderedCitation[]>;
-  renderDocument(request: DocumentRequest): Promise<Uint8Array>;
+  /**
+   * Read one document, filters included, without formatting its citations.
+   * Citation processing waits for {@link renderPrepared}, which needs the
+   * bibliography the prepared document's own citations select.
+   */
+  prepareDocument(request: PrepareRequest): Promise<PreparedDocument>;
+  /** Format a prepared document's citations and write it in `format`. */
+  renderPrepared(request: RenderRequest): Promise<Uint8Array>;
 }
 
 /** A conversion the engine could not complete. `message` is Pandoc's own text. */
@@ -273,41 +312,52 @@ class PandocCitationEngine implements CitationEngine {
     return stdout;
   }
 
-  async renderDocument({
+  async prepareDocument({
     markdown,
+    luaFilters = [],
+    files = {},
+    supersedes,
+  }: PrepareRequest): Promise<PreparedDocument> {
+    const filterFiles = Object.fromEntries(
+      luaFilters.map((source, index) => [`filter-${index}.lua`, source]),
+    );
+    const { stdout } = await this.#convert({
+      options: {
+        from: MARKDOWN_READER,
+        to: "json",
+        standalone: false,
+        filters: Object.keys(filterFiles),
+      },
+      stdin: markdown,
+      files: { ...files, ...filterFiles },
+      supersedes,
+    });
+    return new PandocPreparedDocument(JSON.parse(stdout) as Pandoc);
+  }
+
+  async renderPrepared({
+    document,
     format,
     bibliography,
     styleXml,
     locale,
-    luaFilters = [],
-    files = {},
     supersedes,
-  }: DocumentRequest): Promise<Uint8Array> {
-    const filterFiles = Object.fromEntries(
-      luaFilters.map((source, index) => [`filter-${index}.lua`, source]),
-    );
+  }: RenderRequest): Promise<Uint8Array> {
     const outputName = `output.${format}`;
     const style = styleInput(styleXml);
     const localePass = locale === undefined ? [] : [LOCALE_FILTER_FILE];
     const { outputFile } = await this.#convert({
       options: {
-        from: MARKDOWN_READER,
+        from: "json",
         to: format,
         standalone: true,
-        filters: [
-          ...Object.keys(filterFiles),
-          ...localePass,
-          "citeproc",
-          ...localePass,
-        ],
+        filters: [...localePass, "citeproc", ...localePass],
         bibliography: [BIBLIOGRAPHY_FILE],
         "output-file": outputName,
         ...style.options,
       },
-      stdin: markdown,
+      stdin: documentJson(document),
       files: {
-        ...files,
-        ...filterFiles,
         ...(locale === undefined
           ? {}
           : { [LOCALE_FILTER_FILE]: citationLocaleFilter(locale) }),
@@ -374,6 +424,103 @@ class PandocCitationEngine implements CitationEngine {
     this.#queue = result.catch(() => undefined);
     return result;
   }
+}
+
+/**
+ * A read document, kept as the AST Pandoc wrote and handed back to it unchanged
+ * apart from its citation ids.
+ */
+class PandocPreparedDocument implements PreparedDocument {
+  readonly #ast: Pandoc;
+  #citedIds: readonly string[] | undefined;
+
+  constructor(ast: Pandoc) {
+    this.#ast = ast;
+  }
+
+  get citedIds(): readonly string[] {
+    this.#citedIds ??= distinct([
+      ...collectCitedIds(this.#ast.blocks, []),
+      ...collectCitedIds(this.#ast.meta, []),
+    ]);
+    return this.#citedIds;
+  }
+
+  withCitedIds(canonical: ReadonlyMap<string, string>): PreparedDocument {
+    return new PandocPreparedDocument(
+      rewriteCitedIds(this.#ast, canonical) as Pandoc,
+    );
+  }
+
+  /** The document as Pandoc's JSON reader takes it back. */
+  toJson(): string {
+    return JSON.stringify(this.#ast);
+  }
+}
+
+/**
+ * @throws {CitationEngineError} for a document this engine never prepared,
+ *   which is the only way one could carry an AST Pandoc cannot read back.
+ */
+function documentJson(document: PreparedDocument): string {
+  if (!(document instanceof PandocPreparedDocument)) {
+    throw new CitationEngineError("The document was prepared by no engine");
+  }
+  return document.toJson();
+}
+
+/**
+ * `nocite: "@*"` reaches the AST as this citation id. It asks for every entry of
+ * the bibliography rather than naming a work, so it is no cited id: nothing
+ * resolves it, and it stays in the document for citeproc to act on.
+ *
+ * @see https://pandoc.org/MANUAL.html#including-uncited-items-in-the-bibliography
+ */
+const NOCITE_WILDCARD = "*";
+
+/**
+ * A `Citation` is the one AST record carrying a `citationId`, and it is plain
+ * JSON, so both walks below read the tree generically rather than enumerating
+ * every constructor that can hold an inline. A constructor added to
+ * pandoc-types therefore needs no change here.
+ */
+function collectCitedIds(value: unknown, into: string[]): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value as unknown[]) collectCitedIds(item, into);
+    return into;
+  }
+  if (typeof value !== "object" || value === null) return into;
+  for (const [key, nested] of Object.entries(value)) {
+    if (key !== "citationId" || typeof nested !== "string") {
+      collectCitedIds(nested, into);
+    } else if (nested !== NOCITE_WILDCARD) {
+      into.push(nested);
+    }
+  }
+  return into;
+}
+
+/** The same tree with every `citationId` the map names replaced. */
+function rewriteCitedIds(
+  value: unknown,
+  canonical: ReadonlyMap<string, string>,
+): unknown {
+  if (Array.isArray(value)) {
+    return (value as unknown[]).map((item) => rewriteCitedIds(item, canonical));
+  }
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key,
+      key === "citationId" && typeof nested === "string"
+        ? (canonical.get(nested) ?? nested)
+        : rewriteCitedIds(nested, canonical),
+    ]),
+  );
+}
+
+function distinct(ids: readonly string[]): string[] {
+  return [...new Set(ids)];
 }
 
 const LOCALE_FILTER_FILE = "citation-locale.lua";

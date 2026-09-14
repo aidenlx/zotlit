@@ -182,7 +182,9 @@ local function resolve_style(meta)
 end
 --@end
 
---- The `linkpath -> citation key` map, keyed by decoded bare linkpath.
+--- The `linkpath -> cited key` map, keyed by decoded bare linkpath. The cli
+--- variant is given citation keys; the sandbox host names each Item by an id of
+--- its own, which it resolves after Pandoc has read the document.
 --- @return table<string, string>
 local function load_citations()
   local payload = decode_payload(

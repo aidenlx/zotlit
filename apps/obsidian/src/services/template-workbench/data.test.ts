@@ -1,5 +1,6 @@
 import Ajv2020 from "ajv/dist/2020";
 import type { DatabaseSync } from "node:sqlite";
+import type { CliData, CliHandler, Plugin } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
@@ -10,6 +11,7 @@ import citationSchema from "@zotlit/db/contract/citation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { TemplateEngine } from "@zotlit/templates";
 import { CITATION_EXAMPLE_IDS } from "@zotlit/workbench/render";
 import type { CitationExampleId } from "@zotlit/workbench/render";
 
@@ -23,6 +25,295 @@ import {
 } from "./cli";
 import { loadCitationData, loadTemplateData } from "./data";
 import type { TemplateDataDeps } from "./data";
+import { registerTemplateWorkbench } from "./register";
+
+function registeredData(deps: FixtureDeps) {
+  const handlers = new Map<string, CliHandler>();
+  Object.assign(deps.app.vault, {
+    getName: () => "Data fixture",
+    adapter: { getBasePath: () => "/fixture" },
+    getMarkdownFiles: () => [{ path: "Notes/Paper.md", basename: "Paper" }],
+  });
+  Object.assign(deps.app, {
+    metadataCache: {
+      getFileCache: () => ({ frontmatter: { "zotero-key": "MAIN2345" } }),
+    },
+  });
+  Object.assign(deps.zoteroPref, {
+    sourceId: "fixture-source",
+    databasePath: "/Zotero/zotero.sqlite",
+  });
+  Object.assign(deps.templates, { waitUntilSettled: async () => "settled" });
+  registerTemplateWorkbench(
+    {
+      manifest: { version: "test" },
+      registerCliHandler: (...args: Parameters<Plugin["registerCliHandler"]>) =>
+        handlers.set(args[0], args[3]),
+    } as unknown as Plugin,
+    {
+      ...deps,
+      profile: {
+        ready: Promise.resolve(),
+        profileOf: () => ({ ok: true, profile: { selector: "default" } }),
+      },
+    } as never,
+  );
+  return async (params: Parameters<CliHandler>[0]) =>
+    JSON.parse((await handlers.get(TEMPLATE_DATA_COMMAND)!(params)) as string);
+}
+
+describe("registered field discovery", () => {
+  it("joins real values with definitions and expressions, with note and environment identity", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    const result = await run({
+      note: "Notes/Paper.md",
+      root: "note",
+      query: "citekey",
+      "expect-source": "fixture-source",
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      identity: {
+        vault: { path: "/fixture" },
+        source: { id: "fixture-source" },
+      },
+      selection: {
+        key: "MAIN2345",
+        note: "Notes/Paper.md",
+        profile: "default",
+        root: "note",
+      },
+    });
+    expect(result.discovery.matches[0]).toMatchObject({
+      path: "zt.citekey",
+      presence: "present",
+      value: "fixture2024",
+      definition: {
+        name: "citekey",
+        description: expect.stringContaining("citation"),
+      },
+      examples: { liquid: "{{ zt.citekey }}", eta: "<%= zt.citekey %>" },
+    });
+    expect(result.zt).toBeUndefined();
+    expect(fixture.writeCalls).toEqual([]);
+  });
+
+  it("builds data from the selected note when an item has several", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    // A resolved note makes the excerpt-image context read the attachment
+    // folder, which the base fixture's FileManager does not answer.
+    Object.assign(fixture.deps.app.fileManager, {
+      getAvailablePathForAttachment: async (name: string) =>
+        `attachments/${name}`,
+    });
+    const notes = [
+      { path: "Notes/One.md", basename: "One" },
+      { path: "Notes/Two.md", basename: "Two" },
+    ];
+    fixture.deps.app.vault.getMarkdownFiles = () => notes as never;
+    fixture.deps.noteIndex.getNotesByItemKey = () => notes as never;
+
+    const result = await run({
+      note: "Notes/Two.md",
+      root: "note",
+      path: "zt.notePath",
+    });
+
+    expect(result.selection).toMatchObject({ note: "Notes/Two.md" });
+    expect(result.discovery.matches[0]).toMatchObject({
+      path: "zt.notePath",
+      value: "Notes/Two.md",
+    });
+  });
+
+  it("inspects nested annotations and preserves empty arrays and absent fields", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    const selected = { key: "MAIN2345", root: "note" };
+    expect(
+      (await run({ ...selected, path: "zt.annotations[0].pageLabel" }))
+        .discovery.matches[0],
+    ).toMatchObject({
+      value: "1",
+      presence: "present",
+      examples: { liquid: "{{ zt.annotations[0].pageLabel }}" },
+    });
+    expect(
+      (await run({ ...selected, path: "zt.tags" })).discovery.matches[0],
+    ).toMatchObject({ value: [], presence: "present" });
+    expect(
+      (await run({ ...selected, path: "zt.title" })).discovery.matches[0],
+    ).toMatchObject({ value: null, presence: "present" });
+    expect(
+      (await run({ ...selected, path: "zt.conferenceName" })).discovery
+        .matches[0],
+    ).toMatchObject({
+      presence: "absent",
+      definition: { name: "conferenceName" },
+    });
+    const absent = (
+      await run({ ...selected, path: "zt.annotations[99].comment" })
+    ).discovery.matches[0];
+    expect(absent.presence).toBe("absent");
+    expect(absent).not.toHaveProperty("value");
+    expect((await run({ ...selected })).zt).toBeUndefined();
+    expect((await run({ ...selected, full: "" })).zt.indexedKey).toBe(
+      "MAIN2345",
+    );
+    expect(fixture.writeCalls).toEqual([]);
+  });
+
+  it("keeps focused reads independent of unrelated getters and rejects a different source", async () => {
+    using fixture = createFixture({
+      renderError: new Error("Citation must not run"),
+    });
+    const run = registeredData(fixture.deps);
+    expect(
+      await run({ key: "ANNA2345", root: "annotation", path: "zt.pageLabel" }),
+    ).toMatchObject({ ok: true, discovery: { matches: [{ value: "1" }] } });
+    expect(
+      await run({
+        key: "MAIN2345",
+        root: "note",
+        query: "title",
+        "expect-source": "different-source",
+      }),
+    ).toMatchObject({ ok: false, diagnostic: { code: "TARGET_MISMATCH" } });
+    expect(fixture.writeCalls).toEqual([]);
+  });
+
+  it("keeps Annotation and Citation caller roots distinct and evaluates inert helpers", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    expect(
+      await run({ key: "ANNA2345", root: "annotation", path: "zt.pageLabel" }),
+    ).toMatchObject({
+      selection: { key: "ANNA2345", root: "annotation" },
+      discovery: { matches: [{ value: "1" }] },
+    });
+    expect(
+      await run({
+        example: "two-items",
+        root: "citation",
+        path: "zt.citations[1].item.citekey",
+      }),
+    ).toMatchObject({
+      selection: { example: "two-items", root: "citation" },
+      discovery: { matches: [{ value: "Kahneman2011" }] },
+    });
+    const helper = await run({
+      key: "MAIN2345",
+      root: "note",
+      path: "zt.notes[0].noteLink",
+    });
+    expect(helper.discovery.matches[0]).toMatchObject({
+      value: { $inert: expect.any(String) },
+      examples: { eta: "<%= zt?.notes?.[0]?.noteLink?.() %>" },
+    });
+    expect(fixture.writeCalls).toEqual([]);
+  });
+
+  it("inspects dictionary keys and retains each possible date-day type", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    const field = (
+      await run({
+        key: "MAIN2345",
+        root: "note",
+        path: 'zt.extra.fields["tex.mendeley-tags"]',
+      })
+    ).discovery.matches[0];
+    expect(field).toMatchObject({
+      presence: "present",
+      value: "reading",
+      definition: { type: { kind: "primitive", type: "string" } },
+    });
+    const day = (
+      await run({ key: "MAIN2345", root: "note", path: "zt.date.day" })
+    ).discovery.matches[0];
+    expect(day).toMatchObject({
+      value: 2,
+      definition: {
+        type: {
+          kind: "union",
+          options: expect.arrayContaining([
+            { kind: "primitive", type: "number" },
+            { kind: "primitive", type: "null" },
+          ]),
+        },
+      },
+    });
+    expect(day.definition.description).toContain("Day of month");
+  });
+
+  it("runs Eta helper examples for present, null, and absent selected values", async () => {
+    using fixture = createFixture();
+    const run = registeredData(fixture.deps);
+    const engine = new TemplateEngine();
+    const present = (
+      await run({ key: "MAIN2345", root: "note", path: "zt.notes[0].noteLink" })
+    ).discovery.matches[0];
+    const absent = (
+      await run({
+        key: "MAIN2345",
+        root: "note",
+        path: "zt.notes[99].noteLink",
+      })
+    ).discovery.matches[0];
+    expect(
+      engine.renderString(present.examples.eta, {
+        notes: [{ noteLink: () => "[[Child]]" }],
+      }),
+    ).toBe("[[Child]]");
+    expect(
+      engine.renderString(present.examples.eta, {
+        notes: [{ noteLink: null }],
+      }),
+    ).toBe("");
+    expect(engine.renderString(absent.examples.eta, { notes: [] })).toBe("");
+    const author = (
+      await run({
+        example: "two-items",
+        root: "citation",
+        path: "zt.items[0].creators[0].family",
+      })
+    ).discovery.matches[0];
+    expect(author).toMatchObject({ value: "Ioannidis" });
+    expect(
+      engine.renderString(author.examples.eta, {
+        items: [{ creators: [{ family: "Ioannidis" }] }],
+      }),
+    ).toBe("Ioannidis");
+    expect(
+      (
+        await run({
+          key: "MAIN2345",
+          root: "note",
+          path: "zt.creators[0].family",
+        })
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each<CliData>([
+    { key: "MAIN2345", root: "annotation", query: "text" },
+    { key: "MISS2345", root: "note", query: "title" },
+    { key: "MAIN2345", root: "note", path: "zt.citations[0]" },
+    { key: "MAIN2345", root: "note", path: "zt.title()" },
+    { key: "MAIN2345", root: "note", query: "title", full: "" },
+    { note: "missing", root: "note", query: "title" },
+  ])("gives recovery for invalid discovery %j", async (params) => {
+    using fixture = createFixture();
+    const result = await registeredData(fixture.deps)(params);
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostic: { message: expect.any(String), hint: expect.any(String) },
+    });
+    expect(fixture.writeCalls).toEqual([]);
+  });
+});
 
 describe("zotlit:template-data with the real loader", () => {
   it("renders through inert resolvers without invoking a write surface", async () => {
@@ -77,7 +368,7 @@ describe("zotlit:template-data with the real loader", () => {
     );
 
     expect(result).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -121,7 +412,7 @@ describe("zotlit:template-data with the real loader", () => {
       expect(
         await runTemplateData(fixture.deps, "ANNA2345", "annotation"),
       ).toMatchObject({
-        contractVersion: 5,
+        contractVersion: 7,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         request: {
@@ -234,7 +525,7 @@ describe("zotlit:template-data with the real loader", () => {
     const result = await runTemplateData(fixture.deps, "MAIN2345", "filename");
 
     expect(result).toMatchObject({
-      contractVersion: 5,
+      contractVersion: 7,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -485,6 +776,7 @@ function createFixture(options?: {
   const writeCalls: string[] = [];
   try {
     seed(sqlite);
+    sqlite.exec("PRAGMA query_only = ON");
     return {
       deps: {
         app: {
@@ -566,6 +858,10 @@ async function runTemplateData(
   root: ContractRoot = "note",
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
+    selectNote: async () => ({
+      error: "TARGET_NOT_FOUND" as const,
+      matches: [],
+    }),
     pluginVersion: "1.2.3",
     getIdentity: () => ({
       vault: { name: "Test Vault", path: "/vaults/test" },
@@ -608,6 +904,7 @@ async function runTemplateData(
     await handlers[TEMPLATE_DATA_COMMAND]({
       ...(typeof selector === "string" ? { key: selector } : selector),
       root,
+      full: "",
       format: "json",
     }),
   ) as Record<string, unknown>;
@@ -619,6 +916,10 @@ async function runTemplateRender(
   template: "note" | "citation" = "note",
 ): Promise<Record<string, unknown>> {
   const handlers = createTemplateWorkbenchHandlers({
+    selectNote: async () => ({
+      error: "TARGET_NOT_FOUND" as const,
+      matches: [],
+    }),
     pluginVersion: "1.2.3",
     getIdentity: () => ({
       vault: { name: "Test Vault", path: "/vaults/test" },
@@ -696,11 +997,11 @@ function seed(sqlite: DatabaseSync): void {
         (4, 'note');
 
     insert into fieldsCombined (fieldID, fieldName, custom)
-      values (10, 'citationKey', 0);
+      values (10, 'citationKey', 0), (11, 'date', 0), (12, 'extra', 0);
     insert into itemDataValues (valueID, value)
-      values (100, 'fixture2024');
+      values (100, 'fixture2024'), (101, '2024-01-02 2024-01-02'), (102, 'tex.mendeley-tags: reading');
     insert into itemData (itemID, fieldID, valueID)
-      values (1, 10, 100);
+      values (1, 10, 100), (1, 11, 101), (1, 12, 102);
 
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values

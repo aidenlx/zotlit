@@ -114,9 +114,11 @@ export function diagnosticText(
     case "citation-style-error":
       return diagnostic.message ?? citationStyleText(m, params);
     case "property-error":
+      // The engine's own last word, which the renderer separated from the
+      // wrapper naming the entry: the line already names the property once.
       return m.workbench_diagnostic_property_error({
         key: String(params.key),
-        message: diagnostic.message ?? "",
+        message: String(params.detail ?? diagnostic.message ?? ""),
       });
     case "property-javascript":
       return params.key === undefined
@@ -291,6 +293,7 @@ function repairTarget(diagnostic: RenderDiagnostic): string | undefined {
   if (diagnostic.position !== undefined) return `entry:${diagnostic.position}`;
   if (diagnostic.code === "citation-style-error") return "citation-style";
   if (diagnostic.part === "annotation") return "annotation";
+  if (diagnostic.part === "filename") return "filename";
   return undefined;
 }
 
@@ -460,8 +463,13 @@ function diagnosticObject(
     case "invalid-profile":
       return m.workbench_problems_object_profile();
     default: {
+      // The part is what the renderer itself saw fail, so it outranks the
+      // rendering root below, which records only which data the reader had
+      // open when the failure arrived.
       if (diagnostic.part === "annotation")
         return m.workbench_annotation_label();
+      if (diagnostic.part === "filename")
+        return m.workbench_name_filename_heading();
       switch (diagnostic.report?.context.root) {
         case "annotation":
           return m.workbench_annotation_label();
@@ -565,6 +573,7 @@ export function diagnosisWhere(
   if (callSite) return m.workbench_problems_where_call();
   if (position !== undefined) return m.workbench_problems_where_entry();
   if (part === "annotation") return m.workbench_annotation_edit_format();
+  if (part === "filename") return m.workbench_problems_where_filename();
   return m.workbench_problems_where_advanced();
 }
 
@@ -629,6 +638,8 @@ export function diagnosisLocated(diagnosis: WorkbenchDiagnosis): boolean {
     ? diagnosis.problem.range !== undefined
     : diagnosis.diagnostic.sourceSite !== undefined ||
         diagnosis.diagnostic.callSite !== undefined ||
+        diagnosis.diagnostic.sliceSite !== undefined ||
         diagnosis.diagnostic.position !== undefined ||
-        diagnosis.diagnostic.part === "annotation";
+        diagnosis.diagnostic.part === "annotation" ||
+        diagnosis.diagnostic.part === "filename";
 }

@@ -631,6 +631,31 @@ describe("attribution", () => {
     );
   });
 
+  it("names the note name whichever root the reader had open", () => {
+    for (const root of ["note", "annotation"] as const) {
+      const diagnosis = renderDiagnosis({
+        code: "liquid-syntax-error",
+        message: "illegal tag",
+        part: "filename",
+        report: {
+          code: "liquid-syntax-error",
+          capturedAt: "2026-09-14T00:00:00Z",
+          trigger: "automatic",
+          identity: { sourceRevision: "source", snapshotRevision: "item" },
+          context: { root },
+        },
+      });
+
+      expect(diagnosisExplanation(m, diagnosis).object).toBe(
+        m.workbench_name_filename_heading(),
+      );
+      expect(diagnosisWhere(m, diagnosis)).toBe(
+        m.workbench_problems_where_filename(),
+      );
+      expect(diagnosisLocated(diagnosis)).toBe(true);
+    }
+  });
+
   it("says no verified location for a failure the engine reported nowhere", () => {
     expect(
       diagnosisEngineSources(

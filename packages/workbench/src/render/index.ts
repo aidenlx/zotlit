@@ -18,7 +18,11 @@ import type { AnnotationTemplateContext, TemplateAnnotation } from "@zotlit/db";
 import { inlineCitation, replaceSuffixMarkers } from "@zotlit/templates";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
-import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
+import {
+  evalManagedFrontmatterEntries,
+  FrontmatterJsonEError,
+} from "@zotlit/templates/frontmatter";
+import type { ManagedFrontmatterEvaluationError } from "@zotlit/templates/frontmatter";
 import {
   FRONTMATTER_ABSENT,
   mergeManagedFrontmatterEntries,
@@ -26,13 +30,14 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
-import { renderFailureDiagnostic } from "./attribution";
+import { renderFailureDiagnostic, renderFailureSpan } from "./attribution";
 import type { RenderCallerSource } from "./attribution";
-import { engineEvidence } from "./report";
+import { engineEvidence, errorChain } from "./report";
 import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
 import type {
+  SliceSite,
   TemplateRenderResult,
   RenderDiagnostic,
   RenderedProperty,
@@ -88,6 +93,7 @@ export {
   renderIdentity,
 } from "./result";
 export type {
+  SliceSite,
   TemplateRenderResult,
   RenderCaller,
   RenderDiagnostic,
@@ -97,8 +103,12 @@ export type {
   RenderEngineLocation,
   RenderIdentity,
 } from "./result";
-export { renderFailureCause, renderFailureDiagnostic } from "./attribution";
-export { currentCallSite } from "./locate";
+export {
+  renderFailureCause,
+  renderFailureDiagnostic,
+  renderFailureSpan,
+} from "./attribution";
+export { currentCallSite, currentSliceSite } from "./locate";
 export type { RenderCallerSource, RenderFailureCause } from "./attribution";
 export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
@@ -173,6 +183,8 @@ export function renderProfile(
   let preview: string | null = null;
   let annotationCitation: string | null = null;
   let formatFailure: RenderDiagnostic | null = null;
+  let filename: string | null = null;
+  let filenameFailure: RenderDiagnostic | null = null;
 
   try {
     for (const partial of supported) {
@@ -189,6 +201,18 @@ export function renderProfile(
       snapshot.roots.filename,
       snapshot.descriptors.filename,
     );
+    // The note name is rendered on its own first, so a mistake in the Filename
+    // Template is named as the note name's and leaves every other output on
+    // screen. A mistake anywhere else leaves the name this attempt produced.
+    try {
+      // A preview assumes a free filename; the vault resolves collisions on save.
+      filename = replaceSuffixMarkers(
+        facade.renderLiteratureNoteTemplateFilename(document, filenameData),
+        () => "",
+      );
+    } catch (error) {
+      filenameFailure = filenameErrorDiagnostic(error, caller);
+    }
     const annotations = snapshot.roots.annotations.map((annotation, index) => {
       const descriptors = snapshot.descriptors.annotations[index];
       if (!descriptors) {
@@ -200,8 +224,8 @@ export function renderProfile(
         defined.has(CITATION_TEMPLATE),
       );
     });
-    // The format is rendered on its own first, so a failure inside it is named
-    // as the format's and a host can show it where the format is edited. The
+    // The format is rendered on its own, ahead of the note, so a failure inside
+    // it is named as the format's and a host can show it where it is edited. The
     // note goes on rendering: one that never calls the format keeps its
     // preview, and one that does retains its own occurrence of the fault.
     try {
@@ -246,11 +270,7 @@ export function renderProfile(
         : createdBody;
     return {
       ...identity,
-      // A preview assumes a free filename; the vault resolves collisions on save.
-      filename: replaceSuffixMarkers(
-        facade.renderLiteratureNoteTemplateFilename(document, filenameData),
-        () => "",
-      ),
+      filename,
       properties: frontmatter.properties,
       fold: frontmatter.fold,
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
@@ -280,6 +300,7 @@ export function renderProfile(
       ),
       diagnostics: [
         ...resourceDiagnostics,
+        ...(filenameFailure ? [filenameFailure] : []),
         ...(formatFailure ? [formatFailure] : []),
         ...frontmatter.diagnostics,
       ],
@@ -292,15 +313,46 @@ export function renderProfile(
     });
     return {
       ...failure,
+      filename,
       annotation: preview,
       annotationCitation,
       diagnostics: [
         ...resourceDiagnostics,
+        ...(filenameFailure ? [filenameFailure] : []),
         ...(formatFailure ? [formatFailure] : []),
         ...failure.diagnostics,
       ],
     };
   }
+}
+
+/**
+ * What one failed note-name render reads as, wherever it ran. The place is
+ * named inside the note-name template's own text rather than in the document
+ * that holds it: the pane the reader edits shows exactly that text, so the
+ * mark lands there without reading whatever quoting the manifest wrote the
+ * value under. Both hosts render the note name apart from the note, so both
+ * name the fault the same way; this is where that answer is written, once.
+ */
+export function filenameErrorDiagnostic(
+  error: unknown,
+  caller: RenderCallerSource,
+): RenderDiagnostic {
+  // Every place read off the whole document is dropped: a scan of the source
+  // can spell the blamed template in the note as well, and one fault marks one
+  // place. What is left names the note name and nowhere else.
+  const {
+    sourceSite: _read,
+    callSite: _called,
+    ...attributed
+  } = renderFailureDiagnostic(error, caller);
+  const site = renderFailureSpan(error);
+  return {
+    ...attributed,
+    ...(site === undefined ? {} : { sliceSite: site }),
+    evidence: engineEvidence(error),
+    part: "filename",
+  };
 }
 
 /** Preserve which verified call failed without making its source offset an ID. */
@@ -470,14 +522,9 @@ function evaluateFrontmatter(
           ]
         : [],
     ),
-    ...errors.map(({ key, position, error }) => ({
-      code: "property-error" as const,
-      message: errorMessage(error),
-      evidence: engineEvidence(error),
-      params: { key },
-      part: "properties" as const,
-      position,
-    })),
+    ...errors.map((error) =>
+      propertyErrorDiagnostic(error, authored[error.position - 1]),
+    ),
     ...conflicts,
   ].toSorted(byPosition);
   return { properties, fold, diagnostics };
@@ -516,6 +563,92 @@ function rendered({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * What one failed Managed Frontmatter entry reads as, wherever it ran. Both
+ * hosts evaluate the same entries through the same engines, so both name the
+ * fault the same way and place it in the same row; this is where that answer
+ * is written, once.
+ */
+export function propertyErrorDiagnostic(
+  { key, position, error }: ManagedFrontmatterEvaluationError,
+  authored: ManagedFrontmatterEntry | undefined,
+): RenderDiagnostic & { readonly position: number } {
+  const site = entrySite(error, authored);
+  return {
+    code: "property-error",
+    message: errorMessage(error),
+    evidence: engineEvidence(error),
+    // The engine's own last word, which the row reads on its own: the wrapper
+    // around it names the entry the row already names.
+    params: { key, detail: engineClause(error) },
+    part: "properties",
+    position,
+    ...(site === undefined ? {} : { sliceSite: site }),
+  };
+}
+
+/**
+ * What the engine itself said, taken from the innermost link of the chain.
+ * Everything wrapped around it repeats the entry the row already names, so a
+ * row that carries this reads one sentence about one fault.
+ */
+function engineClause(error: unknown): string {
+  return errorMessage(errorChain(error).at(-1) ?? error);
+}
+
+/**
+ * Where one entry failure points inside the entry's own expression, with what
+ * the attempt read there. JSON-e names the keys and indexes it walked; Liquid
+ * names the span of expression text it tokenized. Either way the text travels
+ * with the place, so a host marks it only against an expression that still
+ * spells the same thing.
+ */
+function entrySite(
+  error: unknown,
+  authored: ManagedFrontmatterEntry | undefined,
+): SliceSite | undefined {
+  const chain = errorChain(error);
+  // An empty path is the whole authored value, which is the place a rule of
+  // one operator fails at: JSON-e names the node it walked to, and for such a
+  // rule that node is the expression itself.
+  const path = chain.find(
+    (link): link is FrontmatterJsonEError =>
+      link instanceof FrontmatterJsonEError && link.path !== undefined,
+  )?.path;
+  if (path !== undefined && authored !== undefined && "value" in authored) {
+    const source = authoredAt(authored.value, path);
+    if (source !== undefined) return { kind: "path", path, source };
+  }
+  return renderFailureSpan(error);
+}
+
+/**
+ * What the author wrote at `path`, as the value a later mark is checked
+ * against. Undefined where the path does not describe the authored value at
+ * all: JSON-e leaves its own operator keys out of the locations it reports, so
+ * a path that steps through an operator names a place the author never wrote
+ * there, and a sibling that happens to sit at that name is not the fault.
+ */
+function authoredAt(
+  value: unknown,
+  path: readonly (string | number)[],
+): string | undefined {
+  let node = value;
+  for (const segment of path) {
+    if (node === null || typeof node !== "object") return undefined;
+    if (!Array.isArray(node) && Object.keys(node).some(isOperatorKey))
+      return undefined;
+    node = (node as Record<string | number, unknown>)[segment];
+    if (node === undefined) return undefined;
+  }
+  return JSON.stringify(node);
+}
+
+/** A key JSON-e reads as an operator rather than as a name to produce. */
+function isOperatorKey(key: string): boolean {
+  return key.startsWith("$") && !key.startsWith("$$");
 }
 
 /** Liquid retains the source token when a note call fails inside the format. */

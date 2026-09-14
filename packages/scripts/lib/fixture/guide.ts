@@ -234,8 +234,16 @@ Confirm that a live host vault answers before changing the Fixture:
   packages/scripts/scripts/obsidian-vault.ts check
 
 A successful check confirms host readiness. On failure, follow its recovery
-command after you open the selected host vault. Set ${OBSIDIAN_HOST_VAULT_ENV}
-to an open vault ID or folder name to select that host explicitly.
+command after you open the selected Host Vault. Set ${OBSIDIAN_HOST_VAULT_ENV}
+to a registered vault ID or unique folder name to select that host directly.
+An unset or empty value uses the focused window. Explicit selection errors stop
+the command. Each CLI probe has a five-second limit; the full check can take longer.
+
+An exact ID takes priority. Folder names must be unique across all registered
+vaults, including closed vaults; use the ID for duplicate names. If another
+folder name matches that ID, ignoring case, select another Host Vault or remove
+the conflicting registration. The selected path must exist and be recorded open.
+Saved open state can be stale; Obsidian can still open a closed window.
 
 Prepare the Fixture, open its per-worktree Development Vault, launch Paired
 Zotero, and verify that both extensions loaded:

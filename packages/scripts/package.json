@@ -4,14 +4,13 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#docs-availability": "./lib/docs-availability.ts",
     "#fixture": "./lib/fixture/build.ts",
     "#fixture/*": "./lib/fixture/*.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
+    "#obsidian-cli": "./lib/obsidian-cli.ts",
     "#obsidian-host-readiness": "./lib/obsidian-host-readiness.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
     "#package-roots": "./lib/package-roots.ts",
-    "#release-docs-handoff": "./lib/release-docs-handoff.ts",
     "#dev-vault": "./lib/dev-vault.ts"
   },
   "exports": {
@@ -23,7 +22,6 @@
   },
   "scripts": {
     "release": "node scripts/release.ts",
-    "docs:availability": "node scripts/docs-availability.ts",
     "fixture": "node scripts/fixture.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

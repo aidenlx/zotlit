@@ -83,6 +83,10 @@ export const FRONTMATTER_REMOVE_PARAMS = ["field"] as const;
 export const FRONTMATTER_REORDER_PARAMS = ["order"] as const;
 export const DATA_PARAMS = [
   "key",
+  "note",
+  "query",
+  "path",
+  "full",
   "root",
   "example",
   "format",
@@ -114,9 +118,12 @@ export const SOURCE_PARAMS = ["template"] as const;
  */
 type ObjectSelector = { key: string } | { example: CitationExampleId };
 
-export type DataRequest = ObjectSelector & {
+export type DataRequest = (ObjectSelector | { note: string }) & {
   root: ContractRoot;
   format: "json";
+  query?: string;
+  path?: string;
+  full?: true;
 };
 
 export type RenderRequest = ObjectSelector & {
@@ -134,24 +141,69 @@ export type DocumentRenderRequest =
   | { key: string; source: string };
 
 export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
-  const rejected = rejectAccepted(params, {
-    command: "template-data",
-    accepted: DATA_PARAMS,
-    hints: { template: dataCommandTemplateHint() },
-  });
+  const rejected = rejectAccepted(
+    { ...params, ...(params.full === "" ? { full: "true" } : {}) },
+    {
+      command: "template-data",
+      accepted: DATA_PARAMS,
+      hints: { template: dataCommandTemplateHint() },
+    },
+  );
   if (rejected) return invalid(rejected.parameter, rejected.message);
+  if (params.full !== undefined && params.full !== "" && params.full !== "true")
+    return invalid(
+      "full",
+      "Use the full flag to request the complete zt object.",
+    );
 
   const root = parseContractRoot(params.root);
   if (root === null) return invalid("root", rootVocabulary());
 
-  const selector = parseObjectSelector(params, root === "citation");
+  const selector: ParsedRequest<ObjectSelector | { note: string }> =
+    params.note !== undefined
+      ? typeof params.note === "string" &&
+        params.note.trim() &&
+        params.key === undefined &&
+        params.example === undefined
+        ? { kind: "valid" as const, value: { note: params.note } }
+        : invalid(
+            "note",
+            "Select one non-empty note path, key, or Citation example.",
+          )
+      : parseObjectSelector(params, root === "citation");
   if (selector.kind === "invalid") return selector;
+
+  const modes = [params.query, params.path, params.full].filter(
+    (value) => value !== undefined,
+  );
+  if (modes.length > 1)
+    return invalid(
+      "query",
+      "Use one of query=<words>, path=<zt.path>, or full.",
+    );
+  for (const name of ["query", "path"] as const) {
+    if (
+      params[name] !== undefined &&
+      (typeof params[name] !== "string" || !params[name].trim())
+    )
+      return invalid(
+        name,
+        `${name} must contain text. Use query=<field name> for discovery.`,
+      );
+  }
 
   const format = params.format ?? "json";
   if (format !== "json") {
     return invalid("format", "format must be 'json'.");
   }
-  return withExpectations(params, { ...selector.value, root, format: "json" });
+  return withExpectations(params, {
+    ...selector.value,
+    root,
+    format: "json",
+    ...(params.query === undefined ? {} : { query: params.query }),
+    ...(params.path === undefined ? {} : { path: params.path }),
+    ...(params.full === undefined ? {} : { full: true as const }),
+  });
 }
 
 export function parseRenderRequest(

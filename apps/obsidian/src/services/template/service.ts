@@ -188,6 +188,7 @@ export interface LiteratureNoteTemplateStatus {
           readonly code: LiteratureNoteTemplateErrorCode | "unknown";
           readonly message: string;
           readonly recovery: string;
+          readonly cause?: unknown;
         };
       };
 }
@@ -443,6 +444,8 @@ export class TemplateService extends Service<void> {
       transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
     }),
     compileErrors: new Map<string, CompileError>(),
+    /** Exact bytes observed by reconciliation, including sources that fail parsing. */
+    loadedDocumentSources: new Map<string, string>(),
     /** Name → the winner {@link #reconcileName} last resolved it to, with the
      *  JavaScript Templates gate already applied. Read by
      *  {@link getTemplateFileStatuses}, so status reports the winner the
@@ -551,6 +554,10 @@ export class TemplateService extends Service<void> {
 
   get compileErrors(): ReadonlyMap<string, CompileError> {
     return this.#registry.compileErrors;
+  }
+
+  getLoadedDocumentSource(path: string): string | undefined {
+    return this.#registry.loadedDocumentSources.get(path);
   }
 
   /** Name → vault path of a shadowed `.eta.md` file whose Liquid edition currently wins. */
@@ -858,11 +865,13 @@ export class TemplateService extends Service<void> {
                   code: error.code,
                   message: error.message,
                   recovery: error.recovery,
+                  cause: error.cause,
                 }
               : {
                   code: "unknown",
                   message: error.message,
                   recovery: "Correct the document, then inspect it again.",
+                  cause: error.cause,
                 },
         },
       };
@@ -1960,6 +1969,7 @@ export class TemplateService extends Service<void> {
       this.#registry.compileErrors.clear();
       this.#registry.literatureNoteDocuments.clear();
       this.#registry.literatureNoteDocumentErrors.clear();
+      this.#registry.loadedDocumentSources.clear();
 
       const root =
         folder === ""
@@ -2196,12 +2206,15 @@ export class TemplateService extends Service<void> {
     if (!file) {
       this.#registry.literatureNoteDocuments.delete(reference);
       this.#registry.literatureNoteDocumentErrors.delete(reference);
+      this.#registry.loadedDocumentSources.delete(path);
       return;
     }
 
+    let source: string | undefined;
     try {
-      const source = await this.#app.vault.cachedRead(file);
+      source = await this.#app.vault.cachedRead(file);
       if (generation !== this.#folderGeneration) return;
+      this.#registry.loadedDocumentSources.set(path, source);
       const document =
         this.#registry.facade.parseLiteratureNoteTemplate(source);
       this.#registry.literatureNoteDocuments.set(reference, { path, document });
@@ -2209,6 +2222,8 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       const failure = Error.isError(error) ? error : new Error(String(error));
+      if (source === undefined)
+        this.#registry.loadedDocumentSources.delete(path);
       this.#registry.literatureNoteDocuments.delete(reference);
       this.#registry.literatureNoteDocumentErrors.set(reference, failure);
       logger.warn("Failed to reconcile Literature Note Template document", {
@@ -2242,13 +2257,24 @@ export class TemplateService extends Service<void> {
           path,
         });
         this.#registry.reservedPartialFiles.set(name, path);
+        try {
+          const source = await this.#app.vault.cachedRead(file);
+          if (generation !== this.#folderGeneration) return;
+          this.#registry.loadedDocumentSources.set(path, source);
+        } catch (error) {
+          if (generation !== this.#folderGeneration) return;
+          this.#registry.loadedDocumentSources.delete(path);
+          logger.warn("Failed to read reserved partial file", { error, path });
+        }
       } else {
         this.#registry.reservedPartialFiles.delete(name);
+        this.#registry.loadedDocumentSources.delete(path);
       }
       return;
     }
 
     if (!file) {
+      this.#registry.loadedDocumentSources.delete(path);
       // A create rolled back during activation never owned the legacy name.
       if (!this.#registry.partialNames.has(name)) return;
       this.#registry.partialNames.delete(name);
@@ -2263,11 +2289,14 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       logger.warn("Failed to read partial file", { error, path });
+      this.#registry.loadedDocumentSources.delete(path);
       this.#removePartial(name);
+      this.#registry.compileErrors.set(name, { message: errorMessage(error) });
       return;
     }
     if (generation !== this.#folderGeneration) return;
 
+    this.#registry.loadedDocumentSources.set(path, source);
     let parsed;
     try {
       parsed = parsePlainTemplateDocument(source);
@@ -2327,6 +2356,7 @@ export class TemplateService extends Service<void> {
     const file = this.#app.vault.getFileByPath(path);
     if (!file) {
       this.#useBuiltInCitation();
+      this.#registry.loadedDocumentSources.delete(path);
       return;
     }
 
@@ -2336,11 +2366,14 @@ export class TemplateService extends Service<void> {
     } catch (error) {
       if (generation !== this.#folderGeneration) return;
       logger.warn("Failed to read the Citation Template", { error, path });
+      this.#registry.loadedDocumentSources.delete(path);
       this.#useBuiltInCitation();
+      this.#registry.compileErrors.set(name, { message: errorMessage(error) });
       return;
     }
     if (generation !== this.#folderGeneration) return;
 
+    this.#registry.loadedDocumentSources.set(path, source);
     let parsed;
     try {
       parsed = parsePlainTemplateDocument(source);

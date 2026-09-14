@@ -44,6 +44,10 @@ import {
   VAULT_CASES,
 } from "#fixture";
 import {
+  createBoundedObsidianCall,
+  isObsidianUnreachable,
+} from "#obsidian-cli";
+import {
   createObsidianHostReadiness,
   OBSIDIAN_HOST_TIMEOUT_MS,
   OBSIDIAN_HOST_VAULT_ENV,
@@ -87,13 +91,31 @@ function obsidianUserData(): string {
   );
 }
 
-/** The Obsidian CLI always exits 0 — failures come back only as output text. */
-async function cli(args: string[], signal?: AbortSignal): Promise<string> {
+/**
+ * The Obsidian CLI always exits 0 — failures come back only as output text.
+ * Bounded, because a vault window that has gone while the registry still calls
+ * it open never answers at all; see `#obsidian-cli`.
+ */
+const cli = createBoundedObsidianCall(async (args, signal) => {
   const result = await execFileAsync("obsidian", args, {
     signal,
+    // A CLI waiting on a window that never answers sits in `pthread_join` and
+    // outlives SIGTERM, which keeps its pipes — and so this process — alive
+    // long after the call was abandoned. SIGKILL reaps it instead of stranding
+    // it; such orphans were surviving for days.
+    killSignal: "SIGKILL",
     windowsHide: true,
   });
   return `${result.stdout}${result.stderr}`.trim();
+});
+
+/**
+ * Swallow a probe's failure so a retry loop can poll, but never the one that
+ * says the window is gone — no number of retries brings that window back.
+ */
+function rethrowUnreachable(error: unknown): undefined {
+  if (isObsidianUnreachable(error)) throw error;
+  return undefined;
 }
 
 async function readVaultRegistry(): Promise<Record<string, VaultEntry>> {
@@ -117,7 +139,7 @@ const checkObsidianHost = createObsidianHostReadiness({
       () => false,
     ),
   readRegistry: readVaultRegistry,
-  runObsidian: (args, signal) => cli(args, signal),
+  runObsidian: (args, signal) => cli(args, { signal }),
 });
 
 /** Run JavaScript in a vault window. Without `target`, the focused one answers. */
@@ -137,7 +159,12 @@ async function obEval(code: string, target?: string): Promise<string> {
 function isObsidianRunning(): Promise<boolean> {
   return obEval("true").then(
     (answer) => answer === "true",
-    () => false,
+    (error: unknown) => {
+      // An unreachable window is not a stopped app: taking the offline route
+      // here would rewrite the registry under a running main process.
+      rethrowUnreachable(error);
+      return false;
+    },
   );
 }
 
@@ -184,7 +211,7 @@ async function resolveRemovalHost(exclude?: string): Promise<string> {
     return id;
   }
 
-  const focused = await obEval("app.appId").catch(() => "");
+  const focused = await obEval("app.appId").catch(rethrowUnreachable);
   if (!focused) {
     throw new Error(
       `no Obsidian window answered. Open a vault, or set ${OBSIDIAN_HOST_VAULT_ENV}.`,
@@ -330,7 +357,7 @@ async function create(
     const answer = await obEval(
       `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
       id,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     return answer === "true";
   });
   if (!loaded) {
@@ -367,7 +394,7 @@ async function suspendLoadedPlugin(
   const loaded = await obEval(
     `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
     id,
-  ).catch(() => "false");
+  ).catch(rethrowUnreachable);
   if (loaded !== "true") return suspension.move();
 
   const disabled = await cli([
@@ -556,7 +583,7 @@ async function open(
     const answer = await obEval(
       `String(${JSON.stringify(pluginId)} in app.plugins.plugins)`,
       registered,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     return answer === "true";
   });
   if (!loaded) {
@@ -582,7 +609,7 @@ async function linkFixture(vaultId: string): Promise<void> {
     const answer = await obEval(
       `{const pref=app.plugins.plugins.${pluginId}.services.zoteroPref;pref.setProfileDir(${JSON.stringify(profileDir)});pref.setDataDir(${JSON.stringify(dataDir)});"configured"}`,
       vaultId,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     return answer === "configured";
   });
   if (!configured) {
@@ -590,7 +617,7 @@ async function linkFixture(vaultId: string): Promise<void> {
   }
 
   const resolved = await waitFor(async () => {
-    const report = await readFixtureLink(vaultId).catch(() => undefined);
+    const report = await readFixtureLink(vaultId).catch(rethrowUnreachable);
     return (
       report?.profileDir === profileDir && report.databasePath === databasePath
     );
@@ -605,7 +632,7 @@ async function linkFixture(vaultId: string): Promise<void> {
     const raw = await obEval(
       `(async()=>{const services=app.plugins.plugins.${pluginId}.services;await services.db.refresh();return JSON.stringify({profileDir:services.zoteroPref.resolvedProfileDir,databasePath:services.zoteroPref.databasePath,dbState:services.db.state})})()`,
       vaultId,
-    ).catch(() => "");
+    ).catch(rethrowUnreachable);
     if (!raw) return false;
     const report = JSON.parse(raw) as FixtureLinkReport;
     return (
@@ -838,8 +865,16 @@ const vaultCaseOption = {
 } as const;
 
 const hostReadinessReference = `Host readiness:
-  Host-dependent commands require a vault window that answers within
-  ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. Run 'obsidian-vault.ts check' before changing the Fixture.
+  Host-dependent commands require a Host Vault that answers each CLI probe
+  within ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. The complete check can take longer.
+  Run 'obsidian-vault.ts check' before changing the Fixture.
+  Set ZT_HOST_VAULT=<vault-id-or-folder-name> to select the host directly.
+  An unset or empty value uses the focused window. Explicit selection errors stop.
+  An exact registered ID takes priority; a folder name must be unique across
+  all registered vaults, including closed vaults. Use an ID for duplicate names.
+  If another folder name matches that ID, ignoring case, select another Host Vault
+  or remove the conflicting registration. The selected path must exist and be recorded open.
+  Saved open state can be stale; Obsidian can still open a closed window.
   On failure, check lists existing registered paths and missing stale paths.
   Open the selected host vault yourself, then rerun the reported command.`;
 

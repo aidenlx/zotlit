@@ -6,6 +6,7 @@ import type {
 } from "#/document/index";
 import type { Diagnostic } from "@codemirror/lint";
 import { forEachDiagnostic, setDiagnosticsEffect } from "@codemirror/lint";
+import { Compartment } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
@@ -14,8 +15,8 @@ import type { WorkbenchMessages } from "./generated/messages";
 import { diagnosisExplanation } from "./problems";
 import type { WorkbenchDiagnosis } from "./problems";
 
-import { jsonPosition } from "#/document/index";
-import { currentCallSite } from "#/render/locate";
+import { entryPosition, jsonPosition } from "#/document/index";
+import { currentCallSite, currentSliceSite } from "#/render/locate";
 
 const Findings = createContext<readonly WorkbenchDiagnosis[]>([]);
 const Reveal = createContext<((id: string) => void) | undefined>(undefined);
@@ -58,13 +59,29 @@ export function sourceDiagnostics({
   json: boolean;
 }): SourceDiagnostic[] {
   const bounds = controller.sliceRange(slice);
+  // The row this pane edits, when it edits one. A property failure names the
+  // place inside that row's own expression, which no other pane can place.
+  const position = entryPosition(slice);
+  const inSlice = (site: { from: number; to: number } | undefined) =>
+    site && { from: bounds.from + site.from, to: bounds.from + site.to };
+  // Whether a failure's own place is one this pane holds. A site is read
+  // against the text the pane shows, so one fault marks one place: the row it
+  // names, or the note-name pane a note-name failure names.
+  const ownSite = (diagnostic: { part?: string; position?: number }) =>
+    position !== null
+      ? diagnostic.position === position
+      : slice === "filename" && diagnostic.part === "filename";
   return diagnoses.flatMap((diagnosis) => {
     const explanation = diagnosisExplanation(messages, diagnosis);
     const ranges =
       diagnosis.kind === "document"
         ? diagnosis.occurrences.map((problem) => problem.range)
         : diagnosis.occurrences.map((diagnostic) =>
-            currentCallSite(diagnostic, controller),
+            ownSite(diagnostic)
+              ? inSlice(
+                  currentSliceSite(diagnostic, controller.sliceText(slice)),
+                )
+              : currentCallSite(diagnostic, controller),
           );
     return ranges.flatMap((range): SourceDiagnostic[] => {
       if (!range || range.from < bounds.from || range.to > bounds.to) return [];
@@ -76,10 +93,15 @@ export function sourceDiagnostics({
               offset - bounds.from,
             )
           : offset - bounds.from;
+      const from = local(range.from);
+      const to = local(range.to);
       return [
         {
-          from: local(range.from),
-          to: local(range.to),
+          from,
+          // A laid-out pane holds whitespace the stored text never had, and
+          // the mapping through it lands past the marked text. A pane that
+          // shows the stored text carries the range the failure verified.
+          to: json ? trimmedEnd(source, from, to) : to,
           severity: "error",
           diagnosisId: diagnosis.id,
           message: `${explanation.condition}\n${explanation.suggestion}`,
@@ -89,7 +111,19 @@ export function sourceDiagnostics({
   });
 }
 
-/** An explicit, keyboard-accessible control beside each affected source line. */
+/** Where a mark ends once the whitespace after the marked text is left out. */
+function trimmedEnd(source: string, from: number, to: number): number {
+  let end = to;
+  while (end > from + 1 && /\s/.test(source[end - 1] ?? "")) end -= 1;
+  return end;
+}
+
+/**
+ * An explicit, keyboard-accessible control beside each affected source line.
+ * The column is mounted while the pane holds a problem and dropped once it is
+ * clean, so a pane with nothing wrong keeps its full width. The pane owns that
+ * switch: it calls `show` whenever it sets the diagnostics the column reads.
+ */
 export function sourceProblemGutter(
   reveal: (id: string) => void,
   label: () => string,
@@ -110,7 +144,8 @@ export function sourceProblemGutter(
       return button;
     }
   }
-  return [
+  const slot = new Compartment();
+  const column = [
     gutter({
       class: "cm-problem-gutter",
       lineMarker(view, line) {
@@ -171,4 +206,9 @@ export function sourceProblemGutter(
       },
     }),
   ];
+  return {
+    extension: slot.of([]),
+    /** Mount the column while `present`, and drop it once nothing is wrong. */
+    show: (present: boolean) => slot.reconfigure(present ? column : []),
+  };
 }

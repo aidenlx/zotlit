@@ -1,8 +1,6 @@
 ---
 title: "Export a note with citations"
 description: "Export an active Markdown note with citations and a bibliography to DOCX or HTML."
-introduced: "2.1.0"
-updated: "2.1.0"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -73,7 +71,9 @@ Built-in export uses its own citation membership. The following settings do not 
 
 All wikilinks to Literature Notes are export members. A valid Citation Fragment such as `#cite:locator=33` adds its citation details.
 
-Literal Pandoc keys such as `@doe2024` also work. Each key must exist in the bibliography data that Zotero supplies.
+Literal Pandoc citations such as `[@doe2024]`, `[@doe2024, p. 12]`, and `[-@doe2024]` are export members too. Each citation key must name one Zotero item in the <UiLabel name={m.settings_library_scope_name()} />. A `nocite` property key adds its item to the bibliography without citing it in the text.
+
+Pandoc reads the note, so text it treats as ordinary — a key inside code or behind a `\` escape — is no citation of the export.
 
 <Callout type="info">
   Export is all-or-nothing. ZotLit writes the destination only after citation
@@ -89,6 +89,8 @@ Literal Pandoc keys such as `@doe2024` also work. Each key must exist in the bib
 | ZotLit cannot read the Zotero database                                                                        | Check the <UiLabel name={m.settings_page_zotero()} /> settings, then run the export again.                                            |
 | Zotero holds no item for a Literature Note                                                                    | Restore the missing item or update the Literature Note's `zotero-key`.                                                                |
 | Better BibTeX holds no citation key for a Literature Note                                                     | Assign a citation key in Better BibTeX, then run the export again.                                                                    |
+| No Zotero item matches a literal citation key                                                                 | Check the spelling of the key, or widen the <UiLabel name={m.settings_library_scope_name()} />.                                       |
+| A literal citation key matches multiple Zotero items                                                          | Change one of the keys in Zotero, or narrow the <UiLabel name={m.settings_library_scope_name()} />.                                   |
 | ZotLit asks you to start Zotero                                                                               | Start Zotero and keep it running during export.                                                                                       |
 | The Zotero local API is disabled                                                                              | In Zotero, open **Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero**.          |
 | Better BibTeX or the Zotero local API refuses the request                                                     | Check the named source in the error, then retry after it responds normally.                                                           |

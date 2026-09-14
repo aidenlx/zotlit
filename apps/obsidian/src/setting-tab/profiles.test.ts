@@ -3,6 +3,7 @@ import {
   ButtonComponent,
   ExtraButtonComponent,
   Menu,
+  Modal,
   Setting,
 } from "@mock/obsidian";
 import type {
@@ -18,7 +19,10 @@ import { describe, expect, it, vi } from "vitest";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
-import { openNativeProfile } from "@/views/template-workbench/register";
+import {
+  openNativeProfile,
+  openTemplateWorkbench,
+} from "@/views/template-workbench/register";
 
 import type { SettingTabContext } from "./context";
 import {
@@ -30,6 +34,7 @@ import {
 
 vi.mock("@/views/template-workbench/register", () => ({
   openNativeProfile: vi.fn(async () => {}),
+  openTemplateWorkbench: vi.fn(async () => {}),
 }));
 
 function context(): SettingTabContext {
@@ -396,53 +401,31 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
   );
 });
 
-it("adds a Profile from Default under the first unused number, with no dialog", async () => {
+it("collects a destination before creating a Profile and cancels without a write", async () => {
   const ctx = context();
-  const duplicate = vi.fn(async () => ({
-    id: "Jk6Lm8Np2Qr4",
-    path: "templates/zotlit-profile.profile-2.md",
-  }));
-  ctx.profile = {
-    profiles: [
-      {
-        id: "Bk3Qn7XvT2Lp",
-        label: "Profile 1",
-        bindings: {},
-        match: { state: "absent", summary: m.profile_match_absent() },
-      },
-      {
-        id: "Rz9Wm4YfH6Kd",
-        label: "Profile 3",
-        bindings: {},
-        match: { state: "absent", summary: m.profile_match_absent() },
-      },
-    ],
-    diagnostics: [],
-    loaded: true,
-    defaultDocumentPath: "templates/zotlit-profile.default.md",
-    resolveProfile: () => ({ label: undefined }),
-    duplicate,
-  } as unknown as SettingTabContext["profile"];
-  ctx.app = {
-    vault: { getFileByPath: () => null },
-    setting: { close: vi.fn() },
-  } as unknown as SettingTabContext["app"];
+  const create = vi.fn();
   ctx.requestUpdate = vi.fn();
-
+  ctx.profile.resolveProfile = vi.fn(() => ({
+    bindings: { "note.literature-folder": "literatures" },
+  })) as unknown as SettingTabContext["profile"]["resolveProfile"];
+  ctx.profile.prepareCreate = vi.fn(async () => ({
+    reason: m.settings_profile_name_invalid(),
+    create,
+  })) as unknown as SettingTabContext["profile"]["prepareCreate"];
   const profiles = list(profilesPage(ctx), m.settings_profile_other_heading());
   profiles.addItem!.action(document.createElement("div"));
-
-  // "Profile 1" and "Profile 3" are taken, so the gap is used before the tail.
-  await vi.waitFor(() =>
-    expect(duplicate).toHaveBeenCalledWith("default", {
-      label: m.settings_profile_numbered_name({ number: 2 }),
-    }),
+  const modal = Modal.instances.at(-1)!;
+  modal.onOpen();
+  expect(modal.title).toBe(m.settings_profile_add());
+  expect(modal.contentEl.textContent).toContain(m.settings_profile_name_name());
+  expect(modal.contentEl.textContent).toContain(
+    m.settings_profile_folder_name(),
   );
-  await vi.waitFor(() =>
-    expect(ctx.customize).toHaveBeenCalledExactlyOnceWith({
-      profileId: "Jk6Lm8Np2Qr4",
-    }),
-  );
+  modal.close();
+  modal.onClose();
+  await vi.waitFor(() => expect(ctx.requestUpdate).toHaveBeenCalledOnce());
+  expect(create).not.toHaveBeenCalled();
+  expect(openTemplateWorkbench).not.toHaveBeenCalled();
 });
 
 it("asks the import flow for its own source", async () => {

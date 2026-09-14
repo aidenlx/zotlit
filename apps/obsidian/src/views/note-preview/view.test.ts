@@ -242,6 +242,19 @@ async function pick(view: Preview, title: string) {
 const advance = (ms = 300) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
+/**
+ * Waits for the preview's Markdown to finish rendering. Each block marks
+ * itself pending while its own render runs and clears the mark once it has
+ * presented its citations, so the mark's absence is the completion signal.
+ */
+async function rendered(view: Preview): Promise<void> {
+  for (let round = 0; round < 20; round++) {
+    if (!view.contentEl.querySelector("[data-zotlit-preview-pending]")) return;
+    await act(async () => {});
+  }
+  throw new Error("The preview never finished rendering its Markdown.");
+}
+
 /** Presses the preview's own button whose text is `label`. */
 function previewButton(view: Preview, label: string): void {
   const button = Array.from(view.contentEl.querySelectorAll("button")).find(
@@ -1241,6 +1254,32 @@ Annotation`,
     expect(test.editor.store.getState().presentation.selected).toBe(1);
   });
 
+  it("names a note-name failure and opens the tab it is repaired in", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await failing(
+      test,
+      PROFILE_SOURCE.replace(
+        "filename: '{{ zt.title }}'",
+        "filename: '{% for tag i zt.tags %}{{ tag }}{% endfor %}'",
+      ),
+    );
+
+    // Only the note name failed, so the note the reader was reading stands.
+    expect(preview.contentEl.textContent).toContain("Better figures");
+    await act(async () => previewButton(preview, m.workbench_problem_show()));
+    const area = problemsArea(test.editor);
+    expect(area.textContent).toContain(m.workbench_name_filename_heading());
+
+    await act(async () =>
+      problemsButton(test.editor, m.workbench_problems_where_filename()),
+    );
+    expect(test.editor.store.getState()).toMatchObject({
+      advanced: false,
+      tab: "name",
+    });
+  });
+
   it("keeps an unclassified engine failure honest about what it knows", async () => {
     await using test = await setup();
     vi.useFakeTimers();
@@ -1414,6 +1453,9 @@ Annotation`,
       ),
     );
     await advance();
+    // The retained note is re-rendered under the failed attempt, so the
+    // assertions wait for that render rather than for the result alone.
+    await rendered(preview);
 
     expect(preview.contentEl.textContent).toContain(
       m.workbench_preview_retained(),

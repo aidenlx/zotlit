@@ -46,6 +46,27 @@ export interface RenderEngineLocation {
   readonly column?: number;
 }
 
+/**
+ * The failing place inside one pane's own text, named the way the engine that
+ * ran it names places: a JSON-e rule reports the keys and indexes it walked,
+ * and a Liquid expression reports a span of the text it tokenized. Both carry
+ * what the attempt read there, so a host marks a place only where the text it
+ * shows now still spells the same thing.
+ */
+export type SliceSite =
+  | {
+      readonly kind: "path";
+      readonly path: readonly (string | number)[];
+      /** The authored value at that path, as the attempt serialized it. */
+      readonly source: string;
+    }
+  | {
+      readonly kind: "span";
+      readonly from: number;
+      readonly to: number;
+      readonly source: string;
+    };
+
 /** The Template Document whose own call reached the failing template. */
 export interface RenderCaller {
   /** Its vault path, when the failure named one. */
@@ -64,8 +85,17 @@ export interface RenderDiagnostic {
   readonly message?: string;
   /** The values a host's own message for `code` reads. */
   readonly params?: Readonly<Record<string, string | number>>;
-  /** `annotation` names the Annotation Section alone as what failed. */
-  readonly part?: "annotation" | "profile" | "properties" | "render";
+  /**
+   * The preview surface this failure belongs to, so a host leaves every other
+   * one standing. `annotation` names the Annotation Section alone, `filename`
+   * the note name alone.
+   */
+  readonly part?:
+    | "annotation"
+    | "filename"
+    | "profile"
+    | "properties"
+    | "render";
   /**
    * 1-based position of the Managed Frontmatter entry that caused it, so the
    * responsible row can carry the diagnostic. Absent when nothing names one,
@@ -95,6 +125,14 @@ export interface RenderDiagnostic {
     readonly source: string;
     readonly offset: number;
   };
+  /**
+   * Where inside the failing surface — a Managed Frontmatter entry, the note
+   * name — the engine stopped, in that text's own terms rather than the
+   * document's. Only the open source knows where the surface sits, so a host
+   * resolves this against the text it shows and leaves it unmarked where that
+   * text no longer holds it.
+   */
+  readonly sliceSite?: SliceSite;
   /**
    * What the engine said before this diagnostic reduced it to `message`,
    * captured at the boundary that catches the error. Absent where the failure
@@ -277,10 +315,10 @@ export function sameRenderSelection(
 /**
  * `result` with the outputs it produced none of taken from `kept`, so an
  * attempt where one preview surface failed and another succeeded leaves each
- * reader the newest output their own surface has. The note's name, properties,
- * and marks travel with the output they describe; a surface
- * whose output is null either failed or is not this document's to produce, and
- * either way the last one that worked is what a reader compares against.
+ * reader the newest output their own surface has. The note's properties and
+ * marks travel with the body they describe; a surface whose output is null
+ * either failed or is not this document's to produce, and either way the last
+ * one that worked is what a reader compares against.
  *
  * A result for another paper, example, caller, or mode replaces what was kept
  * rather than filling in from it: another preview's output is no comparison.
@@ -291,9 +329,14 @@ export function retainOutputs<R extends TemplateRenderResult>(
 ): R {
   if (!sameRenderSelection(kept, result)) return result;
   const surfaces = [
+    // The note name renders apart from the note body, so it keeps its own
+    // newest output: a name that worked while the body failed stands, and a
+    // name that failed beside a body that worked shows the last that worked.
+    result.filename === null && kept.filename !== null
+      ? { filename: kept.filename }
+      : null,
     result.creationBody === null && kept.creationBody !== null
       ? {
-          filename: kept.filename,
           properties: kept.properties,
           fold: kept.fold,
           frontmatterBlock: kept.frontmatterBlock,

@@ -91,7 +91,11 @@ export function noteCustomizeRequest(
   const note = deps.profile.profileOf(file);
   if (!note.ok)
     return unknownProfileDiagnostic(note.stamped.stamp, { path: file.path });
-  return { profileId: note.profile.selector, item: noteItem(app, file) };
+  return {
+    profileId: note.profile.selector,
+    item: noteItem(app, file),
+    originatingNote: file,
+  };
 }
 
 function customizeNote(

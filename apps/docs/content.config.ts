@@ -89,18 +89,6 @@ export const docsMarkdownEdition: LLMsOptions = {
 
 export const docsSchema = v.object({
   ...pageSchema.entries,
-  /**
-   * First ZotLit release that contained the page's main subject. Unset
-   * until `release.ts`'s docs-availability phase assigns it at release
-   * time — see ADR 0002.
-   */
-  introduced: v.optional(semverSchema),
-  /**
-   * Latest ZotLit release that materially changed the page's main
-   * subject. Unset until `release.ts`'s docs-availability phase assigns
-   * it at release time — see ADR 0002.
-   */
-  updated: v.optional(semverSchema),
 });
 
 export const changelogSchema = v.object({

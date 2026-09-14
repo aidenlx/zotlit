@@ -1,5 +1,5 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
-import { parseYaml, stringifyYaml, getFrontMatterInfo } from "obsidian";
+import { stringifyYaml } from "obsidian";
 
 import { DEFAULT_CITATION_VARIANT, withAnnotationCitation } from "@zotlit/db";
 import type {
@@ -10,15 +10,15 @@ import type {
 import { replaceSuffixMarkers } from "@zotlit/templates";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { parsePlainTemplateDocument } from "@zotlit/templates/facade";
-import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
-import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import {
   citationExampleData,
   emptyRender,
   engineEvidence,
   failedRender,
+  filenameErrorDiagnostic,
+  propertyErrorDiagnostic,
   renderFailureDiagnostic,
   renderIdentity,
   retainOutputs,
@@ -47,10 +47,8 @@ import {
   prepareLiteratureNote,
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
-import type { ResolvedProfile } from "@/services/profile/bindings";
-import { seedProfileEntry } from "@/services/profile/service";
+import { bindUnvalidatedDraftProfile } from "@/services/profile/service";
 import type { ProfileService } from "@/services/profile/service";
-import type { Settings } from "@/services/settings/schema";
 import {
   loadCitationData,
   loadTemplateData,
@@ -60,6 +58,9 @@ import type { ConversionRawSource } from "@/services/template/conversion-copy";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 
+import { previewBaseline } from "./baseline";
+export { previewBaseline } from "./baseline";
+import { nativePropertyRows } from "./check-profile";
 import { renderDraftCitations } from "./citations";
 import type { NativeCitationDeps, PreviewCitation } from "./citations";
 
@@ -287,7 +288,7 @@ async function partialRootData(
   const profile =
     chosen ??
     (draft
-      ? bindDraftProfile(settings, draft)
+      ? bindUnvalidatedDraftProfile(settings, draft)
       : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
     { ...deps, settings: { loaded: Promise.resolve(profile.settings) } },
@@ -311,28 +312,6 @@ function draftProfileManifest(
   } catch {
     return null;
   }
-}
-
-/**
- * The Profile a draft Profile document resolves under, exactly as the registry
- * resolves a saved one: one entry seeded from the manifest, bound by the
- * shared resolver. The preview reads neither the entry's match nor its
- * document reference, so the draft supplies no Library scope and no path.
- */
-function bindDraftProfile(
-  settings: Settings,
-  manifest: LiteratureNoteTemplateManifest,
-): ResolvedProfile {
-  return manifest.id === DEFAULT_PROFILE
-    ? bindProfile(settings, { selector: DEFAULT_PROFILE })
-    : bindProfile(settings, {
-        selector: manifest.id as ProfileId,
-        entry: seedProfileEntry(manifest, {
-          document: "",
-          path: "",
-          libraries: [],
-        }),
-      });
 }
 
 /**
@@ -464,34 +443,17 @@ async function citationRootData(
     : { kind: "unavailable", message: m.workbench_example_missing_item() };
 }
 
-/** Keep the real note's outside body and unrelated Properties, entirely in memory. */
-export function previewBaseline(
-  source: string | null,
-  created: string,
-  managed: string | null,
-) {
-  const info = source === null ? null : getFrontMatterInfo(source);
-  const current: unknown = info?.exists ? parseYaml(info.frontmatter) : {};
-  const frontmatter: Record<string, unknown> =
-    current !== null && typeof current === "object" && !Array.isArray(current)
-      ? { ...current }
-      : {};
-  const body = source === null ? created : source.slice(info!.contentStart);
-  return {
-    frontmatter,
-    body:
-      managed === null
-        ? body
-        : replaceManagedRegion(body, () => managed).content,
-  };
-}
-
 export async function renderNativeProfile(
   deps: NativeRenderDeps,
   request: RenderRequest,
 ): Promise<NativeRenderResult> {
   const identity = renderIdentity(request);
   let sourcePath = "";
+  // The note name is produced apart from everything else, so a mistake in the
+  // Filename Template leaves the rest of this preview on screen and a mistake
+  // anywhere else leaves the name this attempt produced.
+  let noteName: string | null = null;
+  let noteNameFailure: RenderDiagnostic | null = null;
   try {
     await deps.templates.ready;
     const document = deps.templates.prepareLiteratureNoteTemplateSource(
@@ -499,7 +461,7 @@ export async function renderNativeProfile(
     );
     const settings = await deps.settings.loaded;
     const manifest = document.manifest;
-    const profile = bindDraftProfile(settings, manifest);
+    const profile = bindUnvalidatedDraftProfile(settings, manifest);
     const dataDeps = {
       ...deps,
       settings: { loaded: Promise.resolve(profile.settings) },
@@ -525,6 +487,19 @@ export async function renderNativeProfile(
     const context = note.data as NoteTemplateContext;
     const composeDeps = { template: deps.templates };
     const diagnostics: RenderDiagnostic[] = [];
+    try {
+      // A preview assumes a free filename; the vault resolves collisions on save.
+      noteName = replaceSuffixMarkers(
+        document.renderFilename(filename.data),
+        () => "",
+      );
+    } catch (error) {
+      noteNameFailure = filenameErrorDiagnostic(
+        error,
+        callerSource(deps, request.source),
+      );
+      diagnostics.push(noteNameFailure);
+    }
     const onConflict: FrontmatterMergeConflictHandler = (key, detail) =>
       diagnostics.push({
         code: "property-append-conflict",
@@ -549,26 +524,17 @@ export async function renderNativeProfile(
     const { prepared } = composed;
     const properties: TemplateRenderResult["properties"][number][] = [];
     if (prepared.kind === "document")
-      for (const field of prepared.fields) {
-        const missing =
-          field.value === undefined || field.value === FRONTMATTER_ABSENT;
-        properties.push({
-          key: field.key,
-          position: field.position!,
-          missing,
-          ...(missing ? {} : { value: field.value }),
-        });
-      }
+      properties.push(...nativePropertyRows(prepared.fields));
     if (composed.outcome === "refused")
       for (const error of composed.evaluation.errors)
-        diagnostics.push({
-          code: "property-error",
-          part: "properties",
-          position: error.position,
-          params: { key: error.key },
-          message: errorText(error.error),
-          evidence: engineEvidence(error.error),
-        });
+        // The same answer the web renderer reads, so a row underlines the text
+        // that failed and reads the engine's own words in either host.
+        diagnostics.push(
+          propertyErrorDiagnostic(
+            error,
+            manifest.frontmatter?.[error.position - 1],
+          ),
+        );
     manifest.frontmatter?.forEach((entry, index) => {
       if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
         diagnostics.push({
@@ -710,10 +676,7 @@ export async function renderNativeProfile(
       sourcePath,
       citations: noteCitations.citations,
       annotationCitations: annotationCitations.citations,
-      filename: replaceSuffixMarkers(
-        document.renderFilename(filename.data),
-        () => "",
-      ),
+      filename: noteName,
       properties,
       fold: Object.entries(frontmatter).map(([key, value]) => ({
         key,
@@ -732,20 +695,22 @@ export async function renderNativeProfile(
       diagnostics,
     };
   } catch (error) {
+    const failure = failedRender(
+      identity,
+      renderFault(error, "render", callerSource(deps, request.source)),
+    );
     return {
-      ...failedRender(
-        identity,
-        renderFault(error, "render", callerSource(deps, request.source)),
-      ),
+      ...failure,
+      filename: noteName,
+      diagnostics: [
+        ...(noteNameFailure ? [noteNameFailure] : []),
+        ...failure.diagnostics,
+      ],
       sourcePath,
       citations: [],
       annotationCitations: [],
     };
   }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
