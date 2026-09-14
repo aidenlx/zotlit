@@ -36,6 +36,7 @@ import type { TemplateDataDeps } from "./data";
 import { CONTRACT_VERSION } from "./envelope";
 import { createInspectHandler, sourceRevision } from "./inspect";
 import type { InspectDeps, InspectDocument, SourceVersion } from "./inspect";
+import { INSPECT_DIAGNOSTICS } from "./inspect-contract";
 import {
   choices,
   CITATION_VARIANT_NAMES,
@@ -586,6 +587,21 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
               "Select a partial caller root and applicable data; plain documents use create mode.",
           },
         });
+      if (
+        document.problems.some(
+          (problem) =>
+            (problem as { code?: unknown } | null)?.code ===
+            "RESERVED_PARTIAL_NAME",
+        )
+      )
+        return finish({
+          ...context,
+          ok: false,
+          diagnostic: {
+            code: "RESERVED_PARTIAL_NAME",
+            ...INSPECT_DIAGNOSTICS.RESERVED_PARTIAL_NAME,
+          },
+        });
       const checks: Record<string, ProfileCheck> = {
         structure: { status: "not-checked", diagnostics: [] },
         [document.kind]: { status: "not-checked", diagnostics: [] },
@@ -916,6 +932,21 @@ export function createCheckHandler(deps: CheckDeps): CliHandler {
       const document =
         deps.templates.prepareLiteratureNoteTemplateSource(source);
       const selector = parseProfileSelector(document.manifest.id ?? "default");
+      if (draft && selector === undefined)
+        return finish({
+          ...context,
+          ok: false,
+          checks: {
+            ...checks,
+            structure: { status: "failed", diagnostics: [] },
+          },
+          diagnostic: {
+            code: "INVALID_PROFILE_ID",
+            message: "The Profile ID must contain twelve letters or digits.",
+            recovery:
+              "Set the draft manifest id to 'default' or to a twelve-character Profile ID, then check the draft again.",
+          },
+        });
       const profile = draft
         ? bindDraftProfile(await deps.data.settings.loaded, document.manifest)
         : selector === undefined

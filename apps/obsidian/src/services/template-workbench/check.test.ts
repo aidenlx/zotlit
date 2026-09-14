@@ -506,6 +506,41 @@ describe("registered template-check", () => {
     ]);
   });
 
+  it("refuses a standalone draft identity that is no Profile ID", async () => {
+    await using f = await fixture();
+    const draft = await f.draft(SOURCE.replace("Bk3Qn7XvT2Lp", "x"));
+
+    expect(await f.check({ draft, key: "1:ABCD2345" })).toMatchObject({
+      ok: false,
+      input: { origin: "draft", path: draft },
+      checks: { structure: { status: "failed" } },
+      diagnostic: { code: "INVALID_PROFILE_ID" },
+    });
+    expect(loadTemplateData).not.toHaveBeenCalled();
+  });
+
+  it("refuses a saved Shared Partial whose filename is a reserved name", async () => {
+    await using f = await fixture();
+    f.vault.createFile(
+      "templates/zotlit-partial.note.md",
+      "Reserved partial output",
+    );
+    await f.template.waitUntilSettled(1000);
+
+    expect(
+      await f.check({
+        document: "partial:note",
+        root: "note",
+        key: "ABCD2345",
+        output: "all",
+      }),
+    ).toMatchObject({
+      ok: false,
+      document: { id: "partial:note" },
+      diagnostic: { code: "RESERVED_PARTIAL_NAME" },
+    });
+  });
+
   it("binds changed and removed draft overrides against current Default settings", async () => {
     await using f = await fixture(
       SOURCE.replace(
