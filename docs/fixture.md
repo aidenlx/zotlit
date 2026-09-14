@@ -89,6 +89,18 @@ packages/scripts/scripts/obsidian-vault.ts check
 
 A successful check confirms host readiness. When it fails, open the host vault that you select and follow the exact recovery instructions in the error.
 
+Set `ZT_HOST_VAULT` to select a Host Vault when the focused window does not answer:
+
+```sh
+ZT_HOST_VAULT=<vault-id-or-folder-name> packages/scripts/scripts/obsidian-vault.ts check
+```
+
+Use the same variable with `open`, `create`, `sync`, or a Paired Run. A nonempty value selects that host directly. An unset or empty value uses the focused window. An explicit selection failure stops the command.
+
+An exact registered vault ID takes priority. Otherwise, the folder name must match exactly one registered vault, including closed vaults. Use the ID from the error's registry listing to resolve duplicate folder names. If another vault's folder name matches that ID, ignoring case, select another Host Vault or remove the conflicting registration from Obsidian.
+
+The selected vault must have an existing path and be recorded as open. The check then verifies its response and live vault entry. The saved open state can be stale, so this check cannot guarantee that Obsidian keeps every closed window closed. Each CLI probe has a five-second limit; the complete check can take longer.
+
 ## Run a Paired Run
 
 A Paired Run opens Paired Zotero and a Development Vault on the same Fixture. Use it to prepare both applications for a manual smoke test on macOS or Windows.
