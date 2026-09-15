@@ -33,7 +33,6 @@ import type {
 const logger = getLogger(["template", "migration"]);
 
 interface MigrationSettings {
-  readonly current?: Awaited<MigrationSettings["loaded"]> | null;
   loaded: Promise<
     Readonly<
       Pick<
@@ -311,6 +310,8 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 
     // Every source is built and verified before the first write, so a refusal
     // anywhere below leaves the vault exactly as the user left it.
+    // Each fold is caught on its own so a refusal names the files that fold
+    // reads: the citation and partial files, or the Literature Note slots.
     let documents: { path: string; source: string }[];
     let legacyFiles: string[];
     let kept: readonly string[];
@@ -321,7 +322,17 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       documents = [...converted.documents];
       legacyFiles = [...converted.trashed];
       kept = converted.kept;
-      if (profilePath) {
+    } catch (error) {
+      if (error instanceof LegacyTemplateConversionError) {
+        return refusedByConversion(error, [
+          ...legacy.citation.map(({ path }) => path),
+          ...legacy.partials.map(({ path }) => path),
+        ]);
+      }
+      throw error;
+    }
+    if (profilePath) {
+      try {
         const profile =
           await this.#template.convertLegacyLiteratureNoteTemplates({
             note: data.note,
@@ -330,16 +341,12 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
           });
         documents.unshift({ path: profilePath, source: profile.source });
         legacyFiles.push(...profile.legacyFiles);
+      } catch (error) {
+        if (error instanceof LegacyTemplateConversionError) {
+          return refusedByConversion(error, slotFiles);
+        }
+        throw error;
       }
-    } catch (error) {
-      if (error instanceof LegacyTemplateConversionError) {
-        return refusedByConversion(error, [
-          ...slotFiles,
-          ...legacy.citation.map(({ path }) => path),
-          ...legacy.partials.map(({ path }) => path),
-        ]);
-      }
-      throw error;
     }
 
     const occupied = documents.find(({ path }) =>
@@ -370,24 +377,8 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     this.#settings.update({ "note.template-conversion-pending": false });
     await this.#settings.flush();
 
-    const trashed: string[] = [];
-    const pendingCleanup: string[] = [];
-    for (const path of legacyFiles) {
-      const file = this.#app.vault.getFileByPath(path);
-      if (!file) continue;
-      try {
-        await this.#app.fileManager.trashFile(file);
-        trashed.push(path);
-      } catch (error) {
-        // The accepted documents are already active. Keep this file in place
-        // for a later retry rather than undo the conversion.
-        pendingCleanup.push(path);
-        logger.warn("Failed to move a legacy template file to trash", {
-          error,
-          path,
-        });
-      }
-    }
+    const { trashed, pendingCleanup } =
+      await this.#trashLegacyFiles(legacyFiles);
     this.#settings.update({
       "note.template-conversion-result": {
         document: profilePath,
@@ -415,40 +406,25 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
   /**
    * Trash the legacy files a previous conversion could not move, from the
    * recorded `pendingCleanup`. A file that still resists stays on the list.
+   * @throws when no conversion has completed: the Welcome view offers the
+   * retry only beside a recorded result.
    */
-  async retryCleanup(): Promise<LiteratureNoteTemplateMigrationResult> {
+  async retryCleanup(): Promise<
+    Extract<LiteratureNoteTemplateMigrationResult, { outcome: "converted" }>
+  > {
     await this.ready;
-    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    const settings = await this.#settings.loaded;
     const accepted = settings["note.template-conversion-result"];
     if (!accepted) {
-      return refused(
-        "no-legacy-templates",
-        "No completed conversion was found",
-        "Convert the legacy templates before retrying cleanup.",
-      );
+      throw new Error("Cleanup retry needs a completed conversion");
     }
-    const pendingCleanup: string[] = [];
-    const trashed: string[] = [];
-    let trashedCount = accepted.trashed;
-    for (const path of accepted.pendingCleanup ?? []) {
-      const file = this.#app.vault.getFileByPath(path);
-      if (!file) continue;
-      try {
-        await this.#app.fileManager.trashFile(file);
-        trashed.push(path);
-        trashedCount += 1;
-      } catch (error) {
-        pendingCleanup.push(path);
-        logger.warn("Failed to retry moving a legacy template file to trash", {
-          error,
-          path,
-        });
-      }
-    }
+    const { trashed, pendingCleanup } = await this.#trashLegacyFiles(
+      accepted.pendingCleanup,
+    );
     this.#settings.update({
       "note.template-conversion-result": {
         ...accepted,
-        trashed: trashedCount,
+        trashed: accepted.trashed + trashed.length,
         pendingCleanup,
       },
     });
@@ -461,6 +437,33 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       pendingCleanup,
       kept: [],
     };
+  }
+
+  /**
+   * Move legacy files to trash once the converted documents are active. A
+   * file that resists stays in place for a later retry: the conversion is
+   * already accepted, so a cleanup fault never undoes it.
+   */
+  async #trashLegacyFiles(
+    paths: readonly string[],
+  ): Promise<{ trashed: string[]; pendingCleanup: string[] }> {
+    const trashed: string[] = [];
+    const pendingCleanup: string[] = [];
+    for (const path of paths) {
+      const file = this.#app.vault.getFileByPath(path);
+      if (!file) continue;
+      try {
+        await this.#app.fileManager.trashFile(file);
+        trashed.push(path);
+      } catch (error) {
+        pendingCleanup.push(path);
+        logger.warn("Failed to move a legacy template file to trash", {
+          error,
+          path,
+        });
+      }
+    }
+    return { trashed, pendingCleanup };
   }
 
   /** Trash the documents this pass created, newest first. A file that resists
@@ -492,7 +495,7 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 
   async #detectTemplates(layoutReady: boolean): Promise<void> {
     if (this.#stopped) return;
-    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    const settings = await this.#settings.loaded;
     const legacy = this.#template.getLegacyTemplateDocuments();
     const hasLegacyFiles =
       this.#template.getLegacyLiteratureNoteTemplateFiles().length > 0 ||
@@ -505,15 +508,21 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       this.#app.vault.getFileByPath(
         join(settings["template.folder"], CONVERTED_DEFAULT_PROFILE_DOCUMENT),
       ) !== null;
-    const detection = {
+    const branch =
+      !converted && !hasLegacyFiles && !layoutReady
+        ? "deferred"
+        : converted || !hasLegacyFiles
+          ? "converted-or-none"
+          : settings["note.template-conversion-pending"]
+            ? "already-answered"
+            : "newly-armed";
+    logger.debug("Template conversion detection", {
       phase: layoutReady ? "layout-ready" : "initial",
       foundLegacy: hasLegacyFiles,
-    };
-    if (!converted && !hasLegacyFiles && !layoutReady) {
-      logger.debug("Template conversion detection", {
-        ...detection,
-        branch: "deferred",
-      });
+      converted,
+      branch,
+    });
+    if (branch === "deferred") {
       // The first scan can precede Obsidian's vault inventory. Keep startup
       // finite and preserve a saved pending flag until the layout-ready scan.
       this.#app.workspace.onLayoutReady(async () => {
@@ -529,37 +538,22 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       });
       return;
     }
-    if (converted || !hasLegacyFiles) {
-      logger.debug("Template conversion detection", {
-        ...detection,
-        branch: "converted-or-none",
-        converted,
-      });
+    if (branch === "converted-or-none") {
       if (settings["note.template-conversion-pending"]) {
         this.#settings.update({ "note.template-conversion-pending": false });
         await this.#settings.flush();
       }
       return;
     }
+    if (branch === "already-answered") return;
 
-    if (!settings["note.template-conversion-pending"]) {
-      this.#settings.update({ "note.template-conversion-pending": true });
-      await this.#settings.flush();
-      logger.debug("Template conversion detection", {
-        ...detection,
-        branch: "newly-armed",
-      });
-      if (layoutReady) {
-        if (!this.#stopped) await this.#openPrompt();
-      } else {
-        this.#app.workspace.onLayoutReady(() => {
-          if (!this.#stopped) void this.#openPrompt();
-        });
-      }
+    this.#settings.update({ "note.template-conversion-pending": true });
+    await this.#settings.flush();
+    if (layoutReady) {
+      if (!this.#stopped) await this.#openPrompt();
     } else {
-      logger.debug("Template conversion detection", {
-        ...detection,
-        branch: "already-answered",
+      this.#app.workspace.onLayoutReady(() => {
+        if (!this.#stopped) void this.#openPrompt();
       });
     }
   }

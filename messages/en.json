@@ -83,7 +83,7 @@
   "notice_literature_note_template_conversion_no_annotation": "Add an annotation to a Zotero item, then try again.",
   "notice_literature_note_template_conversion_exists": "The converted profile document already exists. Rename or remove it, then try again.",
   "notice_literature_note_template_conversion_none": "No legacy template files need conversion.",
-  "notice_literature_note_template_conversion_pending_cleanup": "The converted templates are active, but some old files could not be moved to trash. Review them from the Welcome view and retry cleanup.",
+  "notice_literature_note_template_conversion_pending_cleanup": "The converted templates are active, but these old files could not be moved to trash: {files}. Retry cleanup from the welcome view.",
   "notice_duplicate_literature_notes": "Multiple literature notes use this Zotero key: {paths}. ZotLit used {selected}; resolve the duplicates.",
   "notice_create_note_failed": "Failed to create literature note.",
   "notice_empty_filename": "The filename template rendered an empty name. Adjust the template and try again.",
@@ -1113,7 +1113,7 @@
   "settings_migration_reminder_name": "Finish migrating from v1",
   "settings_migration_reminder_mark_done": "Mark as done",
   "settings_template_conversion_reminder_action": "Review conversion",
-  "settings_template_conversion_reminder_desc": "Your legacy templates remain active. Review conversion when you are ready.",
+  "settings_template_conversion_reminder_desc": "Legacy templates stay active until you convert them. Review the conversion when you are ready.",
   "settings_resources_whats_new_name": "What's new in v{version}",
   "settings_resources_whats_new_desc": "See what changed in this release.",
   "settings_resources_whats_new_button": "View release notes",
@@ -1211,7 +1211,7 @@
   "welcome_migration_title": "Upgrading from ZotLit v1",
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
   "welcome_template_conversion_title": "Convert your literature note templates",
-  "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. Before writing anything, it renders the converted templates with one Zotero item, one annotation when an annotation template exists, and a one-item citation, then compares that output with the legacy output. It also checks that the frontmatter fields evaluate. This covers the selected data, not every item. When the checks pass, it moves the old files to Obsidian’s configured trash.",
+  "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. Before it writes anything, it renders one Zotero item (with one annotation and a one-item citation where your templates use them) through the old and the new templates and compares the output, and checks that the frontmatter fields evaluate. When the checks pass, it moves the old files to Obsidian’s configured trash.",
   "welcome_template_conversion_completed_title": "Literature note templates converted",
   "welcome_template_conversion_completed_body": [
     {
