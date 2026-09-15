@@ -501,8 +501,8 @@ export default class ZotLitPlugin extends Plugin {
         attachmentImport: services.attachmentImport,
         openSettings: () => {
           openSettingsTab(this.app, this.manifest.id, [
-            m.settings_page_attachments(),
-            m.settings_attachment_approved_name(),
+            "settings_page_attachments",
+            "settings_attachment_approved",
           ]);
         },
       }),
