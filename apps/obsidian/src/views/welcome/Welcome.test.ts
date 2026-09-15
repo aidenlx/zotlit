@@ -139,6 +139,26 @@ it("replaces the pending prompt with the persisted result after conversion", asy
   expect(container.textContent).not.toContain(m.welcome_migration_title());
 });
 
+it("lists retained files and retries cleanup from the completed state", async () => {
+  const { actions, container } = await render("upgraded", {
+    templateConversionResult: {
+      document: "Research templates/zotlit-profile.default.md",
+      trashed: 2,
+      pendingCleanup: ["Research templates/zotlit-note.liquid.md"],
+    },
+  });
+
+  expect(container.textContent).toContain(
+    "Research templates/zotlit-note.liquid.md",
+  );
+  const retry = [...container.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === m.welcome_template_cleanup_retry(),
+  );
+  expect(retry).toBeDefined();
+  await act(() => retry?.click());
+  expect(actions.retryTemplateCleanup).toHaveBeenCalledOnce();
+});
+
 async function render(
   mode: "fresh" | "upgraded",
   state: Partial<WelcomeState> = {},
@@ -155,6 +175,7 @@ async function render(
   });
   const actions: WelcomeActions = {
     convertLiteratureNoteTemplates: vi.fn(async () => {}),
+    retryTemplateCleanup: vi.fn(async () => {}),
     locateZotero: vi.fn(),
     openExternal: vi.fn(),
     openSettings: vi.fn(),
