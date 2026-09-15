@@ -1092,7 +1092,7 @@
   "welcome_migration_title": "从 ZotLit v1 升级",
   "welcome_migration_body": "在您重命名自定义 Eta 模板并启用 JavaScript 模板门之前，不会加载自定义 Eta 模板。",
   "welcome_template_conversion_title": "转换文献笔记模板",
-  "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个片段各自成文件。在写入任何文件前，ZotLit 会验证输出逐字节一致，随后将旧文件移至 Obsidian 设定的回收站。",
+  "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个片段各自成文件。写入任何文件前，它会用一个 Zotero 条目、一个批注（存在批注模板时）和一条单条目引用渲染转换后的模板，并将该输出与旧版输出比对。它还会检查 Frontmatter 字段能否成功求值。这只覆盖所选数据，而非每个条目。检查通过后，它会将旧文件移至 Obsidian 设定的回收站。",
   "welcome_template_conversion_completed_files": [
     {
       "declarations": ["input count", "local category = count: plural"],
