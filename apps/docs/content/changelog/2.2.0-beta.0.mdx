@@ -1,6 +1,7 @@
 ---
 version: "2.2.0-beta.0"
 date: "2026-09-15"
+companion: "2.2.0-beta.0"
 description: "Literature note profiles, the Template Workbench, citations in the graph view"
 ---
 
@@ -14,6 +15,8 @@ ZotLit 2.2 gives a literature note template one document of its own, adds a work
 ## Highlights
 
 ### Citations in the graph view
+
+![The global graph view showing citation edges linking literature notes and a dimmed Cited Work Node, beside a note's local graph and the References Sidebar](/img/changelog/graph-view-citations.webp)
 
 Your citations now appear in Obsidian's graph. A note gains an edge to every work it cites, so literature notes stop floating unconnected and two notes that cite the same paper meet at its node. Where no literature note exists yet, the work appears as a dimmed Cited Work Node.
 
@@ -52,9 +55,11 @@ If a command opens nothing, ZotLit says why: the Graph core plugin is off, the c
 
 ### Literature note profiles
 
+![A profile document open in the editor beside the Literature note profiles settings page, listing the Default profile, a Books profile, and the book-details partial](/img/changelog/literature-note-profiles.webp)
+
 2.1 built a literature note from separate files: a note file, a managed-region file, a filename file, an annotation file, and a frontmatter field list that lived in settings. 2.2 puts the whole note into one Markdown document per profile. Each `zotlit-profile.<slug>.md` in your template folder holds the note name, the note folder, the properties, the note body, and the annotation format together.
 
-Two companions complete the set. `zotlit-citation.md` holds the text of every inserted citation, once for the whole vault, and each `zotlit-partial.<name>.md` holds template text that several profiles share.
+Two companions complete the set. `zotlit-citation.md` holds the text of every inserted citation, once for the whole vault, and each `zotlit-partial.<name>.md` holds template text that several profiles share. [Profile document](/docs/reference/templates/profile-document) gives the format of all three.
 
 <SettingsPath page={m.settings_page_profiles()} /> is the new home of all of
 this. The <UiLabel name={m.settings_profile_default_name()} /> row is your
@@ -75,13 +80,15 @@ Below the profiles sits the <UiLabel name={m.settings_partials_heading()} /> lis
 and its <UiLabel name={m.settings_template_reset()} /> button returns it to the
 built-in text once you have changed it.
 
-A profile can also select itself. A Profile Match tests an item's library, item type, tags, or collections, and every new note that fits uses that profile. A profile without a Match stays manual. See [Profile Match](/docs/reference/templates/profile-match).
+A profile can also select itself. A Profile Match tests an item's library, item type, tags, or collections, and every new note that fits uses that profile. A profile without a Match stays manual. See [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates) for the steps from an empty profile to a matched one.
 
 Every note records the profile that made it, so a later update uses the same template. <Command inline name={m.command_switch_literature_note_profile_name()} /> moves a note, and the imported notes that follow it, onto another profile.
 
-[How templates work](/docs/concepts/how-templates-work) covers the three kinds of document, and [converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) the upgrade.
+[Profiles](/docs/concepts/profiles) explains how ZotLit picks one and how a note keeps it, [How templates work](/docs/concepts/how-templates-work) covers the three kinds of document, and [converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) the upgrade.
 
 ### The Template Workbench
+
+![The Template Workbench layout with the Fields pane, the profile editor showing a Liquid template with a field hover card, and the Note preview pane](/img/changelog/template-workbench-layout.webp)
 
 Your templates have a view of their own now, with the fields beside the editor and the resulting note on the other side. <Command inline name={m.template_workbench_open()} /> opens the document in your active note, and <Command inline name={m.template_workbench_open_layout()} /> opens all three panes together, in a window of their own when the editor would otherwise share one. From a literature note, <Command inline name={m.command_customize_note_template_name()} /> opens the profile that made it with that paper already selected.
 
@@ -91,7 +98,7 @@ The preview refreshes as you type. Its pane menu switches between <UiLabel name=
 
 Repeated text becomes a partial in one step. Select it, then choose <UiLabel name={m.template_workbench_extract_partial()} />. <UiLabel name={m.workbench_partial_new()} /> starts one from scratch, the <UiLabel name={m.template_workbench_partials()} /> menu lists every partial in the vault, and <UiLabel name={m.template_workbench_open_markdown()} /> opens the same document in Obsidian's own editor.
 
-[Template Workbench View](/docs/concepts/template-workbench-view) describes every way in, and [Customize a template](/docs/how-to/customize-a-template) walks through the profile, the citation text, and partials.
+[Template Workbench View](/docs/concepts/template-workbench-view) describes every way in, [Customize a template](/docs/how-to/customize-a-template) walks through the profile, the citation text, and partials, and [Edit a profile as Markdown](/docs/how-to/edit-a-profile-as-markdown) is the route for anyone who would rather type the document.
 
 ### Inside the Template Workbench View
 
@@ -99,7 +106,7 @@ The editor is tabbed by part of the note: <UiLabel name={m.workbench_tab_note()}
 
 The editor knows the document's language. Liquid templates get their tags, variables, and filters highlighted, with the YAML manifest and the Markdown markers styled apart from the body. Eta templates pair tags as you type and gain the same suggestions and hover; the <UiLabel name={m.settings_template_js_enable_name()} /> gate governs rendering, not editing. Typing a field or a partial name offers what is available and what it holds.
 
-When something fails, <UiLabel name={m.workbench_problems_heading()} /> sits under the editor with what went wrong, which part of the document it came from, and the actions to reach it, including <UiLabel name={m.workbench_problems_copy()} /> when you want to ask for help.
+When something fails, <UiLabel name={m.workbench_problems_heading()} /> sits under the editor with what went wrong, which part of the document it came from, and the actions to reach it, including <UiLabel name={m.workbench_problems_copy()} /> when you want to ask for help. [Collect debug logs](/docs/how-to/collect-debug-logs#template-error-report) says what that report carries.
 
 [Properties](/docs/how-to/configure-frontmatter-properties) covers the properties tab, and [Template Workbench View](/docs/concepts/template-workbench-view) the tabs, the languages, and the panes. The workbench view is part of the desktop app.
 
@@ -132,7 +139,7 @@ Nine commands in ZotLit's `obsidian` CLI namespace now refuse every call and rep
 
 `zotlit:template-schema`, `zotlit:template-render`, `zotlit:template-document-render`, `zotlit:template-source`, `zotlit:frontmatter-status`, `zotlit:frontmatter-eval`, `zotlit:frontmatter-set`, `zotlit:frontmatter-remove`, `zotlit:frontmatter-reorder`.
 
-An agent that wrote templates through them must move to `zotlit:template-inspect`, which reads a saved document and how current it is; `zotlit:template-data`, which lists fields with real values from an item; and `zotlit:template-check`, which renders every part and reports what fails. Frontmatter is edited in the profile document and checked with `output=frontmatter`. These are command line commands, not command palette entries. [The Template Workbench CLI](/docs/concepts/template-workbench) explains the loop.
+An agent that wrote templates through them must move to `zotlit:template-inspect`, which reads a saved document and how current it is; `zotlit:template-data`, which lists fields with real values from an item; and `zotlit:template-check`, which renders every part and reports what fails. Frontmatter is edited in the profile document and checked with `output=frontmatter`. These are command line commands, not command palette entries. [The Template Workbench CLI](/docs/concepts/template-workbench) explains the loop, and the [Template Workbench CLI reference](/docs/reference/template-workbench-cli#retired) lists every live command beside the retired one it replaces.
 
 ### The settings tab is reorganized
 
@@ -176,29 +183,17 @@ The explorer is rebuilt on the workbench's own field browser. Fields are grouped
 
 See [Insert citations](/docs/how-to/insert-citations) and [Review, copy, and troubleshoot references](/docs/how-to/review-copy-troubleshoot-references).
 
+### LaTeX citations in a template
+
+`tex_cite` in Liquid, and `texCite` in Eta, write `zt.citations` as one LaTeX citation command, so a citation template reaches `\cite{doe2024}` or `\autocite{doe2024}` without a key loop of your own. The first item's prefix becomes the prenote, and its locator and suffix the postnote. See [`tex_cite`](/docs/reference/templates/syntax#tex-cite) and [`texCite`](/docs/reference/templates/eta-syntax#tex-cite).
+
+One filter covers both formats Zotero Integration gave a command of its own, `latex` and `biblatex`. [Migrate from Zotero Integration](/docs/how-to/migrate-from-zotero-integration) maps that plugin's Nunjucks templates, its persist blocks, and its citation formats onto profiles.
+
 ### Batch update and import
 
-The confirmation for a vault-wide run now groups its rows by profile and says which items match no profile or several, which profiles are unavailable, and what happens to the notes you keep as they are. The import dialog names the notes that will arrive without a parent literature note before you confirm.
+The confirmation for a vault-wide run now groups its rows by profile and says which items match no profile or several, which profiles are unavailable, and what happens to the notes you keep as they are. The import dialog names the notes that will arrive without a parent literature note before you confirm. See [Keep notes up to date](/docs/how-to/keep-notes-updated#batch) for a batch run, and [Create and open literature notes](/docs/how-to/create-and-open-notes#bulk-profiles) for the profile a bulk run gives new notes.
 
 ### Other improvements
 
-- Links and menu commands from Zotero now name the profile they mean, so a note opens with the template you chose rather than the default. A profile ZotLit cannot find opens a prompt to pick one.
+- Links and menu commands from Zotero now name the profile they mean, so a note opens with the template you chose rather than the default. A profile ZotLit cannot find opens a prompt to pick one. See [Protocol links](/docs/reference/protocol-links).
 - The Welcome view's settings link opens <SettingsPath page={m.settings_page_zotero()} />, and its folder picker explains how to navigate and choose.
-
-## Bug Fixes
-
-- Updated the Liquid template engine to a release that fixes a security advisory in the previous one. The engine 2.1.4 bundles is affected.
-
-## Known Issues
-
-### A refused conversion can leave you with no way to fix it
-
-The conversion refuses instead of writing half a result, so a refusal leaves your vault untouched. Two refusals then land where 2.2 offers no repair.
-
-If a frontmatter field is written in JavaScript while the JavaScript Templates gate is off, the notice names the fields. Turn on <UiLabel name={m.settings_template_js_enable_name()} /> under <SettingsPath page={m.settings_page_advanced()} /> and convert again. If a converted field fails to evaluate against the item ZotLit picked, the same notice names it, but there is no field editor to correct it in: the Frontmatter page is gone, and a profile's edit actions stay disabled while the conversion is pending. The conversion reads the field list from the `note.frontmatter-fields` setting, so the plugin's saved settings file is the only place to correct it. Writing `zotlit-profile.default.md` yourself does not repair anything: that file is what marks a vault as converted, so the offer stands down and the field stays as it is. In both cases your 2.1 files keep rendering, so your notes keep working while you sort it out.
-
-### A failed move to the trash can pass without a word
-
-After the new documents are written, ZotLit moves the old template files to Obsidian's configured trash. If that move fails, nothing tells you: the button stops and the Welcome card stays as it was. The converted documents are on disk and the old files are still beside them.
-
-What you see next depends on which files you had. If you had a note file, the profile document exists, so the offer does not come back and the leftover `zotlit-*.liquid.md` and `zotlit-*.eta.md` files stay where they are. Nothing renders from them any more, and you can move them to the trash yourself. If you had only citation or partial files, the offer returns and refuses because a converted document is already there. Rename or remove that document, then convert again, or delete the new documents and start the conversion over.
