@@ -7,6 +7,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 This tutorial walks you through creating your first literature note in Obsidian from a Zotero library item. By the end, you will have a Markdown note with the item's title, a link back to Zotero, and any annotations you have already made on the PDF.
@@ -45,7 +46,7 @@ ZotLit finds your Zotero database automatically from your Zotero profile.
   <Step>
     ### See the result
 
-    ZotLit creates the note and opens it. You will see a brief notice: "Literature note created."
+    ZotLit creates the note and opens it. You will see a brief notice: <UiLabel name={m.notice_created_note()} />
 
     The note appears in a `literatures` folder in your vault (the default location). It contains:
 
@@ -55,6 +56,8 @@ ZotLit finds your Zotero database automatically from your Zotero profile.
     - An **Annotations** section with your PDF highlights and notes (if the item had annotations)
 
     The note's filename is the item's citation key by default.
+
+    ZotLit built this note from the Default profile, the built-in one that decides a note's name, folder, properties, and body. Read about [profiles](/docs/concepts/profiles) to see what you can change.
 
   </Step>
 </Steps>

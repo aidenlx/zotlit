@@ -71,9 +71,13 @@ Built-in export uses its own citation membership. The following settings do not 
 
 All wikilinks to Literature Notes are export members. A valid Citation Fragment such as `#cite:locator=33` adds its citation details.
 
-Literal Pandoc citations such as `[@doe2024]`, `[@doe2024, p. 12]`, and `[-@doe2024]` are export members too. Each citation key must name one Zotero item in the <UiLabel name={m.settings_library_scope_name()} />. A `nocite` property key adds its item to the bibliography without citing it in the text.
+Literal Pandoc citations are export members in every form Pandoc reads: `[@doe2024]`, `[@doe2024, p. 12]`, `[-@doe2024]`, and the in-text `@doe2024`. A work cited both by a wikilink and by a literal key takes one bibliography entry.
 
-Pandoc reads the note, so text it treats as ordinary — a key inside code or behind a `\` escape — is no citation of the export.
+Each citation key must name one Zotero item in the <UiLabel name={m.settings_library_scope_name()} />. A key that matches no item, or several, stops the export and names the keys. See [Fix an export error](#fix-an-export-error).
+
+A `nocite` property in the note's frontmatter adds its item to the bibliography without citing it in the text.
+
+Pandoc reads the note, so text it treats as ordinary (a key inside code or behind a `\` escape) is no citation of the export.
 
 <Callout type="info">
   Export is all-or-nothing. ZotLit writes the destination only after citation

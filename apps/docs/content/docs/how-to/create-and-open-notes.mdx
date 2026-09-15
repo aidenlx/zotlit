@@ -37,10 +37,23 @@ It searches every library in your [library scope](/docs/reference/settings#libra
     - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
     - Press `Esc` to dismiss the switcher.
 
-    If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief "Creating literature note..." notice, followed by "Literature note created."
+    If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief <UiLabel name={m.notice_creating_note()} /> notice, followed by <UiLabel name={m.notice_created_note()} />
 
   </Step>
 </Steps>
+
+### Choose the profile that creates the note
+
+A [profile](/docs/concepts/profiles) supplies a note's name, folder, properties, and body. While your vault holds only the Default profile, the Default creates the note and ZotLit asks nothing.
+
+Once you add a profile, ZotLit selects one by [Profile Match](/docs/reference/templates/profile-match):
+
+- One profile matches the item: ZotLit creates the note from it, and the notice reports the match.
+- Several profiles match, or none does: a picker opens. Select the profile for this note, or dismiss the picker to cancel the creation.
+
+A profile that matches the item carries the <UiLabel name={m.modal_profile_match_candidate()} /> badge in the picker. When nothing matched, the Default is preselected. When several profiles match, ZotLit names them above the results and the search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />.
+
+See [Use a different template for different notes](/docs/how-to/use-different-templates) to add a profile and set the conditions that select it.
 
 ## Open a note from a Pandoc citation
 
@@ -58,7 +71,7 @@ ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key
 
 A click resolves the citation key against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} /> (set at the top of <SettingsPath />). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
 
-If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
+If the item is not found in your Zotero library, a notice appears: <UiLabel name={m.notice_citekey_not_found({ citekey: "…" })} /> If the database is unavailable, ZotLit shows <UiLabel name={m.notice_citekey_db_unavailable({ citekey: "…" })} />
 
 If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
 
@@ -94,6 +107,21 @@ Select a citation excerpt to open its source note at that occurrence. Select <Ui
 
 You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires ZotLit Companion, the Zotero add-on.
 
+### Choose the profile for new notes [#bulk-profiles]
+
+Every new note is created from a [profile](/docs/concepts/profiles), which decides its name, folder, properties, and body. When your vault holds added profiles, the confirmation carries a profile control for the new notes, above the item groups. Each control governs the rows it names:
+
+- <UiLabel name={m.batch_profile_unresolved_label({ count: "…" })} /> covers
+  items that no profile matched, or that several profiles matched. Its help
+  reads <UiLabel name={m.batch_profile_unresolved_help()} />.
+- <UiLabel name={m.batch_profile_affected_label({ count: "…" })} /> covers items
+  whose matched profile is unavailable. Its help reads
+  <UiLabel name={m.batch_profile_recovery_help()} />.
+- <UiLabel name={m.batch_profile_override_all_label()} /> overrides matching for
+  every new note in the batch.
+
+A control names its profile once every row it governs agrees on one. The line under it reads <UiLabel name={m.batch_profile_source_match()} /> when Profile Match selected that profile. To change the profile for those rows, select the control and choose another; its tooltip names the rows it governs. See [Use a different template for different notes](/docs/how-to/use-different-templates) for how matching picks a profile.
+
 ### Update the entire library at once [#library-wide]
 
 Use this command to create or update literature notes for every item in your library at once.
@@ -102,7 +130,7 @@ Open the command palette and run:
 
 <Command name={m.command_update_all_notes_name()} />
 
-Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
+Obsidian opens a confirmation modal that lists what will be created and what will be updated, and, when your vault holds added profiles, which profile creates the new notes. Review the list, then confirm to start the batch.
 
 In Zotero, right-click **My Library** or a group library in the sidebar. Choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />.
 
@@ -114,7 +142,7 @@ In Zotero, right-click a collection in the sidebar and choose <UiLabel name={m["
 
 Items in nested subcollections are included, so you do not need to repeat the action on each child collection.
 
-If the collection no longer exists in your Zotero database, Obsidian reports "Collection not found in Zotero."
+If the collection no longer exists in your Zotero database, Obsidian reports <UiLabel name={m.notice_collection_not_found()} />
 
 ### Open or update a single item from Zotero
 
@@ -145,7 +173,7 @@ When exactly one regular item is selected in the Zotero library, the top-level c
   <Step>
     ### Confirm in Obsidian
 
-    Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
+    Obsidian opens a confirmation modal that lists what will be created and what will be updated, and, when your vault holds added profiles, which profile creates the new notes. Review the list, then confirm to start the batch.
 
   </Step>
 </Steps>
@@ -155,7 +183,9 @@ When exactly one regular item is selected in the Zotero library, the top-level c
   that happens, ZotLit sends the item list over HTTP to the ZotLit server
   running inside Obsidian. If the server is not enabled, Zotero shows an alert
   asking you to enable it or select fewer items. You can enable the ZotLit
-  server in **Settings &gt; ZotLit**.
+  server under <SettingsPath page={m.settings_page_advanced()} /> in the{" "}
+  <UiLabel name={m.settings_advanced_local_server_heading()} /> group. See [Set
+  up live updates](/docs/how-to/set-up-live-updates).
 </Callout>
 
 ## How ZotLit identifies literature notes

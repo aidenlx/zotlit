@@ -1,0 +1,225 @@
+---
+title: "Migrate from Zotero Integration"
+description: "Switch from the mgmeyers Zotero Integration plugin to ZotLit, translate your Nunjucks templates, and understand the key differences."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Use this guide when you currently use the mgmeyers **Zotero Integration** plugin and want to switch to ZotLit.
+
+<Callout type="info" title="What changes">
+
+- Your Zotero library and citation keys stay the same.
+- Your existing literature notes remain in the vault as regular Markdown files.
+- Templates need translation: Zotero Integration uses Nunjucks; ZotLit uses [Liquid](/docs/reference/templates/syntax) (or [Eta](/docs/reference/templates/eta-syntax)).
+- Better BibTeX is no longer required. ZotLit reads Zotero's database directly. You are recommended to keep Better BibTeX installed for its citation key format.
+- The `{% persist %}` block model changes to a [managed region](/docs/concepts/literature-notes-and-the-managed-region) model. The two models are inverted: Zotero Integration marks content to keep; ZotLit marks content to replace.
+
+</Callout>
+
+## Install ZotLit [#install]
+
+<Steps>
+  <Step>
+    ### Disable Zotero Integration
+
+    In Obsidian, open **Settings &rarr; Community plugins**. Disable (or uninstall) **Zotero Integration**. The two plugins have different plugin IDs and can coexist for testing, but running both at the same time may cause conflicts with Zotero connections.
+
+  </Step>
+  <Step>
+    ### Install ZotLit
+
+    In **Settings &rarr; Community plugins**, search for **ZotLit** and install it. Enable the plugin after installation.
+
+  </Step>
+  <Step>
+    ### Connect your Zotero library
+
+    Open <SettingsPath page={m.settings_page_zotero()} />. ZotLit connects to your local Zotero database. No additional Zotero plugin is needed for the connection.
+
+  </Step>
+</Steps>
+
+## Existing notes [#existing-notes]
+
+Zotero Integration notes are regular Markdown files. They stay in your vault and remain readable after the switch.
+
+ZotLit identifies literature notes by a `zotero-key` frontmatter property. If your Zotero Integration notes already carry a Zotero key in frontmatter (and ZotLit can resolve it), ZotLit recognizes them. If not, treat them as standalone notes and create fresh literature notes through ZotLit.
+
+ZotLit does not read Zotero Integration's `%% begin notes %%` / `%% end notes %%` persist markers. Those markers remain as inert comments in the file.
+
+## Translate templates [#translate-templates]
+
+<Callout type="info" title="Using defaults?">
+
+If you never customized a Zotero Integration template, skip this section. ZotLit's built-in defaults produce a comparable literature note.
+
+</Callout>
+
+### Syntax differences [#syntax]
+
+Zotero Integration uses Nunjucks. ZotLit uses Liquid by default. The table below maps common Nunjucks constructs to their Liquid equivalents.
+
+| Nunjucks (Zotero Integration)                        | Liquid (ZotLit)                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| `{{ title }}`                                        | `{{ zt.title }}`                                                         |
+| `{% set x = value %}`                                | `{% assign x = value %}`                                                 |
+| `{% for item in array %}`                            | `{% for item in array %}`                                                |
+| `{% include "[[file]]" %}`                           | `{% render "partial-name" with zt as zt %}`                              |
+| `loop.index`                                         | `forloop.index`                                                          |
+| `loop.first` / `loop.last`                           | `forloop.first` / `forloop.last`                                         |
+| `{{ date \| format("YYYY-MM-DD") }}`                 | `{{ zt.date \| date: "%Y-%m-%d" }}`                                      |
+| `{{ array \| filterby("prop", "startswith", "x") }}` | Template logic or [Eta JavaScript](/docs/reference/templates/eta-syntax) |
+| `{{ obj \| setAttribute("key", "val") }}`            | `{% assign key = val %}`                                                 |
+
+### Data path changes [#data-paths]
+
+All template data in ZotLit lives under the `zt` variable. The table below maps Zotero Integration variables to their ZotLit equivalents.
+
+| Zotero Integration                 | ZotLit                                   | Notes                                                                               |
+| ---------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| `title`                            | `zt.title`                               | All item fields move under `zt.`                                                    |
+| `citekey`                          | `zt.citationKey`                         |                                                                                     |
+| `desktopURI`                       | `zt.backlink`                            | A `zotero://select` URI                                                             |
+| `authors` (comma-separated string) | `zt.creators` (array of creator objects) | Use `{% for c in zt.creators %}` to iterate; each has `family`, `given`, `fullName` |
+| `annotation.annotatedText`         | `zt.text`                                | Inside the Annotation Section of a profile                                          |
+| `annotation.colorCategory`         | `zt.colorName`                           | Resolved palette name (`"yellow"`, `"red"`, etc.)                                   |
+| `annotation.imageRelativePath`     | `zt.imgLink`                             | A link helper; call `{{ zt.imgLink }}` for the Markdown link                        |
+| `annotation.comment`               | `zt.comment`                             | Plain-text comment                                                                  |
+
+The [Template Data Explorer](/docs/how-to/explore-template-data) shows every available field for a live Zotero item. Use it to discover the ZotLit equivalent of any Zotero Integration variable.
+
+### The persist-to-managed-region shift [#persist-vs-managed]
+
+This is the most important conceptual difference between the two plugins.
+
+- In Zotero Integration, `{% persist "id" %}` marks content to **keep** across re-imports. Everything outside persist blocks is re-rendered.
+- In ZotLit, `{% managed %}...{% endmanaged %}` marks content to **re-render** on update. Everything outside the managed region is kept.
+
+The model is inverted. Zotero Integration marks what to keep. ZotLit marks what to replace.
+
+In Zotero Integration, you might have several persist blocks. In ZotLit, there is one managed region per note.
+
+**Zotero Integration template:**
+
+```text
+# {{ title }}
+Authors: {{ authors }}
+
+{% persist "notes" %}
+{% if isFirstImport %}
+- [ ] Read this paper
+{% endif %}
+{% endpersist %}
+
+{% persist "annotations" %}
+{% set newAnnots = annotations | filterby("date", "dateafter", lastImportDate) %}
+{% for a in newAnnots %}
+> {{ a.annotatedText }}
+{% endfor %}
+{% endpersist %}
+```
+
+**ZotLit equivalent (profile note source):**
+
+The note body contains one managed region for generated content. Personal notes go outside the region.
+
+```liquid
+# {{ zt.title }}
+Authors: {% for c in zt.creators %}{{ c.fullName }}{% unless forloop.last %}, {% endunless %}{% endfor %}
+
+{% managed %}
+(Annotations and generated content go here. Re-rendered on every update.)
+{% endmanaged %}
+
+## My notes
+(This section is never touched by updates. Write freely here.)
+- [ ] Read this paper
+```
+
+The Annotation Section is a separate part of the profile document (after the `--- zotlit:annotation ---` header). It controls the format of one annotation:
+
+```liquid
+> {{ zt.text }}
+```
+
+Key points:
+
+- Personal notes that were inside `{% persist "notes" %}` move **outside** the managed region.
+- The annotation loop moves into the profile's [Annotation Section](/docs/reference/templates/profile-document). ZotLit iterates over annotations automatically.
+- `isFirstImport` and `lastImportDate` have no equivalent. The managed region re-renders all content on every update.
+- All annotations render every time. Stale annotations are removed automatically.
+
+### Template includes [#includes]
+
+Zotero Integration's `{% include "[[file]]" %}` becomes ZotLit's shared partials. Create a `zotlit-partial.<name>.md` file in the [template folder](/docs/concepts/how-templates-work#template-folder), then reference it with `{% render "<name>" with zt as zt %}`.
+
+See [Customize a template](/docs/how-to/customize-a-template) for the steps.
+
+### Citation formats [#citation-formats]
+
+Zotero Integration registered one command per citation format. ZotLit renders every citation through the citation template, so the format is a filter choice inside that one document:
+
+| Zotero Integration format | Citation template                            |
+| ------------------------- | -------------------------------------------- |
+| `pandoc`                  | `{{ zt.citations \| pandoc_cite }}`          |
+| `latex`                   | `{{ zt.citations \| tex_cite }}`             |
+| `biblatex`                | `{{ zt.citations \| tex_cite: "autocite" }}` |
+| `template`                | The citation template itself                 |
+
+See [`tex_cite`](/docs/reference/templates/syntax#tex-cite) for the prenote and postnote rules, and for the inputs LaTeX has no slot for.
+
+The citation template reads `zt.variant` to render two forms: the suggester inserts `main` on Enter and `alt` on Shift+Enter. One template therefore offers two of these formats at a time, where Zotero Integration gave each its own command.
+
+`formatted-citation` and `formatted-bibliography` render through a CSL style rather than the template. ZotLit produces that output when it [exports a note with citations](/docs/how-to/export-note-with-citations).
+
+## Features with no direct equivalent [#no-equivalent]
+
+| Zotero Integration feature                       | Workaround in ZotLit                                        |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| `{% persist %}` (multiple blocks)                | Place personal content outside the single managed region    |
+| `isFirstImport` / `lastImportDate`               | Managed region re-renders all content each time             |
+| Annotation concatenation (`+` prefix)            | Merge text in Zotero's annotation editor                    |
+| `pdfannots2json` (external annotation extractor) | Use Zotero's built-in PDF reader                            |
+| Image DPI / format / quality / OCR settings      | ZotLit uses Zotero's cached annotation images               |
+| `runImport()` public API                         | Use [ZotLit protocol links](/docs/reference/protocol-links) |
+
+## Features you gain [#features-you-gain]
+
+- **No Better BibTeX dependency.** ZotLit reads Zotero's database directly in a more performant way.
+- **Template Workbench.** Live preview while editing templates, with the Data Explorer beside the editor.
+- **Profile match.** Auto-select templates by item type, tags, or collections.
+- **Graph citations.** Citation edges appear in Obsidian's graph view.
+- **Managed region.** Your edits outside the region survive every update, with no special syntax.
+- **Profile switching.** Change a note's template after creation.
+
+## See also
+
+<Cards>
+  <Card
+    title="How to customize a template"
+    description="Edit a profile, the citation text, or a shared partial in the Template Workbench View."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="Literature notes and the managed region"
+    description="How ZotLit separates your writing from generated content."
+    href="/docs/concepts/literature-notes-and-the-managed-region"
+  />
+  <Card
+    title="How templates work"
+    description="The three kinds of template document and how ZotLit finds them."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Explore template data"
+    description="Browse available fields and copy paths in the Template Data Explorer."
+    href="/docs/how-to/explore-template-data"
+  />
+</Cards>

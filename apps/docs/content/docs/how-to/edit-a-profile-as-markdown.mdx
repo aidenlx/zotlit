@@ -1,0 +1,89 @@
+---
+title: "Edit a profile as Markdown"
+description: "Open a profile document as Markdown, follow the shape ZotLit enforces, and read the faults the Problems area reports."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Edit the profile document itself when you would rather type Markdown than use the Workbench tabs. A profile is an ordinary note in your vault, and ZotLit keeps it editable even while it reports a fault.
+
+## Open the document as Markdown [#open]
+
+<Steps>
+  <Step>
+    ### Open the document in Obsidian's Markdown editor
+
+    In the file explorer, open the profile document like any other note. From the Workbench, select <UiLabel name={m.workbench_advanced()} /> to edit the complete document in one editor, or open the pane menu and select <UiLabel name={m.template_workbench_open_markdown()} />, which saves the document first and then switches that pane to Obsidian's Markdown editor.
+
+  </Step>
+  <Step>
+    ### Edit the document and save
+
+    Type the change and save the file. ZotLit keeps the document editable, so a fault never costs you the text.
+
+  </Step>
+  <Step>
+    ### Return to the Workbench
+
+    The view header carries <UiLabel name={m.template_workbench_open()} />, which reopens the same document in the Workbench, with its preview and its problems.
+
+  </Step>
+</Steps>
+
+## The shape ZotLit enforces [#shape]
+
+A profile document has four parts, in this order: the manifest, the note source, an optional managed block, and the Annotation Section. [Profile document](/docs/reference/templates/profile-document#document-structure) carries each part, its boundaries, and a sample file.
+
+Before you save, these must all be true:
+
+- The first line of the file is exactly `---`, and one later `---` line closes the manifest.
+- `id` is 12 letters or digits, and no other profile document in the folder carries the same one. Profiles that share an ID are all excluded from ZotLit.
+- The note source holds at most one managed block, opened with `{% managed %}` and closed with `{% endmanaged %}`. ZotLit re-renders that block alone when you update a note, and leaves the rest of the source as you wrote it. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) for what an update rewrites.
+- Exactly one `--- zotlit:annotation ---` line appears, after the note source.
+- A document with `id: default` carries neither Match conditions nor bindings.
+- The properties ZotLit writes belong in the manifest, not in a note. See [Frontmatter](/docs/reference/templates/frontmatter) for the entry forms, the merge strategies, and the reserved keys.
+
+## What the Problems area reports [#problems]
+
+A document that breaks one of those rules is never rejected. Fix it where you type: ZotLit keeps the document editable and lists each fault in the <UiLabel name={m.workbench_problems_heading()} /> area at the bottom of the Workbench pane, with the recovery it suggests. Work through the entries and save; the area recomputes as you edit, so an entry clears once the document no longer breaks its rule.
+
+| What breaks                                               | The Problems area reports                                             |
+| --------------------------------------------------------- | --------------------------------------------------------------------- |
+| The file does not open with a manifest                    | <UiLabel name={m.workbench_problem_invalid_document()} />             |
+| The manifest is not valid YAML, or a key fails validation | <UiLabel name={m.workbench_problem_invalid_manifest()} />             |
+| A manifest partial is named `annotation`                  | <UiLabel name={m.workbench_problem_reserved_annotation_partial()} />  |
+| The note source holds more than one managed block         | <UiLabel name={m.workbench_problem_duplicate_managed_block()} />      |
+| The managed block is not opened and closed correctly      | <UiLabel name={m.workbench_problem_invalid_managed_block()} />        |
+| A section header other than the annotation line appears   | <UiLabel name={m.workbench_problem_unknown_section_header()} />       |
+| The Annotation Section is absent                          | <UiLabel name={m.workbench_problem_missing_annotation_section()} />   |
+| The Annotation Section appears more than once             | <UiLabel name={m.workbench_problem_duplicate_annotation_section()} /> |
+
+The Problems area also offers <UiLabel name={m.workbench_problems_copy()} />, so you can paste the whole report into a bug report. See [Collect debug logs](/docs/how-to/collect-debug-logs) for the rest of that report.
+
+## See also
+
+<Cards>
+  <Card
+    title="Profile document"
+    description="The manifest, the note source, the managed block, and the Annotation Section."
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="Frontmatter"
+    description="The properties a profile writes into a note, and how it merges them."
+    href="/docs/reference/templates/frontmatter"
+  />
+  <Card
+    title="Template Workbench View"
+    description="The tabs, the preview, and the modes that edit a profile."
+    href="/docs/concepts/template-workbench-view"
+  />
+  <Card
+    title="Profiles"
+    description="What a profile is, and how a note keeps the one that made it."
+    href="/docs/concepts/profiles"
+  />
+</Cards>

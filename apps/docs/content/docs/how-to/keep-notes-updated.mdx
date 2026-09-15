@@ -32,9 +32,9 @@ These commands are available from the command palette and from the right-click c
 
     <Command name={m.command_update_note_name()} />
 
-    ZotLit refreshes the frontmatter and re-renders the content inside the managed region (`%%zt-managed%%` ... `%%/zt-managed%%`). Your writing outside the managed region stays untouched.
+    ZotLit refreshes the frontmatter and re-renders the managed region (`%%zt-managed%%` ... `%%/zt-managed%%`). Your writing outside the managed region stays untouched.
 
-    A notice confirms: "Literature note updated."
+    A notice confirms: <UiLabel name={m.notice_updated_note()} />
 
   </Step>
 </Steps>
@@ -45,7 +45,7 @@ To refresh frontmatter without touching the note body, run:
 
 <Command name={m.command_update_note_metadata_name()} />
 
-A notice confirms: "Metadata updated." The note body is not changed.
+A notice confirms: <UiLabel name={m.notice_updated_note_metadata()} /> The note body is not changed.
 
 ### Context menu
 
@@ -67,13 +67,15 @@ ZotLit Companion, the Zotero add-on, starts batch updates from Zotero.
 
     Obsidian opens a confirmation dialog titled <UiLabel name={m.batch_update_title()} />. It shows how many notes will be created or updated, grouped by status: <UiLabel name={m.batch_update_group_update({ count: "…" })} />, <UiLabel name={m.batch_update_group_create({ count: "…" })} />, and <UiLabel name={m.batch_update_group_not_found({ count: "…" })} />.
 
-    Click <UiLabel name={m.batch_update_confirm_button()} /> to proceed.
+    When your vault holds added profiles, the dialog also carries a profile control for the new notes. See [Choose the profile for new notes](/docs/how-to/create-and-open-notes#bulk-profiles).
+
+    Select <UiLabel name={m.batch_update_confirm_button()} /> to proceed.
 
   </Step>
   <Step>
     ### Review the summary
 
-    After the batch completes, a summary appears: "Done. `{created}` created, `{updated}` updated, `{failed}` failed."
+    After the batch completes, a summary appears: <UiLabel name={m.batch_update_summary({ created: "…", updated: "…", failed: "…" })} /> With added profiles, the created and updated counts name the profile they ran under, as in <UiLabel name={m.batch_profile_created({ count: "…", label: "…" })} />.
 
   </Step>
 </Steps>
@@ -82,7 +84,7 @@ To update every note at once, run <Command inline name={m.command_update_all_not
 
 While more than one library contributes items, the confirmation names the library beside each status heading, so identical statuses stay apart. One contributing library keeps the plain headings.
 
-If a selected library is missing from your Zotero database, the run continues over the rest and the confirmation states how many libraries it skipped. If none of your selected libraries is available, no dialog opens and a notice reports "No library in the library scope is available."
+If a selected library is missing from your Zotero database, the run continues over the rest and the confirmation states how many libraries it skipped. If none of your selected libraries is available, no dialog opens and a notice reports <UiLabel name={m.batch_all_no_library_in_scope()} />
 
 <Callout type="info" title="Large selections">
   A selection too large to fit in a protocol link falls back to an HTTP
@@ -97,16 +99,17 @@ You can also open a single note from Zotero by right-clicking one item and choos
 ## Overwrite a note
 
 <Command inline name={m.command_overwrite_note_name()} /> is a separate,
-destructive command. It replaces the entire note body with the re-rendered note
-template. Frontmatter keys managed by ZotLit are refreshed; other frontmatter
-keys you added are kept.
+destructive command. It replaces the entire note body with a fresh render of the
+note's [profile document](/docs/reference/templates/profile-document).
+Frontmatter keys managed by ZotLit are refreshed; other frontmatter keys you
+added are kept.
 
 A confirmation dialog appears before the overwrite proceeds.
 
 <Callout type="warn" title="Notes created with ZotLit v1">
-  Literature notes created with ZotLit v1 do not have a managed region. Running <UiLabel name={m.command_update_note_name()} /> on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
+  Literature notes created with ZotLit v1 do not have a managed region. Running <UiLabel name={m.command_update_note_name()} /> on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice <UiLabel name={m.notice_updated_note_no_region()} />
 
-To fully refresh a v1 note's body, use <Command inline name={m.command_overwrite_note_name()} />. This replaces the entire body with the current note template.
+To fully refresh a v1 note's body, use <Command inline name={m.command_overwrite_note_name()} />. It rebuilds the body from the note's profile document. A v1 note carries no `zotlit-profile` field, so the Default profile rebuilds it.
 
 </Callout>
 

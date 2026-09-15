@@ -39,7 +39,7 @@ Collect this when a template preview fails in the Template Workbench. The report
 
     Select <UiLabel name={m.workbench_problems_copy()} />. Select <UiLabel name={m.workbench_problems_technical()} /> first if you want to read the report before you copy it: the disclosure shows the same text.
 
-    The report holds the engine message, the error name, its causes, any source excerpt, and the location the engine named. Beside those it records the time of the failure, whether an automatic check or <UiLabel name={m.workbench_preview_run()} /> started it, the Template Document and section, the template language, the preview root and its options, the selected item or example, the source revision, and the ZotLit and Obsidian versions. A value the failed attempt could not supply reads `unavailable`.
+    The report holds the engine message, the error name, its causes, any source excerpt, and the location the engine named. Beside those it records the time of the failure, whether an automatic check or <UiLabel name={m.workbench_preview_run()} /> started it, the template document and section, the template language, the preview root and its options, the selected item or example, the source revision, and the ZotLit and Obsidian versions. A value the failed attempt could not supply reads `unavailable`.
 
   </Step>
   <Step>
@@ -68,9 +68,9 @@ Collect this when a template preview fails in the Template Workbench. The report
 
 The copied report covers one failed template attempt. Collect one of the following as well when it applies:
 
-- **[ZotLit logs](#zotlit-logs)** — the failure has no engine message, or it happens while creating or updating a note rather than in the preview.
-- **[Template data](#template-data)** — the template rendered without failing, but produced the wrong content.
-- **[Obsidian debug info](#obsidian-debug-info)** — the problem may involve another plugin, a theme, or a specific Obsidian build.
+- **[ZotLit logs](#zotlit-logs)**: the failure has no engine message, or it happens while creating or updating a note rather than in the preview.
+- **[Template data](#template-data)**: the template rendered without failing, but produced the wrong content.
+- **[Obsidian debug info](#obsidian-debug-info)**: the problem may involve another plugin, a theme, or a specific Obsidian build.
 
 Each one is a separate collection step. The copied report never carries a log archive or a template-data export.
 
@@ -115,7 +115,7 @@ Each one is a separate collection step. The copied report never carries a log ar
   <Step>
     ### Save the log archive
 
-    Back in <SettingsPath page={m.settings_page_advanced()} />, click <UiLabel name={m.settings_log_export_name()} />. This exports the log file for sharing.
+    Back in <SettingsPath page={m.settings_page_advanced()} />, select <UiLabel name={m.settings_log_export_name()} />. This exports the log file for sharing.
 
   </Step>
   <Step>
@@ -147,7 +147,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
   <Step>
     ### Anchor at the annotation
 
-    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select <UiLabel name={m.template_data_explorer_menu_explore_annotation()} />. For any other template, skip this step and stay at the note root.
+    If the problem is in an annotation template, open the more-options menu on that annotation node in the tree and select <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />. For any other template, skip this step and stay at the note root.
 
   </Step>
   <Step>

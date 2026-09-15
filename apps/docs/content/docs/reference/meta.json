@@ -3,6 +3,7 @@
   "pages": [
     "settings",
     "commands",
+    "template-workbench-cli",
     "protocol-links",
     "theme-hooks",
     "templates"

@@ -121,9 +121,9 @@ For an annotation value, the equivalent native Eta syntax is:
 <%~ include("annotation", annotation) %>
 ```
 
-In a Literature Note Profile, the shortcut and native calls to `annotation` use the Profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the Profile's language and can be empty.
+In a Literature Note profile, the shortcut and native calls to `annotation` use the profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the profile's language and can be empty.
 
-Calls from shared partials use the calling Profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable Profile. Outside Profile rendering, the shortcut keeps the existing named-template lookup.
+Calls from shared partials use the calling profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable profile. Outside profile rendering, the shortcut keeps the existing named-template lookup.
 
 ## `include()`: composing templates
 
@@ -136,7 +136,7 @@ Calls from shared partials use the calling Profile's section, with isolated anno
 
 The data argument becomes the child template's `zt` variable, direct passthrough not merged with the parent's data. When omitted, the child inherits the parent's `zt`.
 
-The name resolves to a registered template, not to a file path. During Profile rendering, `"annotation"` selects the Profile's Annotation Section.
+The name resolves to a registered template, not to a file path. During profile rendering, `"annotation"` selects the profile's Annotation Section.
 
 ### Calling a partial [#calling-a-partial]
 
@@ -150,7 +150,7 @@ The argument becomes the partial's `zt`. Omit it and the partial inherits the ca
 
 ### The `content` include
 
-When `include("content", zt)` is called from the note template, ZotLit automatically wraps the output with managed-region markers (`%%zt-managed%%` / `%%/zt-managed%%`). These markers never appear in any `.eta.md` file. They are injected at render time.
+When `include("content", zt)` is called from the note template, ZotLit automatically wraps the output with managed-region markers (`%%zt-managed%%` / `%%/zt-managed%%`). These markers never appear in a template document. They are injected at render time.
 
 ## `bq()`: blockquote helper [#bq-blockquote-helper]
 
@@ -337,9 +337,9 @@ linkHelper(alias?, subpath?)
 
 `zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types without a cached image (everything except `image` and `ink`).
 
-## Template Document naming [#template-document-naming]
+## Template document naming [#template-document-naming]
 
-A Template Document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, and the filename prefix alone says what a document is: `zotlit-profile.<slug>.md` for a Profile, `zotlit-citation.md` for the citation text, and `zotlit-partial.<name>.md` for one partial. See [Template Document naming](/docs/reference/templates/syntax#template-document-naming) for the full rule and the reserved partial names.
+A template document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, and the filename prefix alone says what a document is: `zotlit-profile.<slug>.md` for a profile, `zotlit-citation.md` for the citation text, and `zotlit-partial.<name>.md` for one partial. See [Template document naming](/docs/reference/templates/syntax#template-document-naming) for the full rule and the reserved partial names.
 
 An Eta document declares its language in a YAML manifest at the top of the file, before the source:
 
@@ -353,7 +353,7 @@ language: eta
 
 `language` is the manifest's only legal key, and its values are `liquid` and `eta`. A document with no manifest is Liquid, so every Eta citation document and Eta partial needs this block. Switch a document between the two from the Template Workbench View's pane menu, with <UiLabel name={m.template_workbench_change_language()} />; it rewrites the manifest key and leaves the source as written.
 
-A Profile document declares its language with the `language` key of its own manifest.
+A profile document declares its language with the `language` key of its own manifest.
 
 ## No async
 

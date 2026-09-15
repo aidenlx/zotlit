@@ -1,0 +1,102 @@
+---
+title: "Migrate from 2.1 templates"
+description: "Keep your 2.1 template files working, then convert them to profile documents when you are ready."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Use this guide when you are on ZotLit 2.1, your templates still work, and you want to know what the update changed.
+
+## What changed
+
+In 2.1, a note's look was spread across separate files in the template folder, one file per part. In 2.2, the same look lives in a single [profile document](/docs/reference/templates/profile-document).
+
+| 2.1 file                                             | 2.2 home                                                                        |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `zotlit-note.<lang>.md`                              | The note source of `zotlit-profile.default.md`                                  |
+| `zotlit-content.<lang>.md`                           | The managed block inside that note source                                       |
+| `zotlit-filename.<lang>.md`                          | The `filename` key of the profile document manifest                             |
+| `zotlit-annotation.<lang>.md`                        | The Annotation Section, after the `--- zotlit:annotation ---` header            |
+| `zotlit-cite.<lang>.md` and `zotlit-cite2.<lang>.md` | The two branches of the one `zotlit-citation.md` citation text                  |
+| Any other `zotlit-<name>.<lang>.md`                  | Its own `zotlit-partial.<name>.md` partial                                      |
+| The frontmatter field list in settings               | The `frontmatter` list in the manifest, which holds managed frontmatter entries |
+
+## Nothing breaks on upgrade
+
+Your 2.1 files keep loading and rendering after the update. ZotLit converts and moves nothing on its own, and your existing notes do not change. The conversion runs only when you start it.
+
+## Convert when you are ready
+
+<Steps>
+  <Step>
+    ### Open the conversion offer
+
+    The Welcome view opens once, the first time you launch Obsidian after the update. The offer sits above the quick-start timeline, titled <UiLabel name={m.welcome_template_conversion_title()} />. Open the view again later with <Command inline name={m.command_open_welcome_name()} />, or use the reminder row at the top of <SettingsPath />.
+
+  </Step>
+  <Step>
+    ### Select Convert templates
+
+    Select <UiLabel name={m.welcome_template_conversion_action()} /> and wait for the conversion to finish. Closing the Welcome view without converting leaves everything as it was, and the reminder row stays at the top of <SettingsPath /> with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action.
+
+  </Step>
+</Steps>
+
+## What the conversion does
+
+ZotLit builds the new documents in memory and renders them against one item from your Zotero library. It compares the note, the update, the note name, the annotation, and both citation outputs against what your 2.1 files produce. It writes nothing unless every output matches byte for byte.
+
+When the outputs match, ZotLit writes `zotlit-profile.default.md`, `zotlit-citation.md`, and one file per partial. It then moves your 2.1 files to Obsidian's configured trash. That trash is the only backup: ZotLit keeps no copy of the old files. If a file cannot be moved to the trash, ZotLit shows no notice and saves no record of the conversion.
+
+One case keeps a file in place. If your two citation files use different languages, the citation text converts as Liquid and the Eta file stays where it is; ZotLit names the files through <UiLabel name={m.notice_literature_note_template_conversion_kept({ files: "…" })} />.
+
+## What is refused, and what you see
+
+Every refusal happens before the first write, so your vault and your settings stay as they were. Each one reports a notice.
+
+- **A converted output that does not reproduce the old one.** <UiLabel name={m.notice_literature_note_template_conversion_mismatch({ difference: "…" })} /> This is the refusal you are most likely to meet, because it is what the byte check reports. The notice names the output that differed: `create output`, `update output`, `filename output`, `annotation output`, `main citation output`, or `alternate citation output`. Edit the 2.1 file behind that output so the converted form reproduces it, then select the button again.
+
+- **A layout ZotLit cannot convert automatically.** <UiLabel name={m.notice_literature_note_template_conversion_unsupported()} /> The conversion handles only the shapes 2.1 shipped: one content insertion in the note file, and one language across the files. Edit the files on disk to match, then select the button again. The notice also appears when an Eta file is involved and <UiLabel name={m.settings_template_js_enable_name()} /> is off; turn the gate on under <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} /> and try again.
+
+- **A frontmatter field written in JavaScript while the gate is off.** <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_inert({ fields: "…" })} /> Turn on <UiLabel name={m.settings_template_js_enable_name()} /> under <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />, then select the button again. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
+
+- **A field that fails to evaluate against the item ZotLit picked.** <UiLabel name={m.notice_literature_note_template_conversion_frontmatter_evaluation({ fields: "…" })} /> This release has no editor for the legacy field list, and a profile's edit actions stay disabled while the conversion is pending. The list lives in the plugin's saved settings file, under `note.frontmatter-fields`; correct the named fields there, then select the button again. Writing a profile document by hand repairs nothing: the offer stands down as soon as `zotlit-profile.default.md` exists, whatever the file holds.
+
+- **No item, or no annotation, to verify against.** <UiLabel name={m.notice_literature_note_template_conversion_no_item()} /> or <UiLabel name={m.notice_literature_note_template_conversion_no_annotation()} /> Connect a Zotero library that contains an item, then select the button again. The annotation notice appears only when an annotation file is among the files being converted.
+
+- **A converted document already exists.** <UiLabel name={m.notice_literature_note_template_conversion_exists()} /> Rename or remove the file in the way, then select the button again. The notice says "profile document" even when the occupant is `zotlit-citation.md` or a partial.
+
+- **No legacy templates left to convert.** <UiLabel name={m.notice_literature_note_template_conversion_none()} /> ZotLit found none of the files the conversion reads, so nothing is written and nothing changes. Keep using the built-in templates.
+
+## While the conversion is pending
+
+Until you convert, ZotLit refuses to create, update, or switch a note through any profile other than the Default profile. The notice reads <UiLabel name={m.notice_literature_note_template_conversion_required()} />. Notes on the Default profile are unaffected. Every profile document action stays locked until the conversion has run: the Profiles page shows no Add and no Import, and the actions on the rows it keeps, such as Edit, Duplicate, Share, and Delete, are disabled.
+
+## Expected result
+
+Your 2.1 files sit in Obsidian's configured trash, and the converted documents render the same output. A notice reads <UiLabel name={m.notice_literature_note_template_conversion_success()} /> Every profile works again.
+
+## See also
+
+<Cards>
+  <Card
+    title="How templates work"
+    description="The three kinds of template document and how ZotLit finds them."
+    href="/docs/concepts/how-templates-work#convert-legacy"
+  />
+  <Card
+    title="Profile document"
+    description="The manifest, the note source, the managed block, and the Annotation Section."
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="Settings reference"
+    description="Every ZotLit setting, including the template engine rows."
+    href="/docs/reference/settings"
+  />
+</Cards>
