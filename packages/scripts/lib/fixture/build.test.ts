@@ -1288,9 +1288,11 @@ describe("a Stress Build", () => {
 describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [
+      "citation-networks-notes.md",
       "citation-only-test.md",
       "cited-work-node-test.md",
       "citekey-smoke-test.md",
+      "knowledge-management-survey.md",
       "literature-note-citation-test.md",
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
@@ -1299,6 +1301,7 @@ describe("the generated Obsidian vault", () => {
       "profile-examples/profile-import-replacement-v1.md",
       "profile-examples/profile-import-replacement-v2.md",
       "profile-examples/profile-import-unavailable-style.md",
+      "tools-for-thought.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
     ]) {
