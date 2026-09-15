@@ -1142,7 +1142,7 @@ export class NotePreviewView extends ItemView {
           <button
             onClick={() =>
               openSettingsTab(this.app, this.#pluginId, [
-                m.settings_page_profiles(),
+                "settings_page_profiles",
               ])
             }
           >

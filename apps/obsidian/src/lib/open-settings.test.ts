@@ -6,7 +6,7 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { revealSetting } from "./open-settings";
+import { openSettingsTab, revealSetting } from "./open-settings";
 
 const TAB_ID = "zotlit";
 
@@ -61,6 +61,36 @@ function createSettingsModal(items = settingItems) {
   };
   return { app: { setting } as unknown as App, setting, tab };
 }
+
+describe("openSettingsTab", () => {
+  it("opens the tab and descends the page path", () => {
+    const { app, setting } = createSettingsModal();
+
+    openSettingsTab(app, TAB_ID, ["settings_page_citations"]);
+
+    expect(setting.open).toHaveBeenCalledOnce();
+    expect(setting.openTabById).toHaveBeenCalledExactlyOnceWith(TAB_ID);
+    expect(setting.navigateToSearchResult).toHaveBeenCalledOnce();
+  });
+
+  it("opens the tab alone with an empty path", () => {
+    const { app, setting } = createSettingsModal();
+
+    openSettingsTab(app, TAB_ID);
+
+    expect(setting.open).toHaveBeenCalledOnce();
+    expect(setting.navigateToSearchResult).not.toHaveBeenCalled();
+  });
+
+  it("opens the modal alone when the tab id is unknown", () => {
+    const { app, setting } = createSettingsModal();
+
+    openSettingsTab(app, "not-installed", ["settings_page_citations"]);
+
+    expect(setting.open).toHaveBeenCalledOnce();
+    expect(setting.navigateToSearchResult).not.toHaveBeenCalled();
+  });
+});
 
 describe("revealSetting", () => {
   it("opens the tab, descends to the row's page, and flashes the row", () => {
