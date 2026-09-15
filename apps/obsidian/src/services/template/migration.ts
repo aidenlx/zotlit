@@ -233,6 +233,8 @@ export type LiteratureNoteTemplateMigrationResult =
        *  Literature Note slots to fold into one. */
       document: string | null;
       trashed: readonly string[];
+      /** Legacy files a failed trash left behind; retry from the Welcome view. */
+      pendingCleanup: readonly string[];
       /** Legacy files left in place and reported: the Eta side of a
        *  mixed-language `cite` / `cite2` pair. */
       kept: readonly string[];
@@ -363,22 +365,35 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     await this.#settings.flush();
 
     const trashed: string[] = [];
+    const pendingCleanup: string[] = [];
     for (const path of legacyFiles) {
       const file = this.#app.vault.getFileByPath(path);
       if (!file) continue;
-      await this.#app.fileManager.trashFile(file);
-      trashed.push(path);
+      try {
+        await this.#app.fileManager.trashFile(file);
+        trashed.push(path);
+      } catch (error) {
+        // The accepted documents are already active. Keep this file in place
+        // for a later retry rather than undo the conversion.
+        pendingCleanup.push(path);
+        logger.warn("Failed to move a legacy template file to trash", {
+          error,
+          path,
+        });
+      }
     }
     this.#settings.update({
       "note.template-conversion-result": {
         document: profilePath,
         trashed: trashed.length,
+        pendingCleanup,
       },
     });
     await this.#settings.flush();
     logger.info("Converted legacy templates", {
       documents: documents.map(({ path }) => path),
       trashed,
+      pendingCleanup,
       kept,
     });
     return {
@@ -386,7 +401,59 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       document:
         profilePath === null ? null : CONVERTED_DEFAULT_PROFILE_DOCUMENT,
       trashed,
+      pendingCleanup,
       kept,
+    };
+  }
+
+  /**
+   * Trash the legacy files a previous conversion could not move, from the
+   * recorded `pendingCleanup`. A file that still resists stays on the list.
+   */
+  async retryCleanup(): Promise<LiteratureNoteTemplateMigrationResult> {
+    await this.ready;
+    const settings = this.#settings.current ?? (await this.#settings.loaded);
+    const accepted = settings["note.template-conversion-result"];
+    if (!accepted) {
+      return refused(
+        "no-legacy-templates",
+        "No completed conversion was found",
+        "Convert the legacy templates before retrying cleanup.",
+      );
+    }
+    const pendingCleanup: string[] = [];
+    const trashed: string[] = [];
+    let trashedCount = accepted.trashed;
+    for (const path of accepted.pendingCleanup ?? []) {
+      const file = this.#app.vault.getFileByPath(path);
+      if (!file) continue;
+      try {
+        await this.#app.fileManager.trashFile(file);
+        trashed.push(path);
+        trashedCount += 1;
+      } catch (error) {
+        pendingCleanup.push(path);
+        logger.warn("Failed to retry moving a legacy template file to trash", {
+          error,
+          path,
+        });
+      }
+    }
+    this.#settings.update({
+      "note.template-conversion-result": {
+        ...accepted,
+        trashed: trashedCount,
+        pendingCleanup,
+      },
+    });
+    await this.#settings.flush();
+    return {
+      outcome: "converted",
+      document:
+        accepted.document === null ? null : CONVERTED_DEFAULT_PROFILE_DOCUMENT,
+      trashed,
+      pendingCleanup,
+      kept: [],
     };
   }
 

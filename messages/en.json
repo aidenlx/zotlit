@@ -83,6 +83,7 @@
   "notice_literature_note_template_conversion_no_annotation": "Add an annotation to a Zotero item, then try again.",
   "notice_literature_note_template_conversion_exists": "The converted profile document already exists. Rename or remove it, then try again.",
   "notice_literature_note_template_conversion_none": "No legacy template files need conversion.",
+  "notice_literature_note_template_conversion_pending_cleanup": "The converted templates are active, but some old files could not be moved to trash. Review them from the Welcome view and retry cleanup.",
   "notice_duplicate_literature_notes": "Multiple literature notes use this Zotero key: {paths}. ZotLit used {selected}; resolve the duplicates.",
   "notice_create_note_failed": "Failed to create literature note.",
   "notice_empty_filename": "The filename template rendered an empty name. Adjust the template and try again.",
@@ -1237,6 +1238,8 @@
     }
   ],
   "welcome_template_conversion_action": "Convert templates",
+  "welcome_template_cleanup_body": "These old files could not be moved to trash and are still in your vault:",
+  "welcome_template_cleanup_retry": "Retry cleanup",
   "welcome_action_open_migration_guide": "Open migration guide",
   "workbench_profile_menu": "Open profile",
   "workbench_start_default": "Start from Default",
