@@ -3,10 +3,23 @@ import { evalQuotedToken, toValueSync, TypeGuards, Value } from "liquidjs";
 import type { Context, Liquid, Template } from "liquidjs";
 
 import { PandocCitationError } from "./pandoc-citation";
+import { TexCitationError } from "./tex-citation";
+
+/** The citation source filters that read `zt.citations` as their whole input. */
+const CITATION_SOURCE_FILTERS: readonly string[] = ["pandoc_cite", "tex_cite"];
+
+/** A citation source module rejected the Citation Item array it was handed. */
+type CitationSourceError = PandocCitationError | TexCitationError;
+
+function isCitationSourceError(error: unknown): error is CitationSourceError {
+  return (
+    error instanceof PandocCitationError || error instanceof TexCitationError
+  );
+}
 
 /** The formatter rejected a direct Citation Item read from the template's entry root. */
 export class CitationInputError extends Error {
-  constructor(cause: PandocCitationError) {
+  constructor(cause: CitationSourceError) {
     super(cause.message, { cause });
     this.name = "CitationInputError";
   }
@@ -38,7 +51,8 @@ export function withCitationInputProvenance(
           !TypeGuards.isPropertyAccessToken(operand) ||
           operand.variable !== undefined ||
           operand.props.length !== 2 ||
-          filter?.name !== "pandoc_cite"
+          filter === undefined ||
+          !CITATION_SOURCE_FILTERS.includes(filter.name)
         )
           continue;
         const path = operand.props.map((part) =>
@@ -60,7 +74,7 @@ export function withCitationInputProvenance(
           } catch (error) {
             if (
               fromCaller &&
-              error instanceof PandocCitationError &&
+              isCitationSourceError(error) &&
               error.code === "invalid-input" &&
               error.property === "items"
             )

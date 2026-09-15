@@ -151,6 +151,8 @@ const LIQUID_SECTION = `LIQUID DIALECT
   {% suffix length, prepend, append %} emits a filename-suffix placeholder.
   obsidian_tag converts tag values for Obsidian; it accepts arrays and tag objects.
   pandoc_cite formats zt.citations; "prefer-author-in-text" selects that form.
+  tex_cite formats zt.citations as one LaTeX command; its optional argument
+  names the command, e.g. "autocite", and defaults to "cite".
   arr_prefix, arr_suffix, arr_replace transform arrays; flatten accepts a depth.
   The date filter accepts Temporal values and Zotero multipart dates.
   A trailing -%} removes inline blanks and one following newline; a leading
@@ -162,7 +164,9 @@ const ETA_SECTION = `ETA TEMPLATES
   a check reports the failure and its recovery hint.
   renderAnnotation(annotation) renders the Profile's Annotation Section.
   pandocCite(zt.citations) formats citations; its optional second argument
-  "prefer-author-in-text" selects that form.`;
+  "prefer-author-in-text" selects that form.
+  texCite(zt.citations) formats citations as one LaTeX command; its optional
+  second argument names the command, e.g. "autocite", and defaults to "cite".`;
 
 const TROUBLESHOOTING_SECTION = `TROUBLESHOOTING
   Use yq to edit YAML with jq query syntax.

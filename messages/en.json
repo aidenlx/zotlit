@@ -2264,6 +2264,7 @@
         "name=strip_html": "Strips all HTML tags from a string.",
         "name=strip_newlines": "Strips all newline characters (line breaks) from a string.",
         "name=sum": "Returns the sum of all elements in an array.",
+        "name=tex_cite": "Formats an item or array of items as a LaTeX citation command.",
         "name=times": "Multiplies a number by a given number.",
         "name=to_integer": "Converts the input to an integer.",
         "name=truncate": "Truncates a string down to a given number of characters.",

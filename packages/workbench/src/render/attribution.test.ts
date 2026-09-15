@@ -106,4 +106,22 @@ describe("render failure attribution", () => {
       }
     },
   );
+
+  it("identifies invalid caller data behind the LaTeX Citation filter", () => {
+    const source = '{% render "citation" with zt as zt %}';
+    const facade = new TemplateFacade();
+    facade.define("note", source, "liquid");
+    facade.define("citation", "{{ zt.citations | tex_cite }}", "liquid");
+    expect.assertions(2);
+    try {
+      facade.render("note", { title: "A note root" });
+    } catch (error) {
+      const diagnostic = renderFailureDiagnostic(error, {
+        source,
+        language: "liquid",
+      });
+      expect(diagnostic.code).toBe("citation-data-mismatch");
+      expect(diagnostic.engine?.template).toBe("citation");
+    }
+  });
 });

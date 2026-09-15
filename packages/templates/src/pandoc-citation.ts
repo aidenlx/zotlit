@@ -2,6 +2,8 @@
 
 import { regex } from "arkregex";
 
+import { assertCitationItems } from "./citation-items";
+
 const SIMPLE_KEY_SOURCE =
   "[\\p{L}\\p{N}_*](?:[\\p{L}\\p{N}_]|[:.#$%&+?<>~/-](?=[\\p{L}\\p{N}_])|[:/](?=/))*";
 
@@ -136,35 +138,8 @@ function assertFormatInput(
   if (form !== "normal" && form !== "prefer-author-in-text") {
     throw invalidInput(`Unknown Pandoc Citation form: ${String(form)}`, "form");
   }
-  if (!Array.isArray(items)) {
-    throw invalidInput("Pandoc Citation Items must be an array", "items");
-  }
-  for (const [itemIndex, item] of items.entries()) {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      (typeof item.citationKey !== "string" && item.citationKey !== null) ||
-      (typeof item.prefix !== "string" && item.prefix !== null) ||
-      (typeof item.suffix !== "string" && item.suffix !== null) ||
-      typeof item.suppressAuthor !== "boolean" ||
-      !isLocator(item.locator)
-    ) {
-      throw invalidInput(
-        `Citation Item ${itemIndex + 1} has an invalid shape`,
-        "items",
-        itemIndex,
-      );
-    }
-  }
-}
-
-function isLocator(value: unknown): value is PandocLocator | null {
-  if (value === null) return true;
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { label?: unknown }).label === "string" &&
-    typeof (value as { value?: unknown }).value === "string"
+  assertCitationItems(items, (message, itemIndex) =>
+    invalidInput(message, "items", itemIndex),
   );
 }
 

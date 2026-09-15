@@ -17,6 +17,7 @@ import { coerceOutput } from "./coerce";
 import { filenameSuffix } from "./filename-suffix";
 import { normalizeObsidianTag } from "./obsidian-tag";
 import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
+import { formatTemplateTexCitation } from "./tex-citation-adapter";
 
 export { ParseError, TokenizationError } from "liquidjs";
 
@@ -57,6 +58,7 @@ export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   FLATTEN_FILTER_NAME,
   "obsidian_tag",
   "pandoc_cite",
+  "tex_cite",
 ]);
 
 /** Tags this engine registers beyond LiquidJS builtins; `bq` is the only block tag. */
@@ -353,6 +355,7 @@ export function createLiquidEngine({
   });
 
   engine.registerFilter("pandoc_cite", formatTemplatePandocCitation);
+  engine.registerFilter("tex_cite", formatTemplateTexCitation);
 
   engine.registerTag("suffix", SuffixTag);
 

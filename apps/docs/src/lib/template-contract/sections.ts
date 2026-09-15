@@ -91,7 +91,16 @@ Pass \`zt.citations\` to the Pandoc Citation formatter, which reads \`prefix\`, 
 | Liquid   | \`normal\`                | \`{{ zt.citations \\| pandoc_cite }}\`                          |
 | Eta      | \`normal\`                | \`<%= pandocCite(zt.citations) %>\`                            |
 | Liquid   | \`prefer-author-in-text\` | \`{{ zt.citations \\| pandoc_cite: "prefer-author-in-text" }}\` |
-| Eta      | \`prefer-author-in-text\` | \`<%= pandocCite(zt.citations, "prefer-author-in-text") %>\`   |`,
+| Eta      | \`prefer-author-in-text\` | \`<%= pandocCite(zt.citations, "prefer-author-in-text") %>\`   |
+
+To write LaTeX source instead, pass the same \`zt.citations\` to the LaTeX formatter. It joins every retained key into one command and takes the prenote and postnote from the first retained item. A citation that carries a prefix emits natbib's and BibLaTeX's two-argument form, \`\\cite[see][p. 3]{smith2024}\`.
+
+| Language | Form        | Expression                                   |
+| -------- | ----------- | -------------------------------------------- |
+| Liquid   | \`\\cite\`     | \`{{ zt.citations \\| tex_cite }}\`             |
+| Eta      | \`\\cite\`     | \`<%= texCite(zt.citations) %>\`               |
+| Liquid   | \`\\autocite\` | \`{{ zt.citations \\| tex_cite: "autocite" }}\` |
+| Eta      | \`\\autocite\` | \`<%= texCite(zt.citations, "autocite") %>\`   |`,
   },
   {
     id: "citation-variant",
