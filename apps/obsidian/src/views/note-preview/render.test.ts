@@ -762,3 +762,129 @@ describe("retained output metadata", () => {
     expect(retainNativeOutputs(kept, other)).toBe(other);
   });
 });
+
+describe("native raw legacy repair rendering", () => {
+  it("uses filename data and Eta directly without a Profile manifest", async () => {
+    await using fixture = await createRenderFixture({ javascript: true });
+    const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
+    const result = await renderNativeTemplate(
+      {
+        ...fixture.deps,
+        rawInput: { kind: "profile", slot: "filename", language: "eta" },
+      },
+      {
+        source: "REPAIRED-<%= zt.title %>",
+        snapshot,
+      },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.filename).toBe(`REPAIRED-${snapshot.item.title}`);
+    expect(result.creationBody).toBeNull();
+  });
+
+  it("reports a raw Eta runtime failure through preview diagnostics", async () => {
+    await using fixture = await createRenderFixture({ javascript: true });
+    const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
+    const result = await renderNativeTemplate(
+      {
+        ...fixture.deps,
+        rawInput: { kind: "profile", slot: "note", language: "eta" },
+      },
+      { source: '<% throw new Error("RAW-ETA-1099") %>', snapshot },
+    );
+    expect(result.creationBody).toBeNull();
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        message: expect.stringContaining("RAW-ETA-1099"),
+      }),
+    ]);
+  });
+
+  it("renders selected annotation source with scoped partials and reports raw syntax failures", async () => {
+    await using fixture = await createRenderFixture({
+      partials: { callout: "COPIED {{ zt.text }}" },
+    });
+    const snapshot = getSampleItem(SAMPLE_ITEM_CHOICES[0]!.id)!;
+    const annotation = annotationSamples(snapshot, null).example;
+    const deps = {
+      ...fixture.deps,
+      rawInput: {
+        kind: "profile" as const,
+        slot: "annotation" as const,
+        language: "liquid" as const,
+      },
+    };
+    const result = await renderNativeTemplate(deps, {
+      source: '{% render "callout" with zt as zt %}',
+      snapshot,
+      annotation,
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.annotation).toContain("COPIED ");
+    const broken = await renderNativeTemplate(deps, {
+      source: "{% for item i zt.items %}",
+      snapshot,
+      annotation,
+    });
+    expect(broken.diagnostics).toEqual([
+      expect.objectContaining({ code: "liquid-syntax-error" }),
+    ]);
+  });
+});
+
+it.each([
+  ["cite", "main"],
+  ["cite2", "alt"],
+] as const)(
+  "renders raw %s under its citation root and selected %s variant",
+  async (slot, variant) => {
+    await using fixture = await createRenderFixture({ javascript: true });
+    const result = await renderNativeTemplate(
+      {
+        ...fixture.deps,
+        rawInput: { kind: "citation", slot, language: "eta" },
+      },
+      {
+        source: "REPAIR-CITE-1100 <%= zt.items[0].citationKey %>",
+        snapshot: fixture.snapshot,
+        citation: { variant, example: null },
+      },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.citation).toBe("REPAIR-CITE-1100 figures2014");
+    expect(result.creationBody).toBeNull();
+  },
+);
+
+it.each([
+  ["note", "{{ zt.title }}", "Better figures"],
+  ["annotation", "{{ zt.text }}", "Use readable figures."],
+  ["citation", "{{ zt.items[0].citationKey }}", "figures2014"],
+] as const)(
+  "renders a raw partial with %s caller data and scoped dependencies",
+  async (context, source, expected) => {
+    await using fixture = await createRenderFixture({
+      partials: { shared: `REPAIR-PARTIAL-1100 ${source}` },
+    });
+    const { example } = annotationSamples(fixture.snapshot, null);
+    const result = await renderNativeTemplate(
+      {
+        ...fixture.deps,
+        rawInput: { kind: "partial", slot: "outer", language: "liquid" },
+      },
+      {
+        source: '{% render "shared" with zt as zt %}',
+        snapshot: fixture.snapshot,
+        annotation: example,
+        citation:
+          context === "citation"
+            ? { variant: "main", example: null }
+            : undefined,
+        partial: { name: "outer", context, profile: null },
+      },
+    );
+    expect(result.diagnostics).toEqual([]);
+    expect(result.partial).toBe(`REPAIR-PARTIAL-1100 ${expected}`);
+    expect(result.creationBody).toBeNull();
+  },
+);

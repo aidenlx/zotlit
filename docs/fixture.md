@@ -195,6 +195,9 @@ A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the s
 | `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. It also seeds the graph's citation cases. The Fixture writes a Literature Note for My Library Items only, so `cited-work-node-test.md` cites three works without one — one key the `partial` Scope Case keeps, two it drops — and a fourth key that two Items hold, which stays ambiguous. `citation-only-test.md` carries its citation as its only link, and the `rougierTenSimpleRules2014` Literature Note cites a second Literature Note. The graph showcase adds a second citation web for screenshots and demonstrations: ten information-science Items — Bush, Nelson, Garfield, Small, Luhmann, Ahrens, Berners-Lee, Forte, Matuschak, and Engelbart — form three thematic clusters (personal knowledge management, citation analysis, and hypertext) linked by cross-citations and by three research-note vault pages (`knowledge-management-survey.md`, `citation-networks-notes.md`, `tools-for-thought.md`). Engelbart sits in the Shared Reading group and has no Literature Note, so it appears as a Cited Work Node. The template folder also holds `zotlit-citation.md` and `zotlit-partial.book-details.md`. |
 | `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
 | `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected Legacy Template Files with visible edits, and an edited Managed Frontmatter list. |
+| `upgrader-field-error` | The Upgrader state with an invalid Liquid expression, `1 +`, in the `fixture-repair` frontmatter field. |
+| `upgrader-layout-error` | The Upgrader state with the required content insertion removed from the note source. Profile synthesis needs a source repair. |
+| `upgrader-frontmatter-only` | Version-9 settings with the edited frontmatter fields, including `year`, and no Legacy Template Files. |
 
 The Configured vault's template folder carries the two Template Documents the Template Workbench opens beside a Profile:
 
@@ -242,6 +245,73 @@ The `upgrader` case writes the ZotLit 2.1.0 shape:
 - The four legacy slot files `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, and `zotlit-annotation.liquid.md` in the template folder. Each starts from the shipped Liquid default and carries one visible edit.
 
 On load, ZotLit migrates the settings to the current version, sets `note.template-conversion-pending`, and opens the conversion prompt. Run `pnpm fixture --help` for the exact field list and edits, which come from the Fixture Spec.
+
+### Test conversion review and repair
+
+Use this acceptance checklist for [#1095](https://github.com/aidenlx/zotlit/issues/1095). Record the observed result for each step; building the Fixture only prepares the test data.
+
+Start each independent trial once, with its case ID:
+
+```sh
+pnpm fixture open --vault-case <case> --purge
+```
+
+After the ready report, run `obsidian vault=<id> command id=app:reload` with the reported vault ID. This reload makes Obsidian rebuild its file index from the generated seed, including files removed by a purge.
+
+For close, reload, restart, and resume checks, reopen the same Development Vault in Obsidian. Fixture open, build, dev, and vault sync commands restore generated state. Run them again only to start a new trial. Wait for saved changes before closing an editor.
+
+#### Review and postpone
+
+1. Start `upgrader`. Record the original template files and render a Literature Note and both Citation Variants for comparison.
+2. Open conversion review. Check that it lists the note slots, citation pair, partial, frontmatter fields, and resulting documents from the tables above.
+3. Check the verification explanation: one selected Item, an optional Annotation, and a one-item Citation. Selected outputs are compared; the create baseline normalizes trailing line breaks. Managed Frontmatter receives evaluation checks, without complete final-file comparison.
+4. Postpone conversion. Reload ZotLit, then restart Obsidian twice. Check that the automatic Welcome invitation appears only on the initial detection. Open review again through the compact settings entry.
+5. Confirm that Default still renders the original templates. Check that legacy field rows remain hidden, available Default binding controls still work, and Profile file actions and added Profile use remain gated.
+6. Review and accept the supported conversion. Check that the Profile, Citation Template, and Shared Partial become usable together. Compare the rendered note and citation results with the review. Confirm that converted legacy files move to trash according to Obsidian's setting. The mixed-language `zotlit-cite2.eta.md` stays and is explained separately.
+
+#### Repair a field and resume
+
+1. Start `upgrader-field-error`. Open review and follow the field diagnostic to the copied `fixture-repair` input. Check that this unresolved failure blocks activation.
+2. Replace its expression `1 +` with `"REPAIRED-FIELD"`, including the quotes. Retry review. Check that the repaired field evaluates successfully and that the original failure is reported as unavailable comparison output.
+3. Close the editor, resume from the settings entry, then restart Obsidian and resume again. Check that the corrected expression survives both operations. The original field must still contain `1 +`.
+4. Discard the Conversion Copy. Reopen repair and confirm that the copied field starts with `1 +` again. Apply the correction and retry.
+5. Once the repair is valid, explicitly accept the reviewed difference. Create or update a Literature Note and confirm `fixture-repair: REPAIRED-FIELD` in its frontmatter. The review must keep unavailable original output distinct from matching output.
+
+#### Repair a layout, citations, and a partial
+
+1. Start `upgrader-layout-error`. Open **Repair copied sources** from review. Confirm that the copied note source is editable even though Profile synthesis fails.
+2. In that copy, replace `<!-- Restore the content insertion in the Conversion Copy. -->` with `{% render "content" with zt as zt %}`. Save, return to review, and select **Regenerate from copied sources**. Inspect the resulting Profile. Regeneration replaces candidate note, filename, annotation, citation, and Shared Partial content while preserving repaired frontmatter fields. The original note source must retain the comment until acceptance.
+3. Under **Repair copied sources**, add `REPAIRED-CITATION ` to `zotlit-cite.liquid.md` and `REPAIRED-PARTIAL ` to `zotlit-annotation-callout.liquid.md`. Open, edit, close, and restore their editors; verify Citation and Shared Partial preview contexts. Create or extract a partial named `fixture-extra` with the source `REPAIRED-NEW-PARTIAL`, and reference it from the copied note. Check that creation and unpack actions write inside the inactive copy.
+4. Insert a citation through the normal workflow. The case's annotation source calls `annotation-callout`. Render it with `obsidian vault=<id> zotlit:template-render template=annotation key=TYY6Z6ZF format=markdown`, and select the same Annotation in the repair preview. Check that neither active output contains a repair marker. The inactive previews must show the corresponding markers.
+5. Select **Regenerate from copied sources**, then review. Check that matching, changed, and unavailable original outputs have distinct results. Explicitly accept the valid changes, then render the accepted documents with the same data. Confirm all three repair markers, the restored note content insertion, and the accepted `zotlit-partial.fixture-extra.md` file.
+
+Also test a new partial created from a raw copied source before the first regeneration. Change an original template, then select **Review against current originals**. Confirm that the new partial survives removal of the old copy. After regeneration, edit that partial's raw input again and repeat the original-change review. The latest raw text must survive, and acceptance must remain blocked until **Regenerate from copied sources** updates the candidate.
+
+For stale-review coverage, start a separate `upgrader` trial. Prepare and review a copy, then append `ORIGINAL-CHANGED` to the original note source. Attempt acceptance. Check that activation stops and requires a new review against the changed original. For the settings check, prepare another review and run `obsidian vault=<id> zotlit:frontmatter-set field=year expr=zt.title language=liquid merge=replace`. Check the CLI reports `ok: true`, then confirm that acceptance requires a new review. Restore the field with `obsidian vault=<id> zotlit:frontmatter-set field=year expr=zt.date.year language=liquid merge=replace`.
+
+#### Retry incomplete cleanup
+
+Start a separate `upgrader` trial and complete review. In this disposable Development Vault, inject a failure for one exact legacy file before acceptance. Use the vault ID reported during setup. Replace `<legacy-note-path>` with the original note source's vault-relative path from review.
+
+```sh
+obsidian vault=<id> eval code='(() => { if (globalThis.fixtureTrashRestore) throw new Error("Fixture trash probe already installed"); const manager = app.fileManager; const original = manager.trashFile; const path = "<legacy-note-path>"; if (!app.vault.getFileByPath(path)) throw new Error("Fixture source missing"); globalThis.fixtureTrashRestore = () => { manager.trashFile = original; delete globalThis.fixtureTrashRestore; }; manager.trashFile = function(file) { if (file.path === path) return Promise.reject(new Error("Fixture cleanup failure")); return original.call(this, file); }; })()'
+```
+
+This development probe intercepts Obsidian's `FileManager.trashFile` for that file only. Read the CLI result for errors before continuing.
+
+1. Accept conversion. Check that the converted documents remain active and render correctly. The cleanup result must list the injected file as pending cleanup, separately from the deliberately retained Eta citation source.
+2. Restore the original method with the command below, including when the trial fails. Close and reopen the result, then restart Obsidian in the same vault. Check that the pending file is still listed and the accepted conversion remains active.
+3. Retry cleanup. Check that the injected file moves to trash, the pending list clears, and the accepted documents remain unchanged. The deliberately retained citation source must remain in the vault.
+
+```sh
+obsidian vault=<id> eval code='globalThis.fixtureTrashRestore?.()'
+```
+
+#### Preserve frontmatter and Default membership
+
+1. Start `upgrader-frontmatter-only`. Check that conversion review is unnecessary. In ZotLit settings, find **Templates and properties** and select **Edit profile**. Inspect the resulting Default Profile.
+2. Confirm that its Managed Frontmatter includes `year` with the expression `zt.date.year`. Render a Literature Note for an Item with a date and check the resulting year.
+3. Record the frontmatter of an existing unstamped Literature Note and Imported Note. Add another Profile, then check that both notes still belong to Default and their Profile stamps remain absent.
 
 ## Run the Paired Zotero
 

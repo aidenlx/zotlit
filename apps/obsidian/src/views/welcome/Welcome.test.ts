@@ -139,6 +139,41 @@ it("replaces the pending prompt with the persisted result after conversion", asy
   expect(container.textContent).not.toContain(m.welcome_migration_title());
 });
 
+it("shows saved cleanup files and invokes retry after reopening", async () => {
+  const { actions, container, store } = await render("upgraded", {
+    templateConversionResult: {
+      document: "templates/zotlit-profile.default.md",
+      trashed: 1,
+      pendingCleanup: ["templates/zotlit-note.liquid.md"],
+      kept: ["templates/zotlit-cite2.eta.md"],
+    },
+  });
+  expect(container.textContent).toContain("templates/zotlit-note.liquid.md");
+  expect(container.textContent).toContain(m.welcome_template_cleanup_kept());
+  expect(container.textContent).toContain("templates/zotlit-cite2.eta.md");
+  const button = [...container.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent === m.welcome_template_cleanup_retry(),
+  );
+  expect(button).toBeDefined();
+  await act(() => button!.click());
+  expect(actions.retryTemplateCleanup).toHaveBeenCalledOnce();
+  await act(() =>
+    store.setState({
+      templateConversionResult: {
+        document: "templates/zotlit-profile.default.md",
+        trashed: 2,
+        pendingCleanup: [],
+      },
+    }),
+  );
+  expect(container.textContent).not.toContain(
+    m.welcome_template_cleanup_retry(),
+  );
+  expect(container.textContent).toContain(
+    m.welcome_template_conversion_completed_title(),
+  );
+});
+
 async function render(
   mode: "fresh" | "upgraded",
   state: Partial<WelcomeState> = {},
@@ -154,6 +189,7 @@ async function render(
     ...state,
   });
   const actions: WelcomeActions = {
+    retryTemplateCleanup: vi.fn(async () => {}),
     convertLiteratureNoteTemplates: vi.fn(async () => {}),
     locateZotero: vi.fn(),
     openExternal: vi.fn(),

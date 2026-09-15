@@ -746,3 +746,55 @@ language: liquid
     ).toBe(false);
   });
 });
+
+describe("raw legacy repair source", () => {
+  it("edits and undoes invalid Eta without interpreting authored YAML as a manifest", () => {
+    const source = "---\r\nlanguage: liquid\r\n---\r\n<%= it.title";
+    const controller = new WorkbenchDocumentController(source, {
+      runtime: "native",
+      rawSource: { root: "filename", language: "eta" },
+    });
+    expect(controller.problems).toEqual([]);
+    expect(controller.language).toBe("eta");
+    expect(controller.templateRegions).toEqual([
+      {
+        from: 0,
+        to: source.replaceAll("\r\n", "\n").length,
+        root: "filename",
+        language: "eta",
+        expression: false,
+      },
+    ]);
+    controller.dispatch({
+      changes: { from: controller.state.doc.length, insert: " %>" },
+    });
+    expect(controller.source).toBe(`${source} %>`);
+    controller.undo();
+    expect(controller.source).toBe(source);
+  });
+});
+
+it("keeps raw citation and partial source editable under their selected caller root", () => {
+  for (const kind of ["citation", "partial"] as const) {
+    const controller = new WorkbenchDocumentController("<%= zt.title", {
+      kind,
+      runtime: "native",
+      rawSource: { root: "citation", language: "eta" },
+    });
+    if (kind === "partial") controller.setPartialContext("annotation");
+    controller.dispatch({ changes: { from: 0, insert: "REPAIR-1100 " } });
+    expect(controller.sliceText("source")).toBe("REPAIR-1100 <%= zt.title");
+    expect(controller.templateRegions).toEqual([
+      {
+        from: 0,
+        to: 24,
+        root: kind === "citation" ? "citation" : "annotation",
+        language: "eta",
+        expression: false,
+      },
+    ]);
+    expect(controller.problems).toEqual([]);
+    controller.undo();
+    expect(controller.source).toBe("<%= zt.title");
+  }
+});

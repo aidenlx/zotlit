@@ -42,7 +42,9 @@ import {
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   SHARED_PARTIAL_DOCUMENTS,
+  UPGRADER_FIELD_REPAIR,
   UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LAYOUT_REPAIR,
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
   UPGRADER_SETTINGS_VERSION,
@@ -947,10 +949,12 @@ async function writeVault(
   await writeVaultNotes(
     layout,
     options,
-    vaultCase.id === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
+    vaultCase.upgrade ? [] : LITERATURE_NOTE_PROFILES,
   );
-  if (vaultCase.id === "upgrader") {
-    await writeLegacyTemplates(layout);
+  if (vaultCase.upgrade) {
+    if (vaultCase.upgrade !== "frontmatter-only") {
+      await writeLegacyTemplates(layout, vaultCase);
+    }
   } else {
     for (const document of LITERATURE_NOTE_DOCUMENTS) {
       await writeFile(
@@ -1074,11 +1078,28 @@ async function writeVaultNotes(
 }
 
 /** Eject the Upgrader vault's Legacy Template Files, each with its visible edit applied. */
-async function writeLegacyTemplates(layout: FixtureLayout): Promise<void> {
+async function writeLegacyTemplates(
+  layout: FixtureLayout,
+  vaultCase: FixtureVaultCase,
+): Promise<void> {
   for (const template of UPGRADER_LEGACY_TEMPLATES) {
+    let source = await legacyTemplateSource(template);
+    if (vaultCase.upgrade === "layout-error" && template.name === "note") {
+      source = applyTemplateEdit(
+        source,
+        UPGRADER_LAYOUT_REPAIR,
+        "the legacy note template",
+      );
+    }
+    if (
+      vaultCase.upgrade === "layout-error" &&
+      template.name === "annotation"
+    ) {
+      source += `\n${UPGRADER_LAYOUT_REPAIR.annotationCall}\n`;
+    }
     await writeFile(
       join(layout.vaultDir, "templates", legacyTemplateFilename(template)),
-      await legacyTemplateSource(template),
+      source,
     );
   }
 }
@@ -1178,14 +1199,17 @@ function vaultSettings(
     ...(liveUpdatePort === undefined ? {} : { "server.port": liveUpdatePort }),
     [LIBRARY_SCOPE_SETTING_KEY]: scope,
   };
-  if (vaultCase.id === "upgrader") {
+  if (vaultCase.upgrade) {
     // The flat v2.1 shape: note bindings still vault-global, no Profiles, and
     // a recorded launch version so the release check sees a real upgrade.
     return {
       __VERSION__: UPGRADER_SETTINGS_VERSION,
       "note.literature-folder": "literatures",
       "note.import-folder": "zotero_notes",
-      "note.frontmatter-fields": UPGRADER_FRONTMATTER_FIELDS,
+      "note.frontmatter-fields":
+        vaultCase.upgrade === "field-error"
+          ? [...UPGRADER_FRONTMATTER_FIELDS, UPGRADER_FIELD_REPAIR.field]
+          : UPGRADER_FRONTMATTER_FIELDS,
       "release.previous-version": UPGRADER_PLUGIN_VERSION,
       ...shared,
     };

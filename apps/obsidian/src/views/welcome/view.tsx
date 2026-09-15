@@ -9,6 +9,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { DatabaseService } from "@/services/database/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
+import { TemplateConversionReviewModal } from "@/services/template/conversion-review";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -33,7 +34,19 @@ export interface WelcomeViewDeps {
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   settings: Pick<SettingsService, "subscribe">;
   setupActions: SetupActions;
-  templateMigration: Pick<LiteratureNoteTemplateMigrationService, "convert">;
+  templateMigration: Pick<
+    LiteratureNoteTemplateMigrationService,
+    | "prepare"
+    | "activate"
+    | "retryCleanup"
+    | "startRepair"
+    | "resumeRepair"
+    | "reviewRepair"
+    | "regenerateRepair"
+    | "acceptRepair"
+    | "discardRepair"
+    | "refreshRepairOriginals"
+  >;
   release: Pick<ReleaseService, "hasV1Templates">;
 }
 
@@ -80,6 +93,15 @@ export class WelcomeView extends ItemView {
     }
   }
 
+  openConversionReview(): void {
+    new TemplateConversionReviewModal(this.app, {
+      migration: this.#deps.templateMigration,
+      completed: (result) => {
+        new BaseNotice(templateMigrationNotice(result));
+      },
+    }).open();
+  }
+
   protected override async onOpen(): Promise<void> {
     using stack = new DisposableStack();
 
@@ -114,10 +136,11 @@ export class WelcomeView extends ItemView {
     stack.defer(() => this.app.vault.offref(renamed));
 
     const actions: WelcomeActions = {
-      convertLiteratureNoteTemplates: async () => {
-        const result = await this.#deps.templateMigration.convert();
+      retryTemplateCleanup: async () => {
+        const result = await this.#deps.templateMigration.retryCleanup();
         new BaseNotice(templateMigrationNotice(result));
       },
+      convertLiteratureNoteTemplates: async () => this.openConversionReview(),
       openExternal: (url) => window.open(url),
       ...this.#deps.setupActions,
     };
@@ -196,6 +219,8 @@ function templateMigrationNotice(
   result: LiteratureNoteTemplateMigrationResult,
 ): string {
   if (result.outcome === "converted") {
+    if (result.pendingCleanup.length > 0)
+      return m.welcome_template_cleanup_reminder();
     return result.kept.length > 0
       ? m.notice_literature_note_template_conversion_kept({
           files: result.kept.join(", "),
@@ -223,6 +248,8 @@ function templateMigrationNotice(
       return m.notice_literature_note_template_conversion_no_annotation();
     case "converted-document-exists":
       return m.notice_literature_note_template_conversion_exists();
+    case "originals-changed":
+      return m.conversion_review_originals_changed();
     case "no-legacy-templates":
       return m.notice_literature_note_template_conversion_none();
   }

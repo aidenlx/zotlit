@@ -1,17 +1,13 @@
 // Headerless resources strip and migration reminder for the declarative (>=1.13) setting tab.
 
-import { join } from "node:path/posix";
 import type {
   Setting,
   SettingDefinition,
   SettingDefinitionGroup,
 } from "obsidian";
 
-import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
-
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
-import { defaults } from "@/services/settings/schema";
 import {
   BUG_REPORT,
   COMMUNITY,
@@ -46,21 +42,27 @@ export function migrationReminderItem(
 export function templateConversionReminderItem(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
+  const cleanupPending =
+    !!ctx.settings.current?.["note.template-conversion-result"]?.pendingCleanup
+      ?.length;
   return {
-    name: m.welcome_template_conversion_title(),
-    desc: m.welcome_template_conversion_body({
-      path: join(
-        ctx.settings.current?.["template.folder"] ??
-          defaults["template.folder"],
-        CONVERTED_DEFAULT_PROFILE_DOCUMENT,
-      ),
-    }),
+    name: cleanupPending
+      ? m.welcome_template_cleanup_title()
+      : m.welcome_template_conversion_title(),
+    desc: cleanupPending
+      ? m.welcome_template_cleanup_reminder()
+      : m.settings_template_conversion_reminder_desc(),
     render: (setting) => {
       setting.addButton((button) =>
         button
           .setButtonText(m.settings_template_conversion_reminder_action())
           .setCta()
-          .onClick(() => void openWelcomeView(ctx.app, "upgraded")),
+          .onClick(
+            () =>
+              void openWelcomeView(ctx.app, "upgraded", {
+                reviewConversion: !cleanupPending,
+              }),
+          ),
       );
     },
   };
@@ -96,7 +98,9 @@ export function resourcesGroup(
 ): SettingDefinitionGroup<SettingsKey> {
   const pending = ctx.settings.current?.["release.migration-pending"] === true;
   const templateConversionPending =
-    ctx.settings.current?.["note.template-conversion-pending"] === true;
+    ctx.settings.current?.["note.template-conversion-pending"] === true ||
+    !!ctx.settings.current?.["note.template-conversion-result"]?.pendingCleanup
+      ?.length;
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",

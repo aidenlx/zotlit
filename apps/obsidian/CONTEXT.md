@@ -39,6 +39,10 @@ _Avoid_: format, layout, schema
 A per-slot file `zotlit-<name>.liquid.md` or `zotlit-<name>.eta.md` from the 2.1.x format: the slots `note`, `content`, `annotation`, `filename`, `cite`, and `cite2`, plus any non-canonical name that served as a partial. The one-shot converter folds the note slots into the default Profile document, folds `cite` and `cite2` into the Citation Template, and renames each partial file. The term exists for the converter and its prompt alone.
 _Avoid_: template (bare, for the retired shape), slot file (in UI copy)
 
+**Conversion Copy**:
+An editable, saved working copy of legacy template configuration, including its template sources and field list. It stays inactive while the user repairs and reviews conversion; the original configuration remains the comparison baseline.
+_Avoid_: backup, active template set
+
 **Template Document**:
 Any file in the template folder that the Template Workbench edits: a Profile document, the Citation Template, or a Shared Partial. The filename prefix names the kind; a document carries an optional manifest and one source in one rendering language. One editor view opens every kind; the kind picks the tabs and the preview's root data.
 _Avoid_: template file (the retired per-slot files), slot

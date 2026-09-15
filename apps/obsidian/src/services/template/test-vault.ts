@@ -20,6 +20,10 @@ export class MockVault {
     return this.contents.get(file.path) ?? "";
   });
 
+  async read(file: TFile): Promise<string> {
+    return this.cachedRead(file);
+  }
+
   #mtime = 1;
   readonly #listeners: Record<VaultEvent, Set<VaultCallback>> = {
     create: new Set(),
@@ -95,12 +99,34 @@ export class MockVault {
     return result;
   }
 
+  async modify(file: TFile, content: string): Promise<void> {
+    this.modifyFile(file.path, content);
+  }
+
+  async delete(file: TAbstractFile, _force?: boolean): Promise<void> {
+    if (file instanceof TFile) {
+      this.deleteFile(file.path);
+      return;
+    }
+    for (const path of this.files.keys())
+      if (path.startsWith(`${file.path}/`)) this.deleteFile(path);
+    for (const path of this.folders.keys())
+      if (path === file.path || path.startsWith(`${file.path}/`))
+        this.folders.delete(path);
+    this.#detach(file);
+  }
+
   modifyFile(path: string, content: string): void {
     const file = this.files.get(path);
     if (!file) throw new Error(`Missing file: ${path}`);
     file.stat = this.#nextStat(content);
     this.contents.set(path, content);
     this.#emit("modify", file);
+  }
+
+  async rename(file: TFile, path: string): Promise<void> {
+    if (this.files.has(path)) throw new Error("File already exists.");
+    this.renameFile(file.path, path);
   }
 
   renameFile(oldPath: string, newPath: string): void {

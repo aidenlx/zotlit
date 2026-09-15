@@ -403,7 +403,7 @@ export async function openTemplateWorkbench(
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
     originatingNote?: TFile;
-    tab?: "match" | "name";
+    tab?: "match" | "properties" | "name";
     explainUnsupported?: boolean;
     customize?: boolean;
     defaultProfile?: boolean;

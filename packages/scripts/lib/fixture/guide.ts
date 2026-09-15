@@ -16,7 +16,9 @@ import {
   SCOPE_CASES,
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
+  UPGRADER_FIELD_REPAIR,
   UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LAYOUT_REPAIR,
   UPGRADER_LEGACY_PARTIAL_NAME,
   UPGRADER_LEGACY_TEMPLATES,
   UPGRADER_PLUGIN_VERSION,
@@ -204,7 +206,26 @@ zotlit-partial.${UPGRADER_LEGACY_PARTIAL_NAME}.md. It leaves the Eta cite2
 file in the vault and names it in its notice.
 
 On load, ZotLit migrates the settings to the current version, sets
-note.template-conversion-pending, and opens the conversion prompt.`;
+note.template-conversion-pending, and opens the conversion prompt.
+
+Conversion repair cases use the same v2.1 settings and unstamped notes:
+
+  upgrader-field-error
+    Adds ${UPGRADER_FIELD_REPAIR.field.key}: ${JSON.stringify(UPGRADER_FIELD_REPAIR.field.expr)} (${UPGRADER_FIELD_REPAIR.field.language}).
+    Repair the copied expression to ${UPGRADER_FIELD_REPAIR.correction}.
+  upgrader-layout-error
+    Replaces ${UPGRADER_LAYOUT_REPAIR.find}
+    with ${UPGRADER_LAYOUT_REPAIR.replace} in the note source.
+    Restore that insertion in the Conversion Copy.
+    The annotation source also calls ${UPGRADER_LAYOUT_REPAIR.annotationCall}
+    so annotation rendering checks whether a partial repair is active.
+  upgrader-frontmatter-only
+    Keeps the edited field list and writes no Legacy Template Files.
+    Check Customize preserves the fields without a conversion invitation.
+
+Seed a trial once with open --vault-case <id> --purge. For restart and resume
+checks, reopen that same Development Vault in Obsidian. A Fixture open or
+build command restores the seed and overwrites the saved trial state.`;
 
 const PAIRED_RUN_SECTION = `PAIRED RUN
 

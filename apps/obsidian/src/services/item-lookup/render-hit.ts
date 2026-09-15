@@ -63,7 +63,7 @@ export function appendTrailingFlair(el: HTMLElement, label: string): void {
 }
 
 export function renderSuggestion(
-  settings: SettingsService,
+  settings: Pick<SettingsService, "current">,
   hit: SearchHit,
   el: HTMLElement,
 ): void {

@@ -190,6 +190,9 @@ export class SettingsService extends Service<void> {
   #loaded = false;
   #hydrationOrigin: HydrationOrigin | null = null;
   #pendingWrite: Promise<void> | undefined;
+  #persistedUpdate: Promise<void> | null = null;
+  #persistedKeys: ReadonlySet<string> | null = null;
+  #saveAfterPersistedUpdate = false;
 
   ready: Promise<void>;
 
@@ -313,8 +316,67 @@ export class SettingsService extends Service<void> {
         ? patchOrUpdater(this.#snapshot())
         : patchOrUpdater;
 
-    for (const key of Object.keys(patch)) assertWritableKey(key, "update");
+    this.#requireUnreserved(Object.keys(patch));
+    const { nextOverrides, nextBroken } = this.#preparePatch(patch);
+    return this.#commitMutation(nextOverrides, nextBroken, "update");
+  }
 
+  /**
+   * Save a patch before publishing it. Unrelated updates remain visible and
+   * join the next ordinary save. Updates or resets of the reserved keys
+   * throw until this operation finishes. A failed save leaves the patch
+   * unpublished and releases its keys for retry.
+   * `beforePublish` synchronously installs dependent state after saving and
+   * before subscribers receive the committed settings.
+   */
+  async updatePersisted(
+    patch: SettingsPatch,
+    beforePublish?: () => void,
+  ): Promise<void> {
+    this.#requireLoaded("updatePersisted");
+    if (this.#persistedUpdate) {
+      throw new Error("A persisted settings update is already in progress");
+    }
+    const prepared = this.#preparePatch(patch);
+    this.#validateMutation(prepared.nextOverrides, "update");
+    this.#persistedKeys = new Set(Object.keys(patch));
+    const previousWrites = this.flush();
+    const operation = (async () => {
+      try {
+        await previousWrites;
+        const { nextOverrides, nextBroken } = this.#preparePatch(patch);
+        await this.#plugin.saveData({
+          [VERSION_KEY]: CURRENT_VERSION,
+          ...Object.fromEntries(nextBroken),
+          ...nextOverrides,
+        });
+        // Updates made during save stay in memory and in the next ordinary save.
+        const latest = this.#preparePatch(patch);
+        this.#persistedKeys = null;
+        this.#validateMutation(latest.nextOverrides, "update");
+        this.#overrides = latest.nextOverrides;
+        this.#broken = latest.nextBroken;
+        beforePublish?.();
+        this.#notify();
+        this.#scheduleSave();
+      } finally {
+        this.#persistedKeys = null;
+        this.#persistedUpdate = null;
+        if (this.#saveAfterPersistedUpdate) {
+          this.#saveAfterPersistedUpdate = false;
+          this.#scheduleSave();
+        }
+      }
+    })();
+    this.#persistedUpdate = operation;
+    await operation;
+  }
+
+  #preparePatch(patch: SettingsPatch): {
+    nextOverrides: Partial<Settings>;
+    nextBroken: BrokenOverrides;
+  } {
+    for (const key of Object.keys(patch)) assertWritableKey(key, "update");
     const nextOverrides = { ...this.#overrides };
     const nextBroken = new Map(this.#broken);
     for (const key of Object.keys(patch)) {
@@ -326,8 +388,13 @@ export class SettingsService extends Service<void> {
       }
       nextBroken.delete(key as SettingsKey);
     }
+    return { nextOverrides, nextBroken };
+  }
 
-    return this.#commitMutation(nextOverrides, nextBroken, "update");
+  #requireUnreserved(keys: readonly string[]): void {
+    if (keys.some((key) => this.#persistedKeys?.has(key))) {
+      throw new Error("These settings are being saved before publication");
+    }
   }
 
   /**
@@ -339,6 +406,7 @@ export class SettingsService extends Service<void> {
    */
   reset(keys?: readonly (keyof Settings)[]): Readonly<Settings> {
     this.#requireLoaded("reset");
+    this.#requireUnreserved(keys ?? [...(this.#persistedKeys ?? [])]);
 
     if (keys !== undefined) {
       for (const key of keys) assertWritableKey(key, "reset");
@@ -371,6 +439,7 @@ export class SettingsService extends Service<void> {
    * when a save is pending and `Plugin.saveData()` throws.
    */
   async flush(): Promise<void> {
+    if (this.#persistedUpdate) await this.#persistedUpdate;
     const runResult = this.#scheduleSave.run();
     if (runResult) await runResult;
     const pending = this.#pendingWrite;
@@ -391,6 +460,18 @@ export class SettingsService extends Service<void> {
     nextBroken: BrokenOverrides,
     op: "update" | "reset",
   ): Readonly<Settings> {
+    const candidate = this.#validateMutation(nextOverrides, op);
+    this.#overrides = nextOverrides;
+    this.#broken = nextBroken;
+    this.#notify();
+    this.#scheduleSave();
+    return candidate;
+  }
+
+  #validateMutation(
+    nextOverrides: Partial<Settings>,
+    op: "update" | "reset",
+  ): Settings {
     const candidate: Settings = { ...defaults, ...nextOverrides };
     const result = v.safeParse(schema, candidate);
     if (!result.success) {
@@ -400,10 +481,6 @@ export class SettingsService extends Service<void> {
       (error as { cause?: unknown }).cause = result.issues;
       throw error;
     }
-    this.#overrides = nextOverrides;
-    this.#broken = nextBroken;
-    this.#notify();
-    this.#scheduleSave();
     return candidate;
   }
 
@@ -700,6 +777,10 @@ export class SettingsService extends Service<void> {
    * failures observable through `flush()`.
    */
   #performSave(): Promise<void> {
+    if (this.#persistedUpdate) {
+      this.#saveAfterPersistedUpdate = true;
+      return Promise.resolve();
+    }
     const payload = {
       [VERSION_KEY]: CURRENT_VERSION,
       ...Object.fromEntries(this.#broken),

@@ -363,6 +363,8 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerTemplateWorkbenchView(this, {
+      resolveCopyEditor: (path) =>
+        services.templateMigration.resolveCopyEditor(path),
       noteFeature: services.noteFeature,
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
@@ -399,6 +401,8 @@ export default class ZotLitPlugin extends Plugin {
 
     registerNotePreview(this, {
       app: this.app,
+      resolveCopyEditor: (path) =>
+        services.templateMigration.resolveCopyEditor(path),
       itemLookup: services.itemLookup,
       profile: services.profile,
       db: services.db,

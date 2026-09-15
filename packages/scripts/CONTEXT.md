@@ -35,7 +35,7 @@ A named, saved Library Scope state (all, available, partial, unavailable).
 
 **Vault Case**:
 A named, saved Fixture Vault state beside the Library Scope — settings file,
-notes, Profiles, and template files (configured, fresh, upgrader).
+notes, Profiles, and template files (configured, fresh, and the upgrader cases).
 _Avoid_: vault preset, vault scenario
 
 **End-to-end Run**:

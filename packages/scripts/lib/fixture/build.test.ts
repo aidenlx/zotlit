@@ -38,6 +38,13 @@ import type { IndexedItem } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
+import { TemplateFacade } from "@zotlit/templates/facade";
+import {
+  compileFrontmatterFields,
+  evalFrontmatterFields,
+} from "@zotlit/templates/frontmatter";
+import type { FrontmatterField } from "@zotlit/templates/frontmatter";
+import { createLiquidEngine } from "@zotlit/templates/liquid";
 
 import {
   ANNOTATIONS,
@@ -1852,11 +1859,14 @@ describe("a Vault Case", () => {
     return caseLayout;
   }
 
-  it("names the configured, fresh, and upgrader cases", () => {
+  it("names the configured, fresh, and upgrade trial cases", () => {
     expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
       "configured",
       "fresh",
       "upgrader",
+      "upgrader-field-error",
+      "upgrader-layout-error",
+      "upgrader-frontmatter-only",
     ]);
   });
 
@@ -1949,6 +1959,122 @@ describe("a Vault Case", () => {
       ].sort(),
     );
     expect(await readdir(upgrader.vaultDir)).not.toContain("books");
+  });
+
+  it("seeds a hidden field failure with a usable correction", async () => {
+    const vault = await buildVaultCase("upgrader-field-error");
+    const data = JSON.parse(await readFile(vault.pluginDataPath, "utf-8")) as {
+      "note.frontmatter-fields": FrontmatterField[];
+    };
+    const fields = data["note.frontmatter-fields"];
+    const errors: string[] = [];
+    const { compiled } = compileFrontmatterFields(fields, {
+      liquid: createLiquidEngine(),
+      javascript: false,
+    });
+    const original = evalFrontmatterFields(
+      compiled,
+      { title: "Fixture paper", date: { year: 2026 } },
+      (key) => errors.push(key),
+    );
+    expect(errors).toEqual(["fixture-repair"]);
+    expect(original).toMatchObject({ title: "Fixture paper", year: 2026 });
+    expect(original).not.toHaveProperty("fixture-repair");
+
+    const corrected = compileFrontmatterFields(
+      fields.map((field) =>
+        field.key === "fixture-repair"
+          ? { ...field, expr: '"REPAIRED-FIELD"' }
+          : field,
+      ),
+      {
+        liquid: createLiquidEngine(),
+        javascript: false,
+      },
+    );
+    expect(evalFrontmatterFields(corrected.compiled, {})).toHaveProperty(
+      "fixture-repair",
+      "REPAIRED-FIELD",
+    );
+  });
+
+  it("seeds a note layout that fails before Profile synthesis", async () => {
+    const vault = await buildVaultCase("upgrader-layout-error");
+    const readSlot = async (slot: string) => ({
+      language: "liquid" as const,
+      source: await readFile(
+        join(vault.vaultDir, "templates", `zotlit-${slot}.liquid.md`),
+        "utf-8",
+      ),
+    });
+    const [note, content, filename] = await Promise.all([
+      readSlot("note"),
+      readSlot("content"),
+      readSlot("filename"),
+    ]);
+    const sources = { note, content, filename };
+    const facade = new TemplateFacade();
+    expect(sources.note.source).toContain("(v2.1 template)");
+    expect(() =>
+      facade.convertLegacyLiteratureNoteTemplates(sources, {
+        note: {},
+        filename: {},
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "unsupported-legacy-template",
+        difference: "content insertion",
+      }),
+    );
+    expect(await readdir(join(vault.vaultDir, "templates"))).not.toContain(
+      "zotlit-profile.default.md",
+    );
+    facade.define(
+      "annotation",
+      await readFile(
+        join(vault.vaultDir, "templates", "zotlit-annotation.liquid.md"),
+        "utf-8",
+      ),
+      "liquid",
+    );
+    facade.define(
+      "annotation-callout",
+      await readFile(
+        join(
+          vault.vaultDir,
+          "templates",
+          "zotlit-annotation-callout.liquid.md",
+        ),
+        "utf-8",
+      ),
+      "liquid",
+    );
+    const rendered = facade.render("annotation", {
+      pageLabel: "5",
+      text: "Fixture annotation",
+    });
+    expect(rendered).toContain("[!quote] Page 5");
+    expect(rendered).toContain("[!tip] Page 5");
+  });
+
+  it("seeds legacy frontmatter without legacy template files or Profile stamps", async () => {
+    const vault = await buildVaultCase("upgrader-frontmatter-only");
+    const data = JSON.parse(
+      await readFile(vault.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+    expect(data.__VERSION__).toBe(9);
+    expect(data["note.frontmatter-fields"]).toContainEqual({
+      key: "year",
+      expr: "zt.date.year",
+      merge: "replace",
+      language: "liquid",
+    });
+    expect(await readdir(join(vault.vaultDir, "templates"))).toEqual([]);
+    const note = await readFile(
+      join(vault.vaultDir, "literatures", "books-duplicateWithin2020.md"),
+      "utf-8",
+    );
+    expect(note).not.toContain("zotlit-profile:");
   });
 
   it("ejects a mixed-language citation pair the conversion folds to Liquid", async () => {

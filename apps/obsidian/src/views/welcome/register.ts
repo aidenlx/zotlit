@@ -86,6 +86,7 @@ export function registerWelcomeView(
 export async function openWelcomeView(
   app: App,
   mode: "fresh" | "upgraded" = "fresh",
+  options: { reviewConversion?: boolean } = {},
 ): Promise<void> {
   const { workspace } = app;
   const leaf =
@@ -96,4 +97,6 @@ export async function openWelcomeView(
     state: { mode },
   });
   void workspace.revealLeaf(leaf);
+  if (options.reviewConversion && leaf.view instanceof WelcomeView)
+    leaf.view.openConversionReview();
 }
