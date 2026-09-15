@@ -381,11 +381,53 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         difference: "create output",
         message: "Converted create output differs at byte 10",
         hint: "Keep the legacy files unchanged.",
+        files: [
+          "templates/zotlit-filename.liquid.md",
+          "templates/zotlit-note.liquid.md",
+          "templates/zotlit-content.liquid.md",
+        ],
       },
     });
     expect(harness.create).not.toHaveBeenCalled();
     expect(harness.trashFile).not.toHaveBeenCalled();
     expect(harness.settings.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps the prompt armed so the user can retry after editing the named files", async () => {
+    const harness = makeHarness({ pending: true });
+    await using service = harness.service;
+    await service.ready;
+    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
+      new LegacyTemplateConversionError(
+        "legacy-render-mismatch",
+        "Converted create output differs at byte 10",
+        {
+          difference: "create output",
+          recovery: "Edit the named files, then retry conversion.",
+        },
+      ),
+    );
+
+    const refused = await service.convert();
+
+    expect(refused).toMatchObject({
+      outcome: "refused",
+      diagnostic: {
+        code: "legacy-render-mismatch",
+        files: [
+          "templates/zotlit-filename.liquid.md",
+          "templates/zotlit-note.liquid.md",
+          "templates/zotlit-content.liquid.md",
+        ],
+      },
+    });
+    // The refusal leaves the pending flag set, so the prompt stays open and a
+    // second attempt after the edit is allowed.
+    expect(harness.settings.current["note.template-conversion-pending"]).toBe(
+      true,
+    );
+    const retried = await service.convert();
+    expect(retried).toMatchObject({ outcome: "converted" });
   });
 
   it("returns affected fields and leaves the vault untouched when the dry run fails", async () => {
@@ -801,6 +843,11 @@ describe("the one-shot conversion aborts before any write", () => {
         message:
           "Converted alternate citation output differs from the legacy render at byte 4",
         hint: "Keep the legacy files unchanged.",
+        files: [
+          "templates/zotlit-filename.liquid.md",
+          "templates/zotlit-note.liquid.md",
+          "templates/zotlit-content.liquid.md",
+        ],
       },
     });
     expect(harness.create).not.toHaveBeenCalled();

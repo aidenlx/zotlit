@@ -215,9 +215,12 @@ function templateMigrationNotice(
     case "legacy-render-mismatch":
       return m.notice_literature_note_template_conversion_mismatch({
         difference: result.diagnostic.difference,
+        files: result.diagnostic.files.join(", "),
       });
     case "unsupported-legacy-template":
-      return m.notice_literature_note_template_conversion_unsupported();
+      return m.notice_literature_note_template_conversion_unsupported({
+        files: result.diagnostic.files.join(", "),
+      });
     case "legacy-frontmatter-inert":
       return m.notice_literature_note_template_conversion_frontmatter_inert({
         fields: result.diagnostic.fields.join(", "),

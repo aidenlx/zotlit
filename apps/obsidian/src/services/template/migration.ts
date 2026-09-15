@@ -208,6 +208,8 @@ export type LiteratureNoteTemplateMigrationDiagnostic =
       message: string;
       difference: string;
       hint: string;
+      /** Legacy template files the user must edit before retrying. */
+      files: readonly string[];
     }
   | {
       code: "legacy-frontmatter-inert" | "legacy-frontmatter-evaluation";
@@ -331,7 +333,11 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       }
     } catch (error) {
       if (error instanceof LegacyTemplateConversionError) {
-        return refusedByConversion(error);
+        return refusedByConversion(error, [
+          ...slotFiles,
+          ...legacy.citation.map(({ path }) => path),
+          ...legacy.partials.map(({ path }) => path),
+        ]);
       }
       throw error;
     }
@@ -576,6 +582,7 @@ function refused(
 /** Carry a failed verification out as the refusal the prompt reports. */
 function refusedByConversion(
   error: LegacyTemplateConversionError,
+  files: readonly string[],
 ): LiteratureNoteTemplateMigrationResult {
   const detail = {
     difference: error.difference,
@@ -591,5 +598,8 @@ function refusedByConversion(
       diagnostic: { ...detail, code: error.code, fields: error.fields ?? [] },
     };
   }
-  return { outcome: "refused", diagnostic: { ...detail, code: error.code } };
+  return {
+    outcome: "refused",
+    diagnostic: { ...detail, code: error.code, files },
+  };
 }
