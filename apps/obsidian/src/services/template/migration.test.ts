@@ -34,7 +34,7 @@ function makeHarness(options?: {
     "note.template-conversion-result": null as {
       document: string | null;
       trashed: number;
-      pendingCleanup?: string[];
+      pendingCleanup: string[];
     } | null,
     "template.folder": "templates",
   };
@@ -393,43 +393,6 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     expect(harness.settings.update).not.toHaveBeenCalled();
   });
 
-  it("keeps the prompt armed so the user can retry after editing the named files", async () => {
-    const harness = makeHarness({ pending: true });
-    await using service = harness.service;
-    await service.ready;
-    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
-      new LegacyTemplateConversionError(
-        "legacy-render-mismatch",
-        "Converted create output differs at byte 10",
-        {
-          difference: "create output",
-          recovery: "Edit the named files, then retry conversion.",
-        },
-      ),
-    );
-
-    const refused = await service.convert();
-
-    expect(refused).toMatchObject({
-      outcome: "refused",
-      diagnostic: {
-        code: "legacy-render-mismatch",
-        files: [
-          "templates/zotlit-filename.liquid.md",
-          "templates/zotlit-note.liquid.md",
-          "templates/zotlit-content.liquid.md",
-        ],
-      },
-    });
-    // The refusal leaves the pending flag set, so the prompt stays open and a
-    // second attempt after the edit is allowed.
-    expect(harness.settings.current["note.template-conversion-pending"]).toBe(
-      true,
-    );
-    const retried = await service.convert();
-    expect(retried).toMatchObject({ outcome: "converted" });
-  });
-
   it("returns affected fields and leaves the vault untouched when the dry run fails", async () => {
     const harness = makeHarness({ pending: true });
     await harness.service.ready;
@@ -597,6 +560,7 @@ async function makeVaultHarness(
     settings,
     template,
     vault,
+    trashFile,
     storedSettings: () => structuredClone(plugin.data),
     [Symbol.asyncDispose]: () => owned[Symbol.asyncDispose](),
   };
@@ -819,7 +783,21 @@ language: liquid
 
 describe("the one-shot conversion aborts before any write", () => {
   it("leaves the vault untouched when a citation variant fails verification", async () => {
-    const harness = makeHarness({ pending: true });
+    const harness = makeHarness({
+      pending: true,
+      legacyDocuments: {
+        citation: [
+          {
+            name: "cite",
+            path: "templates/zotlit-cite.liquid.md",
+            language: "liquid",
+            inert: false,
+            shadowed: [],
+          },
+        ],
+        partials: [],
+      },
+    });
     await harness.service.ready;
     harness.template.convertLegacyTemplateDocuments.mockRejectedValueOnce(
       new LegacyTemplateConversionError(
@@ -843,11 +821,7 @@ describe("the one-shot conversion aborts before any write", () => {
         message:
           "Converted alternate citation output differs from the legacy render at byte 4",
         hint: "Keep the legacy files unchanged.",
-        files: [
-          "templates/zotlit-filename.liquid.md",
-          "templates/zotlit-note.liquid.md",
-          "templates/zotlit-content.liquid.md",
-        ],
+        files: ["templates/zotlit-cite.liquid.md"],
       },
     });
     expect(harness.create).not.toHaveBeenCalled();
@@ -860,40 +834,50 @@ describe("layout-ready legacy conversion detection", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("discovers layout-ready originals and preserves postponement across delayed inventory on restart", async () => {
-    const original = {
-      "templates/zotlit-note.liquid.md":
-        '# Late inventory {{ zt.title }}\n{% render "content" with zt as zt %}',
-      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
-    };
-    let storedSettings: unknown;
-    {
-      await using first = await makeVaultHarness({});
-      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
-        false,
-      );
-      // Obsidian populates its initial inventory without create events.
-      for (const [path, source] of Object.entries(original))
-        first.vault.addFile(path, source);
-      await first.layoutReady();
-      expect(first.openPrompt).toHaveBeenCalledOnce();
-      expect(first.settings.current?.["note.template-conversion-pending"]).toBe(
-        true,
-      );
-      expect(Object.fromEntries(first.vault.contents)).toEqual(original);
-      storedSettings = first.storedSettings();
-    }
-    await using resumed = await makeVaultHarness({}, { storedSettings });
-    expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
+  const original = {
+    "templates/zotlit-note.liquid.md":
+      '# Late inventory {{ zt.title }}\n{% render "content" with zt as zt %}',
+    "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+  };
+
+  it("arms the prompt from the layout-ready scan when startup preceded the inventory", async () => {
+    await using harness = await makeVaultHarness({});
+    expect(harness.settings.current?.["note.template-conversion-pending"]).toBe(
+      false,
+    );
+    // Obsidian populates its initial inventory without create events.
+    for (const [path, source] of Object.entries(original))
+      harness.vault.addFile(path, source);
+
+    await harness.layoutReady();
+
+    expect(harness.openPrompt).toHaveBeenCalledOnce();
+    expect(harness.settings.current?.["note.template-conversion-pending"]).toBe(
       true,
+    );
+    expect(Object.fromEntries(harness.vault.contents)).toEqual(original);
+  });
+
+  it("keeps a postponed conversion postponed when the inventory arrives late after restart", async () => {
+    await using resumed = await makeVaultHarness(
+      {},
+      {
+        storedSettings: {
+          __VERSION__: 1,
+          "note.template-conversion-pending": true,
+        },
+      },
     );
     for (const [path, source] of Object.entries(original))
       resumed.vault.addFile(path, source);
+
     await resumed.layoutReady();
+
     expect(resumed.openPrompt).not.toHaveBeenCalled();
     expect(resumed.settings.current?.["note.template-conversion-pending"]).toBe(
       true,
     );
+    // The late inventory still renders through the legacy files.
     expect(
       resumed.template.render(
         "cite",
@@ -901,5 +885,96 @@ describe("layout-ready legacy conversion detection", () => {
       ),
     ).toBe("<[@smith2024]>\n");
     expect(Object.fromEntries(resumed.vault.contents)).toEqual(original);
+  });
+});
+
+describe("repair and retry after a refusal", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("names the Literature Note slots a layout refusal needs edited and converts once they are fixed", async () => {
+    await using harness = await makeVaultHarness({
+      "templates/zotlit-note.liquid.md": "# No content {{ zt.title }}\n",
+      "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+    });
+
+    const refused = await harness.service.convert();
+
+    expect(refused).toMatchObject({
+      outcome: "refused",
+      diagnostic: {
+        code: "unsupported-legacy-template",
+        files: ["templates/zotlit-note.liquid.md"],
+      },
+    });
+    expect(harness.vault.files.has("templates/zotlit-profile.default.md")).toBe(
+      false,
+    );
+
+    harness.vault.modifyFile(
+      "templates/zotlit-note.liquid.md",
+      '# Fixed {{ zt.title }}\n{% render "content" with zt as zt %}',
+    );
+    await vi.advanceTimersByTimeAsync(500);
+
+    const retried = await harness.service.convert();
+
+    expect(retried).toMatchObject({ outcome: "converted", pendingCleanup: [] });
+    expect(harness.vault.files.has("templates/zotlit-profile.default.md")).toBe(
+      true,
+    );
+    expect(harness.vault.files.has("templates/zotlit-note.liquid.md")).toBe(
+      false,
+    );
+  });
+});
+
+describe("cleanup retry across restart", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("records the file trash refused and clears it when a later session retries", async () => {
+    let storedSettings: unknown;
+    {
+      await using first = await makeVaultHarness({
+        "templates/zotlit-cite.liquid.md": CITE_LIQUID,
+        "templates/zotlit-cite2.liquid.md": CITE2_LIQUID,
+      });
+      first.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+
+      const converted = await first.service.convert();
+
+      expect(converted).toMatchObject({
+        outcome: "converted",
+        trashed: ["templates/zotlit-cite2.liquid.md"],
+        pendingCleanup: ["templates/zotlit-cite.liquid.md"],
+      });
+      expect(first.vault.files.has("templates/zotlit-citation.md")).toBe(true);
+      expect(first.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
+        true,
+      );
+      storedSettings = first.storedSettings();
+    }
+    await using resumed = await makeVaultHarness(
+      { "templates/zotlit-cite.liquid.md": CITE_LIQUID },
+      { storedSettings },
+    );
+    expect(
+      resumed.settings.current?.["note.template-conversion-result"],
+    ).toMatchObject({ pendingCleanup: ["templates/zotlit-cite.liquid.md"] });
+    expect(resumed.openPrompt).not.toHaveBeenCalled();
+
+    const retried = await resumed.service.retryCleanup();
+
+    expect(retried).toMatchObject({
+      trashed: ["templates/zotlit-cite.liquid.md"],
+      pendingCleanup: [],
+    });
+    expect(resumed.vault.files.has("templates/zotlit-cite.liquid.md")).toBe(
+      false,
+    );
+    expect(resumed.storedSettings()).toMatchObject({
+      "note.template-conversion-result": { trashed: 2, pendingCleanup: [] },
+    });
   });
 });

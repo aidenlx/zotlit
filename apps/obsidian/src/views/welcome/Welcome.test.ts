@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DOCS_COMPANION } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
@@ -17,6 +18,14 @@ import { Welcome } from "./Welcome";
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
 
 let root: Root | undefined;
+
+const CONVERTED: LiteratureNoteTemplateMigrationResult = {
+  outcome: "converted",
+  document: "zotlit-profile.default.md",
+  trashed: [],
+  pendingCleanup: [],
+  kept: [],
+};
 
 afterEach(async () => {
   await act(() => root?.unmount());
@@ -82,6 +91,7 @@ it.each(["fresh", "upgraded"] as const)(
       templateConversionResult: {
         document: "Research templates/zotlit-profile.default.md",
         trashed: 4,
+        pendingCleanup: [],
       },
     });
     expect(container.textContent).toContain(
@@ -124,6 +134,7 @@ it("replaces the pending prompt with the persisted result after conversion", asy
       templateConversionResult: {
         document: "templates/zotlit-profile.default.md",
         trashed: 4,
+        pendingCleanup: [],
       },
     }),
   );
@@ -137,6 +148,43 @@ it("replaces the pending prompt with the persisted result after conversion", asy
     m.welcome_template_conversion_action(),
   );
   expect(container.textContent).not.toContain(m.welcome_migration_title());
+});
+
+it("keeps a refusal readable in the banner after the notice is gone", async () => {
+  const { actions, container } = await render("upgraded", {
+    templateConversionPending: true,
+    templateFolder: "templates",
+  });
+  vi.mocked(actions.convertLiteratureNoteTemplates).mockResolvedValueOnce({
+    outcome: "refused",
+    diagnostic: {
+      code: "unsupported-legacy-template",
+      message:
+        "Legacy note template must contain one supported content insertion",
+      difference: "content insertion",
+      hint: "Keep one standard content render in the legacy note template.",
+      files: ["templates/zotlit-note.liquid.md"],
+    },
+  });
+  const button = [...container.querySelectorAll("button")].find(
+    (candidate) =>
+      candidate.textContent === m.welcome_template_conversion_action(),
+  );
+
+  await act(async () => {
+    button?.click();
+    // Let the conversion promise settle before reading the banner.
+    await Promise.resolve();
+  });
+
+  const alert = container.querySelector('[role="alert"]');
+  expect(alert?.textContent).toBe(
+    m.notice_literature_note_template_conversion_unsupported({
+      files: "templates/zotlit-note.liquid.md",
+    }),
+  );
+  // The button stays available for the retry after the file is edited.
+  expect(button?.disabled).toBe(false);
 });
 
 it("lists retained files and retries cleanup from the completed state", async () => {
@@ -174,7 +222,7 @@ async function render(
     ...state,
   });
   const actions: WelcomeActions = {
-    convertLiteratureNoteTemplates: vi.fn(async () => {}),
+    convertLiteratureNoteTemplates: vi.fn(async () => CONVERTED),
     retryTemplateCleanup: vi.fn(async () => {}),
     locateZotero: vi.fn(),
     openExternal: vi.fn(),

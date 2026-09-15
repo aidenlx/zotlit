@@ -24,6 +24,7 @@ import {
   MIGRATION_GUIDE,
   SPONSOR,
 } from "./links";
+import { templateMigrationNotice } from "./migration-notice";
 import { useWelcomeStore } from "./store";
 
 type NodeState = "done" | "active" | "warn" | "todo" | "keep";
@@ -366,9 +367,9 @@ function Callout({
       style={tone === "accent" ? ACCENT_CALLOUT_SURFACE : undefined}
     >
       <StepHeading>{title}</StepHeading>
-      <p className="zt:mt-1 zt:text-sm zt:text-pretty zt:text-muted-foreground">
+      <div className="zt:mt-1 zt:text-sm zt:text-pretty zt:text-muted-foreground">
         {children}
-      </p>
+      </div>
       {action ? <div className="zt:mt-3">{action}</div> : null}
     </div>
   );
@@ -385,6 +386,9 @@ function MigrationBanner() {
     (state) => state.v1TemplatesPresent,
   );
   const [converting, setConverting] = useState(false);
+  // The notice that names a refusal is transient; the banner keeps the same
+  // sentence beside the button until the next attempt.
+  const [refusal, setRefusal] = useState<string | null>(null);
   if (templateConversionPending) {
     return (
       <Callout
@@ -398,23 +402,37 @@ function MigrationBanner() {
             disabled={converting}
             onClick={() => {
               setConverting(true);
-              void actions.convertLiteratureNoteTemplates().finally(() => {
-                setConverting(false);
-              });
+              setRefusal(null);
+              void actions
+                .convertLiteratureNoteTemplates()
+                .then((outcome) => {
+                  if (outcome.outcome === "refused")
+                    setRefusal(templateMigrationNotice(outcome));
+                })
+                .finally(() => {
+                  setConverting(false);
+                });
             }}
           >
             {m.welcome_template_conversion_action()}
           </Button>
         }
       >
-        {m.welcome_template_conversion_body({
-          path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
-        })}
+        <p className="zt:m-0">
+          {m.welcome_template_conversion_body({
+            path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+          })}
+        </p>
+        {refusal ? (
+          <p className="zt:mt-2 zt:mb-0 zt:text-destructive" role="alert">
+            {refusal}
+          </p>
+        ) : null}
       </Callout>
     );
   }
   if (result) {
-    const retained = result.pendingCleanup ?? [];
+    const retained = result.pendingCleanup;
     return (
       <Callout
         tone="muted"
@@ -436,18 +454,22 @@ function MigrationBanner() {
           ) : undefined
         }
       >
-        {result.document
-          ? m.welcome_template_conversion_completed_body({
-              path: result.document,
-              count: result.trashed,
-            })
-          : m.welcome_template_conversion_completed_files({
-              count: result.trashed,
-            })}
+        <p className="zt:m-0">
+          {result.document
+            ? m.welcome_template_conversion_completed_body({
+                path: result.document,
+                count: result.trashed,
+              })
+            : m.welcome_template_conversion_completed_files({
+                count: result.trashed,
+              })}
+        </p>
         {retained.length > 0 ? (
           <>
-            <p>{m.welcome_template_cleanup_body()}</p>
-            <ul>
+            <p className="zt:mt-2 zt:mb-0">
+              {m.welcome_template_cleanup_body()}
+            </p>
+            <ul className="zt:my-1">
               {retained.map((path) => (
                 <li key={path}>{path}</li>
               ))}

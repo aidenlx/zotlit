@@ -107,6 +107,7 @@ it("preserves the completed template conversion across a settings reload", async
     "note.template-conversion-result": {
       document: "Research templates/zotlit-profile.default.md",
       trashed: 4,
+      pendingCleanup: [],
     },
   });
   await service.flush();
@@ -115,6 +116,7 @@ it("preserves the completed template conversion across a settings reload", async
   expect((await reopened.loaded)["note.template-conversion-result"]).toEqual({
     document: "Research templates/zotlit-profile.default.md",
     trashed: 4,
+    pendingCleanup: [],
   });
 });
 

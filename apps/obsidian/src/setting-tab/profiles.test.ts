@@ -294,46 +294,21 @@ describe("Profile settings", () => {
     expect(profiles.extraButtons).toBeUndefined();
   });
 
-  it("keeps Profile file actions locked while conversion is deferred", () => {
+  it("writes only default bindings through the settings controls", () => {
     const ctx = context();
-    ctx.settings = {
-      current: { ...defaults, "note.template-conversion-pending": true },
-    } as unknown as SettingTabContext["settings"];
-    const disabled = new WeakMap<ButtonComponent, boolean>();
-    using _disable = vi
-      .spyOn(ButtonComponent.prototype, "setDisabled")
-      .mockImplementation(function (this: ButtonComponent, value) {
-        disabled.set(this, value);
-        return this;
-      });
-    const { defaultRow, profileRow } = pageWithOneProfile(ctx);
-    for (const row of [defaultRow, profileRow, documentRow(ctx)]) {
-      expect(disabled.get(customizeButton(row))).toBe(true);
-    }
+    expect(
+      getProfileControlValue(ctx.settings, "note-profile:default:folder"),
+    ).toBe("literatures");
+    setProfileControlValue(
+      ctx.settings,
+      "note-profile:default:folder",
+      "Reading",
+    );
+    expect(
+      // oxlint-disable-next-line unbound-method -- `expect` reads the spy without calling it.
+      ctx.settings.updateDefaultLiteratureNoteProfileBindings,
+    ).toHaveBeenCalledWith({ "note.literature-folder": "Reading" });
   });
-
-  it.each([false, true])(
-    "writes default bindings while conversion pending is %s",
-    (pending) => {
-      const ctx = context();
-      ctx.settings = {
-        current: { ...defaults, "note.template-conversion-pending": pending },
-        updateDefaultLiteratureNoteProfileBindings: vi.fn(),
-      } as unknown as SettingTabContext["settings"];
-      expect(
-        getProfileControlValue(ctx.settings, "note-profile:default:folder"),
-      ).toBe("literatures");
-      setProfileControlValue(
-        ctx.settings,
-        "note-profile:default:folder",
-        "Reading",
-      );
-      expect(
-        // oxlint-disable-next-line unbound-method -- `expect` reads the spy without calling it.
-        ctx.settings.updateDefaultLiteratureNoteProfileBindings,
-      ).toHaveBeenCalledWith({ "note.literature-folder": "Reading" });
-    },
-  );
 });
 
 it("warns once about repeated IDs and lists each excluded file with its own actions", async () => {

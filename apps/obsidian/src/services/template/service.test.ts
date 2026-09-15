@@ -84,6 +84,27 @@ describe("TemplateService", () => {
     ).toBeUndefined();
   });
 
+  it("picks up files the initial inventory missed on refresh", async () => {
+    const vault = new MockVault();
+    const { service } = await makeHarness({ vault });
+    // Obsidian populates a late inventory without create events.
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books"),
+    );
+    expect(
+      service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+    ).toBeUndefined();
+
+    await service.refresh();
+
+    expect(
+      service
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")
+        ?.renderForCreate({ title: "First" }),
+    ).toContain("# Books First");
+  });
+
   it("compiles document frontmatter with the per-device JavaScript gate", async () => {
     const vault = new MockVault();
     vault.addFile(

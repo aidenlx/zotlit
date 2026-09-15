@@ -10,12 +10,12 @@ import type { DatabaseService } from "@/services/database/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
-import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
 import { readConnectionStatus, readConnectionSync } from "./connection";
+import { templateMigrationNotice } from "./migration-notice";
 import type { SetupActions } from "./setup-actions";
 import { createWelcomeStore, WelcomeStoreProvider } from "./store";
 import { Welcome } from "./Welcome";
@@ -124,6 +124,7 @@ export class WelcomeView extends ItemView {
       convertLiteratureNoteTemplates: async () => {
         const result = await this.#deps.templateMigration.convert();
         new BaseNotice(templateMigrationNotice(result));
+        return result;
       },
       openExternal: (url) => window.open(url),
       ...this.#deps.setupActions,
@@ -196,46 +197,5 @@ export class WelcomeView extends ItemView {
       window.clearTimeout(this.#checkingTimer);
       this.#checkingTimer = null;
     }
-  }
-}
-
-function templateMigrationNotice(
-  result: LiteratureNoteTemplateMigrationResult,
-): string {
-  if (result.outcome === "converted") {
-    if (result.pendingCleanup.length > 0)
-      return m.notice_literature_note_template_conversion_pending_cleanup();
-    return result.kept.length > 0
-      ? m.notice_literature_note_template_conversion_kept({
-          files: result.kept.join(", "),
-        })
-      : m.notice_literature_note_template_conversion_success();
-  }
-  switch (result.diagnostic.code) {
-    case "legacy-render-mismatch":
-      return m.notice_literature_note_template_conversion_mismatch({
-        difference: result.diagnostic.difference,
-        files: result.diagnostic.files.join(", "),
-      });
-    case "unsupported-legacy-template":
-      return m.notice_literature_note_template_conversion_unsupported({
-        files: result.diagnostic.files.join(", "),
-      });
-    case "legacy-frontmatter-inert":
-      return m.notice_literature_note_template_conversion_frontmatter_inert({
-        fields: result.diagnostic.fields.join(", "),
-      });
-    case "legacy-frontmatter-evaluation":
-      return m.notice_literature_note_template_conversion_frontmatter_evaluation(
-        { fields: result.diagnostic.fields.join(", ") },
-      );
-    case "no-verification-item":
-      return m.notice_literature_note_template_conversion_no_item();
-    case "no-verification-annotation":
-      return m.notice_literature_note_template_conversion_no_annotation();
-    case "converted-document-exists":
-      return m.notice_literature_note_template_conversion_exists();
-    case "no-legacy-templates":
-      return m.notice_literature_note_template_conversion_none();
   }
 }
