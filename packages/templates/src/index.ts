@@ -10,6 +10,7 @@ import { embed } from "./embed";
 import { filenameSuffix } from "./filename-suffix";
 import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
 import { replaceHelper } from "./replace-helper";
+import { formatTemplateTexCitation } from "./tex-citation-adapter";
 
 export interface TemplateEngineOptions {
   /** @default [false, false] */
@@ -44,6 +45,7 @@ export class TemplateEngine extends Eta {
   readonly suffixHelper = filenameSuffix;
   readonly embedHelper = embed;
   readonly pandocCiteHelper = formatTemplatePandocCitation;
+  readonly texCiteHelper = formatTemplateTexCitation;
 
   constructor({
     autoTrim = [DEFAULT_AUTO_TRIM.leading, DEFAULT_AUTO_TRIM.trailing],
@@ -59,7 +61,7 @@ export class TemplateEngine extends Eta {
       autoFilter: true,
       filterFunction: coerceOutput,
       functionHeader:
-        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper; const pandocCite = this.pandocCiteHelper;" +
+        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper; const pandocCite = this.pandocCiteHelper; const texCite = this.texCiteHelper;" +
         "const renderAnnotation = (annotation) => { if (annotation == null) throw new TypeError('renderAnnotation requires an annotation'); return include('annotation', annotation); };",
       plugins: [includeDataPlugin],
     });

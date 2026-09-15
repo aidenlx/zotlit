@@ -292,6 +292,49 @@ Items with a null citation key are omitted. The filter preserves the order of th
 
 Input that cannot be represented without changing its citation structure raises a render error.
 
+### `tex_cite`: LaTeX citation command [#tex-cite]
+
+Formats a Citation Item array as one LaTeX citation command. Pass `zt.citations` directly to the filter.
+
+```liquid
+{{ zt.citations | tex_cite }}
+{{ zt.citations | tex_cite: "autocite" }}
+```
+
+The optional command is `"cite"` by default. Write it without the backslash. A starred command such as `"autocite*"` is accepted.
+
+| Command      | Output for one item    | Bibliography package    |
+| ------------ | ---------------------- | ----------------------- |
+| `"cite"`     | `\cite{smith2024}`     | LaTeX, natbib, BibLaTeX |
+| `"autocite"` | `\autocite{smith2024}` | BibLaTeX                |
+
+Every retained item joins one key list. The command carries one prenote and one postnote, and both come from the first retained item:
+
+| Input                                             | Output                           |
+| ------------------------------------------------- | -------------------------------- |
+| Two items                                         | `\cite{smith2024,doe2023}`       |
+| Locator `"3"` with `labelShort` `"p."`            | `\cite[p. 3]{smith2024}`         |
+| Prefix `"see "`                                   | `\cite[see][]{smith2024}`        |
+| Prefix `"see "` with locator `"3"`                | `\cite[see][p. 3]{smith2024}`    |
+| Locator `"3"` with suffix `", note 4"`            | `\cite[p. 3, note 4]{smith2024}` |
+| Empty array or items with null citation keys only | `""`                             |
+
+Items with a null citation key are omitted, and the remaining items keep their order.
+
+<Callout type="warn" title="The prenote form needs natbib or BibLaTeX">
+  The LaTeX kernel's own `\cite` takes one optional argument. The two-argument
+  `\cite[see][p. 3]{smith2024}` form above compiles under natbib or BibLaTeX,
+  which redefine `\cite` to take both. A citation that carries no prefix emits
+  at most one optional argument and works in a plain LaTeX document.
+</Callout>
+
+An affix reaches LaTeX as source, so a prefix of `\emph{see}` renders as emphasis. These inputs raise a render error instead:
+
+- `suppressAuthor` set to `true`, which LaTeX has no general form for.
+- A prefix, suffix, or locator on any item after the first, which has no slot.
+- An empty citation key, or one that holds whitespace, a comma, or a TeX special character.
+- A prefix, suffix, or locator whose braces do not balance, or which holds an unescaped `%`.
+
 ### `collection_paths`: collection path strings [#collection-paths]
 
 Maps an array of collections to their joined path strings. The default separator is `/`.
