@@ -904,7 +904,12 @@ export class TemplateService extends Service<void> {
     return exportLiteratureNotePack(source, partials, options);
   }
 
-  /** Rescan the current vault inventory after Obsidian finishes opening a vault. */
+  /**
+   * Rebuild the template folder from the vault's current inventory. The
+   * startup scan can run before Obsidian has indexed every file, and files
+   * indexed later arrive without `create` events, so a caller that waited for
+   * layout-ready uses this to pick them up.
+   */
   async refresh(): Promise<void> {
     await this.ready;
     await this.#rebuildFolder(this.#currentTemplateFolder());

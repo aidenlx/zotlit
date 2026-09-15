@@ -237,7 +237,7 @@
   "notice_literature_note_template_conversion_no_item": "请连接一个含有条目的 Zotero 数据库，然后重试。",
   "notice_literature_note_template_conversion_exists": "转换后的配置方案文档已存在。请重命名或移除该文档，然后重试。",
   "notice_literature_note_template_conversion_none": "没有需要转换的旧版模板文件。",
-  "notice_literature_note_template_conversion_pending_cleanup": "转换后的模板已生效，但部分旧文件未能移入回收站。请在欢迎视图中查看并重试清理。",
+  "notice_literature_note_template_conversion_pending_cleanup": "转换后的模板已生效，但以下旧文件未能移入回收站：{files}。请在欢迎视图中重试清理。",
   "notice_duplicate_literature_notes": "多个文献笔记使用同一个 Zotero 标识符：{paths}。ZotLit 已使用 {selected}；请解决重复项。",
   "notice_create_note_failed": "创建文献笔记失败。",
   "notice_empty_filename": "文件名模板呈现一个空名称。调整模板并重试。",
@@ -995,7 +995,7 @@
   "settings_migration_reminder_name": "完成从 v1 的迁移",
   "settings_migration_reminder_mark_done": "标记为已完成",
   "settings_template_conversion_reminder_action": "查看转换",
-  "settings_template_conversion_reminder_desc": "您的旧版模板仍在使用。准备好后即可查看转换。",
+  "settings_template_conversion_reminder_desc": "旧版模板会一直生效，直到您完成转换。准备好后即可查看转换。",
   "settings_resources_whats_new_name": "v{version} 的新功能",
   "settings_resources_whats_new_desc": "查看此版本中发生了什么变化。",
   "settings_resources_whats_new_button": "查看发行说明",
@@ -1092,7 +1092,7 @@
   "welcome_migration_title": "从 ZotLit v1 升级",
   "welcome_migration_body": "在您重命名自定义 Eta 模板并启用 JavaScript 模板门之前，不会加载自定义 Eta 模板。",
   "welcome_template_conversion_title": "转换文献笔记模板",
-  "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个片段各自成文件。写入任何文件前，它会用一个 Zotero 条目、一个批注（存在批注模板时）和一条单条目引用渲染转换后的模板，并将该输出与旧版输出比对。它还会检查 Frontmatter 字段能否成功求值。这只覆盖所选数据，而非每个条目。检查通过后，它会将旧文件移至 Obsidian 设定的回收站。",
+  "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个片段各自成文件。写入任何文件前，它会用一个 Zotero 条目（模板用到时还包括一条批注和一条单条目引用）分别渲染新旧模板并比对输出，同时检查 Frontmatter 字段能否求值。检查通过后，它会将旧文件移至 Obsidian 设定的回收站。",
   "welcome_template_conversion_completed_files": [
     {
       "declarations": ["input count", "local category = count: plural"],
