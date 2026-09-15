@@ -20,6 +20,7 @@ export function pandocEngineDefinition(
 ): SettingDefinition<SettingsKey> {
   const status = ctx.pandocEngine.getStatus();
   return {
+    id: "settings_citation_engine",
     name: m.settings_citation_engine_name(),
     desc: `${m.settings_citation_engine_desc()} ${statusSentence(status)}`,
     render: (setting) => renderEngineActions(setting, ctx, status),

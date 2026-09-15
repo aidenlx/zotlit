@@ -49,6 +49,7 @@ export function libraryScopeRow(
 ): SettingDefinition<SettingsKey> {
   const scope = ctx.libraryScope.effective;
   return {
+    id: "settings_library_scope",
     name: m.settings_library_scope_name(),
     desc: describeScope(ctx),
     render: (setting) => renderModeRow(setting, ctx, scope),
@@ -63,6 +64,7 @@ export function selectedLibrariesList(
   const entries = selectedEntries(ctx, scope);
   return {
     type: "list",
+    id: "settings_library_scope_selected",
     heading: m.settings_library_scope_selected(),
     visible: () => scope.mode === "selected",
     // The final selected Library has no delete affordance at all: Selected
@@ -78,6 +80,7 @@ export function selectedLibrariesList(
         }
       : undefined,
     items: entries.map((entry) => ({
+      id: `settings_library_scope_entry:${selectorKey(entry.selector)}`,
       name: entry.label,
       desc: entry.unavailable
         ? m.settings_library_scope_unavailable()

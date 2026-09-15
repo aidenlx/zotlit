@@ -10,9 +10,11 @@ export function languagePackDefinition(
   copy: LanguagePackSettingCopy,
 ): SettingDefinition<SettingsKey> {
   const { name, desc, install } = copy;
-  if (install === undefined) return { name, desc };
+  if (install === undefined)
+    return { id: "settings_language_pack", name, desc };
 
   return {
+    id: "settings_language_pack",
     name,
     desc,
     render: (setting) => {

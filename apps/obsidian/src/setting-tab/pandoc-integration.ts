@@ -23,9 +23,11 @@ export function pandocIntegrationDefinition(
 ): SettingDefinitionGroup<SettingsKey> {
   return {
     type: "group",
+    id: "settings_citation_native_pandoc",
     heading: m.settings_citation_native_pandoc_heading(),
     items: [
       {
+        id: "settings_citation_pandoc_tutorial",
         name: m.settings_citation_pandoc_tutorial_name(),
         desc: m.settings_citation_pandoc_tutorial_desc(),
         render: (setting) =>
@@ -40,11 +42,13 @@ export function pandocIntegrationDefinition(
           ),
       },
       {
+        id: "settings_citation_pandoc_files",
         name: m.settings_citation_pandoc_files_name(),
         desc: m.settings_citation_pandoc_files_desc(),
         render: (setting) => renderSaveAction(setting, ctx),
       },
       {
+        id: "settings_citation_pandoc_guide",
         name: m.settings_citation_pandoc_guide_name(),
         desc: guideDescription(ctx.manifest.version),
       },

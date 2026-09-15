@@ -34,6 +34,7 @@ export function migrationReminderItem(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
   return {
+    id: "settings_migration_reminder",
     name: m.settings_migration_reminder_name(),
     desc: m.welcome_migration_body(),
     render: (setting) => {
@@ -47,6 +48,7 @@ export function templateConversionReminderItem(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
   return {
+    id: "welcome_template_conversion",
     name: m.welcome_template_conversion_title(),
     desc: m.welcome_template_conversion_body({
       path: join(
@@ -100,6 +102,7 @@ export function resourcesGroup(
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",
+    id: "settings_resources",
     items: [
       ...(pending ? [migrationReminderItem(ctx)] : []),
       ...(templateConversionPending
@@ -116,6 +119,7 @@ function resourcesItems(
 ): SettingDefinition<SettingsKey>[] {
   return [
     {
+      id: "settings_resources_whats_new",
       name: m.settings_resources_whats_new_name({
         version: ctx.manifest.version,
       }),
@@ -129,6 +133,7 @@ function resourcesItems(
       },
     },
     {
+      id: "settings_resources_docs",
       name: m.settings_resources_docs_name(),
       desc: m.settings_resources_docs_desc(),
       render: (setting) => {
@@ -140,6 +145,7 @@ function resourcesItems(
       },
     },
     {
+      id: "settings_resources_help",
       name: m.settings_resources_help_name(),
       desc: m.settings_resources_help_desc(),
       render: (setting) => {
@@ -151,6 +157,7 @@ function resourcesItems(
       },
     },
     {
+      id: "settings_resources_bug_report",
       name: m.settings_resources_bug_report_name(),
       desc: m.settings_resources_bug_report_desc(),
       render: (setting) => {
