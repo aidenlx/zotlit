@@ -34,6 +34,7 @@ function makeHarness(options?: {
     "note.template-conversion-result": null as {
       document: string | null;
       trashed: number;
+      pendingCleanup?: string[];
     } | null,
     "template.folder": "templates",
   };
@@ -202,6 +203,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
         "templates/zotlit-note.liquid.md",
         "templates/zotlit-content.liquid.md",
       ],
+      pendingCleanup: [],
       kept: [],
     });
     expect(harness.create).toHaveBeenCalledWith(
@@ -221,6 +223,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       {
         document: "templates/zotlit-profile.default.md",
         trashed: 3,
+        pendingCleanup: [],
       },
     );
     expect(
@@ -238,19 +241,60 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       {
         document: "templates/zotlit-profile.default.md",
         trashed: 3,
+        pendingCleanup: [],
       },
     );
   });
 
-  it("leaves no receipt when trash fails", async () => {
+  it("keeps the conversion active and records the file when trash fails", async () => {
     const failed = makeHarness({ pending: true });
     await using service = failed.service;
     await service.ready;
     failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
-    await expect(service.convert()).rejects.toThrow("Trash unavailable");
+
+    const result = await service.convert();
+
+    expect(result).toMatchObject({
+      outcome: "converted",
+      pendingCleanup: ["templates/zotlit-filename.liquid.md"],
+    });
+    // The documents stay active and the file that resisted is recorded.
+    expect(failed.settings.current["note.template-conversion-pending"]).toBe(
+      false,
+    );
+    expect(failed.files.has("templates/zotlit-profile.default.md")).toBe(true);
+    expect(failed.files.has("templates/zotlit-filename.liquid.md")).toBe(true);
     expect(
       failed.settings.current["note.template-conversion-result"],
-    ).toBeNull();
+    ).toMatchObject({
+      document: "templates/zotlit-profile.default.md",
+      trashed: 2,
+      pendingCleanup: ["templates/zotlit-filename.liquid.md"],
+    });
+  });
+
+  it("retries retained files and clears the list once the fault is gone", async () => {
+    const failed = makeHarness({ pending: true });
+    await using service = failed.service;
+    await service.ready;
+    failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+    await service.convert();
+
+    const retried = await service.retryCleanup();
+
+    expect(retried).toMatchObject({
+      outcome: "converted",
+      trashed: ["templates/zotlit-filename.liquid.md"],
+      pendingCleanup: [],
+    });
+    expect(failed.files.has("templates/zotlit-filename.liquid.md")).toBe(false);
+    expect(
+      failed.settings.current["note.template-conversion-result"],
+    ).toMatchObject({
+      document: "templates/zotlit-profile.default.md",
+      trashed: 3,
+      pendingCleanup: [],
+    });
   });
 
   it("takes back the documents it created when a later write fails", async () => {
@@ -543,6 +587,7 @@ describe("one-pass conversion of the 2.1.x cite and partial files", () => {
         "templates/zotlit-authors.liquid.md",
         "templates/zotlit-summary.liquid.md",
       ],
+      pendingCleanup: [],
       kept: [],
     });
     expect(harness.vault.contents.get("templates/zotlit-citation.md")).toBe(

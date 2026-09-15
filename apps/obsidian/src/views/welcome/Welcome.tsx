@@ -414,10 +414,27 @@ function MigrationBanner() {
     );
   }
   if (result) {
+    const retained = result.pendingCleanup ?? [];
     return (
       <Callout
         tone="muted"
         title={m.welcome_template_conversion_completed_title()}
+        action={
+          retained.length > 0 ? (
+            <Button
+              loading={converting}
+              disabled={converting}
+              onClick={() => {
+                setConverting(true);
+                void actions.retryTemplateCleanup().finally(() => {
+                  setConverting(false);
+                });
+              }}
+            >
+              {m.welcome_template_cleanup_retry()}
+            </Button>
+          ) : undefined
+        }
       >
         {result.document
           ? m.welcome_template_conversion_completed_body({
@@ -427,6 +444,16 @@ function MigrationBanner() {
           : m.welcome_template_conversion_completed_files({
               count: result.trashed,
             })}
+        {retained.length > 0 ? (
+          <>
+            <p>{m.welcome_template_cleanup_body()}</p>
+            <ul>
+              {retained.map((path) => (
+                <li key={path}>{path}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </Callout>
     );
   }

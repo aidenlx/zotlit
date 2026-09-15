@@ -33,7 +33,10 @@ export interface WelcomeViewDeps {
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   settings: Pick<SettingsService, "subscribe">;
   setupActions: SetupActions;
-  templateMigration: Pick<LiteratureNoteTemplateMigrationService, "convert">;
+  templateMigration: Pick<
+    LiteratureNoteTemplateMigrationService,
+    "convert" | "retryCleanup"
+  >;
   release: Pick<ReleaseService, "hasV1Templates">;
 }
 
@@ -114,6 +117,10 @@ export class WelcomeView extends ItemView {
     stack.defer(() => this.app.vault.offref(renamed));
 
     const actions: WelcomeActions = {
+      retryTemplateCleanup: async () => {
+        const result = await this.#deps.templateMigration.retryCleanup();
+        new BaseNotice(templateMigrationNotice(result));
+      },
       convertLiteratureNoteTemplates: async () => {
         const result = await this.#deps.templateMigration.convert();
         new BaseNotice(templateMigrationNotice(result));
@@ -196,6 +203,8 @@ function templateMigrationNotice(
   result: LiteratureNoteTemplateMigrationResult,
 ): string {
   if (result.outcome === "converted") {
+    if (result.pendingCleanup.length > 0)
+      return m.notice_literature_note_template_conversion_pending_cleanup();
     return result.kept.length > 0
       ? m.notice_literature_note_template_conversion_kept({
           files: result.kept.join(", "),
