@@ -1,7 +1,7 @@
 ---
 version: "2.2.0-beta.0"
-date: "2026-09-11"
-description: "Citations in the graph view, Cited Work Nodes, Citation Graph commands"
+date: "2026-09-15"
+description: "Literature note profiles, the Template Workbench, citations in the graph view"
 ---
 
 import { Command } from "@/components/command";
@@ -9,28 +9,196 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
+ZotLit 2.2 gives a literature note template one document of its own, adds a workbench to edit it inside Obsidian, and draws your citations in the graph view.
+
+## Highlights
+
+### Citations in the graph view
+
+Your citations now appear in Obsidian's graph. A note gains an edge to every work it cites, so literature notes stop floating unconnected and two notes that cite the same paper meet at its node. Where no literature note exists yet, the work appears as a dimmed Cited Work Node.
+
+This is on as soon as you update. Every ordinary graph starts drawing citation edges and Cited Work Nodes, so your graph is busier than it was. <UiLabel name={m.settings_citation_graph_name()} /> under <SettingsPath page={m.settings_page_citations()} /> turns it off again.
+
+Six rows in the graph's own controls decide what each graph draws, built into the native Filters and Display sections and saved per graph like the native rows:
+
+- Under Filters: <UiLabel name={m.graph_option_pandoc_citations_name()} /> and <UiLabel name={m.graph_option_wikilink_citations_name()} />, both on, and <UiLabel name={m.graph_option_citation_connected_only_name()} />, off.
+- Under Display: <UiLabel name={m.graph_option_author_title_labels_name()} />, <UiLabel name={m.graph_option_color_citation_links_name()} />, and <UiLabel name={m.graph_option_citation_popover_name()} />, all off.
+
+<UiLabel name={m.graph_option_wikilink_citations_name()} /> appears only while
+the vault-wide wikilink citation setting is on. **Restore default settings** in
+the graph returns all six to their defaults along with the native options.
+
+Literature notes keep the node colors Obsidian gives them. A Cited Work Node takes a dimmed color of its own, and citation edges take theirs only while <UiLabel name={m.graph_option_color_citation_links_name()} /> is on. Your own color groups still win, and one press of <UiLabel name={m.graph_citations_add_literature_notes_group()} /> in the Groups section colors every literature note without a search query. All three colors have theme hooks; see [Theme hooks](/docs/reference/theme-hooks).
+
+<UiLabel name={m.graph_option_author_title_labels_name()} /> writes the authors
+and the year above each work, with the short title dimmer underneath. Zooming in
+brings the titles out, and hovering shows one at any zoom. The graph's search
+box still matches your files, not the labels on screen.
+
+Hover needs the per-graph <UiLabel name={m.graph_option_citation_popover_name()} /> row, which starts off. With it on, hovering a literature note or a cited work follows your Hover Action setting, and <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} /> adds a <UiLabel name={m.settings_citation_hover_mod_graph_name()} /> row so the graph alone requires a held modifier key. A work with no literature note, and a note nothing cites, now show the formatted entry in the popover instead of Obsidian's page preview.
+
+Select a Cited Work Node to create its literature note from the profile and open it; the key that matches one item becomes the note node, with the same edges. Right-click one for <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, and <UiLabel name={m.graph_citations_menu_copy_citekey()} />. A key that matches several items keeps its dimmed node.
+
+<Command inline name={m.command_open_citation_graph_name()} /> and
+<Command inline name={m.command_open_local_citation_graph_name()} /> open the
+graph arranged for reading as a research map: citation edges in, every node
+except your literature notes, cited works, and the notes that cite them hidden,
+arrows on, labels and the popover on, and the literature notes group added. A
+global graph keeps one set of options for the whole vault, so the first command
+saves that arrangement as your graph settings. The local command needs an open
+note.
+
+If a command opens nothing, ZotLit says why: the Graph core plugin is off, the citations switch is off, or the citation graph is unavailable. [Explore citations in the graph view](/docs/how-to/explore-citations-in-graph) is the full guide.
+
+### Literature note profiles
+
+2.1 built a literature note from separate files: a note file, a managed-region file, a filename file, an annotation file, and a frontmatter field list that lived in settings. 2.2 puts the whole note into one Markdown document per profile. Each `zotlit-profile.<slug>.md` in your template folder holds the note name, the note folder, the properties, the note body, and the annotation format together.
+
+Two companions complete the set. `zotlit-citation.md` holds the text of every inserted citation, once for the whole vault, and each `zotlit-partial.<name>.md` holds template text that several profiles share.
+
+<SettingsPath page={m.settings_page_profiles()} /> is the new home of all of
+this. The <UiLabel name={m.settings_profile_default_name()} /> row is your
+default layout; <UiLabel name={m.settings_profile_add()} /> creates another
+profile, and <UiLabel name={m.command_import_profile_name()} /> reads one in
+from a file or the clipboard. A profile's own row offers
+<UiLabel name={m.settings_profile_edit()} /> and a
+<UiLabel name={m.workbench_more_actions()} /> menu with
+<UiLabel name={m.settings_profile_duplicate()} />,
+<UiLabel name={m.settings_profile_share()} />, and
+<UiLabel name={m.settings_profile_delete()} />. A profile's match is edited on
+the workbench's <UiLabel name={m.workbench_tab_match()} /> tab.
+
+Below the profiles sits the <UiLabel name={m.settings_partials_heading()} /> list, with <UiLabel name={m.settings_partial_add()} /> and <UiLabel name={m.settings_partial_open()} />. A document ZotLit cannot read, or one whose ID collides with another profile's, is listed under <UiLabel name={m.settings_profile_excluded_heading()} /> instead of being used.
+
+<UiLabel name={m.settings_citation_text_name()} /> under
+<SettingsPath page={m.settings_page_citations()} /> opens the citation document,
+and its <UiLabel name={m.settings_template_reset()} /> button returns it to the
+built-in text once you have changed it.
+
+A profile can also select itself. A Profile Match tests an item's library, item type, tags, or collections, and every new note that fits uses that profile. A profile without a Match stays manual. See [Profile Match](/docs/reference/templates/profile-match).
+
+Every note records the profile that made it, so a later update uses the same template. <Command inline name={m.command_switch_literature_note_profile_name()} /> moves a note, and the imported notes that follow it, onto another profile.
+
+[How templates work](/docs/concepts/how-templates-work) covers the three kinds of document, and [converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) the upgrade.
+
+### The Template Workbench
+
+Your templates have a view of their own now, with the fields beside the editor and the resulting note on the other side. <Command inline name={m.template_workbench_open()} /> opens the document in your active note, and <Command inline name={m.template_workbench_open_layout()} /> opens all three panes together, in a window of their own when the editor would otherwise share one. From a literature note, <Command inline name={m.command_customize_note_template_name()} /> opens the profile that made it with that paper already selected.
+
+The layout has three columns. The <UiLabel name={m.workbench_fields_heading()} /> pane lists the Zotero data a template can read, the middle column edits the document, and the <UiLabel name={m.workbench_result_heading()} /> pane shows the note that comes out. The panes are linked through Obsidian's own linked tabs, so choosing a paper or an annotation in one follows in the others.
+
+The preview refreshes as you type. Its pane menu switches between <UiLabel name={m.workbench_preview_as_new_note()} />, <UiLabel name={m.workbench_preview_as_updated_note()} />, and <UiLabel name={m.workbench_preview_updated_section()} />, with <UiLabel name={m.workbench_show_markdown()} /> to read the raw output. When you arrive from a literature note, the top bar names that note and offers <UiLabel name={m.template_workbench_update_this_note()} /> to apply the change there at once.
+
+Repeated text becomes a partial in one step. Select it, then choose <UiLabel name={m.template_workbench_extract_partial()} />. <UiLabel name={m.workbench_partial_new()} /> starts one from scratch, the <UiLabel name={m.template_workbench_partials()} /> menu lists every partial in the vault, and <UiLabel name={m.template_workbench_open_markdown()} /> opens the same document in Obsidian's own editor.
+
+[Template Workbench View](/docs/concepts/template-workbench-view) describes every way in, and [Customize a template](/docs/how-to/customize-a-template) walks through the profile, the citation text, and partials.
+
+### Inside the Template Workbench View
+
+The editor is tabbed by part of the note: <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_name_and_folder()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_profile()} />. <UiLabel name={m.workbench_advanced()} /> shows the whole document as source when you want it that way. Every edit saves as you go.
+
+The editor knows the document's language. Liquid templates get their tags, variables, and filters highlighted, with the YAML manifest and the Markdown markers styled apart from the body. Eta templates pair tags as you type and gain the same suggestions and hover; the <UiLabel name={m.settings_template_js_enable_name()} /> gate governs rendering, not editing. Typing a field or a partial name offers what is available and what it holds.
+
+When something fails, <UiLabel name={m.workbench_problems_heading()} /> sits under the editor with what went wrong, which part of the document it came from, and the actions to reach it, including <UiLabel name={m.workbench_problems_copy()} /> when you want to ask for help.
+
+[Properties](/docs/how-to/configure-frontmatter-properties) covers the properties tab, and [Template Workbench View](/docs/concepts/template-workbench-view) the tabs, the languages, and the panes. The workbench view is part of the desktop app.
+
+## Breaking Changes
+
+Four changes alter what you already have. Read them before you upgrade.
+
+### 2.1 template files give way to documents
+
+Nothing converts on its own. Your `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-filename.liquid.md`, `zotlit-annotation.liquid.md`, the two citation files, and any file that served as a partial keep loading and rendering until you convert them. The Welcome view offers <UiLabel name={m.welcome_template_conversion_title()} /> once after the update, and settings repeat it with <UiLabel name={m.settings_template_conversion_reminder_action()} />. One press folds the note, managed-region, filename, and annotation files into `zotlit-profile.default.md`, the two citation files into `zotlit-citation.md`, and every remaining file into its own partial. ZotLit verifies byte-identical output before it writes anything, then moves the old files to Obsidian's configured trash. The pass needs one item from your Zotero library to verify against, and an annotation as well if you customized the annotation file.
+
+Two things follow if you stay on the old files. Their settings rows are gone, so the frontmatter field list has no editor in the app, and a note cannot use a profile of your own until the conversion has run: ZotLit declines the note and asks you to convert the legacy templates first. The Profiles page shows no Add and no Import until the conversion has run, and every profile file action stays disabled; the quick-switch picker can still make a profile if you need one. Your default literature notes keep working exactly as they did.
+
+If your two citation files use different languages, the fold is Liquid, the Eta file stays where it is, and ZotLit names the files that no longer affect citations.
+
+[Converting 2.1 template files](/docs/how-to/migrate-from-2.1-templates) has the steps and what each file becomes.
+
+### Export with citations stops on an unknown or ambiguous key
+
+<Command inline name={m.command_pandoc_export_name()} /> now reads your note the
+way Pandoc does, so literal `@citation-key` text reaches the bibliography. A
+work you cite both by wikilink and by key gets one entry, `nocite` works, and a
+key inside code or behind an escape stays plain text.
+
+The cost is that a key which matches no item in your library scope, or matches several, stops the whole export and names the keys. In 2.1 such a note exported with Pandoc's undefined-citation output and no reference list, which looked like success. Check the spelling in Zotero, or widen the library scope under <SettingsPath page={m.settings_page_zotero()} />. [Export a note with citations](/docs/how-to/export-note-with-citations) covers the workflow.
+
+### The agent template commands are retired
+
+Nine commands in ZotLit's `obsidian` CLI namespace now refuse every call and report the command as retired:
+
+`zotlit:template-schema`, `zotlit:template-render`, `zotlit:template-document-render`, `zotlit:template-source`, `zotlit:frontmatter-status`, `zotlit:frontmatter-eval`, `zotlit:frontmatter-set`, `zotlit:frontmatter-remove`, `zotlit:frontmatter-reorder`.
+
+An agent that wrote templates through them must move to `zotlit:template-inspect`, which reads a saved document and how current it is; `zotlit:template-data`, which lists fields with real values from an item; and `zotlit:template-check`, which renders every part and reports what fails. Frontmatter is edited in the profile document and checked with `output=frontmatter`. These are command line commands, not command palette entries. [The Template Workbench CLI](/docs/concepts/template-workbench) explains the loop.
+
+### The settings tab is reorganized
+
+- Maintenance is now <SettingsPath page={m.settings_page_advanced()} />.
+- The Database and Library pages merged into <SettingsPath page={m.settings_page_zotero()} />.
+- The Live updates page became the <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />, where <UiLabel name={m.settings_local_server_enabled_name()} /> sits above <UiLabel name={m.settings_live_updates_enabled_name()} />.
+- Note import is now <SettingsPath page={m.settings_page_note_import()} />.
+- The Templates page is gone. <UiLabel name={m.settings_template_folder_name()} /> and the <UiLabel name={m.settings_advanced_template_engine_heading()} /> rows moved to <SettingsPath page={m.settings_page_advanced()} />, and <UiLabel name={m.settings_citation_text_name()} /> to <SettingsPath page={m.settings_page_citations()} />.
+- <UiLabel name={m.settings_citation_references_style_name()} /> moved to the
+  main page, which now holds the default profile's rows.
+- Auto-pair Eta tags has no toggle any more; the editor pairs tags as you type.
+
+Row names are unchanged, so Obsidian's own settings search still finds a setting by the name you know. [Where settings moved](/docs/reference/settings#moved) has the full table.
+
 ## What's New
 
-### Your citations in the graph view
+### Imported notes
 
-Obsidian's graph view now draws your citations ([discussion #965](https://github.com/aidenlx/zotlit/discussions/965)). Each note gains an edge to every work it cites, so Literature Notes stop floating unconnected and two notes that cite the same paper meet at that paper's node.
+<SettingsPath
+  page={m.settings_page_note_import()}
+  setting={m.settings_note_import_highlight_mappings_name()}
+/>
+maps each Zotero highlight color on its own, to an emoji or to an
+<UiLabel name={m.settings_note_import_highlight_mark()} />, or to a
+<UiLabel name={m.settings_note_import_highlight_custom()} /> emoji you choose.
+See [Import Zotero notes](/docs/how-to/import-zotero-notes).
 
-A work you cite but have no Literature Note for still appears, as a dimmed Cited Work Node. Select it to create its Literature Note from your template, right-click it to open the item in Zotero or copy its key, and hover it to read the formatted entry. Once the note exists, a key that matches one Zotero item trades its dimmed node for the note node, with the same edges. A key that matches several items stays ambiguous, so its Cited Work Node remains.
+The emoji stay compatible with [Obsidian 1.14's color highlights](https://obsidian.md/changelog/2026-09-02-desktop-v1.14.0/). With a custom mapping you can use more colors than native Obsidian offers, including [Colorful Highlights](https://community.obsidian.md/plugins/colorful-highlights).
 
-Turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> in **Display** to read authors and years above each work's short title. Literature Notes and Cited Work Nodes use the same labels. Zooming in brings titles into view; hovering shows the second line at any zoom.
+### Template data explorer
 
-Missing or ambiguous citation keys keep their keys. If ZotLit cannot read a work, its Literature Note keeps its file name.
+The explorer is rebuilt on the workbench's own field browser. Fields are grouped into sections you can <UiLabel name={m.workbench_explorer_expand_all()} /> or <UiLabel name={m.workbench_explorer_collapse_all()} />, each row inserts itself with <UiLabel name={m.workbench_fields_put_in_note()} /> or copies it with <UiLabel name={m.workbench_explorer_menu_copy_value()} />, <UiLabel name={m.workbench_explorer_menu_copy_path()} />, <UiLabel name={m.workbench_explorer_menu_copy_output()} />, <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />, <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} />. The pane's menu saves the data as JSON: <UiLabel name={m.template_data_explorer_export_selected_paper()} /> at a note root, <UiLabel name={m.template_data_explorer_menu_export_json()} /> elsewhere. <UiLabel name={m.workbench_choose_item()} /> and <UiLabel name={m.workbench_choose_annotation()} /> switch which item or annotation the pane reads. See [Explore template data](/docs/how-to/explore-template-data).
 
-The graph search still matches your files, not the displayed labels. See [reading authors and titles on nodes](/docs/how-to/explore-citations-in-graph#read-authors-and-titles-on-nodes).
+### Citations, references, and the suggester
 
-Both Citation Graph commands turn these labels on. Graphs saved or bookmarked earlier keep their previous labels until you run a Citation Graph command again or turn on <UiLabel name={m.graph_option_author_title_labels_name()} /> for that graph.
+- Hovering citations in a note retargets one popover instead of opening a card per citation, and the card follows the pointer from one citation to the next.
+- Search results in the citation suggester read as one line: the venue in italics, and the volume and pages in their own form such as `3(2)`. A result from a group library is marked as such.
+- When an imported note's profile or its citation style is unavailable, the References Sidebar says so and offers <UiLabel name={m.profile_switch_recovery()} /> instead of dropping to a plain list.
+- The suggester's footer now reads <UiLabel name={m.instruction_insert_alternate_citation()} /> for the alternate form.
+- A citation with a locator writes Pandoc's braced form, `[@key, {p. 62}]`, in the raw source. The formatted text is unchanged.
 
-Literature Notes, Cited Work Nodes, and citation edges each take their own color, which follows your theme and dark mode. Your own color groups still win, and a one-press <UiLabel name={m.graph_citations_add_literature_notes_group()} /> button in the graph's Groups section colors every Literature Note without writing a search query.
+See [Insert citations](/docs/how-to/insert-citations) and [Review, copy, and troubleshoot references](/docs/how-to/review-copy-troubleshoot-references).
 
-Six new rows in the graph controls panel decide what each graph draws: <UiLabel name={m.graph_option_pandoc_citations_name()} />, <UiLabel name={m.graph_option_wikilink_citations_name()} />, <UiLabel name={m.graph_option_citation_connected_only_name()} />, <UiLabel name={m.graph_option_author_title_labels_name()} />, <UiLabel name={m.graph_option_color_citation_links_name()} />, and <UiLabel name={m.graph_option_citation_popover_name()} />. They persist and reset like the native rows.
+### Batch update and import
 
-Two commands, <Command inline name={m.command_open_citation_graph_name()} /> and <Command inline name={m.command_open_local_citation_graph_name()} />, open the graph set for reading as a research map: citations on, every node except your Literature Notes, cited works, and the notes that cite them hidden, arrows on, and the literature notes group added. A global graph keeps one set of options for the whole vault, so the first command saves that arrangement as your graph settings; **Restore default settings** returns the graph to Obsidian's defaults.
+The confirmation for a vault-wide run now groups its rows by profile and says which items match no profile or several, which profiles are unavailable, and what happens to the notes you keep as they are. The import dialog names the notes that will arrive without a parent literature note before you confirm.
 
-Everything native keeps working across citation edges: search, depth, incoming and outgoing links, following the active note, and **Existing files only** to hide the cited works.
+### Other improvements
 
-The whole feature has one switch, <UiLabel name={m.settings_citation_graph_name()} />, under <SettingsPath page={m.settings_page_citations()} />. Turn it off and every graph goes back to exactly what Obsidian drew before. [Explore citations in the graph view](/docs/how-to/explore-citations-in-graph) is the full guide.
+- Links and menu commands from Zotero now name the profile they mean, so a note opens with the template you chose rather than the default. A profile ZotLit cannot find opens a prompt to pick one.
+- The Welcome view's settings link opens <SettingsPath page={m.settings_page_zotero()} />, and its folder picker explains how to navigate and choose.
+
+## Bug Fixes
+
+- Updated the Liquid template engine to a release that fixes a security advisory in the previous one. The engine 2.1.4 bundles is affected.
+
+## Known Issues
+
+### A refused conversion can leave you with no way to fix it
+
+The conversion refuses instead of writing half a result, so a refusal leaves your vault untouched. Two refusals then land where 2.2 offers no repair.
+
+If a frontmatter field is written in JavaScript while the JavaScript Templates gate is off, the notice names the fields. Turn on <UiLabel name={m.settings_template_js_enable_name()} /> under <SettingsPath page={m.settings_page_advanced()} /> and convert again. If a converted field fails to evaluate against the item ZotLit picked, the same notice names it, but there is no field editor to correct it in: the Frontmatter page is gone, and a profile's edit actions stay disabled while the conversion is pending. The conversion reads the field list from the `note.frontmatter-fields` setting, so the plugin's saved settings file is the only place to correct it. Writing `zotlit-profile.default.md` yourself does not repair anything: that file is what marks a vault as converted, so the offer stands down and the field stays as it is. In both cases your 2.1 files keep rendering, so your notes keep working while you sort it out.
+
+### A failed move to the trash can pass without a word
+
+After the new documents are written, ZotLit moves the old template files to Obsidian's configured trash. If that move fails, nothing tells you: the button stops and the Welcome card stays as it was. The converted documents are on disk and the old files are still beside them.
+
+What you see next depends on which files you had. If you had a note file, the profile document exists, so the offer does not come back and the leftover `zotlit-*.liquid.md` and `zotlit-*.eta.md` files stay where they are. Nothing renders from them any more, and you can move them to the trash yourself. If you had only citation or partial files, the offer returns and refuses because a converted document is already there. Rename or remove that document, then convert again, or delete the new documents and start the conversion over.

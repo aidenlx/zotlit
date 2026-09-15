@@ -1,0 +1,80 @@
+---
+title: "Profiles"
+description: "What a literature note profile is, how ZotLit chooses one for an item, and how a note keeps the one that made it."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+A profile is the document that decides everything about the literature notes ZotLit writes from it: their name, folder, properties, body, and annotation format.
+
+## What a profile is [#document]
+
+A profile is one Markdown file, named `zotlit-profile.<slug>.md` and kept in the folder named by <UiLabel name={m.settings_template_folder_name()} />. ZotLit reads every direct child of that folder whose name starts with `zotlit-profile.`, and each one becomes a profile. Nothing registers, installs, or points at a profile, so dropping the file into the folder is enough to add one.
+
+The filename is not the profile's identity, and renaming the file changes nothing. Each document carries an `id` in its manifest, and that ID is what a note remembers. The look, the properties, and the annotation format all live inside that one file. What it holds is in the [Profile document](/docs/reference/templates/profile-document) reference, and how it relates to the other two kinds of template document is in [How templates work](/docs/concepts/how-templates-work#kinds).
+
+## The Default profile [#default]
+
+Every vault has a Default profile, and it needs no document. Until you customize it, ZotLit uses its built-in template and holds the vault-wide defaults as settings. Customizing writes `zotlit-profile.default.md` into the template folder, after which the Default is a document like any other.
+
+The Default is also the fallback. A note that carries no profile of its own belongs to the Default, and an added profile that leaves something unset inherits that value from the Default. A profile therefore states only what makes it different: a folder for books, a citation style for one journal, a different annotation callout, and nothing else.
+
+## How ZotLit chooses a profile [#selection]
+
+A note is written by exactly one profile. ZotLit resolves which one as it writes, in this order:
+
+1. The profile you chose for that operation.
+2. The profile a command or a Companion link named.
+3. The profile whose Match conditions accept the item.
+4. The Default profile.
+
+Steps 1 and 2 come from a choice you made, and each one covers a single operation. Step 3 is the automatic one: Match conditions are part of the profile document, and a profile without them is never selected on its own. When exactly one profile matches, ZotLit uses it without asking. When several match, ZotLit stops and asks which one you meant. Step 4 is the fallback for a note that nothing above it names.
+
+The condition language is in [Profile Match](/docs/reference/templates/profile-match), and [Use a different template for different notes](/docs/how-to/use-different-templates) adds a profile and checks which items it takes.
+
+## One note, one profile [#stamp]
+
+A literature note records the profile that made it in its `zotlit-profile` property. The value names the profile and carries its ID, as in `Books (V1StGXR8Z5jd)`. The ID is the only part ZotLit compares. The name beside it is a hint for you, refreshed the next time ZotLit writes the note, so renaming a profile's label or its file breaks nothing.
+
+A note written by the Default carries no such property. Absence means the Default, and it never means "ask some other note". Imported notes carry a stamp too, taken from the operation or the literature note that created them.
+
+Because identity lives in the ID, two profile documents that claim the same ID are both left out of the registry rather than repaired. Such a profile stops being offered anywhere until one of the two documents gets a unique ID.
+
+## When a note changes profile [#update]
+
+An update does not re-run the conditions. ZotLit reads the note's stamp, renders the note with the profile that stamp names, and leaves every other note alone. Editing a profile's conditions or adding a profile therefore changes what future notes look like, not what existing ones look like. A command that names a profile the note does not carry is refused rather than obeyed: <UiLabel name={m.notice_literature_note_profile_conflict()} />.
+
+Moving one note to a different profile is a deliberate action of its own, never a side effect of editing the conditions. It asks for confirmation first, and it leaves the text outside the managed region as it was; the next update renders the note from the profile it now names. [Use a different template for different notes](/docs/how-to/use-different-templates) gives that action.
+
+## A note has no template of its own [#customize]
+
+Every note a profile writes renders from that profile's document. There is no per-note copy, so editing the document changes all of them, and each note shows the change the next time it is updated. A note that belongs to the Default follows the Default's document, which exists only once the Default has been customized; until then the note renders from the built-in template.
+
+Editing a note's template therefore means editing the profile that the note names. [Customize a template](/docs/how-to/customize-a-template) covers that edit, together with the citation text and the partials.
+
+## See also
+
+<Cards>
+  <Card
+    title="Use a different template for different notes"
+    description="Add a profile, set its conditions, and confirm it is selected."
+    href="/docs/how-to/use-different-templates"
+  />
+  <Card
+    title="Profile document"
+    description="The manifest keys, the note source, and the Annotation Section."
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="How templates work"
+    description="The three kinds of template document and the folder they live in."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Profile Match"
+    description="The condition language that selects a profile automatically."
+    href="/docs/reference/templates/profile-match"
+  />
+</Cards>

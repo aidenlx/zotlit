@@ -1,24 +1,23 @@
 ---
 title: "Template Workbench CLI"
-description: "How the Template Workbench CLI lets an agent inspect templates, render previews, and manage frontmatter through the Obsidian CLI."
+description: "How an agent inspects, tests, and checks template documents through the Obsidian CLI, and what the commands never write."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
-The Template Workbench CLI registers commands in the Obsidian CLI that let an agent inspect, render, and test templates against your Zotero library. Describe the note you want; the agent writes Liquid or Eta so you do not have to.
-
-## When to use it
-
-Use the Template Workbench CLI when you know how the rendered Markdown should look. Describe the result in plain language. The agent can also diagnose incorrect output or rendering errors.
+The Template Workbench CLI is a set of ZotLit commands in the Obsidian CLI that let an agent read your template documents, render them against your Zotero library, and report what each render produced. You describe the note you want; the agent writes the Liquid or Eta. The same answers show why a document renders wrong or fails to render.
 
 ## How the parts fit together
 
-The **Template Workbench CLI** is a set of ZotLit commands in the Obsidian CLI. It lets an agent inspect current template state and source, inspect template data from your Zotero library, and render changes in memory. The CLI also configures managed frontmatter.
+The **Template Workbench CLI** is the command surface. It selects a template document, reads the Zotero data a template receives, and renders a document in memory to show what it would produce. It reads and renders; it never edits.
 
-The **ZotLit skill** is published with the identifier `zotlit-template`. Its template workflow uses the CLI to inspect, edit, and test templates. Claude Code, Codex, and pi can use it.
+The **ZotLit skill** is published with the identifier `zotlit-template`. Its template workflow uses the CLI to inspect, edit, and check templates. Claude Code, Codex, and pi can use it.
 
-The **Workbench Guide** is the live usage guide built into ZotLit. It matches the commands in your installed plugin version. The ZotLit skill sends the agent to this guide for current instructions.
+The **Workbench Guide** is the live usage guide built into ZotLit. It ships inside the plugin you have installed, so it always matches the commands in that version. The ZotLit skill sends the agent to this guide for current instructions.
 
 For current command help, use:
 
@@ -27,13 +26,29 @@ obsidian help zotlit
 obsidian zotlit:template-guide
 ```
 
-## Inspection and editing boundaries
+## What the commands do
 
-The CLI inspects Zotero data and renders templates in memory. These operations do not write to your vault or Zotero library.
+Five commands answer in the Obsidian CLI. They are CLI commands, not command palette entries.
 
-Your agent edits template files through its vault-aware file tools. Those edits change files in the selected vault. You can ask the agent to show the rendered Markdown before it finishes.
+**Inspection** selects one template document and verifies that the source ZotLit compiled is the source on disk, so the agent never edits a stale copy. The answer names the document, the Shared Partials and citation text it depends on, and any problems ZotLit found in it. With no target selected, the same command lists every template document in the template folder, including the built-in Default profile.
 
-Frontmatter commands write to plugin settings, not vault files or Zotero data.
+**Data** returns the data a template receives, under `zt`. The root selects its shape: <UiLabel name={m.workbench_fields_root_note()} />, <UiLabel name={m.workbench_fields_root_annotation()} />, <UiLabel name={m.workbench_fields_root_filename()} />, or <UiLabel name={m.workbench_fields_root_citation()} />. Optional discovery narrows the answer to the fields an edit needs, which keeps a large Zotero item out of the agent's context.
+
+**Checking** renders a document, or a draft the agent keeps in a scratch file outside the template folder, against a real Zotero item or an existing literature note. It reports each part as passed, failed, or not checked: for a profile, the note name, properties, body, managed region, and annotations; for a citation text or a partial, the rendered text. For an update it reports the properties it would fold into the note and the note text that would result, so you can read the change before you commit to it.
+
+**State** reports the Workbench at a glance: the plugin version, the vault and Zotero source the commands are talking to, whether JavaScript templates are enabled on this device, and the profiles and documents ZotLit found.
+
+**The guide** prints the instructions shipped with your installed version, one topic per subject. The skill sends the agent here, so the agent follows the contract of the release you run.
+
+Every answer is JSON and carries a contract version, the command name, and an `ok` flag. A failure carries a diagnostic with a code, a message, and a hint that names the recovery. See [Template Workbench CLI reference](/docs/reference/template-workbench-cli) for the flags and syntax of each command, and for the diagnostic codes.
+
+Commands from earlier releases that rendered a template file directly, or that read and wrote managed frontmatter through the plugin settings, are retired. They still answer, with a retirement diagnostic that points at inspection, data, and check. Managed frontmatter is not edited through the CLI: it lives in the profile document.
+
+## Reading and editing boundaries
+
+The CLI reads your template documents and your Zotero library, and renders documents in memory. A check writes nothing: no template document, no note, no setting, and no Zotero record. Checking a draft leaves the draft uninstalled.
+
+Your agent edits template documents through its own vault-aware file tools. Those edits change files in the vault, exactly as your own edits do, so you can read the change before you rely on it and check it with the CLI afterwards. The checked output is the evidence, not the agent's summary of it.
 
 <Callout type="warn" title="Agent data access">
   The selected agent can receive Zotero metadata and annotation text returned by
@@ -42,17 +57,19 @@ Frontmatter commands write to plugin settings, not vault files or Zotero data.
 
 ## JavaScript templates
 
-Liquid remains available without extra consent. Eta templates and JavaScript managed frontmatter fields require the JavaScript Templates gate.
+Liquid remains available without extra consent. Eta documents and managed frontmatter entries written with the `js` member require the JavaScript Templates gate.
 
-You enable this gate explicitly on each device. The CLI does not change this setting. An agent must ask you to enable it in ZotLit settings.
+You enable this gate yourself on each device at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />. The CLI never changes it: a command that meets an Eta document while the gate is off fails with a diagnostic instead, and the agent must ask you to enable the setting.
 
-## Managed frontmatter configuration
+## Managed frontmatter
 
-Managed frontmatter fields are YAML properties in literature note frontmatter whose values come from template expressions. ZotLit re-evaluates them on every note update. The CLI can manage these field templates: an agent can list configured fields, evaluate them against a Zotero item, and add, patch, reorder, or remove entries.
+Managed frontmatter fields are YAML properties in literature note frontmatter whose values come from template expressions. ZotLit re-evaluates them on every note update.
 
-These commands write to the plugin's settings service. The settings modal, template compilation, and frontmatter sync all observe the same change. For manual configuration in the UI, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties). For field mechanics and merge strategies, see [Frontmatter reference](/docs/reference/templates/frontmatter).
+The list of entries lives in the manifest of the profile document, in the order ZotLit writes them. Each entry names its language in the entry itself: `expr` for a Liquid expression, `value` for a JSON-e template, or `js` for a JavaScript expression behind the gate. The agent edits that list in the document with its file tools, and reads the result back through a check.
 
-For the full command reference, use the built-in guide:
+For manual configuration in the UI, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties). For the entry members and the merge strategies, see the [Profile document](/docs/reference/templates/profile-document) and the [Frontmatter reference](/docs/reference/templates/frontmatter).
+
+For the frontmatter rules as the shipped guide states them, use:
 
 ```bash
 obsidian zotlit:template-guide topic=frontmatter
@@ -60,15 +77,20 @@ obsidian zotlit:template-guide topic=frontmatter
 
 ## Template Workbench CLI and Template Data Explorer
 
-The Template Workbench CLI gives an agent data and in-memory rendering through the command line. The agent can then edit and test your template files.
+The Template Workbench CLI gives an agent data and in-memory rendering through the command line. The agent can then edit and check your template documents.
 
-The Template Data Explorer is a visual sidebar for you. It lets you browse current template data and copy paths or snippets while editing templates yourself.
+The Template Data Explorer is a visual sidebar for you. It lets you browse current template data and copy paths or snippets while editing templates yourself. See [Explore template data](/docs/how-to/explore-template-data) for its panes and copy actions.
 
-Both use the same side-effect-free data resolution. Browsing and rendering do not create notes or import attachments.
+Both use the same data resolution and neither writes: browsing and rendering do not create notes, import attachments, or change settings.
 
 ## See also
 
 <Cards>
+  <Card
+    title="Template Workbench CLI reference"
+    description="The live commands, their flags, and the diagnostic codes."
+    href="/docs/reference/template-workbench-cli"
+  />
   <Card
     title="Install the ZotLit skill"
     description="Install the skill for agents used in one vault."
@@ -83,11 +105,6 @@ Both use the same side-effect-free data resolution. Browsing and rendering do no
     title="Customize a template"
     description="Edit a profile, preview the result, and update an existing note."
     href="/docs/how-to/customize-a-template"
-  />
-  <Card
-    title="Configure frontmatter properties"
-    description="Add and edit managed frontmatter field templates."
-    href="/docs/how-to/configure-frontmatter-properties"
   />
   <Card
     title="JavaScript templates"

@@ -10,20 +10,22 @@ import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 <UiLabel name={m.settings_template_js_enable_name()} /> is a per-device gate
-that controls whether Eta templates (`.eta.md` files) compile and execute. It is
-disabled by default.
+that controls whether Eta templates compile and execute. It is disabled by
+default.
 
 ## What the gate enables
 
+A template document declares its language in its own text, not in its filename. A citation text or partial carries a manifest with the single key `language: eta`; a profile document sets its language on the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab. See [Profile document](/docs/reference/templates/profile-document) for the manifest and the frontmatter entry members.
+
 When <UiLabel name={m.settings_template_js_enable_name()} /> is on:
 
-- `.eta.md` template files compile and execute using the Eta engine (full JavaScript).
-- Frontmatter fields declared with the `javascript` language evaluate their expressions.
+- Eta template documents compile and execute using the Eta engine (full JavaScript).
+- Managed frontmatter entries written with the `js` member evaluate their expressions.
 
 When disabled (the default):
 
-- `.eta.md` files are inert: never compiled, never executed.
-- Only Liquid templates and Liquid frontmatter fields are active.
+- Eta documents are inert: never compiled, never executed.
+- Only Liquid documents and `expr` or `value` frontmatter entries are active. An `expr` entry holds a Liquid expression and a `value` entry holds a JSON-e template.
 
 See [Behavior when disabled](#behavior-when-disabled) for the exact failure mode.
 
@@ -31,20 +33,20 @@ See [Behavior when disabled](#behavior-when-disabled) for the exact failure mode
 
 Liquid templates render text. A Liquid template has no way to open a file it was not given, make a network call, or run a system command. It can only combine the data it receives into output.
 
-Eta templates are full JavaScript. Code in an `.eta.md` file runs with the same access as ZotLit itself: it can read and modify your vault, connect to the internet, and on desktop, access your system. A template copied from a forum post, a shared vault, or another device executes with that full access the moment it runs.
+Eta templates are full JavaScript. Code in an Eta document runs with the same access as ZotLit itself: it can read and modify your vault, connect to the internet, and on desktop, access your system. A template document copied from a forum post, a shared vault, or another device executes with that full access the moment it runs.
 
 The gate keeps this boundary explicit. Liquid stays safe by default; JavaScript execution requires a deliberate opt-in.
 
 ## Risks of opting in
 
 <Callout type="warn" title="Security implications">
-  Only enable this if you trust every `.eta.md` file in your vault. Eta
+  Only enable this if you trust every Eta template document in your vault. Eta
   templates are not audited or sandboxed by ZotLit.
 </Callout>
 
 Once enabled:
 
-- All `.eta.md` templates in your template folder execute without further prompts.
+- Every Eta template document in your template folder executes without further prompts.
 - A template from an untrusted source could read files, make network requests, or modify your vault.
 - The consent is one-time per device. It covers all current and future Eta templates.
 
@@ -61,18 +63,18 @@ If you sync your vault across devices, only devices where the owner has explicit
 
 ## Behavior when disabled
 
-When the gate is off and you have an `.eta.md` file that would otherwise be active (no Liquid file shadows it), ZotLit treats that template as **inert**:
+When the gate is off and an Eta template document would otherwise render, ZotLit treats it as **inert**:
 
 - The operation that needs the template (create note, update note, insert citation) fails with an error naming the cause. There is no silent fallback to the built-in default.
-- <SettingsPath /> shows a warning: "The Eta template at `{path}` is inactive
-  because JavaScript templates are disabled on this device."
-- The `.eta.md` file remains in your vault untouched, never compiled.
+- <SettingsPath /> shows a warning:
+  <UiLabel name={m.settings_template_inert_eta({ path: "…" })} />
+- The document remains in your vault untouched, never compiled.
 
-The same applies to frontmatter fields declared as `javascript`: any note write that consumes such a field fails with an error naming the inactive fields, and existing notes are not modified.
+The same applies to a managed frontmatter entry declared with the `js` member. A note write that consumes such an entry fails, and the error names the inactive fields. ZotLit never writes a partial field set, so existing notes stay unchanged.
 
 ## Coexistence with Liquid
 
-A Template Document declares one language, so a Liquid document and an Eta document never compete for the same name.
+A template document declares one language, so a Liquid document and an Eta document never compete for the same name.
 
 A ZotLit 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While both exist, the Liquid file wins and the Eta file is ignored, whether or not the gate is on. See [When two 2.1 files share a name](/docs/concepts/how-templates-work#liquid-wins-shadowing).
 
@@ -86,7 +88,7 @@ A ZotLit 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While b
   />
   <Card
     title="How templates work"
-    description="The three Template Document kinds, their filenames, and the two languages."
+    description="The three template document kinds, their filenames, and the two languages."
     href="/docs/concepts/how-templates-work"
   />
   <Card
@@ -98,5 +100,10 @@ A ZotLit 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While b
       </>
     }
     href="/docs/reference/settings"
+  />
+  <Card
+    title="Profile document"
+    description="The manifest keys, the note source, and the Annotation Section."
+    href="/docs/reference/templates/profile-document"
   />
 </Cards>

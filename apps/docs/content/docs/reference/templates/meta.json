@@ -1,4 +1,12 @@
 {
   "title": "Templates",
-  "pages": ["syntax", "data", "frontmatter", "defaults", "eta-syntax"]
+  "pages": [
+    "syntax",
+    "data",
+    "frontmatter",
+    "defaults",
+    "eta-syntax",
+    "profile-document",
+    "profile-match"
+  ]
 }

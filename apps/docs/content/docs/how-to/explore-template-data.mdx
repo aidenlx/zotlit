@@ -10,7 +10,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Template Data Explorer shows the data that templates receive for a Zotero item or built-in example. Use it to discover field paths, inspect values, and copy ready-to-use snippets into your templates.
+The Template Data Explorer shows the fields that templates receive for a Zotero item, an annotation, a note name, or a citation. Use it to look up field paths, read values, and copy ready-to-use snippets into your templates.
 
 ## Open the explorer
 
@@ -89,7 +89,7 @@ In Obsidian:
 
 - For the active literature note, run <Command inline name={m.command_copy_item_key_name()} />, or select <UiLabel name={m.command_copy_item_key_name()} /> from the file menu.
 - On an annotation row, open the more-options menu and select <UiLabel name={m.indexed_key_menu_copy_annotation()} />.
-- In the explorer, open the more-options menu on the tab and select <UiLabel name={m.command_copy_item_key_name()} /> or <UiLabel name={m.indexed_key_menu_copy_annotation()} />. The label follows the current root.
+- In the explorer, open the pane menu and select <UiLabel name={m.command_copy_item_key_name()} /> or <UiLabel name={m.indexed_key_menu_copy_annotation()} />. The label follows the root the pane lists.
 
 If a literature note is already open, you can also copy its `zotero-key` frontmatter value by hand.
 
@@ -98,51 +98,79 @@ In Zotero, the Companion adds two more entry points:
 - Right-click one or more library rows and open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu. The entry names the kind you selected, such as <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "item" })} /> or <UiLabel name={m["zotero.menu_item_copy_key.label"]({ count: 1, kind: "attachment" })} />. Multiple rows copy one key per line.
 - In the PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_copy_key"]()} />.
 
-One key is always enough. The [root you choose](#roots) — note or annotation — selects the view on that object.
+One key is always enough. The root the pane lists decides which object it names: the note root copies the item key, the annotation root the annotation key.
 
-## Browse the data tree
+## Browse the fields
 
-The explorer displays a collapsible tree of every property available under the `zt` root object. Expand nodes to drill into nested objects and arrays. Primitive values (strings, numbers, booleans) display inline next to their key.
+The pane lists the fields of one root, grouped under section headings.
 
-### Filter properties
+### The root the pane lists
 
-Type in the filter box (placeholder: "Filter properties...") to narrow the tree. Filtering matches key names and stringified primitive values by case-insensitive substring. Matching nodes and their ancestor chains auto-expand.
+The pane header names the root it reads: <UiLabel name={m.workbench_fields_root_note()} />, <UiLabel name={m.workbench_fields_root_annotation()} />, <UiLabel name={m.workbench_fields_root_filename()} />, or <UiLabel name={m.workbench_fields_root_citation()} />.
 
-### Switch between note root and annotation root [#roots]
+The root follows the part of the profile you are editing: the note body and its properties list the note root, the Annotation Section lists the annotation root, the manifest's `filename` value lists the note name root, and the Citation text lists the citation root.
 
-By default the tree shows the full `zt` object (note root). To view the data available inside annotation templates, open the more-options menu on an annotation node in the tree and select <UiLabel name={m.template_data_explorer_menu_explore_annotation()} />. The tree re-anchors to that annotation's data shape.
+The standalone explorer takes its root from the Template Workbench View beside it. When it is anchored at an annotation, a breadcrumb above the list reads <UiLabel name={m.template_data_explorer_note_root()} />, and its back button, tooltipped <UiLabel name={m.template_data_explorer_back_to_note_root()} />, returns the list to the note root.
 
-To return, click <UiLabel name={m.template_data_explorer_back_to_note_root()} /> in the breadcrumb.
+To read one annotation's own fields from the note root, open the more-options menu on its row under `zt.annotations` and select <UiLabel name={m.workbench_explorer_menu_explore_annotation()} />.
+
+### Sections
+
+<UiLabel name={m.workbench_explorer_section_common()} /> leads every root and
+holds the fields most templates use. A note root and a note name root group the
+remaining fields under
+<UiLabel name={m.workbench_explorer_section_reference()} />,
+<UiLabel name={m.workbench_explorer_section_identifiers()} />,
+<UiLabel name={m.workbench_explorer_section_content()} />,
+<UiLabel name={m.workbench_explorer_section_organization()} />,
+<UiLabel name={m.workbench_explorer_section_links()} />, and
+<UiLabel name={m.workbench_explorer_section_record()} />. An annotation root
+groups them under <UiLabel name={m.workbench_explorer_section_annotation()} />,
+<UiLabel name={m.workbench_explorer_section_source()} />,
+<UiLabel name={m.workbench_explorer_section_organization()} />,
+<UiLabel name={m.workbench_explorer_section_links()} />, and
+<UiLabel name={m.workbench_explorer_section_record()} />. A citation root has no
+other section yet.
+
+Select a section heading to open or close that section. The button beside the pane's selection control opens every section or closes every one, tooltipped <UiLabel name={m.workbench_explorer_expand_all()} /> or <UiLabel name={m.workbench_explorer_collapse_all()} />. The pane menu carries the same action.
+
+Each top-level row shows a name a reader knows, and its raw path stays in the tooltip and in <UiLabel name={m.workbench_explorer_menu_copy_path()} />. Expand a row that holds an object or an array to read its members. A long value collapses to its first line until you select <UiLabel name={m.workbench_explorer_show_more()} />; <UiLabel name={m.workbench_explorer_show_less()} /> folds it back.
+
+### Filter fields
+
+Type in the search box to narrow the list. The box names the root it searches: <UiLabel name={m.workbench_fields_search_note()} />, <UiLabel name={m.workbench_fields_search_annotation()} />, <UiLabel name={m.workbench_fields_search_filename()} />, or <UiLabel name={m.workbench_fields_search_citation()} />.
+
+A query matches field names, keys, and values by case-insensitive substring. Matching rows and their ancestor chains open automatically. When nothing matches, the list reads <UiLabel name={m.workbench_fields_no_matches()} />.
 
 ## Copy paths and snippets
 
-Each row in the tree offers actions to copy data into your templates.
+Every row carries a menu. Open it from the row's action cluster, labelled <UiLabel name={m.workbench_explorer_row_actions()} />, or right-click the row.
 
 ### Copy path
 
-Click <UiLabel name={m.template_data_explorer_menu_copy_path()} /> in a row's more-options menu to copy the engine-neutral property path (e.g. `zt.creators[0].lastName`). The notice "Path copied" confirms the action.
+Select <UiLabel name={m.workbench_explorer_menu_copy_path()} /> to copy the engine-neutral property path, such as `zt.creators[0].lastName`.
 
 ### Copy value
 
-Click the <UiLabel name={m.template_data_explorer_menu_copy_value()} /> button on a row to copy its current value. Primitives copy verbatim; objects and arrays copy as JSON. The notice "Value copied" confirms the action.
+Select <UiLabel name={m.workbench_explorer_menu_copy_value()} /> to copy the row's current value. Primitives copy verbatim; objects and arrays copy as JSON. The item is unavailable while the row holds no value.
 
 ### Copy template snippets
 
-Below <UiLabel name={m.template_data_explorer_menu_copy_path()} />, the menu offers ready-to-use template snippets wrapped in the correct syntax:
+The same menu offers ready-to-use snippets in the syntax of your template:
 
-- <UiLabel name={m.template_data_explorer_menu_copy_output()} />: renders the value (e.g. `{{ zt.title }}`).
-- <UiLabel name={m.template_data_explorer_menu_copy_if_present()} />: wraps the
-  value in a conditional block.
-- <UiLabel name={m.template_data_explorer_menu_copy_loop()} />: iterates over an
+- <UiLabel name={m.workbench_explorer_menu_copy_output()} /> renders the value, for example `{{ zt.title }}`.
+- <UiLabel name={m.workbench_explorer_menu_copy_if_present()} /> wraps the value
+  in a conditional block.
+- <UiLabel name={m.workbench_explorer_menu_copy_loop()} /> iterates over an
   array node.
-- <UiLabel name={m.template_data_explorer_menu_copy_joined()} />: joins an array
-  into a delimiter-separated string.
+- <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> joins an array into
+  a delimiter-separated string.
 
-Array nodes show <UiLabel name={m.template_data_explorer_menu_copy_loop()} /> and <UiLabel name={m.template_data_explorer_menu_copy_joined()} />. Non-array nodes show <UiLabel name={m.template_data_explorer_menu_copy_output()} /> and <UiLabel name={m.template_data_explorer_menu_copy_if_present()} />.
+An array node offers <UiLabel name={m.workbench_explorer_menu_copy_loop()} />, and <UiLabel name={m.workbench_explorer_menu_copy_joined()} /> where its elements join into text. Every other node offers <UiLabel name={m.workbench_explorer_menu_copy_output()} /> and <UiLabel name={m.workbench_explorer_menu_copy_if_present()} />.
 
-When <UiLabel name={m.settings_template_js_enable_name()} /> is enabled, these snippet items split into <UiLabel name={m.template_data_explorer_submenu_liquid()} /> and <UiLabel name={m.template_data_explorer_submenu_eta()} /> submenus so you can pick the syntax matching your template. When disabled, Liquid snippets appear inline with no submenu.
+With <UiLabel name={m.settings_template_js_enable_name()} /> on, the snippet items sit in two submenus, captioned "Liquid" and "Eta", so you can pick the syntax your template uses. With the gate off, the Liquid items appear directly in the menu.
 
-A successful copy shows the notice "Snippet copied."
+A successful copy shows the notice <UiLabel name={m.workbench_field_copy_done()} />. A failed copy shows <UiLabel name={m.workbench_field_copy_failed()} />.
 
 <Callout type="info" title="Reporting a template problem">
   To send this data with a bug report, follow [Template
@@ -154,7 +182,7 @@ A successful copy shows the notice "Snippet copied."
 <Cards>
   <Card
     title="Customize a template"
-    description="Create an editable template file and apply your changes."
+    description="Create an editable template document and apply your changes."
     href="/docs/how-to/customize-a-template"
   />
   <Card

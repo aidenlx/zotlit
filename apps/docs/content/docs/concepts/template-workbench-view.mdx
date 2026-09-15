@@ -44,7 +44,10 @@ The view groups these parts into six tabs:
 - <UiLabel name={m.workbench_tab_profile()} /> edits the profile's own name,
   description, and version.
 
-Select <UiLabel name={m.workbench_advanced()} /> to edit the complete profile document as Markdown, and <UiLabel name={m.workbench_basic()} /> to return. Those two modes exist for a profile document only.
+<UiLabel name={m.workbench_advanced()} /> is a toggle in the view header. Select
+it to show the whole profile document as Markdown source in place of the tabs,
+and select it again to return to the tabs. A citation text or a partial shows
+its source in its one tab, so the toggle is offered for a profile document only.
 
 ### Preview data [#preview-data]
 
@@ -86,19 +89,21 @@ While your vault holds a profile besides Default, the pane menu also offers <UiL
 
 Above the editor of a citation text or a partial, a caption names the document's language, <UiLabel name={m.workbench_name_language_liquid()} /> or <UiLabel name={m.workbench_name_language_eta()} />. The caption reports; it does not switch.
 
-To switch, open the pane menu and select <UiLabel name={m.template_workbench_change_language()} />, then the language you want. ZotLit rewrites the manifest key alone and translates no source. See [How templates work](/docs/concepts/how-templates-work#manifest).
+The pane menu carries <UiLabel name={m.template_workbench_change_language()} />, the switch between the two languages. ZotLit rewrites the manifest key alone and translates no source. See [How templates work](/docs/concepts/how-templates-work#manifest).
 
 A profile document sets its language on the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab instead, under <UiLabel name={m.workbench_name_language_heading()} />.
 
 ## Open the view [#open]
 
-- For a profile: select <UiLabel name={m.settings_template_customize()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />.
-- For the citation text: run <Command inline name={m.command_customize_citation_text_name()} />, or select <UiLabel name={m.template_workbench_open_citation()} /> from the pane menu, or select <UiLabel name={m.settings_citation_text_open()} /> on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} />.
-- For a partial: select <UiLabel name={m.settings_partial_open()} /> on its row at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />.
+A view edits one template document, and each kind opens from the place that holds it:
 
-To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. ZotLit opens the profile with the note's paper selected for the preview.
+- A profile, from its row at <SettingsPath page={m.settings_page_profiles()} />, or from the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />.
+- The citation text, from the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} />.
+- A partial, from its row under <UiLabel name={m.settings_partials_heading()} /> at <SettingsPath page={m.settings_page_profiles()} />.
 
-See [Customize a template](/docs/how-to/customize-a-template) for complete steps.
+The profile a literature note already uses opens from that note.
+
+Each of those rows carries its own control, and [Customize a template](/docs/how-to/customize-a-template) names it and walks the steps.
 
 ## See also
 

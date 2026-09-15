@@ -1,0 +1,169 @@
+---
+title: "Template Workbench CLI"
+description: "Every live command in the ZotLit CLI namespace, with its synopsis, the guide topics, the answer envelope, and the diagnostic codes."
+---
+
+This reference lists the commands the Template Workbench registers in the Obsidian CLI, the answers they return, and the diagnostic codes they answer with.
+
+## Reaching the CLI [#reaching]
+
+The Template Workbench registers its commands with Obsidian's own CLI. The namespace is `zotlit`, the plugin ID. These commands are desktop-only, like ZotLit itself, which requires Obsidian 1.13.4 or later.
+
+Place the vault selector before the command name:
+
+```bash
+obsidian vault=MyVault zotlit:template-inspect
+```
+
+`vault=` is accepted only in that position. A `vault=` after the command name is refused, because Obsidian ignores it there and routes the call by the working directory or the focused window instead.
+
+These commands are not command-palette commands. [Commands](/docs/reference/commands) lists the commands that appear in the palette.
+
+Use `obsidian help zotlit` for the namespace overview, and `obsidian help zotlit:template-check` for the flags of one command.
+
+## Live commands [#commands]
+
+Five commands answer. The Template Workbench registers nine further commands that are retired, and those answer only with a refusal.
+
+| Command                   | Synopsis                                                                                                                                                                                                                                                                                | Returns                                                                                                                                                                                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zotlit:template-inspect` | `obsidian zotlit:template-inspect [note=<vault-path>] [profile=<id-or-label>] [document=<path-or-reference>] [source=full] [editor] [expect-source=<source-id>]`                                                                                                                        | Without a selector, the inventory of template documents by kind. With one selector, the document, its dependencies, source freshness, and problems, plus the complete source with `source=full`. Every answer also carries the vault and Zotero source identity and the profile diagnostics. |
+| `zotlit:template-check`   | `obsidian zotlit:template-check [profile=<id-or-label>] [key=<indexed-key>] [output=all]`<br />`obsidian zotlit:template-check draft=/absolute/path/draft.md [profile=<id-or-label>] [key=<indexed-key>]`<br />`obsidian zotlit:template-check attempt=<id> evidence=full [output=all]` | The status of every checked component, the input revisions and source freshness, the attempt identity, and the outputs the call disclosed. It answers with a diagnostic when it refuses the document identity.                                                                               |
+| `zotlit:template-status`  | `obsidian zotlit:template-status`                                                                                                                                                                                                                                                       | The plugin version, the vault and Zotero source identity, the JavaScript Templates gate, the status of each template document, the legacy template slots while a conversion is pending, and every profile with its bindings.                                                                 |
+| `zotlit:template-data`    | `obsidian zotlit:template-data root=<note\|annotation\|filename\|citation> (key=<indexed-key> \| note=<vault-path> \| example=<example-id>) [query=<words> \| path=<zt.path> \| full] [format=json] [expect-source=<source-id>]`                                                        | The template data of one root, under `zt`. `query`, `path`, and `full` widen the answer to focused discovery.                                                                                                                                                                                |
+| `zotlit:template-guide`   | `obsidian zotlit:template-guide [topic=<name>]`                                                                                                                                                                                                                                         | The quickstart, or one guide topic, as plain text.                                                                                                                                                                                                                                           |
+
+A check runs every component regardless of `output`. `output` decides only which outputs the answer discloses, so a compact answer is not a check that stopped early.
+
+An indexed key is a Zotero item key of eight characters, with an optional group suffix, as in `ABCD1234g118`. [Copy a Zotero key](/docs/how-to/explore-template-data#indexed-key) describes the form.
+
+## Guide topics [#topics]
+
+`obsidian zotlit:template-guide` without a topic prints the quickstart. With `topic=<name>` it prints one reference section. A topic name outside this list is refused.
+
+| Topic             | Covers                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| No topic          | The workflow, the synopsis, the identity and output rules, and the topic index.                   |
+| `inspect`         | Target selection, source revisions and freshness, the inspect flags, and the inspect diagnostics. |
+| `check`           | Create and update checks, baselines, drafts, output disclosure, and retained attempts.            |
+| `data`            | The `template-data` synopsis, each root, focused discovery, and the serialization markers.        |
+| `frontmatter`     | Managed frontmatter entries, JSON-e and spread entries, merge strategies, and reserved keys.      |
+| `profiles`        | The profile documents, their create and update semantics, and drafts.                             |
+| `citations`       | Citation Variants and the built-in example sets.                                                  |
+| `partials`        | Shared Partials, their caller roots, and their reserved names.                                    |
+| `troubleshooting` | YAML repair, source freshness, reading a failed check, and legacy conversion.                     |
+| `liquid`          | The supported Liquid tags and filters.                                                            |
+| `eta`             | Eta templates and the JavaScript Templates gate.                                                  |
+
+## Retired commands [#retired]
+
+Nine commands remain registered so that a call to them answers usefully instead of failing as an unknown command. Each one answers `ok: false` with the `COMMAND_RETIRED` diagnostic, and carries the description "Retired: use template-inspect, template-data, and template-check". Every flag they once carried is now optional and described as a retired parameter.
+
+| Retired command                   | Replaced by                                                                |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| `zotlit:template-schema`          | `zotlit:template-inspect` and `zotlit:template-data`                       |
+| `zotlit:template-render`          | `zotlit:template-check`                                                    |
+| `zotlit:template-document-render` | `zotlit:template-check`                                                    |
+| `zotlit:template-source`          | `zotlit:template-inspect source=full`                                      |
+| `zotlit:frontmatter-status`       | `zotlit:template-check output=frontmatter`                                 |
+| `zotlit:frontmatter-eval`         | `zotlit:template-check output=frontmatter`                                 |
+| `zotlit:frontmatter-set`          | Edit the profile document, then `zotlit:template-check output=frontmatter` |
+| `zotlit:frontmatter-remove`       | Edit the profile document, then `zotlit:template-check output=frontmatter` |
+| `zotlit:frontmatter-reorder`      | Edit the profile document, then `zotlit:template-check output=frontmatter` |
+
+The replacement path is the same for all nine. Select the document with `zotlit:template-inspect`, edit the [profile document](/docs/reference/templates/profile-document) with file tools, and verify the result with `zotlit:template-check`. Managed frontmatter is a list in the profile document manifest, not a setting.
+
+## Contract version [#contract-version]
+
+The namespace declares its own contract version, currently 7, once, with the answer envelope that every Template Workbench command answers through. Every answer carries it as `contractVersion`, the first field of the answer. Each ZotLit CLI namespace versions its contract on its own, so this number does not track any other namespace.
+
+An installed skill states the version it was written against. Compare that pin with the `contractVersion` of the first answer. When the two differ, the skill is the stale one: read the live guide again, starting with `obsidian zotlit:template-guide`, and follow the live contract rather than the skill.
+
+## Answer envelope [#envelope]
+
+Every answer except a successful `zotlit:template-guide` is a JSON string. The first three fields are always present:
+
+```json
+{
+  "contractVersion": 7,
+  "command": "zotlit:template-check",
+  "ok": true
+}
+```
+
+| Field             | Present                       | Meaning                                                                            |
+| ----------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
+| `contractVersion` | Every answer                  | The contract version of this namespace.                                            |
+| `command`         | Every answer                  | The command that answered.                                                         |
+| `ok`              | Every answer                  | Whether the call succeeded. The rest of the answer is discriminated on this field. |
+| `diagnostic`      | Failures                      | The fault, described below. A success never carries it.                            |
+| `request`         | When a selector was resolved  | The parsed request, echoed back.                                                   |
+| `identity`        | When identity was resolved    | `vault.name`, `vault.path`, `source.id`, and `source.databasePath`.                |
+| `template`        | When the command defines one  | The template the answer concerns.                                                  |
+| `warnings`        | When the command defines them | Non-fatal notes about the answer.                                                  |
+
+The success and failure tails are separate shapes, so a failure cannot carry a result and a success cannot carry a diagnostic. When a call fails before the command resolves the vault and the Zotero source, the answer carries no `identity`.
+
+Verify `identity.vault` and `identity.source` on every answer, and pass `expect-source=<identity.source.id>` when inspecting, discovering data, or running a new check. A supplied value that differs from the connected source answers `TARGET_MISMATCH`.
+
+`zotlit:template-guide` prints plain text on success, not an envelope. Its failures are envelopes.
+
+`zotlit:template-inspect` and `zotlit:template-check` build their own answers with the same three leading fields, and print a single line of JSON rather than the indented form the other commands use.
+
+### Diagnostic fields
+
+| Field     | Meaning                                                                                                     |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| `code`    | The stable code, from the registry below.                                                                   |
+| `message` | What went wrong, naming the offending parameter, path, key, or template.                                    |
+| `hint`    | The recovery action for the code.                                                                           |
+| `details` | Optional context: `parameter`, a source expectation (`target`, `expected`, `actual`), `key`, or `template`. |
+
+Every code in the registry is declared together with its recovery action, and every diagnostic carries that action as `hint`. A `hint` is therefore always present on a registry code, and the caller follows it.
+
+## Diagnostic codes [#diagnostic-codes]
+
+| Code                            | Meaning                                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| `COMMAND_RETIRED`               | The command is retired from template document authoring.                                      |
+| `INVALID_SELECTOR`              | A parameter is missing, unknown, or holds a value the command does not accept.                |
+| `TARGET_MISMATCH`               | The connected Zotero source differs from `expect-source`.                                     |
+| `TEMPLATE_NOT_READY`            | Template compilation had not settled, or failed to start.                                     |
+| `KEY_NOT_FOUND`                 | The indexed key is not in the connected Zotero source.                                        |
+| `NO_PARENT_ITEM`                | The selected object has no parent item.                                                       |
+| `ANNOTATION_REQUIRED`           | The annotation root needs an Annotation key.                                                  |
+| `ANNOTATION_ATTACHMENT_MISSING` | The Annotation's parent Attachment is missing.                                                |
+| `ETA_OPT_IN_REQUIRED`           | The source needs JavaScript Templates, which is off on this device.                           |
+| `TEMPLATE_COMPILE_ERROR`        | The template source does not compile.                                                         |
+| `TEMPLATE_RENDER_ERROR`         | An expression failed while the template rendered.                                             |
+| `EXPRESSION_COMPILE_ERROR`      | A managed frontmatter expression does not compile.                                            |
+| `RESERVED_KEY`                  | The key is managed by ZotLit. The retired frontmatter commands only.                          |
+| `FIELD_NOT_FOUND`               | The key is not a configured managed frontmatter field. The retired frontmatter commands only. |
+| `DOCUMENT_NOT_FOUND`            | A configured template document is missing.                                                    |
+| `UNKNOWN_PROFILE_STAMP`         | The `zotlit-profile` stamp of a note does not resolve.                                        |
+| `DUPLICATE_MANAGED_BLOCK`       | The document carries more than one managed block.                                             |
+| `MISSING_ANNOTATION_SECTION`    | The document has no standalone `--- zotlit:annotation ---` header.                            |
+| `DUPLICATE_ANNOTATION_SECTION`  | The document carries more than one `--- zotlit:annotation ---` header.                        |
+| `UNKNOWN_SECTION_HEADER`        | A section header is not the exact standalone `--- zotlit:annotation ---` line.                |
+| `RESERVED_ANNOTATION_PARTIAL`   | The manifest declares a partial named `annotation`, which the Annotation Section reserves.    |
+| `DOCUMENT_INVALID`              | The document failed validation.                                                               |
+| `RESERVED_PARTIAL_NAME`         | A Shared Partial file uses a reserved name.                                                   |
+| `MISSING_PARTIAL`               | A called Shared Partial has no file.                                                          |
+| `BUNDLED_PARTIAL`               | A partial is still carried in a profile document manifest.                                    |
+
+`zotlit:template-inspect` and `zotlit:template-check` declare further codes in their own guide topics, among them `AMBIGUOUS_TARGET`, `TARGET_NOT_FOUND`, `NOT_LITERATURE_NOTE`, `SOURCE_NOT_LOADED`, `SOURCE_READ_FAILED`, `SOURCE_SUPERSEDED`, `EDITOR_TARGET_MISMATCH`, `INVALID_PROFILE_ID`, `PROFILE_ID_MISMATCH`, `ATTEMPT_NOT_FOUND`, `DRAFT_READ_FAILED`, `BASELINE_READ_FAILED`, and `BASELINE_SUPERSEDED`. Read `topic=inspect` and `topic=check` for those. One code, `duplicate-literature-notes`, is lower case as it is raised.
+
+## Refusals [#refusals]
+
+`zotlit:template-check` refuses a document whose identity your vault rejects, rather than reporting a check that passed. A refusal is not a failed check, and the answer says which one it is.
+
+| Shape                  | Raised when                                    | Carries                                                                                                   |
+| ---------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Refusal before parsing | The rule reads the filename, so no check runs. | No `checks` field. `RESERVED_PARTIAL_NAME` has this shape.                                                |
+| Refusal from parsing   | The manifest ID fails the profile ID rule.     | The `checks` map, with the failing check. `INVALID_PROFILE_ID` and `PROFILE_ID_MISMATCH` have this shape. |
+
+## Data access [#data-access]
+
+The CLI reads Zotero metadata and annotation text, and renders templates in memory. No check writes a note, changes a profile, or imports an attachment, and the preview commands write no template document, note, or setting.
+
+Your agent edits vault files through its own file tools, so those edits change the selected vault. See [Template Workbench](/docs/concepts/template-workbench) for the workflow, and [Install the ZotLit skill](/docs/install-skill) for the skill that drives this CLI.

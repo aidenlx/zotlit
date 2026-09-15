@@ -1,0 +1,182 @@
+---
+title: "Profile document"
+description: "The format of a profile document: its manifest keys, note source, managed block, and Annotation Section."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+This page documents the profile document: the file that holds one profile in full, its manifest keys, and its fixed document structure.
+
+## What a profile document is [#what-a-profile-document-is]
+
+One profile is one file. ZotLit finds profiles by scanning the template folder, and every `zotlit-profile.<slug>.md` there is a profile as soon as it exists. Nothing installs, registers, or points at a document.
+
+| Property     | Value                                    |
+| ------------ | ---------------------------------------- |
+| Filename     | `zotlit-profile.<slug>.md`               |
+| Location     | a direct child of the template folder    |
+| Identity     | the `id` key of the manifest             |
+| Written into | notes stamped with that `id` at creation |
+
+The template folder is the one set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat, so a `zotlit-` file in a subfolder is an ordinary note.
+
+The `<slug>` is a readable convenience: ZotLit derives it from the profile label when it creates the file and never reads it back. Renaming the file keeps the profile, its settings, and its notes, because identity lives in the manifest.
+
+A document whose manifest fails validation, and documents that share an `id`, are excluded from the profile registry. Their Profile Match is inert, and <SettingsPath page={m.settings_page_profiles()} /> lists them under <UiLabel name={m.settings_profile_excluded_heading()} />.
+
+The Default profile is the one exception. It is a settings record rather than a file until you create its document.
+
+The <UiLabel name={m.settings_profile_document_name()} /> row on the main settings page carries two actions. <UiLabel name={m.settings_profile_edit()} /> writes `zotlit-profile.default.md` in the template folder and opens it. The file carries `id: default`, and may carry no bindings and no `match`. <UiLabel name={m.settings_profile_document_restore()} /> moves the file to Obsidian's trash and returns the profile to the built-in template.
+
+## Document structure [#document-structure]
+
+A profile document has four parts, in this order: the manifest, the note source, an optional managed block, and the Annotation Section.
+
+```markdown
+---
+id: V1StGXR8Z5jd
+name: Books
+version: 1.0.0
+contract: 3
+filename: "Books - {{ zt.title }}"
+---
+
+# {{ zt.title }}
+
+{% managed %}
+Citation key: {{ zt.citationKey }}
+{% endmanaged %}
+
+--- zotlit:annotation ---
+{% bq %}
+{{ zt.text }}
+{% endbq %}
+```
+
+| Part               | Required | Boundaries                                                               |
+| ------------------ | -------- | ------------------------------------------------------------------------ |
+| Manifest           | Yes      | The YAML between the opening `---` line and the next line that is `---`. |
+| Note source        | No       | Everything between the manifest and the Annotation Section header.       |
+| Managed block      | No       | Zero or one `{% managed %}` block inside the note source.                |
+| Annotation Section | Yes      | From the header line through the end of the file.                        |
+
+The parts follow these rules.
+
+- The first line of the file is `---`, and a later line consisting of `---` closes the manifest. A document with no manifest, or with an unclosed one, is an error. Duplicate YAML keys are rejected.
+- The note source renders in full when ZotLit creates or overwrites the note.
+- The Annotation Section header is the exact standalone line `--- zotlit:annotation ---`: at the start of a line, with nothing else on it.
+- The Annotation Section runs to the end of the file, and an empty section is valid. It renders once per annotation, with the annotation as `zt`; see the [Data reference](/docs/reference/templates/data).
+- The header is found line by line, before Markdown or template syntax is read. A line inside a fenced code block, or inside a raw or comment region, still starts the section.
+- A missing header, a second header, and any other line that begins with `--- zotlit:` are errors, an explicit note header among them.
+- The manifest's `language` covers the note source, the managed block, the Annotation Section, and the `filename` template. The Annotation Section renders in the profile's language. A carried partial declares its own language.
+
+## Manifest keys [#manifest-keys]
+
+The manifest is a strict mapping. Any key that this table does not list fails validation. Every key below is accepted and validated by the loader; `Read by` says what acts on the value.
+
+- **Notes**: the note pipeline or the profile registry reads it. It changes what ZotLit writes into a note, or which profile a note resolves to.
+- **Editor**: the Template Workbench, the profile share sheet, or the profile import sheet reads or edits it. No note operation consults it.
+- **Web Workbench**: only the web Workbench acts on it. The desktop app shows the value read-only, and no note operation consults it. This release ships with the web Workbench disabled.
+
+| Key                           | Type                             | Required | Read by       | Meaning                                                                                                                                      |
+| ----------------------------- | -------------------------------- | -------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                          | string                           | Yes      | Notes         | The profile's identity: twelve letters or digits, or `default` for the Default profile.                                                      |
+| `name`                        | string                           | Yes      | Notes         | The profile's label: shown in profile lists and written into the note's profile stamp.                                                       |
+| `version`                     | string                           | Yes      | Editor        | The document's own version. The share sheet writes it.                                                                                       |
+| `author`                      | string                           | No       | Editor        | Metadata carried when the profile is shared.                                                                                                 |
+| `description`                 | string                           | No       | Editor        | Metadata carried when the profile is shared.                                                                                                 |
+| `contract`                    | integer, 1 or more               | Yes      | Web Workbench | The Template Contract version the document targets. The current version is 3, and the web Workbench refuses a document that targets another. |
+| `minAppVersion`               | string                           | No       | Web Workbench | Oldest ZotLit version the document needs. An older build does not open or save the document in the web Workbench.                            |
+| `sampleItemType`              | string                           | No       | Editor        | Zotero item type the Workbench previews with. The desktop Workbench edits the value; only the web Workbench picks a sample item by type.     |
+| `filename`                    | template source                  | Yes      | Notes         | Note-name template. Its output becomes the filename of a new literature note.                                                                |
+| `match`                       | string, or an `and` or `or` list | No       | Notes         | Profile Match conditions. See [Profile Match](/docs/reference/templates/profile-match).                                                      |
+| `folder`                      | string                           | No       | Notes         | Binding: folder for literature notes.                                                                                                        |
+| `citationStyle`               | string or `null`                 | No       | Notes         | Binding: CSL style ID. `null` selects ZotLit's embedded style.                                                                               |
+| `importFolder`                | string                           | No       | Notes         | Binding: folder for imported Zotero notes.                                                                                                   |
+| `importColoredHighlights`     | boolean                          | No       | Notes         | Binding: whether imported highlights use color syntax.                                                                                       |
+| `importAnnotationsAsTemplate` | boolean                          | No       | Notes         | Binding: whether imported annotation paragraphs render from the profile's Annotation Section.                                                |
+| `language`                    | `liquid` or `eta`                | No       | Notes         | Rendering language of the document's own sources. Default `liquid`.                                                                          |
+| `partials`                    | list of name, language, source   | No       | Notes         | Partial sources carried inside the document. They render with it, and unpack into partial files on import.                                   |
+| `frontmatter`                 | list of entries                  | No       | Notes         | Managed frontmatter properties, in write order.                                                                                              |
+
+These constraints apply:
+
+- The Default profile document (`id: default`) carries no bindings and no `match`. Both are validation errors.
+- Names in `partials` are unique within one document, and `annotation` is refused, because each profile's Annotation Section answers to that name.
+- Static `frontmatter` keys are unique within one document and cannot be one of ZotLit's reserved keys.
+
+## Bindings [#bindings]
+
+Five manifest keys bind a profile to vault-wide behavior. Each one writes the same record as the matching settings row.
+
+| Key                           | Setting                                                               | Value                                                |
+| ----------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+| `folder`                      | <UiLabel name={m.settings_profile_folder_name()} />                   | Folder path.                                         |
+| `citationStyle`               | <UiLabel name={m.settings_citation_references_style_name()} />        | CSL style ID, or `null` for ZotLit's embedded style. |
+| `importFolder`                | <UiLabel name={m.settings_note_import_folder_name()} />               | Folder path.                                         |
+| `importColoredHighlights`     | <UiLabel name={m.settings_note_import_colored_highlights_name()} />   | `true` or `false`.                                   |
+| `importAnnotationsAsTemplate` | <UiLabel name={m.settings_note_import_annotations_template_name()} /> | `true` or `false`.                                   |
+
+A binding is sparse over the Default profile's record. A document that leaves a key out inherits the value from settings; a document that sets one overrides it for the notes that use that profile. The inherited values are the rows on the main settings page, listed in [Settings](/docs/reference/settings).
+
+## Managed frontmatter entries [#managed-frontmatter-entries]
+
+The `frontmatter` list holds one entry per property ZotLit writes into a literature note's YAML frontmatter, in write order. Each entry declares one value member, and the member's name is the language it evaluates in.
+
+| Member  | Value                                                              |
+| ------- | ------------------------------------------------------------------ |
+| `expr`  | One Liquid value expression.                                       |
+| `value` | One JSON-e template.                                               |
+| `js`    | One JavaScript expression. Inert while the JavaScript gate is off. |
+
+An entry also carries `key`, the property name, and `merge`, which is `replace` (the default), `append`, or `keep`. An entry without `key` is a spread entry: its value must produce a string-keyed mapping, and every produced key becomes a property at that position. A spread entry cannot use `expr`.
+
+See [Frontmatter](/docs/reference/templates/frontmatter) for the entry forms, the merge strategies, and the reserved keys.
+
+## The managed block [#the-managed-block]
+
+The note source may hold one `{% managed %}` block, closed by `{% endmanaged %}`. Both tags are the same in Liquid and in Eta.
+
+The block renders in isolation: variables assigned outside it are not visible inside it. That is what makes an update-time render produce the same text as a create-time render. On create, the block renders in place in the body. On update, only the block re-renders, and its output refills the note's managed region.
+
+Zero blocks is valid. A body without a block is static, and updates to such a note touch frontmatter only. Two blocks, an unclosed block, and an unmatched `{% endmanaged %}` each fail validation.
+
+The markers ZotLit writes around the block's output in the note, `%%zt-managed%%` and `%%/zt-managed%%`, belong to the note rather than to the document. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region).
+
+## File naming and classification [#file-naming-and-classification]
+
+The template folder classifies every `zotlit-` Markdown file by its filename alone. `zotlit-profile.<slug>.md` is a profile document, `zotlit-citation.md` is the citation text, and `zotlit-partial.<name>.md` is one partial. See [Template document naming](/docs/reference/templates/syntax#template-document-naming) for the full rule.
+
+A `zotlit-` Markdown file that fits none of these three patterns registers nothing. Settings gives it one row labelled <UiLabel name={m.settings_template_unrecognized_name()} />, naming its path. Files without the `zotlit-` prefix are ignored entirely.
+
+The 2.1 slot files (`zotlit-<name>.liquid.md` and `zotlit-<name>.eta.md`) still back the Default profile until the conversion runs. See [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates).
+
+See [How templates work](/docs/concepts/how-templates-work) for how the folder is discovered and how the three kinds relate.
+
+## See also
+
+<Cards>
+  <Card
+    title="Frontmatter"
+    description="Entry forms, merge strategies, and reserved keys for managed properties."
+    href="/docs/reference/templates/frontmatter"
+  />
+  <Card
+    title="Profile Match"
+    description="The condition language the match key carries."
+    href="/docs/reference/templates/profile-match"
+  />
+  <Card
+    title="Edit a profile as Markdown"
+    description="Edit the manifest, note source, and Annotation Section by hand."
+    href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="Profiles"
+    description="What a profile decides and how ZotLit selects one."
+    href="/docs/concepts/profiles"
+  />
+</Cards>

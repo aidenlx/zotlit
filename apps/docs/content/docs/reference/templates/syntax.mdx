@@ -9,7 +9,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and Template Document naming.
+This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and template document naming.
 
 All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
 
@@ -188,9 +188,9 @@ For an annotation value, the equivalent native Liquid syntax is:
 
 The named-parameter form, `{% render "annotation", zt: annotation %}`, is also equivalent.
 
-In a Literature Note Profile, the shortcut and native calls to `annotation` use the Profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the Profile's language and can be empty.
+In a literature note profile, the shortcut and native calls to `annotation` use the profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the profile's language and can be empty.
 
-Calls from shared partials use the calling Profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable Profile. Outside Profile rendering, the shortcut keeps the existing named-template lookup.
+Calls from shared partials use the calling profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable profile. Outside profile rendering, the shortcut keeps the existing named-template lookup.
 
 ### `{% bq %}`: blockquote block [#bq-blockquote-block]
 
@@ -511,15 +511,15 @@ A bare call reaches the partial with no `zt`, so every `zt` output in it comes o
 
 Completion inside `{% render "` and `{% include "` lists every partial in the vault. Accepting a name writes the whole call: `render` gets the `with zt as zt` clause, `include` needs none. A call you have already given arguments keeps them, and only the name is replaced.
 
-## Template Document naming [#template-document-naming]
+## Template document naming [#template-document-naming]
 
-A Template Document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat. Files in subfolders are never read, and a file without the `zotlit-` prefix is ignored.
+A template document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat. Files in subfolders are never read, and a file without the `zotlit-` prefix is ignored.
 
 The filename prefix alone says what a document is:
 
 | Filename                   | Document                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------- |
-| `zotlit-profile.<slug>.md` | A Literature Note Profile: note name, folder, properties, body, and annotations |
+| `zotlit-profile.<slug>.md` | A literature note profile: note name, folder, properties, body, and annotations |
 | `zotlit-citation.md`       | The citation text, one per vault, under exactly this name                       |
 | `zotlit-partial.<name>.md` | One partial, registered under `<name>`                                          |
 

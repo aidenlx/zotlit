@@ -18,9 +18,9 @@ Open the command palette and run:
 
 <Command name={m.command_open_annot_view_name()} />
 
-The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view with a single click.
+The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view.
 
-By default, the view follows the active literature note. When no literature note is open, it shows: "Open a literature note to see annotations."
+By default, the view follows the active literature note. When no literature note is open, it shows <UiLabel name={m.annot_view_empty()} />
 
 ## Follow the active Zotero reader
 
@@ -30,7 +30,7 @@ The view can track which item is open in Zotero's PDF reader, updating automatic
   <Step>
     ### Enable the ZotLit server
 
-    Reader-following requires the ZotLit server. If the server is not enabled, the follow-reader button is disabled and its tooltip reads: "Enable the ZotLit server in settings to follow the Zotero reader."
+    Reader-following requires the ZotLit server. If the server is not enabled, the follow-reader button is disabled and its tooltip reads <UiLabel name={m.annot_view_follow_reader_disabled_tooltip()} />.
 
     See [Set up live updates](/docs/how-to/set-up-live-updates) to enable the server.
 
@@ -38,7 +38,7 @@ The view can track which item is open in Zotero's PDF reader, updating automatic
   <Step>
     ### Activate reader-following
 
-    In the annotation view header, click the follow-reader button. Its tooltip changes to "<UiLabel name={m.annot_view_follow_reader_active_tooltip()} />" while active.
+    In the annotation view header, select the follow-reader button. Its tooltip changes to "<UiLabel name={m.annot_view_follow_reader_active_tooltip()} />" while active.
 
     When you open or switch items in the Zotero reader, the annotation view updates to show that item's annotations.
 
@@ -57,11 +57,11 @@ The annotation view has three follow modes:
 | **Reader**         | Follows the item open in the Zotero PDF reader. Requires the ZotLit server. |
 | **Linked**         | Pinned to a manually chosen item.                                           |
 
-To pin the view to a specific item, click the link button (tooltip: "<UiLabel name={m.annot_view_link_tooltip()} />") and search for an item. Click unlink (tooltip: "<UiLabel name={m.annot_view_unlink_tooltip()} />") to return to the default note-following mode.
+To pin the view to a specific item, select the link button (tooltip: "<UiLabel name={m.annot_view_link_tooltip()} />") and search for an item. Select unlink (tooltip: "<UiLabel name={m.annot_view_unlink_tooltip()} />") to return to the default note-following mode.
 
 ## Pull annotations into a note
 
-Drag an annotation row from the sidebar and drop it into the editor. ZotLit renders the annotation through your `annotation` template and inserts the result at the drop position. Image excerpts are saved to the vault automatically.
+Drag an annotation row from the sidebar and drop it into the editor. ZotLit renders the annotation through the [profile](/docs/concepts/profiles) that governs the literature note of the annotation's item, or through the Default profile when that item has no note yet, and inserts the result at the drop position. Image excerpts are saved to the vault automatically.
 
 ### Context menu actions
 

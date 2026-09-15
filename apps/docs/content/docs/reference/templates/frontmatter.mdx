@@ -10,51 +10,89 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents how ZotLit manages YAML frontmatter on literature notes: system-managed fields, user-configured fields, merge strategies, and the behavior during note updates.
+This page documents how ZotLit manages YAML frontmatter on literature notes: the fields ZotLit owns, the managed fields a profile declares, merge strategies, and the behavior during note updates.
 
 For step-by-step configuration, see [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties).
 
-## System-managed field
+## System-managed fields
 
-ZotLit always writes `zotero-key`. User configuration cannot override it.
+ZotLit writes these keys itself. Managed frontmatter cannot target them.
 
-| Field        | Source          | Description                                                                         |
-| ------------ | --------------- | ----------------------------------------------------------------------------------- |
-| `zotero-key` | `zt.indexedKey` | Literature Note identity: `KEY` for My Library or `KEYgGROUPID` for group libraries |
+| Field            | Source                             | Description                                                                                                      |
+| ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `zotero-key`     | `zt.indexedKey`                    | Literature note identity: `KEY` for My Library or `KEYgGROUPID` for group libraries                              |
+| `zotlit-profile` | The profile that ran the operation | The profile that produced the note, as its name and 12-character ID. Absent when the Default profile produced it |
+| `zotlit-csl`     | The profile's citation style       | CSL ID the note's citations and references render with. Absent when the profile binds no style                   |
 
 ## User-configured fields
 
-Configured in the Profile's template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row at <SettingsPath /> with <UiLabel name={m.settings_template_customize()} />. Each field has four parts:
+Managed frontmatter is the ordered list of entries under the `frontmatter` key of a [profile document](/docs/reference/templates/profile-document)'s manifest. Each entry produces one property, or several at once.
 
-| Part                                                      | Description                                             |
-| --------------------------------------------------------- | ------------------------------------------------------- |
-| <UiLabel name={m.settings_frontmatter_key_name()} />      | The YAML property name written to frontmatter           |
-| <UiLabel name={m.settings_frontmatter_expr_name()} />     | Produces the value (evaluated in the declared language) |
-| <UiLabel name={m.settings_frontmatter_language_name()} /> | `liquid` or `javascript`                                |
-| <UiLabel name={m.settings_frontmatter_merge_name()} />    | How the field behaves when refreshing an existing note  |
+Edit the list in the <UiLabel name={m.workbench_tab_properties()} /> tab of the Template Workbench. On the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />, select <UiLabel name={m.settings_profile_edit()} />.
+
+Each entry has an optional `key`, an optional `merge` strategy, and exactly one value member. The member name declares the language, so an entry carries no separate language setting:
+
+| Member  | Required         | Description                                                                                  |
+| ------- | ---------------- | -------------------------------------------------------------------------------------------- |
+| `key`   | No               | The YAML property name written to the note. Omit it for a spread entry                       |
+| `expr`  | One of the three | A Liquid value expression                                                                    |
+| `value` | One of the three | A JSON-e template                                                                            |
+| `js`    | One of the three | A JavaScript expression. Inert while the JavaScript Templates gate is off                    |
+| `merge` | No               | How the entry applies when the note is updated. `replace` (the default), `append`, or `keep` |
+
+One entry, with `key`, `value`, and `merge` written out:
+
+```yaml
+frontmatter:
+  - key: citekey
+    value: { "$eval": "zt.citationKey" }
+    merge: replace
+```
+
+The <UiLabel name={m.workbench_properties_format()} /> control names the value members in the editor: <UiLabel name={m.workbench_properties_format_value()} /> writes an `expr`, <UiLabel name={m.workbench_properties_format_rule()} /> writes a `value`, and <UiLabel name={m.workbench_properties_format_text()} /> writes a `value` that holds the text as written. A `js` entry is edited in the <UiLabel name={m.workbench_advanced()} /> view.
+
+### Spread entries
+
+An entry with no `key` is a spread entry. Its `value` or `js` member evaluates to a mapping, and every produced key lands as a field at that entry's position, under the entry's one merge strategy.
+
+```yaml
+frontmatter:
+  - value:
+      title: { "$eval": "zt.title" }
+      "zotero/${zt.itemType}": true
+```
+
+Inside a spread mapping, a false `$if` omits that key and leaves the note's value alone. `${}` interpolation builds a key name. A top-level `$let` shares one calculation across every produced field. A `$if` that is false at the root of the entry contributes an empty patch, so the entry writes nothing.
+
+`expr` always produces a single value, so a spread entry cannot use it: a keyless `expr` entry fails validation. A spread entry whose result is not a mapping, or that produces a reserved or empty key, refuses the whole operation. Diagnostics name the entry by its 1-based position in the list.
+
+In the editor, <UiLabel name={m.workbench_properties_add_spread()} /> adds a spread entry. Its row reads <UiLabel name={m.workbench_properties_spread()} /> and lists the properties it produced.
 
 ### Default fields
 
-Out of the box, ZotLit configures:
+Out of the box, the Default profile declares four entries. Its document reads:
 
-| <UiLabel name={m.settings_frontmatter_key_name()} /> | <UiLabel name={m.settings_frontmatter_expr_name()} /> | <UiLabel name={m.settings_frontmatter_language_name()} />   | <UiLabel name={m.settings_frontmatter_merge_name()} />    |
-| ---------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
-| `title`                                              | `zt.title`                                            | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
-| `related`                                            | `zt.relatedItems \| note_links`                       | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
-| `collections`                                        | `zt.collections \| collection_paths`                  | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
-| `citekey`                                            | `zt.citationKey`                                      | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
-
-The default `citekey` field has this definition:
-
-```js
-{ key: "citekey", expr: "zt.citationKey", merge: "replace", language: "liquid" }
+```yaml
+frontmatter:
+  - key: title
+    expr: zt.title
+    merge: replace
+  - key: related
+    expr: zt.relatedItems | note_links
+    merge: replace
+  - key: collections
+    expr: zt.collections | collection_paths
+    merge: replace
+  - key: citekey
+    value: { "$eval": "zt.citationKey" }
+    merge: replace
 ```
 
-It writes `citekey: null` when the Zotero item has no citation key. The field is ordinary Managed Frontmatter. You can edit or remove it like any other user-configured field.
+The `citekey` entry writes `citekey: null` when the Zotero item has no citation key. All four are ordinary managed frontmatter. You can edit or remove them like any other entry.
 
 ### Liquid expressions
 
-Liquid expressions use the same filter vocabulary as templates (see [Template syntax](/docs/reference/templates/syntax)). They return typed values (arrays, numbers, strings), not rendered text.
+An `expr` member is one value expression, not a template block. It uses the same filter vocabulary as templates (see [Template syntax](/docs/reference/templates/syntax)) and returns typed values (arrays, numbers, strings), not rendered text.
 
 ```
 zt.title                              -> "My Paper Title"
@@ -67,7 +105,7 @@ zt.date.year                          -> 2023
 
 ### JavaScript expressions
 
-JavaScript expressions require the [JavaScript Templates](/docs/concepts/javascript-templates) gate. Any valid JavaScript expression works, with the full note context available as `zt`:
+A `js` member holds a JavaScript expression. It requires the [JavaScript Templates](/docs/concepts/javascript-templates) gate. Any valid JavaScript expression works, with the full note context available as `zt`:
 
 ```
 zt.authors.map(c => c.fullName)   -> ["Jane Smith", "Bob Jones"]
@@ -79,17 +117,23 @@ The return value is serialized to YAML automatically.
 
 ## Merge strategies
 
-Each user field selects one of three merge strategies that control what happens when the note is updated:
+Each entry selects one merge strategy, set with <UiLabel name={m.workbench_properties_merge()} /> in the editor:
 
-| Strategy  | UI label                                                  | Behavior                                                                                                                                                                                                                                                                                            |
+| Strategy  | Editor option                                             | Behavior                                                                                                                                                                                                                                                                                            |
 | --------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `replace` | <UiLabel name={m.settings_frontmatter_merge_replace()} /> | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
-| `append`  | <UiLabel name={m.settings_frontmatter_merge_append()} />  | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
-| `keep`    | <UiLabel name={m.settings_frontmatter_merge_keep()} />    | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
+| `replace` | <UiLabel name={m.workbench_properties_merge_replace()} /> | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
+| `append`  | <UiLabel name={m.workbench_properties_merge_append()} />  | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
+| `keep`    | <UiLabel name={m.workbench_properties_merge_keep()} />    | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
+
+### Absent values
+
+Only a `value` entry can produce absence. A JSON-e template that renders nothing at its root, such as one whose top-level `$if` is false, contributes no value at all.
+
+Absence is the one way to delete a managed key. Under <UiLabel name={m.workbench_properties_merge_replace()} /> an absent value deletes the existing key; under <UiLabel name={m.workbench_properties_merge_append()} /> and <UiLabel name={m.workbench_properties_merge_keep()} /> it leaves the key as it stands.
 
 ### What counts as blank
 
-A value is blank (and treated as absent by <UiLabel name={m.settings_frontmatter_merge_append()} /> and <UiLabel name={m.settings_frontmatter_merge_keep()} />) when it is:
+A value is blank (and treated as absent by <UiLabel name={m.workbench_properties_merge_append()} /> and <UiLabel name={m.workbench_properties_merge_keep()} />) when it is:
 
 - `null` or undefined
 - An empty string (`""`)
@@ -98,40 +142,43 @@ A value is blank (and treated as absent by <UiLabel name={m.settings_frontmatter
 
 ### Undefined expressions
 
-When an expression returns `undefined`, the field is untouched regardless of the merge strategy. Only defined values (including explicit `null`) reach the merge logic.
+When a Liquid or JavaScript expression returns `undefined`, the field is untouched regardless of the merge strategy. Only defined values (including explicit `null`) reach the merge logic.
 
 ### Append arrays detail
 
-The <UiLabel name={m.settings_frontmatter_merge_append()} /> strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
+The <UiLabel name={m.workbench_properties_merge_append()} /> strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
 
 ## Reserved keys
 
-The following keys cannot be used in user field configuration:
+ZotLit refuses a static key, or a key a spread entry produces, from this set:
 
-| <UiLabel name={m.settings_frontmatter_key_name()} /> | Owner                                     |
-| ---------------------------------------------------- | ----------------------------------------- |
-| `zotero-key`                                         | System-managed (literature note identity) |
-| `zotero-note-key`                                    | Imported notes                            |
-| `zotero-lastmod`                                     | Imported notes                            |
+| Key               | What it protects                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `zotero-key`      | Literature note identity. The item key, with the group library ID appended for group libraries                    |
+| `zotlit-profile`  | The profile stamp that records which profile produced the note. Absence selects the Default profile               |
+| `zotero-note-key` | Identity of an imported child note. Kept apart from `zotero-key` so the note never registers as a literature note |
+| `zotero-lastmod`  | The source child note's `dateModified`, which batch re-import reads to skip unchanged notes                       |
+| `zotlit-csl`      | The CSL style ID one note's citations and references render with, set from the profile's citation style           |
 
-Attempting to use a reserved key is rejected in both the settings modal and the CLI.
+A profile document that declares a reserved or duplicate static key fails to load, and ZotLit excludes it from the profiles it offers instead of repairing it. See [Profiles](/docs/concepts/profiles).
 
 ## Validation
 
-The Template Workbench View and the Template Workbench CLI validate in this order:
+The <UiLabel name={m.workbench_tab_properties()} /> tab marks the row that failed with <UiLabel name={m.workbench_properties_row_problem()} />, and the row shows what went wrong in place of a value. The full explanation, which names the failing key and the entry's position, is in the <UiLabel name={m.workbench_problems_heading()} /> area of the editor.
 
-1. **Empty key:** "Enter a key."
-2. **Reserved key:** "'\{key\}' is managed by ZotLit and can't be used."
-3. **Duplicate key:** "'\{key\}' is already mapped."
-4. **Empty expression:** "Enter an expression."
+Validation has three stages:
 
-Expression syntax errors are detected when saving. Runtime errors (e.g. accessing a property on `null`) are reported per-field at render time. The failing field is skipped and remaining fields still evaluate.
+1. **The document.** A reserved static key, a duplicate static key, or a keyless `expr` entry stops the document from loading.
+2. **The expression.** An `expr` or `js` member that fails to compile, or a `value` that cannot evaluate, is a problem the editor names by key and entry position.
+3. **The write.** A `value` or `js` entry whose result falls outside the frontmatter value domain, a spread entry that produces no mapping, or a produced key that is reserved or empty refuses the whole operation.
+
+A refused operation writes nothing. ZotLit never applies a partial patch to a note. A `js` entry that is inert while the gate is off refuses by key, or by entry position when the entry is keyless.
 
 ## Merge on update
 
 When you run <Command inline name={m.command_update_note_name()} /> or <Command inline name={m.command_update_note_metadata_name()} />, ZotLit refreshes frontmatter:
 
-1. **User-configured fields** are re-evaluated and applied using their merge strategy.
+1. **Managed entries** are re-evaluated in the order they appear in the `frontmatter` list of the [profile document](/docs/reference/templates/profile-document) and applied with their merge strategy.
 2. **System identity** (`zotero-key`) is refreshed.
 3. **Unmanaged keys:** any frontmatter key not in the managed set (e.g. `aliases`, `tags`, `cssclasses`) is preserved. ZotLit never touches keys it does not own.
 
@@ -139,23 +186,25 @@ When you run <Command inline name={m.command_update_note_name()} /> or <Command 
 but applies the same frontmatter behavior: managed keys are refreshed and
 unmanaged keys are kept.
 
-ZotLit writes frontmatter through Obsidian's `processFrontMatter` API, which preserves key ordering and formatting for unmanaged keys. On a newly created note, user-configured fields are written in the order they appear in the Frontmatter settings list, followed by system fields.
+ZotLit writes frontmatter through Obsidian's `processFrontMatter` API, which preserves key ordering and formatting for unmanaged keys. On a newly created note, managed fields are written in the order they appear in the profile document's `frontmatter` list, followed by system fields. An entry later in the list wins the value, because each entry is applied over the value the entries before it produced.
 
-Removing `citekey` or another field from the Managed Frontmatter list does not delete existing values. Those values become unmanaged and remain in the note.
+Removing `citekey` or another entry from the `frontmatter` list does not delete existing values. Those values become unmanaged and remain in the note.
 
 ## JavaScript Templates gate
 
-A field's language determines its evaluation engine. The [JavaScript Templates](/docs/concepts/javascript-templates) gate controls whether `javascript` fields run:
+The [JavaScript Templates](/docs/concepts/javascript-templates) gate controls whether `js` entries run:
 
-- **Gate off:** JavaScript fields are inert. They are not evaluated. Any operation that depends on inert fields surfaces an error naming those fields. Liquid fields are unaffected.
-- **Gate on:** Both Liquid and JavaScript fields evaluate normally.
+- **Gate off:** `js` entries are inert. They are not evaluated. Any operation that depends on an inert entry surfaces an error naming those keys. `expr` and `value` entries are unaffected.
+- **Gate on:** `expr`, `value`, and `js` entries evaluate normally.
 
-The gate never reinterprets an expression. A Liquid field always evaluates as Liquid; a JavaScript field always evaluates as JavaScript.
+The gate never reinterprets a member. An `expr` entry always evaluates as Liquid, and a `js` entry always evaluates as JavaScript.
 
-<Callout type="warn" title="Inert fields block note operations">
-  When any frontmatter field is configured with language `javascript` and the
-  gate is off, literature note creation and update fail with an error listing
-  the inert fields. Either enable the gate or switch those fields to Liquid. See
+A spread entry that uses `js` is refused by its entry position while the gate is off, because its keys cannot be known until it runs.
+
+<Callout type="warn" title="Inert entries block note operations">
+  When any frontmatter entry uses the `js` member and the gate is off,
+  literature note creation and update fail with an error listing the inert keys.
+  Either enable the gate or rewrite those entries as `expr` or `value`. See
   [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
 </Callout>
 
@@ -163,9 +212,19 @@ The gate never reinterprets an expression. A Liquid field always evaluates as Li
 
 <Cards>
   <Card
+    title="Profile document"
+    description="The manifest keys, note source, and Annotation Section of a profile document."
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
     title="Configure frontmatter properties"
     description="Add, edit, and reorder frontmatter fields step by step."
     href="/docs/how-to/configure-frontmatter-properties"
+  />
+  <Card
+    title="Profiles"
+    description="How a profile selects a note's template, folder, and citation style."
+    href="/docs/concepts/profiles"
   />
   <Card
     title="Data reference"
@@ -176,10 +235,5 @@ The gate never reinterprets an expression. A Liquid field always evaluates as Li
     title="JavaScript templates"
     description="What the gate enables, risks, and disabled behavior."
     href="/docs/concepts/javascript-templates"
-  />
-  <Card
-    title="Enable JavaScript templates"
-    description="Steps to turn on the JavaScript Templates gate."
-    href="/docs/how-to/enable-javascript-templates"
   />
 </Cards>

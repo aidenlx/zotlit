@@ -1,0 +1,145 @@
+---
+title: "Use a different template for different notes"
+description: "Add a profile, give it a look of its own, set the conditions that select it, and check that ZotLit picks it for an item."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+A profile decides a literature note's name, folder, properties, and body. Add one when books, papers, or a single collection need a look of their own.
+
+## Add a profile
+
+<Steps>
+  <Step>
+    ### Open the Profiles page
+
+    In Obsidian, open <SettingsPath page={m.settings_page_profiles()} />. In the header of the <UiLabel name={m.settings_profile_other_heading()} /> list, select <UiLabel name={m.settings_profile_add()} />.
+
+  </Step>
+  <Step>
+    ### Name it and choose its folder
+
+    Enter the <UiLabel name={m.settings_profile_name_name()} /> and the <UiLabel name={m.settings_profile_folder_name()} /> for the notes it creates. The dialog reads <UiLabel name={m.settings_profile_destination_desc()} /> Select <UiLabel name={m.settings_profile_add()} /> to create the profile.
+
+    ZotLit writes `zotlit-profile.<slug>.md` into the folder named by <UiLabel name={m.settings_template_folder_name()} /> and opens the document in the Template Workbench View. The name you typed is the label you see in lists. The profile's actual identity is a separate ID inside the document, so renaming the file changes nothing. See [Profiles](/docs/concepts/profiles) for what the document carries.
+
+  </Step>
+  <Step>
+    ### Edit the note source and its properties
+
+    Select <UiLabel name={m.workbench_tab_note()} /> and edit the note source: the text every note from this profile begins with. Select <UiLabel name={m.workbench_tab_properties()} /> and set the YAML properties ZotLit writes at the top of each note.
+
+    The preview beside the editor renders your edits against a Zotero item. Choose another item at any time to check a different case.
+
+  </Step>
+  <Step>
+    ### Set the conditions that select it
+
+    Select <UiLabel name={m.workbench_tab_match()} />. The tab reads <UiLabel name={m.workbench_match_conditions_desc()} />
+
+    Select <UiLabel name={m.workbench_match_add_condition()} /> for the first condition, then pick what it tests: <UiLabel name={m.workbench_match_condition_item_type()} />, <UiLabel name={m.workbench_match_condition_collection()} />, <UiLabel name={m.workbench_match_condition_tag()} />, or <UiLabel name={m.workbench_match_condition_library()} />. A profile matches when <UiLabel name={m.workbench_match_match_all()} /> holds, or when <UiLabel name={m.workbench_match_match_any()} /> does. Switch between the two above the conditions.
+
+    The complete condition language, including the expression form, is in [Profile Match](/docs/reference/templates/profile-match).
+
+  </Step>
+  <Step>
+    ### Check the conditions against an item
+
+    Select <UiLabel name={m.workbench_choose_match_item()} /> and choose an item. The tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for that item.
+
+    The profile's row on the settings page then carries <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} /> while ZotLit can evaluate the conditions.
+
+  </Step>
+  <Step>
+    ### Create a note from the profile
+
+    Run <Command name={m.command_open_lit_note_name()} /> and select an item the profile matches. ZotLit creates the note from the profile and reports the match. The note records the profile in its `zotlit-profile` property.
+
+  </Step>
+</Steps>
+
+Existing notes keep the profile that made them. To move one note to this profile, run <Command inline name={m.command_switch_literature_note_profile_name()} /> from the note.
+
+## When two profiles match [#overlap]
+
+Two profiles can match the same item, and ZotLit does not choose for you when they do. The picker opens and reports <UiLabel name={m.modal_profile_problem_overlap({ profiles: "…" })} />. Its search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />, and every candidate that matches the item carries <UiLabel name={m.modal_profile_match_candidate()} />.
+
+Pick the profile you meant to use, or dismiss the picker to cancel the note. Narrowing the conditions on the <UiLabel name={m.workbench_tab_match()} /> tab is the durable fix.
+
+## When you pick a profile by hand [#manual]
+
+A profile you choose for the current operation wins over Profile Match, whatever the conditions say. [Profiles](/docs/concepts/profiles) holds the order ZotLit tries when it selects one.
+
+Your choice covers that one operation. The note records the profile that made it, and later updates read that record instead of the conditions.
+
+## Share the profile as one file [#share]
+
+A profile is a single document, so you can move it to another vault as one file, with the partials it calls travelling inside it. The [Profile document](/docs/reference/templates/profile-document) reference describes the document that travels and every key inside it.
+
+<Steps>
+  <Step>
+    ### Share the profile
+
+    On the profile's row, open <UiLabel name={m.workbench_more_actions()} /> and select <UiLabel name={m.settings_profile_share()} />. The share dialog collects the document and the partials it appears to call.
+
+  </Step>
+  <Step>
+    ### Choose what the file carries
+
+    Under <UiLabel name={m.profile_share_partials()} />, clear any partial you do not want to send; the ones the profile appears to call are already selected. <UiLabel name={m.profile_share_include_match()} /> carries the Profile Match to the receiving vault, and <UiLabel name={m.profile_share_folders()} /> adds your note folders to the file.
+
+  </Step>
+  <Step>
+    ### Copy it or save it
+
+    Select <UiLabel name={m.profile_share_copy()} /> to put the file on the clipboard, or <UiLabel name={m.profile_share_save()} /> to write it into a folder you choose. Both produce the same single document.
+
+  </Step>
+  <Step>
+    ### Import it in the receiving vault
+
+    Run <Command inline name={m.command_import_profile_name()} />, or select the import button in the header of the <UiLabel name={m.settings_profile_other_heading()} /> list. ZotLit then asks where the file is: <UiLabel name={m.profile_import_clipboard()} /> or <UiLabel name={m.profile_import_file()} />.
+
+  </Step>
+  <Step>
+    ### Read what the import dialog reports
+
+    The dialog previews the partials it will unpack into the template folder, the citation style, and the incoming Profile Match written out in words. <UiLabel name={m.profile_import_include_match()} /> imports the Match with the profile, so it selects notes in this vault too; turn it off to keep the profile for manual selection only. When the shared profile carries no Match, the dialog reads <UiLabel name={m.profile_match_absent()} /> and hides the toggle. Select <UiLabel name={m.profile_import_confirm()} /> to write the profile.
+
+  </Step>
+</Steps>
+
+## See also
+
+<Cards>
+  <Card
+    title="Profiles"
+    description="What a profile is, how one is chosen, and how a note keeps it."
+    href="/docs/concepts/profiles"
+  />
+  <Card
+    title="Profile Match"
+    description="The condition language that selects a profile automatically."
+    href="/docs/reference/templates/profile-match"
+  />
+  <Card
+    title="Profile document"
+    description="The manifest keys, the note source, and the Annotation Section."
+    href="/docs/reference/templates/profile-document"
+  />
+  <Card
+    title="Edit a profile as Markdown"
+    description="Edit the document directly, in the shape ZotLit enforces."
+    href="/docs/how-to/edit-a-profile-as-markdown"
+  />
+  <Card
+    title="Literature note profiles"
+    description="The Default profile, the profile list, and the Partials group."
+    href="/docs/reference/settings#profiles"
+  />
+</Cards>

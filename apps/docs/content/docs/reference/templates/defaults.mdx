@@ -136,7 +136,7 @@ The `pandoc_cite` filter behaves the same in both branches:
 | Missing citation key | Omits items whose `item.citationKey` is null. An empty array or all-null array renders nothing.                                                                                                      |
 | Form                 | `normal` always produces a bracketed Citation Cluster; `prefer-author-in-text` produces an author-in-text citation only when the first retained item has no prefix and does not suppress its author. |
 
-ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders — the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
+ZotLit normalizes the rendered citation to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders: the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
 
 Only the Liquid edition is built in. The same template in Eta reads:
 
@@ -170,7 +170,7 @@ In a Profile document: the `filename` key of its YAML manifest.
 
 ## Live recompilation
 
-Editing a Template Document in your vault triggers live recompilation through a file watcher. Changes take effect immediately, without reloading the plugin. Moving a document to trash returns its templates to the built-in defaults shown above.
+Editing a template document in your vault triggers live recompilation through a file watcher. Changes take effect immediately, without reloading the plugin. Moving a document to trash returns its templates to the built-in defaults shown above.
 
 ## See also
 

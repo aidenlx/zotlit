@@ -12,13 +12,15 @@ import { m } from "@/paraglide/messages.js";
 
 Use the Template Workbench View to change a literature note's name, folder, properties, body, or annotation format, to change the text a citation inserts, or to share a piece of template text between profiles.
 
+A profile is the document that authors one literature note. See [Profiles](/docs/concepts/profiles) for what a profile holds and how ZotLit chooses one. If your vault still holds 2.1 template files, [Migrate from 2.1 templates](/docs/how-to/migrate-from-2.1-templates) folds them into profile documents first.
+
 ## Edit a literature note profile
 
 <Steps>
   <Step>
     ### Open the profile
 
-    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_customize()} />.
+    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select its pencil button, tooltipped <UiLabel name={m.settings_profile_edit()} />.
 
     Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
 
@@ -46,7 +48,7 @@ Use the Template Workbench View to change a literature note's name, folder, prop
 
     Use the <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_name_and_folder()} /> tabs to edit the profile. The Default profile does not use <UiLabel name={m.workbench_tab_match()} /> conditions.
 
-    Check the <UiLabel name={m.profile_preview_name()} /> as you edit. Select <UiLabel name={m.workbench_advanced()} /> to edit the complete profile document as Markdown.
+    Check the <UiLabel name={m.profile_preview_name()} /> as you edit. <UiLabel name={m.workbench_advanced()} /> is a toggle: select it to edit the complete profile document as Markdown, and select it again to return to the tabs.
 
     The note name result is labeled <UiLabel name={m.workbench_name_filename_result()} />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
 
@@ -85,7 +87,7 @@ The **citation text** is one template document, `zotlit-citation.md`, that rende
   <Step>
     ### Edit the source
 
-    The document opens in the Template Workbench View on one <UiLabel name={m.workbench_tab_citation()} /> tab. There are no <UiLabel name={m.workbench_basic()} /> and <UiLabel name={m.workbench_advanced()} /> modes here: the tab is the source. A caption above the editor names the document's language.
+    The document opens in the Template Workbench View on one <UiLabel name={m.workbench_tab_citation()} /> tab. That tab is the source of the whole document, and the view offers no <UiLabel name={m.workbench_advanced()} /> toggle for it: the tab already shows everything the document holds. A caption above the editor names the document's language.
 
     The template receives `zt.variant`, `zt.citations`, and `zt.items`. See [Citation templates](/docs/reference/templates/data#citation-templates) for the fields on each cited item.
 
@@ -146,7 +148,7 @@ Liquid's `{% include %}` tag renders a partial with access to the caller's varia
 
 ### Preview and edit a partial [#preview-a-partial]
 
-In a profile's <UiLabel name={m.workbench_basic()} /> mode, a call with a plain quoted name — Liquid `render` or `include`, Eta `include(...)` — is drawn as a **Partial Placeholder**: a compact control carrying the partial's name, the rest of the arguments as written, <UiLabel name={m.workbench_partial_preview()} />, and <UiLabel name={m.workbench_partial_edit()} />. The preview arrow opens a read-only render of that partial below the line, using the data of the slice the call sits in. Put your cursor in the call and the placeholder turns back into plain source, so you can edit the arguments.
+In a profile's tabs, with <UiLabel name={m.workbench_advanced()} /> off, a call with a plain quoted name (Liquid `render` or `include`, Eta `include(...)`) is drawn as a **Partial Placeholder**: a compact control carrying the partial's name, the rest of the arguments as written, <UiLabel name={m.workbench_partial_preview()} />, and <UiLabel name={m.workbench_partial_edit()} />. The preview arrow opens a read-only render of that partial below the line, using the data of the slice the call sits in. Put your cursor in the call and the placeholder turns back into plain source, so you can edit the arguments.
 
 The five reserved names are never partial names, so none of them draws one: `{% render "annotation" %}` draws the annotation placeholder for the profile's annotation section, and a call on `filename`, `note`, `content`, or `citation` draws nothing. A call inside a fenced code block is prose about a call, and draws nothing either.
 
