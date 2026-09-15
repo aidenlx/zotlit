@@ -1,5 +1,5 @@
 // Companion navigation decides whether to open, update, or ask before creation.
-import type { App } from "obsidian";
+import type { App, PaneType } from "obsidian";
 
 import { getItemsByID } from "@zotlit/db";
 import type { Item, ItemRef } from "@zotlit/db";
@@ -37,8 +37,11 @@ export async function openCompanionNote(
     action: ProtocolAction;
     profile?: ProfileSelector;
     scope?: UpdateScope;
+    /** Absent replaces the last active tab, as an Obsidian URI without one does. */
+    paneType?: PaneType;
   },
 ): Promise<void> {
+  const pane = options.paneType ?? false;
   const target = await deps.noteFeature.resolveCompanionNote(ref.indexedKey, {
     profile: options.profile,
   });
@@ -49,7 +52,7 @@ export async function openCompanionNote(
   }
   if (target.outcome === "existing") {
     const file = resolveLiteratureNoteWithWarning(target.files)!;
-    await deps.app.workspace.openLinkText(file.path, "", false, {
+    await deps.app.workspace.openLinkText(file.path, "", pane, {
       active: true,
     });
     if (target.keptProfile || target.diagnostic) {
@@ -81,7 +84,7 @@ export async function openCompanionNote(
     direct: true,
   });
   if (file) {
-    await deps.app.workspace.openLinkText(file.path, "", false, {
+    await deps.app.workspace.openLinkText(file.path, "", pane, {
       active: true,
     });
   }

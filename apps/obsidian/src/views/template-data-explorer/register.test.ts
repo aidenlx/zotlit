@@ -94,3 +94,39 @@ it("creates an explicit Explorer instead of replacing a pinned or grouped pane",
     }),
   );
 });
+
+it.each(["tab", "split", "window"] as const)(
+  "puts the Explorer in a new %s the link names, leaving the sidebar one alone",
+  async (paneType) => {
+    vi.mocked(activeTemplateWorkbench).mockReturnValue(null);
+    const sidebar = { group: null, pinned: false, setViewState: vi.fn() };
+    const created = { setViewState: vi.fn(async () => {}) };
+    const getLeaf = vi.fn(() => created);
+    const getRightLeaf = vi.fn();
+    const revealLeaf = vi.fn();
+    const app = {
+      workspace: {
+        getLeavesOfType: () => [sidebar],
+        getLeaf,
+        getRightLeaf,
+        revealLeaf,
+      },
+    } as unknown as App;
+    await openTemplateDataExplorer(
+      app,
+      { itemIndexedKey: "PAPER002" },
+      {
+        paneType,
+      },
+    );
+    expect(getLeaf).toHaveBeenCalledExactlyOnceWith(paneType);
+    expect(getRightLeaf).not.toHaveBeenCalled();
+    expect(sidebar.setViewState).not.toHaveBeenCalled();
+    expect(created.setViewState).toHaveBeenCalledWith({
+      type: "zotlit-template-data-explorer",
+      active: true,
+      state: { itemIndexedKey: "PAPER002", zotlitLaunch: true },
+    });
+    expect(revealLeaf).toHaveBeenCalledWith(created);
+  },
+);

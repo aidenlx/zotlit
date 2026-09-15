@@ -1114,6 +1114,13 @@
   ],
   "zotero": {
     "prefs_pane_label": "ZotLit",
+    "prefs_open_section": "在 Obsidian 中打开",
+    "prefs_pane_type": "笔记打开位置",
+    "prefs_pane_type_active": { "label": "当前标签页" },
+    "prefs_pane_type_tab": { "label": "新标签页" },
+    "prefs_pane_type_split": { "label": "新标签页组" },
+    "prefs_pane_type_window": { "label": "新窗口" },
+    "prefs_pane_type_description": "文献笔记或模板数据浏览器在 Obsidian 中的打开位置。新窗口仅限桌面端。",
     "prefs_notify_section": "Obsidian 通知",
     "prefs_notify_enable": {
       "label": "启用"

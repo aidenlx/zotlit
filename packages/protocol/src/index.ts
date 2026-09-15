@@ -42,6 +42,7 @@ export {
   parseProtocolBatchQuery,
   parseProtocolQuery,
   parseUpdateAllProtocolQuery,
+  type PaneType,
   type ProtocolAction,
   protocolActionId,
   protocolActions,

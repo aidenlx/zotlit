@@ -67,7 +67,14 @@ export type FluentMessages = {
   "zotlit-prefs-notify-enable": never;
   "zotlit-prefs-notify-section": never;
   "zotlit-prefs-notify-url": never;
+  "zotlit-prefs-open-section": never;
   "zotlit-prefs-pane-label": never;
+  "zotlit-prefs-pane-type": never;
+  "zotlit-prefs-pane-type-active": never;
+  "zotlit-prefs-pane-type-description": never;
+  "zotlit-prefs-pane-type-split": never;
+  "zotlit-prefs-pane-type-tab": never;
+  "zotlit-prefs-pane-type-window": never;
   "zotlit-prefs-wal-checkpoint": never;
   "zotlit-prefs-wal-checkpoint-description": never;
   "zotlit-protocol-incompatible-message": never;

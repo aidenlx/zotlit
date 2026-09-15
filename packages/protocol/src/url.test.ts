@@ -97,6 +97,48 @@ describe("zotlit obsidian protocol", () => {
     ).toThrow();
   });
 
+  it.each(["tab", "split", "window"] as const)(
+    "carries paneType=%s to the receiver",
+    (paneType) => {
+      expect(
+        parseProtocolQuery({ item: "42", "source-id": SOURCE, paneType }),
+      ).toEqual({ item: 42, sourceId: SOURCE, scope: "full", paneType });
+    },
+  );
+
+  it("leaves paneType absent so the last active tab is replaced", () => {
+    expect(
+      parseProtocolQuery({ item: "42", "source-id": SOURCE }),
+    ).not.toHaveProperty("paneType");
+  });
+
+  it("rejects a paneType outside Obsidian's vocabulary", () => {
+    expect(() =>
+      parseProtocolQuery({
+        item: "42",
+        "source-id": SOURCE,
+        paneType: "popout",
+      }),
+    ).toThrow();
+  });
+
+  it.each(["tab", "split", "window"] as const)(
+    "builds + round-trips a %s link",
+    (paneType) => {
+      const url = buildProtocolUrl("open", 42, { sourceId: SOURCE, paneType });
+      expect(url).toBe(
+        `obsidian://zotlit/open?item=42&source-id=${SOURCE}&paneType=${paneType}`,
+      );
+      expect(parseProtocolQuery(decode(url))).toMatchObject({ paneType });
+    },
+  );
+
+  it("omits paneType from the link when the builder names no pane", () => {
+    expect(buildProtocolUrl("open", 42, { sourceId: SOURCE })).not.toContain(
+      "paneType",
+    );
+  });
+
   it("round-trips an explicit Literature Note Profile", () => {
     const url = buildProtocolUrl("update", 42, {
       sourceId: SOURCE,
@@ -284,8 +326,60 @@ describe("zotlit explore protocol", () => {
     expect(url).not.toContain("annotation");
   });
 
+  it("builds + round-trips a link with an anchor and a pane", () => {
+    const url = buildExploreProtocolUrl(42, {
+      sourceId: SOURCE,
+      annotation: "ABC23456",
+      paneType: "split",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/explore?item=42&source-id=${SOURCE}&annotation=ABC23456&paneType=split`,
+    );
+    expect(parseExploreProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      annotation: "ABC23456",
+      sourceId: SOURCE,
+      paneType: "split",
+    });
+  });
+
+  it("omits paneType when the builder names no pane", () => {
+    expect(buildExploreProtocolUrl(42, { sourceId: SOURCE })).not.toContain(
+      "paneType",
+    );
+  });
+
   it("rejects a missing item", () => {
     expect(() => parseExploreProtocolQuery({ "source-id": SOURCE })).toThrow();
+  });
+
+  it.each(["tab", "split", "window"] as const)(
+    "carries paneType=%s to the receiver",
+    (paneType) => {
+      expect(
+        parseExploreProtocolQuery({
+          item: "42",
+          "source-id": SOURCE,
+          paneType,
+        }),
+      ).toMatchObject({ paneType });
+    },
+  );
+
+  it("leaves paneType absent so the explorer keeps its usual placement", () => {
+    expect(
+      parseExploreProtocolQuery({ item: "42", "source-id": SOURCE }),
+    ).not.toHaveProperty("paneType");
+  });
+
+  it("rejects a paneType outside Obsidian's vocabulary", () => {
+    expect(() =>
+      parseExploreProtocolQuery({
+        item: "42",
+        "source-id": SOURCE,
+        paneType: "popout",
+      }),
+    ).toThrow();
   });
 
   it("rejects a missing source-id", () => {
