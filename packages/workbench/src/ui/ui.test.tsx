@@ -1296,8 +1296,9 @@ describe("the error report", () => {
     };
     const diagnoses = workbenchDiagnoses([], [first, second]);
     expect(diagnoses).toHaveLength(1);
-    const showProblem = vi.fn();
-    const publish = vi.fn();
+    const showProblem =
+      vi.fn<(id: string, occurrence?: RenderDiagnostic) => void>();
+    const publish = vi.fn<(diagnostics: readonly RenderDiagnostic[]) => void>();
     const result = failedRender(
       { sourceRevision: "1a2b3c4d", snapshotRevision: "r7" },
       second,

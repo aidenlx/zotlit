@@ -871,9 +871,11 @@ describe("ProfileService", () => {
       },
       "Scratch.md": { "zotlit-profile": BOOKS },
     };
+    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
     vi.mocked(app.metadataCache.getFileCache).mockImplementation((file) => ({
       frontmatter: frontmatters[file.path],
     }));
+    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
     vi.mocked(app.fileManager.processFrontMatter).mockImplementation(
       async (file, edit) => {
         edit(frontmatters[file.path]!);
@@ -899,9 +901,11 @@ describe("ProfileService", () => {
       "Paper.md": "Paper",
     });
     const { profile, vault, app } = fixture;
+    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
     vi.mocked(app.metadataCache.getFileCache).mockReturnValue({
       frontmatter: { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
     });
+    // oxlint-disable-next-line unbound-method -- `vi.mocked` reads the spy without calling it.
     vi.mocked(app.fileManager.processFrontMatter).mockRejectedValue(
       new Error("Read-only note"),
     );

@@ -4,6 +4,17 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { renderFailureDiagnostic } from "./attribution";
 
+/** The diagnostic `render` attributes to the thrown failure, or `null` when
+ *  rendering succeeded. Keeps the expectations below unconditional. */
+function diagnosticOf(source: string, render: () => void) {
+  try {
+    render();
+    return null;
+  } catch (error) {
+    return renderFailureDiagnostic(error, { source, language: "liquid" });
+  }
+}
+
 describe("render failure attribution", () => {
   it.each([
     "{% for annotation i zt.annotations %}{% endfor %}",
@@ -12,22 +23,16 @@ describe("render failure attribution", () => {
     "{% unknown_tag %}",
   ])("identifies Liquid syntax errors: %s", (source) => {
     const facade = new TemplateFacade();
-    expect.assertions(2);
-    try {
+    const diagnostic = diagnosticOf(source, () => {
       facade.define("note", source, "liquid");
       facade.render("note", {});
-    } catch (error) {
-      const diagnostic = renderFailureDiagnostic(error, {
-        source,
-        language: "liquid",
-      });
-      expect(diagnostic.code).toBe("liquid-syntax-error");
-      expect(diagnostic.engine).toEqual({
-        template: "note",
-        line: 1,
-        column: 1,
-      });
-    }
+    });
+    expect(diagnostic?.code).toBe("liquid-syntax-error");
+    expect(diagnostic?.engine).toEqual({
+      template: "note",
+      line: 1,
+      column: 1,
+    });
   });
 
   it.each([false, true])(
@@ -40,24 +45,16 @@ describe("render failure attribution", () => {
       if (resolved)
         facade.define("venue-line", '{{ "bad" | pandoc_cite }}', "liquid");
 
-      expect.assertions(3);
-      try {
-        facade.render("note", {});
-      } catch (error) {
-        const diagnostic = renderFailureDiagnostic(error, {
-          source,
-          language: "liquid",
-        });
-        expect(diagnostic.code).toBe(
-          resolved ? "render-error" : "missing-partial",
-        );
-        expect(diagnostic.callSite).toEqual(
-          resolved ? undefined : { from: 14, to: 39 },
-        );
-        expect(diagnostic.engine?.template).toBe(
-          resolved ? "venue-line" : "note",
-        );
-      }
+      const diagnostic = diagnosticOf(source, () => facade.render("note", {}));
+      expect(diagnostic?.code).toBe(
+        resolved ? "render-error" : "missing-partial",
+      );
+      expect(diagnostic?.callSite).toEqual(
+        resolved ? undefined : { from: 14, to: 39 },
+      );
+      expect(diagnostic?.engine?.template).toBe(
+        resolved ? "venue-line" : "note",
+      );
     },
   );
 
@@ -72,18 +69,12 @@ describe("render failure attribution", () => {
     facade.define("note", source, "liquid");
     facade.define("citation", citation, "liquid");
 
-    expect.assertions(3);
-    try {
-      facade.render("note", { citations: [] });
-    } catch (error) {
-      const diagnostic = renderFailureDiagnostic(error, {
-        source,
-        language: "liquid",
-      });
-      expect(diagnostic.code).toBe("render-error");
-      expect(diagnostic.engine?.template).toBe("citation");
-      expect(diagnostic.callSite).toEqual({ from: 0, to: source.length });
-    }
+    const diagnostic = diagnosticOf(source, () =>
+      facade.render("note", { citations: [] }),
+    );
+    expect(diagnostic?.code).toBe("render-error");
+    expect(diagnostic?.engine?.template).toBe("citation");
+    expect(diagnostic?.callSite).toEqual({ from: 0, to: source.length });
   });
 
   it.each(['{% render "citation" %}', '{% render "citation" with zt as zt %}'])(
@@ -92,18 +83,12 @@ describe("render failure attribution", () => {
       const facade = new TemplateFacade();
       facade.define("note", source, "liquid");
       facade.define("citation", "{{ zt.citations | pandoc_cite }}", "liquid");
-      expect.assertions(3);
-      try {
-        facade.render("note", { title: "A note root" });
-      } catch (error) {
-        const diagnostic = renderFailureDiagnostic(error, {
-          source,
-          language: "liquid",
-        });
-        expect(diagnostic.code).toBe("citation-data-mismatch");
-        expect(diagnostic.engine?.template).toBe("citation");
-        expect(diagnostic.callSite).toEqual({ from: 0, to: source.length });
-      }
+      const diagnostic = diagnosticOf(source, () =>
+        facade.render("note", { title: "A note root" }),
+      );
+      expect(diagnostic?.code).toBe("citation-data-mismatch");
+      expect(diagnostic?.engine?.template).toBe("citation");
+      expect(diagnostic?.callSite).toEqual({ from: 0, to: source.length });
     },
   );
 
@@ -112,16 +97,10 @@ describe("render failure attribution", () => {
     const facade = new TemplateFacade();
     facade.define("note", source, "liquid");
     facade.define("citation", "{{ zt.citations | tex_cite }}", "liquid");
-    expect.assertions(2);
-    try {
-      facade.render("note", { title: "A note root" });
-    } catch (error) {
-      const diagnostic = renderFailureDiagnostic(error, {
-        source,
-        language: "liquid",
-      });
-      expect(diagnostic.code).toBe("citation-data-mismatch");
-      expect(diagnostic.engine?.template).toBe("citation");
-    }
+    const diagnostic = diagnosticOf(source, () =>
+      facade.render("note", { title: "A note root" }),
+    );
+    expect(diagnostic?.code).toBe("citation-data-mismatch");
+    expect(diagnostic?.engine?.template).toBe("citation");
   });
 });

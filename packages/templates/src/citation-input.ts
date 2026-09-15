@@ -64,6 +64,7 @@ export function withCitationInputProvenance(
         );
         if (path[0] !== "zt" || path[1] !== "citations") continue;
         instrumented = true;
+        // oxlint-disable-next-line unbound-method -- called below as `render.call(this, ...)`, which rebinds it.
         const render = filter.render;
         filter.render = function* (value, context) {
           const entry = entries.get(context);
@@ -92,6 +93,7 @@ export function withCitationInputProvenance(
   return [
     {
       token: first.token,
+      // oxlint-disable-next-line require-yield -- Liquid reads the generator's return value, not its yields.
       *children() {
         return templates;
       },
