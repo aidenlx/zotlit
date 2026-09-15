@@ -305,6 +305,7 @@ describe("Profile settings", () => {
       "Reading",
     );
     expect(
+      // oxlint-disable-next-line unbound-method -- `expect` reads the spy without calling it.
       ctx.settings.updateDefaultLiteratureNoteProfileBindings,
     ).toHaveBeenCalledWith({ "note.literature-folder": "Reading" });
   });

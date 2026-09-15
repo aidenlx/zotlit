@@ -101,7 +101,7 @@ describe("citation example sets", () => {
       "authorsShort",
       "collections",
     ]) {
-      expect(item, absent).not.toHaveProperty(absent);
+      expect(item).not.toHaveProperty(absent);
     }
     expect(item.publicationTitle).toBe("PLoS Medicine");
     expect(item.containerTitle).toBe("PLoS Medicine");

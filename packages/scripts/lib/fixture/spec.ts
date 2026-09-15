@@ -746,8 +746,7 @@ export const ITEMS: readonly FixtureItem[] = [
     key: "ENGBT62A",
     itemType: "journalArticle",
     citationKey: "engelbartAugmentingHuman1962",
-    title:
-      "Augmenting Human Intellect: A Conceptual Framework",
+    title: "Augmenting Human Intellect: A Conceptual Framework",
     venue: "SRI Summary Report",
     date: "1962",
     creators: [author("Douglas C.", "Engelbart")],

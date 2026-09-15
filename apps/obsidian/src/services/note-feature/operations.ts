@@ -214,14 +214,14 @@ export interface ProfilePreview {
 
 export interface PreparedCreationProfile extends ProfilePreview {
   /** Re-enters the create gate; the preview holds no database lease. */
-  create(): Promise<CreateNoteResult>;
+  create: () => Promise<CreateNoteResult>;
 }
 
 export interface ProfileNotePreview {
   path: string;
   body: string;
   properties: Record<string, unknown>;
-  create(): Promise<CreateNoteResult>;
+  create: () => Promise<CreateNoteResult>;
 }
 export interface ProfileNotePreviewOptions {
   profile: ResolvedProfile;

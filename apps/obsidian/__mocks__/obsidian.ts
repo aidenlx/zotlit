@@ -1336,6 +1336,7 @@ export class ButtonComponent {
     return this;
   }
 
+  // oxlint-disable-next-line no-thenable -- mirrors Obsidian's own component signature.
   then(cb: (button: this) => unknown): this {
     cb(this);
     return this;

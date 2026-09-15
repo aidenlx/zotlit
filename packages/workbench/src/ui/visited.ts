@@ -11,9 +11,9 @@ export interface Retention<K> {
    * Whether the pane at `key` is the one the reader opened, and so stays
    * mounted. A key whose occupant changed since it was opened is gone.
    */
-  isRetained(key: K): boolean;
+  isRetained: (key: K) => boolean;
   /** Records that the reader opened the pane at `key`. */
-  open(key: K): void;
+  open: (key: K) => void;
 }
 
 /**
