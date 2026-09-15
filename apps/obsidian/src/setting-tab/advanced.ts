@@ -68,6 +68,7 @@ export function advancedPageItems(
     ...(ctx.webWorkbenchEnabled
       ? [
           {
+            id: "template_workbench_preference",
             name: m.template_workbench_preference_name(),
             desc: m.template_workbench_preference_desc(),
             render: (setting) => {
@@ -93,25 +94,30 @@ export function advancedPageItems(
         ]
       : []),
     {
+      id: "settings_update_notices",
       name: m.settings_update_notices_name(),
       desc: m.settings_update_notices_desc(),
       control: { type: "toggle", key: "release.notices-enabled" },
     },
     {
       type: "group",
+      id: "settings_advanced_template_engine",
       heading: m.settings_advanced_template_engine_heading(),
       items: templateEngineItems(ctx),
     },
     {
       type: "group",
+      id: "settings_advanced_local_server",
       heading: m.settings_advanced_local_server_heading(),
       items: localServerItems(ctx),
     },
     {
       type: "group",
+      id: "settings_advanced_logging",
       heading: m.settings_advanced_logging_heading(),
       items: [
         {
+          id: "settings_log_level",
           name: m.settings_log_level_name(),
           desc: m.settings_log_level_desc(),
           control: {
@@ -122,17 +128,20 @@ export function advancedPageItems(
           },
         },
         {
+          id: "settings_log_to_file",
           name: m.settings_log_to_file_name(),
           desc: m.settings_log_to_file_desc(),
           control: { type: "toggle", key: "log.to-file" },
         },
         {
+          id: "settings_log_open_file",
           name: m.settings_log_open_file_name(),
           desc: m.settings_log_open_file_desc(),
           disabled: fileDisabled,
           action: () => void openLogFile(ctx),
         },
         {
+          id: "settings_log_export",
           name: m.settings_log_export_name(),
           desc: m.settings_log_export_desc(),
           disabled: fileDisabled,
@@ -142,14 +151,17 @@ export function advancedPageItems(
     },
     {
       type: "group",
+      id: "settings_advanced_recovery",
       heading: m.settings_advanced_recovery_heading(),
       items: [
         {
+          id: "settings_citation_index_reset",
           name: m.settings_citation_index_reset_name(),
           desc: m.settings_citation_index_reset_desc(),
           action: () => void resetCitationIndex(ctx),
         },
         {
+          id: "settings_language_pack_reset",
           name: m.settings_language_pack_reset_name(),
           desc: m.settings_language_pack_reset_desc(),
           action: () => void resetLanguagePacks(ctx),

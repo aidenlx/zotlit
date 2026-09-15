@@ -23,11 +23,13 @@ export function localServerItems(
   const port = ctx.localServer.effectivePort;
   return [
     {
+      id: "settings_local_server_enabled",
       name: m.settings_local_server_enabled_name(),
       desc: m.settings_local_server_enabled_desc(),
       control: { type: "toggle", key: "server.enabled" },
     },
     {
+      id: "settings_live_updates_enabled",
       name: m.settings_live_updates_enabled_name(),
       desc: liveUpdateDescription(),
       visible: enabled,
@@ -36,6 +38,7 @@ export function localServerItems(
     ...(ctx.webWorkbenchEnabled
       ? [
           {
+            id: "settings_local_server_workbench",
             name: m.settings_local_server_workbench_name(),
             desc: m.settings_local_server_workbench_desc(),
             visible: enabled,
@@ -48,6 +51,7 @@ export function localServerItems(
         ]
       : []),
     {
+      id: "settings_live_updates_port",
       name: m.settings_live_updates_port_name(),
       desc: m.settings_live_updates_port_desc({
         label: m["zotero.prefs_notify_url"](),
@@ -62,6 +66,7 @@ export function localServerItems(
       },
     },
     {
+      id: "settings_local_server_active_port",
       name: m.settings_local_server_active_port_name(),
       desc:
         port === null
@@ -70,6 +75,7 @@ export function localServerItems(
       visible: enabled,
     },
     {
+      id: "settings_live_updates_hostname",
       name: m.settings_live_updates_hostname_name(),
       desc: m.settings_live_updates_hostname_desc(),
       visible: enabled,
@@ -95,6 +101,7 @@ function workbenchConnectionRows(
   if (connection === null) return [];
   return [
     {
+      id: "settings_local_server_workbench_connection",
       name: m.settings_local_server_workbench_connection_name(),
       desc: m.settings_local_server_workbench_connection_desc({
         website: new URL(connection.origin).host,

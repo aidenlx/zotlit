@@ -253,34 +253,40 @@ export class ZotLitSettingTab extends PluginSettingTab {
       // because it extends the default Profile's rows right above it.
       {
         type: "group",
+        id: "settings_pages",
         items: [
           profilesPage(ctx),
           {
             type: "page",
+            id: "settings_page_note_import",
             name: m.settings_page_note_import(),
             desc: m.settings_page_note_import_desc(),
             items: noteImportPageItems(ctx),
           },
           {
             type: "page",
+            id: "settings_page_citations",
             name: m.settings_page_citations(),
             desc: m.settings_page_citations_desc(),
             items: citationsPageItems(ctx),
           },
           {
             type: "page",
+            id: "settings_page_zotero",
             name: m.settings_page_zotero(),
             desc: m.settings_page_zotero_desc(),
             items: zoteroPageItems(ctx),
           },
           {
             type: "page",
+            id: "settings_page_attachments",
             name: m.settings_page_attachments(),
             desc: m.settings_page_attachments_desc(),
             items: attachmentPageItems(ctx),
           },
           {
             type: "page",
+            id: "settings_page_advanced",
             name: m.settings_page_advanced(),
             desc: m.settings_page_advanced_desc(),
             items: advancedPageItems(ctx),

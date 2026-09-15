@@ -41,6 +41,7 @@ export function noteImportPageItems(
 ): SettingDefinitionItem<SettingsControlKey>[] {
   return [
     {
+      id: "settings_note_import_colored_highlights",
       name: m.settings_note_import_colored_highlights_name(),
       desc: m.settings_note_import_colored_highlights_desc(),
       control: {
@@ -50,11 +51,13 @@ export function noteImportPageItems(
     },
     {
       type: "page",
+      id: "settings_note_import_highlight_mappings",
       name: m.settings_note_import_highlight_mappings_name(),
       desc: m.settings_note_import_highlight_mappings_desc(),
       items: highlightMappingItems(ctx),
     },
     {
+      id: "settings_note_import_annotations_template",
       name: m.settings_note_import_annotations_template_name(),
       desc: m.settings_note_import_annotations_template_desc(),
       control: {
@@ -77,6 +80,7 @@ export function highlightMappingItems(
         );
       return [
         {
+          id: `settings_note_import_highlight:${color}`,
           name: colorLabels[color](),
           render: (setting) => {
             setting.addDropdown((dropdown) => {
@@ -99,6 +103,7 @@ export function highlightMappingItems(
           },
         },
         {
+          id: `settings_note_import_custom_emoji:${color}`,
           name: m.settings_note_import_custom_emoji_name({
             color: colorLabels[color](),
           }),

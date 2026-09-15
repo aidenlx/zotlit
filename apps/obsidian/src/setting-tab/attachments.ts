@@ -13,11 +13,13 @@ export function attachmentPageItems(
 ): SettingDefinitionItem<SettingsKey>[] {
   return [
     {
+      id: "settings_attachment_import",
       name: m.settings_attachment_import_name(),
       desc: m.settings_attachment_import_desc(),
       control: { type: "toggle", key: "attachment.import" },
     },
     {
+      id: "settings_attachment_folder",
       name: m.settings_attachment_folder_name(),
       desc: m.settings_attachment_folder_desc(),
       visible: () => ctx.settings.current?.["attachment.import"] ?? true,

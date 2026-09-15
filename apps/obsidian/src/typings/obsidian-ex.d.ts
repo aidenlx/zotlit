@@ -472,6 +472,43 @@ declare module "obsidian" {
     matches: SearchMatches;
   }
 
+  /**
+   * Stable identity for a setting or a setting page, honored ahead of the
+   * derived key (control key, name, or heading) when Obsidian pairs a
+   * definition with its rendered row across re-renders. Absent from the
+   * vendored typings, which target Obsidian 1.13.1; the runtime reads it from
+   * 1.14 (`app.js` 1.14.2, key builders of `getSettingDefinitions`).
+   *
+   * Required here so a definition that omits one is a compile error. Derive it
+   * from the i18n message key backing the row's label, and keep it unique
+   * among the definition's siblings.
+   */
+  interface SettingDefinitionBase {
+    /**
+     * Unique id among the definition's siblings. Disambiguates siblings that
+     * share a `name`, and keeps a stable reference when a setting is renamed.
+     * Obsidian 1.13.x ignores it: there it must not carry the uniqueness the
+     * derived key already provides.
+     */
+    id: string;
+  }
+  interface SettingDefinitionGroup {
+    /**
+     * Unique id among the group's siblings, ahead of `heading` when the
+     * framework keys the group. Inherited by {@link SettingDefinitionList}.
+     * Obsidian 1.13.x ignores it.
+     */
+    id: string;
+  }
+  interface SettingDefinitionPage {
+    /**
+     * Unique id among the page's siblings, ahead of `name` when the framework
+     * keys the page. Duplicate page ids among siblings log an error, and
+     * Obsidian 1.13.x ignores it.
+     */
+    id: string;
+  }
+
   interface SettingTab {
     /** Tab id. A `PluginSettingTab` takes `plugin.manifest.id`. */
     id: string;

@@ -14,11 +14,13 @@ export function zoteroPageItems(
   return [
     {
       type: "group",
+      id: "settings_zotero_connection",
       heading: m.settings_zotero_connection_heading(),
       items: databaseConnectionItems(ctx),
     },
     {
       type: "group",
+      id: "settings_zotero_libraries",
       heading: m.settings_zotero_libraries_heading(),
       items: [libraryScopeRow(ctx)],
     },
@@ -27,6 +29,7 @@ export function zoteroPageItems(
     selectedLibrariesList(ctx),
     {
       type: "group",
+      id: "settings_db_advanced",
       heading: m.settings_db_advanced(),
       items: databaseAdvancedItems(ctx),
     },

@@ -18,6 +18,7 @@ export function approvedFoldersPage(
 ): SettingDefinitionPage<SettingsKey> {
   return {
     type: "page",
+    id: "settings_attachment_approved",
     name: m.settings_attachment_approved_name(),
     desc: approvedFoldersDesc(),
     items: approvedFolderItems(ctx),
@@ -35,6 +36,7 @@ function approvedFoldersDesc(): DocumentFragment {
 /** Static guidance shown above the mutable approved-folder list. */
 function approvedFoldersPolicy(): SettingDefinitionItem<SettingsKey> {
   return {
+    id: "settings_attachment_approved_policy",
     name: m.settings_attachment_approved_policy_name(),
     desc: m.settings_attachment_approved_policy_desc(),
   };
@@ -51,6 +53,7 @@ function approvedFolderItems(
   return [
     approvedFoldersPolicy(),
     {
+      id: "settings_attachment_approved_list",
       type: "list",
       emptyState: m.settings_attachment_approved_empty(),
       addItem: {
@@ -64,7 +67,11 @@ function approvedFolderItems(
           .revokeFolder(folder)
           .then(() => ctx.requestUpdate());
       },
-      items: folders.map((folder) => ({ name: folder, searchable: false })),
+      items: folders.map((folder) => ({
+        id: `settings_attachment_approved_entry:${folder}`,
+        name: folder,
+        searchable: false,
+      })),
     },
   ];
 }

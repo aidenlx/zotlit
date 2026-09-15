@@ -55,6 +55,7 @@ export function templateEngineItems(
 ): SettingGroupItem<SettingsKey>[] {
   return [
     {
+      id: "settings_template_folder",
       name: m.settings_template_folder_name(),
       desc: m.settings_template_folder_desc(),
       control: {
@@ -64,17 +65,20 @@ export function templateEngineItems(
       },
     },
     {
+      id: "settings_template_js_enable",
       name: m.settings_template_js_enable_name(),
       desc: m.settings_template_js_enable_desc(),
       render: (setting) => renderJsTemplatesButton(setting, ctx),
     },
     {
+      id: "settings_template_trim_leading",
       name: m.settings_template_trim_leading_name(),
       desc: m.settings_template_trim_desc(),
       visible: () => ctx.template.javascriptTemplatesEnabled,
       control: trimControl("template.auto-trim-leading"),
     },
     {
+      id: "settings_template_trim_trailing",
       name: m.settings_template_trim_trailing_name(),
       desc: m.settings_template_trim_desc(),
       visible: () => ctx.template.javascriptTemplatesEnabled,
@@ -94,6 +98,7 @@ function unrecognizedFileItems(
 ): SettingDefinition<SettingsKey>[] {
   if (!ctx.template.loaded) return [];
   return ctx.template.getUnrecognizedFiles().map((path) => ({
+    id: `settings_template_unrecognized:${path}`,
     name: m.settings_template_unrecognized_name(),
     desc: m.settings_template_unrecognized_desc({ path }),
     searchable: false,
@@ -119,6 +124,7 @@ export function partialItems(
   return [
     {
       type: "list",
+      id: "settings_partials",
       heading: m.settings_partials_heading(),
       emptyState: m.settings_partials_empty_desc(),
       addItem: {
@@ -126,6 +132,7 @@ export function partialItems(
         action: () => void addPartial(ctx),
       },
       items: partials.map((partial) => ({
+        id: `settings_partial_entry:${partial.path}`,
         name: partial.name,
         desc: partial.path,
         searchable: false,
@@ -160,6 +167,7 @@ export function partialItems(
       })),
     },
     ...ctx.template.getReservedPartialFiles().map(({ name, path }) => ({
+      id: `settings_partial_reserved:${path}`,
       name: m.settings_partial_reserved_name(),
       desc: m.settings_partial_reserved_desc({ name, path }),
       searchable: false,
@@ -232,6 +240,7 @@ export function citationTextItems(
   if (!ctx.template.loaded) return [];
   return [
     {
+      id: "settings_citation_text",
       name: m.settings_citation_text_name(),
       desc: m.settings_citation_text_desc(),
       render: (setting) => renderCitationTextRow(setting, ctx),

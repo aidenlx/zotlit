@@ -36,6 +36,7 @@ export function databaseConnectionItems(
 ): SettingGroupItem<SettingsKey>[] {
   return [
     {
+      id: "settings_db_companion",
       name: m.settings_db_companion_name(),
       desc: m.settings_db_companion_desc(),
       render: (setting) => {
@@ -47,6 +48,7 @@ export function databaseConnectionItems(
       },
     },
     {
+      id: "settings_db_stale_help",
       name: m.settings_db_stale_help_name(),
       desc: m.settings_db_stale_help_desc(),
       render: (setting) => {
@@ -60,21 +62,25 @@ export function databaseConnectionItems(
       },
     },
     {
+      id: "settings_db_profile_dir",
       name: m.settings_db_profile_dir_name(),
       desc: m.settings_db_profile_dir_desc(),
       render: (setting) => renderProfileDirRow(setting, ctx),
     },
     {
+      id: "settings_db_file",
       name: m.settings_db_file_name(),
       desc: m.settings_db_file_desc(),
       render: (setting) => renderDatabaseFileRow(setting, ctx),
     },
     {
+      id: "settings_db_read_mode",
       name: m.settings_db_read_mode_name(),
       desc: m.settings_db_read_mode_desc(),
       render: (setting) => renderReadModeRow(setting, ctx),
     },
     {
+      id: "settings_db_auto_refresh",
       name: m.settings_db_auto_refresh_name(),
       desc: m.settings_db_auto_refresh_desc(),
       control: { type: "toggle", key: "zotero.auto-refresh" },
@@ -88,11 +94,13 @@ export function databaseAdvancedItems(
 ): SettingGroupItem<SettingsKey>[] {
   return [
     {
+      id: "settings_db_data_dir",
       name: m.settings_db_data_dir_name(),
       desc: m.settings_db_data_dir_desc(),
       render: (setting) => renderDataDirRow(setting, ctx),
     },
     {
+      id: "settings_db_source_id",
       name: m.settings_db_source_id_name(),
       desc: m.settings_db_source_id_desc(),
       render: (setting) => renderSourceIdRow(setting, ctx),

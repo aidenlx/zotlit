@@ -10,9 +10,18 @@ import { revealSetting } from "./open-settings";
 
 const TAB_ID = "zotlit";
 
-const style: SettingDefinition = { name: "Citation and references style" };
-const engine: SettingDefinition = { name: "Pandoc engine" };
-const logLevel: SettingDefinition = { name: "Log level" };
+const style: SettingDefinition = {
+  id: "citation_references_style",
+  name: "Citation and references style",
+};
+const engine: SettingDefinition = {
+  id: "citation_engine",
+  name: "Pandoc engine",
+};
+const logLevel: SettingDefinition = {
+  id: "log_level",
+  name: "Log level",
+};
 
 /**
  * The shape the tab hands out: a group wrapping a navigable page, whose own
@@ -22,12 +31,19 @@ const settingItems: SettingDefinitionItem[] = [
   logLevel,
   {
     type: "group",
+    id: "settings_pages",
     items: [
       {
         type: "page",
+        id: "settings_page_citations",
         name: "Citations",
         items: [
-          { type: "group", heading: "References", items: [style, engine] },
+          {
+            type: "group",
+            id: "settings_citation_references",
+            heading: "References",
+            items: [style, engine],
+          },
         ],
       },
     ],

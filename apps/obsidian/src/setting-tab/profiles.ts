@@ -94,6 +94,7 @@ export function literatureNoteItems(
 ): SettingDefinitionItem<SettingsControlKey>[] {
   return [
     {
+      id: "settings_profile_folder",
       name: m.settings_profile_folder_name(),
       desc: m.settings_note_folder_desc(),
       control: {
@@ -103,6 +104,7 @@ export function literatureNoteItems(
       },
     },
     {
+      id: "settings_note_import_folder",
       name: m.settings_note_import_folder_name(),
       desc: m.settings_note_import_folder_desc(),
       control: {
@@ -127,6 +129,7 @@ export function profilesPage(
 ): SettingDefinitionPage<SettingsControlKey> {
   return {
     type: "page",
+    id: "settings_page_profiles",
     name: m.settings_page_profiles(),
     desc: m.settings_page_profiles_desc(),
     items: [
@@ -150,6 +153,7 @@ function profilesList(
   const locked = profileActionsLocked(ctx);
   return {
     type: "list",
+    id: "settings_profile_other",
     heading: m.settings_profile_other_heading(),
     emptyState: m.settings_profile_empty_desc(),
     // Both ways in stay out of the header while a document write would race the
@@ -175,6 +179,7 @@ function profilesList(
               ),
         ],
     items: profiles.map((profile) => ({
+      id: `settings_profile_entry:${profile.id}`,
       name: profile.label,
       desc: m.settings_profile_match_status({ state: profile.match.state }),
       searchable: false,
@@ -260,6 +265,7 @@ function excludedDocumentItems(
     ...(diagnostics.some(({ code }) => code === "duplicate-profile-id")
       ? [
           {
+            id: "settings_profile_duplicate_id",
             name: m.settings_profile_duplicate_id_name(),
             desc: warning(m.settings_profile_duplicate_banner()),
           },
@@ -267,6 +273,7 @@ function excludedDocumentItems(
       : []),
     {
       type: "list",
+      id: "settings_profile_excluded",
       heading: m.settings_profile_excluded_heading(),
       onDelete: (index) => {
         const diagnostic = diagnostics[index];
@@ -274,6 +281,7 @@ function excludedDocumentItems(
           void deleteExcludedProfileDocument(ctx, diagnostic.path);
       },
       items: diagnostics.map((diagnostic) => ({
+        id: `settings_profile_excluded_entry:${diagnostic.path}`,
         name: diagnostic.path,
         desc:
           diagnostic.code === "duplicate-profile-id"
@@ -401,6 +409,7 @@ function defaultDocumentItem(
   const path = ctx.profile.defaultDocumentPath;
   const ejected = ctx.app.vault.getFileByPath(path) !== null;
   return {
+    id: "settings_profile_document",
     name: m.settings_profile_document_name(),
     desc: m.settings_profile_document_desc(),
     render: (setting) => {
@@ -440,6 +449,7 @@ function defaultProfileItem(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey> {
   return {
+    id: "settings_profile_default",
     name: m.settings_profile_default_name(),
     desc: m.settings_profile_default_desc(),
     render: (setting) => {
