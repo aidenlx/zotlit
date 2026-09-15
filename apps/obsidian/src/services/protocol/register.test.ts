@@ -7,6 +7,7 @@ import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
+import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { registerProtocolHandlers } from "./register";
@@ -29,6 +30,10 @@ vi.mock("@/services/note-feature", async (importOriginal) => ({
 
 vi.mock("@/views/template-workbench/register", () => ({
   openTemplateWorkbench: vi.fn(),
+}));
+
+vi.mock("@/views/template-data-explorer/register", () => ({
+  openTemplateDataExplorer: vi.fn(),
 }));
 
 const SOURCE_ID = "abc12345";
@@ -113,6 +118,56 @@ describe("single-note protocol links", () => {
   );
 });
 
+describe("paneType", () => {
+  it("routes an explore link's paneType to the explorer", async () => {
+    const ref = { indexedKey: "ABCD2345", itemID: 1 } as NonNullable<
+      ReturnType<typeof getItemRefByID>
+    >;
+    vi.mocked(getItemRefByID).mockReturnValue(ref);
+    const app = {} as ProtocolDeps["app"];
+    using _handlers = register({
+      app,
+      db: { state: "ready", client: {} },
+    } as unknown as Partial<ProtocolDeps>);
+    handlers.get("zotlit/explore")?.({
+      action: "zotlit/explore",
+      item: "1",
+      paneType: "window",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+    await vi.waitFor(() =>
+      expect(openTemplateDataExplorer).toHaveBeenCalledExactlyOnceWith(
+        app,
+        { itemIndexedKey: "ABCD2345", anchorAnnotationKey: undefined },
+        { paneType: "window" },
+      ),
+    );
+  });
+
+  it("routes the link's paneType to the Companion flow", async () => {
+    const ref = { indexedKey: "ABCD2345", itemID: 1 } as NonNullable<
+      ReturnType<typeof getItemRefByID>
+    >;
+    vi.mocked(getItemRefByID).mockReturnValue(ref);
+    using _handlers = register({
+      db: { state: "ready", client: {} },
+    } as unknown as Partial<ProtocolDeps>);
+    handlers.get("zotlit/open")?.({
+      action: "zotlit/open",
+      item: "1",
+      paneType: "split",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+    await vi.waitFor(() =>
+      expect(openCompanionNote).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        ref,
+        { action: "open", scope: "full", paneType: "split" },
+      ),
+    );
+  });
+});
+
 describe("library-wide protocol links", () => {
   it("passes the named group as an exact update target", async () => {
     using _handlers = register();
@@ -194,9 +249,32 @@ describe("clipboard Profile protocol handoff", () => {
       ReturnType<ProtocolDeps["importProfile"]>
     >);
     await vi.waitFor(() =>
-      expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file),
+      expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, {}),
     );
   });
+  it("hands the workbench the pane the link names", async () => {
+    const leaf = {};
+    const getLeaf = vi.fn(() => leaf);
+    const file = { path: "templates/shared.md" };
+    const app = {
+      vault: { getFileByPath: vi.fn(() => file) },
+      workspace: { getLeaf },
+    } as unknown as ProtocolDeps["app"];
+    using _handlers = register({
+      app,
+      importProfile: vi.fn(async () => ({ path: file.path })),
+    } as unknown as Partial<ProtocolDeps>);
+    handlers.get("zotlit/import-profile")!({
+      action: "zotlit/import-profile",
+      clipboard: "true",
+      paneType: "split",
+    } as ObsidianProtocolData);
+    await vi.waitFor(() =>
+      expect(openTemplateWorkbench).toHaveBeenCalledWith(app, file, { leaf }),
+    );
+    expect(getLeaf).toHaveBeenCalledExactlyOnceWith("split");
+  });
+
   it("leaves the editor closed after import cancellation", async () => {
     vi.mocked(openTemplateWorkbench).mockClear();
     const importProfile = vi.fn(async () => undefined);

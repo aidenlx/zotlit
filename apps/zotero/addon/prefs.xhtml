@@ -5,6 +5,34 @@
   <html:link rel="localization" href="zotlit.ftl" />
 
   <groupbox>
+    <html:h2 data-l10n-id="zotlit-prefs-open-section" />
+
+    <hbox align="center">
+      <label data-l10n-id="zotlit-prefs-pane-type" control="zotlit-pane-type" />
+      <menulist
+        id="zotlit-pane-type"
+        preference="extensions.zotlit.pane-type"
+        native="true"
+      >
+        <menupopup>
+          <menuitem
+            value="active"
+            data-l10n-id="zotlit-prefs-pane-type-active"
+          />
+          <menuitem value="tab" data-l10n-id="zotlit-prefs-pane-type-tab" />
+          <menuitem value="split" data-l10n-id="zotlit-prefs-pane-type-split" />
+          <menuitem
+            value="window"
+            data-l10n-id="zotlit-prefs-pane-type-window"
+          />
+        </menupopup>
+      </menulist>
+    </hbox>
+
+    <description data-l10n-id="zotlit-prefs-pane-type-description" />
+  </groupbox>
+
+  <groupbox>
     <html:h2 data-l10n-id="zotlit-prefs-notify-section" />
 
     <checkbox

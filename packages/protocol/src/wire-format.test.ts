@@ -176,6 +176,7 @@ describe("wire format", () => {
           "params": [
             "annotation",
             "item",
+            "paneType",
             "source-id",
           ],
         },
@@ -207,6 +208,7 @@ describe("wire format", () => {
           "example": "obsidian://zotlit/import-profile?clipboard=true",
           "params": [
             "clipboard",
+            "paneType",
           ],
         },
         "literatureNotes": {
@@ -285,6 +287,7 @@ describe("wire format", () => {
           ],
           "params": [
             "item",
+            "paneType",
             "profile",
             "scope",
             "source-id",

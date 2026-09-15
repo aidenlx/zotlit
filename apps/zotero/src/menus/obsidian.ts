@@ -24,6 +24,7 @@ import { launchExternalUrl } from "@/lib/launch-url";
 import { logger as appLogger } from "@/lib/logger";
 import { notifyUrl } from "@/notify/shared";
 import { sourceId } from "@/notify/source";
+import { preferredPaneType } from "@/prefs/pane-type";
 import type { FluentMessageId, FluentMessages } from "@/types/fluent";
 
 const logger = appLogger.getChild(["menus", "obsidian"]);
@@ -49,6 +50,7 @@ export function openInObsidian(
   const url = buildProtocolUrl(action, item.id, {
     sourceId: sourceId(),
     scope,
+    paneType: preferredPaneType(),
   });
   logger.info("opening obsidian", { action, itemID: item.id, scope, url });
   launchExternalUrl(url);
@@ -61,6 +63,7 @@ export function exploreInObsidian(
   const url = buildExploreProtocolUrl(item.id, {
     sourceId: sourceId(),
     annotation,
+    paneType: preferredPaneType(),
   });
   logger.info("opening obsidian (explore)", {
     itemID: item.id,

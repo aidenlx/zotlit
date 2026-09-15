@@ -57,6 +57,20 @@ const literatureNoteProfileValue = v.optional(
   v.pipe(v.string(), v.regex(/^[A-Za-z0-9]{12}$/u)),
 );
 
+/**
+ * Where the receiver opens what the action brings up, spelled as Obsidian's own
+ * URI links spell it: `tab` opens a new tab, `split` a new tab group, `window`
+ * a pop-out window (desktop only). Absent on the wire keeps the receiver's
+ * usual placement — for a note, the last active tab is replaced.
+ *
+ * @see https://help.obsidian.md/Extending+Obsidian/Obsidian+URI
+ */
+export type PaneType = "tab" | "split" | "window";
+
+const paneTypeValue = v.optional(
+  v.picklist(["tab", "split", "window"] satisfies PaneType[]),
+);
+
 /** Query payload for `zotlit/{open,update}` protocol handlers. */
 export const protocolQuerySchema = v.pipe(
   v.object({
@@ -64,12 +78,14 @@ export const protocolQuerySchema = v.pipe(
     "source-id": sourceIdValue,
     scope: updateScopeValue,
     profile: literatureNoteProfileValue,
+    paneType: paneTypeValue,
   }),
-  v.transform(({ item, "source-id": sourceId, scope, profile }) => ({
+  v.transform(({ item, "source-id": sourceId, scope, profile, paneType }) => ({
     item,
     sourceId,
     scope,
     ...(profile === undefined ? {} : { profileId: profile }),
+    ...(paneType === undefined ? {} : { paneType }),
   })),
 );
 
@@ -90,7 +106,8 @@ export function protocolSourceMatches(
 /**
  * Build an `obsidian://zotlit/<action>?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. A non-default {@link UpdateScope} adds `&scope=<scope>`.
- * A selected literature-note Profile adds `&profile=<profileId>`.
+ * A selected literature-note Profile adds `&profile=<profileId>`. A named
+ * {@link PaneType} adds `&paneType=<pane>`.
  */
 export function buildProtocolUrl(
   action: ProtocolAction,
@@ -99,11 +116,13 @@ export function buildProtocolUrl(
     sourceId: string;
     scope?: UpdateScope;
     profileId?: string;
+    paneType?: PaneType;
   },
 ): string {
   const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   appendScope(params, options.scope);
   appendProfile(params, options.profileId);
+  appendPaneType(params, options.paneType);
   return `obsidian://${protocolActionId(action)}?${params}`;
 }
 
@@ -133,6 +152,15 @@ function appendProfile(
   profileId: string | undefined,
 ): void {
   if (profileId) params.set("profile", profileId);
+}
+
+/** Append `paneType` only when the builder names a pane, so a link that takes
+ *  the receiver's usual placement stays the short, stable form. */
+function appendPaneType(
+  params: URLSearchParams,
+  paneType: PaneType | undefined,
+): void {
+  if (paneType) params.set("paneType", paneType);
 }
 
 /**
@@ -376,11 +404,13 @@ export const exploreProtocolQuerySchema = v.pipe(
     item: itemID,
     annotation: annotationKeyValue,
     "source-id": sourceIdValue,
+    paneType: paneTypeValue,
   }),
-  v.transform(({ item, annotation, "source-id": sourceId }) => ({
+  v.transform(({ item, annotation, "source-id": sourceId, paneType }) => ({
     item,
     annotation,
     sourceId,
+    ...(paneType === undefined ? {} : { paneType }),
   })),
 );
 
@@ -525,14 +555,15 @@ function buildExactLibraryTargetUrl(
 /**
  * Build an `obsidian://zotlit/explore?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. An optional `annotation` key anchors the explorer at
- * that annotation.
+ * that annotation; a named {@link PaneType} adds `&paneType=<pane>`.
  */
 export function buildExploreProtocolUrl(
   item: number,
-  options: { sourceId: string; annotation?: string },
+  options: { sourceId: string; annotation?: string; paneType?: PaneType },
 ): string {
   const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   if (options.annotation) params.set("annotation", options.annotation);
+  appendPaneType(params, options.paneType);
   return `obsidian://${exploreProtocolActionId}?${params}`;
 }
 
@@ -554,6 +585,7 @@ export const importProfileProtocolActionId =
   `${PROTOCOL_NAMESPACE}/import-profile` as const;
 export const importProfileProtocolQuerySchema = v.object({
   clipboard: v.literal("true"),
+  paneType: paneTypeValue,
 });
 export function buildImportProfileProtocolUrl(): string {
   return `obsidian://${importProfileProtocolActionId}?clipboard=true`;

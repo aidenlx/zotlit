@@ -1,6 +1,6 @@
 import "./style.css";
 import { TFile } from "obsidian";
-import type { App, Plugin } from "obsidian";
+import type { App, PaneType, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
@@ -54,28 +54,35 @@ export function registerTemplateDataExplorer(
   registerExplorerFileMenu(plugin);
 }
 
-/** Every in-vault entry point delegates to this function. */
+/**
+ * Every in-vault entry point delegates to this function.
+ *
+ * @param options.paneType a pane the caller asks for, in Obsidian's URI
+ *   vocabulary. Absent keeps the explorer's usual placement: the reusable
+ *   sidebar leaf.
+ */
 export async function openTemplateDataExplorer(
   app: App,
   state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
+  options: { paneType?: PaneType } = {},
 ): Promise<void> {
+  const { paneType } = options;
   const editor = activeTemplateWorkbench(app);
   if (!state && editor) return openProfileExplorer(app, editor);
   const { workspace } = app;
-  let leaf = workspace
-    .getLeavesOfType(EXPLORER_VIEW_TYPE)
-    .find((leaf) => !leaf.group && !leaf.pinned);
   const launch = state ? { ...state, zotlitLaunch: true } : undefined;
-  if (!leaf) {
-    const right = workspace.getRightLeaf(true);
-    if (!right) return;
-    leaf = right;
-    await leaf.setViewState({
-      type: EXPLORER_VIEW_TYPE,
-      active: true,
-      state: launch,
-    });
-  } else if (launch) {
+  // A named pane always gets a fresh leaf; without one the explorer reuses the
+  // free sidebar leaf it already has.
+  const reused = paneType
+    ? undefined
+    : workspace
+        .getLeavesOfType(EXPLORER_VIEW_TYPE)
+        .find((leaf) => !leaf.group && !leaf.pinned);
+  const leaf =
+    reused ??
+    (paneType ? workspace.getLeaf(paneType) : workspace.getRightLeaf(true));
+  if (!leaf) return;
+  if (!reused || launch) {
     await leaf.setViewState({
       type: EXPLORER_VIEW_TYPE,
       active: true,

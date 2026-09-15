@@ -1769,6 +1769,13 @@
   ],
   "zotero": {
     "prefs_pane_label": "ZotLit",
+    "prefs_open_section": "Opening in Obsidian",
+    "prefs_pane_type": "Open notes in",
+    "prefs_pane_type_active": { "label": "Active tab" },
+    "prefs_pane_type_tab": { "label": "New tab" },
+    "prefs_pane_type_split": { "label": "New tab group" },
+    "prefs_pane_type_window": { "label": "New window" },
+    "prefs_pane_type_description": "Where a literature note or the template data explorer opens in Obsidian. New window is desktop only.",
     "prefs_notify_section": "Obsidian Notifications",
     "prefs_notify_enable": {
       "label": "Enable"

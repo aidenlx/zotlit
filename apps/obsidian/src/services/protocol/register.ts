@@ -1,4 +1,4 @@
-import type { ObsidianProtocolData, Plugin } from "obsidian";
+import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
 import { getItemRefByID } from "@zotlit/db";
 import type { ItemRef } from "@zotlit/db";
@@ -164,6 +164,7 @@ async function handleProtocol(
     action,
     scope: query.scope,
     profile: requested.selector,
+    paneType: query.paneType,
   });
 }
 
@@ -281,10 +282,14 @@ async function handleExploreProtocol(
   const ref = resolveProtocolItem(query, deps, action);
   if (!ref) return;
 
-  await openTemplateDataExplorer(deps.app, {
-    itemIndexedKey: ref.indexedKey,
-    anchorAnnotationKey: query.annotation,
-  });
+  await openTemplateDataExplorer(
+    deps.app,
+    {
+      itemIndexedKey: ref.indexedKey,
+      anchorAnnotationKey: query.annotation,
+    },
+    { paneType: query.paneType },
+  );
 }
 
 async function handleUpdateAllProtocol(
@@ -403,8 +408,9 @@ async function handleProfileImportProtocol(
   data: ObsidianProtocolData,
   deps: ProtocolDeps,
 ): Promise<void> {
+  let paneType: PaneType | undefined;
   try {
-    parseImportProfileProtocolQuery(data);
+    ({ paneType } = parseImportProfileProtocolQuery(data));
   } catch (error) {
     logger.debug("Refused clipboard Profile handoff", { error });
     new BaseNotice(m.notice_protocol_invalid());
@@ -422,7 +428,12 @@ async function handleProfileImportProtocol(
       throw new Error(
         `Imported Profile document is unavailable: ${profile.path}`,
       );
-    await openTemplateWorkbench(deps.app, file);
+    // The workbench picks its own leaf; a named pane hands it one instead.
+    await openTemplateWorkbench(
+      deps.app,
+      file,
+      paneType ? { leaf: deps.app.workspace.getLeaf(paneType) } : {},
+    );
     logger.debug("Opened imported Profile in editor", { path: profile.path });
   } catch (error) {
     logger.error("Failed to open clipboard Profile handoff", { error });

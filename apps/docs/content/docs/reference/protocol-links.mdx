@@ -16,6 +16,24 @@ Every protocol link requires a `source-id` parameter: an 8-character hex string 
 
 If the Zotero database is not yet loaded, ZotLit shows <UiLabel name={m.notice_protocol_db_unavailable()} />.
 
+## Where the link opens [#pane-type]
+
+Three actions put something in front of you: `open`, `update`, and `explore`. Each takes an optional `paneType`, spelled as [Obsidian's own URI links](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI) spell it.
+
+| Value    | Result                                |
+| -------- | ------------------------------------- |
+| `tab`    | Opens a new tab.                      |
+| `split`  | Opens a new tab group.                |
+| `window` | Opens a pop-out window. Desktop only. |
+
+```
+obsidian://zotlit/open?item=<id>&source-id=<hash>&paneType=tab
+```
+
+Omit the parameter to keep each action's usual placement: `open` and `update` replace the last active tab, and `explore` reuses the Template Data Explorer already in the sidebar. A value outside the three shows <UiLabel name={m.notice_protocol_invalid()} /> and stops the action.
+
+ZotLit Companion writes the parameter onto the links its own Zotero menus open. Under the <UiLabel name={m["zotero.prefs_open_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings, <UiLabel name={m["zotero.prefs_pane_type"]()} /> picks the pane. <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />, the default, leaves the parameter off the link.
+
 ## Actions
 
 ### open
@@ -26,11 +44,12 @@ Opens the existing literature note for a Zotero item, or creates one if none exi
 obsidian://zotlit/open?item=<id>&source-id=<hash>
 ```
 
-| Parameter   | Type       | Required | Description                                                        |
-| ----------- | ---------- | -------- | ------------------------------------------------------------------ |
-| `item`      | Integer    | Yes      | Zotero item ID                                                     |
-| `source-id` | 8-char hex | Yes      | Zotero install identifier                                          |
-| `profile`   | 12-char id | No       | The profile that creates or updates the note, named by profile ID. |
+| Parameter   | Type       | Required | Description                                                                                |
+| ----------- | ---------- | -------- | ------------------------------------------------------------------------------------------ |
+| `item`      | Integer    | Yes      | Zotero item ID                                                                             |
+| `source-id` | 8-char hex | Yes      | Zotero install identifier                                                                  |
+| `profile`   | 12-char id | No       | The profile that creates or updates the note, named by profile ID.                         |
+| `paneType`  | Pane value | No       | Where the note opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type). |
 
 `profile` picks the profile the action resolves the note against. The note is created with that profile when none exists yet. A note that already exists keeps the profile it carries. A link naming a different profile reports the profile the note kept and changes nothing.
 
@@ -52,6 +71,7 @@ obsidian://zotlit/update?item=<id>&source-id=<hash>
 | `source-id` | 8-char hex           | Yes      | Zotero install identifier                                                                                 |
 | `scope`     | `full` or `metadata` | No       | What to update. Default: `full` (frontmatter + managed body region). `metadata` updates frontmatter only. |
 | `profile`   | 12-char id           | No       | The profile that creates or updates the note, named by profile ID.                                        |
+| `paneType`  | Pane value           | No       | Where the note opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type).                |
 
 `profile` names the profile for the item. The update runs through the profile the note carries. A link naming a different profile reports the profile the note kept and skips the update. When the item has no note yet, the note is created with the named profile.
 
@@ -179,21 +199,22 @@ obsidian://zotlit/explore?item=<id>&source-id=<hash>
 | `item`       | Integer    | Yes      | Zotero item ID                                                                                             |
 | `source-id`  | 8-char hex | Yes      | Zotero install identifier                                                                                  |
 | `annotation` | 8-char key | No       | Zotero annotation key (charset: `23456789A-NP-Z`). When provided, the explorer focuses on this annotation. |
+| `paneType`   | Pane value | No       | Where the explorer opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type).             |
 
 ## Action summary
 
-| Action             | Single item | Batch | Scope param | Mode param | Library param | profile param |
-| ------------------ | :---------: | :---: | :---------: | :--------: | :-----------: | :-----------: |
-| `open`             |     yes     |   —   |      —      |     —      |       —       |      yes      |
-| `update`           |     yes     |   —   |     yes     |     —      |       —       |      yes      |
-| `update-many`      |      —      |  yes  |     yes     |     —      |       —       |      yes      |
-| `import-note`      |     yes     |   —   |      —      |    yes     |       —       |       —       |
-| `import-notes`     |      —      |  yes  |      —      |    yes     |       —       |       —       |
-| `update-all`       |      —      |  yes  |      —      |     —      |      yes      |       —       |
-| `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |       —       |
-| `explore`          |     yes     |   —   |      —      |     —      |       —       |       —       |
+| Action             | Single item | Batch | Scope param | Mode param | Library param | profile param | paneType param |
+| ------------------ | :---------: | :---: | :---------: | :--------: | :-----------: | :-----------: | :------------: |
+| `open`             |     yes     |   —   |      —      |     —      |       —       |      yes      |      yes       |
+| `update`           |     yes     |   —   |     yes     |     —      |       —       |      yes      |      yes       |
+| `update-many`      |      —      |  yes  |     yes     |     —      |       —       |      yes      |       —        |
+| `import-note`      |     yes     |   —   |      —      |    yes     |       —       |       —       |       —        |
+| `import-notes`     |      —      |  yes  |      —      |    yes     |       —       |       —       |       —        |
+| `update-all`       |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
+| `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
+| `explore`          |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
 
-`profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none.
+`profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none. `paneType` belongs to the actions that put something on screen: `open`, `update`, and `explore`. Every other action ends in a notice or a confirmation modal rather than an opened pane, so it takes none.
 
 ## See also
 

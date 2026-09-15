@@ -299,6 +299,46 @@ it("opens an unknown existing stamp with recovery, while leaving its content unc
   expect(buttonText).toHaveBeenLastCalledWith(m.profile_switch_recovery());
 });
 
+it.each(["tab", "split", "window"] as const)(
+  "opens an existing note in a new %s when the link names one",
+  async (paneType) => {
+    const harness = creationHarness({
+      selector: BOOKS,
+      source: "headless",
+      shouldAsk: false,
+    });
+    vi.mocked(harness.deps.noteFeature.resolveCompanionNote).mockResolvedValue({
+      outcome: "existing",
+      files: [harness.file],
+    });
+    await openCompanionNote(harness.deps, REF, { action: "open", paneType });
+    expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
+      "Papers/Study.md",
+      "",
+      paneType,
+      { active: true },
+    );
+  },
+);
+
+it("opens a note it just created in the pane the link names", async () => {
+  const harness = creationHarness({
+    selector: "default",
+    source: "bound",
+    shouldAsk: false,
+  });
+  await openCompanionNote(harness.deps, REF, {
+    action: "open",
+    paneType: "window",
+  });
+  expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
+    "Papers/Study.md",
+    "",
+    "window",
+    { active: true },
+  );
+});
+
 it("names Default in the kept-Profile notice for an unstamped note", () => {
   expect(
     companionNoteNotice({} as App, {
