@@ -1,0 +1,94 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding << /Type /Encoding /Differences [ 1 /fi 2 /fl ] >> >>
+endobj
+6 0 obj
+<< /Length 1170 >>
+stream
+BT
+/F1 12 Tf
+14 TL
+1 0 0 1 60 700 Tm
+(Left column line one begins here.) Tj
+0 -14 Td
+(Left column line two continues on.) Tj
+0 -14 Td
+(Left column line three follows next.) Tj
+0 -14 Td
+(Left column line four adds more text.) Tj
+0 -14 Td
+(Left column line five keeps going on.) Tj
+0 -14 Td
+(Left column line six still has words.) Tj
+0 -14 Td
+(Left column line seven nears the end.) Tj
+0 -14 Td
+(Left column line eight completes it.) Tj
+ET
+BT
+/F1 12 Tf
+14 TL
+1 0 0 1 330 700 Tm
+(Right column line one starts fresh.) Tj
+0 -14 Td
+(Right column line two moves along.) Tj
+0 -14 Td
+(Right column line three keeps pace.) Tj
+0 -14 Td
+(Right column line four continues on.) Tj
+0 -14 Td
+(Right column line five stays steady.) Tj
+0 -14 Td
+(Right column line six pushes ahead.) Tj
+0 -14 Td
+(Right column line seven nears close.) Tj
+0 -14 Td
+(Right column line eight wraps it up.) Tj
+ET
+BT
+/F2 12 Tf
+14 TL
+1 0 0 1 60 560 Tm
+(The \001re and \002ame test ligatures.) Tj
+ET
+BT
+/F1 12 Tf
+14 TL
+0 1 -1 0 560 100 Tm
+(Rotated line one goes here.) Tj
+0 -14 Td
+(Rotated line two follows next.) Tj
+0 -14 Td
+(Rotated line three continues on.) Tj
+0 -14 Td
+(Rotated line four completes it.) Tj
+ET
+
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000000350 00000 n 
+0000000483 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1705
+%%EOF

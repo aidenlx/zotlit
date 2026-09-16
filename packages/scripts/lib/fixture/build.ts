@@ -23,6 +23,7 @@ import {
 } from "./pristine.ts";
 import {
   ANNOTATIONS,
+  ASSET_DIR,
   assertSeededCitationKeys,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
@@ -63,6 +64,7 @@ import type {
 // covers building the Fixture and reading what it is supposed to contain.
 export {
   ANNOTATIONS,
+  ASSET_DIR,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   COLLECTIONS,
@@ -80,6 +82,7 @@ export {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  PARITY_PDFS,
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   SEEDED_CITATION_KEYS,
@@ -106,6 +109,8 @@ export type {
   FixtureItem,
   FixtureLibrary,
   FixtureNote,
+  FixtureParityBranch,
+  FixtureParityPdf,
   FixtureScopeCase,
   FixtureStyle,
   FixtureVaultCase,
@@ -212,7 +217,6 @@ const ATTACHMENT_LINK_MODES = {
   linked_url: 3,
 } as const;
 
-const ASSET_DIR = join(import.meta.dirname, "assets");
 const VAULT_PAGES_DIR = join(import.meta.dirname, "vault-pages");
 const VAULT_PLUGINS_DIR = join(import.meta.dirname, "vault-plugins");
 

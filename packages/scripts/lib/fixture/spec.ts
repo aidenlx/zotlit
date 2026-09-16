@@ -1,6 +1,11 @@
 // Deterministic description of the Fixture.
 
+import { join } from "node:path";
+
 import { CONTRACT_VERSION, USER_LIBRARY_ID } from "@zotlit/db";
+
+/** Directory the committed source assets named below are read from. */
+export const ASSET_DIR = join(import.meta.dirname, "assets");
 
 /** Names My Library in the printed Library table, beside the group IDs. */
 export const PERSONAL_SELECTOR = "my-library";
@@ -955,9 +960,52 @@ export type FixtureAnnotationAsset =
 export type FixtureAsset =
   | FixtureAnnotationAsset
   | "ioannidis-2005/ioannidis-2005.pdf"
+  | "pdf-parity/pdf-parity-layout.pdf"
+  | "pdf-parity/pdf-parity-scanned.pdf"
   | "rougier-2014/rougier-2014.pdf"
   | "sakimas-song/sakimas-song.html"
   | "sakimas-song/sakimas-song.pdf";
+
+/** One line-grouping branch of Zotero's PDF text-structuring algorithm. */
+export type FixtureParityBranch =
+  | "rotation"
+  | "ligature"
+  | "multi-column"
+  | "no-text-layer";
+
+/**
+ * One PDF built for the Sort Index / Page Label parity test, asset-only: no
+ * Zotero item, attachment, annotation, or collection backs it. The parity
+ * test reads it straight from the asset directory, so it stays out of the
+ * Fixture database and every count assertion that reads from there.
+ */
+export interface FixtureParityPdf {
+  /** Committed asset path, under `assets/`. */
+  readonly asset: FixtureAsset;
+  /** Line-grouping branches this PDF is built to exercise. */
+  readonly branches: readonly FixtureParityBranch[];
+  /** SHA-256 of the committed bytes; `pdf-parity/NOTICE.md` records the same value. */
+  readonly sha256: string;
+}
+
+/**
+ * The two hand-generated parity PDFs (`pdf-parity/generate.ts`): one page
+ * that drives Zotero's line-grouping algorithm through its rotation,
+ * ligature, and multi-column branches, and one scanned page with no text
+ * layer, whose only content is an image.
+ */
+export const PARITY_PDFS: readonly FixtureParityPdf[] = [
+  {
+    asset: "pdf-parity/pdf-parity-layout.pdf",
+    branches: ["rotation", "ligature", "multi-column"],
+    sha256: "3839ce157abd250ab19d57d18855e72a45eaf9a70bdd207981600ca48b67a4db",
+  },
+  {
+    asset: "pdf-parity/pdf-parity-scanned.pdf",
+    branches: ["no-text-layer"],
+    sha256: "dac746f7dee4aaf961bb8a3764611d088264cbb25ea55314914940d1ffcbbf04",
+  },
+];
 
 interface FixtureAttachmentBase {
   itemID: number;
