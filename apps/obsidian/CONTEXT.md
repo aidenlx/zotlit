@@ -276,6 +276,14 @@ _Avoid_: annotation item, annotation row
 The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note; the Excerpt Block always reflects the DB.
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
+**Reader Session**:
+One open reading of an Attachment, whichever reader hosts it — the Zotero Reader or Obsidian's PDF view. Names its source, the Attachment's Indexed Key, the parent Item's Indexed Key, and the selected Annotations' Indexed Keys, and accepts navigation and selection.
+_Avoid_: reader target, PDF reader target, annotation target
+
+**Annotation Source**:
+Where the plugin's Annotation reads for an Attachment come from at one moment: the Zotero Local API while Zotero answers, otherwise the Zotero DB. One source at a time for every Attachment; the two never join. A read result carries its source.
+_Avoid_: fallback (that is the switch, not the source), primary/secondary source, merged source
+
 ### Note content
 
 **Annotation Excerpt**:
@@ -542,6 +550,10 @@ The default-off choice to include eligible Literature Note wikilinks in the Docu
 _Avoid_: wikilink as citekey (the working name), link citations
 
 ### Zotero connection
+
+**Zotero Local API**:
+Zotero's own loopback HTTP API, which Zotero serves from its `httpServer.port` when the `httpServer.localAPI.enabled` preference is on. The only write authority for Annotations. Distinct from the plugin's Local Server, which is the listener ZotLit hosts.
+_Avoid_: local API (ambiguous with the plugin's Local Server), Zotero server, Zotero HTTP server, connector API
 
 **Device Override**:
 A device-scoped value for the Zotero profile directory or data directory — stored per vault × device, never synced — that overrides ZotLit's automatic Zotero detection (default profile from `profiles.ini`, data directory from `prefs.js`) on that device only. Clearing it returns the device to auto-detection. These two values exist solely as Device Overrides; no synced copy exists.
