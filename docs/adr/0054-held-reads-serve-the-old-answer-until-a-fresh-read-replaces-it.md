@@ -1,4 +1,10 @@
+---
+status: amended by ADR-0060
+---
+
 # Held Reads serve the old answer until a fresh read replaces it
+
+> **Amended by [ADR 0060](0060-held-reads-are-realized-on-tanstack-query-core.md).** Held Reads are realized on TanStack Query Core. A failed replacement re-arms after a cooldown instead of waiting for an invalidation, a superseded read is cancelled instead of discarded at commit, and retention is time-based instead of a least-recently-used bound.
 
 Citation surfaces depend on asynchronous derived values: Document Citation Text, bibliography renders, and the Citekey Resolution Snapshot. Each owner previously represented the same questions in a different way: whether an answer exists, whether it is fresh, and whether a replacement read is running. Those local state machines caused surfaces to replace useful answers with pending or failure states during revalidation.
 
