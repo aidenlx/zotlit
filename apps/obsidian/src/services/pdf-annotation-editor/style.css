@@ -19,10 +19,14 @@
 }
 
 /*
- * The marks carry `is-selected` already; what a selected mark looks like is
- * settled with the Mark Popup and the hit test (aidenlx/zotlit#1148), which own
- * selection.
+ * The selected mark keeps its own colour and gains a ring in the accent colour,
+ * so a stack of overlapping marks says which one the popup is acting on. The
+ * ring is a CSS filter rather than a stroke, because a stroke is what an
+ * underline and an ink path are already drawn with.
  */
+:where(.zt-pdf-annotation-mark.is-selected) {
+  filter: drop-shadow(0 0 2px var(--text-accent));
+}
 
 /* Zotero's highlight reads as ink on paper in either theme. */
 :where(.theme-light .zt-pdf-annotation-highlight) {
@@ -33,6 +37,16 @@
 :where(.theme-dark .zt-pdf-annotation-highlight) {
   opacity: 0.3;
   mix-blend-mode: plus-lighter;
+}
+
+/*
+ * Obsidian sizes a hover popover's one child to the width a Markdown embed
+ * wants (`.popover.hover-popover > *`). A row of verbs is as wide as its verbs,
+ * so this overrides that one rule at its own specificity — low enough that a
+ * theme's rule of the same shape still wins, since it is loaded later.
+ */
+.popover.zt-pdf-mark-popup > * {
+  width: fit-content;
 }
 
 /* The note's folded corner shows the paper through the sticky note. */

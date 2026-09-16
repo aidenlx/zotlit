@@ -1,6 +1,8 @@
 // One open Obsidian PDF view bound to the Zotero attachment it shows.
 import type {
   FileSystemAdapter,
+  HoverParent,
+  HoverPopover,
   PDFFileView,
   PDFPageRenderedListener,
   PDFPageView,
@@ -10,7 +12,10 @@ import type {
 import { registerDomEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { AnnotationRepository } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  AnnotationRepository,
+} from "@/services/annotation-repository/service";
 import type {
   AttachmentResolution,
   AttachmentResolver,
@@ -40,6 +45,8 @@ import {
   whenViewerReady,
 } from "./seam";
 import type { PdfSeamProbeResult } from "./seam";
+import { MarkSelection } from "./selection";
+import type { MarkGestures } from "./selection";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -55,7 +62,14 @@ const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });
  */
 export type AnnotationReads = Pick<
   AnnotationRepository,
-  "capability" | "capabilityFor" | "on" | "probe" | "read"
+  | "capability"
+  | "capabilityFor"
+  | "deleteAnnotation"
+  | "mutationFor"
+  | "on"
+  | "patchColor"
+  | "probe"
+  | "read"
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */
@@ -86,6 +100,11 @@ export interface PdfViewBindingDeps {
   attachments: AttachmentReads;
   annotations: AnnotationReads;
   capabilityGestures: CapabilityGestures;
+  /**
+   * The one gesture the Mark Popup reaches outside the reader's own surfaces;
+   * a block it meets is answered by the binding's own edit-gesture path.
+   */
+  markGestures: Pick<MarkGestures, "revealAnnotation">;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -99,23 +118,31 @@ export interface PdfViewBindingDeps {
  * resolves, and the annotation repository, the attachment resolver, and the
  * Annotation View never see the difference.
  */
-export class PdfViewBinding implements Disposable {
+export class PdfViewBinding implements Disposable, HoverParent {
+  /**
+   * The Mark Popup hangs off the binding rather than off the PDF view, so
+   * Obsidian's Page Preview on that view keeps its own popover and neither
+   * closes the other.
+   */
+  hoverPopover: HoverPopover | null = null;
   readonly #view;
   readonly #adapter;
   readonly #attachments;
   readonly #annotations;
   readonly #gestures;
+  readonly #markGestures;
   readonly #now;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /**
    * This view as a reader: what it holds and what is selected in it. ZotLit
-   * owns the selection here, so a consumer's `setSelectedAnnotations` is
-   * reported straight back.
+   * owns the selection here, so a consumer's `setSelectedAnnotations` is taken
+   * by the selection itself, which paints it and reports it back.
    */
   readonly #session = new ReaderSessionHost({
     source: "obsidian-pdf",
     navigate: (annotationKey) => this.#navigate(annotationKey),
-    select: (annotationKeys) => this.#session.reportSelection(annotationKeys),
+    select: (annotationKeys) =>
+      this.#selection?.select(annotationKeys[0] ?? null),
   });
   /** Every listener and node this binding added for this view. */
   readonly #surfaces = new DisposableStack();
@@ -128,6 +155,9 @@ export class PdfViewBinding implements Disposable {
   #probing = Promise.resolve();
   #controller: PDFViewerController | null = null;
   #marks: ReadonlyMap<number, readonly PdfPageAnnotation[]> = new Map();
+  #records: readonly AnnotationRecord[] = [];
+  /** The selected Annotation Mark of this view; `null` until one can be made. */
+  #selection: MarkSelection | null = null;
   #refreshing = Promise.resolve();
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
@@ -142,6 +172,7 @@ export class PdfViewBinding implements Disposable {
     attachments,
     annotations,
     capabilityGestures,
+    markGestures,
     now = () => Temporal.Now.instant(),
   }: PdfViewBindingDeps) {
     this.#view = view;
@@ -149,6 +180,7 @@ export class PdfViewBinding implements Disposable {
     this.#attachments = attachments;
     this.#annotations = annotations;
     this.#gestures = capabilityGestures;
+    this.#markGestures = markGestures;
     this.#now = now;
   }
 
@@ -274,6 +306,7 @@ export class PdfViewBinding implements Disposable {
     if (!this.supported || this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
     this.#mountCapability();
+    this.#mountSelection(attachmentKey);
     this.#surfaces.defer(
       this.#annotations.on("annotations-changed", (changedKey) => {
         if (changedKey === attachmentKey) this.#refresh();
@@ -319,6 +352,9 @@ export class PdfViewBinding implements Disposable {
       // PDF.js drops every child it does not keep on a zoom, a rotation and a
       // page recycle, so each render rebuilds this page's marks from data.
       this.#paint(event.pageNumber - 1);
+      // The re-render can have wiped the mark the popup hangs over, so its
+      // anchor is taken from the page as it now stands.
+      this.#selection?.sync();
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
     this.#probePage(loadedPageOf(controller));
@@ -390,6 +426,42 @@ export class PdfViewBinding implements Disposable {
     this.#drawCapability();
   }
 
+  /**
+   * The selected Annotation Mark and the Mark Popup over it, for the Attachment
+   * this view holds. Runs once: a file switch builds a new binding, and the
+   * gestures are heard on the view's own container, which outlives every page.
+   *
+   * @see https://github.com/aidenlx/zotlit/issues/1148
+   */
+  #mountSelection(attachmentKey: string): void {
+    if (this.#selection) return;
+    const selection = new MarkSelection({
+      containerEl: this.#view.containerEl,
+      parent: this,
+      attachmentKey,
+      marks: () => this.#marks,
+      records: () => this.#records,
+      pageAt: (pageIndex) =>
+        this.#controller && pageViewOf(this.#controller, pageIndex + 1),
+      repaint: () => this.#repaint(),
+      navigate: (annotationKey) => this.#navigate(annotationKey),
+      report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
+      annotations: this.#annotations,
+      gestures: {
+        revealAnnotation: (annotationKey, options) =>
+          this.#markGestures.revealAnnotation(annotationKey, options),
+        reportBlockedGesture: () => this.#editGesture(),
+      },
+      now: this.#now,
+    });
+    this.#selection = selection;
+    this.#surfaces.defer(() => {
+      this.#selection = null;
+      selection[Symbol.dispose]();
+    });
+    selection.load();
+  }
+
   /** What this view may do to its Attachment's Annotations right now. */
   #capability(): EditingCapability {
     return this.#attachment.kind === "resolved"
@@ -427,6 +499,7 @@ export class PdfViewBinding implements Disposable {
           });
           return;
         }
+        this.#records = list.annotations;
         this.#marks = groupAnnotationsByPage(list.annotations);
         logger.debug("Annotation marks rebuilt for a PDF view", {
           path: this.filePath,
@@ -435,6 +508,9 @@ export class PdfViewBinding implements Disposable {
           pages: this.#marks.size,
         });
         this.#repaint();
+        // A mark the read retired takes its selection with it; one that moved
+        // takes the popup along.
+        this.#selection?.sync();
       })
       .catch((error: unknown) => {
         logger.warn("Failed to read the annotations of an open PDF", {
@@ -457,7 +533,10 @@ export class PdfViewBinding implements Disposable {
     const page = controller && pageViewOf(controller, pageIndex + 1);
     if (!page) return;
     const annotations = this.#marks.get(pageIndex) ?? [];
-    renderAnnotationOverlay(page, { annotations });
+    renderAnnotationOverlay(page, {
+      annotations,
+      selected: this.#selection?.selected,
+    });
     if (annotations.length > 0) this.#painted.add(pageIndex);
     else this.#painted.delete(pageIndex);
   }
@@ -465,6 +544,7 @@ export class PdfViewBinding implements Disposable {
   /** Leaves the reader as Obsidian built it, whatever this binding painted. */
   #unpaint(): void {
     this.#marks = new Map();
+    this.#records = [];
     this.#repaint();
     this.#controller = null;
   }

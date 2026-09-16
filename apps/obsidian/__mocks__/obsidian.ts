@@ -24,6 +24,7 @@ import type {
   Instruction,
   Modifier,
   PaneType,
+  Point,
   SearchMatchPart,
   SearchResult,
   UserEvent,
@@ -178,6 +179,13 @@ export class HoverPopover {
   targetEl: HTMLElement | null;
   onTarget = true;
   onHover = false;
+  isFocused = false;
+  /**
+   * The point `position()` anchors to in place of the target's boxes. A
+   * popover with neither a target nor a static position is placed from the
+   * last pointer move, which no test drives, so it stays where it was put.
+   */
+  staticPos: Point | null;
   state = PopoverState.Showing;
   readonly waitTime: number;
   hidden = false;
@@ -186,15 +194,18 @@ export class HoverPopover {
   #loaded = false;
   timer: number;
 
+  // oxlint-disable-next-line max-params -- mirrors Obsidian's own constructor.
   constructor(
     parent: HoverParent,
     targetEl: HTMLElement | null,
     waitTime = 300,
+    staticPos: Point | null = null,
   ) {
     this.hoverEl = document.createElement("div");
     this.hoverEl.className = "popover hover-popover";
     this.targetEl = targetEl;
     this.waitTime = waitTime;
+    this.staticPos = staticPos;
     this.#parent = parent;
     targetEl?.addEventListener("mouseover", this.onMouseIn);
     targetEl?.addEventListener("mouseout", this.onMouseOut);
@@ -229,8 +240,14 @@ export class HoverPopover {
     return (
       this.onTarget ||
       this.onHover ||
+      this.isFocused ||
       this.hoverEl.contains(document.activeElement)
     );
+  }
+
+  /** Pins the popover open with nothing hovering it, as Obsidian's own does. */
+  setIsFocused(focused: boolean): void {
+    this.isFocused = focused;
   }
 
   transition(): void {

@@ -143,6 +143,92 @@ export function renderAnnotationOverlay(
   if (overlay.childElementCount > 0) page.div.append(overlay);
 }
 
+/** One Annotation's hit area on one page, as the hit test measures it. */
+export interface MarkTarget {
+  /** The Annotation's Indexed Key. */
+  key: string;
+  /** Every box it covers on this page, in the page's own units. */
+  rects: readonly PageRect[];
+}
+
+/**
+ * The boxes this page's marks cover, in the same page units the overlay draws
+ * them in — the hit test's whole input, converted once per click rather than
+ * per mark.
+ *
+ * Ink and free text carry no per-page rectangles, so each answers with the box
+ * it paints: an ink stroke's path bounds and a comment's own rectangle.
+ */
+export function markTargets(
+  page: OverlayPageView,
+  annotations: readonly PdfPageAnnotation[],
+): MarkTarget[] {
+  const unitPage = toPageUnits(page);
+  return annotations.flatMap((placement) => {
+    const rects = hitRectsOf(unitPage, placement);
+    return rects.length === 0 ? [] : [{ key: placement.annotation.key, rects }];
+  });
+}
+
+/**
+ * The page box in PDF points, which is what the overlay's `viewBox` is built
+ * from and therefore the units every mark rectangle is measured in.
+ */
+export function pageUnitSize(page: OverlayPageView): {
+  width: number;
+  height: number;
+} {
+  const { viewport } = toPageUnits(page);
+  return { width: viewport.width, height: viewport.height };
+}
+
+function hitRectsOf(
+  page: OverlayPage,
+  { position, rects }: PdfPageAnnotation,
+): PageRect[] {
+  if (rects.length > 0) {
+    return rects.map((rect) => pdfRectToPage(page.viewport, rect));
+  }
+  switch (position.kind) {
+    case "pdf-ink":
+      return inkBounds(page, position);
+    case "pdf-text":
+      return position.rects[0]
+        ? [pdfRectToPage(page.viewport, position.rects[0])]
+        : [];
+    default:
+      return [];
+  }
+}
+
+function inkBounds(page: OverlayPage, position: PdfInkPosition): PageRect[] {
+  const points = position.paths.flatMap((path) => {
+    const converted: [number, number][] = [];
+    for (let index = 0; index + 1 < path.length; index += 2) {
+      const [x, y] = page.viewport.convertToViewportPoint(
+        path[index]!,
+        path[index + 1]!,
+      );
+      converted.push([x, y]);
+    }
+    return converted;
+  });
+  if (points.length === 0) return [];
+  // Half the stroke width spills either side of the path, which is what makes a
+  // one-pixel-thin stroke reachable at all.
+  const spill = position.width / 2;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  return [
+    [
+      Math.min(...xs) - spill,
+      Math.min(...ys) - spill,
+      Math.max(...xs) + spill,
+      Math.max(...ys) + spill,
+    ],
+  ];
+}
+
 interface PdfPagePlacement extends PdfPageAnnotation {
   pageIndex: number;
 }
@@ -325,7 +411,8 @@ function colorOf(annotation: AnnotationRecord): string {
   return annotation.color ?? "currentColor";
 }
 
-type PageRect = readonly [number, number, number, number];
+/** A box in one page's own units, `[left, top, right, bottom]`. */
+export type PageRect = readonly [number, number, number, number];
 
 /** The page reduced to what a mark is drawn from: page units and a document. */
 interface OverlayPage {

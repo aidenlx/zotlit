@@ -14,6 +14,8 @@ import type {
   AnnotationRecord,
   AnnotationRepositoryEvents,
 } from "@/services/annotation-repository/service";
+import { IDLE } from "@/services/annotation-repository/write";
+import type { MutationState } from "@/services/annotation-repository/write";
 import type {
   AttachmentResolution,
   AttachmentResolverEvents,
@@ -204,6 +206,9 @@ export function annotationReads(
   return {
     read: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
+    mutationFor: vi.fn((): MutationState => IDLE),
+    patchColor: vi.fn(() => Promise.resolve(IDLE)),
+    deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
     get capability() {
       return current;
     },
@@ -231,6 +236,11 @@ export function capabilityGestures() {
     showEditingCapability: vi.fn(),
     reportBlockedGesture: vi.fn(),
   };
+}
+
+/** The one gesture the Mark Popup hands to its UI seam. */
+export function markGestures() {
+  return { revealAnnotation: vi.fn() };
 }
 
 /** The ids of the probes that failed, in the order they were recorded. */

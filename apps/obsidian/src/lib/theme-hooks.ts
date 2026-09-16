@@ -45,6 +45,12 @@ export const themeHook = {
    * `ready`, `action`, `busy` or `warning`.
    */
   pdfCapability: "zt-pdf-capability",
+  /**
+   * The Mark Popup, on Obsidian's own hover popover. Each control inside it
+   * carries `data-zt-verb` — `color`, `comment`, `copy`, `delete`, `reveal`, or
+   * `stack` for the stepper through overlapping marks.
+   */
+  pdfMarkPopup: "zt-pdf-mark-popup",
 } as const;
 
 /**

@@ -112,9 +112,10 @@ function createDeps() {
   const localStorage = new Map<string, unknown>();
 
   /** The Reader Session an open Obsidian PDF view exposes. */
+  const navigated: string[] = [];
   const pdfSession = new ReaderSessionHost({
     source: "obsidian-pdf",
-    navigate: () => undefined,
+    navigate: (annotationKey) => navigated.push(annotationKey),
     select: (keys) => pdfSession.reportSelection(keys),
   });
 
@@ -194,6 +195,7 @@ function createDeps() {
     deps: deps as unknown as ConstructorParameters<typeof AnnotationView>[1],
     app,
     pdfSession,
+    navigated,
     localStorage,
     settingsUpdate,
     reads,
@@ -332,6 +334,64 @@ describe("what the view follows in each mode", () => {
     harness.pdfSession.reportSelection([annot.key]);
 
     expect(view.snapshot.selectedAnnotationKeys).toStrictEqual([annot.key]);
+  });
+
+  it("sends a card's selection to the PDF the active tab holds", async () => {
+    const harness = createDeps();
+    const view = await open(harness);
+    harness.pdfSession.setTarget({
+      attachmentKey: PDF_ATTACHMENT,
+      itemKey: PAPER,
+    });
+    harness.openNote(PDF_LEAF);
+    await view.read;
+
+    view.gestures!.onSelectAnnotation(annot);
+
+    expect(harness.navigated).toStrictEqual([annot.key]);
+    expect(view.snapshot.selectedAnnotationKeys).toStrictEqual([annot.key]);
+  });
+
+  it("holds a card's selection itself while no PDF view can take it", async () => {
+    const harness = createDeps();
+    const view = await open(harness);
+    view.gestures!.onSetFollowMode("zotero-reader");
+    harness.pushReaderTarget({ itemID: 1, attachmentID: 11, selected: [] });
+    await view.read;
+
+    view.gestures!.onSelectAnnotation(annot);
+
+    // Zotero owns every gesture on its own reader, so nothing was sent there.
+    expect(harness.navigated).toStrictEqual([]);
+    expect(view.snapshot.selectedAnnotationKeys).toStrictEqual([annot.key]);
+  });
+
+  it("brings one card forward for the Mark Popup, with its comment editor", async () => {
+    const harness = createDeps();
+    const view = await open(harness);
+    harness.openNote(PDF_LEAF);
+    harness.pdfSession.setTarget({
+      attachmentKey: PDF_ATTACHMENT,
+      itemKey: PAPER,
+    });
+    await view.read;
+
+    view.revealAnnotation(annot.key, { comment: true });
+
+    expect(view.snapshot.selectedAnnotationKeys).toStrictEqual([annot.key]);
+    expect(view.snapshot.editingCommentKey).toBe(annot.key);
+  });
+
+  it("leaves a card the list on screen does not hold alone", async () => {
+    const harness = createDeps();
+    const view = await open(harness);
+    harness.openNote(NOTE);
+    await view.read;
+
+    view.revealAnnotation("NOSUCH12", { comment: true });
+
+    expect(view.snapshot.selectedAnnotationKeys).toStrictEqual([]);
+    expect(view.snapshot.editingCommentKey).toBeNull();
   });
 
   it("names the Zotero reader's attachment in Indexed Keys", async () => {

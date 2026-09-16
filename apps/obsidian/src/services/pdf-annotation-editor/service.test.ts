@@ -11,6 +11,7 @@ import {
   attachmentReads,
   capabilityGestures,
   failedIn,
+  markGestures,
   pageView,
   pdfReader,
 } from "./__fixtures__";
@@ -100,6 +101,15 @@ function secondsShown(slot: HTMLElement): string | null {
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 const RETRY_AFTER = NOW.add({ seconds: 45 });
 
+/** The Indexed Key of every mark drawn as selected, in document order. */
+function selectedKeys(page: { div: HTMLElement }): (string | undefined)[] {
+  return [
+    ...page.div.querySelectorAll<SVGElement>(
+      "[data-zotero-annotation-key].is-selected",
+    ),
+  ].map((mark) => mark.dataset.zoteroAnnotationKey);
+}
+
 /** The Indexed Key of every mark painted over one page, in document order. */
 function markedKeys(page: { div: HTMLElement }): (string | undefined)[] {
   return [
@@ -118,6 +128,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
 
   {
@@ -166,6 +177,7 @@ it("paints the attachment's annotations over every page it renders", async () =>
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -188,6 +200,7 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -214,6 +227,7 @@ it("replaces the whole list when the repository announces a change", async () =>
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -242,6 +256,7 @@ it("takes every mark off the page when the leaf closes", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -264,6 +279,7 @@ it("probes the page a view had already painted before the binding attached", asy
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -291,6 +307,7 @@ it("waits for the first render when Obsidian is still opening the document", asy
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -316,6 +333,7 @@ it("reads an external file's absolute path from its `file:` prefix", async () =>
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
 
@@ -339,6 +357,7 @@ it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () =
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -371,6 +390,7 @@ it("paints a view bound while the resolver could not answer yet", async () => {
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -403,6 +423,7 @@ it("unbinds a leaf whose viewer Obsidian already closed", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -432,6 +453,7 @@ it("fails closed to the reader when the controller seam changed shape", async ()
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -458,6 +480,7 @@ it("drops its page listener when a page's viewport changed shape", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -485,6 +508,7 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
     attachments,
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
 
@@ -525,6 +549,7 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
     attachments,
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
 
@@ -551,6 +576,7 @@ it("exposes each open PDF view as a Reader Session, by the file it holds", async
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
 
@@ -577,6 +603,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
     }),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
 
@@ -595,6 +622,7 @@ it("holds the selection a consumer sets, and announces it", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -607,6 +635,35 @@ it("holds the selection a consumer sets, and announces it", async () => {
   expect(announced).toEqual([["PUPR5FG5"]]);
 });
 
+it("paints the mark a consumer selected, and drops one the read retired", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT, UNDERLINE]);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+
+  binding.session.setSelectedAnnotations(["PUPR5FG5"]);
+  expect(selectedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+
+  annotations.replace("ABCD2345", [UNDERLINE]);
+  await binding.refreshed;
+
+  expect(selectedKeys(reader.page)).toEqual([]);
+  expect(binding.session.selected).toEqual([]);
+});
+
 it("moves the reader to the page an annotation is drawn on", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -617,6 +674,7 @@ it("moves the reader to the page an annotation is drawn on", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -644,6 +702,7 @@ it("stops announcing once the view's binding is gone", async () => {
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -669,6 +728,7 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
   });
   {
     await using _service = service;
@@ -708,6 +768,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
     now: () => NOW,
   });
   {
@@ -744,6 +805,7 @@ it("hands the affordance's click and its keyboard activation to the one gesture"
     attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
     capabilityGestures: gestures,
+    markGestures: markGestures(),
   });
   await service.ready;
 
@@ -771,6 +833,7 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
     attachments: attachmentReads(RESOLVED),
     annotations,
     capabilityGestures: gestures,
+    markGestures: markGestures(),
   });
   await service.ready;
 

@@ -2361,5 +2361,9 @@
   "annot_view_write_reason_unknown_annotation": "ZotLit no longer holds this annotation. Refresh data and try again.",
   "annot_view_write_reason_deleted": "This annotation was deleted in Zotero.",
   "annot_view_write_reason_conflict": "This annotation changed in Zotero since ZotLit read it. Refresh data and try again.",
-  "annot_view_write_reason_unknown_outcome": "ZotLit did not learn whether Zotero saved the edit. Refresh data to see what Zotero holds."
+  "annot_view_write_reason_unknown_outcome": "ZotLit did not learn whether Zotero saved the edit. Refresh data to see what Zotero holds.",
+  "pdf_mark_popup_add_comment": "Add comment in the annotation view",
+  "pdf_mark_popup_edit_comment": "Edit comment in the annotation view",
+  "pdf_mark_popup_reveal": "Reveal in the annotation view",
+  "pdf_mark_popup_next_in_stack": "Next mark here ({position} of {total})"
 }
