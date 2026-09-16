@@ -263,6 +263,8 @@ export default class ZotLitPlugin extends Plugin {
         customize,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
+        annotations: services.annotationRepository,
+        writeAuthorization: services.zoteroLocalApi,
         template: services.template,
         release: services.release,
         pandocEngine: services.pandocEngine,

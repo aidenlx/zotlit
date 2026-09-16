@@ -4,17 +4,13 @@
 import type {
   LocalApiFailure,
   LocalApiState,
+  WriteAuthorizationState,
 } from "@/services/zotero-local-api/service";
 
 /**
  * One Editing Capability per Attachment drives every control in the reader and
  * in the Annotation View. API version 3 is the only compatibility gate; the
  * schema version is logged at debug and gates nothing.
- *
- * `authorizing` has no producer until the write path raises Zotero's dialog
- * (aidenlx/zotlit#1144), and `library-read-only` none until a write is refused
- * by the library (aidenlx/zotlit#1145). Both stay in the enum because the
- * surfaces render one closed set of states.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  */
@@ -36,25 +32,39 @@ export type EditingCapability =
     };
 
 /**
- * The capability one Annotation Source leaves, from the probe alone.
+ * The capability one Annotation Source leaves for one Attachment.
  *
- * A session that stands is writable when a Remembered Write Authorization
- * exists for its server and asks for one otherwise; every other state is
- * read-only with the reason the probe or the last answer gave, so a surface can
- * say why rather than only that.
+ * The two facts read first are the ones a request taught this session rather
+ * than the probe: a library Zotero refuses writes to cannot be argued with, and
+ * a gesture standing at Zotero's dialog is what the surface should say while it
+ * waits. Under a session that stands, a Write Authorization in hand is writable
+ * and Zotero's dialog cooldown blocks only the asking — so a remembered
+ * authorization outranks it. Every other state is read-only with the reason the
+ * probe or the last answer gave, so a surface can say why rather than only
+ * that.
  *
  * @param state what the Zotero Local API's last Capability Probe learned.
+ * @param writes what the write path learned about this Attachment.
  * @param now the clock a cooldown deadline is read against.
  */
 export function editingCapabilityOf(
   state: LocalApiState,
+  writes: WriteAuthorizationState,
   now: () => Temporal.Instant,
 ): EditingCapability {
+  if (writes.libraryReadOnly) {
+    return { kind: "read-only", reason: "library-read-only" };
+  }
+  if (writes.authorizing) return { kind: "authorizing" };
   switch (state.kind) {
-    case "available":
-      return state.authorized
-        ? { kind: "writable" }
+    case "available": {
+      if (state.authorized) return { kind: "writable" };
+      const { cooldownUntil } = writes;
+      return cooldownUntil !== null &&
+        Temporal.Instant.compare(cooldownUntil, now()) > 0
+        ? { kind: "cooldown", retryAfter: cooldownUntil }
         : { kind: "authorization-required" };
+    }
     case "probing":
       return { kind: "read-only", reason: "probing" };
     default:

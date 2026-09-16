@@ -414,6 +414,30 @@ it("asks for authorization once a session stands, and keeps reading meanwhile", 
   expect(list?.annotations).toHaveLength(7);
 });
 
+it("answers the session's own capability, and announces when one moves", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, localApi } = await setup(stack, {
+    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  });
+  let announced = 0;
+  stack.defer(
+    repository.on("capability-changed", () => {
+      announced += 1;
+    }),
+  );
+
+  expect(repository.capability).toEqual({
+    kind: "read-only",
+    reason: "probing",
+  });
+  await localApi.probe();
+
+  // The settings row reads this one: it names no Attachment, so no library
+  // Zotero refused a write to is part of it.
+  expect(repository.capability).toEqual({ kind: "authorization-required" });
+  expect(announced).toBeGreaterThan(0);
+});
+
 /** Read once so the Capability Probe runs, and wait for the source it finds. */
 async function switchToLocalApi(
   repository: AnnotationRepository,

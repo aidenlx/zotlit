@@ -24,6 +24,7 @@ import {
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
 import type {
+  AnnotationCapabilityActions,
   AttachmentImportActions,
   CitationIndexActions,
   LocalBridgeActions,
@@ -33,6 +34,7 @@ import type {
   SettingsControlKey,
   SettingsKey,
   SettingTabContext,
+  WriteAuthorizationActions,
 } from "./context";
 import { noteImportPageItems } from "./note-import";
 import {
@@ -60,6 +62,8 @@ export interface ZotLitSettingTabOptions {
   customize: CustomizeAction;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
+  annotations: AnnotationCapabilityActions;
+  writeAuthorization: WriteAuthorizationActions;
   template: TemplateService;
   release: ReleaseTabActions;
   pandocEngine: PandocEngineActions;
@@ -79,6 +83,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #customize: CustomizeAction;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
+  readonly #annotations: AnnotationCapabilityActions;
+  readonly #writeAuthorization: WriteAuthorizationActions;
   readonly #profile: ProfileService;
   readonly #template: TemplateService;
   readonly #release: ReleaseTabActions;
@@ -98,6 +104,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
     customize,
     attachmentImport,
     citationIndex,
+    annotations,
+    writeAuthorization,
     template,
     profile,
     release,
@@ -123,6 +131,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#customize = customize;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
+    this.#annotations = annotations;
+    this.#writeAuthorization = writeAuthorization;
     this.#template = template;
     this.#profile = profile;
     plugin.register(profile.on("changed", () => this.#requestUpdate()));
@@ -230,6 +240,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
       customize: this.#customize,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
+      annotations: this.#annotations,
+      writeAuthorization: this.#writeAuthorization,
       template: this.#template,
       release: this.#release,
       pandocEngine: this.#pandocEngine,

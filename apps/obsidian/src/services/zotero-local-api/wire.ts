@@ -37,12 +37,31 @@ export const NO_CACHE_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The Client Name Zotero shows in its Write Authorization dialog, and the
+ * `appName` the authorize route requires. One string for every vault.
+ *
+ * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+ */
+export const CLIENT_NAME = "ZotLit for Obsidian";
+
+/** The route that raises Zotero's Write Authorization dialog. */
+export const AUTHORIZE_PATH = "/api/local/authorize";
+
+/**
  * Zotero's 12-character per-database server id, `Zotero.Utilities.randomString`
  * over an alphanumeric alphabet.
  *
  * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L770-L789
  */
 const SERVER_ID_RE = /^[0-9A-Za-z]{12}$/;
+
+/**
+ * Zotero's 32-character local API key, `Zotero.Utilities.randomString(32)` over
+ * the same alphanumeric alphabet.
+ *
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L823-L868
+ */
+const API_KEY_RE = /^[0-9A-Za-z]{32}$/;
 
 /** Zotero's own colour rule, anchored and lower case as the client applies it. */
 const COLOR_RE = /^#[0-9a-f]{6}$/;
@@ -230,6 +249,43 @@ export function readAnnotationPage(
 }
 
 /**
+ * What Zotero granted, read from the authorize route's answer.
+ *
+ * `remember` is `true` for Always Allow **and for a dismissed dialog**: Gecko
+ * records slot 1 as the result of any close that is not a button press, and
+ * Zotero maps slot 1 to Always Allow. So a closed dialog grants a persistent
+ * key; it is not a refusal and ZotLit must not read it as one. Only the Deny
+ * button, which is also the default button that Return activates, answers
+ * `403 {"denied":true}`.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1144
+ */
+export interface AuthorizationGrant {
+  /** Zotero's 32-character local API key. */
+  key: string;
+  /** Whether Zotero kept the key past the request that spends it. */
+  remember: boolean;
+}
+
+/**
+ * The grant one `POST /api/local/authorize` answered, or why its body cannot be
+ * believed. A refusal never reaches here: the status classifies it first.
+ */
+export function readGrant(body: string): LocalApiResult<AuthorizationGrant> {
+  const parsed = v.safeParse(grantSchema, parseJson(body));
+  if (!parsed.success) {
+    return { failure: invalid(`authorization: ${issueOf(parsed.issues)}`) };
+  }
+  const { key, remember } = parsed.output;
+  if (!API_KEY_RE.test(key)) {
+    return {
+      failure: invalid(`authorization key of ${key.length} characters`),
+    };
+  }
+  return { value: { key, remember } };
+}
+
+/**
  * How many Annotations the whole search holds, which every page of it carries,
  * or `null` where the answer named none — the count a page walk ends on.
  *
@@ -248,6 +304,11 @@ export function isServerID(value: string): boolean {
 export function invalid(issue: string): LocalApiFailure {
   return { kind: "invalid-response", issue };
 }
+
+const grantSchema = v.object({
+  key: v.string(),
+  remember: v.boolean(),
+});
 
 const itemPageSchema = v.array(
   v.object({
