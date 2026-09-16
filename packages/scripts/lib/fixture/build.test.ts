@@ -41,6 +41,7 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 
 import {
   ANNOTATIONS,
+  ASSET_DIR,
   ATTACHMENTS,
   BUILD_TIMESTAMP,
   buildFixture,
@@ -54,6 +55,7 @@ import {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  PARITY_PDFS,
   SCOPE_CASES,
   SEEDED_CITATION_KEYS,
   seededCitationKeyDrift,
@@ -557,6 +559,28 @@ describe("the generated Zotero database", () => {
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(createHash("sha256").update(pdf).digest("hex")).toBe(
       "ffc1005680cb620eec4c913437dfabbf311b535cfe16cbaeb2faec1f92afc362",
+    );
+  });
+
+  it("commits the Sort Index / Page Label parity PDFs asset-only", async () => {
+    const digests = await Promise.all(
+      PARITY_PDFS.map(async ({ asset }) => {
+        const path = join(ASSET_DIR, asset);
+        const bytes = await readFile(path);
+        return {
+          asset,
+          startsWithPdfHeader: bytes.subarray(0, 5).toString() === "%PDF-",
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        };
+      }),
+    );
+
+    expect(digests).toEqual(
+      PARITY_PDFS.map(({ asset, sha256 }) => ({
+        asset,
+        startsWithPdfHeader: true,
+        sha256,
+      })),
     );
   });
 

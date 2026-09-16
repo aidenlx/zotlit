@@ -15,6 +15,7 @@
   },
   "exports": {
     "./fixture": "./lib/fixture/build.ts",
+    "./fixture/spec": "./lib/fixture/spec.ts",
     "./fixture/local-bridge": "./lib/fixture/local-bridge.ts",
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
     "./package-roots": "./lib/package-roots.ts",

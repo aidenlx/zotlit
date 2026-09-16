@@ -45,6 +45,30 @@ Each file contains @see comments linking to the specific upstream source.
 
 =========================================================================
 
+This project contains a verbatim copy of three modules from Zotero's fork of
+PDF.js, pinned to zotero/pdf.js f57fc80d1c07e4cdc50a767ae0b500b5272123b4
+(zotero/reader 132bb787937a540a09513415fd507654eb0e88f9, zotero/zotero
+22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c):
+
+  packages/pdf-structure/src/vendor/structure.js
+  packages/pdf-structure/src/vendor/page-label.js
+  packages/pdf-structure/src/vendor/util.js
+
+  src/core/module/ lives in zotero/pdf.js, an Apache-2.0 submodule of the
+  AGPL-3.0 zotero/reader, so those files are licensed under the Apache
+  License, Version 2.0. A copy of the License is available at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  structure.js additionally carries Mozilla's bidi.js inline, under its own
+  Apache-2.0 notice:
+
+    Copyright 2012 Mozilla Foundation
+
+  Each file repeats this notice and its pinned commits in its header.
+
+=========================================================================
+
 This project also contains code derived from Mozilla web-ext:
 
   apps/zotero/scripts/dev-server/remote-firefox.ts
