@@ -296,6 +296,18 @@ _Avoid_: degraded state (names the feeling, not the reason), fallback state, wri
 The one rule an Annotation View instance uses to choose the Attachment it shows: Active Tab (the Item of the active Literature Note, or the Attachment of the active Obsidian PDF view), Zotero Reader (the Attachment of the Reader Session the Zotero Reader has in front), or Pinned (one Item the user chose, with the attachment choice remembered). Chosen and changed by the user alone; a source that cannot answer shows its reason in place.
 _Avoid_: follow target, link mode, linked item (the old name of Pinned), auto-follow
 
+**Annotation Mark**:
+The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, not a control: hit-tested by geometry, selected by class, rebuilt with the page.
+_Avoid_: overlay element, highlight box, mark widget
+
+**Mark Popup**:
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover.
+_Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
+
+**Creation Toolbar**:
+The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
+_Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
+
 **Uncertain Create**:
 An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero. Resolved by re-reading and matching stable fields, or by the user; never retried on its own.
 _Avoid_: pending create (a pending write has an outcome coming), orphaned write, lost write
