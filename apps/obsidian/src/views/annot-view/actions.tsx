@@ -9,11 +9,17 @@ import { resolveAnnotCachePath } from "@zotlit/db/path";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  AnnotationRepository,
+  MutationState,
+} from "@/services/annotation-repository/service";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
+import type { CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import type { FollowMode } from "./store";
 
@@ -31,6 +37,12 @@ export interface AnnotActions {
   onUnpin(): void;
   /** Turn Live updates on, so the Zotero reader can reach this view. */
   onEnableLiveUpdates(): void;
+  /** Recolour one Annotation in Zotero, from a swatch in the card's menu. */
+  onSetColor(annot: AnnotationRecord, color: string): void;
+  /** Store what the card's comment editor holds, from the gesture that closed it. */
+  onSaveComment(annot: AnnotationRecord, comment: string): void;
+  /** Erase one Annotation in Zotero, from the card's overflow menu. */
+  onDeleteAnnotation(annot: AnnotationRecord): void;
   getImgSrc(annot: AnnotationRecord): string;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
@@ -40,6 +52,22 @@ export interface AnnotActions {
 export interface AnnotActionDeps {
   app: App;
   getDataDir: () => string;
+  /**
+   * The one write path for an Annotation. Commands take Indexed Keys: the
+   * repository holds the record a write stamps its precondition off.
+   */
+  annotations: Pick<
+    AnnotationRepository,
+    "deleteAnnotation" | "patchColor" | "patchComment"
+  >;
+  /** The clock a failure notice reads a cooldown's remaining seconds against. */
+  now?: () => Temporal.Instant;
+  /**
+   * Whether the overflow menu's delete runs, and the reason it does not. The
+   * view supplies it: the capability and the Annotation's mutation state live
+   * in its store, and the native menu is built outside React.
+   */
+  deleteControl: (annot: AnnotationRecord) => CardControl;
   /**
    * The numeric id the Zotero database holds for an Annotation, or `null` for
    * one it does not hold yet — an Annotation created through the Zotero Local
@@ -77,6 +105,30 @@ function resourceUrl(absolutePath: string): string {
 }
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
+  const now = deps.now ?? (() => Temporal.Now.instant());
+
+  /**
+   * The seam a write's outcome is rendered at: the repository answers data and
+   * the notice is raised here, once, naming the reason. Nothing was drawn
+   * ahead of Zotero, so a failure needs no undo — the card already shows what
+   * Zotero holds.
+   *
+   * @see apps/obsidian/policies/ui-seams.md
+   */
+  const report = (outcome: Promise<MutationState>): void => {
+    void outcome.then((state) => {
+      if (state.kind !== "failed") return;
+      new BaseNotice(writeFailureMessage(state.failure, now()));
+    });
+  };
+
+  const onSetColor = (annot: AnnotationRecord, color: string): void =>
+    report(deps.annotations.patchColor(annot.key, color));
+  const onSaveComment = (annot: AnnotationRecord, comment: string): void =>
+    report(deps.annotations.patchComment(annot.key, comment));
+  const onDeleteAnnotation = (annot: AnnotationRecord): void =>
+    report(deps.annotations.deleteAnnotation(annot.key));
+
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -180,12 +232,30 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         });
     });
 
+    // A native MenuItem carries no tooltip, so a blocked delete says why in a
+    // label beside it rather than in one it cannot show.
+    // @see apps/obsidian/policies/tooltips.md
+    const control = deps.deleteControl(annot);
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_delete())
+        .setIcon("trash-2")
+        .setDisabled(control.disabled)
+        .onClick(() => onDeleteAnnotation(annot));
+    });
+    if (control.disabled) {
+      menu.addItem((item) => item.setTitle(control.tooltip).setIsLabel(true));
+    }
+
     return menu;
   };
 
   return {
     getBacklink,
     getImgSrc,
+    onSetColor,
+    onSaveComment,
+    onDeleteAnnotation,
     onMoreOptions(evt, annot) {
       const menu = buildMenu(annot);
       if ("nativeEvent" in evt) {
@@ -222,6 +292,9 @@ const NOOP_ACTIONS: AnnotActions = {
   onPinItem: () => {},
   onUnpin: () => {},
   onEnableLiveUpdates: () => {},
+  onSetColor: () => {},
+  onSaveComment: () => {},
+  onDeleteAnnotation: () => {},
   onRefresh: () => {},
   getImgSrc: () => IMG_PLACEHOLDER,
   getBacklink: () => undefined,

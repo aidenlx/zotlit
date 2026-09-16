@@ -18,7 +18,9 @@ import {
   CLIENT_NAME,
   invalid,
   isServerID,
+  libraryPath,
   NO_CACHE_HEADERS,
+  readAnnotationItem,
   readAnnotationPage,
   readGrant,
   totalResults,
@@ -400,6 +402,40 @@ export class ZoteroLocalApiClient extends Service<void> {
     });
     if ("failure" in reply) await this.#writeRefused(reply.failure, library);
     return reply;
+  }
+
+  /**
+   * One Annotation as Zotero holds it now, which is what a write reads back
+   * after its `204`. That answer's `Last-Modified-Version` is the **library's**
+   * version, which a quiet library leaves equal to the object's and a busy one
+   * does not, so the object's own version is only ever knowable from here.
+   * Reading it back also puts the stored record through the same validation a
+   * listed one goes through before anything believes it.
+   *
+   * A failed re-read leaves the session standing. The write has already
+   * landed, so this says nothing about whether Zotero answers — its caller
+   * drops the Attachment's list instead, and the next read reconciles.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @param attachmentKey the Attachment it must still hang from.
+   */
+  async readAnnotation(
+    annotationKey: string,
+    attachmentKey: string,
+    signal?: AbortSignal,
+  ): Promise<LocalApiResult<LocalApiAnnotation>> {
+    const state = this.#state;
+    if (state.kind !== "available") {
+      return { failure: noSessionFailure(state) };
+    }
+    const parsed = parseIndexedKey(annotationKey);
+    if (!parsed) return { failure: invalid(`annotation key ${annotationKey}`) };
+    const reply = await this.#send(
+      `/api/${libraryPath(parsed)}/items/${parsed.key}`,
+      { serverID: state.source.serverID, signal },
+    );
+    if ("failure" in reply) return reply;
+    return readAnnotationItem(reply.value.text, attachmentKey);
   }
 
   /**
@@ -864,11 +900,6 @@ class Gestures {
     logger.debug("The authorization gesture was abandoned");
     this.#controller.abort(new AbortError("Authorization gesture abandoned"));
   }
-}
-
-/** The library route one Indexed Key names — `users/0`, or one group's. */
-function libraryPath({ groupID }: { groupID: number | null }): string {
-  return groupID === null ? "users/0" : `groups/${groupID}`;
 }
 
 /**

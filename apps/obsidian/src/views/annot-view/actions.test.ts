@@ -2,6 +2,7 @@ import { Menu } from "@mock/obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { IDLE } from "@/services/annotation-repository/write";
 
 import { createAnnotActions } from "./actions";
 
@@ -28,23 +29,43 @@ beforeEach(() => {
   });
 });
 
+/** The repository's write path, with every command observable. */
+function writes() {
+  return {
+    patchColor: vi.fn(() => Promise.resolve(IDLE)),
+    patchComment: vi.fn(() => Promise.resolve(IDLE)),
+    deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
+  };
+}
+
+function setup(
+  overrides: Partial<Parameters<typeof createAnnotActions>[0]> = {},
+) {
+  const annotations = writes();
+  const actions = createAnnotActions({
+    app: {} as never,
+    getDataDir: () => "",
+    annotations,
+    deleteControl: () => ({ disabled: false, tooltip: "Delete annotation" }),
+    resolveAnnotationID: () => 1,
+    refresh: vi.fn(),
+    noteFeature: { renderAnnotationCitation: () => null },
+    onDragStart: vi.fn(),
+    renderComment: () => () => {},
+    onSetFollowMode: vi.fn(),
+    onPinCurrentItem: vi.fn(),
+    onPinItem: vi.fn(),
+    onUnpin: vi.fn(),
+    onEnableLiveUpdates: vi.fn(),
+    onExploreAnnotation: vi.fn(),
+    ...overrides,
+  });
+  return { actions, annotations };
+}
+
 describe("Annotation View menu", () => {
   it("offers the selected annotation's key", () => {
-    const actions = createAnnotActions({
-      app: {} as never,
-      getDataDir: () => "",
-      resolveAnnotationID: () => 1,
-      refresh: vi.fn(),
-      noteFeature: { renderAnnotationCitation: () => null },
-      onDragStart: vi.fn(),
-      renderComment: () => () => {},
-      onSetFollowMode: vi.fn(),
-      onPinCurrentItem: vi.fn(),
-      onPinItem: vi.fn(),
-      onUnpin: vi.fn(),
-      onEnableLiveUpdates: vi.fn(),
-      onExploreAnnotation: vi.fn(),
-    });
+    const { actions } = setup();
 
     actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
 
@@ -59,5 +80,41 @@ describe("Annotation View menu", () => {
 
     copyKey!.click();
     expect(writeText).toHaveBeenCalledWith("ANNT2345g42");
+  });
+
+  it("deletes through the repository, by key alone", () => {
+    const { actions, annotations } = setup();
+
+    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    const menu = Menu.instances[0]!;
+    const remove = menu.items.find(
+      (item) => item.title === "Delete annotation",
+    );
+
+    expect(remove?.disabled).toBe(false);
+    remove!.click();
+    expect(annotations.deleteAnnotation).toHaveBeenCalledWith("ANNT2345g42");
+  });
+
+  it("disables the delete in place and says why beside it", () => {
+    const reason = "You do not have write access to this library.";
+    const { actions, annotations } = setup({
+      deleteControl: () => ({ disabled: true, tooltip: reason }),
+    });
+
+    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    const menu = Menu.instances[0]!;
+    const remove = menu.items.find(
+      (item) => item.title === "Delete annotation",
+    );
+
+    expect(remove?.disabled).toBe(true);
+    // A native MenuItem shows no tooltip, so the reason stands as a label row.
+    // @see apps/obsidian/policies/tooltips.md
+    expect(
+      menu.items.some((item) => item.isLabel && item.title === reason),
+    ).toBe(true);
+    remove!.click();
+    expect(annotations.deleteAnnotation).not.toHaveBeenCalled();
   });
 });

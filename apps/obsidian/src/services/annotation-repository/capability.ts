@@ -68,11 +68,16 @@ export function editingCapabilityOf(
     case "probing":
       return { kind: "read-only", reason: "probing" };
     default:
-      return fromFailure(state.failure, now);
+      return capabilityOfFailure(state.failure, now);
   }
 }
 
-function fromFailure(
+/**
+ * What one failure leaves the session able to do, for a caller holding a
+ * failure rather than a probe — the write path, naming the reason an edit did
+ * not land in the same words the affordance uses.
+ */
+export function capabilityOfFailure(
   failure: LocalApiFailure,
   now: () => Temporal.Instant,
 ): EditingCapability {
@@ -96,11 +101,13 @@ function fromFailure(
     case "cooldown":
       return { kind: "cooldown", retryAfter: now().add(failure.retryAfter) };
     case "invalid-response":
-    // A read sends no version and no write token, so a `412` of either kind
-    // answers a question this client never asked. The write path owns both as
-    // per-annotation mutation state (aidenlx/zotlit#1145), never as capability.
+    // A read sends no version and no write token, and the list route answers an
+    // empty list rather than a `404`, so all three answer a question this client
+    // never asked. The write path owns them as per-annotation mutation state
+    // (aidenlx/zotlit#1145), never as capability.
     case "conflict":
     case "write-token-used":
+    case "not-found":
       return { kind: "read-only", reason: "invalid-response" };
     default:
       // A failure kind added without a capability for it fails to compile here.

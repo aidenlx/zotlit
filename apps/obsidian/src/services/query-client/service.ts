@@ -123,6 +123,24 @@ export class QueryClientService extends Service {
   }
 
   /**
+   * Replaces what one key holds, for an owner that learned the new value
+   * without reading again — a write whose own answer already carries it.
+   *
+   * A key the cache holds nothing for is left alone: there is no value to
+   * replace, and the first read of that key answers it.
+   *
+   * @param key the key whose held value moves.
+   * @param next what the held value becomes.
+   */
+  update<T>(key: QueryKey, next: (held: T) => T): void {
+    const query = this.#client
+      .getQueryCache()
+      .find<T>({ queryKey: key, exact: true });
+    if (query === undefined || query.state.data === undefined) return;
+    this.#client.setQueryData<T>(key, next(query.state.data));
+  }
+
+  /**
    * Every key under one prefix that the cache holds a read for, so an owner can
    * name what it just dropped without walking the cache itself.
    *

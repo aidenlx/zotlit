@@ -204,9 +204,20 @@ export interface ZoteroAnswers {
    * @default Allow, a One-time Authorization
    */
   authorize?: (request: ZoteroRequest) => Response | Promise<Response>;
+  /**
+   * `GET /api/{library}/items/{key}` — the single-item route a write reads the
+   * Annotation back through once Zotero has taken it.
+   *
+   * @default the {@link ZoteroAnswers.write} answer, so a test that never
+   *   names it sees whatever that route gives.
+   */
+  item?: (request: ZoteroRequest) => Response | Promise<Response>;
   /** Every other route: what an authenticated write answers. @default `204` */
   write?: (request: ZoteroRequest) => Response | Promise<Response>;
 }
+
+/** `/api/users/0/items/RGRPDF24` and its group form, but not the list routes. */
+const ITEM_PATH = /^\/api\/(?:users|groups)\/\d+\/items\/[^/]+$/;
 
 /**
  * The transport seam under the client: a `fetch` that replays answers, and
@@ -239,6 +250,13 @@ export function fakeZotero(answers: ZoteroAnswers = {}): {
       return untilAborted(children(childrenRequest(url)), init?.signal);
     }
     const write = answers.write ?? (() => writeAccepted());
+    if (
+      answers.item &&
+      request.method === "GET" &&
+      ITEM_PATH.test(url.pathname)
+    ) {
+      return untilAborted(answers.item(request), init?.signal);
+    }
     return untilAborted(write(request), init?.signal);
   });
   return { fetch, requests };
@@ -316,6 +334,35 @@ export function annotationPage(
       },
     },
   );
+}
+
+/**
+ * One Annotation from the single-item route. SYNTHESISED, on the same terms as
+ * {@link annotationPage}: the envelope is the recorded one, the
+ * `annotation*` fields are not.
+ */
+export function annotationItem(
+  annotation: WireAnnotation,
+  options: { parentItem?: string } = {},
+): Response {
+  const parentItem = options.parentItem ?? ATTACHMENT_KEY;
+  return new Response(JSON.stringify(wireItem(annotation, parentItem)), {
+    status: 200,
+    headers: { ...API_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * CONTRACT-DERIVED — `404`, which a write meets when Zotero no longer holds
+ * the object. A read never produces one: the list route answers an empty list.
+ *
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L2305-L2312
+ */
+export function notFound(): Response {
+  return new Response("Not found", {
+    status: 404,
+    headers: { ...API_HEADERS, "Content-Type": "text/plain" },
+  });
 }
 
 /** RECORDED — `412`, the answer a read gets when another database holds the port. */

@@ -2,9 +2,7 @@
 // cluster; toggles an inline tag-cloud panel rendered directly beneath it.
 import { useMemo } from "react";
 
-import { annotationColorToName } from "@zotlit/db";
-import type { AnnotationColorName } from "@zotlit/db";
-
+import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
 
@@ -25,24 +23,6 @@ import {
   useTogglePanel,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
-
-const COLOR_MESSAGE: Record<AnnotationColorName, () => string> = {
-  yellow: m.annot_view_color_yellow,
-  red: m.annot_view_color_red,
-  green: m.annot_view_color_green,
-  blue: m.annot_view_color_blue,
-  purple: m.annot_view_color_purple,
-  magenta: m.annot_view_color_magenta,
-  orange: m.annot_view_color_orange,
-  gray: m.annot_view_color_gray,
-  plum: m.annot_view_color_plum,
-};
-
-/** Color name for a swatch tooltip; falls back to the raw hex for colors outside the reader/Citavi palette. */
-function colorLabel(hex: string): string {
-  const name = annotationColorToName(hex);
-  return name ? COLOR_MESSAGE[name]() : hex;
-}
 
 export function FilterBar() {
   const annotations = useAnnotStore((s) => s.annotations);
@@ -155,7 +135,7 @@ function SwatchRow({
             )}
             style={{ backgroundColor: hex }}
             {...activatable(() => onToggle(hex))}
-            {...tooltipAttrs(colorLabel(hex))}
+            {...tooltipAttrs(annotationColorLabel(hex))}
           />
         );
       })}

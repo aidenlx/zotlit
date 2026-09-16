@@ -9,6 +9,8 @@ import type {
   AnnotationRecord,
 } from "@/services/annotation-repository/service";
 
+import { readOnlyWrites } from "./__fixtures__";
+
 const item = {
   itemID: 1,
   libraryID: 1,
@@ -143,9 +145,8 @@ function createDeps() {
           source: { kind: "zotero-db" },
           annotations: [annot],
         }),
-      capability: { kind: "writable" },
-      capabilityFor: () => ({ kind: "writable" }),
       on: () => () => undefined,
+      ...readOnlyWrites(),
     },
     showEditingCapability: () => undefined,
     zoteroPref: { dataDir: "/zotero" },
