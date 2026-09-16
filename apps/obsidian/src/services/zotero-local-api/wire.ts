@@ -276,6 +276,55 @@ export function readAnnotationItem(
   return toAnnotation(parsed.output, attachmentKey);
 }
 
+/**
+ * The bare item key one create answered, or why its answer cannot be believed.
+ *
+ * A `200` still carries object-level outcomes, so the body is read object by
+ * object: any entry under `failed` fails the create, and the one object that
+ * succeeded must carry the key `success` names, the Attachment the request
+ * asked for, and the type it asked for.
+ *
+ * @param expected what the request asked Zotero to create.
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L1919-L1972
+ */
+export function readCreateResult(
+  body: string,
+  expected: { parentKey: string; type: ResolvedAnnotationTypeName },
+): LocalApiResult<string> {
+  const parsed = v.safeParse(createResultSchema, parseJson(body));
+  if (!parsed.success) {
+    return { failure: invalid(`create result: ${issueOf(parsed.issues)}`) };
+  }
+  const { successful, success, failed } = parsed.output;
+
+  const [refused] = Object.values(failed);
+  if (refused) {
+    return {
+      failure: invalid(`create refused: ${refused.code} ${refused.message}`),
+    };
+  }
+
+  const key = success["0"];
+  const created = successful["0"];
+  if (key === undefined || created === undefined) {
+    return { failure: invalid("create answered no object") };
+  }
+  if (!isItemKey(key) || created.key !== key || created.data.key !== key) {
+    return { failure: invalid(`create answered key ${created.key}`) };
+  }
+  if (created.data.parentItem !== expected.parentKey) {
+    return {
+      failure: invalid(`create answered parent ${created.data.parentItem}`),
+    };
+  }
+  if (created.data.annotationType !== expected.type) {
+    return {
+      failure: invalid(`create answered ${created.data.annotationType}`),
+    };
+  }
+  return { value: key };
+}
+
 /** The library route one Indexed Key names — `users/0`, or one group's. */
 export function libraryPath({ groupID }: { groupID: number | null }): string {
   return groupID === null ? "users/0" : `groups/${groupID}`;
@@ -366,6 +415,34 @@ const itemSchema = v.object({
 });
 
 const itemPageSchema = v.array(itemSchema);
+
+/**
+ * The indexed result a multi-object write answers with. Zotero keys every map
+ * by the object's position in the request body, as a string.
+ *
+ * Only the three fields the create checks are read here; everything else about
+ * the new Annotation comes from the re-read, which applies the full record
+ * validation. A stricter schema here would turn a create that landed into an
+ * unreadable answer over a field the caller never looks at.
+ */
+const createResultSchema = v.object({
+  successful: v.record(
+    v.string(),
+    v.object({
+      key: v.string(),
+      data: v.object({
+        key: v.string(),
+        parentItem: v.string(),
+        annotationType: v.picklist(ANNOTATION_TYPES),
+      }),
+    }),
+  ),
+  success: v.record(v.string(), v.string()),
+  failed: v.record(
+    v.string(),
+    v.object({ code: v.number(), message: v.string() }),
+  ),
+});
 
 type WireItem = v.InferOutput<typeof itemSchema>;
 

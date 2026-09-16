@@ -9,6 +9,8 @@ import type {
   PDFViewerController,
 } from "obsidian";
 
+import { PdfTextStructure } from "@zotlit/pdf-structure";
+
 import { registerDomEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -22,12 +24,15 @@ import type {
 } from "@/services/attachment-resolver/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
+import { editingLive } from "@/views/annot-view/card-controls";
 
 import {
   isEditGesture,
   removeCapabilityAffordance,
   renderCapabilityAffordance,
 } from "./capability-affordance";
+import { MarkCreation } from "./creation";
+import type { ReaderPage } from "./creation";
 import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
 import type { PdfPageAnnotation } from "./render";
 import {
@@ -35,6 +40,7 @@ import {
   onPageRendered,
   openFilePathOf,
   pageViewOf,
+  pdfDocumentOf,
   PdfSeamProbeLog,
   probeController,
   probeFileView,
@@ -47,6 +53,7 @@ import {
 import type { PdfSeamProbeResult } from "./seam";
 import { MarkSelection } from "./selection";
 import type { MarkGestures } from "./selection";
+import { pdfPageSource } from "./text-structure";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -64,6 +71,7 @@ export type AnnotationReads = Pick<
   AnnotationRepository,
   | "capability"
   | "capabilityFor"
+  | "createAnnotation"
   | "deleteAnnotation"
   | "mutationFor"
   | "on"
@@ -148,6 +156,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
   readonly #painted = new Set<number>();
+  /**
+   * The pages PDF.js has built for this document, by zero-based index. A text
+   * selection can only reach a page that has rendered, so this is the whole
+   * search space selection capture and the popup's anchor walk.
+   */
+  readonly #rendered = new Set<number>();
   #attachment: AttachmentResolution = { kind: "pending" };
   #filePath: string | null = null;
   #absolutePath: string | null = null;
@@ -158,12 +172,24 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #records: readonly AnnotationRecord[] = [];
   /** The selected Annotation Mark of this view; `null` until one can be made. */
   #selection: MarkSelection | null = null;
+  /** The creation surfaces of this view; `null` until they can be mounted. */
+  #creation: MarkCreation | null = null;
+  /**
+   * This Reader Session's Structured Characters, memoized per page for as long
+   * as the session lives. One PDF view is one Reader Session, so the memo is
+   * built here and released with the binding.
+   *
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  #structure: PdfTextStructure | null = null;
   #refreshing = Promise.resolve();
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
   /** Redraws the Editing Capability affordance; a no-op until one is mounted. */
   #drawCapability: () => void = () => undefined;
-  #capabilityMounted = false;
+  /** The Creation Toolbar's own slot for the affordance; `null` until mounted. */
+  #capabilitySlot: HTMLElement | null = null;
+  #toolbarMounted = false;
   #gesturing = Promise.resolve();
 
   constructor({
@@ -305,8 +331,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
     );
     if (!this.supported || this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
-    this.#mountCapability();
     this.#mountSelection(attachmentKey);
+    this.#mountToolbar();
     this.#surfaces.defer(
       this.#annotations.on("annotations-changed", (changedKey) => {
         if (changedKey === attachmentKey) this.#refresh();
@@ -340,7 +366,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (!this.supported) return;
 
     this.#controller = controller;
-    this.#mountCapability();
+    this.#openStructure(controller);
+    this.#mountToolbar();
 
     const onRender: PDFPageRenderedListener = (event) => {
       this.#probes.record(probeRenderEvent(event));
@@ -349,6 +376,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this[Symbol.dispose]();
         return;
       }
+      this.#rendered.add(event.pageNumber - 1);
       // PDF.js drops every child it does not keep on a zoom, a rotation and a
       // page recycle, so each render rebuilds this page's marks from data.
       this.#paint(event.pageNumber - 1);
@@ -366,8 +394,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
   }
 
   /**
-   * The always-present Editing Capability affordance, in the reader's own right
-   * toolbar slot, beside the keystrokes that ask to edit under a block.
+   * The Creation Toolbar in the reader's own right toolbar slot, carrying the
+   * always-present Editing Capability affordance in its own slot, beside the
+   * keystrokes that ask to edit under a block.
    *
    * Runs once, when both halves stand: the viewer child that owns the toolbar,
    * and an Attachment this view can edit. A PDF Zotero does not know is left
@@ -376,17 +405,18 @@ export class PdfViewBinding implements Disposable, HoverParent {
    *
    * The countdown is a `setInterval` on the toolbar's own window, held under
    * this binding's disposer so a closed leaf, a file switch and plugin unload
-   * each stop it; the node goes the same way, and its removal is idempotent
-   * because Obsidian's own `empty()` on unload may have cleared it first.
+   * each stop it; the nodes go the same way, and their removal is idempotent
+   * because Obsidian's own `empty()` on unload may have cleared them first.
    *
    * @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
    */
-  #mountCapability(): void {
-    if (this.#capabilityMounted || this.#attachment.kind !== "resolved") return;
+  #mountToolbar(): void {
+    const creation = this.#creation;
+    if (this.#toolbarMounted || !creation) return;
     const controller = this.#controller;
     const slot = controller && toolbarSlotOf(controller);
     if (!slot) return;
-    this.#capabilityMounted = true;
+    this.#toolbarMounted = true;
     let ticking: number | null = null;
     const stopTicking = (): void => {
       if (ticking === null) return;
@@ -395,9 +425,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
     };
 
     this.#drawCapability = () => {
-      if (this.#surfaces.disposed) return;
+      const capabilitySlot = this.#capabilitySlot;
+      if (this.#surfaces.disposed || !capabilitySlot) return;
       const capability = this.#capability();
-      renderCapabilityAffordance(slot, {
+      renderCapabilityAffordance(capabilitySlot, {
         capability,
         now: this.#now(),
         onActivate: () => this.#gestures.showEditingCapability(),
@@ -413,7 +444,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#surfaces.defer(() => {
       stopTicking();
       this.#drawCapability = () => undefined;
-      removeCapabilityAffordance(slot);
+      // The Creation Toolbar takes its own slot out with it, and Obsidian's
+      // `empty()` on unload may have cleared both first, so this is the third
+      // idempotent removal of the same node rather than the only one.
+      if (this.#capabilitySlot)
+        removeCapabilityAffordance(this.#capabilitySlot);
+      this.#capabilitySlot = null;
     });
     this.#surfaces.defer(
       this.#annotations.on("capability-changed", () => this.#drawCapability()),
@@ -423,23 +459,46 @@ export class PdfViewBinding implements Disposable, HoverParent {
         if (isEditGesture(event)) this.#editGesture();
       }),
     );
-    this.#drawCapability();
+    creation.mountToolbar(slot);
   }
 
   /**
-   * The selected Annotation Mark and the Mark Popup over it, for the Attachment
-   * this view holds. Runs once: a file switch builds a new binding, and the
-   * gestures are heard on the view's own container, which outlives every page.
+   * The selected Annotation Mark, the Mark Popup over it, and the creation
+   * surfaces that share that popup, for the Attachment this view holds. Runs
+   * once: a file switch builds a new binding, and the gestures are heard on the
+   * view's own container, which outlives every page.
    *
    * @see https://github.com/aidenlx/zotlit/issues/1148
+   * @see https://github.com/aidenlx/zotlit/issues/1150
    */
   #mountSelection(attachmentKey: string): void {
     if (this.#selection) return;
+    const creation = new MarkCreation({
+      containerEl: this.#view.containerEl,
+      parent: this,
+      attachmentKey,
+      pages: () => this.#pages(),
+      records: () => this.#records,
+      structure: () => this.#structure,
+      repaint: () => this.#repaint(),
+      reveal: (annotationKey) => {
+        // The create dropped the Attachment's list, so the mark exists once the
+        // refresh it started has answered.
+        void this.refreshed.then(() => this.#selection?.select(annotationKey));
+      },
+      renderCapability: (slot) => {
+        this.#capabilitySlot = slot;
+        this.#drawCapability();
+      },
+      annotations: this.#annotations,
+      now: this.#now,
+    });
+    this.#creation = creation;
     const selection = new MarkSelection({
       containerEl: this.#view.containerEl,
       parent: this,
       attachmentKey,
-      marks: () => this.#marks,
+      marks: () => this.#visibleMarks(),
       records: () => this.#records,
       pageAt: (pageIndex) =>
         this.#controller && pageViewOf(this.#controller, pageIndex + 1),
@@ -452,14 +511,59 @@ export class PdfViewBinding implements Disposable, HoverParent {
           this.#markGestures.revealAnnotation(annotationKey, options),
         reportBlockedGesture: () => this.#editGesture(),
       },
+      creation,
       now: this.#now,
     });
     this.#selection = selection;
     this.#surfaces.defer(() => {
       this.#selection = null;
+      this.#creation = null;
       selection[Symbol.dispose]();
+      creation[Symbol.dispose]();
     });
     selection.load();
+  }
+
+  /**
+   * The Structured Characters of the open document, and the Page Label pass
+   * over them. The pass runs in idle time once the document is open, because a
+   * creation that arrives first awaits the same pass rather than starting one.
+   *
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  #openStructure(controller: PDFViewerController): void {
+    const document_ = pdfDocumentOf(controller);
+    if (!document_ || this.#structure) return;
+    const structure = new PdfTextStructure(pdfPageSource(document_));
+    this.#structure = structure;
+    const win = this.#view.containerEl.win;
+    const idle = win.requestIdleCallback(() => {
+      void structure.pageLabels().catch((error: unknown) => {
+        logger.warn("The PDF page label pass did not finish", {
+          error,
+          path: this.filePath,
+        });
+      });
+    });
+    this.#surfaces.defer(() => {
+      win.cancelIdleCallback(idle);
+      this.#structure = null;
+    });
+  }
+
+  /** The pages PDF.js still holds, of those this binding has seen render. */
+  #pages(): ReaderPage[] {
+    const controller = this.#controller;
+    if (!controller) return [];
+    return [...this.#rendered].flatMap((pageIndex) => {
+      const view = pageViewOf(controller, pageIndex + 1);
+      return view ? [{ pageIndex, view }] : [];
+    });
+  }
+
+  /** The marks the overlay draws, which mark visibility can stand down whole. */
+  #visibleMarks(): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
+    return this.#creation?.marksVisible === false ? new Map() : this.#marks;
   }
 
   /** What this view may do to its Attachment's Annotations right now. */
@@ -475,7 +579,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
    * open — and only what survives it is worth a notice.
    */
   #editGesture(): void {
-    if (this.#capability().kind === "writable") return;
+    // A gesture that can still act carries its own answer: under
+    // `authorization-required` the create opens Zotero's dialog and goes on, so
+    // a notice saying the edit was blocked would contradict it.
+    if (editingLive(this.#capability())) return;
     this.#gesturing = this.#annotations.probe().then(() => {
       if (this.#surfaces.disposed) return;
       if (this.#attachment.kind !== "resolved") return;
@@ -532,7 +639,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const controller = this.#controller;
     const page = controller && pageViewOf(controller, pageIndex + 1);
     if (!page) return;
-    const annotations = this.#marks.get(pageIndex) ?? [];
+    const annotations = this.#visibleMarks().get(pageIndex) ?? [];
     renderAnnotationOverlay(page, {
       annotations,
       selected: this.#selection?.selected,
@@ -551,14 +658,19 @@ export class PdfViewBinding implements Disposable, HoverParent {
 
   /** The page-stage probes, run against the first page that reaches them. */
   #probePage(page: PDFPageView | null): void {
-    if (this.#pageProbed || !page) return;
+    const controller = this.#controller;
+    if (this.#pageProbed || !page || !controller) return;
     this.#pageProbed = true;
     this.#probes.record(probePageView(page));
-    if (this.supported) this.#probing = this.#probeTextContent(page);
+    if (this.supported)
+      this.#probing = this.#probeTextContent(controller, page);
   }
 
-  async #probeTextContent(page: PDFPageView): Promise<void> {
-    const result = await probeTextContent(page);
+  async #probeTextContent(
+    controller: PDFViewerController,
+    page: PDFPageView,
+  ): Promise<void> {
+    const result = await probeTextContent(controller, page);
     if (this.#surfaces.disposed) return;
     this.#probes.record([result]);
     if (!this.supported) this[Symbol.dispose]();

@@ -447,7 +447,10 @@ declare module "obsidian" {
      * or unpainting during teardown reads `null` here — and has nothing left
      * to remove or to draw on.
      */
-    pdfViewer: { eventBus: unknown } | null;
+    pdfViewer: {
+      eventBus: unknown;
+      pdfDocument?: PDFDocumentProxy | null;
+    } | null;
     /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
     on(event: "pagerendered", listener: PDFPageRenderedListener): void;
     off(event: "pagerendered", listener: PDFPageRenderedListener): void;
@@ -518,7 +521,35 @@ declare module "obsidian" {
    * is what the Sort Index port reads per-glyph rectangles from.
    */
   interface PDFPageProxy {
+    /** `[x1, y1, x2, y2]` — the PDF page box the Sort Index measures against. */
+    view: number[];
+    /**
+     * The document-wide object store a text item's font is resolved through.
+     * A font reaches it when the page's operator list is fetched, so a page
+     * that has rendered answers the base font name and one that has not
+     * answers nothing yet.
+     */
+    commonObjs: PDFObjects;
     getTextContent(params: { includeChars: true }): Promise<PDFTextContent>;
+  }
+
+  /** PDF.js's resolved-object store, read for the base font name alone. */
+  interface PDFObjects {
+    has(objId: string): boolean;
+    get(objId: string): { name?: string } | null;
+  }
+
+  /**
+   * The PDF.js document proxy ZotLit reads the Page Label heuristic's inputs
+   * from. It hangs off the same `pdfViewer` the controller's liveness is read
+   * through, and is `null` before Obsidian opens a document.
+   */
+  interface PDFDocumentProxy {
+    numPages: number;
+    /** One-based, as PDF.js spells it. */
+    getPage(pageNumber: number): Promise<PDFPageProxy>;
+    /** The PDF catalog's `/PageLabels`, or `null` where the PDF declares none. */
+    getPageLabels(): Promise<string[] | null>;
   }
 
   interface PDFTextContent {
@@ -532,6 +563,10 @@ declare module "obsidian" {
      * same items with this key absent rather than failing the call.
      */
     chars?: PDFTextChar[];
+    /** The chunk's text matrix, `[a, b, c, d, e, f]`. */
+    transform: number[];
+    /** PDF.js's loaded font name, e.g. `g_d0_f1`, not the base font name. */
+    fontName: string;
   }
 
   /** One glyph: its character, its Unicode value, and its PDF-space rectangle. */

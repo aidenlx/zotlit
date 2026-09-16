@@ -3,6 +3,8 @@
 //
 // @see https://github.com/aidenlx/zotlit/issues/1145
 
+import type { ResolvedAnnotationTypeName } from "@zotlit/db";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
 
@@ -11,7 +13,7 @@ import { editingCapabilityCopy } from "./capability-copy";
 
 /**
  * Why a write did not land, beside every failure Zotero itself can answer.
- * The two extra members are refusals: neither ever left ZotLit.
+ * The three extra members are refusals: none ever left ZotLit.
  */
 export type WriteFailure =
   | LocalApiFailure
@@ -24,7 +26,14 @@ export type WriteFailure =
    */
   | { kind: "db-source" }
   /** No list the repository holds names this Annotation, so nothing was read. */
-  | { kind: "unknown-annotation" };
+  | { kind: "unknown-annotation" }
+  /**
+   * The stored position would be longer than Zotero accepts, so the create is
+   * refused before the write rather than answered `413`.
+   *
+   * @see https://github.com/aidenlx/zotlit/issues/1139 — "Zotero Local API contract"
+   */
+  | { kind: "position-too-large" };
 
 /**
  * What a write left on one Annotation. `pending` is the only state a surface
@@ -106,6 +115,125 @@ export function commentPatch(
 }
 
 /**
+ * The longest `annotationPosition` a create may send. Zotero's own reader
+ * splits a longer position into several Annotations; ZotLit creates one
+ * Annotation per selection, so it refuses rather than splits.
+ *
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/data/item.js#L4546-L4560
+ */
+export const MAX_POSITION_LENGTH = 65_000;
+
+/** How many decimals a stored PDF coordinate keeps. */
+const POSITION_DECIMALS = 1e3;
+
+/** The PDF position a created highlight or underline covers, unrounded. */
+export interface CreatePosition {
+  pageIndex: number;
+  rects: readonly (readonly number[])[];
+  /** The second page's boxes, for a quote that ran over a page break. */
+  nextPageRects?: readonly (readonly number[])[];
+}
+
+/** One Annotation to create, as the reader decided it. */
+export interface AnnotationDraft {
+  /** The Attachment it hangs from, by bare item key. */
+  parentKey: string;
+  type: ResolvedAnnotationTypeName;
+  /** A swatch in any case; the write sends lower case. */
+  color: string;
+  /** Empty where the user typed none, which Zotero stores as no comment. */
+  comment: string;
+  /** The quoted text, which Zotero keeps for highlight and underline only. */
+  text: string;
+  /** Zotero's printed-page label for the page the Annotation sits on. */
+  pageLabel: string;
+  /** Computed from the **unrounded** position, as Zotero's reader does. */
+  sortIndex: string;
+  position: CreatePosition;
+}
+
+/** One create, as the caller must be able to repeat it (aidenlx/zotlit#1151). */
+export interface CreateRequest extends WriteRequest {
+  /** Zotero remembers this for twelve hours, so a retry cannot create twice. */
+  writeToken: string;
+}
+
+/**
+ * A fresh write token: 32 hexadecimal characters, the shape Zotero's own
+ * clients send.
+ *
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L1889-L1906
+ */
+export function newWriteToken(): string {
+  return crypto.randomUUID().replaceAll("-", "");
+}
+
+/**
+ * The create: a one-element multi-object `POST` carrying a write token and
+ * neither a client key nor a version, because Zotero generates the key and a
+ * supplied one is refused on Zotero 10.
+ *
+ * `annotationType` is the first key of the object. Zotero's `fromJSON` walks
+ * the body with `for (let field in json)` and every other `annotation*` setter
+ * asserts the type is already set, so a later type is a `400`.
+ *
+ * The rectangles are rounded to three decimals here and nowhere else: the Sort
+ * Index in `draft` was computed from the unrounded values, as Zotero's reader
+ * computes it.
+ *
+ * @param library the library the create targets, as the route spells it.
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/data/item.js#L5677
+ */
+export function createRequest(
+  library: string,
+  draft: AnnotationDraft,
+  writeToken: string = newWriteToken(),
+): CreateRequest {
+  const quotes = draft.type === "highlight" || draft.type === "underline";
+  return {
+    path: `/api/${library}/items`,
+    method: "POST",
+    headers: { ...JSON_CONTENT, "Zotero-Write-Token": writeToken },
+    writeToken,
+    body: JSON.stringify([
+      {
+        annotationType: draft.type,
+        itemType: "annotation",
+        parentItem: draft.parentKey,
+        ...(quotes && { annotationText: draft.text }),
+        annotationComment: draft.comment,
+        annotationColor: wireColor(draft.color),
+        annotationPageLabel: draft.pageLabel,
+        annotationSortIndex: draft.sortIndex,
+        annotationPosition: writePosition(draft.position),
+      },
+    ]),
+  };
+}
+
+/**
+ * The stored position, rounded the way Zotero's reader rounds it before every
+ * save: three decimals in PDF user-space points.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/lib/utilities.js#L686-L712
+ */
+export function writePosition(position: CreatePosition): string {
+  const round = (rects: readonly (readonly number[])[]) =>
+    rects.map((rect) =>
+      rect.map(
+        (value) => Math.round(value * POSITION_DECIMALS) / POSITION_DECIMALS,
+      ),
+    );
+  return JSON.stringify({
+    pageIndex: position.pageIndex,
+    rects: round(position.rects),
+    ...(position.nextPageRects && {
+      nextPageRects: round(position.nextPageRects),
+    }),
+  });
+}
+
+/**
  * A delete, whose precondition is a header rather than a body: Zotero's
  * single-object delete reads `If-Unmodified-Since-Version` alone and answers
  * `428` without it.
@@ -138,7 +266,14 @@ export function writeFailureMessage(
   });
 }
 
-function writeFailureReason(
+/**
+ * Why a write did not land, in one clause — the half a caller with its own
+ * sentence around it needs. A create says "not created" rather than "not
+ * saved", and takes this as its reason.
+ *
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ */
+export function writeFailureReason(
   failure: WriteFailure,
   now: Temporal.Instant,
 ): string {
@@ -147,6 +282,8 @@ function writeFailureReason(
       return m.annot_view_write_reason_db_source();
     case "unknown-annotation":
       return m.annot_view_write_reason_unknown_annotation();
+    case "position-too-large":
+      return m.annot_view_write_reason_position_too_large();
     case "not-found":
       return m.annot_view_write_reason_deleted();
     // A patch and a delete both send a version and no write token, so a replayed

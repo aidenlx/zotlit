@@ -5,11 +5,16 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { AbortError } from "@/lib/abort-error";
 import type { DatabaseEvents } from "@/services/database/service";
 import { QueryClientService } from "@/services/query-client/service";
 import {
   annotationItem,
   annotationPage,
+  authorized,
+  createAccepted,
+  createRefused,
+  denied,
   freshnessSignal,
   localApiClient,
   localApiDisabled,
@@ -651,6 +656,220 @@ it("shows a write in flight as pending, and draws no provisional value", async (
   );
 });
 
+// #endregion
+
+// #region the create path
+
+/** A stand-in token, so a request's own shape is what an assertion reads. */
+const TOKEN = "0123456789abcdef0123456789abcdef";
+
+/** The Annotation one create asks Zotero for, in the reader's own words. */
+const DRAFT = {
+  type: "highlight",
+  color: "#FFD400",
+  comment: "",
+  text: "Identify Your Message",
+  pageLabel: "1",
+  sortIndex: "00000|002041|00170",
+  position: {
+    pageIndex: 0,
+    rects: [[265.833_4, 611.202_4, 374.503_4, 620.019_4]],
+  },
+} as const;
+
+/** The Annotation Zotero answers a create with, and reads back afterwards. */
+const MADE: WireAnnotation = {
+  key: "MADE2345",
+  version: 42,
+  type: "highlight",
+  text: "Identify Your Message",
+  color: "#ffd400",
+  pageLabel: "1",
+  sortIndex: "00000|002041|00170",
+  position: { pageIndex: 0, rects: [[265.833, 611.202, 374.503, 620.019]] },
+};
+
+it("creates through a one-element multi-object POST carrying a write token", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    { write: () => createAccepted(MADE), item: () => annotationItem(MADE) },
+    { writeToken: () => TOKEN },
+  );
+  const sent = requests.length;
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
+  const [create] = requests.slice(sent);
+  expect([create?.method, create?.url.pathname]).toEqual([
+    "POST",
+    "/api/users/0/items",
+  ]);
+  expect(Object.fromEntries(create!.headers)).toMatchObject({
+    "zotero-api-key": REMEMBERED_KEY,
+    "zotero-server-id": SERVER_ID,
+    "zotero-api-version": "3",
+    "zotero-allowed-request": "1",
+    "zotero-write-token": TOKEN,
+    "content-type": "application/json",
+  });
+  expect(JSON.parse(create!.body ?? "")).toEqual([
+    {
+      annotationType: "highlight",
+      itemType: "annotation",
+      parentItem: "RGRPDF24",
+      annotationText: "Identify Your Message",
+      annotationComment: "",
+      annotationColor: "#ffd400",
+      annotationPageLabel: "1",
+      annotationSortIndex: "00000|002041|00170",
+      annotationPosition:
+        '{"pageIndex":0,"rects":[[265.833,611.202,374.503,620.019]]}',
+    },
+  ]);
+});
+
+it("reads the created Annotation back and drops the Attachment's list", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    {
+      write: () => createAccepted(MADE),
+      item: () => annotationItem(MADE),
+      children: () => annotationPage([...ROUGIER_ANNOTATIONS, MADE]),
+    },
+    { writeToken: () => TOKEN },
+  );
+  const sent = requests.length;
+
+  await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(
+    requests.slice(sent).map(({ method, url }) => `${method} ${url.pathname}`),
+  ).toEqual(["POST /api/users/0/items", "GET /api/users/0/items/MADE2345"]);
+  const list = await repository.read("RGRPDF24");
+  expect(list?.annotations.map(({ key }) => key)).toContain("MADE2345");
+});
+
+it("fails the create on an object Zotero refused under its own 200", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => createRefused(400, "Invalid annotationSortIndex"),
+  });
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    failure: { kind: "invalid-response" },
+  });
+  expect(repository.pendingCreates.size).toBe(0);
+});
+
+it("refuses a create under the Zotero DB source before any request", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await setup(stack);
+  // The Capability Probe runs on the first ask, so it is behind us before the
+  // create is measured against "nothing was sent".
+  await repository.read("RGRPDF24");
+  const sent = requests.length;
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(outcome).toEqual({ kind: "failed", failure: { kind: "db-source" } });
+  expect(requests).toHaveLength(sent);
+});
+
+it("refuses a position longer than Zotero accepts before the write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack);
+  const sent = requests.length;
+
+  const outcome = await repository.createAnnotation("RGRPDF24", {
+    ...DRAFT,
+    position: {
+      pageIndex: 0,
+      rects: Array.from({ length: 4000 }, () => [1.111, 2.222, 3.333, 4.444]),
+    },
+  });
+
+  expect(outcome).toEqual({
+    kind: "failed",
+    failure: { kind: "position-too-large" },
+  });
+  expect(requests).toHaveLength(sent);
+});
+
+it("keeps the write token and the request start instant while an answer is lost", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(
+    stack,
+    { write: () => Promise.reject(new AbortError("reader closed")) },
+    { writeToken: () => TOKEN },
+  );
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(outcome).toEqual({ kind: "uncertain" });
+  const pending = repository.pendingCreates.get(TOKEN);
+  expect(pending?.attachmentKey).toBe("RGRPDF24");
+  expect(pending?.startedAt).toEqual(NOW);
+  expect(pending?.request.writeToken).toBe(TOKEN);
+  expect(pending?.draft.parentKey).toBe("RGRPDF24");
+});
+
+it("opens Zotero's dialog when the gesture needs one, then goes on", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    {
+      authorize: () => authorized({ remember: false }),
+      write: () => createAccepted(MADE),
+      item: () => annotationItem(MADE),
+    },
+    { key: undefined, writeToken: () => TOKEN },
+  );
+  expect(repository.capabilityFor("RGRPDF24")).toEqual({
+    kind: "authorization-required",
+  });
+  const sent = requests.length;
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(
+    requests.slice(sent).map(({ method, url }) => `${method} ${url.pathname}`),
+  ).toEqual([
+    // The gesture probes before it asks, because the probe is the sole
+    // authority on whether the local API is on at all.
+    "GET /api/",
+    "POST /api/local/authorize",
+    "POST /api/users/0/items",
+    "GET /api/users/0/items/MADE2345",
+  ]);
+  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
+});
+
+it("stops a create Zotero's dialog refused, and opens no second one", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    { authorize: () => denied() },
+    { key: undefined },
+  );
+  const sent = requests.length;
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(outcome).toEqual({ kind: "failed", failure: { kind: "denied" } });
+  expect(requests.slice(sent).map(({ url }) => url.pathname)).toEqual([
+    "/api/",
+    "/api/local/authorize",
+  ]);
+});
+
+// #endregion
+
 /**
  * The repository over a Zotero Local API session that already holds a Write
  * Authorization, with the Fixture's Annotations read into its partition — the
@@ -659,7 +878,12 @@ it("shows a write in flight as pending, and draws no provisional value", async (
 async function writable(
   stack: AsyncDisposableStack,
   answers: ZoteroAnswers = {},
+  options: { key?: string; writeToken?: () => string } = {},
 ) {
+  const { writeToken } = options;
+  // Named as `undefined` means "no Remembered Authorization", which is not the
+  // same as leaving it out.
+  const key = "key" in options ? options.key : REMEMBERED_KEY;
   const harness = await setup(
     stack,
     {
@@ -667,7 +891,7 @@ async function writable(
       item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
       ...answers,
     },
-    { key: REMEMBERED_KEY },
+    { key, writeToken },
   );
   await switchToLocalApi(harness.repository);
   await harness.repository.read("RGRPDF24");
@@ -717,8 +941,9 @@ function annotationRows(client: NodeDatabaseClient): unknown[] {
 async function setup(
   stack: AsyncDisposableStack,
   answers: ZoteroAnswers = { root: unreachable },
-  options: ClientOptions = {},
+  options: ClientOptions & { writeToken?: () => string } = {},
 ) {
+  const { writeToken, ...clientOptions } = options;
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -739,7 +964,7 @@ async function setup(
     requests,
     serverEvents,
     prefEvents,
-  } = localApiClient(answers, options);
+  } = localApiClient(answers, clientOptions);
   stack.use(localApi);
   await localApi.ready;
 
@@ -750,6 +975,7 @@ async function setup(
     queryClient,
     localApi,
     now: () => NOW,
+    writeToken,
   });
   stack.use(repository);
   await repository.ready;

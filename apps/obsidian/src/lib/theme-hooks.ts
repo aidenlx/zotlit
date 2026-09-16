@@ -46,11 +46,23 @@ export const themeHook = {
    */
   pdfCapability: "zt-pdf-capability",
   /**
-   * The Mark Popup, on Obsidian's own hover popover. Each control inside it
-   * carries `data-zt-verb` — `color`, `comment`, `copy`, `delete`, `reveal`, or
-   * `stack` for the stepper through overlapping marks.
+   * The Creation Toolbar in the PDF reader's own right toolbar slot, which
+   * also holds the Editing Capability affordance. Each control inside it
+   * carries `data-zt-tool` — `highlight`, `highlight-color`, `underline`,
+   * `underline-color`, or `visibility`.
+   */
+  pdfCreationToolbar: "zt-pdf-creation-toolbar",
+  /**
+   * The Mark Popup, on Obsidian's own hover popover, in both of its modes.
+   * Each control inside it carries `data-zt-verb` — `color`, `comment`,
+   * `copy`, `delete`, `reveal`, and `stack` for the stepper through
+   * overlapping marks when a mark is selected; `highlight`, `underline`,
+   * `color-1` to `color-8`, `comment` and `copy` when a fresh text selection
+   * is waiting to be created.
    */
   pdfMarkPopup: "zt-pdf-mark-popup",
+  /** The comment sheet the Mark Popup opens under its create-mode row. */
+  pdfCommentSheet: "zt-pdf-comment-sheet",
 } as const;
 
 /**

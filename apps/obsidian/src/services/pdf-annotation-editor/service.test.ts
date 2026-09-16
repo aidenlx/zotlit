@@ -861,4 +861,11 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   await press("u");
   expect(annotations.probe).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+
+  // A gesture that opens Zotero's dialog and goes on is not a blocked one, so
+  // it is never answered with a notice saying the edit did not happen.
+  annotations.setCapability({ kind: "authorization-required" });
+  await press("h");
+  expect(annotations.probe).toHaveBeenCalledOnce();
+  expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
 });

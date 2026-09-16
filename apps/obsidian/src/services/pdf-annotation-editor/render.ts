@@ -81,6 +81,8 @@ export type OverlayPageView = Pick<PDFPageView, "div"> & {
     | "scale"
     | "rotation"
     | "userUnit"
+    // The PDF-point to viewport-pixel matrix, which selection capture inverts.
+    | "transform"
     | "convertToViewportPoint"
   > &
     Partial<Pick<PDFPageViewport, "clone">>;

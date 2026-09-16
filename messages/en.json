@@ -2365,5 +2365,17 @@
   "pdf_mark_popup_add_comment": "Add comment in the annotation view",
   "pdf_mark_popup_edit_comment": "Edit comment in the annotation view",
   "pdf_mark_popup_reveal": "Reveal in the annotation view",
-  "pdf_mark_popup_next_in_stack": "Next mark here ({position} of {total})"
+  "pdf_mark_popup_next_in_stack": "Next mark here ({position} of {total})",
+  "annot_view_write_reason_position_too_large": "This selection is too large for Zotero to store as one annotation.",
+  "pdf_toolbar_highlight": "Highlight",
+  "pdf_toolbar_highlight_color": "Highlight color",
+  "pdf_toolbar_underline": "Underline",
+  "pdf_toolbar_underline_color": "Underline color",
+  "pdf_toolbar_show_marks": "Show Zotero annotations",
+  "pdf_toolbar_hide_marks": "Hide Zotero annotations",
+  "pdf_create_popup_comment": "Add comment",
+  "pdf_create_popup_comment_placeholder": "Add a comment…",
+  "pdf_create_popup_comment_hint": "Press Ctrl+Enter (Windows) or Command+Enter (macOS) to save",
+  "pdf_create_popup_copy": "Copy selected text",
+  "pdf_create_failed": "The annotation was not created. {reason}"
 }

@@ -174,35 +174,51 @@ export function renderMarkPopupRow(
 ): void {
   row.empty();
   for (const verb of verbs) {
-    const node = control(row, verb, activate);
-    // The palette wears the Annotation's own colour, through the element's
-    // style rather than an attribute on the icon's SVG, where a stylesheet's
-    // own rules would be out of reach.
-    if (verb.id === "color" && color !== null) node.style.color = color;
+    markPopupControl(
+      row,
+      // The palette wears the Annotation's own colour.
+      { ...verb, color: verb.id === "color" ? color : null },
+      (node) => activate(verb.id, node),
+    );
   }
   if (!stepper) return;
-  const node = control(
+  const node = markPopupControl(
     row,
     { id: "stack", icon: "chevrons-right", ...stepper },
-    activate,
+    (pressed) => activate("stack", pressed),
   );
   node.createSpan({ cls: "zt:text-xs zt:tabular-nums", text: stepper.text });
 }
 
-function control(
+/**
+ * One control of a Mark Popup row, in either mode: an Obsidian
+ * `clickable-icon` carrying its id in `data-zt-verb`, its accessible name and
+ * tooltip, and — for a swatch — its colour through the element's own style,
+ * where a stylesheet's rules can still reach it and `var()` still substitutes.
+ *
+ * A blocked control keeps its seat and carries the reason in its tooltip and
+ * its accessible state, rather than leaving the row.
+ *
+ * @param activate what a press runs, against the node pressed — which is what a
+ *   menu opens beneath, from the pointer and from the keyboard alike.
+ * @see apps/obsidian/policies/tooltips.md
+ */
+export function markPopupControl(
   row: HTMLElement,
   {
     id,
     icon,
     tooltip,
     disabled = false,
+    color = null,
   }: {
-    id: MarkPopupControlId;
+    id: string;
     icon: IconName;
     tooltip: string;
     disabled?: boolean;
+    color?: string | null;
   },
-  activate: MarkPopupActivate,
+  activate: (node: HTMLElement) => void,
 ): HTMLElement {
   const node = row.createDiv({
     cls: "clickable-icon",
@@ -211,14 +227,15 @@ function control(
   node.dataset.ztVerb = id;
   setTooltip(node, tooltip);
   setIcon(node, icon);
+  if (color !== null) node.style.color = color;
   if (disabled) {
     node.addClass("is-disabled");
     node.setAttribute("aria-disabled", "true");
     return node;
   }
-  node.addEventListener("click", () => activate(id, node));
+  node.addEventListener("click", () => activate(node));
   node.addEventListener("keydown", (event) =>
-    onActivateKey(event, () => activate(id, node)),
+    onActivateKey(event, () => activate(node)),
   );
   return node;
 }

@@ -30,6 +30,7 @@ import type { MutationState } from "@/services/annotation-repository/write";
 import { editingLive } from "@/views/annot-view/card-controls";
 
 import { inTextEntry } from "./capability-affordance";
+import type { CreationGestures } from "./creation";
 import {
   distance,
   markAnchor,
@@ -96,6 +97,14 @@ export interface MarkSelectionDeps {
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
   gestures: MarkGestures;
+  /**
+   * The creation surfaces, which hear the same pointer, key and scroll gestures
+   * this class already owns. One listener set serves both, so the selected mark
+   * and a fresh text selection can never both have a popup open.
+   *
+   * @see https://github.com/aidenlx/zotlit/issues/1150
+   */
+  creation: CreationGestures | null;
   /** The clock a cooldown's remaining seconds are read against. */
   now: () => Temporal.Instant;
 }
@@ -134,8 +143,20 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl, "click", (event) => this.#click(event)),
     );
+    // The browser has settled the selection by the time a release bubbles, so
+    // this is where a drag on the page becomes a selection worth acting on.
     this.#surfaces.use(
-      registerDomEvent(containerEl, "keydown", (event) => this.#key(event)),
+      registerDomEvent(containerEl.doc, "pointerup", () =>
+        this.#deps.creation?.settle(),
+      ),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "keydown", (event) => {
+        this.#key(event);
+        // The selected mark's keymap answers first; what it left alone is the
+        // creation surfaces', so one key never runs two verbs.
+        if (!event.defaultPrevented) this.#deps.creation?.key(event);
+      }),
     );
     // Scrolling does not bubble, so the page's own scroller is reached by
     // listening on the way down.
@@ -148,7 +169,12 @@ export class MarkSelection implements Disposable {
       registerDomEvent(
         containerEl.doc,
         "pointerdown",
-        (event) => this.#outsidePress(event),
+        (event) => {
+          // On the way down, so the creation surfaces hear every press in this
+          // window — inside the reader and outside it alike.
+          this.#deps.creation?.press(event);
+          this.#outsidePress(event);
+        },
         { capture: true },
       ),
     );
@@ -157,6 +183,7 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl.doc, "selectionchange", () => {
         if (this.#selected !== null && !this.#collapsed()) this.#apply(null);
+        this.#deps.creation?.changed();
       }),
     );
     this.#surfaces.defer(
@@ -186,6 +213,7 @@ export class MarkSelection implements Disposable {
    * scrolled out of the reader hides the popup and keeps the selection.
    */
   sync(): void {
+    this.#deps.creation?.sync();
     const key = this.#selected;
     if (key !== null && !this.#deps.records().some((one) => one.key === key)) {
       this.#apply(null);

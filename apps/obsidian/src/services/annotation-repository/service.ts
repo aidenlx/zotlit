@@ -3,6 +3,7 @@ import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 
 import {
   annotationTypeToName,
+  formatIndexedKey,
   getAnnotationsByParent,
   getAttachmentByKey,
   parseAnnotationPosition,
@@ -27,15 +28,34 @@ import type {
   LocalApiSource,
   ZoteroLocalApiClient,
 } from "@/services/zotero-local-api/service";
-import { libraryPath } from "@/services/zotero-local-api/wire";
+import {
+  libraryPath,
+  readCreateResult,
+} from "@/services/zotero-local-api/wire";
 
 import { editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
-import { colorPatch, commentPatch, eraseRequest, IDLE } from "./write";
-import type { MutationState, WriteRequest, WriteTarget } from "./write";
+import {
+  colorPatch,
+  commentPatch,
+  createRequest,
+  eraseRequest,
+  IDLE,
+  MAX_POSITION_LENGTH,
+  newWriteToken,
+  writePosition,
+} from "./write";
+import type {
+  AnnotationDraft,
+  CreateRequest,
+  MutationState,
+  WriteFailure,
+  WriteRequest,
+  WriteTarget,
+} from "./write";
 
 export type { EditingCapability } from "./capability";
-export type { MutationState, WriteFailure } from "./write";
+export type { AnnotationDraft, MutationState, WriteFailure } from "./write";
 
 const logger = getLogger("annotation-repository");
 
@@ -135,6 +155,7 @@ export interface AnnotationRepositoryDeps {
   >;
   localApi: Pick<
     ZoteroLocalApiClient,
+    | "authorize"
     | "authorizedSend"
     | "demandSource"
     | "listAnnotations"
@@ -146,6 +167,12 @@ export interface AnnotationRepositoryDeps {
   >;
   /** The clock a cooldown deadline in the Editing Capability is read against. */
   now?: () => Temporal.Instant;
+  /**
+   * The write token each create carries.
+   *
+   * @default a fresh 32-character token per create
+   */
+  writeToken?: () => string;
 }
 
 /** One Annotation, beside the held list a write reads and replaces it in. */
@@ -155,6 +182,38 @@ interface HeldAnnotation {
   attachmentKey: string;
   record: AnnotationRecord;
 }
+
+/**
+ * One create whose outcome is not yet known, kept with the write token that
+ * made it and the instant it left. An answer that never arrives leaves this
+ * entry standing, which is what an Uncertain Create is reconciled from: the
+ * `dateAdded` window starts at {@link PendingCreate.startedAt}, and "Try again"
+ * re-sends {@link PendingCreate.request} on the same token.
+ *
+ * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
+ * @see https://github.com/aidenlx/zotlit/issues/1151
+ */
+export interface PendingCreate {
+  /** The Attachment's Indexed Key. */
+  attachmentKey: string;
+  /** What the create asked Zotero for, as the stable fields to match on. */
+  draft: AnnotationDraft;
+  /** The request as sent, so a retry is the same request on the same token. */
+  request: CreateRequest;
+  startedAt: Temporal.Instant;
+}
+
+/** What one create ended with. */
+export type CreateOutcome =
+  /** @param annotationKey the Indexed Key Zotero generated. */
+  | { kind: "created"; annotationKey: string }
+  /**
+   * The answer never arrived, so the Annotation may or may not exist. The
+   * create stays in {@link AnnotationRepository.pendingCreates} until a
+   * reconciliation settles it.
+   */
+  | { kind: "uncertain" }
+  | { kind: "failed"; failure: WriteFailure };
 
 /** One partition's key and the read that fills it. */
 interface AnnotationPartition {
@@ -212,6 +271,13 @@ export class AnnotationRepository extends Service<void> {
    * few a session has edited.
    */
   readonly #mutations = new Map<string, MutationState>();
+  /**
+   * Every create whose outcome is not yet known, by write token. An entry
+   * leaves as soon as Zotero says what happened; one whose answer never
+   * arrived stays, and is what aidenlx/zotlit#1151 reconciles.
+   */
+  readonly #creates = new Map<string, PendingCreate>();
+  readonly #writeToken;
 
   ready: Promise<void>;
 
@@ -220,12 +286,14 @@ export class AnnotationRepository extends Service<void> {
     queryClient,
     localApi,
     now = () => Temporal.Now.instant(),
+    writeToken = newWriteToken,
   }: AnnotationRepositoryDeps) {
     super();
     this.#db = db;
     this.#queries = queryClient;
     this.#localApi = localApi;
     this.#now = now;
+    this.#writeToken = writeToken;
     this.ready = this.#load();
   }
 
@@ -286,6 +354,111 @@ export class AnnotationRepository extends Service<void> {
    */
   mutationFor(annotationKey: string): MutationState {
     return this.#mutations.get(annotationKey) ?? IDLE;
+  }
+
+  /**
+   * Every create whose outcome is still unknown, by write token. Empty in a
+   * session where every create was answered.
+   */
+  get pendingCreates(): ReadonlyMap<string, PendingCreate> {
+    return this.#creates;
+  }
+
+  /**
+   * Create one highlight or underline on an Attachment, from a user gesture.
+   *
+   * The gesture is what may open Zotero's dialog, so a session that has not
+   * been authorized asks here and continues on Allow; nothing else in this
+   * class does. The write itself is a one-element multi-object `POST` carrying
+   * a write token and no client key, and its answer is checked object by object
+   * before the created Annotation is read back.
+   *
+   * The Attachment's list is dropped rather than patched, because the list is
+   * kept in Zotero's own reading order and only a fresh read can place a new
+   * Annotation in it.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   * @param draft everything about the Annotation except its parent, which this
+   *   Attachment names; its Sort Index was computed from the unrounded position.
+   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+   */
+  async createAnnotation(
+    attachmentKey: string,
+    draft: Omit<AnnotationDraft, "parentKey">,
+  ): Promise<CreateOutcome> {
+    const parsed = parseIndexedKey(attachmentKey);
+    if (!parsed) {
+      return { kind: "failed", failure: { kind: "unknown-annotation" } };
+    }
+    if (!this.#localApi.demandSource()) {
+      return { kind: "failed", failure: { kind: "db-source" } };
+    }
+    const whole = { ...draft, parentKey: parsed.key };
+    if (writePosition(whole.position).length > MAX_POSITION_LENGTH) {
+      logger.debug("A selection's position is longer than Zotero accepts", {
+        attachmentKey,
+      });
+      return { kind: "failed", failure: { kind: "position-too-large" } };
+    }
+
+    const blocked = await this.#authorizeGesture(attachmentKey);
+    if (blocked) return { kind: "failed", failure: blocked };
+
+    const library = libraryPath(parsed);
+    const request = createRequest(library, whole, this.#writeToken());
+    const pending: PendingCreate = {
+      attachmentKey,
+      draft: whole,
+      request,
+      startedAt: this.#now(),
+    };
+    this.#creates.set(request.writeToken, pending);
+
+    const reply = await this.#localApi.authorizedSend(request.path, {
+      library,
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+    });
+    if ("failure" in reply) {
+      // A lost answer is the one failure that leaves the create standing: the
+      // Annotation may exist, and only a reconciliation can say.
+      if (reply.failure.kind !== "unknown-outcome") {
+        this.#creates.delete(request.writeToken);
+        return { kind: "failed", failure: reply.failure };
+      }
+      logger.debug("A create lost its answer", { attachmentKey });
+      return { kind: "uncertain" };
+    }
+
+    const created = readCreateResult(reply.value.text, {
+      parentKey: parsed.key,
+      type: whole.type,
+    });
+    this.#creates.delete(request.writeToken);
+    if ("failure" in created) {
+      return { kind: "failed", failure: created.failure };
+    }
+
+    const annotationKey = formatIndexedKey(created.value, parsed.groupID);
+    const fresh = await this.#localApi.readAnnotation(
+      annotationKey,
+      attachmentKey,
+    );
+    if ("failure" in fresh) {
+      logger.debug("A created annotation could not be read back", {
+        annotationKey,
+        failure: fresh.failure,
+      });
+    }
+    this.#queries.invalidate(this.#activePartition(attachmentKey).queryKey);
+    this.#emitter.emit("annotations-changed", attachmentKey);
+    logger.debug("Zotero created an annotation", {
+      attachmentKey,
+      annotationKey,
+      type: whole.type,
+    });
+    return { kind: "created", annotationKey };
   }
 
   /**
@@ -505,6 +678,21 @@ export class AnnotationRepository extends Service<void> {
       }
     }
     return null;
+  }
+
+  /**
+   * Zotero's own dialog, where this Attachment needs one before it can be
+   * written to. A session that already holds an authorization asks nothing.
+   *
+   * @returns why the gesture cannot go on, or `null` where it can.
+   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+   */
+  async #authorizeGesture(attachmentKey: string): Promise<WriteFailure | null> {
+    if (this.#capability(attachmentKey).kind !== "authorization-required") {
+      return null;
+    }
+    const granted = await this.#localApi.authorize();
+    return "failure" in granted ? granted.failure : null;
   }
 
   /** Records one Annotation's mutation state and announces it. */
