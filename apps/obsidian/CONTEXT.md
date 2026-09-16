@@ -276,6 +276,10 @@ _Avoid_: annotation item, annotation row
 The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note; the Excerpt Block always reflects the DB.
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
+**Excerpt Image**:
+The PNG Zotero renders for an image or ink Annotation, stored under its data directory cache by Annotation key. It appears only after a Zotero UI trigger (the Reader, or the attachment's Annotations pane) and Zotero deletes it on a position change, an ink colour change, or deletion. The Excerpt Block displays it; ZotLit renders none of its own yet.
+_Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annotation)
+
 **Reader Session**:
 One open reading of an Attachment, whichever reader hosts it — the Zotero Reader or Obsidian's PDF view. Names its source, the Attachment's Indexed Key, the parent Item's Indexed Key, and the selected Annotations' Indexed Keys, and accepts navigation and selection.
 _Avoid_: reader target, PDF reader target, annotation target
@@ -287,6 +291,10 @@ _Avoid_: fallback (that is the switch, not the source), primary/secondary source
 **Editing Capability**:
 What writes are possible for an Attachment's Annotations at one moment, and, when none are, the one reason: writable, authorization required, authorizing, cooldown, or read-only with its cause (Zotero unavailable, local API disabled, incompatible Zotero, invalid response, server changed, library read-only, probing). One value per Attachment; every editing control in the reader and the Annotation View follows it.
 _Avoid_: degraded state (names the feeling, not the reason), fallback state, write mode, read-only mode (one of its values, not the whole)
+
+**Follow Mode**:
+The one rule an Annotation View instance uses to choose the Attachment it shows: Active Tab (the Item of the active Literature Note, or the Attachment of the active Obsidian PDF view), Zotero Reader (the Attachment of the Reader Session the Zotero Reader has in front), or Pinned (one Item the user chose, with the attachment choice remembered). Chosen and changed by the user alone; a source that cannot answer shows its reason in place.
+_Avoid_: follow target, link mode, linked item (the old name of Pinned), auto-follow
 
 **Uncertain Create**:
 An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero. Resolved by re-reading and matching stable fields, or by the user; never retried on its own.
