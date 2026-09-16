@@ -412,6 +412,128 @@ declare module "obsidian" {
     };
   }
 
+  /**
+   * Obsidian's PDF file view — `leaf.view` of view type `"pdf"`, for a vault
+   * file and an external file alike. Internal; shape verified against Obsidian
+   * 1.14.2.
+   *
+   * @see apps/obsidian/src/services/pdf-annotation-editor/seam.ts — the one
+   *   adapter that reads these members, each behind a structural probe.
+   */
+  interface PDFFileView extends FileView {
+    /**
+     * `FileView.loadFile` nulls this twice while it swaps files, so every read
+     * is a branch. An external file's path carries a `file:` prefix ahead of
+     * its absolute path.
+     */
+    file: TFile | null;
+    /** Deferred host for the child that owns Obsidian's PDF.js viewer. */
+    viewer: PDFViewerHost;
+  }
+
+  /** The deferred wrapper Obsidian loads its PDF viewer child behind. Internal. */
+  interface PDFViewerHost {
+    /** Calls back with the child once it exists, at once when it already does. */
+    then(callback: (controller: PDFViewerController) => void): void;
+    /** The child {@link PDFViewerHost.then} hands out; `null` until load and after unload. */
+    child: PDFViewerController | null;
+  }
+
+  /** The PDF viewer child, the seam ZotLit's reader surfaces rest on. Internal. */
+  interface PDFViewerController {
+    /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
+    on(event: "pagerendered", listener: PDFPageRenderedListener): void;
+    off(event: "pagerendered", listener: PDFPageRenderedListener): void;
+    /** The PDF.js page view for a one-based page number, once that page is built. */
+    getPage(pageNumber: number): PDFPageView | undefined;
+    /** Applies an Obsidian PDF subpath such as `#page=3`. */
+    applySubpath(subpath: string): void;
+    /** The reader's own toolbar; `null` once the child unloads. */
+    toolbar: PDFViewerToolbar | null;
+  }
+
+  interface PDFViewerToolbar {
+    /** The right-hand slot ZotLit's Creation Toolbar mounts into. */
+    toolbarRightEl: HTMLElement;
+  }
+
+  /** PDF.js `pagerendered`, forwarded by Obsidian's event bus. */
+  interface PDFPageRenderedEvent {
+    /** One-based. */
+    pageNumber: number;
+    source: PDFPageView;
+  }
+
+  type PDFPageRenderedListener = (event: PDFPageRenderedEvent) => void;
+
+  /** The PDF.js page view members ZotLit reads. Internal. */
+  interface PDFPageView {
+    div: HTMLElement;
+    viewport: PDFPageViewport;
+    /** The PDF.js page proxy backing this view; absent until the page loads. */
+    pdfPage?: PDFPageProxy;
+  }
+
+  /**
+   * The nine properties PDF.js `PageViewport` assigns in its constructor, plus
+   * the conversions and the rebuild ZotLit calls. Zotero PDF coordinates reach
+   * the page through these. The nine are always assigned, so each is required
+   * here: a missing one is a changed seam, not a default to fill in.
+   */
+  interface PDFPageViewport {
+    /** `[x1, y1, x2, y2]` in PDF points, before scale and rotation. */
+    viewBox: readonly number[];
+    /** `/UserUnit` of the page. PDF.js folds it into the transform, not into `scale`. */
+    userUnit: number;
+    scale: number;
+    rotation: number;
+    offsetX: number;
+    offsetY: number;
+    /** The PDF-point to viewport-pixel matrix `convertToViewportPoint` applies. */
+    transform: readonly number[];
+    width: number;
+    height: number;
+    convertToViewportPoint(x: number, y: number): [number, number];
+    convertToPdfPoint?(x: number, y: number): [number, number];
+    /**
+     * Rebuilds the viewport at another scale or rotation. The overlay takes its
+     * page-unit box from `clone({ scale: 1 })`, which is identical at every zoom
+     * step; dividing the viewport box by `scale * userUnit` reaches the same
+     * units but leaves float noise, so it is the fallback for a build with no
+     * `clone`, not the first choice.
+     */
+    clone?(options: { scale?: number; rotation?: number }): PDFPageViewport;
+  }
+
+  /**
+   * The PDF.js page proxy members ZotLit reads. `includeChars` is an Obsidian
+   * patch of the bundled worker that upstream PDF.js has no counterpart for; it
+   * is what the Sort Index port reads per-glyph rectangles from.
+   */
+  interface PDFPageProxy {
+    getTextContent(params: { includeChars: true }): Promise<PDFTextContent>;
+  }
+
+  interface PDFTextContent {
+    items: PDFTextItem[];
+  }
+
+  interface PDFTextItem {
+    /**
+     * Present only under `includeChars`. The worker reads that option as a
+     * boolean defaulting to `false`, so a build without the patch answers the
+     * same items with this key absent rather than failing the call.
+     */
+    chars?: PDFTextChar[];
+  }
+
+  /** One glyph: its character, its Unicode value, and its PDF-space rectangle. */
+  interface PDFTextChar {
+    c: string;
+    u: string;
+    r: [number, number, number, number];
+  }
+
   /** The settings modal (`app.setting`). Internal; shape verified against Obsidian 1.13. */
   interface SettingsModal extends Modal {
     /** Tab rendered into the content pane, or null while none is open. */
