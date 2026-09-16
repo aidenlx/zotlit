@@ -441,6 +441,13 @@ declare module "obsidian" {
 
   /** The PDF viewer child, the seam ZotLit's reader surfaces rest on. Internal. */
   interface PDFViewerController {
+    /**
+     * The PDF.js viewer `on`, `off` and `getPage` all reach through. The
+     * child's `unload` closes it and nulls this, so a subscriber unsubscribing
+     * or unpainting during teardown reads `null` here — and has nothing left
+     * to remove or to draw on.
+     */
+    pdfViewer: { eventBus: unknown } | null;
     /** Subscribes on the PDF.js event bus behind `pdfViewer.eventBus`. */
     on(event: "pagerendered", listener: PDFPageRenderedListener): void;
     off(event: "pagerendered", listener: PDFPageRenderedListener): void;

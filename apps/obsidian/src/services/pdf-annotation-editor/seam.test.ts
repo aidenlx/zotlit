@@ -10,6 +10,8 @@ import {
   UNPATCHED_CONTENT,
 } from "./__fixtures__";
 import {
+  onPageRendered,
+  pageViewOf,
   PdfSeamProbeLog,
   probeController,
   probeFileView,
@@ -206,6 +208,33 @@ it.each([
     probe: "P11",
     ok: false,
   });
+});
+
+it("removes its page listener from a viewer Obsidian still holds open", () => {
+  const reader = pdfReader();
+  const listener = () => undefined;
+
+  {
+    using _subscription = onPageRendered(reader.child as never, listener);
+  }
+
+  expect(reader.child.off).toHaveBeenCalledExactlyOnceWith(
+    "pagerendered",
+    listener,
+  );
+});
+
+it("reads nothing off a controller whose viewer Obsidian closed", () => {
+  const reader = pdfReader();
+  const subscription = onPageRendered(reader.child as never, () => undefined);
+  reader.closeViewer();
+
+  // What `off` and `getPage` would throw on instead: the viewer both read
+  // through is gone, and every listener and page went with it.
+  expect(() => subscription[Symbol.dispose]()).not.toThrow();
+  expect(reader.child.off).not.toHaveBeenCalled();
+  expect(pageViewOf(reader.child as never, 1)).toBeNull();
+  expect(reader.child.getPage).not.toHaveBeenCalled();
 });
 
 it("records each probe once and never recovers from a failure", () => {

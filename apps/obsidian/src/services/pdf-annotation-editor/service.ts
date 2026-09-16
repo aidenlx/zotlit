@@ -2,20 +2,20 @@
 import type { App, FileSystemAdapter, PDFFileView } from "obsidian";
 
 import { registerEvent } from "@/lib/disposables";
-import type { ResolveAttachment } from "@/services/attachment-resolver/service";
 import { Service } from "@/services/service-base";
 
 import { PdfViewBinding } from "./binding";
-import type { AnnotationReads } from "./binding";
+import type { AnnotationReads, AttachmentReads } from "./binding";
 import { openFilePathOf } from "./seam";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
+export type { AttachmentResolution } from "@/services/attachment-resolver/service";
 export type {
-  AttachmentResolution,
-  ResolveAttachment,
-} from "@/services/attachment-resolver/service";
-export type { AnnotationReads, PdfViewBinding } from "./binding";
+  AnnotationReads,
+  AttachmentReads,
+  PdfViewBinding,
+} from "./binding";
 export type { PdfSeamProbeId, PdfSeamProbeResult } from "./seam";
 
 /** Obsidian's own view type for a PDF, in the vault and outside it alike. */
@@ -23,7 +23,7 @@ const PDF_VIEW_TYPE = "pdf";
 
 export interface PdfAnnotationEditorDeps {
   app: App;
-  resolveAttachment: ResolveAttachment;
+  attachments: AttachmentReads;
   annotations: AnnotationReads;
 }
 
@@ -33,27 +33,23 @@ export interface PdfAnnotationEditorDeps {
  * on file switch, leaf close, and plugin unload.
  *
  * Holds no database client. The attachment it binds a view to arrives through
- * the injected {@link ResolveAttachment} and its Annotations through the
+ * the injected {@link AttachmentReads} and its Annotations through the
  * repository, so a seam that changed shape costs the reader its surfaces and
  * leaves every other ZotLit surface alone.
  */
 export class PdfAnnotationEditor extends Service<void> {
   readonly #app;
-  readonly #resolveAttachment;
+  readonly #attachments;
   readonly #annotations;
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
 
   ready: Promise<void>;
 
-  constructor({
-    app,
-    resolveAttachment,
-    annotations,
-  }: PdfAnnotationEditorDeps) {
+  constructor({ app, attachments, annotations }: PdfAnnotationEditorDeps) {
     super();
     this.#app = app;
-    this.#resolveAttachment = resolveAttachment;
+    this.#attachments = attachments;
     this.#annotations = annotations;
     this.ready = this.#load();
   }
@@ -106,7 +102,7 @@ export class PdfAnnotationEditor extends Service<void> {
       const binding = new PdfViewBinding({
         view,
         adapter,
-        resolveAttachment: this.#resolveAttachment,
+        attachments: this.#attachments,
         annotations: this.#annotations,
       });
       this.#bindings.set(view, binding);

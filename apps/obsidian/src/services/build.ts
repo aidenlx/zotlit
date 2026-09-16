@@ -157,8 +157,7 @@ export function buildServices(
       pdfAnnotationEditor: ({ attachmentResolver, annotationRepository }) =>
         new PdfAnnotationEditor({
           app: plugin.app,
-          resolveAttachment: (absolutePath) =>
-            attachmentResolver.resolve(absolutePath),
+          attachments: attachmentResolver,
           annotations: annotationRepository,
         }),
     })

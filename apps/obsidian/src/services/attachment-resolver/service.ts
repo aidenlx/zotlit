@@ -3,6 +3,7 @@ import { getAllAttachments } from "@zotlit/db";
 import type { AttachmentWithParentKey } from "@zotlit/db";
 import { attachmentAbsPath, attachmentPathKey } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
@@ -16,6 +17,10 @@ const logger = getLogger("attachment-resolver");
  * Keys — `key` for the personal library, `key + "g" + groupID` for a group — as
  * ADR 0033 settles and `formatIndexedKey` in `@zotlit/db` formats.
  *
+ * `pending` and `unresolved` are different answers: the first says the resolver
+ * cannot answer yet, the second says Zotero does not know this file. A caller
+ * holding a `pending` resolution asks again on `resolutions-changed`.
+ *
  * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
  */
 export type AttachmentResolution =
@@ -25,12 +30,21 @@ export type AttachmentResolution =
       /** The parent Item's Indexed Key; `null` for a standalone Attachment. */
       itemKey: string | null;
     }
-  | { kind: "unresolved" };
+  | { kind: "unresolved" }
+  | { kind: "pending" };
 
-/** Maps the absolute path of an open PDF to its Zotero attachment. */
-export type ResolveAttachment = (absolutePath: string) => AttachmentResolution;
+export interface AttachmentResolverEvents {
+  /**
+   * The answers {@link AttachmentResolver.resolve} gives may differ from here
+   * on — the database moved, or the resolved Zotero paths did. Raised whether
+   * or not an index was held, so a caller that was told `pending` hears the
+   * database it was waiting for arrive.
+   */
+  "resolutions-changed": () => void;
+}
 
 const UNRESOLVED: AttachmentResolution = { kind: "unresolved" };
+const PENDING: AttachmentResolution = { kind: "pending" };
 
 export interface AttachmentResolverDeps {
   db: Pick<DatabaseService, "state" | "client" | "on">;
@@ -56,6 +70,7 @@ export class AttachmentResolver extends Service<void> {
   readonly #db;
   readonly #zoteroPref;
   readonly #platform;
+  readonly #emitter = createNanoEvents<AttachmentResolverEvents>();
   #index: ReadonlyMap<string, AttachmentResolution> | null = null;
 
   ready: Promise<void>;
@@ -72,13 +87,22 @@ export class AttachmentResolver extends Service<void> {
     this.ready = this.#load();
   }
 
+  on<K extends keyof AttachmentResolverEvents>(
+    event: K,
+    cb: AttachmentResolverEvents[K],
+  ): () => void {
+    return this.#emitter.on(event, cb);
+  }
+
   /**
    * @param absolutePath the open file's absolute path, with no `file:` prefix
    *   and already through the vault adapter for an in-vault file.
+   * @returns `pending` while the database cannot be read yet — the caller hears
+   *   `resolutions-changed` once it can.
    */
   resolve(absolutePath: string): AttachmentResolution {
     const index = this.#index ?? this.#build();
-    if (index === null) return UNRESOLVED;
+    if (index === null) return PENDING;
     return (
       index.get(attachmentPathKey(absolutePath, this.#platform)) ?? UNRESOLVED
     );
@@ -95,10 +119,17 @@ export class AttachmentResolver extends Service<void> {
     this.commit(stack.move());
   }
 
+  /**
+   * Drops the cached index and announces the change. The announcement stands
+   * even when nothing was cached: the database reaching `ready` is exactly the
+   * moment a caller told `pending` becomes answerable.
+   */
   #drop(reason: string): void {
-    if (this.#index === null) return;
-    this.#index = null;
-    logger.debug("Attachment path index dropped", { reason });
+    if (this.#index !== null) {
+      this.#index = null;
+      logger.debug("Attachment path index dropped", { reason });
+    }
+    this.#emitter.emit("resolutions-changed");
   }
 
   /**

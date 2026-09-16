@@ -11,7 +11,7 @@ import { getLogger } from "@/lib/log";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type {
   AttachmentResolution,
-  ResolveAttachment,
+  AttachmentResolver,
 } from "@/services/attachment-resolver/service";
 
 import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
@@ -39,10 +39,13 @@ const EXTERNAL_FILE_PREFIX = "file:";
 /** What a binding reads Annotations through, and hears their replacement on. */
 export type AnnotationReads = Pick<AnnotationRepository, "read" | "on">;
 
+/** What a binding names its Attachment through, and hears a re-resolution on. */
+export type AttachmentReads = Pick<AttachmentResolver, "resolve" | "on">;
+
 export interface PdfViewBindingDeps {
   view: PDFFileView;
   adapter: FileSystemAdapter;
-  resolveAttachment: ResolveAttachment;
+  attachments: AttachmentReads;
   annotations: AnnotationReads;
 }
 
@@ -58,14 +61,14 @@ export interface PdfViewBindingDeps {
 export class PdfViewBinding implements Disposable {
   readonly #view;
   readonly #adapter;
-  readonly #resolveAttachment;
+  readonly #attachments;
   readonly #annotations;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
-  /** Every listener and node the reader surfaces added for this view. */
+  /** Every listener and node this binding added for this view. */
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
   readonly #painted = new Set<number>();
-  #attachment: AttachmentResolution = { kind: "unresolved" };
+  #attachment: AttachmentResolution = { kind: "pending" };
   #filePath: string | null = null;
   #absolutePath: string | null = null;
   #pageProbed = false;
@@ -76,15 +79,10 @@ export class PdfViewBinding implements Disposable {
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
 
-  constructor({
-    view,
-    adapter,
-    resolveAttachment,
-    annotations,
-  }: PdfViewBindingDeps) {
+  constructor({ view, adapter, attachments, annotations }: PdfViewBindingDeps) {
     this.#view = view;
     this.#adapter = adapter;
-    this.#resolveAttachment = resolveAttachment;
+    this.#attachments = attachments;
     this.#annotations = annotations;
   }
 
@@ -102,6 +100,11 @@ export class PdfViewBinding implements Disposable {
     return this.#absolutePath;
   }
 
+  /**
+   * What the open file names in Zotero. `pending` until the resolver can
+   * answer — a binding built while the database is still loading holds that,
+   * and takes the answer the resolver announces.
+   */
   get attachment(): AttachmentResolution {
     return this.#attachment;
   }
@@ -142,23 +145,17 @@ export class PdfViewBinding implements Disposable {
       logger.debug("PDF view holds no file yet");
       return;
     }
-    this.#absolutePath = absolutePathOf(filePath, this.#adapter);
-    this.#attachment = this.#resolveAttachment(this.#absolutePath);
-    logger.debug("PDF view resolved", {
-      path: filePath,
-      attachment: this.#attachment,
-    });
+    const absolutePath = absolutePathOf(filePath, this.#adapter);
+    this.#absolutePath = absolutePath;
+    // A view bound while the Zotero database is still loading — plugin startup
+    // over an open PDF tab — is told `pending`, and takes its answer here.
+    this.#surfaces.defer(
+      this.#attachments.on("resolutions-changed", () =>
+        this.#resolve(absolutePath),
+      ),
+    );
+    this.#resolve(absolutePath);
     if (!this.supported) return;
-    if (this.#attachment.kind === "resolved") {
-      const { attachmentKey } = this.#attachment;
-      this.#surfaces.defer(
-        this.#annotations.on("annotations-changed", (changedKey) => {
-          if (changedKey === attachmentKey) this.#refresh();
-        }),
-      );
-      this.#surfaces.defer(() => this.#unpaint());
-      this.#refresh();
-    }
     whenViewerReady(this.#view.viewer, (controller) =>
       this.#attach(controller),
     );
@@ -166,6 +163,30 @@ export class PdfViewBinding implements Disposable {
 
   [Symbol.dispose](): void {
     this.#surfaces.dispose();
+  }
+
+  /**
+   * Names the open file's Attachment and binds its Annotations, then paints
+   * whatever page the reader already holds. The first answer that is not
+   * `pending` stands: a file Zotero does not know is asked about once, however
+   * often the resolver announces a change.
+   */
+  #resolve(absolutePath: string): void {
+    if (this.#surfaces.disposed || this.#attachment.kind !== "pending") return;
+    this.#attachment = this.#attachments.resolve(absolutePath);
+    logger.debug("PDF view resolved", {
+      path: this.#filePath,
+      attachment: this.#attachment,
+    });
+    if (!this.supported || this.#attachment.kind !== "resolved") return;
+    const { attachmentKey } = this.#attachment;
+    this.#surfaces.defer(
+      this.#annotations.on("annotations-changed", (changedKey) => {
+        if (changedKey === attachmentKey) this.#refresh();
+      }),
+    );
+    this.#surfaces.defer(() => this.#unpaint());
+    this.#refresh();
   }
 
   #attach(controller: PDFViewerController): void {

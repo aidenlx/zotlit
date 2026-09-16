@@ -13,6 +13,10 @@ import type {
   AnnotationRecord,
   AnnotationRepositoryEvents,
 } from "@/services/annotation-repository/service";
+import type {
+  AttachmentResolution,
+  AttachmentResolverEvents,
+} from "@/services/attachment-resolver/service";
 
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
@@ -79,6 +83,9 @@ export function pdfReader(page = pageView()) {
   const toolbarRightEl = document.createElement("div");
   const listeners: ((event: unknown) => void)[] = [];
   const child: Record<string, unknown> = {
+    // `on` and `off` read the event bus through this, and Obsidian's `unload`
+    // closes it and nulls it — see `closeViewer` below.
+    pdfViewer: { eventBus: {} },
     on: vi.fn((_event: string, listener: (event: unknown) => void) => {
       listeners.push(listener);
     }),
@@ -100,6 +107,15 @@ export function pdfReader(page = pageView()) {
       for (const listener of listeners) {
         listener({ pageNumber: 1, source: page });
       }
+    },
+    /**
+     * What the child's `unload` does before a closing leaf reaches ZotLit's
+     * disposal: the viewer is closed, and every listener goes with it.
+     */
+    closeViewer: () => {
+      listeners.length = 0;
+      child.pdfViewer = null;
+      child.toolbar = null;
     },
   };
 }
@@ -135,6 +151,32 @@ export function annotation(
       "application/pdf",
     ),
     version: null,
+  };
+}
+
+/**
+ * The attachment resolver, reduced to the lookup and the re-resolution a
+ * binding takes.
+ *
+ * @param resolution what the resolver answers for every path, starting with
+ *   `pending` — what a resolver whose database is still loading answers.
+ */
+export function attachmentReads(
+  resolution: AttachmentResolution = { kind: "pending" },
+) {
+  const emitter = createNanoEvents<AttachmentResolverEvents>();
+  let current = resolution;
+  return {
+    resolve: vi.fn(() => current),
+    on: <K extends keyof AttachmentResolverEvents>(
+      event: K,
+      cb: AttachmentResolverEvents[K],
+    ) => emitter.on(event, cb),
+    /** What the resolver does once the database it waited on is readable. */
+    answer(next: AttachmentResolution): void {
+      current = next;
+      emitter.emit("resolutions-changed");
+    },
   };
 }
 
