@@ -23,6 +23,7 @@
     "test:lua-filter": "node scripts/check-lua-filter.ts"
   },
   "dependencies": {
+    "@base-ui/react": "catalog:",
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",

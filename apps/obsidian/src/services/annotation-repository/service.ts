@@ -69,6 +69,15 @@ export interface AnnotationRecord {
   color: string | null;
   comment: string | null;
   text: string | null;
+  /** The Attachment this Annotation hangs from, by Indexed Key. */
+  parentKey: string;
+  /** Zotero's printed-page label, as Zotero stored it. */
+  pageLabel: string | null;
+  /**
+   * The Annotation's Zotero tags, by name. Names rather than the numeric tag
+   * ids SQLite keeps, because a name is what both sources can supply.
+   */
+  tags: readonly string[];
   /** Parsed once per read, so a redraw parses nothing. */
   position: AnnotationPosition;
   /**
@@ -349,13 +358,16 @@ function readAttachmentAnnotations(
   }
   const contentType = attachment.contentType ?? "";
   return getAnnotationsByParent(client, attachment.itemID).map((annotation) =>
-    toRecord(annotation, contentType),
+    toRecord(annotation, { attachmentKey, contentType }),
   );
 }
 
 function toRecord(
   annotation: Annotation,
-  contentType: string,
+  {
+    attachmentKey,
+    contentType,
+  }: { attachmentKey: string; contentType: string },
 ): AnnotationRecord {
   return {
     key: annotation.indexedKey,
@@ -363,6 +375,9 @@ function toRecord(
     color: annotation.color,
     comment: annotation.comment,
     text: annotation.text,
+    parentKey: attachmentKey,
+    pageLabel: annotation.pageLabel,
+    tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
     // The Zotero DB keeps no object version, which is why the Zotero DB source
     // refuses a write rather than sending a precondition it cannot supply.
@@ -377,8 +392,22 @@ function fromLocalApi({
   color,
   comment,
   text,
+  parentKey,
+  pageLabel,
+  tags,
   position,
   version,
 }: LocalApiAnnotation): AnnotationRecord {
-  return { key, type, color, comment, text, position, version };
+  return {
+    key,
+    type,
+    color,
+    comment,
+    text,
+    parentKey,
+    pageLabel,
+    tags,
+    position,
+    version,
+  };
 }

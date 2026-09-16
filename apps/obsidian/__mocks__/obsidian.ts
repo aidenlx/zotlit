@@ -765,6 +765,7 @@ export class MenuItem {
   #section = "";
   #checked: boolean | null = null;
   #disabled = false;
+  #isLabel = false;
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
@@ -789,6 +790,11 @@ export class MenuItem {
     return this.#disabled;
   }
 
+  /** Whether the row is a non-clickable label, as in Obsidian. */
+  get isLabel(): boolean {
+    return this.#isLabel;
+  }
+
   setTitle(title: string): this {
     this.#title = title;
     return this;
@@ -804,6 +810,11 @@ export class MenuItem {
   }
 
   setWarning(_isWarning: boolean): this {
+    return this;
+  }
+
+  setIsLabel(isLabel: boolean): this {
+    this.#isLabel = isLabel;
     return this;
   }
 

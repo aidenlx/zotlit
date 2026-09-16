@@ -80,6 +80,12 @@ export interface Annotation {
   color: string | null;
   pageLabel: string | null;
   /**
+   * The Annotation's Zotero tags, by name, in Zotero's own order. Names rather
+   * than numeric tag ids: the name is what every source of an Annotation can
+   * supply, and what a reader shows.
+   */
+  tags: string[];
+  /**
    * Raw Zotero sort key. Its zero-padded formats sort correctly as text.
    *
    * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/data/item.js#L4257-L4277
@@ -104,9 +110,15 @@ export function annotationTypeToName(
 
 /**
  * Whether Zotero renders a cached excerpt image for this annotation type.
+ *
+ * Either spelling of the type answers: a row from SQLite carries the numeric
+ * id, while an Annotation the Zotero Local API described carries the name.
+ *
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L62
  */
-export function annotationHasCacheImage(_type: AnnotationType): boolean {
-  const type = ANNOT_TYPE[_type];
-  return type === "image" || type === "ink";
+export function annotationHasCacheImage(
+  type: AnnotationType | ResolvedAnnotationTypeName,
+): boolean {
+  const name = typeof type === "number" ? ANNOT_TYPE[type] : type;
+  return name === "image" || name === "ink";
 }

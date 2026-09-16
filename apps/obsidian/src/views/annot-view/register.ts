@@ -2,15 +2,9 @@ import "./style.css";
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { AttachmentImportService } from "@/services/attachment-import/service";
-import type { DatabaseService } from "@/services/database/service";
-import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LocalServerService } from "@/services/local-server/service";
-import type { NoteFeature } from "@/services/note-feature";
-import type { NoteIndex } from "@/services/note-index/service";
-import type { SettingsService } from "@/services/settings/service";
-import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import type { AnnotActions } from "./actions";
+import type { AnnotState } from "./store";
 import { ANNOT_VIEW_TYPE, AnnotationView } from "./view";
 import type { AnnotViewDeps } from "./view";
 
@@ -19,40 +13,17 @@ type AnnotViewPlugin = Pick<
   "registerView" | "addCommand" | "addRibbonIcon" | "app"
 >;
 
-export interface AnnotViewRegistrationDeps {
-  app: App;
-  db: DatabaseService;
-  liveUpdate: LocalServerService;
-  zoteroPref: ZoteroPrefService;
-  noteFeature: Pick<
-    NoteFeature,
-    "renderAnnotation" | "renderAnnotationCitation"
-  >;
-  noteIndex: NoteIndex;
-  attachmentImport: AttachmentImportService;
-  itemLookup: ItemLookup;
-  settings: SettingsService;
-}
-
+/**
+ * The real services satisfy {@link AnnotViewDeps} as they are — every member is
+ * a structural `Pick` — so registration takes the same bundle the view does.
+ */
 export function registerAnnotView(
   plugin: AnnotViewPlugin,
-  deps: AnnotViewRegistrationDeps,
+  deps: AnnotViewDeps,
 ): void {
-  const viewDeps: AnnotViewDeps = {
-    app: deps.app,
-    db: deps.db,
-    liveUpdate: deps.liveUpdate,
-    zoteroPref: deps.zoteroPref,
-    noteFeature: deps.noteFeature,
-    noteIndex: deps.noteIndex,
-    attachmentImport: deps.attachmentImport,
-    itemLookup: deps.itemLookup,
-    settings: deps.settings,
-  };
-
   plugin.registerView(
     ANNOT_VIEW_TYPE,
-    (leaf) => new AnnotationView(leaf, viewDeps),
+    (leaf) => new AnnotationView(leaf, deps),
   );
 
   const open = () => {
@@ -65,6 +36,105 @@ export function registerAnnotView(
     callback: open,
   });
   plugin.addRibbonIcon("highlighter", m.command_open_annot_view_name(), open);
+
+  addFollowModeCommands(plugin, () => targetView(plugin.app));
+}
+
+/**
+ * What the five Follow Mode commands need of the view they act on: the state it
+ * publishes, and the gestures it publishes. Both are the same surfaces its
+ * React tree and its pane menu read, so a command is one more caller of them
+ * rather than a set of delegates built for commands alone.
+ */
+export interface FollowModeCommandTarget {
+  readonly snapshot: Pick<AnnotState, "followMode" | "pinnable">;
+  readonly gestures: Pick<
+    AnnotActions,
+    "onSetFollowMode" | "onPinCurrentItem" | "onPinItem" | "onUnpin"
+  > | null;
+}
+
+/**
+ * The five gestures that change an Annotation View's Follow Mode from the
+ * command palette. Each one applies to the view `findView` names, and drops out
+ * of the palette when that view is absent or the gesture cannot apply — so a
+ * command never silently does nothing.
+ *
+ * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
+ */
+export function addFollowModeCommands(
+  plugin: Pick<AnnotViewPlugin, "addCommand">,
+  findView: () => FollowModeCommandTarget | null,
+): void {
+  type Gestures = NonNullable<FollowModeCommandTarget["gestures"]>;
+  const command = ({
+    id,
+    name,
+    applies,
+    run,
+  }: {
+    id: string;
+    name: string;
+    /** Whether the palette offers it against the state the view publishes. */
+    applies: (state: FollowModeCommandTarget["snapshot"]) => boolean;
+    run: (gestures: Gestures) => void;
+  }): void => {
+    plugin.addCommand({
+      id,
+      name,
+      checkCallback(checking) {
+        const view = findView();
+        if (!view?.gestures || !applies(view.snapshot)) return false;
+        if (!checking) run(view.gestures);
+        return true;
+      },
+    });
+  };
+
+  command({
+    id: "annot-view-follow-active-tab",
+    name: m.command_annot_view_follow_active_tab_name(),
+    applies: (state) => state.followMode !== "active-tab",
+    run: (gestures) => gestures.onSetFollowMode("active-tab"),
+  });
+  command({
+    id: "annot-view-follow-zotero-reader",
+    name: m.command_annot_view_follow_zotero_reader_name(),
+    applies: (state) => state.followMode !== "zotero-reader",
+    run: (gestures) => gestures.onSetFollowMode("zotero-reader"),
+  });
+  command({
+    id: "annot-view-pin-current-item",
+    name: m.command_annot_view_pin_current_item_name(),
+    applies: (state) =>
+      state.followMode !== "pinned" && state.pinnable !== null,
+    run: (gestures) => gestures.onPinCurrentItem(),
+  });
+  command({
+    id: "annot-view-pin-item",
+    name: m.command_annot_view_pin_item_name(),
+    applies: () => true,
+    run: (gestures) => gestures.onPinItem(),
+  });
+  command({
+    id: "annot-view-unpin",
+    name: m.command_annot_view_unpin_name(),
+    applies: (state) => state.followMode === "pinned",
+    run: (gestures) => gestures.onUnpin(),
+  });
+}
+
+/**
+ * The Annotation View a command acts on: the focused one, else the first open.
+ * A vault with several keeps a mode per instance, and the focused one is the
+ * instance the gesture belongs to.
+ */
+function targetView(app: App): AnnotationView | null {
+  const active = app.workspace.getActiveViewOfType(AnnotationView);
+  if (active) return active;
+  const [leaf] = app.workspace.getLeavesOfType(ANNOT_VIEW_TYPE);
+  const view = leaf?.view;
+  return view instanceof AnnotationView ? view : null;
 }
 
 async function activateView(plugin: AnnotViewPlugin): Promise<void> {

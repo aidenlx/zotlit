@@ -258,6 +258,14 @@ describe("wire format", () => {
               "selected",
             ],
           },
+          {
+            "event": "reader/inactive",
+            "fields": [
+              "dataPath",
+              "event",
+              "profilePath",
+            ],
+          },
         ],
         "updateAllUrl": {
           "example": "obsidian://zotlit/update-all?source-id=a1b2c3d4&library=7&collection=ABCD2345",
@@ -293,7 +301,7 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 8,
+        "version": 9,
         "zoteroNotes": {
           "body": [
             "items",

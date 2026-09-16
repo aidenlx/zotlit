@@ -130,6 +130,12 @@ export interface LocalApiAnnotation {
   version: number;
   /** Zotero's reading-order key, zero-padded so that text order is it. */
   sortIndex: string;
+  /** The Attachment's Indexed Key — the `parentItem` this Annotation hangs from. */
+  parentKey: string;
+  /** Zotero's printed-page label, as Zotero stored it. */
+  pageLabel: string | null;
+  /** The Annotation's Zotero tags, by name, in the order Zotero answered them. */
+  tags: string[];
 }
 
 /**
@@ -261,6 +267,8 @@ const itemPageSchema = v.array(
       annotationText: v.optional(v.string()),
       annotationSortIndex: v.string(),
       annotationPosition: v.string(),
+      annotationPageLabel: v.optional(v.string()),
+      tags: v.optional(v.array(v.object({ tag: v.string() }))),
     }),
   }),
 );
@@ -315,6 +323,9 @@ function toAnnotation(
       position,
       version: item.version,
       sortIndex: data.annotationSortIndex,
+      parentKey: parent,
+      pageLabel: emptyToNull(data.annotationPageLabel),
+      tags: (data.tags ?? []).map((entry) => entry.tag),
     },
   };
 }

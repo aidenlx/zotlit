@@ -42,9 +42,20 @@ export const readerActiveSchema = v.object({
   selected: v.array(v.number()),
 });
 
+/**
+ * The focused Zotero tab or window stopped being a reader. Carries no identity:
+ * the receiver keeps the last reader target it holds and flags it closed until
+ * the next `reader/active` names one again.
+ */
+export const readerInactiveSchema = v.object({
+  ...debugDirs.entries,
+  event: v.literal("reader/inactive"),
+});
+
 export type DbUpdated = v.InferOutput<typeof dbUpdatedSchema>;
 export type ReaderAnnotSelect = v.InferOutput<typeof readerAnnotSelectSchema>;
 export type ReaderActive = v.InferOutput<typeof readerActiveSchema>;
+export type ReaderInactive = v.InferOutput<typeof readerInactiveSchema>;
 
 /**
  * Events pushed from the Zotero companion to the Obsidian plugin's HTTP
@@ -54,6 +65,7 @@ export const notifyEventSchema = v.variant("event", [
   dbUpdatedSchema,
   readerAnnotSelectSchema,
   readerActiveSchema,
+  readerInactiveSchema,
 ]);
 
 export type NotifyEvent = v.InferOutput<typeof notifyEventSchema>;

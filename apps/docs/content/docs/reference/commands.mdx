@@ -258,6 +258,23 @@ Opens the annotation view in the right sidebar, showing annotations from the Zot
 | Command palette | Always available                                                     |
 | Ribbon          | yes (tooltip: "<UiLabel name={m.command_open_annot_view_name()} />") |
 
+<Command name={m.command_annot_view_follow_active_tab_name()} />
+
+<Command name={m.command_annot_view_follow_zotero_reader_name()} />
+
+<Command name={m.command_annot_view_pin_current_item_name()} />
+
+<Command name={m.command_annot_view_pin_item_name()} />
+
+<Command name={m.command_annot_view_unpin_name()} />
+
+These five change what the annotation view follows. Each acts on the open annotation view, and the command palette offers it only where it applies — so the mode the view already follows, and a pin with no item to take, are absent rather than inert. See [Use the annotation view](/docs/how-to/use-annotation-view).
+
+| Entry point     | Details                                                     |
+| --------------- | ----------------------------------------------------------- |
+| Command palette | Active with an annotation view open, where the mode applies |
+| Pane menu       | The same three switches, plus the item picker               |
+
 ## Template data explorer
 
 <Command name={m.command_open_template_data_explorer_name()} />
@@ -354,41 +371,46 @@ Opens the release notes for the installed ZotLit version.
 
 ## Entry-point summary
 
-| Command                                                            | Palette | Ribbon |  File menu   | Available when                                     |
-| ------------------------------------------------------------------ | :-----: | :----: | :----------: | -------------------------------------------------- |
-| <UiLabel name={m.command_refresh_db_name()} />                     |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_update_all_notes_name()} />               |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_import_all_notes_name()} />               |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_open_lit_note_name()} />                  |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_insert_citation_name()} />                |   yes   |   no   |      no      | An editor is open                                  |
-| <UiLabel name={m.command_open_citekey_name()} />                   |   yes   |   no   |      no      | Cursor on a recognized citation key                |
-| <UiLabel name={m.command_open_citekey_new_tab_name()} />           |   yes   |   no   |      no      | Cursor on a recognized citation key                |
-| <UiLabel name={m.command_open_citekey_right_name()} />             |   yes   |   no   |      no      | Cursor on a recognized citation key                |
-| <UiLabel name={m.command_open_citekey_window_name()} />            |   yes   |   no   |      no      | Cursor on a recognized citation key                |
-| <UiLabel name={m.command_open_references_view_name()} />           |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_show_cited_by_name()} />                  |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_set_citation_presentation_name()} />      |   yes   |   no   | More options | Active Markdown note                               |
-| <UiLabel name={m.command_pandoc_export_name()} />                  |   yes   |   no   |      no      | Active Markdown note                               |
-| <UiLabel name={m.command_customize_citation_text_name()} />        |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_open_citation_graph_name()} />            |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_open_local_citation_graph_name()} />      |   yes   |   no   |      no      | Active on a note                                   |
-| <UiLabel name={m.command_update_note_name()} />                    |   yes   |   no   |     yes      | Active on a literature note                        |
-| <UiLabel name={m.command_update_note_metadata_name()} />           |   yes   |   no   |     yes      | Active on a literature note                        |
-| <UiLabel name={m.command_overwrite_note_name()} />                 |   yes   |   no   |     yes      | Active on a literature note                        |
-| <UiLabel name={m.command_import_child_notes_name()} />             |   yes   |   no   |     yes      | Active on a literature note                        |
-| <UiLabel name={m.command_copy_item_key_name()} />                  |   yes   |   no   |     yes      | Active on a file with a Zotero key                 |
-| <UiLabel name={m.command_customize_note_template_name()} />        |   yes   |   no   |     yes      | Active on a literature note                        |
-| <UiLabel name={m.command_switch_literature_note_profile_name()} /> |   yes   |   no   |      no      | Active on a literature note                        |
-| <UiLabel name={m.command_reimport_note_name()} />                  |   yes   |   no   |     yes      | Active on an imported note                         |
-| <UiLabel name={m.command_open_annot_view_name()} />                |   yes   |  yes   |      no      | Always                                             |
-| <UiLabel name={m.command_open_template_data_explorer_name()} />    |   yes   |   no   |     yes      | Always                                             |
-| <UiLabel name={m.template_workbench_open_layout()} />              |   yes   |   no   |     yes      | Active on a profile document                       |
-| <UiLabel name={m.template_workbench_open()} />                     |   yes   |   no   |     yes      | Active on a template document or a literature note |
-| <UiLabel name={m.template_workbench_open_layout()} />              |   yes   |   no   |      no      | Active in the Template Workbench View              |
-| <UiLabel name={m.profile_preview_open()} />                        |   yes   |   no   |      no      | Active in the Template Workbench View              |
-| <UiLabel name={m.command_import_profile_name()} />                 |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_open_welcome_name()} />                   |   yes   |   no   |      no      | Always                                             |
-| <UiLabel name={m.command_open_release_note_name()} />              |   yes   |   no   |      no      | Always                                             |
+| Command                                                             | Palette | Ribbon |  File menu   | Available when                                      |
+| ------------------------------------------------------------------- | :-----: | :----: | :----------: | --------------------------------------------------- |
+| <UiLabel name={m.command_refresh_db_name()} />                      |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_update_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_import_all_notes_name()} />                |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_lit_note_name()} />                   |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_insert_citation_name()} />                 |   yes   |   no   |      no      | An editor is open                                   |
+| <UiLabel name={m.command_open_citekey_name()} />                    |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_citekey_new_tab_name()} />            |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_citekey_right_name()} />              |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_citekey_window_name()} />             |   yes   |   no   |      no      | Cursor on a recognized citation key                 |
+| <UiLabel name={m.command_open_references_view_name()} />            |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_show_cited_by_name()} />                   |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_set_citation_presentation_name()} />       |   yes   |   no   | More options | Active Markdown note                                |
+| <UiLabel name={m.command_pandoc_export_name()} />                   |   yes   |   no   |      no      | Active Markdown note                                |
+| <UiLabel name={m.command_customize_citation_text_name()} />         |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_citation_graph_name()} />             |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_local_citation_graph_name()} />       |   yes   |   no   |      no      | Active on a note                                    |
+| <UiLabel name={m.command_update_note_name()} />                     |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_update_note_metadata_name()} />            |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_overwrite_note_name()} />                  |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_import_child_notes_name()} />              |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_copy_item_key_name()} />                   |   yes   |   no   |     yes      | Active on a file with a Zotero key                  |
+| <UiLabel name={m.command_customize_note_template_name()} />         |   yes   |   no   |     yes      | Active on a literature note                         |
+| <UiLabel name={m.command_switch_literature_note_profile_name()} />  |   yes   |   no   |      no      | Active on a literature note                         |
+| <UiLabel name={m.command_reimport_note_name()} />                   |   yes   |   no   |     yes      | Active on an imported note                          |
+| <UiLabel name={m.command_open_annot_view_name()} />                 |   yes   |  yes   |      no      | Always                                              |
+| <UiLabel name={m.command_annot_view_follow_active_tab_name()} />    |   yes   |   no   |      no      | Annotation view open, in another mode               |
+| <UiLabel name={m.command_annot_view_follow_zotero_reader_name()} /> |   yes   |   no   |      no      | Annotation view open, in another mode               |
+| <UiLabel name={m.command_annot_view_pin_current_item_name()} />     |   yes   |   no   |      no      | Annotation view open on an item, not already pinned |
+| <UiLabel name={m.command_annot_view_pin_item_name()} />             |   yes   |   no   |      no      | Annotation view open                                |
+| <UiLabel name={m.command_annot_view_unpin_name()} />                |   yes   |   no   |      no      | Annotation view open and pinned                     |
+| <UiLabel name={m.command_open_template_data_explorer_name()} />     |   yes   |   no   |     yes      | Always                                              |
+| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |     yes      | Active on a profile document                        |
+| <UiLabel name={m.template_workbench_open()} />                      |   yes   |   no   |     yes      | Active on a template document or a literature note  |
+| <UiLabel name={m.template_workbench_open_layout()} />               |   yes   |   no   |      no      | Active in the Template Workbench View               |
+| <UiLabel name={m.profile_preview_open()} />                         |   yes   |   no   |      no      | Active in the Template Workbench View               |
+| <UiLabel name={m.command_import_profile_name()} />                  |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_welcome_name()} />                    |   yes   |   no   |      no      | Always                                              |
+| <UiLabel name={m.command_open_release_note_name()} />               |   yes   |   no   |      no      | Always                                              |
 
 The two <UiLabel name={m.template_workbench_open_layout()} /> rows are separate commands. The first opens the profile document you are editing; the second brings the Workbench forward from inside the view.
 

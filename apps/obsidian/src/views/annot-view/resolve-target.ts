@@ -1,15 +1,29 @@
 // Pure follow-mode → load-target resolution for the annotation view.
 import { parseIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
-import type { ItemRef, Library } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
 
-/** A resolved item plus the attachment to prefer when first loading it. */
+import type { ReaderSessionTarget } from "@/services/reader-session/session";
+
+import type { AttachmentLock } from "./store";
+
+/** What the view reads, in the one identity every surface shares. */
 export interface LoadTarget {
-  indexedKey: string;
+  /**
+   * The Item whose Attachments the view lists, by Indexed Key; `null` for a
+   * standalone Attachment, which {@link lockedAttachmentKey} then names alone.
+   */
+  itemKey: string | null;
+  /**
+   * The Attachment an Obsidian PDF view or the Zotero Reader chose. It is the
+   * one on screen and the picker stands down while it stands.
+   */
+  lockedAttachmentKey: string | null;
+  /** Why the Attachment is locked; `null` when the user may choose. */
+  lock: AttachmentLock;
+  /** Bare key of whichever of the two keys the read starts from. */
   key: string;
   libraryID: number;
   groupID: number | null;
-  /** Reader-driven attachment; authoritative when set, falls back to saved/first when null. */
-  boundAttachmentID: number | null;
 }
 
 /** Map a group ID to its active library ID; `null` when the group is unknown. */
@@ -22,60 +36,76 @@ export function resolveLibraryID(
   return libraries.find((l) => l.groupID === groupID)?.libraryID ?? null;
 }
 
+/** What the active Obsidian tab offers the view, already read by the caller. */
+export type ActiveLeafTarget =
+  /** A Literature Note, by the Indexed Key in its frontmatter. */
+  | { kind: "note"; itemKey: string }
+  /** An Obsidian PDF view ZotLit resolved to a Zotero Attachment. */
+  | { kind: "pdf"; target: ReaderSessionTarget };
+
 /**
- * Per-mode inputs, all pre-fetched by the view (active-note frontmatter key,
- * reader item ref, pinned item ref). Keeping resolution pure lets the branch
- * logic be unit-tested without Obsidian/DB access.
+ * Per-mode inputs, all pre-fetched by the view (the active leaf, the Zotero
+ * Reader's session target, the pinned Item). Keeping resolution pure lets the
+ * branch logic be unit-tested without Obsidian/DB access.
  */
-export type ResolveTargetInput =
-  | {
-      mode: "note";
-      indexedKey: string | null;
-      libraries: readonly Library[] | null;
-    }
-  | { mode: "reader"; ref: ItemRef | null; attachmentID: number | null }
-  | { mode: "linked"; linkedTarget: ItemRef | null };
+export type ResolveTargetInput = { libraries: readonly Library[] | null } & (
+  | { mode: "active-tab"; leaf: ActiveLeafTarget | null }
+  | { mode: "zotero-reader"; target: ReaderSessionTarget | null }
+  | { mode: "pinned"; pinnedItemKey: string | null }
+);
 
 export function resolveLoadTarget(
   input: ResolveTargetInput,
 ): LoadTarget | null {
+  const { libraries } = input;
   switch (input.mode) {
-    case "note":
-      return resolveNoteTarget(input.indexedKey, input.libraries);
-    case "reader":
-      return input.ref
-        ? { ...toBase(input.ref), boundAttachmentID: input.attachmentID }
-        : null;
-    case "linked":
-      return input.linkedTarget
-        ? { ...toBase(input.linkedTarget), boundAttachmentID: null }
-        : null;
+    case "active-tab":
+      if (input.leaf === null) return null;
+      return input.leaf.kind === "note"
+        ? itemTarget(input.leaf.itemKey, libraries)
+        : readerTarget(input.leaf.target, "obsidian-pdf", libraries);
+    case "zotero-reader":
+      return readerTarget(input.target, "zotero-reader", libraries);
+    case "pinned":
+      return itemTarget(input.pinnedItemKey, libraries);
   }
 }
 
-function toBase(ref: ItemRef): Omit<LoadTarget, "boundAttachmentID"> {
+function readerTarget(
+  target: ReaderSessionTarget | null,
+  lock: AttachmentLock,
+  libraries: readonly Library[] | null,
+): LoadTarget | null {
+  if (!target) return null;
+  // The Attachment is what the reader holds; its parent only names the list
+  // the picker would offer, so a standalone Attachment resolves all the same.
+  const base = locate(target.itemKey ?? target.attachmentKey, libraries);
+  if (!base) return null;
   return {
-    indexedKey: ref.indexedKey,
-    key: ref.key,
-    libraryID: ref.libraryID,
-    groupID: ref.groupID,
+    itemKey: target.itemKey,
+    lockedAttachmentKey: target.attachmentKey,
+    lock,
+    ...base,
   };
 }
 
-function resolveNoteTarget(
-  indexedKey: string | null,
+function itemTarget(
+  itemKey: string | null,
   libraries: readonly Library[] | null,
 ): LoadTarget | null {
-  if (!indexedKey) return null;
+  if (!itemKey) return null;
+  const base = locate(itemKey, libraries);
+  if (!base) return null;
+  return { itemKey, lockedAttachmentKey: null, lock: null, ...base };
+}
+
+function locate(
+  indexedKey: string,
+  libraries: readonly Library[] | null,
+): Pick<LoadTarget, "key" | "libraryID" | "groupID"> | null {
   const parsed = parseIndexedKey(indexedKey);
   if (!parsed) return null;
   const libraryID = resolveLibraryID(parsed.groupID, libraries);
   if (libraryID === null) return null;
-  return {
-    indexedKey,
-    key: parsed.key,
-    libraryID,
-    groupID: parsed.groupID,
-    boundAttachmentID: null,
-  };
+  return { key: parsed.key, libraryID, groupID: parsed.groupID };
 }

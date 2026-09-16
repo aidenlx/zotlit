@@ -2,6 +2,7 @@
 import type { App, FileSystemAdapter, PDFFileView } from "obsidian";
 
 import { registerEvent } from "@/lib/disposables";
+import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
 
 import { PdfViewBinding } from "./binding";
@@ -11,6 +12,10 @@ import { openFilePathOf } from "./seam";
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
 export type { AttachmentResolution } from "@/services/attachment-resolver/service";
+export type {
+  ReaderSession,
+  ReaderSessionTarget,
+} from "@/services/reader-session/session";
 export type {
   AnnotationReads,
   AttachmentReads,
@@ -57,6 +62,19 @@ export class PdfAnnotationEditor extends Service<void> {
   /** The live binding for each open PDF view, in workspace order. */
   get bindings(): readonly PdfViewBinding[] {
     return [...this.#bindings.values()];
+  }
+
+  /**
+   * @param filePath a vault path, or a `file:`-prefixed absolute path for an
+   *   external file — the same spelling Obsidian gives the open file.
+   * @returns that PDF view as a Reader Session, or `null` while no open PDF
+   *   view holds the file.
+   */
+  sessionForPath(filePath: string): ReaderSession | null {
+    for (const binding of this.#bindings.values()) {
+      if (binding.filePath === filePath) return binding.session;
+    }
+    return null;
   }
 
   async #load(): Promise<void> {

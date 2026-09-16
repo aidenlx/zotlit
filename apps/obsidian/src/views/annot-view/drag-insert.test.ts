@@ -28,11 +28,12 @@ describe("annotation drag-insert diagnostics", () => {
       },
       notify,
       getImportHandle: () => ({}) as never,
+      resolveAnnotationID: () => 1,
       onSettled: vi.fn(),
     });
     handler(
       { dataTransfer: { setData: vi.fn() } } as never,
-      { itemID: 1, key: "ANNOT1", text: "Excerpt" } as never,
+      { key: "ANNT2345", text: "Excerpt" } as never,
     );
     const message = notify.mock.calls[0]![0] as DocumentFragment;
     expect(message.textContent).toContain("Missing (Qw8Er5Ty2Ui9)");
@@ -65,12 +66,13 @@ describe("annotation drag-insert diagnostics", () => {
       },
       notify,
       getImportHandle: () => ({}) as never,
+      resolveAnnotationID: () => 1,
       onSettled,
     });
 
     handler(
       { dataTransfer } as never,
-      { itemID: 1, key: "ANNOT1", text: "Excerpt" } as never,
+      { key: "ANNT2345", text: "Excerpt" } as never,
     );
 
     expect(notify).toHaveBeenCalledWith(error.message);

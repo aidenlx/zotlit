@@ -1,34 +1,113 @@
 import { useContext, useMemo, useState } from "react";
 
+import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { Menu } from "@/components/obsidian/menu";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
+import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
+import { CapabilitySlot } from "./capability-slot";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import {
-  selectActiveAttachment,
+  annotViewBody,
+  attachmentLine,
+  conditionLines,
+  followModeIcon,
+  followModeLabel,
+  followModeMenu,
+  identityLabel,
+} from "./presentation";
+import type {
+  AnnotViewBody,
+  AttachmentLine as AttachmentSlot,
+  EmptyStateAction,
+  FollowMenuAction,
+  FollowMenuEntry,
+} from "./presentation";
+import {
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
-  useSetSelectedAttachmentID,
+  useSetSelectedAttachmentKey,
   useToggleSearchOpen,
 } from "./store";
 
-export function AnnotView() {
-  const itemKey = useAnnotStore((s) => s.itemKey);
+/**
+ * Each shape `presentation.ts` derives is a fresh object, and the store is read
+ * through `useSyncExternalStore`, which compares snapshots by identity — a
+ * selector that builds one on every call never settles. So each is built from
+ * the slices it depends on and held while those are unchanged.
+ */
+function useFollowMenu(): FollowMenuEntry[] {
+  const followMode = useAnnotStore((s) => s.followMode);
+  const pinnable = useAnnotStore((s) => s.pinnable);
+  const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
+  return useMemo(
+    () => followModeMenu({ followMode, pinnable, selectedAttachmentKey }),
+    [followMode, pinnable, selectedAttachmentKey],
+  );
+}
+
+function useAttachmentSlot(): AttachmentSlot {
+  const attachments = useAnnotStore((s) => s.attachments);
+  const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
+  const attachmentLock = useAnnotStore((s) => s.attachmentLock);
+  return useMemo(
+    () =>
+      attachmentLine({ attachments, selectedAttachmentKey, attachmentLock }),
+    [attachments, selectedAttachmentKey, attachmentLock],
+  );
+}
+
+function useBody(): AnnotViewBody {
+  const attachments = useAnnotStore((s) => s.attachments);
+  const annotations = useAnnotStore((s) => s.annotations);
+  const followMode = useAnnotStore((s) => s.followMode);
+  const liveUpdatesOn = useAnnotStore((s) => s.liveUpdatesOn);
+  const pinnedItemKey = useAnnotStore((s) => s.pinnedItemKey);
+  return useMemo(
+    () =>
+      annotViewBody({
+        attachments,
+        annotations,
+        followMode,
+        liveUpdatesOn,
+        pinnedItemKey,
+      }),
+    [attachments, annotations, followMode, liveUpdatesOn, pinnedItemKey],
+  );
+}
+
+function useConditionLines(): string[] {
+  const annotationSource = useAnnotStore((s) => s.annotationSource);
   const attachments = useAnnotStore((s) => s.attachments);
   const followMode = useAnnotStore((s) => s.followMode);
+  const zoteroReaderClosed = useAnnotStore((s) => s.zoteroReaderClosed);
+  return useMemo(
+    () =>
+      conditionLines({
+        annotationSource,
+        attachments,
+        followMode,
+        zoteroReaderClosed,
+      }),
+    [annotationSource, attachments, followMode, zoteroReaderClosed],
+  );
+}
+
+export function AnnotView() {
   const searchOpen = useAnnotStore((s) => s.searchOpen);
+  const body = useBody();
   const [collapsed, setCollapsed] = useState(true);
 
-  const hasItem =
-    itemKey !== null && attachments !== null && attachments.length > 0;
+  const hasItem = body.kind === "list" || body.kind === "loading";
 
   return (
     <div className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
@@ -38,22 +117,18 @@ export function AnnotView() {
         onToggleCollapsed={() => setCollapsed((c) => !c)}
       />
       <ItemIdentityLabel />
+      <AttachmentLine />
+      <ConditionLines />
       {hasItem && searchOpen && <SearchRow />}
       {hasItem && <FilterBar />}
-      {itemKey === null ? (
-        <div className="pane-empty zt:p-2">
-          {followMode === "reader"
-            ? m.annot_view_empty_reader()
-            : followMode === "linked"
-              ? m.annot_view_empty_linked()
-              : m.annot_view_empty()}
-        </div>
-      ) : attachments === null ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
-      ) : attachments.length === 0 ? (
-        <div className="pane-empty zt:p-2">{m.annot_view_no_attachments()}</div>
-      ) : (
+      {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
+      ) : body.kind === "loading" ? (
+        <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>
+      ) : body.kind === "no-attachments" ? (
+        <div className="pane-empty zt:p-2">{body.message}</div>
+      ) : (
+        <EmptyPane message={body.message} action={body.action} />
       )}
     </div>
   );
@@ -65,16 +140,16 @@ interface ToolbarProps {
   onToggleCollapsed: () => void;
 }
 
+/** `[mode ▾] [capability slot] [collapse/expand] [search]`. */
 function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
-  const actions = useContext(AnnotActionsContext);
-  const followMode = useAnnotStore((s) => s.followMode);
   const searchOpen = useAnnotStore((s) => s.searchOpen);
   const toggleSearchOpen = useToggleSearchOpen();
 
   return (
     <SidebarToolbar className="zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
       <SidebarToolbar.Actions className="zt:@sm:w-auto zt:@sm:shrink-0">
-        <FollowControls />
+        <FollowModeMenu />
+        <CapabilitySlot />
         {hasItem && (
           <>
             <IconButton
@@ -87,11 +162,6 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
               )}
             />
             <IconButton
-              icon="refresh-ccw"
-              onClick={() => actions.onRefresh()}
-              {...tooltipAttrs(m.annot_view_refresh_tooltip())}
-            />
-            <IconButton
               icon="search"
               active={searchOpen}
               onClick={toggleSearchOpen}
@@ -100,63 +170,189 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
           </>
         )}
       </SidebarToolbar.Actions>
-      {hasItem && followMode !== "reader" && <AttachmentSelector />}
     </SidebarToolbar>
   );
 }
 
-function FollowControls() {
+/** Runs one entry of the Follow Mode menu against the view's actions. */
+function runMenuAction(actions: AnnotActions, action: FollowMenuAction): void {
+  switch (action) {
+    case "pin-current-item":
+      actions.onPinCurrentItem();
+      return;
+    case "unpin":
+      actions.onUnpin();
+      return;
+    case "choose-item":
+      actions.onPinItem();
+  }
+}
+
+/**
+ * The one button that changes the Follow Mode, beside the native pane menu and
+ * the five commands. Nothing else writes the mode, and the entries it renders
+ * are the ones the pane menu renders.
+ *
+ * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
+ */
+function FollowModeMenu() {
   const actions = useContext(AnnotActionsContext);
   const followMode = useAnnotStore((s) => s.followMode);
-  const serverAvailable = useAnnotStore((s) => s.serverAvailable);
-
-  const followingReader = followMode === "reader";
-  const isLinked = followMode === "linked";
-
-  const readerTooltip = followingReader
-    ? m.annot_view_follow_reader_active_tooltip()
-    : serverAvailable
-      ? m.annot_view_follow_reader_tooltip()
-      : m.annot_view_follow_reader_disabled_tooltip();
+  const entries = useFollowMenu();
+  const modes = entries.filter((entry) => entry.kind === "mode");
+  const actionEntries = entries.filter((entry) => entry.kind === "action");
 
   return (
-    <>
-      <IconButton
-        className="zt:data-[active]:text-accent-foreground"
-        icon="book-open"
-        active={followingReader}
-        data-active={followingReader ? "" : undefined}
-        disabled={!serverAvailable && !followingReader}
-        onClick={() => actions.onToggleFollowReader()}
-        {...tooltipAttrs(readerTooltip)}
-      />
-      <IconButton
-        className="zt:data-[active]:text-accent-foreground"
-        icon={isLinked ? "unlink" : "link"}
-        active={isLinked}
-        data-active={isLinked ? "" : undefined}
-        onClick={() =>
-          isLinked ? actions.onUnlinkItem() : actions.onLinkItem()
-        }
-        {...tooltipAttrs(
-          isLinked
-            ? m.annot_view_unlink_tooltip()
-            : m.annot_view_link_tooltip(),
-        )}
-      />
-    </>
+    <Menu.Root>
+      <Menu.Trigger
+        className="clickable-icon zt:flex zt:items-center zt:gap-0.5"
+        {...tooltipAttrs(followModeLabel(followMode))}
+      >
+        <Icon name={followModeIcon(followMode)} />
+        <Icon name="chevron-down" size={12} />
+      </Menu.Trigger>
+      <Menu.Content>
+        <Menu.RadioGroup
+          value={followMode}
+          onValueChange={(next) => {
+            const select = modes.find((entry) => entry.mode === next)?.select;
+            if (select) actions.onSetFollowMode(select);
+          }}
+        >
+          {modes.map((entry) => (
+            <Menu.RadioItem key={entry.mode} value={entry.mode}>
+              {entry.label}
+            </Menu.RadioItem>
+          ))}
+        </Menu.RadioGroup>
+        <Menu.Separator />
+        <Menu.Group>
+          {actionEntries.map((entry) => (
+            <Menu.Item
+              key={entry.action}
+              icon={entry.icon}
+              disabled={entry.reason !== null}
+              reason={entry.reason ?? undefined}
+              onClick={() => runMenuAction(actions, entry.action)}
+            >
+              {entry.label}
+            </Menu.Item>
+          ))}
+        </Menu.Group>
+      </Menu.Content>
+    </Menu.Root>
   );
 }
 
+/**
+ * The Item's title and creators, shown only where nothing else on screen names
+ * the Item — so never while the view follows the active tab.
+ */
 function ItemIdentityLabel() {
-  const followMode = useAnnotStore((s) => s.followMode);
-  const label = useAnnotStore((s) => s.itemDisplayLabel);
-
-  if (followMode === "note" || !label) return null;
+  const label = useAnnotStore(identityLabel);
+  if (label === null) return null;
 
   return (
     <div className="zt:truncate zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
       {label}
+    </div>
+  );
+}
+
+/**
+ * The Attachment on screen: a picker while the choice is the user's, and a
+ * control disabled in place, with the reason, while a reader holds it.
+ */
+function AttachmentLine() {
+  const line = useAttachmentSlot();
+  const setAttachmentKey = useSetSelectedAttachmentKey();
+
+  if (line.kind === "hidden") return null;
+  if (line.kind === "locked") {
+    return (
+      <div className="zt:px-3 zt:pb-1">
+        <div
+          className="clickable-icon zt:flex zt:w-full zt:items-center zt:text-xs"
+          aria-disabled="true"
+          {...tooltipAttrs(line.reason)}
+        >
+          <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
+            {line.label}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const selected = line.options.find(
+    (option) => option.key === line.selectedKey,
+  );
+  return (
+    <div className="zt:px-3 zt:pb-1">
+      <Menu.Root>
+        <Menu.Trigger
+          className="clickable-icon zt:flex zt:w-full zt:items-center zt:gap-1 zt:text-xs"
+          {...tooltipAttrs(m.annot_view_attachment_tooltip())}
+        >
+          <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
+            {selected?.label}
+          </span>
+          <Icon name="chevron-down" size={12} />
+        </Menu.Trigger>
+        <Menu.Content>
+          <Menu.RadioGroup
+            value={line.selectedKey}
+            onValueChange={setAttachmentKey}
+          >
+            {line.options.map((option) => (
+              <Menu.RadioItem key={option.key} value={option.key}>
+                {option.label}
+              </Menu.RadioItem>
+            ))}
+          </Menu.RadioGroup>
+        </Menu.Content>
+      </Menu.Root>
+    </div>
+  );
+}
+
+/** What the list on screen cannot say for itself: its reader, and its source. */
+function ConditionLines() {
+  const lines = useConditionLines();
+  if (lines.length === 0) return null;
+
+  return (
+    <div className="zt:flex zt:flex-col zt:gap-0.5 zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
+      {lines.map((line) => (
+        <div key={line}>{line}</div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyPane({
+  message,
+  action,
+}: {
+  message: string;
+  action: { label: string; action: EmptyStateAction } | null;
+}) {
+  const actions = useContext(AnnotActionsContext);
+  return (
+    <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
+      <div>{message}</div>
+      {action && (
+        <button
+          className="zt:underline"
+          onClick={() =>
+            action.action === "enable-live-updates"
+              ? actions.onEnableLiveUpdates()
+              : actions.onPinItem()
+          }
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }
@@ -178,33 +374,8 @@ function SearchRow() {
   );
 }
 
-function AttachmentSelector() {
-  const attachments = useAnnotStore((s) => s.attachments);
-  const active = useAnnotStore(selectActiveAttachment);
-  const setAttachmentID = useSetSelectedAttachmentID();
-
-  if (!attachments || attachments.length <= 1) return null;
-
-  return (
-    <div className="zt:mx-auto zt:w-full zt:max-w-xs zt:min-w-0 zt:@sm:mx-0">
-      <select
-        className="dropdown zt:w-full zt:truncate"
-        value={String(active?.itemID ?? "")}
-        onChange={(e) => setAttachmentID(Number(e.currentTarget.value))}
-      >
-        {attachments.map((atch) => (
-          <option key={atch.itemID} value={atch.itemID}>
-            ({atch.annotCount}) {atch.path?.replace(/^storage:/, "")}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 function AnnotList({ collapsed }: { collapsed: boolean }) {
   const annotations = useAnnotStore((s) => s.annotations);
-  const attachment = useAnnotStore(selectActiveAttachment);
   const clearFilters = useClearFilters();
 
   const filter = useAnnotFilter();
@@ -212,10 +383,6 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     () => (annotations ? filterAnnotations(annotations, filter) : []),
     [annotations, filter],
   );
-
-  if (!annotations || !attachment) {
-    return <div className="pane-empty zt:p-2">{m.annot_view_loading()}</div>;
-  }
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
@@ -232,7 +399,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-8 zt:text-xs">
       <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
         {filtered.map((annot) => (
-          <Annotation key={annot.itemID} annot={annot} collapsed={collapsed} />
+          <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
         ))}
       </div>
     </div>

@@ -1,12 +1,11 @@
 import type { App } from "obsidian";
 import type { DragEvent } from "react";
 
-import type { AnnotViewItem } from "@zotlit/db";
-
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
@@ -22,6 +21,13 @@ export interface DragInsertDeps {
   notify: (message: string | DocumentFragment) => void;
   /** Pre-prepared attachment-import handle for the active note. */
   getImportHandle: () => AttachmentImport | null;
+  /**
+   * The numeric id the Zotero database holds for an Annotation, or `null` for
+   * one it does not hold yet. The annotation template renders from the
+   * database, so a card the Zotero Local API answered before SQLite caught up
+   * cannot be rendered — the drag says so rather than inserting nothing.
+   */
+  resolveAnnotationID: (indexedKey: string) => number | null;
   /**
    * Called once a drag settles (dropped or abandoned) so the view can swap in a
    * fresh handle — discarding an abandoned drag's pending image (v1's `cancel`).
@@ -41,14 +47,21 @@ export interface DragInsertDeps {
  * this branch is the last line, not the usual path.
  */
 export function createDragInsertHandler(deps: DragInsertDeps) {
-  return (evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void => {
+  return (evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void => {
     const handle = deps.getImportHandle();
+    const annotationID = deps.resolveAnnotationID(annot.key);
     evt.dataTransfer.dropEffect = "copy";
+
+    if (annotationID === null) {
+      evt.preventDefault();
+      new BaseNotice(m.annot_view_annotation_not_in_database());
+      return;
+    }
 
     let rendered: string | null = null;
     try {
       rendered = handle
-        ? deps.noteFeature.renderAnnotation(annot.itemID, {
+        ? deps.noteFeature.renderAnnotation(annotationID, {
             attachmentImport: handle,
           })
         : null;
@@ -66,7 +79,7 @@ export function createDragInsertHandler(deps: DragInsertDeps) {
 
     if (rendered == null || handle == null) {
       logger.warn("Drag-insert cancelled", {
-        annotationID: annot.itemID,
+        annotationKey: annot.key,
         reason: handle == null ? "no-import-handle" : "render-unavailable",
       });
       evt.preventDefault();

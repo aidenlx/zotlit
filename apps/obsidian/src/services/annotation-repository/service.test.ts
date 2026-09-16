@@ -107,6 +107,9 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
     color: "#a28ae5",
     comment: "Making figures is hard :(",
     text: null,
+    parentKey: "RGRPDF24",
+    pageLabel: "1",
+    tags: [],
     position: {
       kind: "pdf-text",
       pageIndex: 0,

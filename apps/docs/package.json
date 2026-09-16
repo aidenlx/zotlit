@@ -22,7 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@base-ui/react": "^1.7.0",
+    "@base-ui/react": "catalog:",
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",

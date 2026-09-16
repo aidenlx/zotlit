@@ -66,6 +66,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     comment: null,
     color: "#ffd400",
     pageLabel: "5",
+    tags: [],
     sortIndex: "0",
     position: { pageIndex: 0, rects: [] },
     authorName: null,

@@ -1,15 +1,15 @@
 import { useCallback, useContext } from "react";
 
-import { annotationTypeToName } from "@zotlit/db";
-import type { AnnotationType, AnnotViewItem } from "@zotlit/db";
+import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { AnnotActionsContext } from "./actions";
-import { useAnnotStore, useToggleSelectedTagID } from "./store";
+import { useAnnotStore, useToggleSelectedTag } from "./store";
 import { tagChipVariants } from "./tag-chip";
 
 const TYPE_ICON: Record<string, string> = {
@@ -21,31 +21,28 @@ const TYPE_ICON: Record<string, string> = {
   note: "sticky-note",
 };
 
-function typeIcon(type: AnnotationType): string {
-  return TYPE_ICON[annotationTypeToName(type)] ?? "file-question";
+function typeIcon(type: ResolvedAnnotationTypeName): string {
+  return TYPE_ICON[type] ?? "file-question";
 }
 
-function typeLabel(type: AnnotationType): string {
-  const name = annotationTypeToName(type);
-  return name.charAt(0).toUpperCase() + name.slice(1);
+function typeLabel(type: ResolvedAnnotationTypeName): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
 interface AnnotationProps {
-  annot: AnnotViewItem;
+  annot: AnnotationRecord;
   collapsed: boolean;
 }
 
 export function Annotation({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
   const color = annot.color ?? undefined;
-  const selected = useAnnotStore(
-    (s) =>
-      s.followMode === "reader" &&
-      (s.readerTarget?.selected.includes(annot.itemID) ?? false),
+  const selected = useAnnotStore((s) =>
+    s.selectedAnnotationKeys.includes(annot.key),
   );
-  const selectedTagIDs = useAnnotStore((s) => s.selectedTagIDs);
+  const selectedTags = useAnnotStore((s) => s.selectedTags);
   const dragTarget = useAnnotStore((s) => s.dragTarget);
-  const toggleTag = useToggleSelectedTagID();
+  const toggleTag = useToggleSelectedTag();
   const dragTooltip =
     dragTarget === "ready"
       ? typeLabel(annot.type)
@@ -56,7 +53,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
   return (
     <div
       className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-selected:border-primary zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:@md:mb-3"
-      data-id={annot.itemID}
+      data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
     >
       <div
@@ -100,18 +97,18 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       {annot.tags.length > 0 && (
         <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
           {annot.tags.map((tag) => {
-            const tagSelected = selectedTagIDs.includes(tag.tagID);
+            const tagSelected = selectedTags.includes(tag);
             return (
               <span
-                key={tag.tagID}
+                key={tag}
                 className={tagChipVariants({
                   state: tagSelected ? "selected" : "resting",
                   ring: true,
                 })}
-                {...activatable(() => toggleTag(tag.tagID))}
+                {...activatable(() => toggleTag(tag))}
                 aria-pressed={tagSelected}
               >
-                {tag.name}
+                {tag}
               </span>
             );
           })}
@@ -157,12 +154,12 @@ function ExcerptBlock({
   collapsed,
   color,
 }: {
-  annot: AnnotViewItem;
+  annot: AnnotationRecord;
   collapsed: boolean;
   color: string | undefined;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const name = annotationTypeToName(annot.type);
+  const name = annot.type;
 
   if ((name === "note" || name === "text") && !annot.text) return null;
 

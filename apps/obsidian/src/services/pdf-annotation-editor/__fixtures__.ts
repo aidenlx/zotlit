@@ -146,6 +146,9 @@ export function annotation(
     color: "#2ea8e5",
     comment: null,
     text: null,
+    parentKey: "RGRPDF24",
+    pageLabel: "1",
+    tags: [],
     position: parseAnnotationPosition(
       position as AnnotationPositionRaw,
       "application/pdf",

@@ -100,7 +100,73 @@ it("reads every Annotation of one Attachment in Zotero's reading order", async (
     },
     version: 14,
     sortIndex: "00000|000191|00088",
+    parentKey: ATTACHMENT_KEY,
+    pageLabel: "1",
+    tags: [],
   });
+});
+
+it("carries a page label and tags, in the order Zotero answered them", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: () =>
+      annotationPage([
+        {
+          ...ROUGIER_ANNOTATIONS[0]!,
+          pageLabel: "xiv",
+          tags: ["todo", "review"],
+        },
+      ]),
+  });
+  await client.probe();
+
+  const result = await client.listAnnotations(ATTACHMENT_KEY);
+
+  expect(read(result)[0]).toMatchObject({
+    pageLabel: "xiv",
+    tags: ["todo", "review"],
+  });
+});
+
+it("answers an empty tags list for an annotation with no tags key", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    // ROUGIER_ANNOTATIONS[0] sets no `tags`, so the wire item carries none.
+    children: () => annotationPage([ROUGIER_ANNOTATIONS[0]!]),
+  });
+  await client.probe();
+
+  const result = await client.listAnnotations(ATTACHMENT_KEY);
+
+  expect(read(result)[0]).toMatchObject({ tags: [] });
+});
+
+it("reads an empty-string page label as null, the way Zotero stores an unset one", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: () =>
+      annotationPage([{ ...ROUGIER_ANNOTATIONS[0]!, pageLabel: "" }]),
+  });
+  await client.probe();
+
+  const result = await client.listAnnotations(ATTACHMENT_KEY);
+
+  expect(read(result)[0]).toMatchObject({ pageLabel: null });
+});
+
+it("names the Attachment's Indexed Key as parentKey, group suffix included", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: ({ groupID, key }: ChildrenRequest) =>
+      annotationPage([{ ...ROUGIER_ANNOTATIONS[0]!, groupID: groupID ?? 0 }], {
+        parentItem: key,
+      }),
+  });
+  await client.probe();
+
+  const result = await client.listAnnotations("SHAREPDFg42");
+
+  expect(read(result)[0]).toMatchObject({ parentKey: "SHAREPDFg42" });
 });
 
 it("follows the list route to its end, so an Attachment past one page is whole", async () => {

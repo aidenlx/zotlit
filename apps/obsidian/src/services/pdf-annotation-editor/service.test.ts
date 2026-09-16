@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { FileSystemAdapter } from "obsidian";
 import { expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import {
   annotation,
@@ -494,4 +495,116 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
   expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/vault/attachments/rougier-2014.pdf",
   );
+});
+
+it("exposes each open PDF view as a Reader Session, by the file it holds", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT]),
+  });
+  await service.ready;
+
+  const session = service.sessionForPath("attachments/rougier-2014.pdf");
+  expect(session).toBe(service.bindings[0]!.session);
+  expect(session!.source).toBe("obsidian-pdf");
+  expect(session!.target).toEqual({
+    attachmentKey: "ABCD2345",
+    itemKey: "WXYZ6789g4711",
+  });
+  expect(service.sessionForPath("attachments/other.pdf")).toBeNull();
+});
+
+it("names a standalone attachment in its session, with no parent Item", async () => {
+  const view = pdfView("attachments/loose.pdf");
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads({
+      kind: "resolved",
+      attachmentKey: "LSTAND23",
+      itemKey: null,
+    }),
+    annotations: annotationReads(),
+  });
+  await service.ready;
+
+  expect(service.sessionForPath("attachments/loose.pdf")!.target).toEqual({
+    attachmentKey: "LSTAND23",
+    itemKey: null,
+  });
+});
+
+it("holds the selection a consumer sets, and announces it", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf");
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
+  });
+  await service.ready;
+  const session = service.bindings[0]!.session;
+  const announced: (readonly string[])[] = [];
+  session.on("selection-changed", (selected) => announced.push(selected));
+
+  session.setSelectedAnnotations(["PUPR5FG5"]);
+
+  expect(session.selected).toEqual(["PUPR5FG5"]);
+  expect(announced).toEqual([["PUPR5FG5"]]);
+});
+
+it("moves the reader to the page an annotation is drawn on", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT]),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+
+  const applySubpath = reader.child.applySubpath as Mock<(s: string) => void>;
+
+  binding.session.navigateToAnnotation("PUPR5FG5");
+  expect(applySubpath).toHaveBeenCalledWith("#page=1");
+
+  // An annotation this reader draws nowhere moves nothing.
+  applySubpath.mockClear();
+  binding.session.navigateToAnnotation("K3JRFLFQ");
+  expect(applySubpath).not.toHaveBeenCalled();
+});
+
+it("stops announcing once the view's binding is gone", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf");
+  const { app } = workspace([{ view }]);
+
+  const service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+  });
+  await service.ready;
+  const session = service.bindings[0]!.session;
+  const announced: unknown[] = [];
+  session.on("target-changed", (target) => announced.push(target));
+
+  await service[Symbol.asyncDispose]();
+  session.setSelectedAnnotations(["PUPR5FG5"]);
+
+  expect(announced).toEqual([]);
+  expect(service.bindings).toEqual([]);
+  expect(service.sessionForPath("attachments/rougier-2014.pdf")).toBeNull();
 });

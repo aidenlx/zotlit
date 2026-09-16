@@ -1,20 +1,21 @@
 import { Menu } from "@mock/obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AnnotViewItem } from "@zotlit/db";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { createAnnotActions } from "./actions";
 
-const annotation: AnnotViewItem = {
-  itemID: 1,
-  key: "ANNO2345",
-  type: 1,
+const annotation: AnnotationRecord = {
+  key: "ANNT2345g42",
+  type: "highlight",
   text: "Selected text",
   comment: null,
   color: "#ffd400",
+  parentKey: "ATCH2345g42",
   pageLabel: "4",
-  parentKey: "ATCH2345",
   tags: [],
+  position: { kind: "pdf-rects", pageIndex: 3, rects: [] },
+  version: null,
 };
 
 let writeText: ReturnType<typeof vi.fn>;
@@ -31,15 +32,17 @@ describe("Annotation View menu", () => {
   it("offers the selected annotation's key", () => {
     const actions = createAnnotActions({
       app: {} as never,
-      getGroupID: () => 42,
       getDataDir: () => "",
+      resolveAnnotationID: () => 1,
       refresh: vi.fn(),
       noteFeature: { renderAnnotationCitation: () => null },
       onDragStart: vi.fn(),
       renderComment: () => () => {},
-      onToggleFollowReader: vi.fn(),
-      onLinkItem: vi.fn(),
-      onUnlinkItem: vi.fn(),
+      onSetFollowMode: vi.fn(),
+      onPinCurrentItem: vi.fn(),
+      onPinItem: vi.fn(),
+      onUnpin: vi.fn(),
+      onEnableLiveUpdates: vi.fn(),
       onExploreAnnotation: vi.fn(),
     });
 
@@ -55,6 +58,6 @@ describe("Annotation View menu", () => {
     expect(menu.items.every((item) => item.section === "")).toBe(true);
 
     copyKey!.click();
-    expect(writeText).toHaveBeenCalledWith("ANNO2345g42");
+    expect(writeText).toHaveBeenCalledWith("ANNT2345g42");
   });
 });

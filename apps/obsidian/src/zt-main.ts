@@ -354,6 +354,8 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       liveUpdate: services.localServer,
+      pdfReaders: services.pdfAnnotationEditor,
+      annotations: services.annotationRepository,
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,

@@ -1,6 +1,6 @@
 ---
 title: "Use the annotation view"
-description: "Open the annotation sidebar, follow the active Zotero reader, and pull highlights into your notes."
+description: "Open the annotation sidebar, choose what it follows, and pull highlights into your notes."
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -10,7 +10,7 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The annotation view is a sidebar panel that lists a Zotero item's annotations. You can browse highlights, drag them into your notes, and optionally follow the active Zotero reader so the view updates as you read.
+The annotation view is a sidebar panel that lists a Zotero item's annotations. You can browse highlights, drag them into your notes, and choose whether the view follows your active tab, the Zotero reader, or one item you pin.
 
 ## Open the annotation view
 
@@ -20,44 +20,54 @@ Open the command palette and run:
 
 The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view.
 
-By default, the view follows the active literature note. When no literature note is open, it shows <UiLabel name={m.annot_view_empty()} />
+By default, the view follows your active tab. When that tab is neither a literature note nor a Zotero PDF, it shows <UiLabel name={m.annot_view_empty_active_tab()} />
 
-## Follow the active Zotero reader
+## Choose what the view follows
 
-The view can track which item is open in Zotero's PDF reader, updating automatically as you switch between reader tabs.
+The annotation view has three follow modes:
+
+| Mode                                                        | Behavior                                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| <UiLabel name={m.annot_view_mode_active_tab()} /> (default) | Follows your active tab: the item of a literature note, or the attachment of a Zotero PDF. |
+| <UiLabel name={m.annot_view_mode_zotero_reader()} />        | Follows the attachment open in Zotero's reader. Needs live updates.                        |
+| <UiLabel name={m.annot_view_mode_pinned()} />               | Stays on one item you chose, with its attachment remembered.                               |
+
+Select the mode button at the start of the view's toolbar to switch. The same
+three switches are in the view's pane menu, and each has a command of its own.
+
+The view keeps the mode you chose until you choose another one. When its source
+cannot answer, the view says so in place instead of switching for you.
 
 <Steps>
   <Step>
-    ### Enable the ZotLit server
+    ### Follow the Zotero reader
 
-    Reader-following requires the ZotLit server. If the server is not enabled, the follow-reader button is disabled and its tooltip reads <UiLabel name={m.annot_view_follow_reader_disabled_tooltip()} />.
+    Select <UiLabel name={m.annot_view_mode_zotero_reader()} /> from the mode button. When you open or switch items in the Zotero reader, the view updates to show that attachment's annotations.
 
-    See [Set up live updates](/docs/how-to/set-up-live-updates) to enable the server.
+    This mode needs live updates, which carry the reader's position from Zotero to Obsidian. While live updates is off, the view offers <UiLabel name={m.annot_view_enable_live_updates()} /> in place of the list. See [Set up live updates](/docs/how-to/set-up-live-updates).
+
+    Closing the reader in Zotero leaves the last attachment on screen under <UiLabel name={m.annot_view_reader_closed()} />
 
   </Step>
   <Step>
-    ### Activate reader-following
+    ### Pin one item
 
-    In the annotation view header, select the follow-reader button. Its tooltip changes to "<UiLabel name={m.annot_view_follow_reader_active_tooltip()} />" while active.
+    Select <UiLabel name={m.annot_view_mode_pin_current_item()} /> to pin the item the view already shows, or <UiLabel name={m.annot_view_pin_choose_item()} /> to search Zotero for another one.
 
-    When you open or switch items in the Zotero reader, the annotation view updates to show that item's annotations.
+    Pinning from a Zotero PDF tab releases that tab's hold on the attachment, so you can switch between the item's attachments while the pin stands.
+
+    Select <UiLabel name={m.annot_view_mode_unpin()} /> to return to the mode you were in before the pin.
+
+    A PDF that Zotero stores with no parent item cannot be pinned, and the control says so.
 
   </Step>
 </Steps>
 
-If the ZotLit server becomes unavailable while reader-following is active, the view reverts to following the active literature note.
+## Choose an attachment
 
-## Follow modes
+When the item has more than one attachment, a picker under the toolbar names the one on screen with its annotation count, and remembers your choice per item.
 
-The annotation view has three follow modes:
-
-| Mode               | Behavior                                                                    |
-| ------------------ | --------------------------------------------------------------------------- |
-| **Note** (default) | Follows the active literature note in Obsidian.                             |
-| **Reader**         | Follows the item open in the Zotero PDF reader. Requires the ZotLit server. |
-| **Linked**         | Pinned to a manually chosen item.                                           |
-
-To pin the view to a specific item, select the link button (tooltip: "<UiLabel name={m.annot_view_link_tooltip()} />") and search for an item. Select unlink (tooltip: "<UiLabel name={m.annot_view_unlink_tooltip()} />") to return to the default note-following mode.
+A Zotero PDF tab and the Zotero reader each choose the attachment themselves, so the picker stands down while one of them does.
 
 ## Pull annotations into a note
 

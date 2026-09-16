@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { USER_LIBRARY_ID } from "@zotlit/db";
-import type { ItemRef, Library } from "@zotlit/db";
+import type { Library } from "@zotlit/db";
+
+import type { ReaderSessionTarget } from "@/services/reader-session/session";
 
 import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
 
@@ -12,20 +14,19 @@ const GROUP_LIBRARY: Library = {
   name: "Shared",
 };
 
-const USER_REF: ItemRef = {
-  itemID: 100,
-  key: "AAAA2345",
-  libraryID: USER_LIBRARY_ID,
-  groupID: null,
-  indexedKey: "AAAA2345",
+const USER_PAPER: ReaderSessionTarget = {
+  attachmentKey: "ATCH2345",
+  itemKey: "AAAA2345",
 };
 
-const GROUP_REF: ItemRef = {
-  itemID: 200,
-  key: "BBBB2345",
-  libraryID: 42,
-  groupID: 7,
-  indexedKey: "BBBB2345g7",
+const GROUP_PAPER: ReaderSessionTarget = {
+  attachmentKey: "ATCH2345g7",
+  itemKey: "BBBB2345g7",
+};
+
+const STANDALONE: ReaderSessionTarget = {
+  attachmentKey: "LSTAND23",
+  itemKey: null,
 };
 
 describe("resolveLibraryID", () => {
@@ -45,50 +46,86 @@ describe("resolveLibraryID", () => {
   });
 });
 
-describe("resolveLoadTarget — note mode", () => {
-  it("resolves a personal-library note key", () => {
+describe("resolveLoadTarget — Active Tab", () => {
+  it("resolves a Literature Note's own Item, with nothing locked", () => {
     expect(
       resolveLoadTarget({
-        mode: "note",
-        indexedKey: "AAAA2345",
+        mode: "active-tab",
+        leaf: { kind: "note", itemKey: "AAAA2345" },
         libraries: null,
       }),
     ).toEqual({
-      indexedKey: "AAAA2345",
+      itemKey: "AAAA2345",
+      lockedAttachmentKey: null,
+      lock: null,
       key: "AAAA2345",
       libraryID: USER_LIBRARY_ID,
       groupID: null,
-      boundAttachmentID: null,
     });
   });
 
   it("resolves a group note key through the library list", () => {
     expect(
       resolveLoadTarget({
-        mode: "note",
-        indexedKey: "BBBB2345g7",
+        mode: "active-tab",
+        leaf: { kind: "note", itemKey: "BBBB2345g7" },
         libraries: [GROUP_LIBRARY],
       }),
     ).toEqual({
-      indexedKey: "BBBB2345g7",
+      itemKey: "BBBB2345g7",
+      lockedAttachmentKey: null,
+      lock: null,
       key: "BBBB2345",
       libraryID: 42,
       groupID: 7,
-      boundAttachmentID: null,
     });
   });
 
-  it("returns null when there is no active note key", () => {
+  it("locks the Attachment an open Obsidian PDF holds", () => {
     expect(
-      resolveLoadTarget({ mode: "note", indexedKey: null, libraries: null }),
+      resolveLoadTarget({
+        mode: "active-tab",
+        leaf: { kind: "pdf", target: USER_PAPER },
+        libraries: null,
+      }),
+    ).toEqual({
+      itemKey: "AAAA2345",
+      lockedAttachmentKey: "ATCH2345",
+      lock: "obsidian-pdf",
+      key: "AAAA2345",
+      libraryID: USER_LIBRARY_ID,
+      groupID: null,
+    });
+  });
+
+  it("resolves a standalone Attachment through its own key", () => {
+    expect(
+      resolveLoadTarget({
+        mode: "active-tab",
+        leaf: { kind: "pdf", target: STANDALONE },
+        libraries: null,
+      }),
+    ).toEqual({
+      itemKey: null,
+      lockedAttachmentKey: "LSTAND23",
+      lock: "obsidian-pdf",
+      key: "LSTAND23",
+      libraryID: USER_LIBRARY_ID,
+      groupID: null,
+    });
+  });
+
+  it("returns null when the active tab names nothing", () => {
+    expect(
+      resolveLoadTarget({ mode: "active-tab", leaf: null, libraries: null }),
     ).toBeNull();
   });
 
   it("returns null for a malformed key", () => {
     expect(
       resolveLoadTarget({
-        mode: "note",
-        indexedKey: "not-a-key",
+        mode: "active-tab",
+        leaf: { kind: "note", itemKey: "not-a-key" },
         libraries: null,
       }),
     ).toBeNull();
@@ -97,56 +134,68 @@ describe("resolveLoadTarget — note mode", () => {
   it("returns null when a group's library is not loaded", () => {
     expect(
       resolveLoadTarget({
-        mode: "note",
-        indexedKey: "BBBB2345g7",
+        mode: "active-tab",
+        leaf: { kind: "note", itemKey: "BBBB2345g7" },
         libraries: [],
       }),
     ).toBeNull();
   });
 });
 
-describe("resolveLoadTarget — reader mode", () => {
-  it("binds the reader's attachment to the resolved ref", () => {
+describe("resolveLoadTarget — Zotero Reader", () => {
+  it("locks the Attachment the Zotero reader holds", () => {
     expect(
-      resolveLoadTarget({ mode: "reader", ref: GROUP_REF, attachmentID: 555 }),
+      resolveLoadTarget({
+        mode: "zotero-reader",
+        target: GROUP_PAPER,
+        libraries: [GROUP_LIBRARY],
+      }),
     ).toEqual({
-      indexedKey: "BBBB2345g7",
+      itemKey: "BBBB2345g7",
+      lockedAttachmentKey: "ATCH2345g7",
+      lock: "zotero-reader",
       key: "BBBB2345",
       libraryID: 42,
       groupID: 7,
-      boundAttachmentID: 555,
     });
   });
 
-  it("passes a null attachment through unbound", () => {
+  it("returns null while the Zotero reader names nothing", () => {
     expect(
-      resolveLoadTarget({ mode: "reader", ref: USER_REF, attachmentID: null }),
-    ).toMatchObject({ key: "AAAA2345", boundAttachmentID: null });
-  });
-
-  it("returns null when the reader ref does not resolve", () => {
-    expect(
-      resolveLoadTarget({ mode: "reader", ref: null, attachmentID: 555 }),
+      resolveLoadTarget({
+        mode: "zotero-reader",
+        target: null,
+        libraries: null,
+      }),
     ).toBeNull();
   });
 });
 
-describe("resolveLoadTarget — linked mode", () => {
-  it("resolves the pinned ref with no bound attachment", () => {
+describe("resolveLoadTarget — Pinned", () => {
+  it("resolves the pinned Item with the picker left live", () => {
     expect(
-      resolveLoadTarget({ mode: "linked", linkedTarget: GROUP_REF }),
+      resolveLoadTarget({
+        mode: "pinned",
+        pinnedItemKey: "BBBB2345g7",
+        libraries: [GROUP_LIBRARY],
+      }),
     ).toEqual({
-      indexedKey: "BBBB2345g7",
+      itemKey: "BBBB2345g7",
+      lockedAttachmentKey: null,
+      lock: null,
       key: "BBBB2345",
       libraryID: 42,
       groupID: 7,
-      boundAttachmentID: null,
     });
   });
 
   it("returns null when nothing is pinned", () => {
     expect(
-      resolveLoadTarget({ mode: "linked", linkedTarget: null }),
+      resolveLoadTarget({
+        mode: "pinned",
+        pinnedItemKey: null,
+        libraries: null,
+      }),
     ).toBeNull();
   });
 });

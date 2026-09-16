@@ -2,28 +2,23 @@ import { deletedItems, itemAnnotations } from "@drizzle/schema";
 import { and, eq, notExists } from "drizzle-orm";
 
 import type { NodeDatabaseClient } from "@/client/node";
-import type { AnnotationType } from "@/lib/zt-annot";
+import { formatIndexedKey } from "@/lib/zt-key";
 
+import { groupIDForLibrary } from "./_groups";
 import { defineQuery } from "./_shared";
 import type { QueryRow } from "./_shared";
 
 export interface AnnotViewAttachment {
   itemID: number;
+  /**
+   * The Attachment's Indexed Key — the one identity the view, the reader, and
+   * the Zotero Local API share. `itemID` stays adapter data for the read here.
+   *
+   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
+   */
+  indexedKey: string;
   path: string | null;
   annotCount: number;
-}
-
-export interface AnnotViewItem {
-  itemID: number;
-  key: string;
-  type: AnnotationType;
-  /** May carry Zotero's inline rich-text tags; see `Annotation.text`. */
-  text: string | null;
-  comment: string | null;
-  color: string | null;
-  pageLabel: string | null;
-  parentKey: string;
-  tags: { tagID: number; name: string }[];
 }
 
 const annotViewAttachmentsQuery = defineQuery<{
@@ -40,6 +35,7 @@ const annotViewAttachmentsQuery = defineQuery<{
       item_itemID: { deletedItem: false },
     },
     columns: { itemID: true, path: true },
+    with: { item_itemID: { columns: { key: true } } },
     extras: {
       annotCount: (table) =>
         db.$count(
@@ -60,9 +56,13 @@ const annotViewAttachmentsQuery = defineQuery<{
 
 type AttachmentRow = QueryRow<typeof annotViewAttachmentsQuery>;
 
-function toAnnotViewAttachment(row: AttachmentRow): AnnotViewAttachment {
+function toAnnotViewAttachment(
+  row: AttachmentRow,
+  groupID: number | null,
+): AnnotViewAttachment {
   return {
     itemID: row.itemID,
+    indexedKey: formatIndexedKey(row.item_itemID.key, groupID),
     path: row.path,
     annotCount: row.annotCount,
   };
@@ -73,70 +73,37 @@ export function getAnnotViewAttachments(
   itemKey: string,
   libraryID: number,
 ): AnnotViewAttachment[] {
+  const groupID = groupIDForLibrary(db, libraryID);
   return annotViewAttachmentsQuery
     .prepared(db)
     .all({ key: itemKey, libraryID })
-    .map(toAnnotViewAttachment);
+    .map((row) => toAnnotViewAttachment(row, groupID));
 }
 
-const annotViewAnnotationsQuery = defineQuery<{ parentItemID: number }>()(
+const annotationCountQuery = defineQuery<{ parentItemID: number }>()(
   (db, { placeholder }) =>
     db.query.itemAnnotations.findMany({
       where: {
         parentItemID: placeholder("parentItemID"),
         item: { deletedItem: false },
       },
-      columns: {
-        itemID: true,
-        type: true,
-        text: true,
-        comment: true,
-        color: true,
-        pageLabel: true,
-      },
-      with: {
-        item: {
-          columns: { key: true },
-          with: {
-            itemTags: {
-              columns: {},
-              with: {
-                tag: { columns: { tagID: true, name: true } },
-              },
-            },
-          },
-        },
-        parentAttachment: {
-          columns: {},
-          with: { item_itemID: { columns: { key: true } } },
-        },
-      },
-      orderBy: { sortIndex: "asc" },
+      columns: { itemID: true },
     }),
 );
 
-type AnnotationRow = QueryRow<typeof annotViewAnnotationsQuery>;
-
-function toAnnotViewItem(row: AnnotationRow): AnnotViewItem {
-  return {
-    itemID: row.itemID,
-    key: row.item.key,
-    type: row.type,
-    text: row.text,
-    comment: row.comment,
-    color: row.color,
-    pageLabel: row.pageLabel,
-    parentKey: row.parentAttachment.item_itemID.key,
-    tags: row.item.itemTags.map((it) => it.tag),
-  };
-}
-
-export function getAnnotViewAnnotations(
+/**
+ * How many live Annotations one Attachment holds, for the label the attachment
+ * picker shows. The Annotations themselves are read through the annotation
+ * repository, which answers from whichever Annotation Source is active rather
+ * than from SQLite alone.
+ *
+ * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+ */
+export function getAttachmentAnnotationCount(
   db: NodeDatabaseClient,
   attachmentItemID: number,
-): AnnotViewItem[] {
-  return annotViewAnnotationsQuery
+): number {
+  return annotationCountQuery
     .prepared(db)
-    .all({ parentItemID: attachmentItemID })
-    .map(toAnnotViewItem);
+    .all({ parentItemID: attachmentItemID }).length;
 }
