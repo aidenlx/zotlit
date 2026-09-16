@@ -9,7 +9,13 @@ import { formatIndexedKey } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
-import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
+import type { NodeFetchInit } from "@/lib/node-fetch";
+import {
+  parseJson,
+  ZOTERO_ALLOWED_REQUEST,
+  zoteroOrigin,
+} from "@/lib/zotero-http";
+import type { ZoteroTransport } from "@/lib/zotero-http";
 import { ZOTERO_HTTP_PORT_PREF } from "@/services/zotero-pref/prefs-file";
 
 const logger = getLogger(["pandoc", "bibliography"]);
@@ -22,15 +28,6 @@ const JSON_RPC_PATH = "/better-bibtex/json-rpc";
 
 /** Better BibTeX's Better CSL JSON translator, which writes `id` from the citation key. */
 const BETTER_CSL_JSON = "f4b52ab0-f878-4556-85a0-c7aeedd09dfc";
-
-/**
- * Zotero refuses requests it reads as browser traffic: a `Mozilla/` user agent,
- * or any `Origin` header. This header is the documented opt-out from that
- * guard, so a call stays served however the transport presents itself.
- */
-const ALLOWED_REQUEST: Readonly<Record<string, string>> = {
-  "Zotero-Allowed-Request": "1",
-};
 
 /** Which source answered, or produced, a result. */
 export type BibliographySource = "better-bibtex" | "local-api";
@@ -52,15 +49,7 @@ interface ZoteroReply {
 }
 
 export interface BibliographyPorts {
-  /**
-   * One HTTP round trip. Resolves with whatever status Zotero answered, however
-   * unhappy; rejects only when the connection itself failed, which is how a
-   * closed Zotero announces itself.
-   *
-   * Production passes `nodeFetch`, which reaches Zotero over Node's stack: no
-   * `Origin`, no user agent, and no CORS check on the answer.
-   */
-  fetch: FetchLike;
+  fetch: ZoteroTransport;
   /** HTTP port read from the active Zotero profile. */
   httpPort: number | null;
   /**
@@ -205,7 +194,7 @@ async function fromLocalApi(
     const response = await send(
       ports,
       `${zoteroOrigin(ports.httpPort)}/api/${library}/items?${query.toString()}`,
-      { method: "GET", headers: { ...ALLOWED_REQUEST } },
+      { method: "GET", headers: { ...ZOTERO_ALLOWED_REQUEST } },
     );
     if (!response) return { error: zoteroUnreachable(ports.httpPort) };
     if (response.status === 403) return { error: localApiDisabled() };
@@ -276,7 +265,10 @@ async function callJsonRpc(
     `${zoteroOrigin(ports.httpPort)}${JSON_RPC_PATH}`,
     {
       method: "POST",
-      headers: { ...ALLOWED_REQUEST, "Content-Type": "application/json" },
+      headers: {
+        ...ZOTERO_ALLOWED_REQUEST,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
     },
   );
@@ -328,10 +320,6 @@ function zoteroUnreachable(port: number): BibliographyFailure {
   return { code: "zotero-unreachable", port };
 }
 
-function zoteroOrigin(port: number): string {
-  return `http://127.0.0.1:${port}`;
-}
-
 function localApiDisabled(): BibliographyFailure {
   return { code: "local-api-disabled", pref: LOCAL_API_PREF };
 }
@@ -377,14 +365,6 @@ function asCslItems(value: unknown): CslItemData[] {
 
 function isCslItem(value: unknown): value is CslItemData {
   return typeof asRecord(value)["id"] === "string";
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 function asArray(value: unknown): unknown[] {

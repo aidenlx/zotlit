@@ -1,4 +1,5 @@
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
+import { nodeFetch } from "@/lib/node-fetch";
 import {
   createProfileCreator,
   createProfileImporter,
@@ -57,6 +58,7 @@ import {
 import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
+import { ZoteroLocalApiClient } from "./zotero-local-api/service";
 import { ZoteroPrefService } from "./zotero-pref/service";
 
 /**
@@ -132,8 +134,24 @@ export function buildServices(
         new AttachmentResolver({ db, zoteroPref }),
     })
     .use({
-      annotationRepository: ({ db, queryClient }) =>
-        new AnnotationRepository({ db, queryClient }),
+      zoteroLocalApi: ({ zoteroPref, localServer }) =>
+        new ZoteroLocalApiClient({
+          fetch: nodeFetch,
+          zoteroPref,
+          localServer,
+          // The Remembered Write Authorization arrives with the write path
+          // (aidenlx/zotlit#1144); until then every session reads unauthorized,
+          // which the Zotero Local API allows.
+          credentials: { read: () => Promise.resolve(null) },
+        }),
+    })
+    .use({
+      annotationRepository: ({ db, queryClient, zoteroLocalApi }) =>
+        new AnnotationRepository({
+          db,
+          queryClient,
+          localApi: zoteroLocalApi,
+        }),
     })
     .use({
       pdfAnnotationEditor: ({ attachmentResolver, annotationRepository }) =>

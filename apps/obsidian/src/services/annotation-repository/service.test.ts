@@ -7,9 +7,22 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import type { DatabaseEvents } from "@/services/database/service";
 import { QueryClientService } from "@/services/query-client/service";
+import {
+  annotationPage,
+  freshnessSignal,
+  localApiClient,
+  localApiDisabled,
+  rootOk,
+  ROUGIER_ANNOTATIONS,
+  SERVER_ID,
+  unreachable,
+} from "@/services/zotero-local-api/__fixtures__";
+import type { ZoteroAnswers } from "@/services/zotero-local-api/__fixtures__";
 
 import { AnnotationRepository } from "./service";
 import type { AnnotationList } from "./service";
+
+const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
 // The Fixture's own rows are the oracle: the same item ids, keys, types,
 // colours, sort indexes and positions it builds on `rougier-2014.pdf`, which
@@ -101,6 +114,7 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
       rotation: 0,
       rects: [[398.804, 685.107, 560.804, 702.107]],
     },
+    version: null,
   });
 });
 
@@ -193,6 +207,219 @@ it("leaves the Zotero database exactly as it found it", async () => {
   expect(annotationRows(client)).toEqual(before);
 });
 
+it("switches to the Zotero Local API when it answers, and says which source did", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, {
+    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  });
+
+  const announced = nextChange(repository);
+  // The first ask arms the Capability Probe and is answered meanwhile by the
+  // source that is known to stand.
+  const first = await repository.read("RGRPDF24");
+  const switched = await announced;
+  const second = await repository.read("RGRPDF24");
+
+  expect(first?.source).toEqual({ kind: "zotero-db" });
+  expect(switched).toEqual(["RGRPDF24"]);
+  expect(second?.source).toEqual({
+    kind: "zotero-local-api",
+    serverID: SERVER_ID,
+  });
+  expect(second?.annotations.map(({ key, type }) => [key, type])).toEqual(
+    READING_ORDER,
+  );
+});
+
+it("draws the same mark from either source, the object version apart", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, {
+    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  });
+
+  const announced = nextChange(repository);
+  const fromDatabase = await repository.read("RGRPDF24");
+  await announced;
+  const fromLocalApi = await repository.read("RGRPDF24");
+
+  // The Zotero DB keeps no version, so the Zotero Local API's is the one
+  // difference a surface can see between the two record sets.
+  expect(
+    fromLocalApi?.annotations.map((record) => ({ ...record, version: null })),
+  ).toEqual(fromDatabase?.annotations);
+  expect(fromLocalApi?.annotations.map(({ version }) => version)).toEqual([
+    16, 17, 14, 13, 11, 15, 12,
+  ]);
+});
+
+it("drops the server partition on the Companion's Freshness Signal", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests, serverEvents } = await setup(stack, {
+    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  });
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+  const sent = requests.length;
+
+  const announced = nextChange(repository);
+  freshnessSignal(serverEvents);
+  const refreshed = await announced;
+  await repository.read("RGRPDF24");
+
+  expect(refreshed).toEqual(["RGRPDF24"]);
+  // One Capability Probe, then one list read: the held answer was dropped
+  // rather than served again.
+  expect(requests.slice(sent).map(({ url }) => url.pathname)).toEqual([
+    "/api/",
+    "/api/users/0/items/RGRPDF24/children",
+  ]);
+});
+
+it("keeps the marks under the Zotero DB source when Zotero closes mid-session", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering = true;
+  const { repository, serverEvents } = await setup(stack, {
+    root: () => (answering ? rootOk() : unreachable()),
+    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  });
+  await switchToLocalApi(repository);
+  const live = await repository.read("RGRPDF24");
+
+  answering = false;
+  const announced = nextChange(repository);
+  freshnessSignal(serverEvents);
+  const gone = await announced;
+  const fallback = await repository.read("RGRPDF24");
+
+  expect(live?.source).toEqual({
+    kind: "zotero-local-api",
+    serverID: SERVER_ID,
+  });
+  expect(gone).toEqual(["RGRPDF24"]);
+  // The same marks are still on screen, from the source that can still answer.
+  expect(fallback?.source).toEqual({ kind: "zotero-db" });
+  expect(fallback?.annotations.map(({ key, type }) => [key, type])).toEqual(
+    READING_ORDER,
+  );
+});
+
+it("stands the source down when a list read fails, and answers from the Zotero DB", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, { children: () => unreachable() });
+  await switchToLocalApi(repository);
+
+  const announced = nextChange(repository);
+  const failed = await repository.read("EPUBBKS2");
+  const fallback = await repository.read("EPUBBKS2");
+
+  // Nothing was ever held for this Attachment on the source that failed.
+  expect(failed).toBeNull();
+  expect((await announced).toSorted()).toEqual(["EPUBBKS2", "RGRPDF24"]);
+  expect(fallback?.source).toEqual({ kind: "zotero-db" });
+  expect(fallback?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
+});
+
+it("partitions the cache by server id, so another database answers for itself", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  const { repository, prefEvents } = await setup(stack, {
+    root: () => rootOk({ "Zotero-Server-ID": serverID }),
+    children: () =>
+      annotationPage(
+        serverID === SERVER_ID
+          ? ROUGIER_ANNOTATIONS
+          : ROUGIER_ANNOTATIONS.slice(0, 1),
+        { serverID },
+      ),
+  });
+  await switchToLocalApi(repository);
+  const first = await repository.read("RGRPDF24");
+
+  serverID = "Zzzz11119999";
+  const announced = nextChange(repository);
+  prefEvents.emit("resolved-changed");
+  await announced;
+  const second = await repository.read("RGRPDF24");
+
+  expect(first?.annotations).toHaveLength(7);
+  expect(second?.source).toEqual({
+    kind: "zotero-local-api",
+    serverID: "Zzzz11119999",
+  });
+  expect(second?.annotations.map(({ key }) => key)).toEqual(["PUPR5FG5"]);
+});
+
+it("cancels the read in flight when the partition it fills is dropped", async () => {
+  await using stack = new AsyncDisposableStack();
+  const held = Promise.withResolvers<Response>();
+  const inFlight = Promise.withResolvers<void>();
+  let reads = 0;
+  const { repository, serverEvents, requests } = await setup(stack, {
+    children: () => {
+      if (reads++ > 0) return annotationPage(ROUGIER_ANNOTATIONS);
+      inFlight.resolve();
+      return held.promise;
+    },
+  });
+  await switchToLocalApi(repository);
+
+  const reading = repository.read("RGRPDF24");
+  // The read is in flight when the transport has been handed the request it
+  // will not answer.
+  await inFlight.promise;
+  freshnessSignal(serverEvents);
+  const list = await reading;
+
+  // The superseded read never publishes: the ask that joined it is answered by
+  // the read the invalidation asked for.
+  expect(list?.annotations).toHaveLength(7);
+  expect(
+    requests.filter(({ url }) => url.pathname.endsWith("/children")),
+  ).toHaveLength(2);
+});
+
+it("answers the Editing Capability the Annotation Source leaves", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, localApi } = await setup(stack, {
+    root: localApiDisabled,
+  });
+
+  const beforeProbe = repository.capabilityFor("RGRPDF24");
+  await localApi.probe();
+  const disabled = repository.capabilityFor("RGRPDF24");
+
+  expect(beforeProbe).toEqual({ kind: "read-only", reason: "probing" });
+  // Reads need no key, so a session that stands asks for one only to write.
+  expect(disabled).toEqual({
+    kind: "read-only",
+    reason: "local-api-disabled",
+  });
+});
+
+it("asks for authorization once a session stands, and keeps reading meanwhile", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await setup(stack, {
+    children: () => annotationPage(ROUGIER_ANNOTATIONS),
+  });
+
+  await switchToLocalApi(repository);
+  const list = await repository.read("RGRPDF24");
+
+  expect(repository.capabilityFor("RGRPDF24")).toEqual({
+    kind: "authorization-required",
+  });
+  expect(list?.annotations).toHaveLength(7);
+});
+
+/** Read once so the Capability Probe runs, and wait for the source it finds. */
+async function switchToLocalApi(
+  repository: AnnotationRepository,
+): Promise<void> {
+  const announced = nextChange(repository);
+  await repository.read("RGRPDF24");
+  await announced;
+}
+
 function colorOf(list: AnnotationList | null, key: string): string | null {
   return list?.annotations.find((record) => record.key === key)?.color ?? null;
 }
@@ -204,7 +431,18 @@ function annotationRows(client: NodeDatabaseClient): unknown[] {
     .all();
 }
 
-async function setup(stack: AsyncDisposableStack) {
+/**
+ * The repository over a real query client and a real Zotero Local API client,
+ * with a fake transport under it: the seam a surface reads through, driven by
+ * the answers a Paired Run recorded.
+ *
+ * @param answers what Zotero answers. The default is a Zotero that is not
+ *   running, so the Zotero DB is the source.
+ */
+async function setup(
+  stack: AsyncDisposableStack,
+  answers: ZoteroAnswers = { root: unreachable },
+) {
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -220,10 +458,51 @@ async function setup(stack: AsyncDisposableStack) {
       dbEvents.on(event, cb),
   };
 
+  const {
+    client: localApi,
+    requests,
+    serverEvents,
+    prefEvents,
+  } = localApiClient(answers);
+  stack.use(localApi);
+  await localApi.ready;
+
   const queryClient = new QueryClientService();
   stack.use(queryClient);
-  const repository = new AnnotationRepository({ db, queryClient });
+  const repository = new AnnotationRepository({
+    db,
+    queryClient,
+    localApi,
+    now: () => NOW,
+  });
   stack.use(repository);
   await repository.ready;
-  return { repository, client, db, dbEvents, acquireRead, queryClient };
+  return {
+    repository,
+    client,
+    db,
+    dbEvents,
+    acquireRead,
+    queryClient,
+    localApi,
+    requests,
+    serverEvents,
+    prefEvents,
+  };
+}
+
+/** The next `annotations-changed` the repository emits, as a completion signal. */
+function nextChange(
+  repository: AnnotationRepository,
+): Promise<readonly string[]> {
+  return new Promise((resolve) => {
+    const announced: string[] = [];
+    const off = repository.on("annotations-changed", (key) => {
+      announced.push(key);
+      queueMicrotask(() => {
+        off();
+        resolve(announced);
+      });
+    });
+  });
 }
