@@ -78,13 +78,35 @@ class Rdp {
   }
 }
 
+/** How long a listener gets to prove it speaks RDP before we give up on it. */
+const GREETING_TIMEOUT_MS = 5000;
+
 function connect(port: number, host = "127.0.0.1"): Promise<Rdp> {
   return new Promise((resolve, reject) => {
     const socket = createConnection({ port, host });
     const rdp = new Rdp(socket);
-    socket.once("error", reject);
+    // Something else may be listening on a port a previous Zotero used. It
+    // will never send the root greeting, so without this the connect hangs
+    // instead of failing, and a caller probing for a live Zotero never gets
+    // its answer.
+    const timer = setTimeout(() => {
+      rdp.close();
+      reject(new Error(`no RDP greeting from ${host}:${port}`));
+    }, GREETING_TIMEOUT_MS);
+    const settle = (outcome: () => void): void => {
+      clearTimeout(timer);
+      outcome();
+    };
+    socket.once("error", (error: Error) => {
+      settle(() => reject(error));
+    });
     // Root actor greets us first.
-    rdp.next((p) => p.from === "root").then(() => resolve(rdp), reject);
+    rdp
+      .next((p) => p.from === "root")
+      .then(
+        () => settle(() => resolve(rdp)),
+        (error: unknown) => settle(() => reject(error)),
+      );
   });
 }
 
@@ -116,7 +138,7 @@ function evalJS(rdp: Rdp, consoleActor: string, text: string): Promise<Packet> {
 const sleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
 
-type Evaluate = (text: string) => Promise<Packet>;
+export type Evaluate = (text: string) => Promise<Packet>;
 
 interface AsyncEvalOptions {
   pause?: (ms: number) => Promise<void>;
@@ -165,6 +187,43 @@ export async function evalAsync(
   }
 }
 
+/**
+ * One connection to a running Zotero's parent process, already attached to its
+ * console actor. Disposing it closes the socket.
+ */
+export interface RdpSession extends Disposable {
+  /** Evaluate a synchronous expression and return the reply packet. */
+  evaluate: Evaluate;
+  /** Evaluate an `async` expression through {@link evalAsync}. */
+  evaluateAsync(body: string): Promise<Packet>;
+}
+
+/**
+ * Attach to the debugging port a Paired Run's Zotero listens on. Rejects when
+ * nothing answers there, so a caller probing for a live Zotero treats the
+ * rejection as "no Zotero", not as a failure of its own.
+ */
+export async function openRdpSession(
+  port: number,
+  host = "127.0.0.1",
+): Promise<RdpSession> {
+  const rdp = await connect(port, host);
+  try {
+    const consoleActor = await getParentConsoleActor(rdp);
+    const evaluate: Evaluate = (text) => evalJS(rdp, consoleActor, text);
+    return {
+      evaluate,
+      evaluateAsync: (body) => evalAsync(evaluate, body),
+      [Symbol.dispose]() {
+        rdp.close();
+      },
+    };
+  } catch (error) {
+    rdp.close();
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
   const [, , portArg, expr] = process.argv;
   const port = Number(portArg);
@@ -176,29 +235,21 @@ async function main(): Promise<void> {
   }
 
   const isAsync = expr.startsWith("await ");
-  const rdp = await connect(port);
-  try {
-    const consoleActor = await getParentConsoleActor(rdp);
-    const res = isAsync
-      ? await evalAsync(
-          (text) => evalJS(rdp, consoleActor, text),
-          expr.slice("await ".length),
-        )
-      : await evalJS(rdp, consoleActor, expr);
-    if (res.exception || res.exceptionMessage) {
-      console.error(
-        "EXCEPTION:",
-        JSON.stringify(res.exceptionMessage ?? res.exception, null, 2),
-      );
-    }
-    console.log(
-      typeof res.result === "string"
-        ? res.result
-        : JSON.stringify(res.result, null, 2),
+  using session = await openRdpSession(port);
+  const res = isAsync
+    ? await session.evaluateAsync(expr.slice("await ".length))
+    : await session.evaluate(expr);
+  if (res.exception || res.exceptionMessage) {
+    console.error(
+      "EXCEPTION:",
+      JSON.stringify(res.exceptionMessage ?? res.exception, null, 2),
     );
-  } finally {
-    rdp.close();
   }
+  console.log(
+    typeof res.result === "string"
+      ? res.result
+      : JSON.stringify(res.result, null, 2),
+  );
 }
 
 const entrypoint = process.argv[1];

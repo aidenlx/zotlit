@@ -29,6 +29,7 @@ import {
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
   VAULT_CASES,
+  writePairedRunState,
 } from "#fixture";
 import { renderGuide } from "#fixture/guide";
 import { startMockLocalBridge } from "#fixture/local-bridge-server";
@@ -276,6 +277,10 @@ const cli = yargs(hideBin(process.argv))
         layout,
         companionDir,
       );
+      // This instance holds `zotero.sqlite` exactly as a Paired Run's does, so
+      // it is reported the same way — anything that would rebuild the Fixture
+      // has to see it. It carries no debugging port, and the report says so.
+      await writePairedRunState(layout, { pid });
       console.log(
         `Launched the Paired Zotero from ${applicationDir} (pid ${pid})`,
       );

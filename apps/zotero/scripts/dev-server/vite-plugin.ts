@@ -107,6 +107,7 @@ export function zoteroDevServerPlugin({
         JSON.stringify({
           event: "paired-zotero-ready",
           pid: activeSession.child.pid,
+          debuggerPort: activeSession.port,
         }),
       );
     } else {
