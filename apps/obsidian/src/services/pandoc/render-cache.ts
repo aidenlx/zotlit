@@ -4,11 +4,10 @@ import { createHash } from "node:crypto";
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { HeldReads } from "@/lib/held-reads";
-import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 import type { ProfileService } from "@/services/profile/service";
+import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -27,18 +26,21 @@ import type { CslStyleRequest, ResolvedCslStyle } from "./styles";
 const logger = getLogger(["pandoc", "render-cache"]);
 
 /**
- * Renders held at once. A cited set the user moved away from is worth keeping
- * for the move back, and each render is a handful of formatted entries, so the
- * bound is generous; it exists so a session that visits many documents cannot
- * grow the cache without end.
+ * The key prefixes renders are held under; {@link renderKey} completes them.
+ *
+ * A render key names the very cited set it covers, so an edit to that set asks
+ * under another key and the one it replaces stops being asked for. Renders
+ * therefore expire on the default garbage-collection time rather than being
+ * retained for the session.
  */
-const HELD_RENDERS = 32;
+const BIBLIOGRAPHY_RENDER = "bibliography-render";
+const CITATION_RENDER = "citation-render";
 
 interface BibliographyRenderEvents {
   /** A held render value changed. */
   changed: (key: string) => void;
   /** A render committed, including an equal or failed read. */
-  settled: (key: string) => void;
+  settled: (key: string, held: Held<unknown> | null) => void;
   /**
    * Every held render went stale. A consumer that keeps rendered text on screen
    * asks for its own render again.
@@ -57,6 +59,8 @@ export interface BibliographyRenderCacheOptions {
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "on">;
   settings: Pick<SettingsService, "ready" | "subscribe">;
+  /** The plugin-wide query client every Held Read is realized on. */
+  queryClient: QueryClientService;
 }
 
 /**
@@ -121,16 +125,9 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #zoteroPref;
   readonly #settings;
   readonly #profile;
+  readonly #queries;
   readonly #emitter = createNanoEvents<BibliographyRenderEvents>();
   readonly #styles = new InstalledStyleCache();
-  /** Bibliography renders by {@link renderKey}. */
-  readonly #renders = new HeldReads<BibliographyRenderResult>({
-    limit: HELD_RENDERS,
-  });
-  /** In-text citation renders, held the same way and dropped by the same signals. */
-  readonly #citations = new HeldReads<readonly RenderedCitation[]>({
-    limit: HELD_RENDERS,
-  });
   /** `undefined` until the first settings snapshot names the vault selections. */
   #vault: EffectivePresentation | undefined;
   /** The first unavailable selected style found in this plugin lifecycle. */
@@ -145,6 +142,7 @@ export class BibliographyRenderCache extends Service<void> {
     this.#zoteroPref = options.zoteroPref;
     this.#settings = options.settings;
     this.#profile = options.profile;
+    this.#queries = options.queryClient;
     this.ready = this.#load();
   }
 
@@ -166,27 +164,47 @@ export class BibliographyRenderCache extends Service<void> {
     items: readonly CslItemData[],
     presentation?: RenderPresentation,
   ): Promise<BibliographyRenderOutcome> {
-    await this.ready.catch(() => undefined);
-    if (this.#engine.getStatus().kind !== "installed") {
-      return { kind: "unavailable", reason: "engine-absent" };
-    }
-
-    const request = this.#styleRequest(presentation);
-    const style = await this.#resolveStyle(request);
-    if (style.kind === "failed") {
-      return { kind: "unavailable", reason: "style-missing" };
-    }
     // A document that cites nothing still renders under the style it names, so
-    // an unusable one is answered above rather than passed over here.
-    const key = renderKey({ request, style, items });
-    const record = await this.#renders.read(key, () =>
-      items.length === 0
-        ? Promise.resolve({ entries: [], hasEntryMarkers: false })
-        : this.#runBibliography(items, style),
+    // an unusable one is answered here rather than passed over.
+    const prepared = await this.#prepare(presentation);
+    if ("reason" in prepared) {
+      return { kind: "unavailable", reason: prepared.reason };
+    }
+    const key = renderKey({ ...prepared, items });
+    const record = await this.#askThenPeek<BibliographyRenderResult>(
+      [BIBLIOGRAPHY_RENDER, key],
+      () => this.#runBibliography(items, prepared.style),
     );
     return record === null
       ? { kind: "unavailable", reason: "failed" }
       : { kind: "held", key, record };
+  }
+
+  /**
+   * The bibliography of `items` once the render behind it stands, for a caller
+   * that shows no stale list of its own — the citation text service numbers its
+   * cited entries off the very list the References Sidebar shows.
+   *
+   * @param presentation the style and Citation Locale to render under; the
+   *   vault selection where it names none.
+   * @param signal ends the wait; the shared render runs on for every other
+   *   caller that joined it.
+   * @returns null where nothing can be rendered or the render failed.
+   */
+  async readBibliography(
+    items: readonly CslItemData[],
+    {
+      presentation,
+      signal,
+    }: { presentation?: RenderPresentation; signal?: AbortSignal } = {},
+  ): Promise<BibliographyRenderResult | null> {
+    const prepared = await this.#prepare(presentation);
+    if ("reason" in prepared) return null;
+    return await this.#queries.read<BibliographyRenderResult>(
+      [BIBLIOGRAPHY_RENDER, renderKey({ ...prepared, items })],
+      () => this.#runBibliography(items, prepared.style),
+      signal,
+    );
   }
 
   /**
@@ -210,26 +228,46 @@ export class BibliographyRenderCache extends Service<void> {
     items: readonly CslItemData[],
     presentation?: RenderPresentation,
   ): Promise<CitationRenderOutcome> {
-    await this.ready.catch(() => undefined);
-    if (this.#engine.getStatus().kind !== "installed") {
-      return { kind: "unavailable", reason: "engine-absent" };
+    const prepared = await this.#prepare(presentation);
+    if ("reason" in prepared) {
+      return { kind: "unavailable", reason: prepared.reason };
     }
-
-    const request = this.#styleRequest(presentation);
-    const style = await this.#resolveStyle(request);
-    if (style.kind === "failed") {
-      return { kind: "unavailable", reason: "style-missing" };
-    }
-
-    const key = renderKey({ request, style, items, citations });
-    const record = await this.#citations.read(key, () =>
-      citations.length === 0
-        ? Promise.resolve([])
-        : this.#runCitations(citations, items, style),
+    const key = renderKey({ ...prepared, items, citations });
+    const record = await this.#askThenPeek<readonly RenderedCitation[]>(
+      [CITATION_RENDER, key],
+      () => this.#runCitations(citations, items, prepared.style),
     );
     return record === null
       ? { kind: "unavailable", reason: "failed" }
       : { kind: "held", key, record };
+  }
+
+  /**
+   * One document's in-text citations once the render behind them stands, for a
+   * caller that shows no stale text of its own — the citation text service
+   * holds the formatted text every surface of that document reads.
+   *
+   * @param presentation the style and Citation Locale to render under; the
+   *   vault selection where it names none.
+   * @param signal ends the wait; the shared render runs on for every other
+   *   caller that joined it.
+   * @returns null where nothing can be rendered or the render failed.
+   */
+  async readCitations(
+    citations: readonly string[],
+    items: readonly CslItemData[],
+    {
+      presentation,
+      signal,
+    }: { presentation?: RenderPresentation; signal?: AbortSignal } = {},
+  ): Promise<readonly RenderedCitation[] | null> {
+    const prepared = await this.#prepare(presentation);
+    if ("reason" in prepared) return null;
+    return await this.#queries.read<readonly RenderedCitation[]>(
+      [CITATION_RENDER, renderKey({ ...prepared, items, citations })],
+      () => this.#runCitations(citations, items, prepared.style),
+      signal,
+    );
   }
 
   /**
@@ -273,24 +311,15 @@ export class BibliographyRenderCache extends Service<void> {
         if (settings) this.#applySettings(settings);
       }),
     );
-    stack.defer(
-      this.#renders.on("changed", (key) => this.#emitter.emit("changed", key)),
-    );
-    stack.defer(
-      this.#renders.on("settled", (key) => this.#emitter.emit("settled", key)),
-    );
-    stack.defer(
-      this.#citations.on("changed", (key) =>
-        this.#emitter.emit("changed", key),
-      ),
-    );
-    stack.defer(
-      this.#citations.on("settled", (key) =>
-        this.#emitter.emit("settled", key),
-      ),
-    );
-    stack.use(this.#renders);
-    stack.use(this.#citations);
+    for (const prefix of [BIBLIOGRAPHY_RENDER, CITATION_RENDER]) {
+      stack.defer(
+        this.#queries.watch([prefix], {
+          changed: (key) => this.#emitter.emit("changed", renderKeyOf(key)),
+          settled: (key, held) =>
+            this.#emitter.emit("settled", renderKeyOf(key), held),
+        }),
+      );
+    }
 
     this.commit(stack.move());
   }
@@ -311,17 +340,57 @@ export class BibliographyRenderCache extends Service<void> {
     if (held) this.#invalidate();
   }
 
+  /** Marks every held render stale and announces the drop. */
   #invalidate(): void {
     logger.debug("Bibliography renders went stale");
-    this.#renders.invalidate();
-    this.#citations.invalidate();
+    for (const prefix of [BIBLIOGRAPHY_RENDER, CITATION_RENDER]) {
+      this.#queries.invalidate([prefix]);
+    }
     this.#emitter.emit("invalidated");
+  }
+
+  /**
+   * What a render request stands on before its key can be built: the engine,
+   * the Citation Presentation it resolves to, and the style it formats with.
+   */
+  async #prepare(
+    presentation: RenderPresentation | undefined,
+  ): Promise<
+    | { request: CslStyleRequest; style: RenderStyle }
+    | { reason: RenderUnavailableReason }
+  > {
+    await this.ready.catch(() => undefined);
+    if (this.#engine.getStatus().kind !== "installed") {
+      return { reason: "engine-absent" };
+    }
+    const request = this.#styleRequest(presentation);
+    const style = await this.#resolveStyle(request);
+    return style.kind === "failed"
+      ? { reason: "style-missing" }
+      : { request, style };
+  }
+
+  /**
+   * Asks for one render key and peeks at what it holds: a stale record answers
+   * at once while the render replacing it runs, and only a first read is waited
+   * on.
+   */
+  async #askThenPeek<T>(
+    queryKey: readonly string[],
+    render: () => Promise<T>,
+  ): Promise<Held<T> | null> {
+    const asking = this.#queries.ask(queryKey, render);
+    const held = this.#queries.peek<T>(queryKey);
+    if (held !== null) return held;
+    await asking;
+    return this.#queries.peek<T>(queryKey);
   }
 
   async #runBibliography(
     items: readonly CslItemData[],
     style: RenderStyle,
-  ): Promise<BibliographyRenderResult | null> {
+  ): Promise<BibliographyRenderResult> {
+    if (items.length === 0) return { entries: [], hasEntryMarkers: false };
     try {
       const presentation = enginePresentation(style);
       const engine = await this.#engine.getEngine();
@@ -339,7 +408,7 @@ export class BibliographyRenderCache extends Service<void> {
       return { entries, hasEntryMarkers };
     } catch (error) {
       logger.warn("Cannot format the bibliography", { error });
-      return null;
+      throw error;
     }
   }
 
@@ -347,7 +416,8 @@ export class BibliographyRenderCache extends Service<void> {
     citations: readonly string[],
     items: readonly CslItemData[],
     style: RenderStyle,
-  ): Promise<readonly RenderedCitation[] | null> {
+  ): Promise<readonly RenderedCitation[]> {
+    if (citations.length === 0) return [];
     try {
       const engine = await this.#engine.getEngine();
       const rendered = await engine.renderCitations({
@@ -359,7 +429,7 @@ export class BibliographyRenderCache extends Service<void> {
       return rendered;
     } catch (error) {
       logger.warn("Cannot format the citations", { error });
-      return null;
+      throw error;
     }
   }
 
@@ -440,6 +510,11 @@ function renderKey({
     ...items.map((item) => item.id),
     ...(citations.length > 0 ? ["", ...citations] : []),
   ].join("\n");
+}
+
+/** The {@link renderKey} a held render's query key carries. */
+function renderKeyOf(key: readonly unknown[]): string {
+  return String(key[1]);
 }
 
 /**

@@ -8,14 +8,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getItemsByKey } from "@zotlit/db";
 import { makeCreator, makeItem } from "@zotlit/item-lookup/fixtures";
 
-import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
-import type {
-  BibliographyRenderOutcome,
-  BibliographyRenderResult,
-} from "@/services/pandoc/render-cache";
+import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import type { CitationPopoverContentProps } from "./content";
@@ -68,29 +64,10 @@ const emptyText = (): DocumentCitations => ({
   literalWorks: new Map(),
 });
 
-function harness(initial: Held<DocumentCitations> | null) {
-  let held = initial;
+function harness(read: () => Promise<DocumentCitations | null>) {
   let file: TFile | null = NOTE;
   const deleted = new Set<(file: TFile) => void>();
-  const listeners = {
-    changed: new Set<(path: string) => void>(),
-    settled: new Set<
-      (path: string, held: Held<DocumentCitations> | null) => void
-    >(),
-    invalidated: new Set<() => void>(),
-  };
-  const citationText = {
-    peek: vi.fn(() => held),
-    on: vi.fn(
-      <K extends keyof typeof listeners>(
-        event: K,
-        listener: (typeof listeners)[K] extends Set<infer T> ? T : never,
-      ) => {
-        listeners[event].add(listener as never);
-        return () => listeners[event].delete(listener as never);
-      },
-    ),
-  };
+  const citationText = { read: vi.fn(read) };
   const service = new CitationPopover({
     app: {
       vault: {
@@ -151,18 +128,6 @@ function harness(initial: Held<DocumentCitations> | null) {
       file = null;
       for (const cb of deleted) cb(NOTE);
     },
-    emitChanged: () => {
-      for (const listener of listeners.changed) listener(NOTE.path);
-    },
-    emitInvalidated: () => {
-      for (const listener of listeners.invalidated) listener();
-    },
-    emitSettled: (settled: Held<DocumentCitations> | null) => {
-      for (const listener of listeners.settled) listener(NOTE.path, settled);
-    },
-    hold(value: Held<DocumentCitations>) {
-      held = value;
-    },
     show,
     [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
@@ -173,122 +138,74 @@ beforeEach(() => {
 });
 
 describe("Citation Popover citation text", () => {
-  it("settles the second hover after the first citation-text read failed", async () => {
-    vi.useFakeTimers();
-    try {
-      await using run = harness(null);
+  it("settles a hover the citation-text read answered nothing for", async () => {
+    await using run = harness(() => Promise.resolve(null));
 
-      run.show();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(run.citationText.peek).toHaveBeenCalledOnce();
-      run.emitSettled(null);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(popovers[0]!.render).toHaveBeenCalledOnce();
-      expect(run.citationText.peek).toHaveBeenCalledOnce();
-
-      run.show();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(run.citationText.peek).toHaveBeenCalledTimes(2);
-      run.emitSettled(null);
-      await vi.advanceTimersByTimeAsync(100);
-      expect(popovers[1]!.render).toHaveBeenCalledOnce();
-      expect(run.citationText.peek).toHaveBeenCalledTimes(2);
-      const content = popovers[1]!.render.mock
-        .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
-      expect(content.props.note).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it.each([
-    [
-      "the document changed",
-      (run: ReturnType<typeof harness>) => run.emitChanged(),
-    ],
-    [
-      "all documents changed",
-      (run: ReturnType<typeof harness>) => run.emitInvalidated(),
-    ],
-  ])("follows a replaced first read when %s", async (_name, invalidate) => {
-    await using run = harness(null);
     run.show();
-    await vi.waitFor(() =>
-      expect(run.citationText.peek).toHaveBeenCalledOnce(),
-    );
-
-    invalidate(run);
-    await vi.waitFor(() =>
-      expect(run.citationText.peek).toHaveBeenCalledTimes(2),
-    );
-
-    run.hold({
-      value: emptyText(),
-      status: "fresh",
-      settled: Promise.resolve(emptyText()),
-    });
-    run.emitChanged();
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
+    expect(run.citationText.read).toHaveBeenCalledOnce();
+    const content = popovers[0]!.render.mock
+      .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
+    expect(content.props.note).toBeUndefined();
   });
 
-  it("uses the held citation text after its replacement read failed", async () => {
-    const text: DocumentCitations = {
-      ...emptyText(),
-      formatted: new Map([
-        [
-          "[@ghost]",
-          [
-            {
-              start: 0,
-              text: {
-                content: [
-                  {
-                    t: "Note",
-                    c: [{ t: "Para", c: [{ t: "Str", c: "held note" }] }],
-                  },
-                ],
-                citations: [{ id: "ghost", mode: "normal" }],
-              },
-              serials: [],
-            },
-          ],
-        ],
-      ]),
-    };
-    await using run = harness({
-      value: text,
-      status: "failed",
-      settled: Promise.resolve(null),
-    });
-
+  it("draws the text the read settled on rather than what stood at the hover", async () => {
+    const settled = Promise.withResolvers<DocumentCitations | null>();
+    await using run = harness(() => settled.promise);
     run.show();
+    await vi.waitFor(() =>
+      expect(run.citationText.read).toHaveBeenCalledOnce(),
+    );
+    expect(popovers[0]!.render).not.toHaveBeenCalled();
+
+    settled.resolve(noteText("settled note"));
 
     await vi.waitFor(() => expect(popovers[0]!.render).toHaveBeenCalledOnce());
     const content = popovers[0]!.render.mock
       .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
-    expect(content.props.note).toEqual([{ t: "Str", c: "held note" }]);
+    expect(content.props.note).toEqual([{ t: "Str", c: "settled note" }]);
   });
 });
+
+/** One document's citation text, whose hovered occurrence carries a note. */
+function noteText(note: string): DocumentCitations {
+  return {
+    ...emptyText(),
+    formatted: new Map([
+      [
+        "[@ghost]",
+        [
+          {
+            start: 0,
+            text: {
+              content: [
+                { t: "Note", c: [{ t: "Para", c: [{ t: "Str", c: note }] }] },
+              ],
+              citations: [{ id: "ghost", mode: "normal" }],
+            },
+            serials: [],
+          },
+        ],
+      ],
+    ]),
+  };
+}
 
 describe("source-less Citation Popover", () => {
   it("shows an uncited Item without a citation key under the vault presentation", async () => {
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "ABCD2345", title: "Alpha kernels", citationKey: null }),
     ]);
-    const render = vi.fn(async () => ({
-      kind: "held",
-      record: {
-        value: {
-          entries: [
-            {
-              id: "ABCD2345",
-              marker: [{ t: "Str", c: "[1]" }],
-              content: [{ t: "Str", c: "Formatted alpha" }],
-            },
-          ],
+    const readBibliography = vi.fn(async () => ({
+      entries: [
+        {
+          id: "ABCD2345",
+          marker: [{ t: "Str", c: "[1]" }],
+          content: [{ t: "Str", c: "Formatted alpha" }],
         },
-      },
+      ],
+      hasEntryMarkers: true,
     }));
     await using service = new CitationPopover({
       app: {},
@@ -296,7 +213,7 @@ describe("source-less Citation Popover", () => {
       citationIndex: { resolution: null },
       libraryScope: { current: [] },
       profile: profileReader(),
-      bibliographyRender: { render, on: () => () => undefined },
+      bibliographyRender: { readBibliography, on: () => () => undefined },
     } as never);
 
     service.showWork({
@@ -322,8 +239,9 @@ describe("source-less Citation Popover", () => {
       },
     ]);
     expect(content.props.note).toBeUndefined();
-    expect(render.mock.calls[0]).toEqual([
+    expect(readBibliography.mock.calls[0]).toEqual([
       [expect.objectContaining({ title: "Alpha kernels" })],
+      { signal: expect.any(AbortSignal) },
     ]);
   });
 });
@@ -346,10 +264,9 @@ function workHarness() {
     })),
     on,
   };
-  const render = vi.fn<() => Promise<BibliographyRenderOutcome>>(async () => ({
-    kind: "unavailable",
-    reason: "engine-absent",
-  }));
+  const readBibliography = vi.fn<
+    () => Promise<BibliographyRenderResult | null>
+  >(async () => null);
   const open = vi.fn();
   const service = new CitationPopover({
     app: {},
@@ -357,14 +274,14 @@ function workHarness() {
     citationIndex,
     libraryScope: { current: [] },
     profile: profileReader(),
-    bibliographyRender: { render, on },
+    bibliographyRender: { readBibliography, on },
   } as never);
   const element = document.createElement("div");
   const root = createRoot(element);
   return {
     db,
     citationIndex,
-    render,
+    readBibliography,
     open,
     emit(event: string) {
       for (const listener of listeners.get(event) ?? []) listener();
@@ -522,7 +439,7 @@ describe("popover failure and lifetime", () => {
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "ABCD2345", title: "Alpha kernels" }),
     ]);
-    run.render.mockRejectedValue(new Error("Engine stopped"));
+    run.readBibliography.mockRejectedValue(new Error("Engine stopped"));
     run.show();
     expect((await run.shown()).textContent).toContain("Alpha kernels");
     expect(
@@ -531,12 +448,7 @@ describe("popover failure and lifetime", () => {
   });
 
   it("closes a document popover when its source is deleted", async () => {
-    const text = emptyText();
-    await using run = harness({
-      value: text,
-      status: "fresh",
-      settled: Promise.resolve(text),
-    });
+    await using run = harness(() => Promise.resolve(emptyText()));
     run.show();
     await vi.waitFor(() => expect(popovers.at(-1)!.render).toHaveBeenCalled());
     run.removeSource();
@@ -545,42 +457,35 @@ describe("popover failure and lifetime", () => {
 });
 
 describe("source-less presentation updates", () => {
-  it.each(["engine-absent", "style-missing", "failed"] as const)(
-    "keeps Item actions when formatting is %s",
-    async (reason) => {
-      await using run = workHarness();
-      vi.mocked(getItemsByKey).mockReturnValue([
-        makeItem({
-          key: "ABCD2345",
-          title: "Alpha kernels",
-          citationKey: null,
-        }),
-      ]);
-      run.render.mockResolvedValue({ kind: "unavailable", reason });
-      run.show();
-      const element = await run.shown();
-      expect(element.textContent).toContain("Alpha kernels");
-      expect(
-        element.querySelector("[data-citation-popover-actions]"),
-      ).not.toBeNull();
-    },
-  );
+  it("keeps Item actions when nothing could be formatted", async () => {
+    await using run = workHarness();
+    vi.mocked(getItemsByKey).mockReturnValue([
+      makeItem({ key: "ABCD2345", title: "Alpha kernels", citationKey: null }),
+    ]);
+    run.readBibliography.mockResolvedValue(null);
+    run.show();
+    const element = await run.shown();
+    expect(element.textContent).toContain("Alpha kernels");
+    expect(
+      element.querySelector("[data-citation-popover-actions]"),
+    ).not.toBeNull();
+  });
 
   it("retains the new Item data when an older render finishes later", async () => {
     await using run = workHarness();
-    const pending = Promise.withResolvers<BibliographyRenderOutcome>();
-    run.render.mockReturnValueOnce(pending.promise);
+    const pending = Promise.withResolvers<BibliographyRenderResult | null>();
+    run.readBibliography.mockReturnValueOnce(pending.promise);
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "ABCD2345", title: "Old title" }),
     ]);
     run.show();
-    await vi.waitFor(() => expect(run.render).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalledOnce());
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "ABCD2345", title: "Corrected title" }),
     ]);
     run.emit("invalidated");
     expect((await run.shown()).textContent).toContain("Corrected title");
-    pending.resolve({ kind: "unavailable", reason: "failed" });
+    pending.resolve(null);
     await pending.promise;
     expect((await run.shown()).textContent).toContain("Corrected title");
     expect(popovers.at(-1)!.render).toHaveBeenCalledOnce();
@@ -608,35 +513,18 @@ describe("source-less presentation updates", () => {
 
 describe("source-less bibliography revalidation", () => {
   it.each([true, false])(
-    "consumes the replacement bibliography (success: %s)",
+    "draws the bibliography the read settled on (success: %s)",
     async (success) => {
       await using run = workHarness();
       vi.mocked(getItemsByKey).mockReturnValue([
         makeItem({ key: "ABCD2345", title: "Alpha kernels" }),
       ]);
-      const replacement =
-        Promise.withResolvers<BibliographyRenderResult | null>();
-      run.render.mockResolvedValue({
-        kind: "held",
-        key: "same-item",
-        record: {
-          status: "revalidating",
-          value: {
-            entries: [
-              {
-                id: "ABCD2345",
-                marker: undefined,
-                content: [{ t: "Str", c: "Old bibliography" }],
-              },
-            ],
-            hasEntryMarkers: false,
-          },
-          settled: replacement.promise,
-        },
-      });
+      const settled = Promise.withResolvers<BibliographyRenderResult | null>();
+      run.readBibliography.mockReturnValue(settled.promise);
       run.show();
-      await vi.waitFor(() => expect(run.render).toHaveBeenCalled());
-      replacement.resolve(
+      await vi.waitFor(() => expect(run.readBibliography).toHaveBeenCalled());
+
+      settled.resolve(
         success
           ? {
               entries: [
@@ -650,12 +538,12 @@ describe("source-less bibliography revalidation", () => {
             }
           : null,
       );
+
       await vi.waitFor(async () =>
         expect((await run.shown()).textContent).toContain(
           success ? "New bibliography" : "Alpha kernels",
         ),
       );
-      expect((await run.shown()).textContent).not.toContain("Old bibliography");
     },
   );
 });
@@ -678,15 +566,7 @@ describe("source-less empty bibliography entries", () => {
       entries: [{ id: "LETTERS5", marker: undefined, content: [] }],
       hasEntryMarkers: false,
     };
-    run.render.mockResolvedValue({
-      kind: "held",
-      key: "letter",
-      record: {
-        status: "fresh",
-        value: bibliography,
-        settled: Promise.resolve(bibliography),
-      },
-    });
+    run.readBibliography.mockResolvedValue(bibliography);
     run.show({ kind: "item", indexedKey: "LETTERS5" });
     const element = await run.shown();
     expect(element.textContent).toBe(

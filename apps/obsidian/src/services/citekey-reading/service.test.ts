@@ -24,6 +24,7 @@ import { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -184,30 +185,19 @@ async function makeHarness({
       },
       bibliographyRender: {
         vaultPresentation: { styleId: null, locale: null },
-        renderCitations: async (citations: readonly string[]) => {
+        readCitations: async (citations: readonly string[]) => {
           citationRequests.push({ citations });
-          const value = formatCitations
+          return formatCitations
             ? await formatCitations(citations)
             : formats
               ? citations.map((source, index) =>
                   rendered(render(source, index)),
                 )
               : null;
-          if (value === null) {
-            return { kind: "unavailable", reason: "failed" };
-          }
-          return {
-            kind: "held",
-            key: citations.join("\0"),
-            record: {
-              value,
-              status: "fresh",
-              settled: Promise.resolve(value),
-            },
-          };
         },
         on: () => () => undefined,
       },
+      queryClient: stack.use(new QueryClientService()),
     } as never),
   );
   await citationText.ready;

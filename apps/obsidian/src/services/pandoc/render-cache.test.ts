@@ -2,7 +2,7 @@ import "@mock/dom-parser";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -10,6 +10,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { DatabaseEvents } from "@/services/database/service";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import type { Held } from "@/services/query-client/service";
+import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
@@ -41,19 +43,26 @@ class EngineStub implements CitationEngine {
   readonly citationRequests: CitationRequest[] = [];
   /** Set to make the next render fail, as an engine that refuses one does. */
   fails = false;
+  /** Set to hold the next render until the test lets it finish. */
+  gate: PromiseWithResolvers<void> | null = null;
+  /** What each render writes beside its entries, which tells two renders apart. */
+  stamp: () => string = () => "";
 
   renderBibliography(
     request: BibliographyRequest,
   ): Promise<readonly BibliographyEntry[]> {
     this.requests.push(request);
     if (this.fails) return Promise.reject(new Error("no"));
-    return Promise.resolve(
+    const stamp = this.stamp();
+    const entries = () =>
       request.items.map(({ id }, index) => ({
         id,
         marker: inlines(String(index + 1)),
-        content: inlines(`entry for ${id}`),
-      })),
-    );
+        content: inlines(`entry for ${id}${stamp}`),
+      }));
+    return this.gate
+      ? this.gate.promise.then(entries)
+      : Promise.resolve(entries());
   }
 
   renderCitations(
@@ -238,6 +247,7 @@ async function makeHarness(
     ...overrides,
   });
   const profileEvents = createNanoEvents<{ changed: () => void }>();
+  const queryClient = stack.use(new QueryClientService());
   const cache = stack.use(
     new BibliographyRenderCache({
       profile: {
@@ -248,6 +258,7 @@ async function makeHarness(
       pandocEngine,
       zoteroPref,
       settings,
+      queryClient,
     }),
   );
   await cache.ready;
@@ -398,8 +409,8 @@ describe("BibliographyRenderCache", () => {
     ) {
       throw new Error("bibliography render missing");
     }
-    expect(first.record).toBe(second.record);
-    expect(first.record).toBe(third.record);
+    expect(first.record.value).toBe(second.record.value);
+    expect(first.record.value).toBe(third.record.value);
   });
 
   it("renders again for a different cited set, order included", async () => {
@@ -527,7 +538,7 @@ describe("BibliographyRenderCache", () => {
     expect(missingStyles).toEqual([]);
   });
 
-  it("asks again after invalidation rearms a render the engine refused", async () => {
+  it("serves a refused render until an invalidation rearms it", async () => {
     await using harness = await makeHarness();
     const { cache, engine, db } = harness;
     const items = [item("alpha")];
@@ -538,12 +549,96 @@ describe("BibliographyRenderCache", () => {
       reason: "failed",
     });
     engine.fails = false;
+    // The refusal stands rather than re-running the engine on every ask.
+    await expect(cache.render(items)).resolves.toEqual({
+      kind: "unavailable",
+      reason: "failed",
+    });
+    expect(engine.requests).toHaveLength(1);
+
     db.changed();
     await expect(cache.render(items)).resolves.toMatchObject({
       kind: "held",
     });
 
     expect(engine.requests).toHaveLength(2);
+  });
+
+  it("hands the settled render to the surfaces that hold it", async () => {
+    await using harness = await makeHarness();
+    const { cache } = harness;
+    const settlements: [string, Held<unknown> | null][] = [];
+    cache.on("settled", (key, held) => settlements.push([key, held]));
+
+    await cache.render([item("alpha")]);
+
+    expect(settlements).toEqual([
+      [
+        expect.any(String),
+        expect.objectContaining({
+          value: {
+            entries: [
+              {
+                id: "alpha",
+                marker: inlines("1"),
+                content: inlines("entry for alpha"),
+              },
+            ],
+            hasEntryMarkers: true,
+          },
+          status: "fresh",
+        }),
+      ],
+    ]);
+  });
+
+  it("answers a failed replacement with the render it still holds", async () => {
+    await using harness = await makeHarness();
+    const { cache, engine, db } = harness;
+    const items = [item("alpha")];
+    await expect(cache.readBibliography(items)).resolves.toMatchObject({
+      entries: [{ content: inlines("entry for alpha") }],
+    });
+
+    engine.fails = true;
+    db.changed();
+
+    await expect(cache.readBibliography(items)).resolves.toMatchObject({
+      entries: [{ content: inlines("entry for alpha") }],
+    });
+    expect(engine.requests).toHaveLength(2);
+  });
+
+  it("discards a render an invalidation landed on", async () => {
+    await using harness = await makeHarness();
+    const { cache, engine, db } = harness;
+    const items = [item("alpha")];
+    // Each render names the ordinal of the engine run behind it, so the render
+    // that ends up standing is the one the entries name.
+    engine.stamp = () => ` #${engine.requests.length}`;
+    await cache.render(items);
+
+    const gate = Promise.withResolvers<void>();
+    engine.gate = gate;
+    db.changed();
+    // The render that answers here is the held one; the replacement it starts
+    // is the one the second drop lands on.
+    await cache.render(items);
+    db.changed();
+    gate.resolve();
+
+    // The superseded second render never publishes: the ask its cancellation
+    // armed is the third run, and that is the render that stands.
+    await vi.waitFor(async () => {
+      await expect(cache.render(items)).resolves.toMatchObject({
+        kind: "held",
+        record: {
+          value: { entries: [{ content: inlines("entry for alpha #3") }] },
+          status: "fresh",
+        },
+      });
+    });
+    expect(engine.requests).toHaveLength(3);
   });
 
   it("keeps an unavailable selected style out of every formatting surface", async () => {
@@ -773,7 +868,7 @@ describe("BibliographyRenderCache citations", () => {
     if (first.kind !== "held" || second.kind !== "held") {
       throw new Error("citation render missing");
     }
-    expect(first.record).toBe(second.record);
+    expect(first.record.value).toBe(second.record.value);
     expect(first.record.value.map((citation) => citation.content)).toEqual([
       inlines("cite for [@alpha]"),
       inlines("cite for @alpha"),
@@ -822,7 +917,7 @@ describe("BibliographyRenderCache citations", () => {
     expect(engine.citationRequests).toHaveLength(0);
   });
 
-  it("asks again after invalidation rearms a render the engine refused", async () => {
+  it("serves a refused render until an invalidation rearms it", async () => {
     await using harness = await makeHarness();
     const { cache, engine, db } = harness;
 

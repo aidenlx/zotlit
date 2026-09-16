@@ -7,14 +7,13 @@ import { getCitekeysByLibrary } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
-import { HeldReads } from "@/lib/held-reads";
-import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -137,7 +136,12 @@ const logger = getLogger("citation-index");
 
 /** Files the backfill scans between two yields to the host. */
 const BACKFILL_CHUNK = 20;
-const SNAPSHOT_KEY = "citekeys";
+/**
+ * The one key the citekey resolution snapshot is held under. One vault has one
+ * snapshot, and it is retained for the session: every citekey a surface
+ * resolves reads it, and rebuilding it costs one bulk read per Library.
+ */
+const SNAPSHOT_KEY: readonly string[] = ["citekey-snapshot"];
 
 interface CitationIndexEvents {
   /** One document's literal-citekey occurrences changed. */
@@ -145,8 +149,11 @@ interface CitationIndexEvents {
   /** The vault-wide backfill finished; the index covers every Markdown file. */
   backfilled: () => void;
   /**
-   * The citation-key resolution snapshot was refreshed successfully. Item metadata
-   * can change while keys stay equal, so every work surface refreshes its data.
+   * The citation-key resolution snapshot was rebuilt into another answer: what
+   * a citekey resolves to is no longer what it was. A rebuild that resolves
+   * every key the way the last one did is silent here, and reaches the reverse
+   * observers through `cited-by-invalidated` alone.
+   *
    * Vault-wide, unlike `changed`: every surface that resolves a citekey redraws.
    */
   "resolution-changed": () => void;
@@ -179,6 +186,8 @@ export interface CitationIndexOptions {
    * @default getCitekeysByLibrary
    */
   readCitekeys?: ReadCitekeys;
+  /** The plugin-wide query client every Held Read is realized on. */
+  queryClient: QueryClientService;
 }
 
 /**
@@ -206,10 +215,7 @@ export class CitationIndex extends Service<void> {
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
-  readonly #snapshots = new HeldReads<CitekeySnapshot>({
-    limit: 1,
-    same: (prev, next) => prev.sameAs(next),
-  });
+  readonly #queries;
   /** Callers parked on a one-shot readiness signal; disposal flushes them. */
   readonly #waiters = new Set<() => void>();
   #store?: CitekeyStore;
@@ -236,6 +242,7 @@ export class CitationIndex extends Service<void> {
     this.#libraryScope = options.libraryScope;
     this.#openStore = options.openStore ?? openCitekeyStore;
     this.#readCitekeys = options.readCitekeys ?? getCitekeysByLibrary;
+    this.#queries = options.queryClient;
     this.ready = this.#load();
   }
 
@@ -494,11 +501,26 @@ export class CitationIndex extends Service<void> {
   async whenResolved(): Promise<void> {
     await this.ready;
     if (this.#stopped) return;
-    await this.#waitForRead(this.#rebuildSnapshot());
+    await this.#waitForRead(this.readSnapshot());
+  }
+
+  /**
+   * The citekey resolution snapshot once the rebuild behind it stands, for a
+   * caller that can wait rather than read what the vault holds now.
+   *
+   * @param signal ends the wait; the shared rebuild runs on for every other
+   *   caller that joined it.
+   * @returns null where the rebuild failed.
+   */
+  readSnapshot({
+    signal,
+  }: { signal?: AbortSignal } = {}): Promise<CitekeySnapshot | null> {
+    if (this.#stopped) return Promise.resolve(null);
+    return this.#queries.read(SNAPSHOT_KEY, () => this.#readSnapshot(), signal);
   }
 
   /** Settles a first snapshot read or disposal, whichever comes first. */
-  #waitForRead(read: Promise<Held<CitekeySnapshot> | null>): Promise<void> {
+  #waitForRead(read: Promise<unknown>): Promise<void> {
     return new Promise<void>((resolve) => {
       const wake = (): void => {
         this.#waiters.delete(wake);
@@ -615,23 +637,34 @@ export class CitationIndex extends Service<void> {
     stack.defer(
       this.#libraryScope.on("changed", () => this.#invalidateSnapshot()),
     );
+    this.#queries.client.setQueryDefaults(SNAPSHOT_KEY, {
+      gcTime: Infinity,
+      // An equal rebuild keeps the snapshot every resolved citekey was read
+      // against, so nothing that reads one is told to read it again.
+      structuralSharing: (held, next) =>
+        (held as CitekeySnapshot | undefined)?.sameAs(next as CitekeySnapshot)
+          ? held
+          : next,
+    });
     stack.defer(
-      this.#snapshots.on("settled", (_key, snapshot) => {
-        // A no-value settlement leaves the public resolution pending. Waking a
-        // reverse observer would make its next ask repeat the failed read.
-        if (snapshot === null) {
-          logger.trace(
-            "Resolution snapshot settlement kept reverse observers pending",
-            { resolution: null },
-          );
-          return;
-        }
-        if (snapshot.status === "fresh")
-          this.#emitter.emit("resolution-changed");
-        this.#emitter.emit("cited-by-invalidated");
+      this.#queries.watch<CitekeySnapshot>(SNAPSHOT_KEY, {
+        // A rebuild that resolves every citekey the way the last one did is no
+        // change: every work surface would redraw for the same answers.
+        changed: () => this.#emitter.emit("resolution-changed"),
+        settled: (_key, snapshot) => {
+          // A no-value settlement leaves the public resolution pending. Waking a
+          // reverse observer would make its next ask repeat the failed read.
+          if (snapshot === null) {
+            logger.trace(
+              "Resolution snapshot settlement kept reverse observers pending",
+              { resolution: null },
+            );
+            return;
+          }
+          this.#emitter.emit("cited-by-invalidated");
+        },
       }),
     );
-    stack.use(this.#snapshots);
 
     // A store that fails to open leaves the index whole and unpersisted, so the
     // failure costs a rescan per launch rather than the feature.
@@ -749,37 +782,35 @@ export class CitationIndex extends Service<void> {
    * forward Citation Key lookup answers from.
    */
   #invalidateSnapshot(): void {
-    this.#snapshots.invalidate();
+    this.#queries.invalidate(SNAPSHOT_KEY);
     void this.#rebuildSnapshot();
   }
 
   #heldSnapshot(): Held<CitekeySnapshot> | null {
-    const snapshot = this.#snapshots.peek(SNAPSHOT_KEY);
+    const snapshot = this.#queries.peek<CitekeySnapshot>(SNAPSHOT_KEY);
     void this.#rebuildSnapshot();
     return snapshot;
   }
 
-  #rebuildSnapshot(): Promise<Held<CitekeySnapshot> | null> {
-    if (this.#stopped) {
-      return Promise.resolve(this.#snapshots.peek(SNAPSHOT_KEY));
-    }
-    return this.#snapshots.read(SNAPSHOT_KEY, () => this.#readSnapshot());
+  #rebuildSnapshot(): Promise<CitekeySnapshot | null> {
+    if (this.#stopped) return Promise.resolve(null);
+    return this.#queries.ask(SNAPSHOT_KEY, () => this.#readSnapshot());
   }
 
-  async #readSnapshot(): Promise<CitekeySnapshot | null> {
+  async #readSnapshot(): Promise<CitekeySnapshot> {
     try {
       await this.#db.ready;
       await this.#libraryScope.ready;
     } catch (error) {
       logger.warn("Resolution snapshot database unavailable", { error });
-      return null;
+      throw error;
     }
-    if (this.#stopped) return null;
+    if (this.#stopped) throw new Error("The citation index stopped");
 
     const scope = this.#libraryScope.current;
     if (this.#db.state !== "ready" || scope === null) {
       logger.debug("Resolution snapshot rebuild skipped, database not ready");
-      return null;
+      throw new Error("The Zotero database cannot be read");
     }
     try {
       const inScope = new Set(
@@ -796,7 +827,7 @@ export class CitationIndex extends Service<void> {
       return CitekeySnapshot.from(rows, inScope);
     } catch (error) {
       logger.warn("Resolution snapshot rebuild failed", { error });
-      return null;
+      throw error;
     }
   }
 

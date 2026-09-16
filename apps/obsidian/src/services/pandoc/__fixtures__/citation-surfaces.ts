@@ -333,6 +333,7 @@ export async function openCitationVault({
       },
       zoteroPref: { dataDir, on: () => () => undefined },
       settings,
+      queryClient: harness.queryClient,
     }),
   );
   await cache.ready;
@@ -351,6 +352,7 @@ export async function openCitationVault({
       citationIndex: harness.index,
       noteIndex: harness.noteIndex,
       bibliographyRender: cache,
+      queryClient: harness.queryClient,
     }),
   );
   await citationText.ready;

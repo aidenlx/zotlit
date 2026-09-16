@@ -19,6 +19,8 @@ import type {
 } from "@/services/library-scope/scope";
 import type { LibraryScopeEvents } from "@/services/library-scope/service";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { QueryClientService } from "@/services/query-client/service";
+import { testClock } from "@/services/query-client/test-clock";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -486,6 +488,10 @@ export interface CitationIndexHarness extends AsyncDisposable {
   db: DatabaseStub;
   citekeys: CitekeysStub;
   libraryScope: LibraryScopeStub;
+  /** The one client the owners built on this harness share. */
+  queryClient: QueryClientService;
+  /** Moves the client's clock one step past the failure cooldown deadline. */
+  passCooldown: () => void;
 }
 
 export interface CitationIndexHarnessOptions {
@@ -543,6 +549,8 @@ export async function createCitationIndexHarness(
   const app = { metadataCache, vault, workspace } as unknown as App;
   const settings =
     options.settingsService ?? new SettingsStub(options.settings);
+  const clock = testClock();
+  const queryClient = stack.use(new QueryClientService({ now: clock.now }));
   const index = stack.use(
     new CitationIndex({
       app,
@@ -552,6 +560,7 @@ export async function createCitationIndexHarness(
       libraryScope,
       readCitekeys: citekeys.read,
       openStore: () => Promise.resolve(store),
+      queryClient,
     }),
   );
   const awaitReady = options.awaitReady ?? true;
@@ -574,6 +583,8 @@ export async function createCitationIndexHarness(
     db,
     citekeys,
     libraryScope,
+    queryClient,
+    passCooldown: clock.passCooldown,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }

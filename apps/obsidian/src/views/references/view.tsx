@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { writeClipboardRichText } from "@/lib/clipboard";
-import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -42,6 +41,7 @@ import type {
 } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
+import type { Held } from "@/services/query-client/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";

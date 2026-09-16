@@ -712,22 +712,27 @@ describe("CitationIndex resolution", () => {
     });
   });
 
-  it("refreshes metadata consumers after a database refresh with identical citation keys", async () => {
+  it("refreshes the reverse observers after a database refresh with identical citation keys", async () => {
     await using harness = await createCitationIndexHarness(
       {},
       { notes: false },
     );
     const { index, db } = harness;
     const resolution = index.resolveCitekey("doe2024");
-    let notified = 0;
-    index.on("resolution-changed", () => notified++);
+    let resolutionChanged = 0;
+    let citedByInvalidated = 0;
+    index.on("resolution-changed", () => resolutionChanged++);
+    index.on("cited-by-invalidated", () => citedByInvalidated++);
 
     // Author and title changes leave the bulk citation-key rows identical.
     db.changed();
     await index.whenResolved();
     await yieldToMain();
 
-    expect(notified).toBe(1);
+    // The rebuild resolves every key the way the last one did, so the reverse
+    // observers refresh and nothing that resolves a citekey redraws.
+    expect(citedByInvalidated).toBe(1);
+    expect(resolutionChanged).toBe(0);
     expect(index.resolveCitekey("doe2024")).toEqual(resolution);
   });
 
@@ -760,7 +765,7 @@ describe("CitationIndex resolution", () => {
     expect(index.resolveCitekey("doe2024")).toBeNull();
   });
 
-  it("keeps a failed snapshot until another invalidation rearms it", async () => {
+  it("serves a failed snapshot until another invalidation rearms it", async () => {
     const { index, citekeys, db } = await makeHarness({}, { notes: false });
     expect(index.resolution).toBe("fresh");
 
@@ -777,14 +782,18 @@ describe("CitationIndex resolution", () => {
     await yieldToMain();
     expect(citekeys.calls).toHaveLength(failedCalls);
 
+    // The drop says the database moved, so it ends the cooldown with it.
     db.changed();
     await yieldToMain();
     expect(index.resolution).toBe("fresh");
   });
 
-  it("retries a failed first snapshot on the next citekey read", async () => {
+  it("retries a failed first snapshot after the cooldown", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
-    const { index, citekeys } = await makeHarness({}, { db, notes: false });
+    const { index, citekeys, passCooldown } = await makeHarness(
+      {},
+      { db, notes: false },
+    );
 
     citekeys.error = new Error("torn read");
     db.settle();
@@ -796,6 +805,11 @@ describe("CitationIndex resolution", () => {
     expect(index.citekeyOf(KEY_A)).toBeNull();
     expect(index.resolution).toBeNull();
     await yieldToMain();
+    expect(citekeys.calls).toHaveLength(failedCalls);
+
+    passCooldown();
+    expect(index.resolveCitekey("doe2024")).toBeNull();
+    await yieldToMain();
 
     expect(citekeys.calls).toHaveLength(failedCalls + 1);
     expect(index.resolution).toBe("fresh");
@@ -804,7 +818,7 @@ describe("CitationIndex resolution", () => {
 
   it("retries a failed first snapshot through a document read", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
-    const { index, citekeys, draft } = await makeHarness(
+    const { index, citekeys, draft, passCooldown } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
       { db, notes: false },
     );
@@ -814,6 +828,7 @@ describe("CitationIndex resolution", () => {
     await index.whenResolved();
 
     citekeys.error = null;
+    passCooldown();
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: null },
     ]);
@@ -1796,7 +1811,7 @@ describe("CitationIndex ambiguous citation keys", () => {
     expect(index.citekeyOf(GROUP_KEY)).toBe("doe2024");
   });
 
-  it("emits once for each successful refresh, including an equal refresh", async () => {
+  it("emits for a refresh that moves the candidates, not for an equal one", async () => {
     const { index, citekeys, db } = await makeHarness(
       {},
       { notes: false, citekeys: [myLibraryRow, sameLibraryTwin] },
@@ -1807,14 +1822,14 @@ describe("CitationIndex ambiguous citation keys", () => {
     db.changed();
     await index.whenResolved();
     await yieldToMain();
-    expect(notified).toBe(1);
+    expect(notified).toBe(0);
 
     citekeys.rows = [sameLibraryTwin, myLibraryRow];
     db.changed();
     await index.whenResolved();
     await yieldToMain();
 
-    expect(notified).toBe(2);
+    expect(notified).toBe(1);
     expect(index.resolveCitekey("doe2024")).toMatchObject({
       kind: "ambiguous",
       candidates: [{ indexedKey: KEY_B }, { indexedKey: KEY_A }],
