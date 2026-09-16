@@ -105,6 +105,13 @@ export type LocalApiFailure =
   | { kind: "conflict" }
   /** `412` from this server: the write token was replayed inside 12 hours. */
   | { kind: "write-token-used" }
+  /**
+   * `404` — Zotero holds no such object. Only a write produces one, and there
+   * it means the Annotation was deleted in Zotero.
+   *
+   * @see https://github.com/aidenlx/zotlit/issues/1151
+   */
+  | { kind: "not-found" }
   /** Another Zotero database answers on this port than the session holds. */
   | { kind: "server-changed" }
   /** `429` — Zotero's authorization dialog rate limit. */
@@ -166,9 +173,9 @@ export interface LocalApiAnnotation {
  * A refusal is classified by its status first, because Zotero's `401` carries
  * no server id at all.
  *
- * A `404` is deliberately left to the generic branch: no read can produce one —
- * the children route answers an empty list for a key Zotero does not hold — and
- * the write path reads it as "deleted in Zotero" before classifying.
+ * A `404` is its own member rather than an unreadable answer: no read can
+ * produce one — the children route answers an empty list for a key Zotero does
+ * not hold — so it is always a write meeting an object Zotero has deleted.
  *
  * @param serverID the server id the session holds, or `null` before a probe has
  *   answered one, which is the one call that may be answered by any database.
@@ -203,6 +210,8 @@ export function classifyReply(
         return { kind: "library-read-only" };
       }
       return isDenial(body) ? { kind: "denied" } : invalid(`403 ${body}`);
+    case 404:
+      return { kind: "not-found" };
     case 412:
       if (body.includes("Write token already used")) {
         return { kind: "write-token-used" };
@@ -246,6 +255,30 @@ export function readAnnotationPage(
     annotations.push(record.value);
   }
   return { value: annotations };
+}
+
+/**
+ * One Annotation, read from the single-item route — what a write reads back
+ * once Zotero has taken it, because a `204` carries the library's version
+ * rather than the object's. Every rule {@link readAnnotationPage} applies to a
+ * listed record applies here too.
+ *
+ * @param attachmentKey the Attachment the record must name as its parent.
+ */
+export function readAnnotationItem(
+  body: string,
+  attachmentKey: string,
+): LocalApiResult<LocalApiAnnotation> {
+  const parsed = v.safeParse(itemSchema, parseJson(body));
+  if (!parsed.success) {
+    return { failure: invalid(`annotation: ${issueOf(parsed.issues)}`) };
+  }
+  return toAnnotation(parsed.output, attachmentKey);
+}
+
+/** The library route one Indexed Key names — `users/0`, or one group's. */
+export function libraryPath({ groupID }: { groupID: number | null }): string {
+  return groupID === null ? "users/0" : `groups/${groupID}`;
 }
 
 /**
@@ -310,31 +343,31 @@ const grantSchema = v.object({
   remember: v.boolean(),
 });
 
-const itemPageSchema = v.array(
-  v.object({
-    key: v.string(),
-    version: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
-    library: v.object({
-      type: v.picklist(["user", "group"]),
-      id: v.pipe(v.number(), v.safeInteger()),
-    }),
-    data: v.object({
-      key: v.string(),
-      itemType: v.literal("annotation"),
-      parentItem: v.string(),
-      annotationType: v.picklist(ANNOTATION_TYPES),
-      annotationColor: v.optional(v.string()),
-      annotationComment: v.optional(v.string()),
-      annotationText: v.optional(v.string()),
-      annotationSortIndex: v.string(),
-      annotationPosition: v.string(),
-      annotationPageLabel: v.optional(v.string()),
-      tags: v.optional(v.array(v.object({ tag: v.string() }))),
-    }),
+const itemSchema = v.object({
+  key: v.string(),
+  version: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+  library: v.object({
+    type: v.picklist(["user", "group"]),
+    id: v.pipe(v.number(), v.safeInteger()),
   }),
-);
+  data: v.object({
+    key: v.string(),
+    itemType: v.literal("annotation"),
+    parentItem: v.string(),
+    annotationType: v.picklist(ANNOTATION_TYPES),
+    annotationColor: v.optional(v.string()),
+    annotationComment: v.optional(v.string()),
+    annotationText: v.optional(v.string()),
+    annotationSortIndex: v.string(),
+    annotationPosition: v.string(),
+    annotationPageLabel: v.optional(v.string()),
+    tags: v.optional(v.array(v.object({ tag: v.string() }))),
+  }),
+});
 
-type WireItem = v.InferOutput<typeof itemPageSchema>[number];
+const itemPageSchema = v.array(itemSchema);
+
+type WireItem = v.InferOutput<typeof itemSchema>;
 
 function toAnnotation(
   item: WireItem,

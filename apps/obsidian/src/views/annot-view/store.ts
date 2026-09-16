@@ -8,7 +8,10 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 import type {
   AnnotationRecord,
   AnnotationSource,
+  EditingCapability,
+  MutationState,
 } from "@/services/annotation-repository/service";
+import { IDLE } from "@/services/annotation-repository/write";
 
 import type { AnnotFilter } from "./filter";
 
@@ -43,6 +46,18 @@ export interface AnnotState {
   annotations: readonly AnnotationRecord[] | null;
   /** Which Annotation Source answered for {@link annotations}. */
   annotationSource: AnnotationSource | null;
+  /** What the cards may do to the Attachment on screen. */
+  capability: EditingCapability;
+  /**
+   * What the last write left on each Annotation, by Indexed Key. A key with no
+   * entry is idle, so the map holds only the few this session has edited.
+   */
+  mutations: ReadonlyMap<string, MutationState>;
+  /**
+   * The Annotation whose comment is open in its card's editor; `null` while
+   * none is. One at a time: the editor takes the caret.
+   */
+  editingCommentKey: string | null;
   /** Indexed Keys of the Annotations selected in the reader the view follows. */
   selectedAnnotationKeys: readonly string[];
   /**
@@ -104,6 +119,10 @@ export function createAnnotStore() {
         attachmentLock: null,
         annotations: null,
         annotationSource: null,
+        // Nothing has probed Zotero yet, which is exactly what "probing" says.
+        capability: { kind: "read-only", reason: "probing" },
+        mutations: new Map(),
+        editingCommentKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,
         itemDisplayLabel: null,
@@ -145,6 +164,21 @@ function useAnnotStoreApi(): AnnotStore {
 
 export function useAnnotStore<T>(selector: (s: AnnotState) => T): T {
   return useStore(useAnnotStoreApi(), selector);
+}
+
+/**
+ * What the last write left on one Annotation. The stored states are stable
+ * objects and {@link IDLE} is a constant, so this selector never builds one —
+ * a fresh object would never compare equal to the last snapshot.
+ */
+export function useMutation(annotationKey: string): MutationState {
+  return useAnnotStore((s) => s.mutations.get(annotationKey) ?? IDLE);
+}
+
+/** Opens one card's comment editor, or closes the one that is open. */
+export function useSetEditingComment(): (key: string | null) => void {
+  const store = useAnnotStoreApi();
+  return (key) => store.setState({ editingCommentKey: key });
 }
 
 export function useSetSelectedAttachmentKey(): (key: string) => void {

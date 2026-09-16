@@ -35,6 +35,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
+import { IDLE } from "@/services/annotation-repository/write";
 import type {
   AttachmentImport,
   AttachmentImportService,
@@ -61,6 +62,8 @@ import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
 import { CapabilitySlotContext } from "./capability-slot";
 import { CapabilityAffordance } from "./CapabilityAffordance";
+import { cardControls } from "./card-controls";
+import type { CardControls } from "./card-controls";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
@@ -110,12 +113,20 @@ export interface AnnotViewDeps {
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
   pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath">;
   /**
-   * The one read path for an Attachment's Annotations, so the cards and the
-   * reader overlay show one Annotation Source's records rather than two.
+   * The one read and write path for an Attachment's Annotations, so the cards
+   * and the reader overlay show one Annotation Source's records rather than
+   * two, and an edit stamps its precondition off the record they show.
    */
   annotations: Pick<
     AnnotationRepository,
-    "capability" | "capabilityFor" | "on" | "read"
+    | "capability"
+    | "capabilityFor"
+    | "deleteAnnotation"
+    | "mutationFor"
+    | "on"
+    | "patchColor"
+    | "patchComment"
+    | "read"
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
@@ -241,6 +252,8 @@ export class AnnotationView extends ItemView {
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
+      annotations: this.#deps.annotations,
+      deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
       refresh: () => this.#deps.db.refresh(),
@@ -276,6 +289,7 @@ export class AnnotationView extends ItemView {
     this.#store.setState({
       liveUpdatesOn: this.#deps.liveUpdate.available,
       zoteroReaderClosed: this.#deps.liveUpdate.readerClosed,
+      capability: this.#deps.annotations.capability,
     });
 
     this.#root = createRoot(this.contentEl);
@@ -354,6 +368,30 @@ export class AnnotationView extends ItemView {
     this.register(
       this.#deps.liveUpdate.on("reader/closed", (closed) => {
         this.#store.setState({ zoteroReaderClosed: closed });
+      }),
+    );
+
+    this.register(
+      this.#deps.annotations.on("capability-changed", () =>
+        this.#syncCapability(),
+      ),
+    );
+    // The capability is the Attachment's, so it moves with the Attachment as
+    // well as with the probe.
+    this.register(
+      this.#store.subscribe(
+        (s) => s.selectedAttachmentKey,
+        () => this.#syncCapability(),
+      ),
+    );
+    this.register(
+      this.#deps.annotations.on("mutation-changed", (annotationKey) => {
+        const mutations = new Map(this.#store.getState().mutations);
+        mutations.set(
+          annotationKey,
+          this.#deps.annotations.mutationFor(annotationKey),
+        );
+        this.#store.setState({ mutations });
       }),
     );
 
@@ -692,7 +730,12 @@ export class AnnotationView extends ItemView {
   ): void {
     const read = ++this.#reads;
     const memoryKey = this.#memoryKey;
-    this.#store.setState({ annotations: null, annotationSource: null });
+    this.#store.setState({
+      annotations: null,
+      annotationSource: null,
+      // The editor belongs to a card that is about to be replaced.
+      editingCommentKey: null,
+    });
     this.#reading = this.#deps.annotations
       .read(attachmentKey)
       .then((list) => {
@@ -722,6 +765,34 @@ export class AnnotationView extends ItemView {
         });
         this.#store.setState({ annotations: [] });
       });
+  }
+
+  /**
+   * The Editing Capability the cards read: the Attachment's own, or — with
+   * none on screen — the session's, which names no library.
+   */
+  #syncCapability(): void {
+    const { selectedAttachmentKey } = this.#store.getState();
+    this.#store.setState({
+      capability:
+        selectedAttachmentKey === null
+          ? this.#deps.annotations.capability
+          : this.#deps.annotations.capabilityFor(selectedAttachmentKey),
+    });
+  }
+
+  /**
+   * What one card's editing verbs may do, for the native overflow menu, which
+   * is built outside React and so reads the store itself.
+   */
+  #cardControls(annot: AnnotationRecord): CardControls {
+    const { capability, mutations } = this.#store.getState();
+    return cardControls({
+      capability,
+      mutation: mutations.get(annot.key) ?? IDLE,
+      hasComment: annot.comment !== null,
+      now: Temporal.Now.instant(),
+    });
   }
 
   /**
@@ -837,6 +908,7 @@ export class AnnotationView extends ItemView {
       pinnable: null,
       annotations: null,
       annotationSource: null,
+      editingCommentKey: null,
       selectedAnnotationKeys: [],
     });
     this.#itemKey = null;

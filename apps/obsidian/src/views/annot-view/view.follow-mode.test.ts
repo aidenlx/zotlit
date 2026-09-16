@@ -11,6 +11,8 @@ import type {
 import type { ReaderTarget } from "@/services/local-server/service";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 
+import { readOnlyWrites } from "./__fixtures__";
+
 const PAPER = "PAPER234";
 const PDF_ATTACHMENT = "ATCH0001";
 const OTHER_ATTACHMENT = "ATCH0002";
@@ -146,9 +148,8 @@ function createDeps() {
         annotations: attachmentKey === PDF_ATTACHMENT ? [annot] : [],
       });
     },
-    capability: { kind: "writable" } as const,
-    capabilityFor: () => ({ kind: "writable" }) as const,
     on,
+    ...readOnlyWrites(),
   };
 
   const settingsUpdate = vi.fn();

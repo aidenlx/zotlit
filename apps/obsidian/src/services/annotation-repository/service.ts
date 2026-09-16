@@ -6,6 +6,7 @@ import {
   getAnnotationsByParent,
   getAttachmentByKey,
   parseAnnotationPosition,
+  parseIndexedKey,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type {
@@ -26,11 +27,15 @@ import type {
   LocalApiSource,
   ZoteroLocalApiClient,
 } from "@/services/zotero-local-api/service";
+import { libraryPath } from "@/services/zotero-local-api/wire";
 
 import { editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
+import { colorPatch, commentPatch, eraseRequest, IDLE } from "./write";
+import type { MutationState, WriteRequest, WriteTarget } from "./write";
 
 export type { EditingCapability } from "./capability";
+export type { MutationState, WriteFailure } from "./write";
 
 const logger = getLogger("annotation-repository");
 
@@ -112,25 +117,43 @@ export interface AnnotationRepositoryEvents {
    * affected, so nothing re-reads a list for this.
    */
   "capability-changed": () => void;
+  /**
+   * What a write left on one Annotation moved. A consumer re-reads
+   * {@link AnnotationRepository.mutationFor} and redraws that card's verbs; no
+   * record set is affected, because a write in flight draws nothing.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  "mutation-changed": (annotationKey: string) => void;
 }
 
 export interface AnnotationRepositoryDeps {
   db: Pick<DatabaseService, "acquireRead" | "on">;
   queryClient: Pick<
     QueryClientService,
-    "invalidate" | "keysUnder" | "peek" | "read"
+    "invalidate" | "keysUnder" | "peek" | "read" | "update"
   >;
   localApi: Pick<
     ZoteroLocalApiClient,
+    | "authorizedSend"
     | "demandSource"
     | "listAnnotations"
     | "on"
     | "probe"
+    | "readAnnotation"
     | "state"
     | "writeStateFor"
   >;
   /** The clock a cooldown deadline in the Editing Capability is read against. */
   now?: () => Temporal.Instant;
+}
+
+/** One Annotation, beside the held list a write reads and replaces it in. */
+interface HeldAnnotation {
+  queryKey: QueryKey;
+  /** The Attachment's Indexed Key, which the record itself names. */
+  attachmentKey: string;
+  record: AnnotationRecord;
 }
 
 /** One partition's key and the read that fills it. */
@@ -157,6 +180,12 @@ export class LocalApiReadFailed extends Error {
  * query client, so the overlay and the Annotation View asking for one Attachment
  * at once cost one database read.
  *
+ * It is also the one write path. A command takes Indexed Keys alone: the record
+ * the active source answered supplies the version the write sends as its
+ * precondition, and a record with no version — the Zotero DB source's — refuses
+ * the write before any request. Nothing is drawn ahead of Zotero, so the only
+ * thing a write in flight changes on screen is that the verbs stand down.
+ *
  * The Zotero DB partition is dropped wholesale whenever the database refreshes,
  * and the Zotero Local API partition whenever that source moves — a Freshness
  * Signal, another Zotero database, a capability that changed. Every Attachment
@@ -177,6 +206,12 @@ export class AnnotationRepository extends Service<void> {
    * `null` for the session, so a change is logged once rather than per read.
    */
   readonly #lastCapability = new Map<string | null, string>();
+  /**
+   * What a write left on each Annotation it touched, by Indexed Key. An
+   * Annotation no write is standing on has no entry, so the map holds only the
+   * few a session has edited.
+   */
+  readonly #mutations = new Map<string, MutationState>();
 
   ready: Promise<void>;
 
@@ -244,6 +279,56 @@ export class AnnotationRepository extends Service<void> {
     await this.#localApi.probe();
   }
 
+  /**
+   * What a write left on one Annotation, for the card that draws its verbs.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  mutationFor(annotationKey: string): MutationState {
+    return this.#mutations.get(annotationKey) ?? IDLE;
+  }
+
+  /**
+   * Recolour one Annotation, of whatever type: Zotero's colour setter is one
+   * rule for all six, so an ink stroke recolours like a highlight.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @param color the swatch to store, in any case; the write sends lower case.
+   */
+  async patchColor(
+    annotationKey: string,
+    color: string,
+  ): Promise<MutationState> {
+    return await this.#command(annotationKey, (target) =>
+      colorPatch(target, color),
+    );
+  }
+
+  /**
+   * Replace one Annotation's comment. An empty string clears it.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  async patchComment(
+    annotationKey: string,
+    comment: string,
+  ): Promise<MutationState> {
+    return await this.#command(annotationKey, (target) =>
+      commentPatch(target, comment),
+    );
+  }
+
+  /**
+   * Erase one Annotation in Zotero. The record leaves the Attachment's list
+   * only once Zotero has answered, so the card and the Annotation Mark stand
+   * until the delete is real.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  async deleteAnnotation(annotationKey: string): Promise<MutationState> {
+    return await this.#command(annotationKey, eraseRequest, "drop");
+  }
+
   on<K extends keyof AnnotationRepositoryEvents>(
     event: K,
     cb: AnnotationRepositoryEvents[K],
@@ -285,6 +370,149 @@ export class AnnotationRepository extends Service<void> {
     this.#lastCapability.set(attachmentKey, described);
     logger.debug("Editing capability changed", { attachmentKey, capability });
     return capability;
+  }
+
+  /**
+   * One command, from the record it stamps its precondition off to the state it
+   * leaves on the card.
+   *
+   * Everything a write needs comes from the list the active source already
+   * answered, which is what makes a command take keys alone. A record with no
+   * version came from the Zotero DB partition, which keeps none, so the write
+   * is refused there and then — before any request, because there is no
+   * precondition to send and an unconditional write would overwrite whatever
+   * Zotero holds.
+   *
+   * @param settle whether the Annotation is read back after the `204`, or
+   *   leaves the list because the write erased it.
+   * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+   */
+  async #command(
+    annotationKey: string,
+    request: (target: WriteTarget) => WriteRequest,
+    settle: "re-read" | "drop" = "re-read",
+  ): Promise<MutationState> {
+    const held = this.#holding(annotationKey);
+    const parsed = parseIndexedKey(annotationKey);
+    if (!held || !parsed) {
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "unknown-annotation" },
+      });
+    }
+    const { version } = held.record;
+    if (version === null) {
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "db-source" },
+      });
+    }
+
+    const library = libraryPath(parsed);
+    const { path, method, headers, body } = request({
+      library,
+      key: parsed.key,
+      version,
+    });
+    this.#settle(annotationKey, { kind: "pending" });
+    const reply = await this.#localApi.authorizedSend(path, {
+      library,
+      method,
+      headers,
+      body,
+    });
+    if ("failure" in reply) {
+      logger.debug("Zotero refused a write", {
+        annotationKey,
+        method,
+        failure: reply.failure,
+      });
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: reply.failure,
+      });
+    }
+
+    logger.debug("Zotero took a write", { annotationKey, method });
+    await this.#applyWrite(held, annotationKey, settle);
+    this.#emitter.emit("annotations-changed", held.attachmentKey);
+    return this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * The Attachment's list, once Zotero has taken the write.
+   *
+   * A patch reads the Annotation back rather than believing its own input: the
+   * `204` carries the library's version, not the object's, and the next write
+   * needs the object's. A re-read that does not answer drops the list instead,
+   * so the Attachment reconciles on its next read rather than holding a record
+   * whose version is known to be stale.
+   */
+  async #applyWrite(
+    held: HeldAnnotation,
+    annotationKey: string,
+    settle: "re-read" | "drop",
+  ): Promise<void> {
+    const { queryKey, attachmentKey } = held;
+    if (settle === "drop") {
+      this.#queries.update<AnnotationList>(queryKey, (list) => ({
+        ...list,
+        annotations: list.annotations.filter(
+          (record) => record.key !== annotationKey,
+        ),
+      }));
+      return;
+    }
+    const fresh = await this.#localApi.readAnnotation(
+      annotationKey,
+      attachmentKey,
+    );
+    if ("failure" in fresh) {
+      logger.debug("A written annotation could not be read back", {
+        annotationKey,
+        failure: fresh.failure,
+      });
+      this.#queries.invalidate(queryKey);
+      return;
+    }
+    const record = fromLocalApi(fresh.value);
+    this.#queries.update<AnnotationList>(queryKey, (list) => ({
+      ...list,
+      annotations: list.annotations.map((stale) =>
+        stale.key === annotationKey ? record : stale,
+      ),
+    }));
+  }
+
+  /**
+   * The list the active Annotation Source holds this Annotation in, and the
+   * record itself. Only the active source's partition is walked: the card that
+   * offered the gesture is showing that source's list, and it is that record's
+   * version a write must send.
+   */
+  #holding(annotationKey: string): HeldAnnotation | null {
+    const source = this.#localApi.demandSource();
+    const prefix = source
+      ? [ANNOTATIONS, ZOTERO_LOCAL_API, source.serverID]
+      : [ANNOTATIONS, ZOTERO_DB];
+    for (const queryKey of this.#queries.keysUnder(prefix)) {
+      const list = this.#queries.peek<AnnotationList>(queryKey)?.value;
+      const record = list?.annotations.find(
+        (annotation) => annotation.key === annotationKey,
+      );
+      if (record) {
+        return { queryKey, attachmentKey: record.parentKey, record };
+      }
+    }
+    return null;
+  }
+
+  /** Records one Annotation's mutation state and announces it. */
+  #settle(annotationKey: string, state: MutationState): MutationState {
+    if (state.kind === "idle") this.#mutations.delete(annotationKey);
+    else this.#mutations.set(annotationKey, state);
+    this.#emitter.emit("mutation-changed", annotationKey);
+    return state;
   }
 
   /**
