@@ -74,6 +74,17 @@ const attachmentByItemIdQuery = defineQuery<{ itemID: number }>()(
     }),
 );
 
+const allAttachmentsQuery = defineQuery<void>()((db) =>
+  db.query.itemAttachments.findMany({
+    where: { item_itemID: { deletedItem: false } },
+    columns: attachmentFindOptions.columns,
+    with: {
+      ...attachmentFindOptions.with,
+      item_parentItemID: { columns: { key: true } },
+    },
+  }),
+);
+
 type AttachmentRow = QueryRow<typeof attachmentsByParentQuery>;
 
 function toAttachment(row: AttachmentRow, groupID: number | null): Attachment {
@@ -120,6 +131,41 @@ export function getAttachmentByKey(
   const row = attachmentByKeyQuery.prepared(db).all({ libraryID, key })[0];
   if (!row) return null;
   return toAttachment(row, groupIDForLibrary(db, libraryID));
+}
+
+export interface AttachmentWithParentKey extends Attachment {
+  /**
+   * Indexed Key of the Item this Attachment hangs from; `null` for a standalone
+   * Attachment, which Zotero allows and which holds Annotations like any other.
+   */
+  parentIndexedKey: string | null;
+}
+
+/**
+ * Every live Attachment, each beside its parent Item's Indexed Key — for a
+ * consumer that indexes the whole table rather than asking per Item. The
+ * attachment path index runs `attachmentAbsPath` across this.
+ *
+ * @see ../lib/zt-path.ts — `attachmentAbsPath` and `attachmentPathKey`
+ */
+export function getAllAttachments(
+  db: NodeDatabaseClient,
+): AttachmentWithParentKey[] {
+  const memo: GroupIDMemo = new Map();
+  return allAttachmentsQuery
+    .prepared(db)
+    .all()
+    .map((row) => {
+      // Zotero keeps a child in its parent's library, so one group lookup
+      // covers both keys.
+      const groupID = resolveGroupID(db, row.item_itemID.libraryID, memo);
+      const parentKey = row.item_parentItemID?.key;
+      return {
+        ...toAttachment(row, groupID),
+        parentIndexedKey:
+          parentKey === undefined ? null : formatIndexedKey(parentKey, groupID),
+      };
+    });
 }
 
 export function getAttachmentByItemId(

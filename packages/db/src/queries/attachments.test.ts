@@ -7,7 +7,11 @@ import type { NodeDatabaseClient } from "@/client/node";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getAttachmentByKey, getAttachmentsByParents } from "./attachments";
+import {
+  getAllAttachments,
+  getAttachmentByKey,
+  getAttachmentsByParents,
+} from "./attachments";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -95,6 +99,36 @@ describe("getAttachmentByKey", () => {
     expect(getAttachmentByKey(db, "MISSING", USER_LIBRARY_ID)).toBeNull();
     expect(getAttachmentByKey(db, "TRASHED", USER_LIBRARY_ID)).toBeNull();
     expect(getAttachmentByKey(db, "ATTOTHER", USER_LIBRARY_ID)).toBeNull();
+  });
+});
+
+describe("getAllAttachments", () => {
+  it("pairs every live attachment with its parent Item's Indexed Key, and a standalone one with null", () => {
+    sqlite.exec(`
+      insert into groups (groupID, libraryID, name)
+        values (4200309, 2, 'Shared Reading');
+
+      insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
+        values (500, 2, '2024-01-11 00:00:00', '2024-01-11 00:00:00', 1, 'STANDALN');
+
+      insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path)
+        values (500, null, 0, 'application/pdf', 'storage:loose.pdf');
+    `);
+
+    expect(
+      getAllAttachments(db).map((attachment) => [
+        attachment.indexedKey,
+        attachment.parentIndexedKey,
+        attachment.path,
+      ]),
+    ).toEqual([
+      ["ATTA1", "PARA", "storage:paper.pdf"],
+      ["ATTA2", "PARA", "/abs/path/book.epub"],
+      ["ATTB1", "PARB", null],
+      ["ATTOTHERg4200309", "PAROTHERg4200309", "storage:other-lib.pdf"],
+      ["URLATTCH", "PARURL", "https://example.com/article"],
+      ["STANDALN", null, "storage:loose.pdf"],
+    ]);
   });
 });
 

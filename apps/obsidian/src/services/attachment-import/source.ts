@@ -6,6 +6,8 @@ import { constants } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
+import { isCaseInsensitivePlatform } from "@zotlit/db/path";
+
 import type { AttachmentCopySource } from "@/lib/copy-attachments";
 import { isErrno } from "@/lib/errno";
 
@@ -153,8 +155,7 @@ export async function buildCanonicalRoots(
     annotationCache,
     base,
     approved: approved.filter((root) => root !== null),
-    caseInsensitive:
-      process.platform === "darwin" || process.platform === "win32",
+    caseInsensitive: isCaseInsensitivePlatform(process.platform),
   };
 }
 
