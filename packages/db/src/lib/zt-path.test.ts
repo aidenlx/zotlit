@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import { USER_LIBRARY_ID } from "@/lib/constants";
 
 import type { Attachment } from "./zt-attach";
-import { attachmentAbsPath, resolveAnnotCachePath } from "./zt-path";
+import {
+  attachmentAbsPath,
+  attachmentPathKey,
+  resolveAnnotCachePath,
+} from "./zt-path";
 
 function attachment(overrides: Partial<Attachment>): Attachment {
   return {
@@ -145,5 +149,80 @@ describe("attachmentAbsPath", () => {
     expect(
       attachmentAbsPath(attachment({ path: null, linkMode: 0 }), ctx),
     ).toBeNull();
+  });
+});
+
+describe("attachmentPathKey", () => {
+  // Worked examples: each input is a form one side of a lookup arrives in,
+  // beside the single key both sides must fold onto.
+  it.each([
+    [
+      "collapses a doubled separator",
+      "/zotero//storage/RGRPDF24//rougier-2014.pdf",
+      "/zotero/storage/RGRPDF24/rougier-2014.pdf",
+    ],
+    [
+      "turns backslashes into forward slashes",
+      "C:\\Users\\me\\Zotero\\storage\\RGRPDF24\\rougier-2014.pdf",
+      "C:/Users/me/Zotero/storage/RGRPDF24/rougier-2014.pdf",
+    ],
+    [
+      "collapses a mixed separator run",
+      "C:\\Users\\/me\\\\rougier-2014.pdf",
+      "C:/Users/me/rougier-2014.pdf",
+    ],
+    [
+      "resolves a parent segment",
+      "/vault/attachments/../linked-files/rougier-2014.pdf",
+      "/vault/linked-files/rougier-2014.pdf",
+    ],
+    [
+      "resolves a current-directory segment",
+      "/vault/./attachments/rougier-2014.pdf",
+      "/vault/attachments/rougier-2014.pdf",
+    ],
+    ["drops a trailing separator", "/vault/attachments/", "/vault/attachments"],
+    [
+      "drops a trailing separator run",
+      "/vault/attachments\\\\",
+      "/vault/attachments",
+    ],
+    ["keeps the separator of a root path", "/", "/"],
+  ])("%s", (_name, path, expected) => {
+    expect(attachmentPathKey(path, "linux")).toBe(expected);
+  });
+
+  it.each<NodeJS.Platform>(["darwin", "win32"])(
+    "folds case on %s, where one file answers to both casings",
+    (platform) => {
+      expect(
+        attachmentPathKey("/Vault/Attachments/Rougier-2014.PDF", platform),
+      ).toBe("/vault/attachments/rougier-2014.pdf");
+    },
+  );
+
+  it("keeps case on linux, where two casings are two files", () => {
+    expect(attachmentPathKey("/vault/Rougier-2014.pdf", "linux")).toBe(
+      "/vault/Rougier-2014.pdf",
+    );
+    expect(attachmentPathKey("/vault/rougier-2014.pdf", "linux")).not.toBe(
+      attachmentPathKey("/vault/Rougier-2014.pdf", "linux"),
+    );
+  });
+
+  it("meets a backslash-stored Zotero row and a forward-slash Obsidian path", () => {
+    // Zotero writes a plain `linked_file` path with the platform's separators;
+    // Obsidian collapses every separator run to `/` before it resolves one.
+    expect(
+      attachmentPathKey(
+        "C:\\Users\\me\\Vault\\attachments\\rougier-2014.pdf",
+        "win32",
+      ),
+    ).toBe(
+      attachmentPathKey(
+        "C:/Users/me/Vault/attachments/rougier-2014.pdf",
+        "win32",
+      ),
+    );
   });
 });

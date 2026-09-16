@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
 import { annotationHasCacheImage } from "./zt-annot";
 import type { Annotation } from "./zt-annot";
@@ -82,4 +82,49 @@ export function attachmentAbsPath(
     case "unknown":
       return null;
   }
+}
+
+const CASE_INSENSITIVE_PLATFORMS: ReadonlySet<NodeJS.Platform> = new Set([
+  "darwin",
+  "win32",
+]);
+
+/**
+ * Whether the platform's filesystem compares paths without case, so one file
+ * can be named in two casings — Zotero keeps a `linked_file` path as it was
+ * typed, and both Obsidian and ZotLit derive their own from a base directory. A
+ * Linux volume holds both casings as distinct files, so folding there could name
+ * the wrong file.
+ *
+ * @see apps/obsidian/docs/adr/0035-the-attachment-resolver-case-folds-on-case-insensitive-platforms.md
+ */
+export function isCaseInsensitivePlatform(platform: NodeJS.Platform): boolean {
+  return CASE_INSENSITIVE_PLATFORMS.has(platform);
+}
+
+/** Obsidian collapses every separator run to one `/` before it resolves the
+ * absolute path behind a `file:` prefix; the key follows the same rule. */
+const SEPARATOR_RUN_RE = /[\\/]+/g;
+/** Keeps the lone separator of a root path, which carries no segment to trim. */
+const TRAILING_SEPARATOR_RE = /(?<=.)\/+$/;
+
+/**
+ * The comparison key for an absolute attachment path: separators collapsed to
+ * `/`, `.` and `..` segments resolved, no trailing separator, and case folded
+ * where the filesystem itself folds. Both sides of a lookup go through it, so a
+ * Zotero row and an Obsidian view path meet however each was written.
+ *
+ * @param platform the filesystem's platform, as `process.platform` names it.
+ * @see apps/obsidian/docs/adr/0035-the-attachment-resolver-case-folds-on-case-insensitive-platforms.md
+ */
+export function attachmentPathKey(
+  path: string,
+  platform: NodeJS.Platform,
+): string {
+  const normalized = posix
+    .normalize(path.replace(SEPARATOR_RUN_RE, "/"))
+    .replace(TRAILING_SEPARATOR_RE, "");
+  return isCaseInsensitivePlatform(platform)
+    ? normalized.toLowerCase()
+    : normalized;
 }

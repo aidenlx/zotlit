@@ -61,8 +61,10 @@ export {
   getAnnotationsByParent,
 } from "./queries/annotations";
 export {
+  getAllAttachments,
   getAttachmentByKey,
   getAttachmentsByParents,
+  type AttachmentWithParentKey,
 } from "./queries/attachments";
 export {
   getChildNotesByParentIDs,

@@ -7,6 +7,7 @@ import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
+import { AttachmentResolver } from "./attachment-resolver/service";
 import { CitationIndex } from "./citation-index/service";
 import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
@@ -126,12 +127,15 @@ export function buildServices(
         new DatabaseService({ settings, zoteroPref }),
     })
     .use({
-      pdfAnnotationEditor: () =>
+      attachmentResolver: ({ db, zoteroPref }) =>
+        new AttachmentResolver({ db, zoteroPref }),
+    })
+    .use({
+      pdfAnnotationEditor: ({ attachmentResolver }) =>
         new PdfAnnotationEditor({
           app: plugin.app,
-          // Stubbed until the attachment resolver lands, so every PDF opens as
-          // it did before. See https://github.com/aidenlx/zotlit/issues/1141.
-          resolveAttachment: () => ({ kind: "unresolved" }),
+          resolveAttachment: (absolutePath) =>
+            attachmentResolver.resolve(absolutePath),
         }),
     })
     .use({

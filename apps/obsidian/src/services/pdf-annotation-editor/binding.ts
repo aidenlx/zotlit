@@ -8,6 +8,10 @@ import type {
 } from "obsidian";
 
 import { getLogger } from "@/lib/log";
+import type {
+  AttachmentResolution,
+  ResolveAttachment,
+} from "@/services/attachment-resolver/service";
 
 import {
   loadedPageOf,
@@ -28,25 +32,6 @@ const logger = getLogger("pdf-annotation-editor");
 
 /** Obsidian prefixes an external file's path with this ahead of its absolute path. */
 const EXTERNAL_FILE_PREFIX = "file:";
-
-/**
- * What an open PDF resolves to in the Zotero library. Both keys are Indexed
- * Keys — `key` for the personal library, `key + "g" + groupID` for a group — as
- * ADR 0033 settles and `formatIndexedKey` in `@zotlit/db` formats.
- *
- * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
- */
-export type AttachmentResolution =
-  | { kind: "resolved"; attachmentKey: string; itemKey: string }
-  | { kind: "unresolved" };
-
-/**
- * Maps the absolute path of an open PDF to its Zotero attachment.
- *
- * @see https://github.com/aidenlx/zotlit/issues/1141 — the resolver service
- *   that replaces the unresolved stub this milestone injects.
- */
-export type ResolveAttachment = (absolutePath: string) => AttachmentResolution;
 
 export interface PdfViewBindingDeps {
   view: PDFFileView;
@@ -131,7 +116,7 @@ export class PdfViewBinding implements Disposable {
     this.#attachment = this.#resolveAttachment(this.#absolutePath);
     logger.debug("PDF view resolved", {
       path: filePath,
-      attachment: this.#attachment.kind,
+      attachment: this.#attachment,
     });
     if (!this.supported) return;
     whenViewerReady(this.#view.viewer, (controller) =>

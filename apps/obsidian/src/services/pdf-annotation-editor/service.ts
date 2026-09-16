@@ -2,17 +2,19 @@
 import type { App, FileSystemAdapter, PDFFileView } from "obsidian";
 
 import { registerEvent } from "@/lib/disposables";
+import type { ResolveAttachment } from "@/services/attachment-resolver/service";
 import { Service } from "@/services/service-base";
 
 import { PdfViewBinding } from "./binding";
-import type { ResolveAttachment } from "./binding";
 import { openFilePathOf } from "./seam";
 
+// Re-exported so a consumer of the reader seam reaches the resolution it binds
+// a view to without naming the resolver service.
 export type {
   AttachmentResolution,
-  PdfViewBinding,
   ResolveAttachment,
-} from "./binding";
+} from "@/services/attachment-resolver/service";
+export type { PdfViewBinding } from "./binding";
 export type { PdfSeamProbeId, PdfSeamProbeResult } from "./seam";
 
 /** Obsidian's own view type for a PDF, in the vault and outside it alike. */
