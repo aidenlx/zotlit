@@ -29,6 +29,11 @@ export interface CapabilityCopy {
   label: string;
   /** What to do about it, or null where the label is the whole of it. */
   detail: string | null;
+  /**
+   * Whether the icon turns, because ZotLit or Zotero is working. Decided here
+   * rather than re-derived from the enum, so the table stays the one dispatch.
+   */
+  spinning: boolean;
 }
 
 /**
@@ -52,6 +57,7 @@ export function editingCapabilityCopy(
         tone: "ready",
         label: m.capability_writable(),
         detail: null,
+        spinning: false,
       };
     case "authorization-required":
       // The same icon as writable: the control stays live, and the gesture is
@@ -61,6 +67,7 @@ export function editingCapabilityCopy(
         tone: "action",
         label: m.capability_authorization_required(),
         detail: m.capability_authorization_required_detail(),
+        spinning: false,
       };
     case "authorizing":
       return {
@@ -68,6 +75,7 @@ export function editingCapabilityCopy(
         tone: "busy",
         label: m.capability_authorizing(),
         detail: m.capability_authorizing_detail(),
+        spinning: true,
       };
     case "cooldown":
       return {
@@ -77,10 +85,64 @@ export function editingCapabilityCopy(
         detail: m.capability_cooldown_detail({
           seconds: secondsUntil(capability.retryAfter, now),
         }),
+        spinning: false,
       };
     case "read-only":
       return readOnlyCopy(capability.reason);
   }
+}
+
+/**
+ * The always-present affordance, as both of its renderers draw it: the reader's
+ * vanilla render function and the Annotation View's Preact component read this
+ * one answer, so the two surfaces cannot drift apart.
+ *
+ * @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
+ */
+export interface CapabilityAffordance {
+  /** The Obsidian icon, from the one icon map. */
+  icon: string;
+  tone: CapabilityTone;
+  /** The accessible name, which Obsidian also renders as the hover tooltip. */
+  tooltip: string;
+  /** Whether the icon turns, because ZotLit or Zotero is working. */
+  spinning: boolean;
+  /** Whole seconds left of a cooldown, or null while nothing counts down. */
+  countdown: number | null;
+}
+
+/**
+ * What the affordance shows for one Editing Capability.
+ *
+ * The tooltip carries the whole of the copy table's answer, because the
+ * affordance is one icon with nowhere else to put the detail; a surface that
+ * counts down re-reads this once a second while {@link
+ * CapabilityAffordance.countdown} is not null.
+ *
+ * @param capability the state to show.
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ */
+export function editingCapabilityAffordance(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): CapabilityAffordance {
+  const { icon, tone, label, detail, spinning } = editingCapabilityCopy(
+    capability,
+    now,
+  );
+  return {
+    icon,
+    tone,
+    tooltip:
+      detail === null
+        ? label
+        : m.capability_affordance_tooltip({ label, detail }),
+    spinning,
+    countdown:
+      capability.kind === "cooldown"
+        ? secondsUntil(capability.retryAfter, now)
+        : null,
+  };
 }
 
 /**
@@ -106,6 +168,7 @@ function readOnlyCopy(
         tone: "busy",
         label: m.capability_probing(),
         detail: null,
+        spinning: true,
       };
     case "zotero-unavailable":
       return warning(
@@ -141,5 +204,11 @@ function readOnlyCopy(
 }
 
 function warning(label: string, detail: string): CapabilityCopy {
-  return { icon: "alert-triangle", tone: "warning", label, detail };
+  return {
+    icon: "alert-triangle",
+    tone: "warning",
+    label,
+    detail,
+    spinning: false,
+  };
 }

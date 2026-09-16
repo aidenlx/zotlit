@@ -6,7 +6,11 @@ import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
 
 import { PdfViewBinding } from "./binding";
-import type { AnnotationReads, AttachmentReads } from "./binding";
+import type {
+  AnnotationReads,
+  AttachmentReads,
+  CapabilityGestures,
+} from "./binding";
 import { openFilePathOf } from "./seam";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
@@ -19,6 +23,7 @@ export type {
 export type {
   AnnotationReads,
   AttachmentReads,
+  CapabilityGestures,
   PdfViewBinding,
 } from "./binding";
 export type { PdfSeamProbeId, PdfSeamProbeResult } from "./seam";
@@ -30,6 +35,10 @@ export interface PdfAnnotationEditorDeps {
   app: App;
   attachments: AttachmentReads;
   annotations: AnnotationReads;
+  /** What the Editing Capability affordance and a blocked keystroke reach. */
+  capabilityGestures: CapabilityGestures;
+  /** The clock each binding's cooldown countdown is read against. */
+  now?: () => Temporal.Instant;
 }
 
 /**
@@ -46,16 +55,26 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #app;
   readonly #attachments;
   readonly #annotations;
+  readonly #capabilityGestures;
+  readonly #now;
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
 
   ready: Promise<void>;
 
-  constructor({ app, attachments, annotations }: PdfAnnotationEditorDeps) {
+  constructor({
+    app,
+    attachments,
+    annotations,
+    capabilityGestures,
+    now = () => Temporal.Now.instant(),
+  }: PdfAnnotationEditorDeps) {
     super();
     this.#app = app;
     this.#attachments = attachments;
     this.#annotations = annotations;
+    this.#capabilityGestures = capabilityGestures;
+    this.#now = now;
     this.ready = this.#load();
   }
 
@@ -122,6 +141,8 @@ export class PdfAnnotationEditor extends Service<void> {
         adapter,
         attachments: this.#attachments,
         annotations: this.#annotations,
+        capabilityGestures: this.#capabilityGestures,
+        now: this.#now,
       });
       this.#bindings.set(view, binding);
       binding.load();

@@ -143,8 +143,11 @@ function createDeps() {
           source: { kind: "zotero-db" },
           annotations: [annot],
         }),
+      capability: { kind: "writable" },
+      capabilityFor: () => ({ kind: "writable" }),
       on: () => () => undefined,
     },
+    showEditingCapability: () => undefined,
     zoteroPref: { dataDir: "/zotero" },
     noteFeature: {
       renderAnnotation: () => RENDERED,

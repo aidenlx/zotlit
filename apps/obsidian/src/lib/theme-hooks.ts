@@ -39,6 +39,12 @@ export const themeHook = {
   pdfAnnotationHighlight: "zt-pdf-annotation-highlight",
   /** The folded corner of a note Annotation Mark, which takes the page's own colour. */
   pdfAnnotationNoteFold: "zt-pdf-annotation-note-fold",
+  /**
+   * The always-present Editing Capability affordance in the PDF reader's own
+   * toolbar. `data-zt-capability-tone` names the state it is showing —
+   * `ready`, `action`, `busy` or `warning`.
+   */
+  pdfCapability: "zt-pdf-capability",
 } as const;
 
 /**

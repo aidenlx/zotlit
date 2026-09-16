@@ -215,6 +215,18 @@ export function onPageRendered(
 }
 
 /**
+ * The reader's right toolbar slot, which P10 guards, and `null` once the child
+ * holding it unloaded — Obsidian nulls the toolbar there, and a binding
+ * disposing after that has nothing left to take out of it.
+ */
+export function toolbarSlotOf(
+  controller: PDFViewerController,
+): HTMLElement | null {
+  const slot = controller.toolbar?.toolbarRightEl;
+  return isElement(slot) ? slot : null;
+}
+
+/**
  * The PDF.js page view for a one-based page number, once that page is built,
  * and `null` once the viewer holding the pages closed.
  */

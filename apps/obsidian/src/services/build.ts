@@ -1,5 +1,7 @@
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
 import { nodeFetch } from "@/lib/node-fetch";
+import { revealSetting } from "@/lib/open-settings";
 import {
   createProfileCreator,
   createProfileImporter,
@@ -7,6 +9,7 @@ import {
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
+import { CapabilityNotices } from "./annotation-repository/notices";
 import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
@@ -156,11 +159,34 @@ export function buildServices(
         }),
     })
     .use({
-      pdfAnnotationEditor: ({ attachmentResolver, annotationRepository }) =>
+      capabilityNotices: ({ annotationRepository, zoteroLocalApi }) =>
+        new CapabilityNotices({
+          capabilities: annotationRepository,
+          writes: zoteroLocalApi,
+          openEditingSettings: () =>
+            revealSetting(
+              plugin.app,
+              plugin.manifest.id,
+              m.settings_zotero_editing_name(),
+            ),
+        }),
+    })
+    .use({
+      pdfAnnotationEditor: ({
+        attachmentResolver,
+        annotationRepository,
+        capabilityNotices,
+      }) =>
         new PdfAnnotationEditor({
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
+          capabilityGestures: {
+            showEditingCapability: () =>
+              void capabilityNotices.showEditingCapability(),
+            reportBlockedGesture: (attachmentKey) =>
+              capabilityNotices.reportBlockedGesture(attachmentKey),
+          },
         }),
     })
     .use({
