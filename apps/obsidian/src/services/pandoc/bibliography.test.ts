@@ -3,9 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import type { NodeFetchInit } from "@/lib/node-fetch";
+
 import { fetchBibliography, LOCAL_API_PREF } from "./bibliography";
 import type {
-  BibliographyHttpRequest,
   BibliographyItemRef,
   BibliographyPorts,
   BibliographyResult,
@@ -50,7 +51,14 @@ interface Fixture {
   zoteroClosed?: boolean;
 }
 
-type Call = BibliographyHttpRequest & { rpcMethod?: string };
+/** One call as the transport received it, in the shape `fetch` takes. */
+interface Call {
+  url: string;
+  method: string;
+  headers: Headers;
+  body?: string;
+  rpcMethod?: string;
+}
 
 function ports(
   fixture: Fixture,
@@ -58,21 +66,30 @@ function ports(
 ): BibliographyPorts & { calls: Call[] } {
   const calls: Call[] = [];
   const rpcUrl = `http://127.0.0.1:${httpPort}/better-bibtex/json-rpc`;
-  const request = vi.fn(async (req: BibliographyHttpRequest) => {
-    if (fixture.zoteroClosed) throw new Error("ECONNREFUSED");
-    if (req.url === rpcUrl) {
-      const { method, params } = JSON.parse(req.body ?? "{}") as {
+  const fetch = vi.fn(async (input: string | URL, init: NodeFetchInit = {}) => {
+    // A closed Zotero fails the connection, which is what `nodeFetch` rejects
+    // a TypeError for.
+    if (fixture.zoteroClosed) throw new TypeError("fetch failed");
+    const url = String(input);
+    const call: Call = {
+      url,
+      method: init.method ?? "GET",
+      headers: new Headers(init.headers),
+      body: typeof init.body === "string" ? init.body : undefined,
+    };
+    if (url === rpcUrl) {
+      const { method, params } = JSON.parse(call.body ?? "{}") as {
         method: string;
         params: unknown[];
       };
-      calls.push({ ...req, rpcMethod: method });
+      calls.push({ ...call, rpcMethod: method });
       if (fixture.rpcError?.method === method) {
         return rpcBody({
           error: { code: -32602, message: fixture.rpcError.message },
         });
       }
       if (!fixture.rpc || !(method in fixture.rpc)) {
-        return { status: 404, text: "Endpoint does not exist" };
+        return new Response("Endpoint does not exist", { status: 404 });
       }
       const answer = fixture.rpc[method];
       return rpcBody({
@@ -82,41 +99,37 @@ function ports(
             : answer,
       });
     }
-    calls.push({ ...req });
+    calls.push(call);
     if (fixture.apiStatus !== undefined) {
-      return { status: fixture.apiStatus, text: "Local API is not enabled" };
+      return new Response("Local API is not enabled", {
+        status: fixture.apiStatus,
+      });
     }
-    const library = LIBRARY_ROUTE.exec(req.url)?.groups.library ?? "";
+    const library = LIBRARY_ROUTE.exec(url)?.groups.library ?? "";
     const entries = fixture.api?.[library] ?? [];
     const requested = new Set(
-      new URL(req.url).searchParams.get("itemKey")?.split(",") ?? [],
+      new URL(url).searchParams.get("itemKey")?.split(",") ?? [],
     );
-    return {
-      status: 200,
-      text: JSON.stringify(
-        entries
-          .filter((entry) => requested.has(entry.key))
-          .map((entry) => ({
-            key: entry.key,
-            version: 1,
-            csljson: JSON.stringify(entry.csljson),
-          })),
-      ),
-    };
+    return Response.json(
+      entries
+        .filter((entry) => requested.has(entry.key))
+        .map((entry) => ({
+          key: entry.key,
+          version: 1,
+          csljson: JSON.stringify(entry.csljson),
+        })),
+    );
   });
   return {
     calls,
-    request,
+    fetch,
     httpPort,
     localApiEnabled: fixture.localApiEnabled ?? true,
   };
 }
 
 function rpcBody(payload: object) {
-  return {
-    status: 200,
-    text: JSON.stringify({ jsonrpc: "2.0", ...payload, id: 1 }),
-  };
+  return Response.json({ jsonrpc: "2.0", ...payload, id: 1 });
 }
 
 function entries(result: BibliographyResult): [string, string][] {
@@ -257,9 +270,9 @@ describe("fetchBibliography", () => {
       `${ORIGIN}/api/users/0/items?itemKey=AAAA1111&include=csljson`,
       `${ORIGIN}/api/groups/42/items?itemKey=BBBB2222&include=csljson`,
     ]);
-    expect(reads.map((call) => call.headers["Zotero-Allowed-Request"])).toEqual(
-      ["1", "1"],
-    );
+    expect(
+      reads.map((call) => call.headers.get("Zotero-Allowed-Request")),
+    ).toEqual(["1", "1"]);
   });
 
   it("sends every item key of a library in one read", async () => {

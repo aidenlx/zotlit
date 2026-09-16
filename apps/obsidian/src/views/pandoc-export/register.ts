@@ -2,7 +2,6 @@ import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
 import { basename, join } from "node:path";
-import { requestUrl } from "obsidian";
 import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
 
 import { parseIndexedKey, resolveIndexedKeyLibrary } from "@zotlit/db";
@@ -10,6 +9,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { nodeFetch } from "@/lib/node-fetch";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -19,10 +19,7 @@ import {
   fetchBibliography,
   LOCAL_API_PREF,
 } from "@/services/pandoc/bibliography";
-import type {
-  BibliographyItemRef,
-  BibliographyTransport,
-} from "@/services/pandoc/bibliography";
+import type { BibliographyItemRef } from "@/services/pandoc/bibliography";
 import {
   documentPresentation,
   effectivePresentation,
@@ -256,7 +253,7 @@ function exportPorts(
     readItemRefs: (indexedKeys) => readItemRefs(db, indexedKeys),
     fetchBibliography: (refs) =>
       fetchBibliography(refs, {
-        request: zoteroRequest,
+        fetch: nodeFetch,
         httpPort: zoteroPref.httpPort,
         localApiEnabled: zoteroPref.get(LOCAL_API_PREF) === true,
       }),
@@ -296,15 +293,6 @@ function placeItem(
     groupID: parsed.groupID,
   };
 }
-
-/**
- * Zotero's HTTP server over Obsidian's own transport, which reaches localhost
- * without CORS. A refusal comes back as a status; only a dead port rejects.
- */
-const zoteroRequest: BibliographyTransport = async (request) => {
-  const response = await requestUrl({ ...request, throw: false });
-  return { status: response.status, text: response.text };
-};
 
 /** Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */
 function absolutePath(app: App, file: TFile): string {

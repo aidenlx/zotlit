@@ -9,6 +9,7 @@ import { formatIndexedKey } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
+import type { FetchLike, NodeFetchInit } from "@/lib/node-fetch";
 import { ZOTERO_HTTP_PORT_PREF } from "@/services/zotero-pref/prefs-file";
 
 const logger = getLogger(["pandoc", "bibliography"]);
@@ -23,8 +24,9 @@ const JSON_RPC_PATH = "/better-bibtex/json-rpc";
 const BETTER_CSL_JSON = "f4b52ab0-f878-4556-85a0-c7aeedd09dfc";
 
 /**
- * Zotero refuses requests it reads as browser traffic — and Obsidian's
- * `requestUrl` carries a Chromium user agent — unless they carry this header.
+ * Zotero refuses requests it reads as browser traffic: a `Mozilla/` user agent,
+ * or any `Origin` header. This header is the documented opt-out from that
+ * guard, so a call stays served however the transport presents itself.
  */
 const ALLOWED_REQUEST: Readonly<Record<string, string>> = {
   "Zotero-Allowed-Request": "1",
@@ -43,29 +45,22 @@ export interface BibliographyItemRef {
   groupID: number | null;
 }
 
-export interface BibliographyHttpRequest {
-  url: string;
-  method: "GET" | "POST";
-  headers: Record<string, string>;
-  body?: string;
-}
-
-export interface BibliographyHttpResponse {
+/** What a call reads from Zotero's answer. */
+interface ZoteroReply {
   status: number;
   text: string;
 }
 
-/**
- * One HTTP round trip. Resolves with whatever status Zotero answered, however
- * unhappy; rejects only when the connection itself failed, which is how a
- * closed Zotero announces itself.
- */
-export type BibliographyTransport = (
-  request: BibliographyHttpRequest,
-) => Promise<BibliographyHttpResponse>;
-
 export interface BibliographyPorts {
-  request: BibliographyTransport;
+  /**
+   * One HTTP round trip. Resolves with whatever status Zotero answered, however
+   * unhappy; rejects only when the connection itself failed, which is how a
+   * closed Zotero announces itself.
+   *
+   * Production passes `nodeFetch`, which reaches Zotero over Node's stack: no
+   * `Origin`, no user agent, and no CORS check on the answer.
+   */
+  fetch: FetchLike;
   /** HTTP port read from the active Zotero profile. */
   httpPort: number | null;
   /**
@@ -207,11 +202,11 @@ async function fromLocalApi(
       include: "csljson",
     });
     const library = groupID === null ? "users/0" : `groups/${groupID}`;
-    const response = await send(ports, {
-      url: `${zoteroOrigin(ports.httpPort)}/api/${library}/items?${query.toString()}`,
-      method: "GET",
-      headers: { ...ALLOWED_REQUEST },
-    });
+    const response = await send(
+      ports,
+      `${zoteroOrigin(ports.httpPort)}/api/${library}/items?${query.toString()}`,
+      { method: "GET", headers: { ...ALLOWED_REQUEST } },
+    );
     if (!response) return { error: zoteroUnreachable(ports.httpPort) };
     if (response.status === 403) return { error: localApiDisabled() };
     if (response.status !== 200) {
@@ -276,12 +271,15 @@ async function callJsonRpc(
   method: string,
   params: readonly unknown[],
 ): Promise<RpcOutcome> {
-  const response = await send(ports, {
-    url: `${zoteroOrigin(ports.httpPort)}${JSON_RPC_PATH}`,
-    method: "POST",
-    headers: { ...ALLOWED_REQUEST, "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
-  });
+  const response = await send(
+    ports,
+    `${zoteroOrigin(ports.httpPort)}${JSON_RPC_PATH}`,
+    {
+      method: "POST",
+      headers: { ...ALLOWED_REQUEST, "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+    },
+  );
   if (!response) return { ok: false, reason: "unreachable" };
   if (response.status !== 200) return { ok: false, reason: "absent" };
 
@@ -314,15 +312,14 @@ function rpcFailure(
 /** `null` when the configured Zotero HTTP server cannot be reached. */
 async function send(
   ports: BibliographyPorts,
-  request: BibliographyHttpRequest,
-): Promise<BibliographyHttpResponse | null> {
+  url: string,
+  init: NodeFetchInit,
+): Promise<ZoteroReply | null> {
   try {
-    return await ports.request(request);
+    const response = await ports.fetch(url, init);
+    return { status: response.status, text: await response.text() };
   } catch (error) {
-    logger.debug("Zotero's HTTP server did not answer", {
-      url: request.url,
-      error,
-    });
+    logger.debug("Zotero's HTTP server did not answer", { url, error });
     return null;
   }
 }
