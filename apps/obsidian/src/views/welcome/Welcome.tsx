@@ -469,9 +469,13 @@ function MigrationBanner() {
             <p className="zt:mt-2 zt:mb-0">
               {m.welcome_template_cleanup_body()}
             </p>
-            <ul className="zt:my-1">
+            <ul className="zt:my-1 zt:flex zt:list-none zt:flex-col zt:gap-1 zt:p-0">
               {retained.map((path) => (
-                <li key={path}>{path}</li>
+                <li key={path}>
+                  <code className="zt:rounded-sm zt:border zt:border-border zt:bg-muted zt:px-2 zt:py-0.5 zt:font-mono zt:text-xs">
+                    {path}
+                  </code>
+                </li>
               ))}
             </ul>
           </>
