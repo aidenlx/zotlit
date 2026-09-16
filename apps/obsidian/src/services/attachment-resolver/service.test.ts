@@ -12,6 +12,7 @@ import type {
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
 import { AttachmentResolver, buildPathIndex } from "./service";
+import type { AttachmentResolution } from "./service";
 
 // The Fixture's own attachment rows are the oracle: the same item ids, keys and
 // parents it builds, with its three roots given literal paths. Two rows depart
@@ -236,16 +237,41 @@ it("reports no collision when every attachment names its own file", () => {
   expect(collisions).toEqual([]);
 });
 
-it("answers nothing, and keeps no index, while the database cannot be read", async () => {
+it("answers pending, and keeps no index, while the database cannot be read", async () => {
   await using stack = new AsyncDisposableStack();
   const { resolver, db } = await setup(stack, { databaseState: "degraded" });
   const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
 
-  expect(resolver.resolve(path)).toEqual({ kind: "unresolved" });
+  // Not `unresolved`: "I cannot answer yet" and "Zotero does not know this
+  // file" are different answers, and only the second one is final.
+  expect(resolver.resolve(path)).toEqual({ kind: "pending" });
 
   db.state = "ready";
 
   expect(resolver.resolve(path)).toEqual(ROUGIER);
+});
+
+it("announces the database it was waiting on, having cached no index", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { resolver, db, dbEvents } = await setup(stack, {
+    databaseState: "loading",
+  });
+  const path = `${VAULT_DIR}/attachments/rougier-2014.pdf`;
+  const announced: AttachmentResolution[] = [];
+  stack.defer(
+    resolver.on("resolutions-changed", () =>
+      announced.push(resolver.resolve(path)),
+    ),
+  );
+
+  expect(resolver.resolve(path)).toEqual({ kind: "pending" });
+
+  // What plugin startup does: the database reaches `ready` and says so, with
+  // no index yet built for the announcement to drop.
+  db.state = "ready";
+  dbEvents.emit("changed");
+
+  expect(announced).toEqual([ROUGIER]);
 });
 
 it("rebuilds on the next lookup after the database changed", async () => {

@@ -16,6 +16,10 @@ const logger = getLogger("pdf-annotation-editor");
  * The eleven private members ZotLit reads inside Obsidian's PDF reader, as the
  * seam re-verification numbers them. Each is guarded structurally once per
  * binding, so an Obsidian upgrade is re-verified in this one place.
+ *
+ * `PDFViewerController.pdfViewer` is read too, and carries no number: it is not
+ * a member ZotLit reads anything out of, it is the liveness `viewerOpen` asks
+ * about, and a teardown nulling it is Obsidian working as designed.
  */
 export const PDF_SEAM_MEMBERS = {
   P1: "PDFFileView.file",
@@ -194,22 +198,47 @@ export function whenViewerReady(
   host.then(onReady);
 }
 
-/** Subscribes to page renders, paired with the removal that ends the subscription. */
+/**
+ * Subscribes to page renders, paired with the removal that ends the
+ * subscription. Closing the viewer drops every listener on it, so the skip a
+ * closed viewer takes leaks nothing; a live controller is unsubscribed.
+ */
 export function onPageRendered(
   controller: PDFViewerController,
   listener: PDFPageRenderedListener,
 ): Disposable {
   controller.on("pagerendered", listener);
-  return disposable(() => controller.off("pagerendered", listener));
+  return disposable(() => {
+    if (!viewerOpen(controller, "remove a page listener")) return;
+    controller.off("pagerendered", listener);
+  });
 }
 
-/** The PDF.js page view for a one-based page number, once that page is built. */
+/**
+ * The PDF.js page view for a one-based page number, once that page is built,
+ * and `null` once the viewer holding the pages closed.
+ */
 export function pageViewOf(
   controller: PDFViewerController,
   pageNumber: number,
 ): PDFPageView | null {
+  if (!viewerOpen(controller, "read a page view")) return null;
   const page: unknown = controller.getPage(pageNumber);
   return isPageView(page) ? page : null;
+}
+
+/**
+ * Whether Obsidian still holds the PDF.js viewer behind this controller.
+ *
+ * P4 and P5 both reach through `PDFViewerController.pdfViewer`, which the
+ * child's own `unload` closes and nulls. A leaf closing, a view swapping files
+ * and a pop-out detaching all run that unload before ZotLit's teardown, so
+ * every read of a torn-down controller answers here rather than throwing.
+ */
+function viewerOpen(controller: PDFViewerController, intent: string): boolean {
+  if (isObject(controller.pdfViewer)) return true;
+  logger.debug("PDF viewer closed before ZotLit read it", { intent });
+  return false;
 }
 
 /**

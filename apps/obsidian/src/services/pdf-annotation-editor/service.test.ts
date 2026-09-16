@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import {
   annotation,
   annotationReads,
+  attachmentReads,
   failedIn,
   pageView,
   pdfReader,
@@ -85,12 +86,12 @@ function markedKeys(page: { div: HTMLElement }): (string | undefined)[] {
 it("binds an open PDF view, resolves its vault path, and unbinds on unload", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const attachments = attachmentReads(RESOLVED);
   const annotations = annotationReads();
   const { app, offref } = workspace([{ view }]);
   const service = new PdfAnnotationEditor({
     app,
-    resolveAttachment,
+    attachments,
     annotations,
   });
 
@@ -98,7 +99,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     await using _service = service;
     await service.ready;
 
-    expect(resolveAttachment).toHaveBeenCalledExactlyOnceWith(
+    expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
       "/vault/attachments/rougier-2014.pdf",
     );
     const binding = service.bindings[0]!;
@@ -131,7 +132,7 @@ it("paints the attachment's annotations over every page it renders", async () =>
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations,
   });
   await service.ready;
@@ -152,7 +153,7 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations,
   });
   await service.ready;
@@ -177,7 +178,7 @@ it("replaces the whole list when the repository announces a change", async () =>
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations,
   });
   await service.ready;
@@ -204,7 +205,7 @@ it("takes every mark off the page when the leaf closes", async () => {
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
   });
   await service.ready;
@@ -225,7 +226,7 @@ it("probes the page a view had already painted before the binding attached", asy
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
   });
   await service.ready;
@@ -251,7 +252,7 @@ it("waits for the first render when Obsidian is still opening the document", asy
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations: annotationReads(),
   });
   await service.ready;
@@ -269,18 +270,18 @@ it("waits for the first render when Obsidian is still opening the document", asy
 });
 
 it("reads an external file's absolute path from its `file:` prefix", async () => {
-  const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const attachments = attachmentReads(RESOLVED);
   const view = pdfView("file:/Users/reader/Zotero/storage/ABCD2345/paper.pdf");
   const { app } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment,
+    attachments,
     annotations: annotationReads(),
   });
   await service.ready;
 
-  expect(resolveAttachment).toHaveBeenCalledExactlyOnceWith(
+  expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/Users/reader/Zotero/storage/ABCD2345/paper.pdf",
   );
   expect(service.bindings[0]!.absolutePath).toBe(
@@ -291,12 +292,13 @@ it("reads an external file's absolute path from its `file:` prefix", async () =>
 it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/holiday-snaps.pdf", reader);
+  const attachments = attachmentReads({ kind: "unresolved" });
   const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => ({ kind: "unresolved" }),
+    attachments,
     annotations,
   });
   await service.ready;
@@ -305,23 +307,88 @@ it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () =
   await binding.probed;
   await binding.refreshed;
 
+  // "Zotero does not know this file" is an answer, so later database changes
+  // do not send the binding asking again.
+  attachments.answer(RESOLVED);
+  attachments.answer(RESOLVED);
+  await binding.refreshed;
+
+  expect(attachments.resolve).toHaveBeenCalledOnce();
   expect(binding.attachment).toEqual({ kind: "unresolved" });
   expect(annotations.read).not.toHaveBeenCalled();
   expect(reader.toolbarRightEl.childElementCount).toBe(0);
   expect(reader.page.div.childElementCount).toBe(0);
 });
 
-it("fails closed to the reader when the controller seam changed shape", async () => {
+it("paints a view bound while the resolver could not answer yet", async () => {
   const reader = pdfReader();
-  delete reader.child.applySubpath;
   const view = pdfView("attachments/rougier-2014.pdf", reader);
-  const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const attachments = attachmentReads();
   const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment,
+    attachments,
+    annotations,
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  reader.renderFirstPage();
+  await binding.probed;
+  await binding.refreshed;
+
+  // What a plugin reload over an open PDF tab does: the Zotero database is
+  // still loading, so "not a Zotero attachment" is not yet the answer.
+  expect(binding.attachment).toEqual({ kind: "pending" });
+  expect(annotations.read).not.toHaveBeenCalled();
+  expect(reader.page.div.childElementCount).toBe(0);
+
+  attachments.answer(RESOLVED);
+  await binding.refreshed;
+
+  // No reopen, no zoom, no page change in between.
+  expect(binding.attachment).toEqual(RESOLVED);
+  expect(markedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+});
+
+it("unbinds a leaf whose viewer Obsidian already closed", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const leaves = [{ view }];
+  const { app, relayout } = workspace(leaves);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT]),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  expect(markedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+
+  // Obsidian runs its own `unload` first on a closing tab and on a pop-out
+  // detach: it closes the PDF.js viewer that `off` and `getPage` read through.
+  reader.closeViewer();
+  leaves.length = 0;
+
+  expect(() => relayout()).not.toThrow();
+  expect(service.bindings).toEqual([]);
+  expect(reader.child.off).not.toHaveBeenCalled();
+});
+
+it("fails closed to the reader when the controller seam changed shape", async () => {
+  const reader = pdfReader();
+  delete reader.child.applySubpath;
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const attachments = attachmentReads(RESOLVED);
+  const annotations = annotationReads([HIGHLIGHT]);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments,
     annotations,
   });
   await service.ready;
@@ -333,7 +400,7 @@ it("fails closed to the reader when the controller seam changed shape", async ()
   expect(reader.child.on).not.toHaveBeenCalled();
   expect(reader.page.div.childElementCount).toBe(0);
   // The resolution the repository and the Annotation View read is untouched.
-  expect(resolveAttachment).toHaveBeenCalledExactlyOnceWith(
+  expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/vault/attachments/rougier-2014.pdf",
   );
   expect(binding.attachment).toEqual(RESOLVED);
@@ -346,7 +413,7 @@ it("drops its page listener when a page's viewport changed shape", async () => {
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment: () => RESOLVED,
+    attachments: attachmentReads(RESOLVED),
     annotations: annotationReads([HIGHLIGHT]),
   });
   await service.ready;
@@ -366,13 +433,13 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
   const first = pdfReader();
   const second = pdfReader();
   const view = pdfView("attachments/first.pdf", first);
-  const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const attachments = attachmentReads(RESOLVED);
   const leaves = [{ view }];
   const { app, relayout } = workspace(leaves);
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment,
+    attachments,
     annotations: annotationReads(),
   });
   await service.ready;
@@ -384,7 +451,7 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
     "pagerendered",
     expect.any(Function),
   );
-  expect(resolveAttachment).toHaveBeenLastCalledWith(
+  expect(attachments.resolve).toHaveBeenLastCalledWith(
     "/vault/attachments/second.pdf",
   );
   expect(second.child.on).toHaveBeenCalledWith(
@@ -405,18 +472,18 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
 it("waits for the file a view has yet to load before it resolves anything", async () => {
   const reader = pdfReader();
   const view = pdfView(null, reader);
-  const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const attachments = attachmentReads(RESOLVED);
   const annotations = annotationReads([HIGHLIGHT]);
   const { app, relayout } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({
     app,
-    resolveAttachment,
+    attachments,
     annotations,
   });
   await service.ready;
 
-  expect(resolveAttachment).not.toHaveBeenCalled();
+  expect(attachments.resolve).not.toHaveBeenCalled();
   expect(annotations.read).not.toHaveBeenCalled();
   expect(reader.child.on).not.toHaveBeenCalled();
   expect(service.bindings[0]!.absolutePath).toBeNull();
@@ -424,7 +491,7 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
   Object.assign(view, pdfView("attachments/rougier-2014.pdf", reader));
   relayout();
 
-  expect(resolveAttachment).toHaveBeenCalledExactlyOnceWith(
+  expect(attachments.resolve).toHaveBeenCalledExactlyOnceWith(
     "/vault/attachments/rougier-2014.pdf",
   );
 });
