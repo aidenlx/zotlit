@@ -68,6 +68,8 @@ export interface WireAnnotation {
   parentItem?: string;
   groupID?: number;
   tags?: string[];
+  /** ISO 8601 UTC, as Zotero writes it; omitted where an answer names none. */
+  dateAdded?: string;
 }
 
 /**
@@ -78,11 +80,17 @@ export interface WireAnnotation {
  * DB source answers from as well, so the two sources are comparable record for
  * record; the versions are this fixture's own.
  *
+ * RECORDED, on 2026-09-16: every `dateAdded`. A list read of this Attachment
+ * against Paired Zotero 10.0 answered these seven keys in this order with these
+ * seven stamps, in ISO 8601 UTC at second precision — the form the Uncertain
+ * Create window is compared against.
+ *
  * @see packages/scripts/lib/fixture/spec.ts — `ANNOTATIONS`
  */
 export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   {
     key: "PUPR5FG5",
+    dateAdded: "2026-08-23T16:17:50Z",
     version: 11,
     type: "highlight",
     text: "Identify Your Message",
@@ -93,6 +101,7 @@ export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   },
   {
     key: "FDRFQ7C2",
+    dateAdded: "2026-08-23T16:18:01Z",
     version: 12,
     type: "image",
     color: "#ffd400",
@@ -102,6 +111,7 @@ export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   },
   {
     key: "K3JRFLFQ",
+    dateAdded: "2026-08-23T16:18:11Z",
     version: 13,
     type: "underline",
     text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
@@ -119,6 +129,7 @@ export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   },
   {
     key: "HRK7BG32",
+    dateAdded: "2026-08-23T16:18:18Z",
     version: 14,
     type: "text",
     comment: "Making figures is hard :(",
@@ -134,6 +145,7 @@ export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   },
   {
     key: "C94NJNYG",
+    dateAdded: "2026-08-23T16:19:19Z",
     version: 15,
     type: "note",
     comment: "some text comment",
@@ -144,6 +156,7 @@ export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   },
   {
     key: "TYY6Z6ZF",
+    dateAdded: "2026-08-23T16:20:09Z",
     version: 16,
     type: "ink",
     color: "#5fb236",
@@ -157,6 +170,7 @@ export const ROUGIER_ANNOTATIONS: readonly WireAnnotation[] = [
   },
   {
     key: "4PE492KU",
+    dateAdded: "2026-08-23T16:20:12Z",
     version: 17,
     type: "ink",
     color: "#f19837",
@@ -406,8 +420,16 @@ export function createRefused(
 }
 
 /**
- * CONTRACT-DERIVED — `404`, which a write meets when Zotero no longer holds
- * the object. A read never produces one: the list route answers an empty list.
+ * RECORDED — `404 Not found`, which a `DELETE` and a single-item `GET` both
+ * answer for an object Zotero no longer holds. Driven against Paired Zotero
+ * 10.0 on 2026-09-16 by erasing `R25HRAM9` in Zotero and writing to it.
+ *
+ * Two corrections the same probe established, both recorded rather than
+ * inferred: the **list** route answers an empty list, but the **single-item**
+ * route answers this, so a read can meet a `404` after all; and a `PATCH` of a
+ * deleted object answers `400 itemType property not provided` rather than
+ * `404`, because Zotero's single-object patch route treats a missing object as
+ * a new one.
  *
  * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L2305-L2312
  */
@@ -538,6 +560,11 @@ export function keyRejected(): Response {
  * RECORDED — `412` from this database: the object moved since it was read. The
  * key that carried the request is spent all the same, which is why this answer
  * appears in a test about a One-time Authorization.
+ *
+ * This is the **header** precondition's wording, which a `DELETE` produces. A
+ * `PATCH`, whose precondition is in the body, answers `item version mismatch:
+ * expected 0, found 2` — also recorded on 2026-09-16, and also a Write
+ * Conflict: neither body names a server id or a write token.
  */
 export function staleVersion(): Response {
   return new Response(
@@ -547,6 +574,34 @@ export function staleVersion(): Response {
       headers: { ...API_HEADERS, "Content-Type": "text/plain" },
     },
   );
+}
+
+/**
+ * RECORDED — `412 Write token already used`, the third `412` body. A create was
+ * sent twice on one `Zotero-Write-Token` against Paired Zotero 10.0 on
+ * 2026-09-16: the first answered `200` and made `R25HRAM9`, the second answered
+ * this. That is what makes the user's "Try again" on an Uncertain Create unable
+ * to create a second Annotation.
+ *
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L695-L704
+ */
+/**
+ * RECORDED — the other `412` a moved object answers, from the **body**
+ * precondition a `PATCH` sends. Driven against Paired Zotero 10.0 on
+ * 2026-09-16 by recolouring `PUPR5FG5` in Zotero and patching it at version 0.
+ */
+export function staleVersionPatch(): Response {
+  return new Response("item version mismatch: expected 0, found 2", {
+    status: 412,
+    headers: { ...API_HEADERS, "Content-Type": "text/plain" },
+  });
+}
+
+export function writeTokenUsed(): Response {
+  return new Response("Write token already used", {
+    status: 412,
+    headers: { ...API_HEADERS, "Content-Type": "text/plain" },
+  });
 }
 
 /**
@@ -733,6 +788,9 @@ function wireItem(
       annotationPageLabel: annotation.pageLabel ?? "",
       annotationSortIndex: annotation.sortIndex,
       annotationPosition: JSON.stringify(annotation.position),
+      ...(annotation.dateAdded !== undefined && {
+        dateAdded: annotation.dateAdded,
+      }),
       ...(annotation.tags !== undefined && {
         tags: annotation.tags.map((tag) => ({ tag })),
       }),

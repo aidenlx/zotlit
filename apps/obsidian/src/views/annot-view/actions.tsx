@@ -14,7 +14,10 @@ import type {
   AnnotationRepository,
   MutationState,
 } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
+import {
+  writeFailureMessage,
+  writeFailureReason,
+} from "@/services/annotation-repository/write";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
@@ -50,6 +53,22 @@ export interface AnnotActions {
   onSaveComment(annot: AnnotationRecord, comment: string): void;
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
+  /**
+   * Send a conflicted write again, against the value Zotero holds now — the
+   * card's "Apply again", and its "Delete anyway".
+   */
+  onApplyAgain(annot: AnnotationRecord): void;
+  /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
+  onDiscardConflict(annot: AnnotationRecord): void;
+  /**
+   * Send one Uncertain Create again on its original write token, from the
+   * badged card's "Try again".
+   *
+   * @param writeToken the token the Uncertain Create carries.
+   */
+  onRetryCreate(writeToken: string): void;
+  /** Drop one Uncertain Create, from the badged card's "Discard". */
+  onDiscardCreate(writeToken: string): void;
   getImgSrc(annot: AnnotationRecord): string;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
@@ -65,7 +84,13 @@ export interface AnnotActionDeps {
    */
   annotations: Pick<
     AnnotationRepository,
-    "deleteAnnotation" | "patchColor" | "patchComment"
+    | "deleteAnnotation"
+    | "discardConflict"
+    | "discardCreate"
+    | "patchColor"
+    | "patchComment"
+    | "retryCreate"
+    | "retryWrite"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
@@ -136,6 +161,26 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     report(deps.annotations.patchComment(annot.key, comment));
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
+  const onApplyAgain = (annot: AnnotationRecord): void =>
+    report(deps.annotations.retryWrite(annot.key));
+  const onDiscardConflict = (annot: AnnotationRecord): void =>
+    deps.annotations.discardConflict(annot.key);
+  /**
+   * A retry that stays uncertain has already said so on its own badged card,
+   * and one that landed needs no notice: only a refusal is news.
+   */
+  const onRetryCreate = (writeToken: string): void => {
+    void deps.annotations.retryCreate(writeToken).then((outcome) => {
+      if (outcome.kind !== "failed") return;
+      new BaseNotice(
+        m.pdf_create_failed({
+          reason: writeFailureReason(outcome.failure, now()),
+        }),
+      );
+    });
+  };
+  const onDiscardCreate = (writeToken: string): void =>
+    deps.annotations.discardCreate(writeToken);
 
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
@@ -264,6 +309,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onSetColor,
     onSaveComment,
     onDeleteAnnotation,
+    onApplyAgain,
+    onDiscardConflict,
+    onRetryCreate,
+    onDiscardCreate,
     onMoreOptions(evt, annot) {
       const menu = buildMenu(annot);
       if ("nativeEvent" in evt) {
@@ -305,6 +354,10 @@ const NOOP_ACTIONS: AnnotActions = {
   onSetColor: () => {},
   onSaveComment: () => {},
   onDeleteAnnotation: () => {},
+  onApplyAgain: () => {},
+  onDiscardConflict: () => {},
+  onRetryCreate: () => {},
+  onDiscardCreate: () => {},
   onRefresh: () => {},
   getImgSrc: () => IMG_PLACEHOLDER,
   getBacklink: () => undefined,

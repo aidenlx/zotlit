@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 
 import { CapabilityNotices } from "./notices";
+import { IDLE } from "./write";
 
 /** The two dependencies the gesture runs through, each recording its order. */
 function seam() {
@@ -9,6 +10,7 @@ function seam() {
   const notices = new CapabilityNotices({
     capabilities: {
       capabilityFor: () => ({ kind: "writable" }),
+      mutationFor: () => IDLE,
       on: () => () => undefined,
       probe: vi.fn(async () => {
         ran.push("probe");
@@ -19,6 +21,8 @@ function seam() {
     },
     writes: { on: () => () => undefined },
     openEditingSettings: vi.fn(() => ran.push("open")),
+    cardShown: () => true,
+    revealAnnotation: vi.fn(() => ran.push("reveal")),
   });
   return {
     notices,

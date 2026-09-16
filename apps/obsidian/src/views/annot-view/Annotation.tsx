@@ -16,6 +16,7 @@ import { activatable, cn, tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { AnnotActionsContext } from "./actions";
+import { conflictPanel } from "./card-conflict";
 import { cardControls, commentIcon } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 import {
@@ -121,9 +122,66 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         <CardActionBar annot={annot} controls={controls} editing={editing} />
       </div>
 
+      <ConflictSlot annot={annot} />
+
       <ExcerptBlock annot={annot} collapsed={collapsed} color={color} />
 
       <CommentSlot annot={annot} editing={editing} control={controls.comment} />
+    </div>
+  );
+}
+
+/**
+ * Zotero's copy of this Annotation moved under the user's write, so the card
+ * puts the fresh Zotero value beside what the user asked for and offers the
+ * two verbs that end it. Nothing was drawn ahead of Zotero, so the card around
+ * this panel already shows what Zotero holds.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1151
+ */
+function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
+  const actions = useContext(AnnotActionsContext);
+  const mutation = useMutation(annot.key);
+  const panel = useMemo(
+    () =>
+      mutation.kind === "conflict" ? conflictPanel(mutation.conflict) : null,
+    [mutation],
+  );
+  if (!panel) return null;
+
+  return (
+    <div className="zt-annot-conflict zt:flex zt:flex-col zt:gap-1 zt:bg-secondary zt:px-2 zt:py-1.5">
+      <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
+        <Icon name="alert-triangle" size={14} />
+        {panel.title}
+      </div>
+      {panel.prompt !== null && (
+        <div className="zt:text-muted-foreground">{panel.prompt}</div>
+      )}
+      {panel.values.map((value) => (
+        <div key={value.label} className="zt:flex zt:gap-1">
+          <span className="zt:shrink-0 zt:text-muted-foreground">
+            {value.label}
+          </span>
+          <span className="zt:min-w-0 zt:break-words">{value.value}</span>
+        </div>
+      ))}
+      <div className="zt:flex zt:gap-2">
+        {panel.actions.map((action) => (
+          <button
+            key={action.kind}
+            className="zt:underline"
+            onClick={(e) => {
+              // The card's own click takes the selection; a verb is not that.
+              e.stopPropagation();
+              if (action.kind === "discard") actions.onDiscardConflict(annot);
+              else actions.onApplyAgain(annot);
+            }}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

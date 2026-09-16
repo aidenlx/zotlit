@@ -22,9 +22,11 @@ import {
   rootOk,
   ROUGIER_ANNOTATIONS,
   SERVER_ID,
+  serverChanged,
   staleVersion,
   unreachable,
   writeAccepted,
+  writeTokenUsed,
 } from "@/services/zotero-local-api/__fixtures__";
 import type {
   ClientOptions,
@@ -599,29 +601,249 @@ it("refuses a write for an Annotation no list holds", async () => {
   expect(requests.slice(sent)).toEqual([]);
 });
 
-it("leaves the record standing when Zotero refuses the write", async () => {
+it("classifies each 412 body by what it says, not by its status", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository } = await writable(stack, { write: () => staleVersion() });
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+  });
+
+  const moved = await repository.patchColor("PUPR5FG5", "#ff6666");
+  expect(moved).toMatchObject({ kind: "conflict" });
+
+  await using swapped = new AsyncDisposableStack();
+  const other = await writable(swapped, { write: () => serverChanged() });
+  expect(await other.repository.patchColor("PUPR5FG5", "#ff6666")).toEqual({
+    kind: "failed",
+    failure: { kind: "server-changed" },
+  });
+  // The third body, `Write token already used`, is a create's answer alone: a
+  // patch carries a version and no write token. It is replayed on the retry
+  // path below.
+});
+
+it("shows the fresh Zotero value beside the user's input, with both verbs", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+  });
+  const conflicted: string[] = [];
+  stack.defer(
+    repository.on("write-conflict", (annotationKey, attachmentKey) => {
+      conflicted.push(`${annotationKey} on ${attachmentKey}`);
+    }),
+  );
 
   const outcome = await repository.patchColor("PUPR5FG5", "#ff6666");
 
-  expect(outcome).toEqual({ kind: "failed", failure: { kind: "conflict" } });
+  expect(outcome).toEqual({
+    kind: "conflict",
+    conflict: { write: "color", attempted: "#ff6666", fresh: "#5fb236" },
+  });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual(outcome);
+  expect(conflicted).toEqual(["PUPR5FG5 on RGRPDF24"]);
+});
+
+it("resolves silently where Zotero already holds the value the write asked for", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    // The Annotation moved to the very colour this write asks for — another
+    // client, or the same user in Zotero.
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
+  });
+  const conflicted: string[] = [];
+  stack.defer(repository.on("write-conflict", (key) => conflicted.push(key)));
+
+  const outcome = await repository.patchColor("PUPR5FG5", "#FF6666");
+
+  expect(outcome).toEqual({ kind: "idle" });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(conflicted).toEqual([]);
+});
+
+it("invalidates the Attachment's list on any version 412 and says so", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+    // What Zotero holds now, which the drop is what makes the view read.
+    children: () =>
+      annotationPage([
+        afterWrite("PUPR5FG5", { color: "#5fb236", version: 30 }),
+      ]),
+  });
+
+  const announced = nextChange(repository);
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  expect(await announced).toEqual(["RGRPDF24"]);
   expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
-    "#2ea8e5",
+    "#5fb236",
   );
 });
 
-it("reads a 404 on a write as an Annotation Zotero has deleted", async () => {
+it("sends Apply again against the version Zotero holds now", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository } = await writable(stack, { write: () => notFound() });
+  let refuse = true;
+  const { repository, requests } = await writable(stack, {
+    write: () => (refuse ? staleVersion() : writeAccepted()),
+    item: () =>
+      annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236", version: 30 })),
+  });
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  refuse = false;
+  const sent = requests.length;
 
+  const outcome = await repository.retryWrite("PUPR5FG5");
+
+  expect(outcome).toEqual({ kind: "idle" });
+  // 11 was the version the first write sent and 30 is the one the conflict
+  // read back: a retry that repeated 11 would conflict for ever.
+  expect(JSON.parse(requests[sent]!.body ?? "")).toEqual({
+    version: 30,
+    annotationColor: "#ff6666",
+  });
+});
+
+it("asks Delete anyway against the copy Zotero holds, and names no value", async () => {
+  await using stack = new AsyncDisposableStack();
+  let refuse = true;
+  const { repository, requests } = await writable(stack, {
+    write: () => (refuse ? staleVersion() : writeAccepted()),
+    item: () =>
+      annotationItem(
+        afterWrite("C94NJNYG", { comment: "edited in Zotero", version: 30 }),
+      ),
+  });
+
+  const conflict = await repository.deleteAnnotation("C94NJNYG");
+  expect(conflict).toEqual({
+    kind: "conflict",
+    conflict: { write: "delete", attempted: null, fresh: null },
+  });
+
+  refuse = false;
+  const sent = requests.length;
+  const outcome = await repository.retryWrite("C94NJNYG");
+
+  expect(outcome).toEqual({ kind: "idle" });
+  const [erase] = requests.slice(sent);
+  expect([
+    erase?.method,
+    erase?.headers.get("If-Unmodified-Since-Version"),
+  ]).toEqual(["DELETE", "30"]);
+});
+
+it("leaves Zotero's copy standing when the conflict is discarded", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+  });
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  const sent = requests.length;
+
+  repository.discardConflict("PUPR5FG5");
+
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(requests.slice(sent)).toEqual([]);
+});
+
+it("reads a 404 on a write as an Annotation Zotero has deleted, and drops the list", async () => {
+  await using stack = new AsyncDisposableStack();
+  let deletedInZotero = false;
+  const { repository } = await writable(stack, {
+    write: () => notFound(),
+    // Zotero stopped holding it between the read the card was drawn from and
+    // the write, which is exactly what the `404` reports.
+    children: () =>
+      annotationPage(
+        deletedInZotero
+          ? ROUGIER_ANNOTATIONS.filter(({ key }) => key !== "PUPR5FG5")
+          : ROUGIER_ANNOTATIONS,
+      ),
+  });
+  deletedInZotero = true;
+
+  const announced = nextChange(repository);
   const outcome = await repository.deleteAnnotation("PUPR5FG5");
 
   expect(outcome).toEqual({ kind: "failed", failure: { kind: "not-found" } });
-  // The card leaves on the next read, not on the refusal.
-  expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
-    "#2ea8e5",
+  expect(await announced).toEqual(["RGRPDF24"]);
+  const list = await repository.read("RGRPDF24");
+  expect(list?.annotations.map(({ key }) => key)).not.toContain("PUPR5FG5");
+});
+
+it("reads a 404 on the conflict's own re-read as a deletion too", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () => notFound(),
+  });
+
+  const outcome = await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  expect(outcome).toEqual({ kind: "failed", failure: { kind: "not-found" } });
+});
+
+it("opens Zotero's dialog for a card gesture, then goes on — colour, comment, delete", async () => {
+  for (const verb of ["color", "comment", "delete"] as const) {
+    await using stack = new AsyncDisposableStack();
+    const { repository, requests } = await writable(
+      stack,
+      { authorize: () => authorized({ remember: false }) },
+      { key: undefined },
+    );
+    expect(repository.capabilityFor("RGRPDF24")).toEqual({
+      kind: "authorization-required",
+    });
+    const sent = requests.length;
+
+    const outcome =
+      verb === "color"
+        ? await repository.patchColor("PUPR5FG5", "#ff6666")
+        : verb === "comment"
+          ? await repository.patchComment("PUPR5FG5", "Worth citing")
+          : await repository.deleteAnnotation("PUPR5FG5");
+
+    expect([verb, outcome]).toEqual([verb, { kind: "idle" }]);
+    expect([
+      verb,
+      requests
+        .slice(sent)
+        .map(({ method, url }) => `${method} ${url.pathname}`),
+    ]).toEqual([
+      verb,
+      [
+        // The gesture probes before it asks, because the probe is the sole
+        // authority on whether the local API is on at all.
+        "GET /api/",
+        "POST /api/local/authorize",
+        `${verb === "delete" ? "DELETE" : "PATCH"} /api/users/0/items/PUPR5FG5`,
+        ...(verb === "delete" ? [] : ["GET /api/users/0/items/PUPR5FG5"]),
+      ],
+    ]);
+  }
+});
+
+it("rolls a card gesture back when Zotero's dialog refuses it", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(
+    stack,
+    { authorize: () => denied() },
+    { key: undefined },
   );
+  const sent = requests.length;
+
+  const outcome = await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  expect(outcome).toEqual({ kind: "failed", failure: { kind: "denied" } });
+  expect(requests.slice(sent).map(({ url }) => url.pathname)).toEqual([
+    "/api/",
+    "/api/local/authorize",
+  ]);
 });
 
 it("shows a write in flight as pending, and draws no provisional value", async () => {
@@ -801,6 +1023,262 @@ it("refuses a position longer than Zotero accepts before the write", async () =>
   expect(requests).toHaveLength(sent);
 });
 
+/**
+ * A clock the test moves itself, so the `dateAdded` window a reconciliation
+ * matches inside is a value rather than the wall clock.
+ *
+ * @see policies/test-timing.md
+ */
+function movingClock(start: Temporal.Instant = NOW) {
+  let at = start;
+  return {
+    now: () => at,
+    advance: (seconds: number) => {
+      at = at.add({ seconds });
+    },
+  };
+}
+
+/** The Annotation Zotero stored for a create whose answer never arrived. */
+const LANDED: WireAnnotation = {
+  ...MADE,
+  // Inside the window: the request left at NOW and the clock moved five
+  // seconds while it was in flight.
+  dateAdded: "2026-09-16T15:52:23Z",
+};
+
+/**
+ * A create whose answer is lost, with the Attachment answering `candidates`
+ * when the reconciliation re-reads it. The clock moves while the request is in
+ * flight, so the window the match runs against is a real interval.
+ */
+async function lostCreate(
+  stack: AsyncDisposableStack,
+  candidates: readonly WireAnnotation[],
+) {
+  const clock = movingClock();
+  const harness = await writable(
+    stack,
+    {
+      write: () => {
+        clock.advance(5);
+        return Promise.reject(new AbortError("reader closed"));
+      },
+      children: () => annotationPage([...ROUGIER_ANNOTATIONS, ...candidates]),
+    },
+    { writeToken: () => TOKEN, repositoryNow: clock.now },
+  );
+  const outcome = await harness.repository.createAnnotation("RGRPDF24", DRAFT);
+  return { ...harness, clock, outcome };
+}
+
+it("confirms a lost create when exactly one candidate matches", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, outcome } = await lostCreate(stack, [LANDED]);
+
+  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
+  expect(repository.pendingCreates.size).toBe(0);
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
+  expect(
+    (await repository.read("RGRPDF24"))?.annotations.map(({ key }) => key),
+  ).toContain("MADE2345");
+});
+
+it("leaves a badged card when no candidate matches", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, outcome } = await lostCreate(stack, []);
+
+  expect(outcome).toEqual({ kind: "uncertain" });
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([
+    {
+      writeToken: TOKEN,
+      attachmentKey: "RGRPDF24",
+      draft: { ...DRAFT, parentKey: "RGRPDF24" },
+      state: { kind: "uncertain" },
+    },
+  ]);
+});
+
+it("leaves a badged card when two candidates match", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, outcome } = await lostCreate(stack, [
+    { ...LANDED, key: "TWINAAA2" },
+    { ...LANDED, key: "TWINAAA3" },
+  ]);
+
+  expect(outcome).toEqual({ kind: "uncertain" });
+  expect(
+    repository.uncertainCreatesFor("RGRPDF24").map(({ state }) => state),
+  ).toEqual([{ kind: "uncertain" }]);
+});
+
+it("leaves a badged card when the dateAdded window rules the candidate out", async () => {
+  await using stack = new AsyncDisposableStack();
+  // Everything about it matches except when Zotero stored it: this Annotation
+  // was already there before the request left.
+  const { outcome } = await lostCreate(stack, [
+    { ...LANDED, dateAdded: "2026-09-16T15:52:20Z" },
+  ]);
+
+  expect(outcome).toEqual({ kind: "uncertain" });
+});
+
+it("sends nothing more of its own accord while a create stands uncertain", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { requests } = await lostCreate(stack, []);
+  const writes = () => requests.filter(({ method }) => method !== "GET").length;
+  const sent = writes();
+
+  await Promise.resolve();
+
+  // The reconciliation read is a read; nothing else leaves until the user asks.
+  expect(writes()).toBe(sent);
+});
+
+it("re-sends the same request on the same write token when the user tries again", async () => {
+  await using stack = new AsyncDisposableStack();
+  const clock = movingClock();
+  let answer: () => Response | Promise<Response> = () => {
+    clock.advance(5);
+    return Promise.reject(new AbortError("reader closed"));
+  };
+  const { repository, requests } = await writable(
+    stack,
+    {
+      write: (request) =>
+        request.method === "POST" ? answer() : writeAccepted(),
+      item: () => annotationItem(LANDED),
+      children: () => annotationPage(ROUGIER_ANNOTATIONS),
+    },
+    { writeToken: () => TOKEN, repositoryNow: clock.now },
+  );
+  const first = await repository.createAnnotation("RGRPDF24", DRAFT);
+  expect(first).toEqual({ kind: "uncertain" });
+  const sent = requests.length;
+
+  answer = () => createAccepted(LANDED);
+  const outcome = await repository.retryCreate(TOKEN);
+
+  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
+  const [retry] = requests.slice(sent);
+  expect([retry?.method, retry?.headers.get("Zotero-Write-Token")]).toEqual([
+    "POST",
+    TOKEN,
+  ]);
+  expect(retry?.body).toBe(
+    requests.find(({ method }) => method === "POST")?.body,
+  );
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
+});
+
+it("reads 412 Write token already used as the first create having landed", async () => {
+  await using stack = new AsyncDisposableStack();
+  const clock = movingClock();
+  let landed = false;
+  let retried = false;
+  const { repository } = await writable(
+    stack,
+    {
+      write: (request) => {
+        if (request.method !== "POST") return writeAccepted();
+        if (landed) return writeTokenUsed();
+        clock.advance(5);
+        landed = true;
+        return Promise.reject(new AbortError("reader closed"));
+      },
+      // The first write did land, but Zotero had not committed it by the time
+      // the first reconciliation read the list; the retry's own `412` is what
+      // says it exists, and the read that follows is what names it.
+      children: () =>
+        annotationPage(
+          retried ? [...ROUGIER_ANNOTATIONS, LANDED] : ROUGIER_ANNOTATIONS,
+        ),
+    },
+    { writeToken: () => TOKEN, repositoryNow: clock.now },
+  );
+  expect(await repository.createAnnotation("RGRPDF24", DRAFT)).toEqual({
+    kind: "uncertain",
+  });
+
+  retried = true;
+  const announced = nextChange(repository);
+  const outcome = await repository.retryCreate(TOKEN);
+
+  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
+  expect(await announced).toContain("RGRPDF24");
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
+});
+
+it("drops a badged card the user discards, and asks Zotero nothing", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await lostCreate(stack, []);
+  const sent = requests.length;
+  let announced = 0;
+  stack.defer(
+    repository.on("uncertain-creates-changed", () => {
+      announced += 1;
+    }),
+  );
+
+  repository.discardCreate(TOKEN);
+
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
+  expect(announced).toBe(1);
+  expect(requests.slice(sent)).toEqual([]);
+});
+
+it("drops every badged card when the Zotero DB source answers instead", async () => {
+  await using stack = new AsyncDisposableStack();
+  const clock = movingClock();
+  let answering = true;
+  const { repository } = await writable(
+    stack,
+    {
+      root: () => (answering ? rootOk() : unreachable()),
+      write: () => {
+        clock.advance(5);
+        return Promise.reject(new AbortError("reader closed"));
+      },
+      children: () => annotationPage(ROUGIER_ANNOTATIONS),
+    },
+    { writeToken: () => TOKEN, repositoryNow: clock.now },
+  );
+  await repository.createAnnotation("RGRPDF24", DRAFT);
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toHaveLength(1);
+
+  // Zotero stopped answering, so the Zotero DB is the only source left — and
+  // it can neither reconcile a create nor retry one.
+  answering = false;
+  await repository.probe();
+
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
+});
+
+it("drops every badged card when another Zotero database answers the port", async () => {
+  await using stack = new AsyncDisposableStack();
+  const clock = movingClock();
+  let serverID = SERVER_ID;
+  const { repository } = await writable(
+    stack,
+    {
+      root: () => rootOk({ "Zotero-Server-ID": serverID }),
+      write: () => {
+        clock.advance(5);
+        return Promise.reject(new AbortError("reader closed"));
+      },
+      children: () => annotationPage(ROUGIER_ANNOTATIONS),
+    },
+    { writeToken: () => TOKEN, repositoryNow: clock.now },
+  );
+  await repository.createAnnotation("RGRPDF24", DRAFT);
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toHaveLength(1);
+
+  serverID = "Zzzz11119999";
+  await repository.probe();
+
+  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
+});
+
 it("keeps the write token and the request start instant while an answer is lost", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository } = await writable(
@@ -878,9 +1356,13 @@ it("stops a create Zotero's dialog refused, and opens no second one", async () =
 async function writable(
   stack: AsyncDisposableStack,
   answers: ZoteroAnswers = {},
-  options: { key?: string; writeToken?: () => string } = {},
+  options: {
+    key?: string;
+    writeToken?: () => string;
+    repositoryNow?: () => Temporal.Instant;
+  } = {},
 ) {
-  const { writeToken } = options;
+  const { writeToken, repositoryNow } = options;
   // Named as `undefined` means "no Remembered Authorization", which is not the
   // same as leaving it out.
   const key = "key" in options ? options.key : REMEMBERED_KEY;
@@ -891,7 +1373,7 @@ async function writable(
       item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666" })),
       ...answers,
     },
-    { key, writeToken },
+    { key, writeToken, repositoryNow },
   );
   await switchToLocalApi(harness.repository);
   await harness.repository.read("RGRPDF24");
@@ -941,9 +1423,13 @@ function annotationRows(client: NodeDatabaseClient): unknown[] {
 async function setup(
   stack: AsyncDisposableStack,
   answers: ZoteroAnswers = { root: unreachable },
-  options: ClientOptions & { writeToken?: () => string } = {},
+  options: ClientOptions & {
+    writeToken?: () => string;
+    /** The repository's own clock, which the `dateAdded` window is read against. */
+    repositoryNow?: () => Temporal.Instant;
+  } = {},
 ) {
-  const { writeToken, ...clientOptions } = options;
+  const { writeToken, repositoryNow, ...clientOptions } = options;
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -974,7 +1460,7 @@ async function setup(
     db,
     queryClient,
     localApi,
-    now: () => NOW,
+    now: repositoryNow ?? (() => NOW),
     writeToken,
   });
   stack.use(repository);

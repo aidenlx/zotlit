@@ -6,7 +6,10 @@ import {
   createProfileCreator,
   createProfileImporter,
 } from "@/setting-tab/profiles";
-import { revealAnnotationInView } from "@/views/annot-view/register";
+import {
+  annotationCardShown,
+  revealAnnotationInView,
+} from "@/views/annot-view/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -170,6 +173,12 @@ export function buildServices(
               plugin.manifest.id,
               m.settings_zotero_editing_name(),
             ),
+          cardShown: (annotationKey) =>
+            annotationCardShown(plugin.app, annotationKey),
+          revealAnnotation: (annotationKey) =>
+            void revealAnnotationInView(plugin, annotationKey, {
+              comment: false,
+            }),
         }),
     })
     .use({

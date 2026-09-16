@@ -86,7 +86,10 @@ it("shows a write in flight as disabled verbs, whatever the capability says", ()
 it("leaves a settled write's verbs to the capability, so the user can try again", () => {
   const unsettled: MutationState[] = [
     { kind: "failed", failure: { kind: "conflict" } },
-    { kind: "conflict" },
+    {
+      kind: "conflict",
+      conflict: { write: "color", attempted: "#ff6666", fresh: "#5fb236" },
+    },
     { kind: "uncertain" },
   ];
 

@@ -54,6 +54,8 @@ export class CapabilityNoticeLedger {
   #serverSpoken: string | null = null;
   /** The libraries whose refusal has been announced, while that mark stands. */
   readonly #readOnlyLibraries = new Set<string>();
+  /** The Annotations whose standing Write Conflict has been announced. */
+  readonly #conflictsSpoken = new Set<string>();
 
   /** @param now the clock a cooldown's remaining seconds are read against. */
   constructor(now: () => Temporal.Instant) {
@@ -92,6 +94,39 @@ export class CapabilityNoticeLedger {
     if (this.#serverSpoken === serverID) return null;
     this.#serverSpoken = serverID;
     return this.#rolledBack("server-changed", false);
+  }
+
+  /**
+   * Zotero's copy of one Annotation moved under a write, and no Annotation View
+   * on screen is showing its card. The notice is the way to the card, so it
+   * carries the verb that opens it rather than the settings row.
+   *
+   * Said once per Annotation while that conflict stands: a conflict the user
+   * resolved and then met again is news. {@link CapabilityNoticeLedger.conflictResolved}
+   * is what re-arms it.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @returns what to tell the user, or null where this conflict already spoke.
+   */
+  conflictOffScreen(annotationKey: string): CapabilityNotice | null {
+    if (this.#conflictsSpoken.has(annotationKey)) return null;
+    this.#conflictsSpoken.add(annotationKey);
+    return {
+      title: m.notice_write_conflict(),
+      lines: [m.notice_write_conflict_detail()],
+      sticky: false,
+      action: m.notice_write_conflict_show(),
+    };
+  }
+
+  /**
+   * One Annotation's Write Conflict is over — applied again, discarded, or
+   * gone with the card. The next conflict on it speaks afresh.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  conflictResolved(annotationKey: string): void {
+    this.#conflictsSpoken.delete(annotationKey);
   }
 
   /**

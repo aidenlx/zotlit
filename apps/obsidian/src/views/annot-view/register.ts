@@ -58,6 +58,27 @@ export async function revealAnnotationInView(
 }
 
 /**
+ * Whether an Annotation View on screen already holds one Annotation's card.
+ *
+ * What it answers is whether the user can already see the card — so a Write
+ * Conflict raises its notice only where nothing shows the two values it put
+ * side by side.
+ *
+ * @param annotationKey the Annotation's Indexed Key.
+ */
+export function annotationCardShown(app: App, annotationKey: string): boolean {
+  return app.workspace
+    .getLeavesOfType(ANNOT_VIEW_TYPE)
+    .some(
+      (leaf) =>
+        leaf.view instanceof AnnotationView &&
+        leaf.view.snapshot.annotations?.some(
+          (record) => record.key === annotationKey,
+        ) === true,
+    );
+}
+
+/**
  * What the five Follow Mode commands need of the view they act on: the state it
  * publishes, and the gestures it publishes. Both are the same surfaces its
  * React tree and its pane menu read, so a command is one more caller of them

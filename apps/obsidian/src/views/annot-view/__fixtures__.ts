@@ -13,17 +13,31 @@ export function readOnlyWrites(): Pick<
   | "capability"
   | "capabilityFor"
   | "deleteAnnotation"
+  | "discardConflict"
+  | "discardCreate"
   | "mutationFor"
   | "patchColor"
   | "patchComment"
+  | "retryCreate"
+  | "retryWrite"
+  | "uncertainCreatesFor"
 > {
   const capability = { kind: "read-only", reason: "probing" } as const;
   return {
     capability,
     capabilityFor: () => capability,
     mutationFor: () => IDLE,
+    uncertainCreatesFor: () => [],
     patchColor: () => Promise.resolve(IDLE),
     patchComment: () => Promise.resolve(IDLE),
     deleteAnnotation: () => Promise.resolve(IDLE),
+    retryWrite: () => Promise.resolve(IDLE),
+    discardConflict: () => undefined,
+    retryCreate: () =>
+      Promise.resolve({
+        kind: "failed",
+        failure: { kind: "unknown-annotation" },
+      }),
+    discardCreate: () => undefined,
   };
 }

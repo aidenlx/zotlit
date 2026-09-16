@@ -102,6 +102,9 @@ it("reads every Annotation of one Attachment in Zotero's reading order", async (
     sortIndex: "00000|000191|00088",
     parentKey: ATTACHMENT_KEY,
     pageLabel: "1",
+    // Never moves after the create, which is what makes it the window an
+    // Uncertain Create is reconciled inside (aidenlx/zotlit#1151).
+    dateAdded: "2026-08-23T16:18:18Z",
     tags: [],
   });
 });

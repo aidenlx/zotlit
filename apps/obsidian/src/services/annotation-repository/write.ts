@@ -35,24 +35,47 @@ export type WriteFailure =
    */
   | { kind: "position-too-large" };
 
+/** Which of the three editing verbs a Write Conflict stands on. */
+export type ConflictedWrite = "color" | "comment" | "delete";
+
+/**
+ * Zotero's copy of one Annotation moved between the read a write stamped its
+ * precondition off and the write itself. Both values travel, because the card
+ * shows the fresh Zotero value beside the user's input and neither may be lost
+ * silently.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
+ */
+export interface WriteConflict {
+  write: ConflictedWrite;
+  /** What the user asked for; `null` for a delete, which names no value. */
+  attempted: string | null;
+  /** What Zotero holds now for the same field; `null` where Zotero holds none. */
+  fresh: string | null;
+}
+
 /**
  * What a write left on one Annotation. `pending` is the only state a surface
- * draws anything for, and what it draws is disabled verbs: no provisional
+ * draws a value for, and what it draws is disabled verbs: no provisional
  * value is ever shown.
  *
  * `conflict` and `uncertain` are the write path's two unsettled outcomes —
  * Zotero's copy moved under the write, and a create whose answer never
- * arrived. They are produced and presented by aidenlx/zotlit#1151; a surface
- * that switches on `kind` today keeps working when they are.
+ * arrived. A conflict stands on one Annotation and carries both values the
+ * card offers; `uncertain` stands on a create, which has no Annotation yet and
+ * so is held by write token rather than by key.
  *
  * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
  */
 export type MutationState =
   | { kind: "idle" }
   | { kind: "pending" }
-  | { kind: "conflict" }
+  | { kind: "conflict"; conflict: WriteConflict }
   | { kind: "uncertain" }
   | { kind: "failed"; failure: WriteFailure };
+
+/** The state a create whose answer never arrived stands in. */
+export const UNCERTAIN: MutationState = { kind: "uncertain" };
 
 /** The state an Annotation no write is standing on is in. */
 export const IDLE: MutationState = { kind: "idle" };

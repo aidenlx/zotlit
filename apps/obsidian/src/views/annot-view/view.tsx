@@ -123,11 +123,16 @@ export interface AnnotViewDeps {
     | "capability"
     | "capabilityFor"
     | "deleteAnnotation"
+    | "discardConflict"
+    | "discardCreate"
     | "mutationFor"
     | "on"
     | "patchColor"
     | "patchComment"
     | "read"
+    | "retryCreate"
+    | "retryWrite"
+    | "uncertainCreatesFor"
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
@@ -383,7 +388,15 @@ export class AnnotationView extends ItemView {
     this.register(
       this.#store.subscribe(
         (s) => s.selectedAttachmentKey,
-        () => this.#syncCapability(),
+        () => {
+          this.#syncCapability();
+          this.#syncUncertainCreates();
+        },
+      ),
+    );
+    this.register(
+      this.#deps.annotations.on("uncertain-creates-changed", () =>
+        this.#syncUncertainCreates(),
       ),
     );
     this.register(
@@ -770,6 +783,20 @@ export class AnnotationView extends ItemView {
   }
 
   /**
+   * The Uncertain Creates the Attachment on screen carries, as its badged
+   * cards. They belong to the Attachment, so they leave the view with it.
+   */
+  #syncUncertainCreates(): void {
+    const { selectedAttachmentKey } = this.#store.getState();
+    this.#store.setState({
+      uncertainCreates:
+        selectedAttachmentKey === null
+          ? []
+          : this.#deps.annotations.uncertainCreatesFor(selectedAttachmentKey),
+    });
+  }
+
+  /**
    * The Editing Capability the cards read: the Attachment's own, or — with
    * none on screen — the session's, which names no library.
    */
@@ -961,6 +988,7 @@ export class AnnotationView extends ItemView {
       pinnable: null,
       annotations: null,
       annotationSource: null,
+      uncertainCreates: [],
       editingCommentKey: null,
       selectedAnnotationKeys: [],
     });
