@@ -214,6 +214,7 @@ describe("Paired Run", () => {
           purge: true,
           liveUpdatePort: 51_234,
           zoteroHttpPort: 52_234,
+          localApi: false,
         });
         prepared = true;
         return {
@@ -244,7 +245,36 @@ describe("Paired Run", () => {
       zotero: { applicationDir: "/Applications/Zotero.app", pid: 804 },
       liveUpdatePort: 51_234,
       zoteroHttpPort: 52_234,
+      localApi: false,
     });
+  });
+
+  it("carries the Local API opt-in into the seed and the ready report", async () => {
+    let seeded: boolean | undefined;
+    let ready: PairedRunReady | undefined;
+    const ports = testPorts({
+      prepareDevelopmentVault: async (options) => {
+        seeded = options.localApi;
+        return {
+          id: "fixture-vault-test-fixture",
+          path: "/workspace/tests/fixture-vault-test-fixture",
+        };
+      },
+      reportReady: (result) => {
+        ready = result;
+      },
+    });
+
+    await runPairedRun(
+      { mode: "open", scopeCase: "all", purge: false, localApi: true },
+      ports,
+    );
+
+    expect(seeded).toBe(true);
+    expect(ready?.localApi).toBe(true);
+    // The run's own Zotero HTTP port is the one the profile carries, so Paired
+    // Zotero and ZotLit read the same number.
+    expect(ready?.zoteroHttpPort).toBe(52_234);
   });
 
   it("gives every Paired Run two distinct ports of its own", async () => {

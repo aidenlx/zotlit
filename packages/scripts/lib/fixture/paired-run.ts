@@ -8,6 +8,13 @@ export interface PairedRunOptions {
   /** Vault Case to seed; absent keeps the Development Vault's current case. */
   vaultCase?: string;
   purge: boolean;
+  /**
+   * Open Zotero's Local API in the Fixture profile. The run's Zotero HTTP port
+   * carries it, so Paired Zotero serves the API where ZotLit reads it.
+   *
+   * @default false
+   */
+  localApi?: boolean;
 }
 
 export interface DevelopmentVault {
@@ -28,6 +35,8 @@ export interface PairedRunReady {
   liveUpdatePort: number;
   /** The HTTP server port this run gave the active Zotero profile. */
   zoteroHttpPort: number;
+  /** Whether this run opened Zotero's Local API on that port. */
+  localApi: boolean;
 }
 
 export interface PairedRunPorts {
@@ -47,6 +56,7 @@ export interface PairedRunPorts {
     purge: boolean;
     liveUpdatePort: number;
     zoteroHttpPort: number;
+    localApi: boolean;
   }): Promise<DevelopmentVault>;
   openPairedZotero(): Promise<PairedZotero>;
   startDevelopmentSession(options: {
@@ -59,6 +69,7 @@ export async function runPairedRun(
   options: PairedRunOptions,
   ports: PairedRunPorts,
 ): Promise<void> {
+  const localApi = options.localApi ?? false;
   if (options.mode === "open") {
     await ports.stopLivePairedZotero();
     const liveUpdatePort = await ports.allocateLiveUpdatePort();
@@ -70,6 +81,7 @@ export async function runPairedRun(
       purge: options.purge,
       liveUpdatePort,
       zoteroHttpPort,
+      localApi,
     });
     // Zotero reads `httpServer.port` during startup, after the generated
     // profile has been written above.
@@ -80,6 +92,7 @@ export async function runPairedRun(
       zotero,
       liveUpdatePort,
       zoteroHttpPort,
+      localApi,
     });
     return;
   }
@@ -96,6 +109,7 @@ export async function runPairedRun(
     purge: options.purge,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   });
 
   const session = await ports.startDevelopmentSession({
@@ -108,6 +122,7 @@ export async function runPairedRun(
     zotero,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   });
   await session.closed;
 }

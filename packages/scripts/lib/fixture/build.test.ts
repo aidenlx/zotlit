@@ -1621,6 +1621,32 @@ describe("the generated Obsidian vault", () => {
     for (const line of BETTER_BIBTEX_PREFS) expect(prefs).toContain(line);
   });
 
+  it("keeps Zotero's Local API shut without the opt-in", async () => {
+    const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
+
+    expect(prefs).not.toContain("httpServer.localAPI.enabled");
+  });
+
+  it("opens Zotero's Local API on the given port where the build opts in", async () => {
+    const apiLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-local-api-")),
+    );
+    fixture.defer(() => rm(apiLayout.root, { recursive: true, force: true }));
+    await buildFixture(apiLayout, { localApi: true, zoteroHttpPort: 54_323 });
+
+    const prefs = await readFile(
+      join(apiLayout.profileDir, "prefs.js"),
+      "utf-8",
+    );
+
+    expect(prefs).toContain(
+      'user_pref("extensions.zotero.httpServer.localAPI.enabled", true);',
+    );
+    expect(prefs).toContain(
+      'user_pref("extensions.zotero.httpServer.port", 54323);',
+    );
+  });
+
   it("keeps the shipped network-port defaults without port overrides", async () => {
     const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
     const data = JSON.parse(
