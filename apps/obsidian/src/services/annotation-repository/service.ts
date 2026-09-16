@@ -35,6 +35,8 @@ import {
 
 import { editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
+import { matchCreatedAnnotation, resolvesSilently } from "./reconcile";
+import type { CreateMatch } from "./reconcile";
 import {
   colorPatch,
   commentPatch,
@@ -43,10 +45,12 @@ import {
   IDLE,
   MAX_POSITION_LENGTH,
   newWriteToken,
+  UNCERTAIN,
   writePosition,
 } from "./write";
 import type {
   AnnotationDraft,
+  ConflictedWrite,
   CreateRequest,
   MutationState,
   WriteFailure,
@@ -55,7 +59,12 @@ import type {
 } from "./write";
 
 export type { EditingCapability } from "./capability";
-export type { AnnotationDraft, MutationState, WriteFailure } from "./write";
+export type {
+  AnnotationDraft,
+  MutationState,
+  WriteConflict,
+  WriteFailure,
+} from "./write";
 
 const logger = getLogger("annotation-repository");
 
@@ -145,6 +154,25 @@ export interface AnnotationRepositoryEvents {
    * @param annotationKey the Annotation's Indexed Key.
    */
   "mutation-changed": (annotationKey: string) => void;
+  /**
+   * Zotero's copy of this Annotation moved under a write, and the card now
+   * carries both values with the verbs that resolve them. Raised only for a
+   * conflict the user must answer: an equal fresh value settles silently and
+   * says nothing.
+   *
+   * The seam that hears this is the one that opens the Annotation View on the
+   * card where no view is showing it.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @param attachmentKey the Attachment it hangs from.
+   */
+  "write-conflict": (annotationKey: string, attachmentKey: string) => void;
+  /**
+   * The Uncertain Creates standing on some Attachment moved: one appeared, was
+   * confirmed, was retried, or was discarded. A consumer re-reads
+   * {@link AnnotationRepository.uncertainCreatesFor}.
+   */
+  "uncertain-creates-changed": () => void;
 }
 
 export interface AnnotationRepositoryDeps {
@@ -201,6 +229,29 @@ export interface PendingCreate {
   /** The request as sent, so a retry is the same request on the same token. */
   request: CreateRequest;
   startedAt: Temporal.Instant;
+  /**
+   * Whether an answer has already been lost. Only then is there a card: a
+   * create still waiting for its first answer shows as disabled verbs on the
+   * surface that started it, and nothing is drawn ahead of Zotero.
+   */
+  uncertain: boolean;
+  /**
+   * What this create leaves on its badged card: `uncertain` while it stands,
+   * `pending` while the user's retry is in flight, `failed` where that retry
+   * was refused.
+   */
+  state: MutationState;
+}
+
+/** One Uncertain Create as a surface reads it, beside the token that names it. */
+export interface UncertainCreate {
+  /** Zotero remembers this for twelve hours, so a retry cannot create twice. */
+  writeToken: string;
+  /** The Attachment's Indexed Key. */
+  attachmentKey: string;
+  /** What the create asked Zotero for, which is what the badged card shows. */
+  draft: AnnotationDraft;
+  state: MutationState;
 }
 
 /** What one create ended with. */
@@ -365,6 +416,35 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
+   * The Uncertain Creates one Attachment carries, in the order they were made
+   * — the badged cards the Annotation View shows under its list. A create
+   * still waiting for its first answer is not one of them: nothing is drawn
+   * ahead of Zotero.
+   *
+   * They live in memory alone, so they are gone after a reload; a switch to
+   * the Zotero DB source and a Zotero database change drop them too, because
+   * neither can answer for the create that made them.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
+   */
+  uncertainCreatesFor(attachmentKey: string): readonly UncertainCreate[] {
+    const standing: UncertainCreate[] = [];
+    for (const [writeToken, pending] of this.#creates) {
+      if (!pending.uncertain || pending.attachmentKey !== attachmentKey) {
+        continue;
+      }
+      standing.push({
+        writeToken,
+        attachmentKey: pending.attachmentKey,
+        draft: pending.draft,
+        state: pending.state,
+      });
+    }
+    return standing;
+  }
+
+  /**
    * Create one highlight or underline on an Attachment, from a user gesture.
    *
    * The gesture is what may open Zotero's dialog, so a session that has not
@@ -411,9 +491,63 @@ export class AnnotationRepository extends Service<void> {
       draft: whole,
       request,
       startedAt: this.#now(),
+      uncertain: false,
+      state: { kind: "pending" },
     };
     this.#creates.set(request.writeToken, pending);
+    return await this.#sendCreate(request.writeToken, pending);
+  }
 
+  /**
+   * Send one Uncertain Create again, from the user's "Try again" and from
+   * nothing else. The request and its `Zotero-Write-Token` are the original
+   * ones, so a first write that did land answers `412 Write token already
+   * used` rather than creating a second Annotation.
+   *
+   * A One-time Authorization is spent by the request that lost its answer, so
+   * this asks Zotero's dialog again where the session no longer holds a key —
+   * the retry is a user gesture like the create was.
+   *
+   * @param writeToken the token {@link AnnotationRepository.uncertainCreatesFor} named.
+   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
+   */
+  async retryCreate(writeToken: string): Promise<CreateOutcome> {
+    const pending = this.#creates.get(writeToken);
+    if (!pending) {
+      return { kind: "failed", failure: { kind: "unknown-annotation" } };
+    }
+    this.#createSettled(writeToken, pending, { kind: "pending" });
+    return await this.#sendCreate(writeToken, pending);
+  }
+
+  /**
+   * Drop one Uncertain Create, from the user's "Discard". Zotero is not asked
+   * anything: the Annotation either landed, and the next read shows it, or it
+   * never did.
+   *
+   * @param writeToken the token {@link AnnotationRepository.uncertainCreatesFor} named.
+   */
+  discardCreate(writeToken: string): void {
+    if (!this.#creates.delete(writeToken)) return;
+    logger.debug("An uncertain create was discarded", { writeToken });
+    this.#emitter.emit("uncertain-creates-changed");
+  }
+
+  /**
+   * One create request, and everything its answer settles — shared by the
+   * first send and by the user's retry, because the two differ only in what
+   * came before them.
+   */
+  async #sendCreate(
+    writeToken: string,
+    pending: PendingCreate,
+  ): Promise<CreateOutcome> {
+    const { attachmentKey, draft, request } = pending;
+    const parsed = parseIndexedKey(attachmentKey);
+    if (!parsed) {
+      return { kind: "failed", failure: { kind: "unknown-annotation" } };
+    }
+    const library = libraryPath(parsed);
     const reply = await this.#localApi.authorizedSend(request.path, {
       library,
       method: request.method,
@@ -421,23 +555,15 @@ export class AnnotationRepository extends Service<void> {
       body: request.body,
     });
     if ("failure" in reply) {
-      // A lost answer is the one failure that leaves the create standing: the
-      // Annotation may exist, and only a reconciliation can say.
-      if (reply.failure.kind !== "unknown-outcome") {
-        this.#creates.delete(request.writeToken);
-        return { kind: "failed", failure: reply.failure };
-      }
-      logger.debug("A create lost its answer", { attachmentKey });
-      return { kind: "uncertain" };
+      return await this.#createRefused(writeToken, pending, reply.failure);
     }
 
     const created = readCreateResult(reply.value.text, {
       parentKey: parsed.key,
-      type: whole.type,
+      type: draft.type,
     });
-    this.#creates.delete(request.writeToken);
     if ("failure" in created) {
-      return { kind: "failed", failure: created.failure };
+      return this.#createFailed(writeToken, pending, created.failure);
     }
 
     const annotationKey = formatIndexedKey(created.value, parsed.groupID);
@@ -451,14 +577,121 @@ export class AnnotationRepository extends Service<void> {
         failure: fresh.failure,
       });
     }
-    this.#queries.invalidate(this.#activePartition(attachmentKey).queryKey);
-    this.#emitter.emit("annotations-changed", attachmentKey);
     logger.debug("Zotero created an annotation", {
       attachmentKey,
       annotationKey,
-      type: whole.type,
+      type: draft.type,
     });
+    return this.#createLanded(writeToken, pending, annotationKey);
+  }
+
+  /**
+   * What a refused create leaves behind.
+   *
+   * A lost answer is the one refusal that leaves the create standing: the
+   * Annotation may exist, so ZotLit re-reads the Attachment and matches the
+   * intended create on its stable fields. A `412 Write token already used`
+   * says the first write did land, so the same match names what it created.
+   * Every other refusal is an answer: the create did not land.
+   */
+  async #createRefused(
+    writeToken: string,
+    pending: PendingCreate,
+    failure: WriteFailure,
+  ): Promise<CreateOutcome> {
+    const { attachmentKey } = pending;
+    if (
+      failure.kind !== "unknown-outcome" &&
+      failure.kind !== "write-token-used"
+    ) {
+      return this.#createFailed(writeToken, pending, failure);
+    }
+    logger.debug(
+      failure.kind === "unknown-outcome"
+        ? "A create lost its answer"
+        : "A retried create met its own write token",
+      { attachmentKey },
+    );
+
+    const match = await this.#matchCreate(pending);
+    if (match?.kind === "confirmed") {
+      return this.#createLanded(writeToken, pending, match.annotationKey);
+    }
+    // A write token Zotero has already spent says the Annotation exists even
+    // where the match cannot name it, so the list is dropped either way and
+    // the next read shows whatever Zotero holds.
+    if (failure.kind === "write-token-used")
+      this.#dropAttachment(attachmentKey);
+    this.#createSettled(writeToken, { ...pending, uncertain: true }, UNCERTAIN);
+    return { kind: "uncertain" };
+  }
+
+  /**
+   * The Annotation one create asked for, if exactly one of the Attachment's
+   * Annotations carries every stable field and was added while the request ran.
+   *
+   * @returns the match, or `null` where Zotero could not be re-read at all —
+   *   which says nothing about the create and so leaves it uncertain.
+   */
+  async #matchCreate(pending: PendingCreate): Promise<CreateMatch | null> {
+    const { attachmentKey, draft, startedAt } = pending;
+    const listed = await this.#localApi.listAnnotations(attachmentKey);
+    if ("failure" in listed) {
+      logger.debug("An uncertain create could not be reconciled", {
+        attachmentKey,
+        failure: listed.failure,
+      });
+      return null;
+    }
+    const match = matchCreatedAnnotation(draft, attachmentKey, {
+      candidates: listed.value,
+      window: { from: startedAt, to: this.#now() },
+    });
+    logger.debug("An uncertain create was matched against Zotero", {
+      attachmentKey,
+      match,
+    });
+    return match;
+  }
+
+  /** One create that is known to have landed: the entry goes and the list drops. */
+  #createLanded(
+    writeToken: string,
+    pending: PendingCreate,
+    annotationKey: string,
+  ): CreateOutcome {
+    this.#creates.delete(writeToken);
+    this.#dropAttachment(pending.attachmentKey);
+    if (pending.uncertain) this.#emitter.emit("uncertain-creates-changed");
     return { kind: "created", annotationKey };
+  }
+
+  /**
+   * One create Zotero refused outright. A first send that is refused never
+   * landed, so its entry goes; a retry that is refused says nothing about the
+   * original create, so the badged card stands and carries the refusal.
+   */
+  #createFailed(
+    writeToken: string,
+    pending: PendingCreate,
+    failure: WriteFailure,
+  ): CreateOutcome {
+    if (pending.uncertain) {
+      this.#createSettled(writeToken, pending, { kind: "failed", failure });
+    } else {
+      this.#creates.delete(writeToken);
+    }
+    return { kind: "failed", failure };
+  }
+
+  /** Records what one create left on its badged card and announces it. */
+  #createSettled(
+    writeToken: string,
+    pending: PendingCreate,
+    state: MutationState,
+  ): void {
+    this.#creates.set(writeToken, { ...pending, state });
+    this.#emitter.emit("uncertain-creates-changed");
   }
 
   /**
@@ -472,9 +705,11 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     color: string,
   ): Promise<MutationState> {
-    return await this.#command(annotationKey, (target) =>
-      colorPatch(target, color),
-    );
+    return await this.#command(annotationKey, {
+      write: "color",
+      attempted: color,
+      request: (target) => colorPatch(target, color),
+    });
   }
 
   /**
@@ -486,9 +721,11 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     comment: string,
   ): Promise<MutationState> {
-    return await this.#command(annotationKey, (target) =>
-      commentPatch(target, comment),
-    );
+    return await this.#command(annotationKey, {
+      write: "comment",
+      attempted: comment,
+      request: (target) => commentPatch(target, comment),
+    });
   }
 
   /**
@@ -499,7 +736,48 @@ export class AnnotationRepository extends Service<void> {
    * @param annotationKey the Annotation's Indexed Key.
    */
   async deleteAnnotation(annotationKey: string): Promise<MutationState> {
-    return await this.#command(annotationKey, eraseRequest, "drop");
+    return await this.#command(annotationKey, {
+      write: "delete",
+      attempted: null,
+      request: eraseRequest,
+      settle: "drop",
+    });
+  }
+
+  /**
+   * Send one conflicted write again, against the value Zotero holds now — the
+   * card's "Apply again", and its "Delete anyway". The user has seen both
+   * values by then, so this asks for the same change with the fresh version as
+   * its precondition.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @returns what the second write left, which is `idle` where it landed and
+   *   another conflict where Zotero moved again.
+   */
+  async retryWrite(annotationKey: string): Promise<MutationState> {
+    const standing = this.#mutations.get(annotationKey);
+    if (standing?.kind !== "conflict") return standing ?? IDLE;
+    const { write, attempted } = standing.conflict;
+    switch (write) {
+      case "color":
+        return await this.patchColor(annotationKey, attempted ?? "");
+      case "comment":
+        return await this.patchComment(annotationKey, attempted ?? "");
+      case "delete":
+        return await this.deleteAnnotation(annotationKey);
+    }
+  }
+
+  /**
+   * Leave Zotero's copy as it stands, from the card's "Discard". The card goes
+   * back to what the last read answered; nothing is sent.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   */
+  discardConflict(annotationKey: string): void {
+    if (this.#mutations.get(annotationKey)?.kind !== "conflict") return;
+    logger.debug("A write conflict was discarded", { annotationKey });
+    this.#settle(annotationKey, IDLE);
   }
 
   on<K extends keyof AnnotationRepositoryEvents>(
@@ -518,7 +796,29 @@ export class AnnotationRepository extends Service<void> {
         this.#emitter.emit("capability-changed");
       }),
     );
+    // A create belongs to the database that was asked to make it, so another
+    // one answering the port takes every Uncertain Create with it.
+    stack.defer(
+      this.#localApi.on("server-changed", () => {
+        this.#dropUncertainCreates("the Zotero database changed");
+      }),
+    );
     this.commit(stack.move());
+  }
+
+  /**
+   * Every Uncertain Create goes: the source that could reconcile them is no
+   * longer the one that was asked to make them, and a retry against another
+   * database or against the Zotero DB source means nothing.
+   */
+  #dropUncertainCreates(reason: string): void {
+    if (this.#creates.size === 0) return;
+    logger.debug("Uncertain creates dropped", {
+      reason,
+      creates: this.#creates.size,
+    });
+    this.#creates.clear();
+    this.#emitter.emit("uncertain-creates-changed");
   }
 
   /**
@@ -556,14 +856,27 @@ export class AnnotationRepository extends Service<void> {
    * precondition to send and an unconditional write would overwrite whatever
    * Zotero holds.
    *
-   * @param settle whether the Annotation is read back after the `204`, or
-   *   leaves the list because the write erased it.
+   * The gesture behind the command is what may open Zotero's dialog, exactly as
+   * it is for a create: under `authorization-required` the write waits on the
+   * same one-request-at-a-time continuation and goes on after Allow, rather
+   * than being sent keyless and coming back `401`.
+   *
+   * @param command.write which verb this is, so a conflict can name the two
+   *   values the card puts side by side.
+   * @param command.attempted the value the user asked for; `null` for a delete.
+   * @param command.settle whether the Annotation is read back after the `204`,
+   *   or leaves the list because the write erased it.
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
   async #command(
     annotationKey: string,
-    request: (target: WriteTarget) => WriteRequest,
-    settle: "re-read" | "drop" = "re-read",
+    command: {
+      write: ConflictedWrite;
+      attempted: string | null;
+      request: (target: WriteTarget) => WriteRequest;
+      settle?: "re-read" | "drop";
+    },
   ): Promise<MutationState> {
     const held = this.#holding(annotationKey);
     const parsed = parseIndexedKey(annotationKey);
@@ -581,13 +894,21 @@ export class AnnotationRepository extends Service<void> {
       });
     }
 
+    this.#settle(annotationKey, { kind: "pending" });
+    const blocked = await this.#authorizeGesture(held.attachmentKey);
+    if (blocked) {
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: blocked,
+      });
+    }
+
     const library = libraryPath(parsed);
-    const { path, method, headers, body } = request({
+    const { path, method, headers, body } = command.request({
       library,
       key: parsed.key,
       version,
     });
-    this.#settle(annotationKey, { kind: "pending" });
     const reply = await this.#localApi.authorizedSend(path, {
       library,
       method,
@@ -600,16 +921,92 @@ export class AnnotationRepository extends Service<void> {
         method,
         failure: reply.failure,
       });
-      return this.#settle(annotationKey, {
-        kind: "failed",
+      const state = await this.#writeRefused(held, annotationKey, {
+        write: command.write,
+        attempted: command.attempted,
         failure: reply.failure,
       });
+      this.#settle(annotationKey, state);
+      if (state.kind === "conflict") {
+        this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
+      }
+      return state;
     }
 
     logger.debug("Zotero took a write", { annotationKey, method });
-    await this.#applyWrite(held, annotationKey, settle);
+    await this.#applyWrite(held, annotationKey, command.settle ?? "re-read");
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * What a refused write leaves on the card.
+   *
+   * A version `412` invalidates the Attachment's list whatever it turns out to
+   * mean: the write proved that what ZotLit holds is behind Zotero. The
+   * Annotation is then read back on its own, so the card can put Zotero's value
+   * beside the user's — and so the next write stamps the version Zotero holds
+   * now rather than the one that just failed. An equal fresh value resolves
+   * silently: the user's change is already what stands.
+   *
+   * A `404` is the other end of the same story — Zotero no longer holds the
+   * Annotation — so the list drops and the card leaves on the next read.
+   *
+   * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
+   */
+  async #writeRefused(
+    held: HeldAnnotation,
+    annotationKey: string,
+    refusal: {
+      write: ConflictedWrite;
+      attempted: string | null;
+      failure: WriteFailure;
+    },
+  ): Promise<MutationState> {
+    const { write, attempted, failure } = refusal;
+    if (failure.kind === "not-found") {
+      this.#dropAttachment(held.attachmentKey, held.queryKey);
+      return { kind: "failed", failure };
+    }
+    if (failure.kind !== "conflict") return { kind: "failed", failure };
+
+    const fresh = await this.#localApi.readAnnotation(
+      annotationKey,
+      held.attachmentKey,
+    );
+    if ("failure" in fresh) {
+      logger.debug("A conflicted annotation could not be read back", {
+        annotationKey,
+        failure: fresh.failure,
+      });
+      this.#dropAttachment(held.attachmentKey, held.queryKey);
+      return {
+        kind: "failed",
+        failure: fresh.failure.kind === "not-found" ? fresh.failure : failure,
+      };
+    }
+
+    const record = fromLocalApi(fresh.value);
+    // The fresh record replaces the stale one before the list is dropped, so
+    // "Apply again" sends the version Zotero holds rather than repeating the
+    // precondition that just failed.
+    this.#queries.update<AnnotationList>(held.queryKey, (list) => ({
+      ...list,
+      annotations: list.annotations.map((stale) =>
+        stale.key === annotationKey ? record : stale,
+      ),
+    }));
+    this.#dropAttachment(held.attachmentKey, held.queryKey);
+
+    const value = freshValueOf(record, write);
+    if (resolvesSilently(write, attempted, value)) {
+      logger.debug("A write conflict resolved to the value Zotero holds", {
+        annotationKey,
+        write,
+      });
+      return IDLE;
+    }
+    return { kind: "conflict", conflict: { write, attempted, fresh: value } };
   }
 
   /**
@@ -695,6 +1092,20 @@ export class AnnotationRepository extends Service<void> {
     return "failure" in granted ? granted.failure : null;
   }
 
+  /**
+   * One Attachment's list is superseded: it goes, and the Attachment is
+   * announced. The only signal a consumer replaces a list on.
+   *
+   * @param queryKey the partition key the caller already holds; the active
+   *   partition's own key where it does not.
+   */
+  #dropAttachment(attachmentKey: string, queryKey?: QueryKey): void {
+    this.#queries.invalidate(
+      queryKey ?? this.#activePartition(attachmentKey).queryKey,
+    );
+    this.#emitter.emit("annotations-changed", attachmentKey);
+  }
+
   /** Records one Annotation's mutation state and announces it. */
   #settle(annotationKey: string, state: MutationState): MutationState {
     if (state.kind === "idle") this.#mutations.delete(annotationKey);
@@ -768,9 +1179,13 @@ export class AnnotationRepository extends Service<void> {
   #sourceMoved(): void {
     this.#queries.invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
     const held = this.#attachmentsHeld([ANNOTATIONS]);
+    const source = this.#localApi.demandSource();
+    if (source === null) {
+      this.#dropUncertainCreates("the Zotero DB source answers now");
+    }
     logger.debug("The Zotero Local API source moved", {
       attachments: held.length,
-      source: this.#localApi.demandSource(),
+      source,
     });
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
@@ -804,6 +1219,23 @@ export class AnnotationRepository extends Service<void> {
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
     }
+  }
+}
+
+/** What Zotero holds now for the field one refused write asked to change. */
+function freshValueOf(
+  record: AnnotationRecord,
+  write: ConflictedWrite,
+): string | null {
+  switch (write) {
+    case "color":
+      return record.color;
+    case "comment":
+      return record.comment;
+    // A delete names no value, so there is nothing to put beside the user's
+    // input; the fresh card itself is what "Delete anyway" is asked against.
+    case "delete":
+      return null;
   }
 }
 

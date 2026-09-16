@@ -35,6 +35,12 @@ function writes() {
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     patchComment: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
+    retryWrite: vi.fn(() => Promise.resolve(IDLE)),
+    discardConflict: vi.fn(),
+    retryCreate: vi.fn(() =>
+      Promise.resolve({ kind: "created", annotationKey: "MADE2345" } as const),
+    ),
+    discardCreate: vi.fn(),
   };
 }
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 import { CapabilityNoticeLedger } from "./capability-notices";
@@ -206,5 +208,34 @@ describe("a Zotero database swapped under the port", () => {
     expect(ledger.serverChanged("F6E5D4C3B2A1")).toBeNull();
     // And returning to the first one is a change again.
     expect(ledger.serverChanged("A1B2C3D4E5F6")).not.toBeNull();
+  });
+});
+
+describe("a Write Conflict the user cannot see", () => {
+  it("says so once, with the verb that opens the card", () => {
+    const time = clock();
+    const ledger = new CapabilityNoticeLedger(time.read);
+
+    const first = ledger.conflictOffScreen("PUPR5FG5");
+
+    expect(first).toEqual({
+      title: m.notice_write_conflict(),
+      lines: [m.notice_write_conflict_detail()],
+      sticky: false,
+      action: m.notice_write_conflict_show(),
+    });
+    // The same conflict, met again by a second gesture, is not news.
+    expect(ledger.conflictOffScreen("PUPR5FG5")).toBeNull();
+  });
+
+  it("speaks again once that conflict is over, and for another Annotation", () => {
+    const time = clock();
+    const ledger = new CapabilityNoticeLedger(time.read);
+    ledger.conflictOffScreen("PUPR5FG5");
+
+    expect(ledger.conflictOffScreen("C94NJNYG")).not.toBeNull();
+
+    ledger.conflictResolved("PUPR5FG5");
+    expect(ledger.conflictOffScreen("PUPR5FG5")).not.toBeNull();
   });
 });

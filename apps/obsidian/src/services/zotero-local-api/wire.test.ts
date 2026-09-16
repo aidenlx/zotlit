@@ -1,7 +1,15 @@
 import { expect, it } from "vitest";
 
-import { createAccepted, createRefused } from "./__fixtures__";
-import { readCreateResult } from "./wire";
+import {
+  createAccepted,
+  createRefused,
+  notFound,
+  serverChanged,
+  staleVersion,
+  staleVersionPatch,
+  writeTokenUsed,
+} from "./__fixtures__";
+import { classifyReply, readCreateResult } from "./wire";
 
 const EXPECTED = { parentKey: "RGRPDF24", type: "highlight" } as const;
 
@@ -115,4 +123,33 @@ it("names the field when the answer is not the shape this client reads", () => {
       issue: expect.stringContaining("create result:"),
     },
   });
+});
+
+/** The session's own database, which every answer below but one names. */
+const SERVER_ID = "A8sf5Zsz8ySw";
+
+async function classify(answer: Response) {
+  return classifyReply(
+    {
+      status: answer.status,
+      headers: answer.headers,
+      text: await answer.text(),
+    },
+    SERVER_ID,
+  );
+}
+
+it("classifies each 412 by its body: a server, a spent token, a moved object", async () => {
+  // All four bodies are recorded from Paired Zotero 10.0: the two preconditions
+  // word themselves differently, and neither is the other two answers.
+  expect(await classify(serverChanged())).toEqual({ kind: "server-changed" });
+  expect(await classify(writeTokenUsed())).toEqual({
+    kind: "write-token-used",
+  });
+  expect(await classify(staleVersion())).toEqual({ kind: "conflict" });
+  expect(await classify(staleVersionPatch())).toEqual({ kind: "conflict" });
+});
+
+it("classifies a 404 as the object being gone, not as an unreadable answer", async () => {
+  expect(await classify(notFound())).toEqual({ kind: "not-found" });
 });

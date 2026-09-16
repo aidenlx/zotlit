@@ -21,11 +21,12 @@ const NOTICE_DURATION = Temporal.Duration.from({ seconds: 10 });
  * `/obsidian-debug` can put any of them on screen without first arranging the
  * state that would raise it.
  *
- * @param openEditingSettings what the notice's one action runs.
+ * @param runAction what the notice's one action runs — the "Zotero editing"
+ *   settings row for a capability notice, the card itself for a conflict.
  */
 export function showCapabilityNotice(
   { title, lines, sticky, action }: CapabilityNotice,
-  openEditingSettings: () => void,
+  runAction: () => void,
 ): BaseNotice {
   const notice = new BaseNotice(
     BaseNotice.render((renderer) => {
@@ -38,7 +39,7 @@ export function showCapabilityNotice(
           .setCta()
           .onClick(() => {
             notice.hide();
-            openEditingSettings();
+            runAction();
           });
       });
     }),
@@ -48,12 +49,22 @@ export function showCapabilityNotice(
 }
 
 export interface CapabilityNoticesDeps {
-  /** The Editing Capability, per Attachment, and the probe a gesture runs. */
-  capabilities: Pick<AnnotationRepository, "capabilityFor" | "on" | "probe">;
+  /**
+   * The Editing Capability, per Attachment, the probe a gesture runs, and what
+   * a write left on one Annotation — which is where a Write Conflict is heard.
+   */
+  capabilities: Pick<
+    AnnotationRepository,
+    "capabilityFor" | "mutationFor" | "on" | "probe"
+  >;
   /** What a refused write, a swapped database and a retired mark are heard on. */
   writes: Pick<ZoteroLocalApiClient, "on">;
   /** Reveals the "Zotero editing" settings row. */
   openEditingSettings: () => void;
+  /** Whether an Annotation View on screen already shows this card. */
+  cardShown: (annotationKey: string) => boolean;
+  /** Opens the Annotation View and brings one Annotation's card forward. */
+  revealAnnotation: (annotationKey: string) => void;
   now?: () => Temporal.Instant;
 }
 
@@ -69,6 +80,8 @@ export class CapabilityNotices extends Service<void> {
   readonly #capabilities;
   readonly #writes;
   readonly #openEditingSettings;
+  readonly #cardShown;
+  readonly #revealAnnotation;
   readonly #ledger;
 
   ready: Promise<void>;
@@ -77,12 +90,16 @@ export class CapabilityNotices extends Service<void> {
     capabilities,
     writes,
     openEditingSettings,
+    cardShown,
+    revealAnnotation,
     now = () => Temporal.Now.instant(),
   }: CapabilityNoticesDeps) {
     super();
     this.#capabilities = capabilities;
     this.#writes = writes;
     this.#openEditingSettings = openEditingSettings;
+    this.#cardShown = cardShown;
+    this.#revealAnnotation = revealAnnotation;
     this.#ledger = new CapabilityNoticeLedger(now);
     this.ready = this.#load();
   }
@@ -123,6 +140,23 @@ export class CapabilityNotices extends Service<void> {
         );
       }),
     );
+    // A conflict the user cannot see is a change lost in silence, so the one
+    // notice that answers it is the way to the card.
+    stack.defer(
+      this.#capabilities.on("write-conflict", (annotationKey) => {
+        this.#conflicted(annotationKey);
+      }),
+    );
+    // A card that settled back to any other state has no conflict standing on
+    // it, so the next one is news rather than the same one twice.
+    stack.defer(
+      this.#capabilities.on("mutation-changed", (annotationKey) => {
+        if (this.#capabilities.mutationFor(annotationKey).kind === "conflict") {
+          return;
+        }
+        this.#ledger.conflictResolved(annotationKey);
+      }),
+    );
     stack.defer(
       this.#writes.on("write-refused", (failure, library) => {
         this.#show(this.#ledger.writeRefused(failure, library));
@@ -139,6 +173,21 @@ export class CapabilityNotices extends Service<void> {
       }),
     );
     this.commit(stack.move());
+  }
+
+  /**
+   * One Write Conflict, where no Annotation View is showing its card. A view
+   * that already shows it says everything this notice would, in the place the
+   * user resolves it.
+   */
+  #conflicted(annotationKey: string): void {
+    if (this.#cardShown(annotationKey)) return;
+    const notice = this.#ledger.conflictOffScreen(annotationKey);
+    if (!notice) return;
+    logger.debug("A write conflict stands on a card no view shows", {
+      annotationKey,
+    });
+    showCapabilityNotice(notice, () => this.#revealAnnotation(annotationKey));
   }
 
   #show(notice: CapabilityNotice | null): void {
