@@ -296,6 +296,18 @@ _Avoid_: pending create (a pending write has an outcome coming), orphaned write,
 A write the Zotero Local API refused because the Annotation changed in Zotero since ZotLit last read it, on the same Zotero Server ID. ZotLit re-reads, shows the fresh Annotation beside the user's input, and lets the user apply again or discard; a fresh value equal to the intended one is no conflict.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
+**Sort Index**:
+The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it once, at creation, and never rewrites it.
+_Avoid_: sort key, reading position, annotation order
+
+**Structured Characters**:
+One page's glyphs in the reading order Zotero's reader assigns, after its dedupe and line grouping. The single input for the Sort Index offset, the Page Label, and outline extraction.
+_Avoid_: char array, text layer (that is Obsidian's DOM), page text
+
+**Page Label**:
+The printed page number Zotero shows for a page, predicted from the document's characters and catalog, then aligned to the user's earlier Annotations on the Attachment.
+_Avoid_: page number (the 1-based index), page index
+
 ### Note content
 
 **Annotation Excerpt**:
