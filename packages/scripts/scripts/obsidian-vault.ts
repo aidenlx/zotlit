@@ -243,6 +243,8 @@ interface SeedOptions {
   liveUpdatePort?: number;
   /** HTTP server port written into the generated Zotero profile. */
   zoteroHttpPort?: number;
+  /** Open Zotero's Local API in the generated profile. */
+  localApi?: boolean;
 }
 
 async function create(
@@ -253,6 +255,7 @@ async function create(
     vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -279,6 +282,7 @@ async function create(
     vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   });
   if (purge) {
     const exists = await access(abs).then(
@@ -430,6 +434,7 @@ async function sync(
     vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -449,6 +454,7 @@ async function sync(
       vaultCase,
       liveUpdatePort,
       zoteroHttpPort,
+      localApi,
     });
 
     // `--purge` deletes the folder first, so renamed or removed Fixture files
@@ -480,6 +486,7 @@ async function rebuildFixtureVault(
     vaultCase = DEFAULT_VAULT_CASE,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   }: SeedOptions = {},
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
@@ -512,6 +519,7 @@ async function rebuildFixtureVault(
     vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
     linkedAttachmentVaultDir: resolve(target),
     pluginBundleDir: hasDistDev
       ? distDev
@@ -530,13 +538,21 @@ async function open(
     vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
+    localApi,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
   const host = await resolveHost();
   const registered = findVaultId(await vaultList(host), abs);
 
-  const seed = { purge, scopeCase, vaultCase, liveUpdatePort, zoteroHttpPort };
+  const seed = {
+    purge,
+    scopeCase,
+    vaultCase,
+    liveUpdatePort,
+    zoteroHttpPort,
+    localApi,
+  };
   if (!registered) {
     await create(abs, seed);
     return;
@@ -850,6 +866,13 @@ const zoteroHttpPortOption = {
   type: "number",
 } as const;
 
+const localApiOption = {
+  describe:
+    "open Zotero's Local API in the generated profile, on the Zotero HTTP port",
+  type: "boolean",
+  default: false,
+} as const;
+
 const scopeCaseOption = {
   describe: "Scope Case to build",
   type: "string",
@@ -911,7 +934,8 @@ const vaultCli = yargs(hideBin(process.argv))
         .option("scope-case", scopeCaseOption)
         .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
-        .option("zotero-http-port", zoteroHttpPortOption),
+        .option("zotero-http-port", zoteroHttpPortOption)
+        .option("local-api", localApiOption),
     async (argv) => {
       await open(
         argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
@@ -921,6 +945,7 @@ const vaultCli = yargs(hideBin(process.argv))
           vaultCase: argv["vault-case"],
           liveUpdatePort: argv["live-update-port"],
           zoteroHttpPort: argv["zotero-http-port"],
+          localApi: argv["local-api"],
         },
       );
     },
@@ -942,7 +967,8 @@ const vaultCli = yargs(hideBin(process.argv))
         .option("purge", syncPurgeOption)
         .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
-        .option("zotero-http-port", zoteroHttpPortOption),
+        .option("zotero-http-port", zoteroHttpPortOption)
+        .option("local-api", localApiOption),
     async (argv) => {
       await sync(
         argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
@@ -951,6 +977,7 @@ const vaultCli = yargs(hideBin(process.argv))
           vaultCase: argv["vault-case"],
           liveUpdatePort: argv["live-update-port"],
           zoteroHttpPort: argv["zotero-http-port"],
+          localApi: argv["local-api"],
         },
       );
     },

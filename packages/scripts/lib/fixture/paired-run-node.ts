@@ -120,6 +120,7 @@ export function createNodePairedRunPorts({
       purge,
       liveUpdatePort,
       zoteroHttpPort,
+      localApi,
     }) {
       const result = await runCaptured(
         process.execPath,
@@ -130,6 +131,7 @@ export function createNodePairedRunPorts({
           ...(vaultCase === undefined ? [] : [`--vault-case=${vaultCase}`]),
           `--live-update-port=${liveUpdatePort}`,
           `--zotero-http-port=${zoteroHttpPort}`,
+          ...(localApi ? ["--local-api"] : []),
           ...(purge ? ["--purge"] : []),
         ],
         { cwd: workspaceRoot, forwardStderr: true },
@@ -444,6 +446,7 @@ function printReady({
   zotero,
   liveUpdatePort,
   zoteroHttpPort,
+  localApi,
 }: PairedRunReady): void {
   console.log(`Paired Run ready (${mode})`);
   console.log(`Development Vault  ${vault.path} (${vault.id})`);
@@ -452,6 +455,13 @@ function printReady({
   );
   console.log(`Live Updates port  ${liveUpdatePort}`);
   console.log(`Zotero HTTP port   ${zoteroHttpPort}`);
+  console.log(
+    `Zotero Local API   ${
+      localApi
+        ? `open at http://127.0.0.1:${zoteroHttpPort}/api/`
+        : "shut (pass --local-api to open it)"
+    }`,
+  );
   if (mode === "dev") console.log("Press Ctrl-C to stop the live Paired Run.");
 }
 

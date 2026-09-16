@@ -262,7 +262,20 @@ server.port in the Development Vault settings and extensions.zotlit.notify-url
 in the Fixture profile. It writes the Zotero HTTP port into
 extensions.zotero.httpServer.port in that profile. The ready report names both
 ports. This keeps the run clear of the default ports used by other ZotLit vaults
-and Zotero profiles.`;
+and Zotero profiles.
+
+Zotero's Local API stays shut until a command asks for it. Pass --local-api to
+build, open, or dev: the build sets
+extensions.zotero.httpServer.localAPI.enabled to true and gives the profile a
+free Zotero HTTP port. Paired Zotero serves the API on that port, and ZotLit
+reads the same number back from the profile, so both sides agree and the
+shipped 23119 stays clear. The build and the ready report print the base URL.
+
+Reads need no key. A write needs a Write Authorization, which Zotero 10 prompts
+for on POST /api/local/authorize and returns as a key for the Zotero-API-Key
+header. Zotero cancels every request it reads as browser traffic, so each call
+carries Zotero-Allowed-Request and the write calls also carry
+Zotero-Server-ID.`;
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING
 

@@ -56,6 +56,13 @@ const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
 const companionDir = join(workspaceRoot, "apps", "zotero", "dist-dev", "addon");
 const pairedRunPorts = createNodePairedRunPorts({ workspaceRoot, layout });
 
+const localApiOption = {
+  describe:
+    "open Zotero's Local API in the Fixture profile, on a free Zotero HTTP port the profile carries",
+  type: "boolean",
+  default: false,
+} as const;
+
 function pairedRunBuilder(y: Argv) {
   return y
     .positional("scope-case", {
@@ -74,7 +81,8 @@ function pairedRunBuilder(y: Argv) {
         "restore the exact generated Development Vault seed, and clear the plugin's vault-scoped local storage",
       type: "boolean",
       default: false,
-    });
+    })
+    .option("local-api", localApiOption);
 }
 
 /**
@@ -114,17 +122,27 @@ async function build({
   scopeCase,
   vaultCase = DEFAULT_VAULT_CASE,
   stressItemCount,
+  localApi = false,
 }: {
   scopeCase: string;
   vaultCase?: string;
   stressItemCount?: number;
+  localApi?: boolean;
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
+  // The Local API needs one port both sides name, and the shipped 23119 belongs
+  // to whatever Zotero the machine already runs. The profile carries this one,
+  // so Paired Zotero serves on it and ZotLit reads it back from the same file.
+  const zoteroHttpPort = localApi
+    ? await pairedRunPorts.allocateZoteroHttpPort()
+    : undefined;
   await buildFixture(layout, {
     scopeCase,
     vaultCase,
     stressItemCount,
     pluginBundleDir,
+    zoteroHttpPort,
+    localApi,
   });
   await installBetterBibtex(layout.profileDir);
   console.log(
@@ -138,6 +156,11 @@ async function build({
   console.log(`Saved Library Scope: ${scopeCase}`);
   console.log(`Vault Case: ${vaultCase}`);
   console.log("Installed pinned Better BibTeX in the Zotero profile.");
+  if (zoteroHttpPort !== undefined) {
+    console.log(
+      `Opened Zotero's Local API at http://127.0.0.1:${zoteroHttpPort}/api/`,
+    );
+  }
   console.log(
     pluginBundleDir
       ? "Installed ZotLit in the vault and enabled it."
@@ -162,11 +185,13 @@ const cli = yargs(hideBin(process.argv))
           type: "string",
           choices: VAULT_CASES.map(({ id }) => id),
           default: DEFAULT_VAULT_CASE,
-        }),
+        })
+        .option("local-api", localApiOption),
     async (argv) => {
       await build({
         scopeCase: argv["scope-case"],
         vaultCase: argv["vault-case"],
+        localApi: argv["local-api"],
       });
     },
   )
@@ -181,6 +206,7 @@ const cli = yargs(hideBin(process.argv))
           scopeCase: argv["scope-case"],
           vaultCase: argv["vault-case"],
           purge: argv.purge,
+          localApi: argv["local-api"],
         },
         pairedRunPorts,
       );
@@ -197,6 +223,7 @@ const cli = yargs(hideBin(process.argv))
           scopeCase: argv["scope-case"],
           vaultCase: argv["vault-case"],
           purge: argv.purge,
+          localApi: argv["local-api"],
         },
         pairedRunPorts,
       );

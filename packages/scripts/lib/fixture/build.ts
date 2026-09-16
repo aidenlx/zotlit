@@ -140,6 +140,13 @@ export interface BuildOptions {
   liveUpdatePort?: number;
   /** TCP port written to the generated Zotero profile's HTTP server pref. */
   zoteroHttpPort?: number;
+  /**
+   * Open Zotero's Local API in the generated profile. A caller that asks for it
+   * also passes {@link BuildOptions.zoteroHttpPort}, so Paired Zotero serves the
+   * API on a port of this Fixture's own and ZotLit reads that same port back
+   * from the profile.
+   */
+  localApi?: boolean;
   /** Development Vault root used by vault-backed linked Attachment rows. */
   linkedAttachmentVaultDir?: string;
 }
@@ -811,6 +818,19 @@ function seedItemData(
 }
 
 /**
+ * Zotero ships its Local API off, and a build turns it on only where
+ * {@link BuildOptions.localApi} asks. Paired Zotero then answers reads on its
+ * HTTP port, and accepts writes once Zotero grants a Write Authorization.
+ * Zotero 10 prompts for that grant at run time, so a preference opens reads
+ * alone.
+ *
+ * @see {@link https://www.zotero.org/support/dev/web_api/v3/local_api} for the
+ * endpoint set and the authorization flow.
+ */
+const LOCAL_API_PREF =
+  'user_pref("extensions.zotero.httpServer.localAPI.enabled", true);';
+
+/**
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
  * profile-directory override in ZotLit switches the whole install over. The
  * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
@@ -826,6 +846,7 @@ function writePrefs(
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
     ...BETTER_BIBTEX_PREFS,
+    ...(options.localApi ? [LOCAL_API_PREF] : []),
     ...(options.zoteroHttpPort === undefined
       ? []
       : [

@@ -123,7 +123,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
    This command keeps the Obsidian and Zotero watchers running after readiness. Press `Ctrl-C` to stop both watchers and Paired Zotero. The Development Vault stays open in Obsidian. If a watcher or Paired Zotero stops unexpectedly, the command stops the remaining processes and exits with an error.
 
-Each Paired Run takes two free TCP ports. It writes the Live Updates port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. It writes the Zotero HTTP port into the Fixture profile as `extensions.zotero.httpServer.port`. Zotero uses that HTTP server for Better BibTeX and the local API. The ready report names both ports. A Paired Run therefore stays clear of the default Live Updates port `9091` and Zotero HTTP port `23119` used by other profiles.
+Each Paired Run takes two free TCP ports. It writes the Live Updates port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. It writes the Zotero HTTP port into the Fixture profile as `extensions.zotero.httpServer.port`. Zotero uses that HTTP server for Better BibTeX and for the Zotero Local API, which `--local-api` opens. The ready report names both ports. A Paired Run therefore stays clear of the default Live Updates port `9091` and Zotero HTTP port `23119` used by other profiles.
 
 The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed. Add `--vault-case <id>` to open the Development Vault of a different [Vault Case](#vault-cases).
 
@@ -154,6 +154,85 @@ Use these cases to compare the built-in and native export workflows in one Paire
    | `pandoc-export-missing-bibliography.md` | The export succeeds because ZotLit fetches the bibliography item. Check for the Xu citation and bibliography entry. | The export stops on the citeproc warning that `xuLiteratureNoteWhose2019` is missing. Add that Item to `references.json`, then check that the next run succeeds. |
 
 Keep Obsidian and Paired Zotero open during this trial. Save the outputs and failure text with the trial result.
+
+### Trial the Zotero Local API
+
+The Zotero Local API stays shut until a command asks for it. Pass `--local-api` to `build`, `open`, or `dev`:
+
+```sh
+pnpm fixture open --local-api
+```
+
+That build sets `extensions.zotero.httpServer.localAPI.enabled` to `true` and gives the Fixture profile a free Zotero HTTP port. Paired Zotero serves the API on that port, and ZotLit reads the same number back from the profile through its Device Override, so both applications name one port and the shipped `23119` stays free for the machine's own Zotero. The build and the ready report print the base URL.
+
+Reads need no key. Writes need a Write Authorization, which Zotero 10 grants through its own dialog.
+
+Zotero refuses each request that it reads as browser traffic. A request is browser traffic when its `User-Agent` starts with `Mozilla/`, or when it carries an `Origin` header. Zotero closes the connection, so the caller sees a network failure and no status code. The `Zotero-Allowed-Request` header lifts this refusal. Zotero sends `Access-Control-Allow-Origin` for the bookmarklet origin only, so a renderer `fetch()` from Obsidian's `app://obsidian.md` origin fails the browser's CORS check even when the request reaches the endpoint. Obsidian's `requestUrl()` runs out of the renderer, so the CORS check does not apply to it. ZotLit sends `Zotero-Allowed-Request: 1` on each call, in `apps/obsidian/src/services/pandoc/bibliography.ts`.
+
+Use this trial to measure both effects on one Fixture:
+
+1. Start a Paired Run with the API open, and record the Zotero HTTP port from the ready report:
+
+   ```sh
+   pnpm fixture open --local-api
+   ```
+
+2. Read from a terminal. Replace `<port>` with the reported port:
+
+   ```sh
+   curl -i -H "Zotero-Allowed-Request: 1" "http://127.0.0.1:<port>/api/users/0/items?limit=1"
+   ```
+
+   Record the `Zotero-Server-ID` response header, and the `key` and `version` of the returned Item.
+
+3. In the Development Vault, open the Obsidian developer console and send the same request from the renderer:
+
+   ```js
+   await fetch("http://127.0.0.1:<port>/api/users/0/items?limit=1");
+   ```
+
+   The renderer sends `Origin: app://obsidian.md`, so Zotero closes the connection and the call fails. Add the `Zotero-Allowed-Request` header and send it again: the request now reaches the endpoint, and the response carries no `Access-Control-Allow-Origin`, so the CORS check fails it.
+
+4. Send the same request through Obsidian's own request path in that console:
+
+   ```js
+   await require("obsidian").requestUrl({
+     url: "http://127.0.0.1:<port>/api/users/0/items?limit=1",
+     headers: { "Zotero-Allowed-Request": "1" },
+   });
+   ```
+
+   This call succeeds and returns the Items.
+
+5. Request a Write Authorization. Zotero opens its dialog; select **Allow** or **Always Allow**:
+
+   ```sh
+   curl -i -X POST \
+     -H "Zotero-Allowed-Request: 1" \
+     -H "Zotero-Server-ID: <server-id>" \
+     -H "Content-Type: application/json" \
+     -d '{"appName":"ZotLit Fixture"}' \
+     "http://127.0.0.1:<port>/api/local/authorize"
+   ```
+
+   The response holds a 32-character `key`. **Allow** keeps that key for one successful write. **Always Allow** keeps it for more. A denial answers `403` with `{"denied": true}`. Zotero accepts five dialog requests each minute and answers further requests with `429`.
+
+6. Write with that key. Replace `<item-key>` and `<version>` with the values from step 2:
+
+   ```sh
+   curl -i -X PATCH \
+     -H "Zotero-Allowed-Request: 1" \
+     -H "Zotero-Server-ID: <server-id>" \
+     -H "Zotero-API-Key: <key>" \
+     -H "Content-Type: application/json" \
+     -H "If-Unmodified-Since-Version: <version>" \
+     -d '{"title":"Local API write trial"}' \
+     "http://127.0.0.1:<port>/api/users/0/items/<item-key>"
+   ```
+
+   A successful write answers `204 No Content` with `Last-Modified-Version`, and Zotero shows the new title immediately. A write without a key answers `401`, and a write without `Zotero-Server-ID` answers `428`.
+
+Zotero keeps remembered keys in `zotero-profile/localAPIKeys.json`. Clear them from **Settings → Advanced → Clear Write Authorizations**, or close Paired Zotero and run `pnpm fixture` to return the complete Fixture, keys included, to the Fixture Spec.
 
 ## Scope Cases
 
