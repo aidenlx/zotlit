@@ -3,7 +3,6 @@ import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor, MarkdownRenderChild } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
@@ -15,6 +14,7 @@ import type {
 } from "@/services/citekey-navigation";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 

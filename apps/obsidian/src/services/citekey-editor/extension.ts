@@ -22,7 +22,6 @@ import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
 
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
-import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitekeyResolution } from "@/services/citation-index/service";
@@ -62,6 +61,7 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 
 import {
   citationRanges,

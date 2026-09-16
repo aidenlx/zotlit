@@ -28,17 +28,18 @@ import type { PresentedCitation } from "@/services/citation-text/present";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveLiteratureNote } from "@/services/note-index/service";
 import { holdsNote } from "@/services/pandoc/inline-content";
-import type {
-  BibliographyRenderCache,
-  HeldRenderOutcome,
-} from "@/services/pandoc/render-cache";
+import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 
 export interface NativeCitationDeps {
   app: App;
   db: Pick<DatabaseService, "acquireRead">;
   bibliographyRender: Pick<
     BibliographyRenderCache,
-    "renderCitations" | "render" | "vaultPresentation" | "on"
+    | "renderCitations"
+    | "readCitations"
+    | "readBibliography"
+    | "vaultPresentation"
+    | "on"
   >;
   citationIndex: Pick<
     CitationIndex,
@@ -143,14 +144,23 @@ export async function renderDraftCitations(
   if (complete.length === 0) return { citations: [], diagnostics: [] };
   const sources = complete.map(namedSource);
   const presentation = { styleId: input.styleId, locale: input.locale };
-  const result = await settled(() =>
-    deps.bibliographyRender.renderCitations(
-      sources,
-      [...items.values()],
-      presentation,
-    ),
+  // The outcome says which of the three reasons a preview shows; the read that
+  // follows it answers with the render that stands, rather than with one an
+  // invalidation superseded halfway.
+  const outcome = await deps.bibliographyRender.renderCitations(
+    sources,
+    [...items.values()],
+    presentation,
   );
-  if (result.kind !== "held")
+  const formatted =
+    outcome.kind === "held"
+      ? await deps.bibliographyRender.readCitations(
+          sources,
+          [...items.values()],
+          { presentation },
+        )
+      : null;
+  if (formatted === null)
     return {
       citations: [],
       diagnostics: [
@@ -158,24 +168,24 @@ export async function renderDraftCitations(
           code: "citation-style-error",
           part: "render",
           message:
-            result.reason === "engine-absent"
+            outcome.kind === "unavailable" && outcome.reason === "engine-absent"
               ? m.profile_preview_citation_engine_absent()
-              : result.reason === "style-missing"
+              : outcome.kind === "unavailable" &&
+                  outcome.reason === "style-missing"
                 ? m.profile_preview_citation_style_missing()
                 : m.profile_preview_citation_failed(),
         },
       ],
     };
-  const formatted = result.record.value;
   const serials = new Map<string, number>();
   if (formatted.some(({ content }) => holdsNote(content))) {
-    const bibliography = await settled(() =>
-      deps.bibliographyRender.render([...items.values()], presentation),
+    const bibliography = await deps.bibliographyRender.readBibliography(
+      [...items.values()],
+      { presentation },
     );
-    if (bibliography.kind === "held")
-      bibliography.record.value.entries.forEach(({ id }, index) =>
-        serials.set(id, index + 1),
-      );
+    bibliography?.entries.forEach(({ id }, index) =>
+      serials.set(id, index + 1),
+    );
   }
   return {
     citations: formatted.map((text, index) => ({
@@ -189,16 +199,6 @@ export async function renderDraftCitations(
     })),
     diagnostics: [],
   };
-}
-async function settled<T>(
-  read: () => Promise<HeldRenderOutcome<T>>,
-): Promise<HeldRenderOutcome<T>> {
-  let result = await read();
-  while (result.kind === "held" && result.record.status === "revalidating") {
-    await result.record.settled;
-    result = await read();
-  }
-  return result;
 }
 function namedSource(citation: DraftCitation): string {
   let source = citation.source;

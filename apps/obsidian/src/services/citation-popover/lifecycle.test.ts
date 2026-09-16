@@ -9,7 +9,10 @@ import { makeItem } from "@zotlit/item-lookup/fixtures";
 import * as m from "@/lib/i18n/generated/messages";
 import { wrapNodeHover } from "@/services/graph-citations/hover";
 import type { GraphLeafMembers } from "@/services/graph-citations/install";
-import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
+import type {
+  BibliographyRenderOutcome,
+  BibliographyRenderResult,
+} from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import { CitationPopover } from "./service";
@@ -45,7 +48,12 @@ function harness() {
     kind: "unavailable",
     reason: "engine-absent",
   }));
+  const readBibliography = vi.fn<
+    () => Promise<BibliographyRenderResult | null>
+  >(async () => null);
   const open = vi.fn();
+  /** The signal of every document-text read a visit started, in order. */
+  const textReads: AbortSignal[] = [];
   const service = new CitationPopover({
     app: {
       vault: { getFileByPath: (path: string) => ({ path }) },
@@ -70,15 +78,21 @@ function harness() {
       }),
     },
     citationText: {
-      peek: () => null,
-      on: (event: string, listener: () => void) =>
-        on(`text-${event}`, listener),
+      // One read that never settles on its own, so a visit that ends while it
+      // runs is what releases the wait.
+      read: (_path: string, { signal }: { signal: AbortSignal }) => {
+        textReads.push(signal);
+        return new Promise<never>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason));
+        });
+      },
     },
     libraryScope: { current: [] },
     profile: profileReader(),
     bibliographyRender: {
       on,
       render,
+      readBibliography,
       vaultPresentation: { styleId: null, locale: null },
     },
   } as never);
@@ -89,9 +103,11 @@ function harness() {
     targets,
     service,
     render,
+    readBibliography,
     open,
     listeners,
     metadata,
+    textReads,
     async show(
       work: string | WorkHoverRequest["work"],
       targetEl = first,
@@ -237,8 +253,8 @@ describe("Citation Popover visits", () => {
 
   it("keeps the newest work and actions when earlier formatting finishes last", async () => {
     await using run = harness();
-    const old = Promise.withResolvers<BibliographyRenderOutcome>();
-    const next = Promise.withResolvers<BibliographyRenderOutcome>();
+    const old = Promise.withResolvers<BibliographyRenderResult | null>();
+    const next = Promise.withResolvers<BibliographyRenderResult | null>();
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "ABCD2345", title: "Alpha" }),
     ]);
@@ -247,10 +263,10 @@ describe("Citation Popover visits", () => {
     const card = run.parent.hoverPopover!.hoverEl;
     expect(card.textContent).toContain("Alpha");
 
-    run.render.mockReturnValueOnce(old.promise);
+    run.readBibliography.mockReturnValueOnce(old.promise);
     for (const listener of run.listeners.get("invalidated") ?? []) listener();
     await act(async () => {});
-    run.render.mockReturnValueOnce(next.promise);
+    run.readBibliography.mockReturnValueOnce(next.promise);
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "BCDE3456", title: "Beta" }),
     ]);
@@ -258,7 +274,7 @@ describe("Citation Popover visits", () => {
     expect(card.textContent).not.toContain("Alpha");
     expect(card.querySelector('[role="button"]')).toBeNull();
     await act(async () => {
-      next.resolve({ kind: "unavailable", reason: "engine-absent" });
+      next.resolve(null);
     });
     await act(async () => {
       old.reject(new Error("Stale render failed"));
@@ -289,7 +305,8 @@ describe("Citation Popover visits", () => {
         }),
       );
       await vi.advanceTimersByTimeAsync(0);
-      expect(run.listeners.get("text-changed")?.size).toBe(1);
+      expect(run.textReads).toHaveLength(1);
+      expect(run.textReads[0]!.aborted).toBe(false);
 
       await act(async () => {
         if (action === "retarget") await run.show("beta", run.second);
@@ -298,9 +315,7 @@ describe("Citation Popover visits", () => {
       });
 
       await vi.advanceTimersByTimeAsync(0);
-      expect(run.listeners.get("text-changed")?.size).toBe(0);
-      expect(run.listeners.get("text-invalidated")?.size).toBe(0);
-      expect(run.listeners.get("text-settled")?.size).toBe(0);
+      expect(run.textReads[0]!.aborted).toBe(true);
     },
   );
 

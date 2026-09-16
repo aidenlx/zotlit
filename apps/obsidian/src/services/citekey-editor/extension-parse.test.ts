@@ -53,10 +53,10 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import type { Held } from "@/lib/held-reads";
 import { rendered } from "@/services/citation-text/__fixtures__";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import { hoverPreferences } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 
 import { citekeyEditorExtension } from "./extension";

@@ -5,7 +5,6 @@ import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_CITATION_STYLE } from "@/lib/constants";
-import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   CitationKeyResolution,
@@ -16,6 +15,7 @@ import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
 import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 
 import { ReferencesView } from "./view";

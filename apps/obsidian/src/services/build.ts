@@ -31,6 +31,7 @@ import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
 import { ProfileService } from "./profile/service";
+import { QueryClientService } from "./query-client/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
@@ -92,6 +93,9 @@ export function buildServices(
     })
     .use({
       log: ({ settings }) => new LoggingService({ plugin, settings }),
+    })
+    .use({
+      queryClient: () => new QueryClientService(),
     })
     .use({
       release: ({ settings }) =>
@@ -316,13 +320,14 @@ export function buildServices(
         }),
     })
     .use({
-      citationIndex: ({ noteIndex, settings, db, libraryScope }) =>
+      citationIndex: ({ noteIndex, settings, db, libraryScope, queryClient }) =>
         new CitationIndex({
           app: plugin.app,
           noteIndex,
           settings,
           db,
           libraryScope,
+          queryClient,
         }),
     })
     .use({
@@ -335,6 +340,7 @@ export function buildServices(
         zoteroPref,
         settings,
         profile,
+        queryClient,
       }) =>
         new BibliographyRenderCache({
           profile,
@@ -342,6 +348,7 @@ export function buildServices(
           pandocEngine,
           zoteroPref,
           settings,
+          queryClient,
         }),
     })
     .use({
@@ -351,6 +358,7 @@ export function buildServices(
         citationIndex,
         noteIndex,
         bibliographyRender,
+        queryClient,
       }) =>
         new CitationText({
           profile,
@@ -359,6 +367,7 @@ export function buildServices(
           citationIndex,
           noteIndex,
           bibliographyRender,
+          queryClient,
         }),
     })
     .use({

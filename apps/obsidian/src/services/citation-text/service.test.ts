@@ -15,6 +15,8 @@ import type {
 } from "@/services/citation-index/service";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { Held } from "@/services/query-client/service";
+import { QueryClientService } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -71,6 +73,10 @@ interface Harness {
   citekeyResolutionChanged: () => void;
   /** Fires Obsidian's own metadata event for one file. */
   metadataChanged: (path: string) => void;
+  /** Deletes the document, as Obsidian reports a file the vault no longer has. */
+  deleteNote: () => void;
+  /** The client the text is held on, for reading what one path holds. */
+  queryClient: QueryClientService;
   dispose: () => Promise<void>;
 }
 
@@ -79,7 +85,6 @@ async function makeHarness({
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
   formatCitations,
-  formatStatus = "fresh",
   bibliography,
   links = [],
   notes = {},
@@ -95,8 +100,6 @@ async function makeHarness({
   formatCitations?: (
     citations: readonly string[],
   ) => Promise<readonly RenderedCitation[] | null>;
-  /** The held state the render-cache answer exposes. */
-  formatStatus?: "fresh" | "revalidating" | "failed";
   /**
    * The works the bibliography renders an entry for, in bibliography order,
    * out of the works it was asked for. Defaults to all of them in that same
@@ -146,11 +149,14 @@ async function makeHarness({
         : { frontmatter: { "zotero-key": LIT_KEY } },
   };
 
+  const queryClient = new QueryClientService();
+  let present = true;
   const service = new CitationText({
     app: {
       vault: {
         cachedRead: () => Promise.resolve(body),
-        getFileByPath: (path: string) => (path === NOTE.path ? NOTE : null),
+        getFileByPath: (path: string) =>
+          present && path === NOTE.path ? NOTE : null,
       },
       metadataCache: {
         on: (name: string, cb: () => void) => {
@@ -182,50 +188,30 @@ async function makeHarness({
     },
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      renderCitations: async (citations: readonly string[]) => {
+      readCitations: async (citations: readonly string[]) => {
         citationRequests.push({ citations });
-        const value = formatCitations
+        return formatCitations
           ? await formatCitations(citations)
           : formats
             ? citations.map((source) => rendered(`«${source}»`))
             : null;
-        if (value === null) {
-          return { kind: "unavailable", reason: "failed" };
-        }
-        return {
-          kind: "held",
-          key: citations.join("\0"),
-          record: {
-            value,
-            status: formatStatus,
-            settled: Promise.resolve(formatStatus === "failed" ? null : value),
-          },
-        };
       },
-      render: (items: readonly { id: string }[]) => {
+      readBibliography: (items: readonly { id: string }[]) => {
         const ids = items.map(({ id }) => id);
         bibliographyRequests.push(ids);
         const entries = bibliography ? bibliography(ids) : ids;
-        if (entries === null) {
-          return Promise.resolve({ kind: "unavailable", reason: "failed" });
-        }
-        const value = {
-          entries: entries.map((id) => ({
-            id,
-            marker: undefined,
-            content: [],
-          })),
-          hasEntryMarkers: false,
-        };
-        return Promise.resolve({
-          kind: "held",
-          key: ids.join("\0"),
-          record: {
-            value,
-            status: "fresh",
-            settled: Promise.resolve(value),
-          },
-        });
+        return Promise.resolve(
+          entries === null
+            ? null
+            : {
+                entries: entries.map((id) => ({
+                  id,
+                  marker: undefined,
+                  content: [],
+                })),
+                hasEntryMarkers: false,
+              },
+        );
       },
       on: listen("render"),
     },
@@ -233,6 +219,7 @@ async function makeHarness({
       { ...defaults, ...settings },
       metadataCache as never,
     ),
+    queryClient,
   } as never);
   await service.ready;
 
@@ -245,7 +232,15 @@ async function makeHarness({
     resolutionChanged: () => fire("notes:changed"),
     citekeyResolutionChanged: () => fire("index:resolution-changed"),
     metadataChanged: (path) => fire("metadata:changed", { path }),
-    dispose: () => service[Symbol.asyncDispose](),
+    deleteNote: () => {
+      present = false;
+      fire("metadata:deleted", NOTE);
+    },
+    queryClient,
+    dispose: async () => {
+      await service[Symbol.asyncDispose]();
+      await queryClient[Symbol.asyncDispose]();
+    },
   };
 }
 
@@ -291,16 +286,22 @@ describe("CitationText", () => {
     await dispose();
   });
 
-  it("keeps the held citation text when its replacement render failed", async () => {
+  it("hands the settled read to the surfaces, text and status alike", async () => {
     const { service, dispose } = await makeHarness({
       body: "Blah [@alpha].",
-      formatCitations: () => Promise.resolve([rendered("held")]),
-      formatStatus: "failed",
+    });
+    const settlements: (Held<DocumentCitations> | null)[] = [];
+    service.on("settled", (path, held) => {
+      if (path === NOTE.path) settlements.push(held);
     });
 
-    const { formatted } = await readText(service);
+    await readText(service);
 
-    expect(firstText(formatted.get("[@alpha]"))).toBe("held");
+    expect(settlements).toHaveLength(1);
+    expect(settlements[0]).toMatchObject({ status: "fresh" });
+    expect(firstText(settlements[0]!.value.formatted.get("[@alpha]"))).toBe(
+      `«[@${ALPHA_KEY}]»`,
+    );
     await dispose();
   });
 
@@ -747,10 +748,10 @@ describe("CitationText staleness", () => {
     await dispose();
   });
 
-  // The second invalidation lands while the fresh read runs, so what that read
-  // commits already predates it; the stale mark it leaves is what makes the
-  // next peek read once more, and the last read is the one that stands.
-  it("revalidates again when a second invalidation lands mid-read", async () => {
+  // The second invalidation cancels the fresh read: what that read would have
+  // committed already predates it, and the stale mark it leaves is what makes
+  // the next peek read once more. The last read is the one that stands.
+  it("discards a read a second invalidation landed on", async () => {
     let generation = 0;
     const gates: ((value: readonly RenderedCitation[]) => void)[] = [];
     const { service, citationRequests, rendersInvalidated, dispose } =
@@ -771,13 +772,12 @@ describe("CitationText staleness", () => {
     await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
     rendersInvalidated();
     gates[0]!([rendered("v2")]);
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(
         firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
-      ).toBe("v2"),
-    );
-
-    await vi.waitFor(() => expect(citationRequests).toHaveLength(3));
+      ).toBe("v1");
+      expect(citationRequests).toHaveLength(3);
+    });
     gates[1]!([rendered("v3")]);
     await vi.waitFor(() =>
       expect(
@@ -937,6 +937,28 @@ describe("CitationText staleness", () => {
 
     expect(service.peek(NOTE.path)).not.toBeNull();
     expect(invalidated).toBe(1);
+    await dispose();
+  });
+
+  it("answers a read of a document deleted while it ran with nothing", async () => {
+    const gate = Promise.withResolvers<readonly RenderedCitation[]>();
+    const { service, queryClient, deleteNote, citationRequests, dispose } =
+      await makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: () => gate.promise,
+      });
+
+    const reading = service.read(NOTE.path);
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(1));
+    deleteNote();
+    gate.resolve([rendered("gone")]);
+
+    expect(await reading).toBeNull();
+    // Not even the failed read the deletion left behind stays on the client.
+    expect(
+      queryClient.client.getQueryState(["citation-text", NOTE.path]),
+    ).toBeUndefined();
+    expect(service.peek(NOTE.path)).toBeNull();
     await dispose();
   });
 

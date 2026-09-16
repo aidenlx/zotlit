@@ -440,7 +440,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
 /** One CitationText over a harness, formatting through the real engine. */
 function openText(
-  { app, db, index, noteIndex }: CitationIndexHarness,
+  { app, db, index, noteIndex, queryClient }: CitationIndexHarness,
   engine: CitationEngine,
   styleXml: string,
 ): CitationText {
@@ -452,40 +452,18 @@ function openText(
     noteIndex,
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      renderCitations: async (citations, items) => {
-        const value = await engine.renderCitations({
-          citations,
-          items,
-          styleXml,
-        });
-        return {
-          kind: "held",
-          key: "integration-citations",
-          record: {
-            value,
-            status: "fresh",
-            settled: Promise.resolve(value),
-          },
-        };
-      },
-      render: async (items) => {
+      readCitations: (citations, items) =>
+        engine.renderCitations({ citations, items, styleXml }),
+      readBibliography: async (items) => {
         const entries = await engine.renderBibliography({ items, styleXml });
-        const value = {
+        return {
           entries,
           hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
-        };
-        return {
-          kind: "held",
-          key: "integration-render",
-          record: {
-            value,
-            status: "fresh",
-            settled: Promise.resolve(value),
-          },
         };
       },
       on: () => () => undefined,
     },
+    queryClient,
   });
 }
 

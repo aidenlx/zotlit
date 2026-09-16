@@ -36,7 +36,6 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField, Keymap } from "obsidian";
 
-import type { Held } from "@/lib/held-reads";
 import type {
   CitekeyResolution,
   SnapshotItem,
@@ -54,6 +53,7 @@ import type {
   CitationHoverRequest,
   HoverPreferences,
 } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 
 import {
