@@ -4,6 +4,16 @@
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { parseAnnotationPosition } from "@zotlit/db";
+import type { AnnotationPositionRaw } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
+import type {
+  AnnotationList,
+  AnnotationRecord,
+  AnnotationRepositoryEvents,
+} from "@/services/annotation-repository/service";
+
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
   c: "E",
@@ -20,21 +30,27 @@ export const SCANNED_CONTENT = { items: [] };
 /** What a build that lost the `includeChars` patch answers: items, but no `chars`. */
 export const UNPATCHED_CONTENT = { items: [{ str: "E" }] };
 
-/** A PDF.js `PageViewport` as the bundled 5.3.34 builds one, at 150 % zoom. */
-export function viewport(): Record<string, unknown> {
+/**
+ * A PDF.js `PageViewport` as the bundled 5.3.34 builds one over a US Letter
+ * page, at 150 % zoom by default.
+ */
+export function viewport(scale = 1.5): Record<string, unknown> {
   return {
     viewBox: [0, 0, 612, 792],
     userUnit: 1,
-    scale: 1.5,
+    scale,
     rotation: 0,
     offsetX: 0,
     offsetY: 0,
-    transform: [1.5, 0, 0, -1.5, 0, 1188],
-    width: 918,
-    height: 1188,
-    convertToViewportPoint: (x: number, y: number) => [x, y],
-    convertToPdfPoint: (x: number, y: number) => [x, y],
-    clone: (options: { scale?: number }) => ({ ...viewport(), ...options }),
+    transform: [scale, 0, 0, -scale, 0, 792 * scale],
+    width: 612 * scale,
+    height: 792 * scale,
+    convertToViewportPoint: (x: number, y: number) => [
+      x * scale,
+      (792 - y) * scale,
+    ],
+    convertToPdfPoint: (x: number, y: number) => [x / scale, 792 - y / scale],
+    clone: ({ scale: next = scale }: { scale?: number }) => viewport(next),
   };
 }
 
@@ -94,6 +110,51 @@ export function host(child: unknown) {
     // oxlint-disable-next-line unicorn/no-thenable -- mirrors Obsidian's own deferred host.
     then: (callback: (value: unknown) => void) => callback(child),
     child,
+  };
+}
+
+/**
+ * One Annotation as the repository answers it, from the Fixture's own rows on
+ * `rougier-2014.pdf`.
+ *
+ * @see packages/scripts/lib/fixture/spec.ts — `ANNOTATIONS`
+ */
+export function annotation(
+  key: string,
+  type: AnnotationRecord["type"],
+  position: unknown,
+): AnnotationRecord {
+  return {
+    key,
+    type,
+    color: "#2ea8e5",
+    comment: null,
+    text: null,
+    position: parseAnnotationPosition(
+      position as AnnotationPositionRaw,
+      "application/pdf",
+    ),
+  };
+}
+
+/** The annotation repository, reduced to the reads and the change a binding takes. */
+export function annotationReads(records: readonly AnnotationRecord[] = []) {
+  const emitter = createNanoEvents<AnnotationRepositoryEvents>();
+  let list: AnnotationList = {
+    source: { kind: "zotero-db" },
+    annotations: records,
+  };
+  return {
+    read: vi.fn(() => Promise.resolve(list)),
+    on: <K extends keyof AnnotationRepositoryEvents>(
+      event: K,
+      cb: AnnotationRepositoryEvents[K],
+    ) => emitter.on(event, cb),
+    /** What a dropped Zotero DB partition does: a whole new list, announced. */
+    replace(attachmentKey: string, next: readonly AnnotationRecord[]): void {
+      list = { source: { kind: "zotero-db" }, annotations: next };
+      emitter.emit("annotations-changed", attachmentKey);
+    },
   };
 }
 
