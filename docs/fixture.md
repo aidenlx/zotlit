@@ -129,7 +129,7 @@ The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavai
 
 Both commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
-These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
+These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately. The [release checklist](release-checklist.md) holds the manual checks that a release still needs.
 
 ### Trial the Pandoc export cases
 

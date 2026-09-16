@@ -23,10 +23,14 @@ RDP and hot-reloads the companion on source changes.
 If a session is already running, reuse its log and port — a second launch fails because the
 Fixture database cannot be opened by two Zotero processes.
 
+A Paired Run reports its RDP port two ways. The ready report prints `Zotero RDP port <n>`, and
+the run writes `tmp/acceptance-fixture/paired-zotero.json`, which names the running process and
+its port. Read the port from that report:
+
 ```bash
 pnpm fixture dev > tmp/fixture-dev.log 2>&1 &
-until rg -q "RDP connected on port" tmp/fixture-dev.log; do sleep 2; done
-PORT=$(rg -o 'RDP connected on port (\d+)' -r '$1' tmp/fixture-dev.log | tail -1)
+until [ -f tmp/acceptance-fixture/paired-zotero.json ]; do sleep 2; done
+PORT=$(node -p 'require("./tmp/acceptance-fixture/paired-zotero.json").debuggerPort')
 ```
 
 ## 2. Evaluate JavaScript

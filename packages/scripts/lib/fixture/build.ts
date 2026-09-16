@@ -119,6 +119,14 @@ export type {
 } from "./spec.ts";
 export { getFixtureLayout, getFixtureRoot } from "./layout.ts";
 export type { FixtureLayout } from "./layout.ts";
+export {
+  clearPairedRunState,
+  livePairedZotero,
+  pairedRunStatePath,
+  readPairedRunState,
+  writePairedRunState,
+} from "./run-state.ts";
+export type { PairedRunState } from "./run-state.ts";
 
 export interface BuildOptions {
   /** Scope case the fresh vault starts on. */

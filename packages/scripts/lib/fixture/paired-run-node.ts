@@ -1,4 +1,5 @@
 import type { FixtureLayout } from "#fixture";
+import type { PairedZotero } from "#paired-zotero";
 import getPort from "get-port";
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
@@ -14,7 +15,11 @@ import type {
 } from "./paired-run.ts";
 
 import { DEV_VAULT_CASE_ENV, getDevVaultDir } from "#dev-vault";
-import { LIVE_UPDATE_HOSTNAME } from "#fixture";
+import {
+  clearPairedRunState,
+  LIVE_UPDATE_HOSTNAME,
+  writePairedRunState,
+} from "#fixture";
 import {
   getZoteroBinary,
   installBetterBibtex,
@@ -22,6 +27,13 @@ import {
 } from "#paired-zotero";
 
 type ManagedProcess = ChildProcessByStdio<null, Readable, Readable>;
+
+/** A Paired Zotero a Paired Run started, which always reports its RDP port. */
+type ReadyPairedZotero = PairedZotero & { debuggerPort: number };
+
+interface ReadyDevelopmentSession extends DevelopmentSession {
+  ready: Promise<ReadyPairedZotero>;
+}
 
 const ZOTERO_READY_EVENT = "paired-zotero-ready";
 
@@ -80,6 +92,9 @@ export function createNodePairedRunPorts({
       const findLive = (): Promise<LivePairedZotero[]> =>
         findLivePairedZotero(layout, workspaceRoot);
       let live = await findLive();
+      // The report may not outlive the process it names, whether or not one
+      // was found: a Paired Zotero that already exited leaves its report here.
+      await clearPairedRunState(layout);
       if (live.length === 0) return;
 
       console.log(`Closing the live Paired Zotero: ${describeLive(live)}`);
@@ -153,17 +168,36 @@ export function createNodePairedRunPorts({
       if (typeof report.pid !== "number") {
         throw new Error("Paired Zotero did not return a process id");
       }
-      return { applicationDir, pid: report.pid };
+      if (typeof report.debuggerPort !== "number") {
+        throw new Error("Paired Zotero did not return a debugging port");
+      }
+      const zotero = {
+        applicationDir,
+        pid: report.pid,
+        debuggerPort: report.debuggerPort,
+      };
+      await writePairedRunState(layout, zotero);
+      return zotero;
     },
 
     async startDevelopmentSession({ vaultCase }) {
       const { applicationDir, env } = await zoteroEnvironment();
-      return startDevelopmentSession({
+      const session = startDevelopmentSession({
         applicationDir,
         env,
         workspaceRoot,
         vaultCase,
       });
+      return {
+        ...session,
+        // Both launch paths report the same instance to the same file, so a
+        // process attaching to this Fixture reads one place whichever command
+        // opened it.
+        ready: session.ready.then(async (zotero) => {
+          await writePairedRunState(layout, zotero);
+          return zotero;
+        }),
+      };
     },
 
     reportReady(result) {
@@ -273,7 +307,7 @@ function startDevelopmentSession({
   env: NodeJS.ProcessEnv;
   workspaceRoot: string;
   vaultCase?: string;
-}): DevelopmentSession {
+}): ReadyDevelopmentSession {
   // The Vite dev build copies each bundle into the Development Vault of this
   // run's Vault Case, so hot reload reaches a case vault too.
   const obsidian = spawnWatcher(
@@ -293,10 +327,7 @@ function startDevelopmentSession({
     { cwd: workspaceRoot, env },
   );
   const processes = [obsidian, zotero];
-  const ready = Promise.withResolvers<{
-    applicationDir: string;
-    pid: number;
-  }>();
+  const ready = Promise.withResolvers<ReadyPairedZotero>();
   const closed = Promise.withResolvers<void>();
   const exited = new Set<ManagedProcess>();
   let readySettled = false;
@@ -313,7 +344,11 @@ function startDevelopmentSession({
     if (!event || readySettled || failure) return;
     readySettled = true;
     readySucceeded = true;
-    ready.resolve({ applicationDir, pid: event.pid });
+    ready.resolve({
+      applicationDir,
+      pid: event.pid,
+      debuggerPort: event.debuggerPort,
+    });
   });
 
   const finish = (): void => {
@@ -397,16 +432,23 @@ function pipeLines(source: Readable, receive: (line: string) => void): void {
   });
 }
 
-function parseReadyEvent(line: string): { pid: number } | undefined {
+function parseReadyEvent(
+  line: string,
+): { pid: number; debuggerPort: number } | undefined {
   const prefix = "[zotero-dev] ";
   if (!line.startsWith(prefix)) return undefined;
   try {
     const event = JSON.parse(line.slice(prefix.length)) as {
       event?: unknown;
       pid?: unknown;
+      debuggerPort?: unknown;
     };
-    if (event.event === ZOTERO_READY_EVENT && typeof event.pid === "number") {
-      return { pid: event.pid };
+    if (
+      event.event === ZOTERO_READY_EVENT &&
+      typeof event.pid === "number" &&
+      typeof event.debuggerPort === "number"
+    ) {
+      return { pid: event.pid, debuggerPort: event.debuggerPort };
     }
   } catch {
     // Ordinary Zotero dev logs are not JSON events.
@@ -414,9 +456,12 @@ function parseReadyEvent(line: string): { pid: number } | undefined {
   return undefined;
 }
 
-function parseOpenReport(output: string): { pid?: unknown } {
+function parseOpenReport(output: string): {
+  pid?: unknown;
+  debuggerPort?: unknown;
+} {
   try {
-    return JSON.parse(output) as { pid?: unknown };
+    return JSON.parse(output) as { pid?: unknown; debuggerPort?: unknown };
   } catch {
     throw new Error("Paired Zotero returned an invalid launch report");
   }
@@ -455,6 +500,9 @@ function printReady({
   );
   console.log(`Live Updates port  ${liveUpdatePort}`);
   console.log(`Zotero HTTP port   ${zoteroHttpPort}`);
+  if (zotero.debuggerPort !== undefined) {
+    console.log(`Zotero RDP port    ${zotero.debuggerPort}`);
+  }
   console.log(
     `Zotero Local API   ${
       localApi

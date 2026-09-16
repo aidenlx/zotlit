@@ -41,7 +41,11 @@ try {
 
   const { pid } = session.child;
   if (pid === undefined) throw new Error("Paired Zotero has no process id");
-  console.log(JSON.stringify({ pid }));
+  // `debuggerPort` is the remote debugging port `spawnZotero` allocated for
+  // this instance. Reporting it is what lets a caller evaluate JS in the
+  // running Zotero (scripts/debug/rdp-eval.ts) without hunting for the
+  // listening socket.
+  console.log(JSON.stringify({ pid, debuggerPort: session.port }));
 } catch (error) {
   controller.abort(error);
   throw error;
