@@ -93,6 +93,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-selected:border-primary zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:@md:mb-3"
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
+      onClick={() => actions.onSelectAnnotation(annot)}
     >
       <div
         className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent"

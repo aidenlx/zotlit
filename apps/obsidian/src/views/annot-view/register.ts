@@ -41,6 +41,23 @@ export function registerAnnotView(
 }
 
 /**
+ * Opens the Annotation View and brings one Annotation's card forward — the Mark
+ * Popup's comment and reveal verbs, which hand anything that needs typing to
+ * the card.
+ *
+ * @param comment whether the card's comment editor takes the caret.
+ * @see https://github.com/aidenlx/zotlit/issues/1148
+ */
+export async function revealAnnotationInView(
+  plugin: AnnotViewPlugin,
+  annotationKey: string,
+  { comment }: { comment: boolean },
+): Promise<void> {
+  await activateView(plugin);
+  targetView(plugin.app)?.revealAnnotation(annotationKey, { comment });
+}
+
+/**
  * What the five Follow Mode commands need of the view they act on: the state it
  * publishes, and the gestures it publishes. Both are the same surfaces its
  * React tree and its pane menu read, so a command is one more caller of them

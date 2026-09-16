@@ -57,6 +57,7 @@ function setup(
     onPinItem: vi.fn(),
     onUnpin: vi.fn(),
     onEnableLiveUpdates: vi.fn(),
+    onSelectAnnotation: vi.fn(),
     onExploreAnnotation: vi.fn(),
     ...overrides,
   });

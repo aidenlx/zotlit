@@ -37,6 +37,13 @@ export interface AnnotActions {
   onUnpin(): void;
   /** Turn Live updates on, so the Zotero reader can reach this view. */
   onEnableLiveUpdates(): void;
+  /**
+   * Take this Annotation as the selection, from a click on its card: the reader
+   * the view follows selects it and moves to its Annotation Mark.
+   *
+   * @see https://github.com/aidenlx/zotlit/issues/1148
+   */
+  onSelectAnnotation(annot: AnnotationRecord): void;
   /** Recolour one Annotation in Zotero, from a swatch in the card's menu. */
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
@@ -88,6 +95,7 @@ export interface AnnotActionDeps {
   onPinItem: AnnotActions["onPinItem"];
   onUnpin: AnnotActions["onUnpin"];
   onEnableLiveUpdates: AnnotActions["onEnableLiveUpdates"];
+  onSelectAnnotation: AnnotActions["onSelectAnnotation"];
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
@@ -274,6 +282,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onPinItem: deps.onPinItem,
     onUnpin: deps.onUnpin,
     onEnableLiveUpdates: deps.onEnableLiveUpdates,
+    onSelectAnnotation: deps.onSelectAnnotation,
     onRefresh() {
       void toast.promise(deps.refresh(), {
         loading: m.annot_view_refreshing(),
@@ -292,6 +301,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onPinItem: () => {},
   onUnpin: () => {},
   onEnableLiveUpdates: () => {},
+  onSelectAnnotation: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
   onDeleteAnnotation: () => {},

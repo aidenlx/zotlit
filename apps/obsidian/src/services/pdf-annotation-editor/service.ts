@@ -12,6 +12,7 @@ import type {
   CapabilityGestures,
 } from "./binding";
 import { openFilePathOf } from "./seam";
+import type { MarkGestures } from "./selection";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
@@ -26,6 +27,7 @@ export type {
   CapabilityGestures,
   PdfViewBinding,
 } from "./binding";
+export type { MarkGestures } from "./selection";
 export type { PdfSeamProbeId, PdfSeamProbeResult } from "./seam";
 
 /** Obsidian's own view type for a PDF, in the vault and outside it alike. */
@@ -37,6 +39,8 @@ export interface PdfAnnotationEditorDeps {
   annotations: AnnotationReads;
   /** What the Editing Capability affordance and a blocked keystroke reach. */
   capabilityGestures: CapabilityGestures;
+  /** What the Mark Popup's reveal and comment verbs reach in the sidebar. */
+  markGestures: Pick<MarkGestures, "revealAnnotation">;
   /** The clock each binding's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -56,6 +60,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #attachments;
   readonly #annotations;
   readonly #capabilityGestures;
+  readonly #markGestures;
   readonly #now;
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
@@ -67,6 +72,7 @@ export class PdfAnnotationEditor extends Service<void> {
     attachments,
     annotations,
     capabilityGestures,
+    markGestures,
     now = () => Temporal.Now.instant(),
   }: PdfAnnotationEditorDeps) {
     super();
@@ -74,6 +80,7 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#attachments = attachments;
     this.#annotations = annotations;
     this.#capabilityGestures = capabilityGestures;
+    this.#markGestures = markGestures;
     this.#now = now;
     this.ready = this.#load();
   }
@@ -142,6 +149,7 @@ export class PdfAnnotationEditor extends Service<void> {
         attachments: this.#attachments,
         annotations: this.#annotations,
         capabilityGestures: this.#capabilityGestures,
+        markGestures: this.#markGestures,
         now: this.#now,
       });
       this.#bindings.set(view, binding);

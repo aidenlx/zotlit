@@ -128,14 +128,15 @@ function createAffordance(
 }
 
 /**
- * Whether a keystroke landed in something that takes typing.
+ * Whether a keystroke landed in something that takes typing — the one reading
+ * every reader keymap is inert against.
  *
  * `instanceOf` rather than `instanceof`: the reader runs in pop-out windows,
  * where a global DOM constructor belongs to the wrong window.
  *
  * @see apps/obsidian/policies/popout-windows.md
  */
-function inTextEntry(target: EventTarget | null): boolean {
+export function inTextEntry(target: EventTarget | null): boolean {
   const node = target as Node | null;
   if (!node?.instanceOf(HTMLElement)) return false;
   return (

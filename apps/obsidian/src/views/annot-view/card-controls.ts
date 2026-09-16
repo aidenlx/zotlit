@@ -70,7 +70,7 @@ export function cardControls({
   hasComment,
   now,
 }: CardControlsInput): CardControls {
-  const blocked = blockedReason(capability, mutation, now);
+  const blocked = editingBlockedReason(capability, mutation, now);
   const control = (label: string): CardControl =>
     blocked === null
       ? { disabled: false, tooltip: label }
@@ -98,8 +98,12 @@ export function commentIcon(hasComment: boolean): IconName {
  * Why the editing verbs cannot run, or `null` while they can. A write in
  * flight outranks the capability: it is the nearer answer to "why can I not
  * press this".
+ *
+ * The Mark Popup's row reads the same rule, because its colour, comment and
+ * delete are the same three writes reached from the PDF reader
+ * (aidenlx/zotlit#1148).
  */
-function blockedReason(
+export function editingBlockedReason(
   capability: EditingCapability,
   mutation: MutationState,
   now: Temporal.Instant,

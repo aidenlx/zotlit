@@ -51,6 +51,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
+import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
 import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
@@ -263,6 +264,7 @@ export class AnnotationView extends ItemView {
       onPinItem: () => this.#pickItemToPin(),
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
+      onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
       onDragStart: createDragInsertHandler({
         app: this.#deps.app,
         noteFeature: this.#deps.noteFeature,
@@ -837,6 +839,57 @@ export class AnnotationView extends ItemView {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
+    }
+  }
+
+  /**
+   * Bring one Annotation's card forward, from the Mark Popup in the PDF reader.
+   * A card the list on screen does not hold is left alone: the Follow Mode is
+   * the user's, and a reveal is not one of the gestures that changes it.
+   *
+   * @param comment whether the card's comment editor takes the caret, which is
+   *   the popup's answer to anything that needs typing.
+   * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
+   */
+  revealAnnotation(
+    annotationKey: string,
+    { comment }: { comment: boolean },
+  ): void {
+    const held = this.#store
+      .getState()
+      .annotations?.some((record) => record.key === annotationKey);
+    if (held !== true) return;
+    this.#applySelection([annotationKey]);
+    if (comment) this.#store.setState({ editingCommentKey: annotationKey });
+  }
+
+  /**
+   * A card was activated: the reader this view follows takes the selection and
+   * moves to the mark. Only an Obsidian PDF view can be moved from here —
+   * Zotero owns every gesture on its own reader — so under every other mode
+   * the view holds the selection itself.
+   */
+  #selectAnnotation(annotationKey: string): void {
+    const session = this.#followedSession();
+    if (session?.source === "obsidian-pdf") {
+      session.setSelectedAnnotations([annotationKey]);
+      session.navigateToAnnotation(annotationKey);
+      return;
+    }
+    this.#applySelection([annotationKey]);
+  }
+
+  /** The reader this view's Follow Mode is driven by, while one answers. */
+  #followedSession(): ReaderSession | null {
+    switch (this.#followMode) {
+      case "active-tab": {
+        const path = this.#deps.app.workspace.getActiveFile()?.path;
+        return path ? this.#deps.pdfReaders.sessionForPath(path) : null;
+      }
+      case "zotero-reader":
+        return this.#zoteroReader;
+      case "pinned":
+        return null;
     }
   }
 

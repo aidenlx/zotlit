@@ -6,6 +6,7 @@ import {
   createProfileCreator,
   createProfileImporter,
 } from "@/setting-tab/profiles";
+import { revealAnnotationInView } from "@/views/annot-view/register";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -186,6 +187,10 @@ export function buildServices(
               void capabilityNotices.showEditingCapability(),
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
+          },
+          markGestures: {
+            revealAnnotation: (annotationKey, options) =>
+              void revealAnnotationInView(plugin, annotationKey, options),
           },
         }),
     })

@@ -690,6 +690,14 @@ declare module "obsidian" {
     targetEl: HTMLElement | null;
     onTarget: boolean;
     /**
+     * Whether the popover stands open on its own. Obsidian's own
+     * should-show test reads it beside the pointer and the focus, and its
+     * global click handler leaves a focused popover alone — so this is what
+     * pins one open that has no target to hover.
+     */
+    isFocused: boolean;
+    setIsFocused(focused: boolean): void;
+    /**
      * The pending show or hide timer. Obsidian arms it on `activeWindow` and
      * cancels it with the main window's `clearTimeout`, so a subclass that
      * must cancel it clears it on the window that armed it.
