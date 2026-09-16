@@ -175,6 +175,7 @@ export interface ZoteroRequest {
   url: URL;
   headers: Headers;
   method: string;
+  body: string | null;
 }
 
 /** The children route a list read walks, as its parts. */
@@ -196,6 +197,15 @@ export interface ZoteroAnswers {
    * @default an Attachment with no Annotations
    */
   children?: (request: ChildrenRequest) => Response | Promise<Response>;
+  /**
+   * `POST /api/local/authorize` — Zotero's Write Authorization dialog, as the
+   * endpoint reports whichever button the user pressed.
+   *
+   * @default Allow, a One-time Authorization
+   */
+  authorize?: (request: ZoteroRequest) => Response | Promise<Response>;
+  /** Every other route: what an authenticated write answers. @default `204` */
+  write?: (request: ZoteroRequest) => Response | Promise<Response>;
 }
 
 /**
@@ -209,17 +219,27 @@ export function fakeZotero(answers: ZoteroAnswers = {}): {
   const requests: ZoteroRequest[] = [];
   const fetch = vi.fn((input: string | URL, init?: NodeFetchInit) => {
     const url = new URL(input);
-    requests.push({
+    const request: ZoteroRequest = {
       url,
       headers: new Headers(init?.headers),
       method: init?.method ?? "GET",
-    });
+      body: typeof init?.body === "string" ? init.body : null,
+    };
+    requests.push(request);
     init?.signal?.throwIfAborted();
     if (url.pathname === "/api/") {
       return untilAborted((answers.root ?? rootOk)(), init?.signal);
     }
-    const children = answers.children ?? (() => annotationPage([]));
-    return untilAborted(children(childrenRequest(url)), init?.signal);
+    if (url.pathname === "/api/local/authorize") {
+      const authorize = answers.authorize ?? (() => authorized());
+      return untilAborted(authorize(request), init?.signal);
+    }
+    if (url.pathname.endsWith("/children")) {
+      const children = answers.children ?? (() => annotationPage([]));
+      return untilAborted(children(childrenRequest(url)), init?.signal);
+    }
+    const write = answers.write ?? (() => writeAccepted());
+    return untilAborted(write(request), init?.signal);
   });
   return { fetch, requests };
 }
@@ -355,6 +375,122 @@ export function denied(): Response {
 }
 
 /**
+ * RECORDED — `200` from the authorize route, the answer to a granted dialog.
+ * The recording drove all four dialog outcomes against Zotero 10.0 and found
+ * three of them here: Allow (`remember: false`), Always Allow (`remember:
+ * true`), and **a dismissed dialog, which answers `remember: true` as well**.
+ * Gecko records slot 1 as the result of any close that is not a button press,
+ * and Zotero maps slot 1 to Always Allow, so closing the dialog grants a
+ * persistent key rather than refusing. Only Deny answers {@link denied}.
+ *
+ * @param options.remember what Zotero reported. @default false, an Allow
+ * @param options.key the 32-character key. @default the recorded Allow key
+ */
+export function authorized(
+  options: { remember?: boolean; key?: string } = {},
+): Response {
+  const { remember = false } = options;
+  const key =
+    options.key ??
+    (remember
+      ? "5ixBzUhQfLu8i8RIhU6OEzENW4pAITLf"
+      : "zaxj2JbsV79sbQDXS7REpa3Z3kRDIory");
+  return new Response(JSON.stringify({ key, remember }), {
+    status: 200,
+    headers: { ...API_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * RECORDED — `204`, what an accepted write answers. `Last-Modified-Version` is
+ * the library version after the write, not the object's previous plus one.
+ *
+ * @param version the library version Zotero reported. @default 5, as recorded
+ */
+export function writeAccepted(version = 5): Response {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...API_HEADERS,
+      "Last-Modified-Version": String(version),
+      "Content-Length": "0",
+    },
+  });
+}
+
+/**
+ * RECORDED — the second `401` body: a key Zotero no longer holds, because it
+ * was single-use and has been spent, or because the user cleared write
+ * authorizations. Like {@link unauthorized} it carries no server id and no API
+ * version, and unlike it there is no `WWW-Authenticate` challenge.
+ */
+export function keyRejected(): Response {
+  return new Response("Invalid or expired API key", {
+    status: 401,
+    headers: {
+      "X-Zotero-Version": "10.0",
+      "Content-Type": "text/plain",
+    },
+  });
+}
+
+/**
+ * RECORDED — `412` from this database: the object moved since it was read. The
+ * key that carried the request is spent all the same, which is why this answer
+ * appears in a test about a One-time Authorization.
+ */
+export function staleVersion(): Response {
+  return new Response(
+    "item has been modified since specified version (expected 4, found 7)",
+    {
+      status: 412,
+      headers: { ...API_HEADERS, "Content-Type": "text/plain" },
+    },
+  );
+}
+
+/**
+ * The Remembered Write Authorization in memory, which is what a state-machine
+ * test drives the client over. It models the one rule the real record has that
+ * a plain map does not: a key is bound to the database that granted it, and a
+ * record naming another one is left alone rather than cleared.
+ */
+export function inMemoryCredentials(
+  initial: { serverID: string; key: string } | null = null,
+) {
+  let record: { serverID: string; key?: string } | null = initial && {
+    ...initial,
+  };
+  const writes: ({ serverID: string; key?: string } | null)[] = [];
+  return {
+    /** What the store holds now, as an oracle independent of the client. */
+    get record() {
+      return record;
+    },
+    /** Every write in order, so a test can see a keyless overwrite happen. */
+    writes,
+    read: vi.fn((serverID: string) =>
+      Promise.resolve(
+        record && record.serverID === serverID ? (record.key ?? null) : null,
+      ),
+    ),
+    has: vi.fn(() => Promise.resolve(record?.key !== undefined)),
+    remember: vi.fn((serverID: string, key: string) => {
+      record = { serverID, key };
+      writes.push({ ...record });
+      return Promise.resolve();
+    }),
+    forget: vi.fn(() => {
+      if (record !== null) {
+        record = { serverID: record.serverID };
+        writes.push({ ...record });
+      }
+      return Promise.resolve();
+    }),
+  };
+}
+
+/**
  * CONTRACT-DERIVED — the refusal every endpoint answers before it reads
  * anything else, while `httpServer.localAPI.enabled` is off. The Fixture opens
  * the local API, so this answer was not recorded from it.
@@ -405,7 +541,12 @@ export interface ClientOptions {
   key?: string;
   /** The deadline a Capability Probe runs under. @default one that never fires */
   probeDeadline?: () => AbortSignal;
+  /** The clock the dialog cooldown is read against. @default {@link NOW} */
+  now?: () => Temporal.Instant;
 }
+
+/** The instant a test's clock stands at unless it says otherwise. */
+export const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
 /**
  * The client over a fake transport, with the two event sources it subscribes to
@@ -419,9 +560,11 @@ export function localApiClient(
   const { fetch, requests } = fakeZotero(answers);
   const prefEvents = createNanoEvents<ZoteroPrefEvents>();
   const serverEvents = createNanoEvents<LocalServerEvents>();
-  const credentials = {
-    read: vi.fn(() => Promise.resolve(options.key ?? null)),
-  };
+  const credentials = inMemoryCredentials(
+    options.key === undefined
+      ? null
+      : { serverID: SERVER_ID, key: options.key },
+  );
   const client = new ZoteroLocalApiClient({
     fetch,
     zoteroPref: {
@@ -440,6 +583,7 @@ export function localApiClient(
     credentials,
     probeDeadline:
       options.probeDeadline ?? (() => new AbortController().signal),
+    now: options.now ?? (() => NOW),
   });
   return { client, requests, credentials, prefEvents, serverEvents };
 }

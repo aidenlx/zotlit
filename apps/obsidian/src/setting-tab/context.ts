@@ -1,6 +1,7 @@
 import type { App, PluginManifest } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
+import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
@@ -14,6 +15,7 @@ import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
+import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import type { ImportProfile } from "./import-profile-modal";
@@ -50,6 +52,21 @@ export type LocalBridgeActions = Pick<
 
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
 export type CitationIndexActions = Pick<CitationIndex, "reset">;
+
+/**
+ * The Editing Capability the "Zotero editing" row renders, and the signal that
+ * it moved.
+ */
+export type AnnotationCapabilityActions = Pick<
+  AnnotationRepository,
+  "capability" | "on"
+>;
+
+/** The Write Authorization the "Zotero editing" row grants and forgets. */
+export type WriteAuthorizationActions = Pick<
+  ZoteroLocalApiClient,
+  "authorize" | "forgetAuthorization" | "remembered"
+>;
 
 /** The attachment-import surface the setting tab needs: read and edit the grants. */
 export type AttachmentImportActions = Pick<
@@ -90,6 +107,10 @@ export interface SettingTabContext {
   attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */
   citationIndex: CitationIndexActions;
+  /** The session's Editing Capability, read by the "Zotero editing" row. */
+  annotations: AnnotationCapabilityActions;
+  /** The Write Authorization that row grants and forgets. */
+  writeAuthorization: WriteAuthorizationActions;
   release: ReleaseTabActions;
   /**
    * The template store the Templates, Frontmatter, and Profile rows read.

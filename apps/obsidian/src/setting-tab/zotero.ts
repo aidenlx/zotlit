@@ -7,6 +7,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { databaseAdvancedItems, databaseConnectionItems } from "./database";
 import { libraryScopeRow, selectedLibrariesList } from "./library-scope";
+import { zoteroEditingRow } from "./zotero-editing";
 
 export function zoteroPageItems(
   ctx: SettingTabContext,
@@ -16,7 +17,7 @@ export function zoteroPageItems(
       type: "group",
       id: "settings_zotero_connection",
       heading: m.settings_zotero_connection_heading(),
-      items: databaseConnectionItems(ctx),
+      items: [...databaseConnectionItems(ctx), zoteroEditingRow(ctx)],
     },
     {
       type: "group",

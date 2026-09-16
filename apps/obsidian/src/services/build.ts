@@ -59,6 +59,7 @@ import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
 import { ZoteroLocalApiClient } from "./zotero-local-api/service";
+import { SecretWriteAuthorizationStore } from "./zotero-local-api/write-authorization";
 import { ZoteroPrefService } from "./zotero-pref/service";
 
 /**
@@ -139,10 +140,11 @@ export function buildServices(
           fetch: nodeFetch,
           zoteroPref,
           localServer,
-          // The Remembered Write Authorization arrives with the write path
-          // (aidenlx/zotlit#1144); until then every session reads unauthorized,
-          // which the Zotero Local API allows.
-          credentials: { read: () => Promise.resolve(null) },
+          // The Remembered Write Authorization lives in Obsidian's Keychain,
+          // where the user can see and delete it — never in synced settings.
+          credentials: new SecretWriteAuthorizationStore({
+            secrets: plugin.app.secretStorage,
+          }),
         }),
     })
     .use({

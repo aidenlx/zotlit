@@ -106,6 +106,12 @@ export interface AnnotationRepositoryEvents {
    * @param attachmentKey the Attachment's Indexed Key.
    */
   "annotations-changed": (attachmentKey: string) => void;
+  /**
+   * What a surface may do to an Attachment's Annotations moved. Every consumer
+   * re-reads {@link AnnotationRepository.capabilityFor}; no record set is
+   * affected, so nothing re-reads a list for this.
+   */
+  "capability-changed": () => void;
 }
 
 export interface AnnotationRepositoryDeps {
@@ -116,7 +122,7 @@ export interface AnnotationRepositoryDeps {
   >;
   localApi: Pick<
     ZoteroLocalApiClient,
-    "demandSource" | "listAnnotations" | "on" | "state"
+    "demandSource" | "listAnnotations" | "on" | "state" | "writeStateFor"
   >;
   /** The clock a cooldown deadline in the Editing Capability is read against. */
   now?: () => Temporal.Instant;
@@ -161,6 +167,11 @@ export class AnnotationRepository extends Service<void> {
   readonly #localApi;
   readonly #now;
   readonly #emitter = createNanoEvents<AnnotationRepositoryEvents>();
+  /**
+   * The last Editing Capability each consumer was given, by Attachment and by
+   * `null` for the session, so a change is logged once rather than per read.
+   */
+  readonly #lastCapability = new Map<string | null, string>();
 
   ready: Promise<void>;
 
@@ -200,21 +211,23 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * What a surface may do to one Attachment's Annotations.
-   *
-   * The Zotero Local API's probe is the whole of it for now: a source that
-   * stands is writable or asks for authorization, and every other state is
-   * read-only with its reason. The Attachment is named because the facts that
-   * make one Attachment differ from another all arrive with the write path —
-   * a library that refused a write (aidenlx/zotlit#1145) and the authorization
-   * gesture in flight (aidenlx/zotlit#1144) — and both are per Attachment.
+   * What a surface may do to one Attachment's Annotations: the Capability
+   * Probe, plus what the write path learned about this Attachment's library and
+   * about the authorization gesture in flight.
    *
    * @param attachmentKey the Attachment's Indexed Key.
    */
   capabilityFor(attachmentKey: string): EditingCapability {
-    const capability = editingCapabilityOf(this.#localApi.state, this.#now);
-    logger.trace("Editing capability read", { attachmentKey, capability });
-    return capability;
+    return this.#capability(attachmentKey);
+  }
+
+  /**
+   * What the session itself may do, with no Attachment in hand — what the
+   * "Zotero editing" settings row shows. A library Zotero refuses writes to is
+   * a fact about one Attachment and has no place here.
+   */
+  get capability(): EditingCapability {
+    return this.#capability(null);
   }
 
   on<K extends keyof AnnotationRepositoryEvents>(
@@ -228,7 +241,36 @@ export class AnnotationRepository extends Service<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(this.#db.on("changed", () => this.#dropDatabasePartition()));
     stack.defer(this.#localApi.on("changed", () => this.#sourceMoved()));
+    stack.defer(
+      this.#localApi.on("capability-changed", () => {
+        this.#emitter.emit("capability-changed");
+      }),
+    );
     this.commit(stack.move());
+  }
+
+  /**
+   * One Editing Capability, logged at debug where it differs from the last
+   * value this consumer was given for the same subject — every read at trace,
+   * every change at debug, so a session's capability history is in the log
+   * without one line per redraw.
+   *
+   * @param attachmentKey the Attachment, or null for the session itself.
+   */
+  #capability(attachmentKey: string | null): EditingCapability {
+    const capability = editingCapabilityOf(
+      this.#localApi.state,
+      this.#localApi.writeStateFor(attachmentKey),
+      this.#now,
+    );
+    const described = describeCapability(capability);
+    if (this.#lastCapability.get(attachmentKey) === described) {
+      logger.trace("Editing capability read", { attachmentKey, capability });
+      return capability;
+    }
+    this.#lastCapability.set(attachmentKey, described);
+    logger.debug("Editing capability changed", { attachmentKey, capability });
+    return capability;
   }
 
   /**
@@ -332,6 +374,18 @@ export class AnnotationRepository extends Service<void> {
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
     }
+  }
+}
+
+/** One capability as a value that compares by equality, for the change log. */
+function describeCapability(capability: EditingCapability): string {
+  switch (capability.kind) {
+    case "read-only":
+      return `read-only:${capability.reason}`;
+    case "cooldown":
+      return `cooldown:${capability.retryAfter.toString()}`;
+    default:
+      return capability.kind;
   }
 }
 
