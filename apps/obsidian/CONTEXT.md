@@ -284,6 +284,18 @@ _Avoid_: reader target, PDF reader target, annotation target
 Where the plugin's Annotation reads for an Attachment come from at one moment: the Zotero Local API while Zotero answers, otherwise the Zotero DB. One source at a time for every Attachment; the two never join. A read result carries its source.
 _Avoid_: fallback (that is the switch, not the source), primary/secondary source, merged source
 
+**Editing Capability**:
+What writes are possible for an Attachment's Annotations at one moment, and, when none are, the one reason: writable, authorization required, authorizing, cooldown, or read-only with its cause (Zotero unavailable, local API disabled, incompatible Zotero, invalid response, server changed, library read-only, probing). One value per Attachment; every editing control in the reader and the Annotation View follows it.
+_Avoid_: degraded state (names the feeling, not the reason), fallback state, write mode, read-only mode (one of its values, not the whole)
+
+**Uncertain Create**:
+An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero. Resolved by re-reading and matching stable fields, or by the user; never retried on its own.
+_Avoid_: pending create (a pending write has an outcome coming), orphaned write, lost write
+
+**Write Conflict**:
+A write the Zotero Local API refused because the Annotation changed in Zotero since ZotLit last read it, on the same Zotero Server ID. ZotLit re-reads, shows the fresh Annotation beside the user's input, and lets the user apply again or discard; a fresh value equal to the intended one is no conflict.
+_Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
+
 ### Note content
 
 **Annotation Excerpt**:
