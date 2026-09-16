@@ -54,3 +54,32 @@
   fill: var(--background-primary);
   opacity: 0.55;
 }
+
+/*
+ * The Creation Toolbar sits in Obsidian's own right toolbar slot, so it takes
+ * that toolbar's rhythm rather than setting one of its own. A swatch keeps its
+ * Annotation colour when it is pressed, which `clickable-icon.is-active` would
+ * otherwise repaint in the accent colour.
+ */
+:where(.zt-pdf-creation-toolbar) {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2-1);
+}
+
+:where(.zt-pdf-creation-toolbar .clickable-icon.is-active) {
+  background-color: var(--background-modifier-hover);
+}
+
+/* The comment sheet is an editor, so it is as wide as one rather than as wide
+   as the row of verbs above it. */
+:where(.zt-pdf-comment-sheet) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-1);
+  width: 15em;
+}
+
+:where(.zt-pdf-comment-sheet textarea) {
+  font-size: var(--font-ui-small);
+}

@@ -353,6 +353,59 @@ export function annotationItem(
 }
 
 /**
+ * CONTRACT-DERIVED — `200` from the multi-object write route, the indexed
+ * result a create answers with. The envelope is the one Zotero's own handler
+ * builds; the Annotation inside it is this fixture's.
+ *
+ * @param options.parentItem the Attachment the answer says it hangs from.
+ * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L1919-L1972
+ */
+export function createAccepted(
+  annotation: WireAnnotation,
+  options: { parentItem?: string } = {},
+): Response {
+  const parentItem = options.parentItem ?? ATTACHMENT_KEY;
+  return new Response(
+    JSON.stringify({
+      successful: { 0: wireItem(annotation, parentItem) },
+      success: { 0: annotation.key },
+      unchanged: {},
+      failed: {},
+    }),
+    {
+      status: 200,
+      headers: {
+        ...API_HEADERS,
+        "Content-Type": "application/json",
+        "Last-Modified-Version": String(annotation.version),
+      },
+    },
+  );
+}
+
+/**
+ * CONTRACT-DERIVED — `200` whose one object Zotero refused. A multi-object
+ * write reports each object's own outcome, so a `200` is not a success.
+ */
+export function createRefused(
+  code = 400,
+  message = "Invalid annotationSortIndex",
+): Response {
+  return new Response(
+    JSON.stringify({
+      successful: {},
+      success: {},
+      unchanged: {},
+      failed: { 0: { key: "", code, message } },
+    }),
+    {
+      status: 200,
+      headers: { ...API_HEADERS, "Content-Type": "application/json" },
+    },
+  );
+}
+
+/**
  * CONTRACT-DERIVED — `404`, which a write meets when Zotero no longer holds
  * the object. A read never produces one: the list route answers an empty list.
  *

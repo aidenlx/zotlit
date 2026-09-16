@@ -1,6 +1,7 @@
 // The one guarded adapter over Obsidian's private PDF reader seam: every read
 // of a private member goes through an accessor or a probe declared here.
 import type {
+  PDFDocumentProxy,
   PDFPageRenderedListener,
   PDFPageView,
   PDFViewerController,
@@ -32,7 +33,7 @@ export const PDF_SEAM_MEMBERS = {
   P8: "PDFPageView",
   P9: "PDFPageViewport",
   P10: "PDFViewerController.toolbar.toolbarRightEl",
-  P11: "PDFPageProxy.getTextContent({ includeChars })",
+  P11: "PDFPageProxy.getTextContent({ includeChars }) and PDFViewer.pdfDocument",
 } as const;
 
 export type PdfSeamProbeId = keyof typeof PDF_SEAM_MEMBERS;
@@ -149,7 +150,10 @@ export function probePageView(page: unknown): PdfSeamProbeResult[] {
 }
 
 /**
- * P11: the per-glyph text content the Sort Index port reads.
+ * P11: the whole text source the Sort Index and Page Label port reads — the
+ * per-glyph content of one page, the chunk fields each character's metrics are
+ * derived from, the object store the base font name comes out of, and the
+ * document the Page Label heuristic walks.
  *
  * The worker reads `includeChars` as a boolean defaulting to `false`, so a build
  * that lost the patch answers the same text items with no `chars` key — which is
@@ -157,8 +161,11 @@ export function probePageView(page: unknown): PdfSeamProbeResult[] {
  * scanned page and passes; items that carry no `chars` array do not.
  */
 export async function probeTextContent(
+  controller: PDFViewerController,
   page: PDFPageView,
 ): Promise<PdfSeamProbeResult> {
+  if (!isDocument(pdfDocumentOf(controller))) return verdict("P11", false);
+  if (!isObjectStore(page.pdfPage?.commonObjs)) return verdict("P11", false);
   try {
     const content: unknown = await page.pdfPage?.getTextContent({
       includeChars: true,
@@ -173,7 +180,7 @@ export async function probeTextContent(
       const chars = isObject(item) ? item.chars : undefined;
       if (!Array.isArray(chars)) continue;
       patched = true;
-      if (chars.length > 0) return verdict("P11", isGlyph(chars[0]));
+      if (chars.length > 0) return verdict("P11", isTextItem(item, chars[0]));
     }
     return verdict("P11", patched);
   } catch (error) {
@@ -182,6 +189,18 @@ export async function probeTextContent(
     });
     return verdict("P11", false);
   }
+}
+
+/**
+ * The open document, which carries the page count, the page boxes and the
+ * catalog's `/PageLabels`. `null` once the viewer holding it closed, which is
+ * the same read {@link pageViewOf} answers `null` from.
+ */
+export function pdfDocumentOf(
+  controller: PDFViewerController,
+): PDFDocumentProxy | null {
+  if (!viewerOpen(controller, "read the PDF document")) return null;
+  return controller.pdfViewer?.pdfDocument ?? null;
 }
 
 /** The open file's path, `file:`-prefixed for an external file. */
@@ -312,6 +331,17 @@ function isViewport(value: unknown): boolean {
   );
 }
 
+/** One chunk of text content, with the first glyph the port reads out of it. */
+function isTextItem(item: unknown, glyph: unknown): boolean {
+  return (
+    isObject(item) &&
+    Array.isArray(item.transform) &&
+    item.transform.length === 6 &&
+    typeof item.fontName === "string" &&
+    isGlyph(glyph)
+  );
+}
+
 function isGlyph(value: unknown): boolean {
   return (
     isObject(value) &&
@@ -319,6 +349,20 @@ function isGlyph(value: unknown): boolean {
     typeof value.u === "string" &&
     Array.isArray(value.r) &&
     value.r.length === 4
+  );
+}
+
+/** PDF.js's resolved-object store, which the base font name is read out of. */
+function isObjectStore(value: unknown): boolean {
+  return isObject(value) && isFunction(value.has) && isFunction(value.get);
+}
+
+function isDocument(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.numPages === "number" &&
+    isFunction(value.getPage) &&
+    isFunction(value.getPageLabels)
   );
 }
 

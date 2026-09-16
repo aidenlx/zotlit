@@ -28,14 +28,20 @@ export const GLYPH = {
   r: [58.0535, 726.9241, 64.1506, 737.4685],
 };
 
+/** The chunk fields the port derives each glyph's metrics and grouping from. */
+export const TEXT_CHUNK = {
+  transform: [9.9626, 0, 0, 9.9626, 58.0535, 726.9241],
+  fontName: "g_d0_f1",
+};
+
 /** One page of text content carrying that glyph. */
-export const GLYPH_CONTENT = { items: [{ chars: [GLYPH] }] };
+export const GLYPH_CONTENT = { items: [{ ...TEXT_CHUNK, chars: [GLYPH] }] };
 
 /** A scanned page: the worker answers with no text item at all. */
 export const SCANNED_CONTENT = { items: [] };
 
 /** What a build that lost the `includeChars` patch answers: items, but no `chars`. */
-export const UNPATCHED_CONTENT = { items: [{ str: "E" }] };
+export const UNPATCHED_CONTENT = { items: [{ ...TEXT_CHUNK, str: "E" }] };
 
 /**
  * A PDF.js `PageViewport` as the bundled 5.3.34 builds one over a US Letter
@@ -65,11 +71,19 @@ export interface FakePageView {
   div: HTMLElement;
   viewport: Record<string, unknown>;
   /** Deleted to stand for a page Obsidian has not finished loading. */
-  pdfPage?: { getTextContent: Mock };
+  pdfPage?: {
+    view: number[];
+    commonObjs: { has: Mock; get: Mock };
+    getTextContent: Mock;
+  };
 }
 
 /**
  * A PDF.js page view whose proxy answers `content`.
+ *
+ * The font store answers the base name Zotero's own extraction records, which
+ * is what a page whose operator list has been fetched — that is, one that has
+ * rendered — answers in the reader.
  *
  * @param content what `getTextContent({ includeChars: true })` resolves with.
  */
@@ -77,7 +91,14 @@ export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
   return {
     div: document.createElement("div"),
     viewport: viewport(),
-    pdfPage: { getTextContent: vi.fn(async () => content) },
+    pdfPage: {
+      view: [0, 0, 612, 792],
+      commonObjs: {
+        has: vi.fn(() => true),
+        get: vi.fn(() => ({ name: "NimbusRomNo9L-Regu" })),
+      },
+      getTextContent: vi.fn(async () => content),
+    },
   };
 }
 
@@ -88,7 +109,14 @@ export function pdfReader(page = pageView()) {
   const child: Record<string, unknown> = {
     // `on` and `off` read the event bus through this, and Obsidian's `unload`
     // closes it and nulls it — see `closeViewer` below.
-    pdfViewer: { eventBus: {} },
+    pdfViewer: {
+      eventBus: {},
+      pdfDocument: {
+        numPages: 1,
+        getPage: vi.fn(async () => page.pdfPage),
+        getPageLabels: vi.fn(async () => null),
+      },
+    },
     on: vi.fn((_event: string, listener: (event: unknown) => void) => {
       listeners.push(listener);
     }),
@@ -209,6 +237,9 @@ export function annotationReads(
     mutationFor: vi.fn((): MutationState => IDLE),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
+    createAnnotation: vi.fn(() =>
+      Promise.resolve({ kind: "created" as const, annotationKey: "MADE2345" }),
+    ),
     get capability() {
       return current;
     },

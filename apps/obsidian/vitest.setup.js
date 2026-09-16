@@ -158,3 +158,11 @@ if (typeof HTMLElement !== "undefined") {
     this.style.display = visible ? "" : "none";
   };
 }
+
+// Electron's renderer carries `requestIdleCallback`/`cancelIdleCallback`;
+// neither the `node` environment nor happy-dom does. The PDF reader runs its
+// Page Label pass on one, so the stub puts the callback on the macrotask
+// queue — as close to "after the work in hand" as a test environment gets.
+globalThis.requestIdleCallback ??= (callback) =>
+  setTimeout(() => callback({ didTimeout: false, timeRemaining: () => 0 }), 0);
+globalThis.cancelIdleCallback ??= (handle) => clearTimeout(handle);

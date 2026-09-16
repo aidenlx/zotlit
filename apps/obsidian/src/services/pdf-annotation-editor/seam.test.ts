@@ -3,10 +3,12 @@ import { expect, it } from "vitest";
 
 import {
   failedIn,
+  GLYPH,
   host,
   pageView,
   pdfReader,
   SCANNED_CONTENT,
+  TEXT_CHUNK,
   UNPATCHED_CONTENT,
 } from "./__fixtures__";
 import {
@@ -51,7 +53,7 @@ it("passes every probe against the shape Obsidian 1.14.2 exposes", async () => {
     ...probeController(view.viewer as never, reader.child),
     ...probeRenderEvent({ pageNumber: 1, source: reader.page }),
     ...probePageView(reader.page),
-    await probeTextContent(reader.page as never),
+    await probeTextContent(reader.child as never, reader.page as never),
   ];
 
   expect(results).toHaveLength(ALL_PROBES.length);
@@ -171,13 +173,16 @@ it.each(["clone", "convertToPdfPoint"])(
 
 it("passes P11 on a scanned page, which answers with no text item", async () => {
   await expect(
-    probeTextContent(pageView(SCANNED_CONTENT) as never),
+    probeTextContent(controller() as never, pageView(SCANNED_CONTENT) as never),
   ).resolves.toMatchObject({ probe: "P11", ok: true });
 });
 
 it("passes P11 on a text item the worker found no glyph in", async () => {
   await expect(
-    probeTextContent(pageView({ items: [{ chars: [] }] }) as never),
+    probeTextContent(
+      controller() as never,
+      pageView({ items: [{ ...TEXT_CHUNK, chars: [] }] }) as never,
+    ),
   ).resolves.toMatchObject({ probe: "P11", ok: true });
 });
 
@@ -192,22 +197,51 @@ it.each([
   },
   {
     case: "a glyph no longer carries its rectangle",
-    page: () => pageView({ items: [{ chars: [{ c: "E", u: "E" }] }] }),
+    page: () =>
+      pageView({ items: [{ ...TEXT_CHUNK, chars: [{ c: "E", u: "E" }] }] }),
+  },
+  {
+    case: "a text item no longer carries the chunk's text matrix",
+    page: () => pageView({ items: [{ fontName: "g_d0_f1", chars: [GLYPH] }] }),
+  },
+  {
+    case: "a text item no longer names its font",
+    page: () =>
+      pageView({
+        items: [{ transform: TEXT_CHUNK.transform, chars: [GLYPH] }],
+      }),
+  },
+  {
+    case: "the font object store is gone",
+    page: () => {
+      const page = pageView();
+      delete (page.pdfPage as Record<string, unknown>).commonObjs;
+      return page;
+    },
   },
   {
     case: "the call rejects",
     page: () => ({
       ...pageView(),
       pdfPage: {
+        commonObjs: { get: () => null },
         getTextContent: () => Promise.reject(new Error("worker gone")),
       },
     }),
   },
 ])("fails P11 when $case", async ({ page }) => {
-  await expect(probeTextContent(page() as never)).resolves.toMatchObject({
-    probe: "P11",
-    ok: false,
-  });
+  await expect(
+    probeTextContent(controller() as never, page() as never),
+  ).resolves.toMatchObject({ probe: "P11", ok: false });
+});
+
+it("fails P11 when Obsidian no longer holds the PDF document", async () => {
+  const reader = pdfReader();
+  delete (reader.child.pdfViewer as Record<string, unknown>).pdfDocument;
+
+  await expect(
+    probeTextContent(reader.child as never, reader.page as never),
+  ).resolves.toMatchObject({ probe: "P11", ok: false });
 });
 
 it("removes its page listener from a viewer Obsidian still holds open", () => {

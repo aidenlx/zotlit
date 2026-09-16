@@ -566,6 +566,9 @@ importers:
       '@zotlit/obsidian-i18n':
         specifier: workspace:*
         version: link:../../packages/obsidian-i18n
+      '@zotlit/pdf-structure':
+        specifier: workspace:*
+        version: link:../../packages/pdf-structure
       '@zotlit/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

@@ -36,6 +36,7 @@
     "@zotlit/filter-expression": "workspace:*",
     "@zotlit/item-lookup": "workspace:*",
     "@zotlit/obsidian-i18n": "workspace:*",
+    "@zotlit/pdf-structure": "workspace:*",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/shared": "workspace:*",
     "@zotlit/templates": "workspace:*",

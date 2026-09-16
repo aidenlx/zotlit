@@ -95,6 +95,15 @@ function setup(
   };
   const reported: (readonly string[])[] = [];
   const navigated: string[] = [];
+  // The creation surfaces hear the same gestures; this records what reaches
+  // them, so a key the selected-mark keymap took can be told from one it left.
+  const creation = {
+    press: vi.fn(),
+    settle: vi.fn(),
+    changed: vi.fn(),
+    key: vi.fn(),
+    sync: vi.fn(),
+  };
   let held = records;
   const selection = new MarkSelection({
     containerEl,
@@ -109,6 +118,7 @@ function setup(
     report: (keys) => reported.push(keys),
     annotations,
     gestures,
+    creation,
     now: () => NOW,
   });
   selection.load();
@@ -120,6 +130,7 @@ function setup(
     parent,
     annotations,
     gestures,
+    creation,
     reported,
     navigated,
     /** What the last read answered, for a refresh that retires a mark. */
