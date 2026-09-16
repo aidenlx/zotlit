@@ -15,7 +15,6 @@ import { editorInfoField, livePreviewState } from "obsidian";
 
 import { livePreviewOf } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
-import type { Held } from "@/lib/held-reads";
 import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import {
@@ -42,6 +41,7 @@ import type {
   HoverPreferences,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 
 import { wikilinkDecorations } from "./decorate";
 import type { WikilinkDecoration } from "./decorate";

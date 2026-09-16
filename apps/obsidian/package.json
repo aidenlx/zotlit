@@ -29,6 +29,7 @@
     "@std/async": "catalog:",
     "@std/collections": "catalog:",
     "@std/ini": "jsr:0.225.2",
+    "@tanstack/query-core": "catalog:",
     "@uiw/react-codemirror": "^4.25.11",
     "@zotlit/db": "workspace:*",
     "@zotlit/filter-expression": "workspace:*",

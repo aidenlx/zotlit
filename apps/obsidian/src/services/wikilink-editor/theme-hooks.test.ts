@@ -76,12 +76,12 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
-import type { Held } from "@/lib/held-reads";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 
 import { wikilinkEditorExtension } from "./extension";

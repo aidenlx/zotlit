@@ -37,6 +37,7 @@ catalog:
   "@std/async": jsr:1.4.0
   "@std/assert": jsr:1.0.19
   "@tailwindcss/vite": ^4.3.0
+  "@tanstack/query-core": ^5.102.8
   "@types/node": ^26.1.2
   "@types/node-24": npm:@types/node@^24.13.3
   "@types/react": ^19.2.0

@@ -9,12 +9,11 @@ import {
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
 import type { CitationKey } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
-import { HeldReads } from "@/lib/held-reads";
-import type { Held } from "@/lib/held-reads";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { mapsEqual } from "@/lib/maps-equal";
@@ -39,10 +38,10 @@ import {
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type {
   BibliographyRenderCache,
-  HeldRenderOutcome,
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
+import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 
 import { citationKey, presentedCitationEqual } from "./present";
@@ -57,12 +56,14 @@ export { type DocumentCitations } from "./present";
 const logger = getLogger("citation-text");
 
 /**
- * Documents whose citations are held at once. A reading view renders one
- * section at a time and each asks the same document again, and an editor asks
- * for its own document on every rebuild, so the bound only keeps a session that
- * visits many documents from growing without end.
+ * The key prefix every document's citation text is held under; the vault path
+ * of the document completes it.
+ *
+ * Text is retained for the session rather than for a time or a count: a
+ * document the author keeps open answers from what it holds however long the
+ * pause, and the key is dropped when the file it names is deleted.
  */
-const HELD_DOCUMENTS = 8;
+const CITATION_TEXT = "citation-text";
 
 /** What a citation shows in place of a note where no serial stands for one. */
 const NO_SERIALS: readonly undefined[] = [];
@@ -89,8 +90,10 @@ export interface CitationTextDeps {
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
-    "renderCitations" | "render" | "on" | "vaultPresentation"
+    "readCitations" | "readBibliography" | "on" | "vaultPresentation"
   >;
+  /** The plugin-wide query client every Held Read is realized on. */
+  queryClient: QueryClientService;
 }
 
 /**
@@ -123,10 +126,8 @@ export class CitationText extends Service<void> {
   readonly #noteIndex;
   readonly #profile: ProfileReader;
   readonly #bibliographyRender;
-  readonly #documents = new HeldReads<DocumentCitations>({
-    limit: HELD_DOCUMENTS,
-    same: documentCitationsEqual,
-  });
+  readonly #queries;
+  readonly #emitter = createNanoEvents<CitationTextEvents>();
 
   ready: Promise<void>;
 
@@ -138,6 +139,7 @@ export class CitationText extends Service<void> {
     this.#noteIndex = deps.noteIndex;
     this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
+    this.#queries = deps.queryClient;
     this.ready = this.#load();
   }
 
@@ -145,7 +147,7 @@ export class CitationText extends Service<void> {
     event: K,
     cb: CitationTextEvents[K],
   ): () => void {
-    return this.#documents.on(event, cb);
+    return this.#emitter.on(event, cb);
   }
 
   /**
@@ -158,35 +160,67 @@ export class CitationText extends Service<void> {
    * @returns null while the first read is pending.
    */
   peek(path: string): Held<DocumentCitations> | null {
-    const file = this.#app.vault.getFileByPath(path);
-    if (file === null) {
-      this.#documents.delete(path);
+    if (this.#app.vault.getFileByPath(path) === null) {
+      this.#drop(path);
       return null;
     }
-    void this.#documents.read(path, () =>
-      this.#readDocument(file).catch((error: unknown) => {
-        logger.warn("Cannot read the citations of a document", {
-          path: file.path,
-          error,
-        });
-        return null;
-      }),
+    void this.#queries.ask(documentKey(path), () => this.#read(path));
+    return this.#queries.peek<DocumentCitations>(documentKey(path));
+  }
+
+  /**
+   * The citations of one document once the read behind them stands, for a
+   * caller that can wait — the Citation Popover fills asynchronously and shows
+   * the final answer rather than an intermediate one.
+   *
+   * @param signal ends the wait; the shared read runs on for every other
+   *   surface that joined it.
+   * @returns null where the document is gone or its read failed.
+   */
+  async read(
+    path: string,
+    { signal }: { signal?: AbortSignal } = {},
+  ): Promise<DocumentCitations | null> {
+    const text = await this.#queries.read(
+      documentKey(path),
+      () => this.#read(path),
+      signal,
     );
-    return this.#documents.peek(path);
+    // A file deleted while its read ran holds nothing: the path is resolved
+    // again here, because the read may have started before the file went.
+    if (this.#app.vault.getFileByPath(path) !== null) return text;
+    this.#drop(path);
+    return null;
   }
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
+    this.#queries.client.setQueryDefaults([CITATION_TEXT], {
+      gcTime: Infinity,
+      // An equal re-read keeps the identity the surfaces hold, so nothing
+      // repaints for text that reads the same.
+      structuralSharing: (held, next) =>
+        held !== undefined &&
+        documentCitationsEqual(
+          held as DocumentCitations,
+          next as DocumentCitations,
+        )
+          ? held
+          : next,
+    });
     stack.defer(
-      this.#citationIndex.on("membership-changed", () =>
-        this.#documents.invalidate(),
-      ),
+      this.#queries.watch<DocumentCitations>([CITATION_TEXT], {
+        changed: (key) => this.#emitter.emit("changed", pathOf(key)),
+        settled: (key, held) =>
+          this.#emitter.emit("settled", pathOf(key), held),
+      }),
+    );
+    stack.defer(
+      this.#citationIndex.on("membership-changed", () => this.#invalidate()),
     );
     // A document's own citekeys decide what its citations say.
     stack.defer(
-      this.#citationIndex.on("changed", (path) =>
-        this.#documents.invalidate(path),
-      ),
+      this.#citationIndex.on("changed", (path) => this.#invalidate(path)),
     );
     // So does everything else the document writes around them: a locator or a
     // prefix is part of the source a render is keyed by, and editing one leaves
@@ -195,15 +229,13 @@ export class CitationText extends Service<void> {
     stack.use(
       registerEvent(
         this.#app.metadataCache.on("changed", (file) =>
-          this.#documents.invalidate(file.path),
+          this.#invalidate(file.path),
         ),
       ),
     );
     stack.use(
       registerEvent(
-        this.#app.metadataCache.on("deleted", (file) =>
-          this.#documents.delete(file.path),
-        ),
+        this.#app.metadataCache.on("deleted", (file) => this.#drop(file.path)),
       ),
     );
     // Renaming or creating a Literature Note is a cross-document input: which
@@ -211,27 +243,62 @@ export class CitationText extends Service<void> {
     // reaches. The Note Index reports every moved mapping as `changed`, and
     // its one Full Scan per session is silent, so nothing here flushes text
     // wholesale.
-    stack.defer(
-      this.#noteIndex.on("changed", () => this.#documents.invalidate()),
-    );
+    stack.defer(this.#noteIndex.on("changed", () => this.#invalidate()));
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
     stack.defer(
-      this.#citationIndex.on("resolution-changed", () =>
-        this.#documents.invalidate(),
-      ),
+      this.#citationIndex.on("resolution-changed", () => this.#invalidate()),
     );
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(
-      this.#bibliographyRender.on("invalidated", () =>
-        this.#documents.invalidate(),
-      ),
+      this.#bibliographyRender.on("invalidated", () => this.#invalidate()),
     );
-    stack.use(this.#documents);
 
     this.commit(stack.move());
+  }
+
+  /**
+   * Marks one document's text stale, or every document's where no path names
+   * one, and announces the scope the drop reached.
+   */
+  #invalidate(path?: string): void {
+    const queryKey = path === undefined ? [CITATION_TEXT] : documentKey(path);
+    // A document nothing has read stays quiet: an edit anywhere else in the
+    // vault reaches no surface that shows citation text.
+    if (
+      path !== undefined &&
+      this.#queries.client.getQueryState(queryKey) === undefined
+    ) {
+      return;
+    }
+    this.#queries.invalidate(queryKey);
+    if (path === undefined) this.#emitter.emit("invalidated");
+    else this.#emitter.emit("changed", path);
+  }
+
+  /** Releases what one vault path holds, which a file no longer there must. */
+  #drop(path: string): void {
+    this.#queries.client.removeQueries({ queryKey: documentKey(path) });
+  }
+
+  /**
+   * The document read, as the query behind one vault path runs it. The path is
+   * resolved on every run, so a read asked again after a cancellation reads the
+   * file the path names now — and reads nothing where it names none.
+   */
+  async #read(path: string): Promise<DocumentCitations> {
+    const file = this.#app.vault.getFileByPath(path);
+    if (file === null) {
+      throw new Error(`No document to read the citations of at ${path}`);
+    }
+    try {
+      return await this.#readDocument(file);
+    } catch (error) {
+      logger.warn("Cannot read the citations of a document", { path, error });
+      throw error;
+    }
   }
 
   /**
@@ -296,13 +363,9 @@ export class CitationText extends Service<void> {
     const rendered =
       presentation === null
         ? null
-        : await this.#settledRender(() =>
-            this.#bibliographyRender.renderCitations(
-              sources,
-              items,
-              presentation,
-            ),
-          );
+        : await this.#bibliographyRender.readCitations(sources, items, {
+            presentation,
+          });
     // A style whose citations are footnotes leaves a note in the rendered
     // content, which no surface can show. That output — not the style — is
     // what puts the whole document on Entry Serials.
@@ -388,9 +451,9 @@ export class CitationText extends Service<void> {
     presentation: RenderPresentation,
   ): Promise<ReadonlyMap<string, number>> {
     const serials = new Map<string, number>();
-    const rendered = await this.#settledRender(() =>
-      this.#bibliographyRender.render(items, presentation),
-    );
+    const rendered = await this.#bibliographyRender.readBibliography(items, {
+      presentation,
+    });
     if (rendered === null) {
       logger.debug("Cannot number the cited entries");
       return serials;
@@ -403,21 +466,6 @@ export class CitationText extends Service<void> {
       if (serial !== undefined) serials.set(indexedKey, serial);
     }
     return serials;
-  }
-
-  /** Waits through a stale render and reads the record that replaced it. */
-  async #settledRender<T>(
-    read: () => Promise<HeldRenderOutcome<T>>,
-  ): Promise<T | null> {
-    let outcome = await read();
-    while (
-      outcome.kind === "held" &&
-      outcome.record.status === "revalidating"
-    ) {
-      await outcome.record.settled;
-      outcome = await read();
-    }
-    return outcome.kind === "held" ? outcome.record.value : null;
   }
 
   /**
@@ -525,6 +573,16 @@ export class CitationText extends Service<void> {
     }
     return works;
   }
+}
+
+/** The key one document's citation text is held under. */
+function documentKey(path: string): [string, string] {
+  return [CITATION_TEXT, path];
+}
+
+/** The vault path a {@link documentKey} names. */
+function pathOf(key: readonly unknown[]): string {
+  return String(key[1]);
 }
 
 /** One cited work, as the render and the display surfaces read it. */

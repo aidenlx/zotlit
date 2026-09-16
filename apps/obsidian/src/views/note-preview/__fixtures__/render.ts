@@ -99,6 +99,10 @@ export async function createRenderFixture(options: { existing?: string; javascri
     const value: RenderedCitation[] = sources.map(() => ({ content: [{ t: "Str", c: content }], citations: [{ id: "MAIN2345", mode: "normal" }] }));
     return { kind: "held", key: "fixture", record: { value, status: "fresh", settled: Promise.resolve(value) } };
   });
+  const readCitations = vi.fn<NativeRenderDeps["bibliographyRender"]["readCitations"]>(async (sources, items, options) => {
+    const outcome = await renderCitations(sources, items, options?.presentation);
+    return outcome.kind === "held" ? outcome.record.value : null;
+  });
   const deps: NativeRenderDeps = {
     app, settings, templates,
     profile: { resolveProfile: () => undefined },
@@ -109,7 +113,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
       whenResolved: async () => {}, citekeyOf: () => "figures2014",
       resolveCitekey: (key) => key === "figures2014" ? { kind: "unique", item: { itemID: 1, libraryID: 1, key: "MAIN2345", indexedKey: "MAIN2345" } } : { kind: "missing" },
     },
-    bibliographyRender: { on: () => () => {}, renderCitations, render: async () => ({ kind: "unavailable", reason: "failed" }), vaultPresentation: { styleId: null, locale: null } },
+    bibliographyRender: { on: () => () => {}, renderCitations, readCitations, readBibliography: async () => null, vaultPresentation: { styleId: null, locale: null } },
   };
   const writes = { create: vi.spyOn(vault, "create"), process: vi.spyOn(vault, "process"), modify: vi.spyOn(vault, "modifyFile") };
   const snapshot = exportItemSnapshot(client, { key: "MAIN2345", library: { type: "personal" } }, { provenance: { kind: "connected", installationId: "fixture", vault: "preview" } });

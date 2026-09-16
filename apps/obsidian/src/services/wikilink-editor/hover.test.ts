@@ -70,13 +70,13 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { Keymap, editorInfoField } from "obsidian";
 
-import type { Held } from "@/lib/held-reads";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import { hoverPreferences } from "@/services/citekey-navigation";
 import type { HoverPreferences } from "@/services/citekey-navigation";
+import type { Held } from "@/services/query-client/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 

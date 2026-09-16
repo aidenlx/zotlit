@@ -1,20 +1,15 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 
-import { abortable } from "@std/async/abortable";
 import type { App, HoverParent } from "obsidian";
 
 import { registerEvent } from "@/lib/disposables";
-import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
-import type {
-  CitationText,
-  DocumentCitations,
-} from "@/services/citation-text/service";
+import type { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -50,12 +45,12 @@ export interface CitationPopoverDeps {
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
-  citationText: Pick<CitationText, "on" | "peek">;
+  citationText: Pick<CitationText, "read">;
   profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
-    "render" | "on" | "vaultPresentation"
+    "render" | "readBibliography" | "on" | "vaultPresentation"
   >;
 }
 
@@ -229,7 +224,7 @@ async function fill(
   let read: PopoverRead;
   try {
     read = await ("work" in request
-      ? readWork(deps, request)
+      ? readWork(deps, request, signal)
       : readBlocks(deps, request, signal));
   } catch (error) {
     if (signal.aborted) return;
@@ -305,6 +300,7 @@ async function fill(
 async function readWork(
   deps: CitationPopoverDeps,
   request: WorkHoverRequest,
+  signal: AbortSignal,
 ): Promise<PopoverRead> {
   await deps.profile.ready;
   const work = request.work;
@@ -347,20 +343,14 @@ async function readWork(
   if (database === "unreadable") return { ...empty, unavailable: "database" };
   const source = sources.get(indexedKey);
   if (!source) return { ...empty, unavailable: "item" };
-  const outcome = await deps.bibliographyRender
-    .render([source.csl])
+  // Read through to the render that stands: the popover shows one entry and
+  // has no stale list of its own to keep on screen meanwhile.
+  const bibliography = await deps.bibliographyRender
+    .readBibliography([source.csl], { signal })
     .catch((error: unknown) => {
       logger.warn("Cannot format source-less Item", { indexedKey, error });
       return null;
     });
-  const bibliography =
-    outcome?.kind === "held"
-      ? outcome.record.status === "revalidating"
-        ? await outcome.record.settled
-        : outcome.record.status === "failed"
-          ? null
-          : outcome.record.value
-      : null;
   const entry = bibliography?.entries.find(
     (entry) => entry.id === String(source.csl.id),
   );
@@ -433,7 +423,7 @@ async function readBlocks(
   // The document's own citations as they stand now, rather than as the hover
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
-  const text = await settledCitationText(deps.citationText, file.path, signal);
+  const text = await deps.citationText.read(file.path, { signal });
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the
   // formatted text of the very occurrence the pointer is on, and from no other
@@ -462,45 +452,6 @@ async function readBlocks(
         : undefined,
     pending,
   };
-}
-
-/** Reads through first-load and revalidation commits for an asynchronous surface. */
-async function settledCitationText(
-  citationText: Pick<CitationText, "on" | "peek">,
-  path: string,
-  signal: AbortSignal,
-): Promise<DocumentCitations | null> {
-  while (true) {
-    signal.throwIfAborted();
-    const held = citationText.peek(path);
-    if (held === null) {
-      const wake = Promise.withResolvers<
-        Held<DocumentCitations> | null | undefined
-      >();
-      using subscriptions = new DisposableStack();
-      subscriptions.defer(
-        citationText.on("changed", (changedPath) => {
-          if (changedPath === path) wake.resolve(undefined);
-        }),
-      );
-      subscriptions.defer(
-        citationText.on("invalidated", () => wake.resolve(undefined)),
-      );
-      subscriptions.defer(
-        citationText.on("settled", (settledPath, settled) => {
-          if (settledPath === path) wake.resolve(settled);
-        }),
-      );
-      const settled = await abortable(wake.promise, signal);
-      if (settled !== undefined) return settled?.value ?? null;
-      continue;
-    }
-    if (held.status === "revalidating") {
-      await abortable(held.settled, signal);
-      continue;
-    }
-    return held.value;
-  }
 }
 
 /** The formatted entries by CSL id, which is the item identity they are joined under. */
