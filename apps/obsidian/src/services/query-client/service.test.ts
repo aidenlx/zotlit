@@ -39,6 +39,23 @@ describe("QueryClientService", () => {
     expect(events).toEqual(["changed:a", "settled:a"]);
   });
 
+  it("names every key under a prefix that holds a read", async () => {
+    await using queries = openQueries();
+    await queries.ask(KEY, () => Promise.resolve("A"));
+    await queries.ask(["read", "b"], () => Promise.resolve("B"));
+    await queries.ask(["other", "c"], () => Promise.resolve("C"));
+
+    expect(
+      queries
+        .keysUnder(PREFIX)
+        .toSorted((a, b) => a.join().localeCompare(b.join())),
+    ).toEqual([
+      ["read", "a"],
+      ["read", "b"],
+    ]);
+    expect(queries.keysUnder(["nothing"])).toEqual([]);
+  });
+
   it("serves the held value while one fresh read replaces it", async () => {
     await using queries = openQueries();
     await queries.ask(KEY, () => Promise.resolve("old"));

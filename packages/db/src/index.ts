@@ -120,6 +120,14 @@ export {
   type AnnotationType,
   type ResolvedAnnotationTypeName,
 } from "./lib/zt-annot";
+export { type AnnotationPositionRaw } from "@drizzle/schema";
+export {
+  parseAnnotationPosition,
+  type AnnotationPosition,
+  type PdfInkPosition,
+  type PdfRectsPosition,
+  type PdfTextPosition,
+} from "./lib/zt-annot-pos";
 export {
   withAnnotationCitation,
   type AnnotationTemplateContext,

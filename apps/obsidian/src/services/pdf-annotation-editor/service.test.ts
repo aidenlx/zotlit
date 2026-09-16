@@ -2,19 +2,35 @@
 import { FileSystemAdapter } from "obsidian";
 import { expect, it, vi } from "vitest";
 
-import { failedIn, pageView, pdfReader } from "./__fixtures__";
+import {
+  annotation,
+  annotationReads,
+  failedIn,
+  pageView,
+  pdfReader,
+} from "./__fixtures__";
 import { PdfAnnotationEditor } from "./service";
 import type { AttachmentResolution } from "./service";
 
 /** The eleven probes of the seam re-verification, as issue #1140 numbers them. */
 const PROBE_COUNT = 11;
 
-/** A Zotero attachment as the resolver of issue #1141 will report one. */
+/** A Zotero attachment as the resolver of issue #1141 reports one. */
 const RESOLVED = {
   kind: "resolved",
   attachmentKey: "ABCD2345",
   itemKey: "WXYZ6789g4711",
 } as const satisfies AttachmentResolution;
+
+/** Two of the Fixture's own Annotations on `rougier-2014.pdf`, page one. */
+const HIGHLIGHT = annotation("PUPR5FG5", "highlight", {
+  pageIndex: 0,
+  rects: [[265.833, 611.202, 374.503, 620.019]],
+});
+const UNDERLINE = annotation("K3JRFLFQ", "underline", {
+  pageIndex: 0,
+  rects: [[67.011, 612.638, 211.485, 620.77]],
+});
 
 /** A reader whose one page fails the named viewport probe. */
 function brokenReader(member: string) {
@@ -59,12 +75,24 @@ function workspace(views: { view: unknown }[]) {
   };
 }
 
+/** The Indexed Key of every mark painted over one page, in document order. */
+function markedKeys(page: { div: HTMLElement }): (string | undefined)[] {
+  return [
+    ...page.div.querySelectorAll<SVGElement>("[data-zotero-annotation-key]"),
+  ].map((mark) => mark.dataset.zoteroAnnotationKey);
+}
+
 it("binds an open PDF view, resolves its vault path, and unbinds on unload", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const annotations = annotationReads();
   const { app, offref } = workspace([{ view }]);
-  const service = new PdfAnnotationEditor({ app, resolveAttachment });
+  const service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment,
+    annotations,
+  });
 
   {
     await using _service = service;
@@ -75,14 +103,16 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     );
     const binding = service.bindings[0]!;
     expect(binding.attachment).toEqual(RESOLVED);
+    expect(annotations.read).toHaveBeenCalledExactlyOnceWith("ABCD2345");
 
     reader.renderFirstPage();
     await binding.probed;
     expect(binding.probes).toHaveLength(PROBE_COUNT);
     expect(failedIn(binding.probes)).toEqual([]);
     expect(binding.supported).toBe(true);
-    // This milestone mounts nothing: the reader stays as Obsidian built it.
+    // The Creation Toolbar arrives with creation; this milestone only paints.
     expect(reader.toolbarRightEl.childElementCount).toBe(0);
+    // An attachment with no Annotations leaves the page as Obsidian built it.
     expect(reader.page.div.childElementCount).toBe(0);
   }
 
@@ -93,6 +123,101 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
   expect(offref).toHaveBeenCalledTimes(2);
 });
 
+it("paints the attachment's annotations over every page it renders", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT, UNDERLINE]);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment: () => RESOLVED,
+    annotations,
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+
+  const overlay = reader.page.div.querySelector(".zt-pdf-annotation-overlay");
+
+  expect(overlay?.getAttribute("aria-hidden")).toBe("true");
+  expect(markedKeys(reader.page)).toEqual(["PUPR5FG5", "K3JRFLFQ"]);
+});
+
+it("rebuilds the marks from data after PDF.js recycles the page", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT]);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment: () => RESOLVED,
+    annotations,
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  // What a zoom, a rotation or a page recycle does: PDF.js `reset()` drops
+  // every child of the page that is not on its own keep list, the overlay
+  // included, and renders the page again.
+  reader.page.div.replaceChildren();
+  reader.renderFirstPage();
+
+  expect(markedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+  // Rebuilt from what the binding already holds: no second database read.
+  expect(annotations.read).toHaveBeenCalledOnce();
+});
+
+it("replaces the whole list when the repository announces a change", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT]);
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment: () => RESOLVED,
+    annotations,
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+
+  annotations.replace("ABCD2345", [UNDERLINE]);
+  await binding.refreshed;
+
+  expect(markedKeys(reader.page)).toEqual(["K3JRFLFQ"]);
+
+  // Another attachment's change is not this view's.
+  annotations.replace("ZZZZ9999", []);
+  await binding.refreshed;
+
+  expect(markedKeys(reader.page)).toEqual(["K3JRFLFQ"]);
+});
+
+it("takes every mark off the page when the leaf closes", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const leaves = [{ view }];
+  const { app, relayout } = workspace(leaves);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment: () => RESOLVED,
+    annotations: annotationReads([HIGHLIGHT]),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  expect(reader.page.div.childElementCount).toBe(1);
+
+  leaves.length = 0;
+  relayout();
+
+  expect(reader.page.div.childElementCount).toBe(0);
+});
+
 it("probes the page a view had already painted before the binding attached", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -101,6 +226,7 @@ it("probes the page a view had already painted before the binding attached", asy
   await using service = new PdfAnnotationEditor({
     app,
     resolveAttachment: () => RESOLVED,
+    annotations: annotationReads(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -126,6 +252,7 @@ it("waits for the first render when Obsidian is still opening the document", asy
   await using service = new PdfAnnotationEditor({
     app,
     resolveAttachment: () => RESOLVED,
+    annotations: annotationReads(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -146,7 +273,11 @@ it("reads an external file's absolute path from its `file:` prefix", async () =>
   const view = pdfView("file:/Users/reader/Zotero/storage/ABCD2345/paper.pdf");
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({ app, resolveAttachment });
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment,
+    annotations: annotationReads(),
+  });
   await service.ready;
 
   expect(resolveAttachment).toHaveBeenCalledExactlyOnceWith(
@@ -160,18 +291,22 @@ it("reads an external file's absolute path from its `file:` prefix", async () =>
 it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/holiday-snaps.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
   await using service = new PdfAnnotationEditor({
     app,
     resolveAttachment: () => ({ kind: "unresolved" }),
+    annotations,
   });
   await service.ready;
   const binding = service.bindings[0]!;
   reader.renderFirstPage();
   await binding.probed;
+  await binding.refreshed;
 
   expect(binding.attachment).toEqual({ kind: "unresolved" });
+  expect(annotations.read).not.toHaveBeenCalled();
   expect(reader.toolbarRightEl.childElementCount).toBe(0);
   expect(reader.page.div.childElementCount).toBe(0);
 });
@@ -181,15 +316,22 @@ it("fails closed to the reader when the controller seam changed shape", async ()
   delete reader.child.applySubpath;
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const annotations = annotationReads([HIGHLIGHT]);
   const { app } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({ app, resolveAttachment });
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment,
+    annotations,
+  });
   await service.ready;
   const binding = service.bindings[0]!;
+  await binding.refreshed;
 
   expect(binding.supported).toBe(false);
   expect(failedIn(binding.probes)).toEqual(["P6"]);
   expect(reader.child.on).not.toHaveBeenCalled();
+  expect(reader.page.div.childElementCount).toBe(0);
   // The resolution the repository and the Annotation View read is untouched.
   expect(resolveAttachment).toHaveBeenCalledExactlyOnceWith(
     "/vault/attachments/rougier-2014.pdf",
@@ -205,12 +347,15 @@ it("drops its page listener when a page's viewport changed shape", async () => {
   await using service = new PdfAnnotationEditor({
     app,
     resolveAttachment: () => RESOLVED,
+    annotations: annotationReads([HIGHLIGHT]),
   });
   await service.ready;
   const binding = service.bindings[0]!;
+  await binding.refreshed;
 
   expect(binding.supported).toBe(false);
   expect(failedIn(binding.probes)).toEqual(["P9"]);
+  expect(reader.page.div.childElementCount).toBe(0);
   expect(reader.child.off).toHaveBeenCalledWith(
     "pagerendered",
     expect.any(Function),
@@ -225,7 +370,11 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
   const leaves = [{ view }];
   const { app, relayout } = workspace(leaves);
 
-  await using service = new PdfAnnotationEditor({ app, resolveAttachment });
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment,
+    annotations: annotationReads(),
+  });
   await service.ready;
 
   Object.assign(view, pdfView("attachments/second.pdf", second));
@@ -257,12 +406,18 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
   const reader = pdfReader();
   const view = pdfView(null, reader);
   const resolveAttachment = vi.fn((): AttachmentResolution => RESOLVED);
+  const annotations = annotationReads([HIGHLIGHT]);
   const { app, relayout } = workspace([{ view }]);
 
-  await using service = new PdfAnnotationEditor({ app, resolveAttachment });
+  await using service = new PdfAnnotationEditor({
+    app,
+    resolveAttachment,
+    annotations,
+  });
   await service.ready;
 
   expect(resolveAttachment).not.toHaveBeenCalled();
+  expect(annotations.read).not.toHaveBeenCalled();
   expect(reader.child.on).not.toHaveBeenCalled();
   expect(service.bindings[0]!.absolutePath).toBeNull();
 

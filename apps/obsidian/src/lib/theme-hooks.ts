@@ -27,6 +27,18 @@ export const themeHook = {
   templateInvalid: "zt-template-invalid",
   /** The popover that explains the template token under the pointer. */
   templateHover: "zt-template-hover",
+  /** The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page. */
+  pdfAnnotationOverlay: "zt-pdf-annotation-overlay",
+  /**
+   * One Annotation Mark inside that overlay. `data-zotero-annotation-type`
+   * names its Zotero type and `data-zotero-annotation-key` its Indexed Key;
+   * the selected mark also carries Obsidian's own `is-selected`.
+   */
+  pdfAnnotationMark: "zt-pdf-annotation-mark",
+  /** The filled rectangle of a highlight Annotation Mark, which blends with the page. */
+  pdfAnnotationHighlight: "zt-pdf-annotation-highlight",
+  /** The folded corner of a note Annotation Mark, which takes the page's own colour. */
+  pdfAnnotationNoteFold: "zt-pdf-annotation-note-fold",
 } as const;
 
 /**

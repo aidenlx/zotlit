@@ -123,6 +123,19 @@ export class QueryClientService extends Service {
   }
 
   /**
+   * Every key under one prefix that the cache holds a read for, so an owner can
+   * name what it just dropped without walking the cache itself.
+   *
+   * @param prefix the key prefix to enumerate.
+   */
+  keysUnder(prefix: QueryKey): QueryKey[] {
+    return this.#client
+      .getQueryCache()
+      .findAll({ queryKey: prefix })
+      .map((query) => query.queryKey);
+  }
+
+  /**
    * What one key holds right now, for a caller that cannot wait — an editor
    * builds its decorations synchronously.
    *

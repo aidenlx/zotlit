@@ -1,0 +1,485 @@
+// @vitest-environment happy-dom
+import type { PDFPageViewport } from "obsidian";
+import { expect, it } from "vitest";
+
+import { parseAnnotationPosition } from "@zotlit/db";
+
+import { themeHook } from "@/lib/theme-hooks";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
+
+import { annotation } from "./__fixtures__";
+import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
+import type { OverlayPageView } from "./render";
+
+/** A US Letter page box, `[x1, y1, x2, y2]` in PDF points. */
+const PAGE_BOX = [0, 0, 612, 792] as const;
+
+/** The same page, described from a non-zero origin, as a PDF may do. */
+const OFFSET_BOX = [10, 20, 622, 812] as const;
+
+/** The colour the Fixture gives each of its Annotations on `rougier-2014.pdf`. */
+const FIXTURE_COLORS: Record<string, string> = {
+  PUPR5FG5: "#2ea8e5",
+  K3JRFLFQ: "#ff6666",
+  C94NJNYG: "#ffd400",
+  FDRFQ7C2: "#ffd400",
+  TYY6Z6ZF: "#5fb236",
+  HRK7BG32: "#a28ae5",
+};
+
+/** One rectangle near the top of the page, in PDF points. */
+const RECT = [100, 700, 200, 720] as const;
+
+/**
+ * Where `RECT` lands in page units, worked out by hand from PDF.js's
+ * `PageViewport` matrix expanded per rotation, as `[x, y, width, height]`
+ * beside the overlay `viewBox` the same rotation gives.
+ *
+ * At rotation 0 `vx = x - vb[0]` and `vy = vb[3] - y`, so the rectangle's
+ * corners `(100, 700)` and `(200, 720)` land at `(100, 92)` and `(200, 72)`,
+ * which re-normalise to a box 100 wide and 20 high with its top at 72.
+ *
+ * @see https://github.com/mozilla/pdf.js/blob/v5.3.31/src/display/display_utils.js
+ *   `PageViewport` — the nearest tagged release below the 5.3.34 build Obsidian
+ *   bundles, whose constructor is unchanged between the two.
+ */
+const ROTATIONS = [
+  { rotation: 0, box: "612 792", mark: ["100", "72", "100", "20"] },
+  { rotation: 90, box: "792 612", mark: ["700", "100", "20", "100"] },
+  { rotation: 180, box: "612 792", mark: ["412", "700", "100", "20"] },
+  { rotation: 270, box: "792 612", mark: ["72", "412", "20", "100"] },
+] as const;
+
+it("draws all six Zotero annotation types with the primitive each one calls for", () => {
+  const page = pageView();
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([
+      record("PUPR5FG5", "highlight", {
+        pageIndex: 0,
+        rects: [[265.833, 611.202, 374.503, 620.019]],
+      }),
+      record("K3JRFLFQ", "underline", {
+        pageIndex: 0,
+        rects: [[67.011, 612.638, 211.485, 620.77]],
+      }),
+      record("C94NJNYG", "note", {
+        pageIndex: 0,
+        rects: [[566.901, 598.393, 588.901, 620.393]],
+      }),
+      record("FDRFQ7C2", "image", {
+        pageIndex: 0,
+        rects: [[48.75, 395.509, 570, 743.723]],
+      }),
+      record("TYY6Z6ZF", "ink", {
+        pageIndex: 0,
+        width: 2,
+        paths: [[66.964, 674.348, 66.629, 673.26]],
+      }),
+      record("HRK7BG32", "text", {
+        pageIndex: 0,
+        fontSize: 14,
+        rotation: 0,
+        rects: [[398.804, 685.107, 560.804, 702.107]],
+      }),
+    ]),
+  });
+
+  expect(marksIn(page)).toEqual({
+    PUPR5FG5: ["rect", "highlight"],
+    K3JRFLFQ: ["line", "underline"],
+    C94NJNYG: ["g", "note"],
+    FDRFQ7C2: ["rect", "image"],
+    TYY6Z6ZF: ["path", "ink"],
+    HRK7BG32: ["text", "text"],
+  });
+
+  // The underline sits on the bottom edge of its rectangle: 792 - 612.638.
+  expect(pointsOf(page, "K3JRFLFQ", ["x1", "y1", "x2", "y2"])).toEqual([
+    67.011, 179.362, 211.485, 179.362,
+  ]);
+  expect(attributesOf(page, "K3JRFLFQ")).toMatchObject({
+    stroke: "#ff6666",
+    "stroke-width": "1",
+  });
+  // The ink stroke keeps the width Zotero stored, in the page's own points.
+  expect(pathOf(page, "TYY6Z6ZF")).toEqual([
+    [66.964, 117.652],
+    [66.629, 118.74],
+  ]);
+  expect(attributesOf(page, "TYY6Z6ZF")).toMatchObject({
+    fill: "none",
+    stroke: "#5fb236",
+    "stroke-width": "2",
+  });
+  // The image is stroked, never filled, so the excerpt underneath stays legible.
+  expect(attributesOf(page, "FDRFQ7C2")).toMatchObject({
+    fill: "none",
+    stroke: "#ffd400",
+    "stroke-width": "3",
+  });
+  // The note's folded corner is drawn over its rounded body, and takes its
+  // paper colour from the stylesheet: `var()` never substitutes in an SVG
+  // presentation attribute, so a `fill` attribute here would render black.
+  const note = markIn(page, "C94NJNYG");
+  expect(note.childNodes).toHaveLength(2);
+  expect([...note.lastElementChild!.classList]).toEqual([
+    "zt-pdf-annotation-note-fold",
+  ]);
+  expect(note.lastElementChild!.getAttribute("fill")).toBeNull();
+  // The free text is the comment, at the size Zotero stored.
+  expect(markIn(page, "HRK7BG32").textContent).toBe(
+    "Making figures is hard :(",
+  );
+  expect(attributesOf(page, "HRK7BG32")["font-size"]).toBe("14");
+});
+
+it.each(ROTATIONS)(
+  "places a mark where PDF.js's own transform puts it at rotation $rotation",
+  ({ rotation, box, mark }) => {
+    const page = pageView(viewport({ rotation }));
+
+    renderAnnotationOverlay(page, {
+      annotations: pageAnnotations([highlight()]),
+    });
+
+    expect(overlayIn(page).getAttribute("viewBox")).toBe(`0 0 ${box}`);
+    expect(overlayIn(page).getAttribute("preserveAspectRatio")).toBe("none");
+    expect(rectOf(page, "PUPR5FG5")).toEqual(mark);
+  },
+);
+
+it("carries the page's own `/UserUnit` into the page-unit box", () => {
+  // Half-size user units halve every page coordinate: the 612 x 792 box becomes
+  // 306 x 396 and the rectangle's top edge, 72 at rotation 0, becomes 36.
+  const page = pageView(viewport({ userUnit: 0.5 }));
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  expect(overlayIn(page).getAttribute("viewBox")).toBe("0 0 306 396");
+  expect(rectOf(page, "PUPR5FG5")).toEqual(["50", "36", "50", "10"]);
+});
+
+it("measures from the page box's own origin rather than from zero", () => {
+  // A box starting at (10, 20) shifts the same rectangle left by 10, and its
+  // top edge is measured from 812 rather than 792.
+  const page = pageView(viewport({ box: OFFSET_BOX }));
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  expect(overlayIn(page).getAttribute("viewBox")).toBe("0 0 612 792");
+  expect(rectOf(page, "PUPR5FG5")).toEqual(["90", "92", "100", "20"]);
+});
+
+it("builds the same overlay at every zoom step", () => {
+  const markup = (scale: number) => {
+    const page = pageView(viewport({ scale }));
+    renderAnnotationOverlay(page, {
+      annotations: pageAnnotations([highlight()]),
+    });
+    return overlayIn(page).outerHTML;
+  };
+
+  const reference = markup(1);
+
+  expect(reference).toContain('viewBox="0 0 612 792"');
+  for (const scale of [0.25, 0.5, 1.1, 2.5, 10]) {
+    expect(markup(scale), `scale ${scale}`).toBe(reference);
+  }
+});
+
+it("divides the built viewport out when the seam offers no rebuild", () => {
+  // A viewport with no `clone` is the documented fallback: the same page units,
+  // reached by dividing out `scale * userUnit`.
+  const built = viewport({ scale: 2 });
+  const page = pageView({ ...built, clone: undefined });
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  expect(overlayIn(page).getAttribute("viewBox")).toBe("0 0 612 792");
+  expect(rectOf(page, "PUPR5FG5")).toEqual(["100", "72", "100", "20"]);
+});
+
+it("draws a spilled-over mark on the next page from that page's own rectangles", () => {
+  const spilled = record("PUPR5FG5", "highlight", {
+    pageIndex: 0,
+    rects: [RECT],
+    nextPageRects: [[100, 80, 200, 100]],
+  });
+  const first = pageView();
+  const second = pageView();
+  const annotations = groupAnnotationsByPage([spilled]);
+
+  renderAnnotationOverlay(first, {
+    annotations: annotations.get(0) ?? [],
+  });
+  renderAnnotationOverlay(second, {
+    annotations: annotations.get(1) ?? [],
+  });
+
+  expect(rectOf(first, "PUPR5FG5")).toEqual(["100", "72", "100", "20"]);
+  // 792 - 100 = 692 down the second page, where the quote continues.
+  expect(rectOf(second, "PUPR5FG5")).toEqual(["100", "692", "100", "20"]);
+});
+
+it("paints marks that take no pointer input, last in the page", () => {
+  const page = pageView();
+  const textLayer = page.div.ownerDocument.createElement("div");
+  page.div.append(textLayer);
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+    selected: new Set(["PUPR5FG5"]),
+  });
+
+  const overlay = overlayIn(page);
+
+  expect(page.div.lastElementChild).toBe(overlay);
+  expect(overlay.getAttribute("aria-hidden")).toBe("true");
+  // The public hooks a theme styles the overlay and its marks through.
+  expect(overlay.classList.contains("zt-pdf-annotation-overlay")).toBe(true);
+  expect([...markIn(page, "PUPR5FG5").classList].toSorted()).toEqual([
+    "is-selected",
+    "zt-pdf-annotation-highlight",
+    "zt-pdf-annotation-mark",
+  ]);
+});
+
+it("leaves the page as it found it when the annotations are gone", () => {
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  renderAnnotationOverlay(page, { annotations: [] });
+
+  expect(page.div.childElementCount).toBe(0);
+});
+
+it("draws nothing for a type whose stored position is not the shape it pairs with", () => {
+  const page = pageView();
+
+  renderAnnotationOverlay(page, {
+    // An ink position under a highlight: a pairing Zotero never writes.
+    annotations: pageAnnotations([
+      record("PUPR5FG5", "highlight", {
+        pageIndex: 0,
+        width: 2,
+        paths: [[10, 20, 30, 40]],
+      }),
+    ]),
+  });
+
+  expect(page.div.childElementCount).toBe(0);
+});
+
+it("keys the annotations by the page that draws them, parsing nothing per page", () => {
+  const grouped = groupAnnotationsByPage([
+    record("PUPR5FG5", "highlight", {
+      pageIndex: 0,
+      rects: [RECT],
+    }),
+    record("TYY6Z6ZF", "ink", {
+      pageIndex: 2,
+      width: 2,
+      paths: [[10, 20, 30, 40]],
+    }),
+    record("HRK7BG32", "text", {
+      pageIndex: 2,
+      fontSize: 14,
+      rotation: 0,
+      rects: [[10, 40, 100, 55]],
+    }),
+  ]);
+
+  expect([...grouped.keys()].toSorted((a, b) => a - b)).toEqual([0, 2]);
+  expect(grouped.get(2)?.map(({ annotation }) => annotation.key)).toEqual([
+    "TYY6Z6ZF",
+    "HRK7BG32",
+  ]);
+  expect(grouped.get(0)?.[0]?.position.kind).toBe("pdf-rects");
+});
+
+it("places a spilled-over annotation on both of its pages", () => {
+  const grouped = groupAnnotationsByPage([
+    record("PUPR5FG5", "highlight", {
+      pageIndex: 3,
+      rects: [RECT],
+      nextPageRects: [[100, 80, 200, 100]],
+    }),
+  ]);
+
+  expect([...grouped.keys()].toSorted((a, b) => a - b)).toEqual([3, 4]);
+  expect(grouped.get(4)?.[0]?.annotation.key).toBe("PUPR5FG5");
+});
+
+it("drops an annotation whose position is not a PDF position", () => {
+  const grouped = groupAnnotationsByPage([
+    {
+      key: "EPUBMRK2",
+      type: "highlight",
+      color: "#ffd400",
+      comment: null,
+      text: null,
+      position: parseAnnotationPosition(
+        { type: "FragmentSelector", value: "epubcfi(/6/4!/4/2)" },
+        "application/epub+zip",
+      ),
+    },
+  ]);
+
+  expect(grouped.size).toBe(0);
+});
+
+/** The highlight the geometry cases place, on `RECT`. */
+function highlight(): AnnotationRecord {
+  return record("PUPR5FG5", "highlight", {
+    pageIndex: 0,
+    rects: [RECT],
+  });
+}
+
+/** The shared builder, dressed in the colour and comment the Fixture gives it. */
+function record(
+  key: string,
+  type: AnnotationRecord["type"],
+  position: unknown,
+): AnnotationRecord {
+  return {
+    ...annotation(key, type, position),
+    color: FIXTURE_COLORS[key] ?? null,
+    comment: type === "text" ? "Making figures is hard :(" : null,
+  };
+}
+
+/** Everything the records place on page zero. */
+function pageAnnotations(records: readonly AnnotationRecord[]) {
+  return groupAnnotationsByPage(records).get(0) ?? [];
+}
+
+interface ViewportOptions {
+  rotation?: number;
+  scale?: number;
+  userUnit?: number;
+  box?: readonly [number, number, number, number];
+}
+
+/**
+ * A PDF.js `PageViewport` built from the matrix its constructor writes, so the
+ * conversions the overlay reads come from PDF.js's own rule and not from the
+ * module under test.
+ *
+ * @see https://github.com/mozilla/pdf.js/blob/v5.3.31/src/display/display_utils.js
+ *   `PageViewport` — the nearest tagged release below the 5.3.34 build Obsidian
+ *   bundles, whose constructor is unchanged between the two.
+ */
+function viewport({
+  rotation = 0,
+  scale = 1,
+  userUnit = 1,
+  box = PAGE_BOX,
+}: ViewportOptions = {}): PDFPageViewport {
+  const total = scale * userUnit;
+  const [x1, y1, x2, y2] = box;
+  const axesSwap = rotation === 90 || rotation === 270;
+  const convertToViewportPoint = (x: number, y: number): [number, number] => {
+    switch (rotation) {
+      case 90:
+        return [total * (y - y1), total * (x - x1)];
+      case 180:
+        return [total * (x2 - x), total * (y - y1)];
+      case 270:
+        return [total * (y2 - y), total * (x2 - x)];
+      default:
+        return [total * (x - x1), total * (y2 - y)];
+    }
+  };
+  return {
+    viewBox: box,
+    userUnit,
+    scale,
+    rotation,
+    offsetX: 0,
+    offsetY: 0,
+    transform: [total, 0, 0, -total, -total * x1, total * y2],
+    width: total * (axesSwap ? y2 - y1 : x2 - x1),
+    height: total * (axesSwap ? x2 - x1 : y2 - y1),
+    convertToViewportPoint,
+    clone: ({ scale: next = scale, rotation: turned = rotation }) =>
+      viewport({ rotation: turned, scale: next, userUnit, box }),
+  };
+}
+
+function pageView(built = viewport()): OverlayPageView {
+  return { div: document.createElement("div"), viewport: built };
+}
+
+function overlayIn(page: OverlayPageView): SVGElement {
+  return page.div.querySelector<SVGElement>(
+    `.${themeHook.pdfAnnotationOverlay}`,
+  )!;
+}
+
+function markIn(page: OverlayPageView, key: string): SVGElement {
+  return page.div.querySelector<SVGElement>(
+    `[data-zotero-annotation-key="${key}"]`,
+  )!;
+}
+
+/** The mark's `[x, y, width, height]`, as the overlay wrote them. */
+function rectOf(page: OverlayPageView, key: string): (string | null)[] {
+  const mark = markIn(page, key);
+  return ["x", "y", "width", "height"].map((name) => mark.getAttribute(name));
+}
+
+/** PDF points carry three decimals; the rest is the float noise of the sum. */
+function round(value: string | null): number {
+  return Math.round(Number(value) * 1000) / 1000;
+}
+
+/** The named coordinate attributes of a mark, at PDF-point precision. */
+function pointsOf(
+  page: OverlayPageView,
+  key: string,
+  names: readonly string[],
+): number[] {
+  const mark = markIn(page, key);
+  return names.map((name) => round(mark.getAttribute(name)));
+}
+
+/** An ink mark's path, as its points at PDF-point precision. */
+function pathOf(page: OverlayPageView, key: string): number[][] {
+  const commands = markIn(page, key)
+    .getAttribute("d")!
+    .split(/(?=[ML])/);
+  return commands.map((command) =>
+    command.trim().slice(1).trim().split(" ").map(round),
+  );
+}
+
+function attributesOf(
+  page: OverlayPageView,
+  key: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    [...markIn(page, key).attributes].map(({ name, value }) => [name, value]),
+  );
+}
+
+/** Every mark, as its tag name beside the Zotero type it was drawn for. */
+function marksIn(page: OverlayPageView): Record<string, string[]> {
+  return Object.fromEntries(
+    [
+      ...page.div.querySelectorAll<SVGElement>("[data-zotero-annotation-key]"),
+    ].map((mark) => [
+      mark.dataset.zoteroAnnotationKey,
+      [mark.tagName, mark.dataset.zoteroAnnotationType],
+    ]),
+  );
+}

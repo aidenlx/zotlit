@@ -1,0 +1,42 @@
+/* The Annotation Marks ZotLit paints over Obsidian's PDF pages.
+
+   Every default here is written at zero specificity through `:where()`, so a
+   theme's own `.zt-pdf-annotation-highlight { … }` wins without `!important`. */
+
+/*
+ * The overlay covers the page box and takes no pointer input, so native text
+ * selection, the PDF's own links, and the reader toolbar keep working under it.
+ * A mark is selected by geometry, never by a listener on the mark itself.
+ */
+:where(.zt-pdf-annotation-overlay) {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/*
+ * The marks carry `is-selected` already; what a selected mark looks like is
+ * settled with the Mark Popup and the hit test (aidenlx/zotlit#1148), which own
+ * selection.
+ */
+
+/* Zotero's highlight reads as ink on paper in either theme. */
+:where(.theme-light .zt-pdf-annotation-highlight) {
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+}
+
+:where(.theme-dark .zt-pdf-annotation-highlight) {
+  opacity: 0.3;
+  mix-blend-mode: plus-lighter;
+}
+
+/* The note's folded corner shows the paper through the sticky note. */
+:where(.zt-pdf-annotation-note-fold) {
+  fill: var(--background-primary);
+  opacity: 0.55;
+}

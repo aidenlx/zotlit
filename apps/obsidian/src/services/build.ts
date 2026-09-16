@@ -6,6 +6,7 @@ import {
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
+import { AnnotationRepository } from "./annotation-repository/service";
 import { AttachmentImportService } from "./attachment-import/service";
 import { AttachmentResolver } from "./attachment-resolver/service";
 import { CitationIndex } from "./citation-index/service";
@@ -131,11 +132,16 @@ export function buildServices(
         new AttachmentResolver({ db, zoteroPref }),
     })
     .use({
-      pdfAnnotationEditor: ({ attachmentResolver }) =>
+      annotationRepository: ({ db, queryClient }) =>
+        new AnnotationRepository({ db, queryClient }),
+    })
+    .use({
+      pdfAnnotationEditor: ({ attachmentResolver, annotationRepository }) =>
         new PdfAnnotationEditor({
           app: plugin.app,
           resolveAttachment: (absolutePath) =>
             attachmentResolver.resolve(absolutePath),
+          annotations: annotationRepository,
         }),
     })
     .use({

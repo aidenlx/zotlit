@@ -8,11 +8,14 @@ import type {
 } from "obsidian";
 
 import { getLogger } from "@/lib/log";
+import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type {
   AttachmentResolution,
   ResolveAttachment,
 } from "@/services/attachment-resolver/service";
 
+import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
+import type { PdfPageAnnotation } from "./render";
 import {
   loadedPageOf,
   onPageRendered,
@@ -33,10 +36,14 @@ const logger = getLogger("pdf-annotation-editor");
 /** Obsidian prefixes an external file's path with this ahead of its absolute path. */
 const EXTERNAL_FILE_PREFIX = "file:";
 
+/** What a binding reads Annotations through, and hears their replacement on. */
+export type AnnotationReads = Pick<AnnotationRepository, "read" | "on">;
+
 export interface PdfViewBindingDeps {
   view: PDFFileView;
   adapter: FileSystemAdapter;
   resolveAttachment: ResolveAttachment;
+  annotations: AnnotationReads;
 }
 
 /**
@@ -52,19 +59,33 @@ export class PdfViewBinding implements Disposable {
   readonly #view;
   readonly #adapter;
   readonly #resolveAttachment;
+  readonly #annotations;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /** Every listener and node the reader surfaces added for this view. */
   readonly #surfaces = new DisposableStack();
+  /** The pages this binding currently holds an overlay on. */
+  readonly #painted = new Set<number>();
   #attachment: AttachmentResolution = { kind: "unresolved" };
   #filePath: string | null = null;
   #absolutePath: string | null = null;
   #pageProbed = false;
   #probing = Promise.resolve();
+  #controller: PDFViewerController | null = null;
+  #marks: ReadonlyMap<number, readonly PdfPageAnnotation[]> = new Map();
+  #refreshing = Promise.resolve();
+  /** Serialises the refreshes, so a slower read never overwrites a later one. */
+  #refreshSerial = 0;
 
-  constructor({ view, adapter, resolveAttachment }: PdfViewBindingDeps) {
+  constructor({
+    view,
+    adapter,
+    resolveAttachment,
+    annotations,
+  }: PdfViewBindingDeps) {
     this.#view = view;
     this.#adapter = adapter;
     this.#resolveAttachment = resolveAttachment;
+    this.#annotations = annotations;
   }
 
   /**
@@ -104,6 +125,15 @@ export class PdfViewBinding implements Disposable {
     return this.#probing;
   }
 
+  /**
+   * Settles when the Annotation Marks on screen match the last read this
+   * binding started. Already settled while the view shows a file Zotero does
+   * not know. Never rejects.
+   */
+  get refreshed(): Promise<void> {
+    return this.#refreshing;
+  }
+
   load(): void {
     this.#probes.record(probeFileView(this.#view));
     const filePath = openFilePathOf(this.#view);
@@ -119,6 +149,16 @@ export class PdfViewBinding implements Disposable {
       attachment: this.#attachment,
     });
     if (!this.supported) return;
+    if (this.#attachment.kind === "resolved") {
+      const { attachmentKey } = this.#attachment;
+      this.#surfaces.defer(
+        this.#annotations.on("annotations-changed", (changedKey) => {
+          if (changedKey === attachmentKey) this.#refresh();
+        }),
+      );
+      this.#surfaces.defer(() => this.#unpaint());
+      this.#refresh();
+    }
     whenViewerReady(this.#view.viewer, (controller) =>
       this.#attach(controller),
     );
@@ -133,14 +173,84 @@ export class PdfViewBinding implements Disposable {
     this.#probes.record(probeController(this.#view.viewer, controller));
     if (!this.supported) return;
 
+    this.#controller = controller;
+
     const onRender: PDFPageRenderedListener = (event) => {
       this.#probes.record(probeRenderEvent(event));
       this.#probePage(pageViewOf(controller, event.pageNumber));
-      if (!this.supported) this[Symbol.dispose]();
+      if (!this.supported) {
+        this[Symbol.dispose]();
+        return;
+      }
+      // PDF.js drops every child it does not keep on a zoom, a rotation and a
+      // page recycle, so each render rebuilds this page's marks from data.
+      this.#paint(event.pageNumber - 1);
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
     this.#probePage(loadedPageOf(controller));
-    if (!this.supported) this[Symbol.dispose]();
+    if (!this.supported) {
+      this[Symbol.dispose]();
+      return;
+    }
+    this.#repaint();
+  }
+
+  /** Reads this Attachment's Annotations and redraws every page they touch. */
+  #refresh(): void {
+    if (this.#attachment.kind !== "resolved") return;
+    const { attachmentKey } = this.#attachment;
+    const serial = ++this.#refreshSerial;
+    this.#refreshing = this.#annotations
+      .read(attachmentKey)
+      .then((list) => {
+        if (this.#surfaces.disposed || serial !== this.#refreshSerial) return;
+        if (list === null) {
+          logger.debug("No annotation list stands for this attachment yet", {
+            path: this.filePath,
+            attachmentKey,
+          });
+          return;
+        }
+        this.#marks = groupAnnotationsByPage(list.annotations);
+        logger.debug("Annotation marks rebuilt for a PDF view", {
+          path: this.filePath,
+          source: list.source.kind,
+          annotations: list.annotations.length,
+          pages: this.#marks.size,
+        });
+        this.#repaint();
+      })
+      .catch((error: unknown) => {
+        logger.warn("Failed to read the annotations of an open PDF", {
+          error,
+          path: this.filePath,
+          attachmentKey,
+        });
+      });
+  }
+
+  /** Every page holding marks, and every page that has just lost them. */
+  #repaint(): void {
+    for (const pageIndex of this.#painted.union(new Set(this.#marks.keys()))) {
+      this.#paint(pageIndex);
+    }
+  }
+
+  #paint(pageIndex: number): void {
+    const controller = this.#controller;
+    const page = controller && pageViewOf(controller, pageIndex + 1);
+    if (!page) return;
+    const annotations = this.#marks.get(pageIndex) ?? [];
+    renderAnnotationOverlay(page, { annotations });
+    if (annotations.length > 0) this.#painted.add(pageIndex);
+    else this.#painted.delete(pageIndex);
+  }
+
+  /** Leaves the reader as Obsidian built it, whatever this binding painted. */
+  #unpaint(): void {
+    this.#marks = new Map();
+    this.#repaint();
+    this.#controller = null;
   }
 
   /** The page-stage probes, run against the first page that reaches them. */
