@@ -555,6 +555,30 @@ _Avoid_: wikilink as citekey (the working name), link citations
 Zotero's own loopback HTTP API, which Zotero serves from its `httpServer.port` when the `httpServer.localAPI.enabled` preference is on. The only write authority for Annotations. Distinct from the plugin's Local Server, which is the listener ZotLit hosts.
 _Avoid_: local API (ambiguous with the plugin's Local Server), Zotero server, Zotero HTTP server, connector API
 
+**Capability Probe**:
+One unkeyed request to the Zotero Local API root that tells ZotLit whether Zotero answers, whether its local API preference is on, and which Zotero Server ID it is. Its result selects the Annotation Source; a fresh probe is the only way out of a "Zotero unavailable" or "local API disabled" reading.
+_Avoid_: ping, health check, handshake, api.ready (the Better BibTeX probe used by Pandoc export)
+
+**Write Authorization**:
+The grant Zotero issues to ZotLit, on the user's Allow or Always Allow in Zotero's own dialog, that permits writes through the Zotero Local API. Reads need none; Write Authorization gates writes alone. Zotero decides it; ZotLit only asks and remembers.
+_Avoid_: login, API key (user-facing; keys are the mechanism, not the grant), permission (overloaded with Approved Attachment Root), token
+
+**Remembered Authorization** _(Write Authorization)_:
+A Write Authorization granted with Always Allow: it stays valid until Zotero clears it or the user removes ZotLit's copy. ZotLit keeps one per vault × device, bound to the Zotero Server ID that granted it, and treats it as a candidate until a write succeeds.
+_Avoid_: persistent key, stored credential, saved login
+
+**One-time Authorization** _(Write Authorization)_:
+A Write Authorization granted with Allow: Zotero consumes it on the first authenticated write attempt, whether or not that write succeeds. ZotLit holds it in memory for that one attempt only.
+_Avoid_: single-use key, session key, temporary key
+
+**Client Name**:
+The stable string, `ZotLit for Obsidian`, under which ZotLit asks Zotero for Write Authorization and which Zotero shows in its dialog. One name for every vault.
+_Avoid_: app name (Zotero's wire field), ZotLit (alone — also the Companion's display name inside Zotero)
+
+**Zotero Server ID**:
+Zotero's stable identifier for one Zotero database, which every Zotero Local API response carries. A Remembered Authorization and cached object versions belong to the Server ID that produced them; a different ID is a different Zotero.
+_Avoid_: instance ID, Zotero ID, database ID
+
 **Device Override**:
 A device-scoped value for the Zotero profile directory or data directory — stored per vault × device, never synced — that overrides ZotLit's automatic Zotero detection (default profile from `profiles.ini`, data directory from `prefs.js`) on that device only. Clearing it returns the device to auto-detection. These two values exist solely as Device Overrides; no synced copy exists.
 _Avoid_: local setting ("local" is overloaded: local library, local attachments), per-device setting (implies a category of ordinary settings rather than an override of auto-detection)
