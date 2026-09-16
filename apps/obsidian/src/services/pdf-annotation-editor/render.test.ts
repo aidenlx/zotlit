@@ -331,6 +331,7 @@ it("drops an annotation whose position is not a PDF position", () => {
         { type: "FragmentSelector", value: "epubcfi(/6/4!/4/2)" },
         "application/epub+zip",
       ),
+      version: null,
     },
   ]);
 

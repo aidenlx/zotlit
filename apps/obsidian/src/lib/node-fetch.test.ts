@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AbortError } from "@/lib/abort-error";
 import { nodeFetch } from "@/lib/node-fetch";
@@ -125,6 +125,31 @@ describe("nodeFetch", () => {
     const { headers } = await seen.arrived;
     expect(headers.origin).toBeUndefined();
     expect(headers["user-agent"]).toBeUndefined();
+  });
+
+  it("reaches loopback with a proxy in the environment, rather than through it", async () => {
+    // A proxy in front of Zotero turns its connection-close refusal of browser
+    // traffic into the proxy's own answer, so every local API failure would
+    // arrive as an unrelated status. Node's HTTP stack reads no proxy variable;
+    // this holds a transport that ever did to the same rule.
+    const seen = record();
+    await using server = await serve(seen.handler);
+    using _env = {
+      [Symbol.dispose]: () => {
+        vi.unstubAllEnvs();
+      },
+    };
+    for (const variable of ["http_proxy", "HTTP_PROXY", "ALL_PROXY"]) {
+      vi.stubEnv(variable, "http://127.0.0.1:9/");
+    }
+    vi.stubEnv("NO_PROXY", "");
+
+    const response = await nodeFetch(server.origin);
+
+    expect(response.status).toBe(200);
+    expect((await seen.arrived).headers.host).toBe(
+      server.origin.replace("http://", ""),
+    );
   });
 
   it("keeps a 204 answer body-free, which the Response constructor requires", async () => {

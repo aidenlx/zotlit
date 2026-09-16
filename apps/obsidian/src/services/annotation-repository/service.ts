@@ -1,5 +1,5 @@
 // The Annotations of one Attachment, read from one Annotation Source at a time.
-import type { QueryKey } from "@tanstack/query-core";
+import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 
 import {
   annotationTypeToName,
@@ -20,6 +20,17 @@ import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
+import type {
+  LocalApiAnnotation,
+  LocalApiFailure,
+  LocalApiSource,
+  ZoteroLocalApiClient,
+} from "@/services/zotero-local-api/service";
+
+import { editingCapabilityOf } from "./capability";
+import type { EditingCapability } from "./capability";
+
+export type { EditingCapability } from "./capability";
 
 const logger = getLogger("annotation-repository");
 
@@ -30,15 +41,18 @@ const ANNOTATIONS = "annotations";
 const ZOTERO_DB = "zotero-db";
 
 /**
+ * The partition the Zotero Local API answers from, keyed by the Zotero Server
+ * ID and then by Indexed Key, so one server's records never stand for another's.
+ */
+const ZOTERO_LOCAL_API = "zotero-local-api";
+
+/**
  * Where a whole record set came from. The source is atomic per Attachment: a
  * list is wholly one source's, and the two sets never join.
  *
- * The Zotero Local API source, which also carries its Zotero Server ID, lands
- * with the client that reads it (aidenlx/zotlit#1143).
- *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  */
-export type AnnotationSource = { kind: "zotero-db" };
+export type AnnotationSource = { kind: "zotero-db" } | LocalApiSource;
 
 /**
  * One Annotation as both sources describe it: Indexed Keys, a type name, and a
@@ -57,6 +71,15 @@ export interface AnnotationRecord {
   text: string | null;
   /** Parsed once per read, so a redraw parses nothing. */
   position: AnnotationPosition;
+  /**
+   * The object version this read answered, which a write sends back as its
+   * precondition. `null` under a source that keeps no versions — the Zotero DB
+   * partition, where a write is refused before any request for exactly that
+   * reason.
+   *
+   * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+   */
+  version: number | null;
 }
 
 /** One Attachment's Annotations, beside the source that answered for them. */
@@ -82,12 +105,30 @@ export interface AnnotationRepositoryDeps {
     QueryClientService,
     "invalidate" | "keysUnder" | "peek" | "read"
   >;
+  localApi: Pick<
+    ZoteroLocalApiClient,
+    "demandSource" | "listAnnotations" | "on" | "state"
+  >;
+  /** The clock a cooldown deadline in the Editing Capability is read against. */
+  now?: () => Temporal.Instant;
 }
 
 /** One partition's key and the read that fills it. */
 interface AnnotationPartition {
   queryKey: QueryKey;
-  read: () => Promise<AnnotationList>;
+  /** Takes the query's own signal, so an invalidation cancels the read it ran. */
+  read: QueryFunction<AnnotationList>;
+}
+
+/** Why the Zotero Local API answered no list, as the query's failure. */
+export class LocalApiReadFailed extends Error {
+  readonly failure: LocalApiFailure;
+
+  constructor(failure: LocalApiFailure) {
+    super(`The Zotero Local API answered ${failure.kind}`);
+    this.name = "LocalApiReadFailed";
+    this.failure = failure;
+  }
 }
 
 /**
@@ -97,7 +138,10 @@ interface AnnotationPartition {
  * at once cost one database read.
  *
  * The Zotero DB partition is dropped wholesale whenever the database refreshes,
- * and every Attachment it held is announced through `annotations-changed`.
+ * and the Zotero Local API partition whenever that source moves — a Freshness
+ * Signal, another Zotero database, a capability that changed. Every Attachment
+ * the drop concerns is announced through `annotations-changed`, which is the
+ * only signal that a list was superseded.
  *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
@@ -105,14 +149,23 @@ interface AnnotationPartition {
 export class AnnotationRepository extends Service<void> {
   readonly #db;
   readonly #queries;
+  readonly #localApi;
+  readonly #now;
   readonly #emitter = createNanoEvents<AnnotationRepositoryEvents>();
 
   ready: Promise<void>;
 
-  constructor({ db, queryClient }: AnnotationRepositoryDeps) {
+  constructor({
+    db,
+    queryClient,
+    localApi,
+    now = () => Temporal.Now.instant(),
+  }: AnnotationRepositoryDeps) {
     super();
     this.#db = db;
     this.#queries = queryClient;
+    this.#localApi = localApi;
+    this.#now = now;
     this.ready = this.#load();
   }
 
@@ -137,6 +190,24 @@ export class AnnotationRepository extends Service<void> {
     return this.#queries.peek<AnnotationList>(queryKey);
   }
 
+  /**
+   * What a surface may do to one Attachment's Annotations.
+   *
+   * The Zotero Local API's probe is the whole of it for now: a source that
+   * stands is writable or asks for authorization, and every other state is
+   * read-only with its reason. The Attachment is named because the facts that
+   * make one Attachment differ from another all arrive with the write path —
+   * a library that refused a write (aidenlx/zotlit#1145) and the authorization
+   * gesture in flight (aidenlx/zotlit#1144) — and both are per Attachment.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  capabilityFor(attachmentKey: string): EditingCapability {
+    const capability = editingCapabilityOf(this.#localApi.state, this.#now);
+    logger.trace("Editing capability read", { attachmentKey, capability });
+    return capability;
+  }
+
   on<K extends keyof AnnotationRepositoryEvents>(
     event: K,
     cb: AnnotationRepositoryEvents[K],
@@ -147,23 +218,53 @@ export class AnnotationRepository extends Service<void> {
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(this.#db.on("changed", () => this.#dropDatabasePartition()));
+    stack.defer(this.#localApi.on("changed", () => this.#sourceMoved()));
     this.commit(stack.move());
   }
 
   /**
-   * The partition the active Annotation Source answers from.
-   *
-   * The Zotero DB is the only source this milestone reads. The Zotero Local API
-   * partition adds its branch here — its own key prefix carrying the Zotero
-   * Server ID beside the Indexed Key, and its own read — and nothing outside
-   * this method moves: {@link read} and {@link peek} never name a source, and a
+   * The partition the active Annotation Source answers from — the one place a
+   * source is chosen. {@link read} and {@link peek} never name one, and a
    * result already carries the one that answered it.
+   *
+   * The choice is made once per ask and the whole list comes from it, which is
+   * what makes the source atomic per Attachment. A Zotero that stops answering
+   * changes what this returns, and the change is announced rather than folded
+   * into the list in flight.
    */
   #activePartition(attachmentKey: string): AnnotationPartition {
+    const source = this.#localApi.demandSource();
+    if (source) {
+      return {
+        queryKey: [
+          ANNOTATIONS,
+          ZOTERO_LOCAL_API,
+          source.serverID,
+          attachmentKey,
+        ],
+        read: ({ signal }) =>
+          this.#readFromLocalApi(source, attachmentKey, signal),
+      };
+    }
     return {
       queryKey: [ANNOTATIONS, ZOTERO_DB, attachmentKey],
       read: () => this.#readFromDatabase(attachmentKey),
     };
+  }
+
+  /**
+   * @throws {LocalApiReadFailed} where the Zotero Local API did not answer the
+   *   list. The client has already stood its session down by then, so the
+   *   Attachment's next ask lands on the source that can answer.
+   */
+  async #readFromLocalApi(
+    source: LocalApiSource,
+    attachmentKey: string,
+    signal: AbortSignal,
+  ): Promise<AnnotationList> {
+    const result = await this.#localApi.listAnnotations(attachmentKey, signal);
+    if ("failure" in result) throw new LocalApiReadFailed(result.failure);
+    return { source, annotations: result.value.map(fromLocalApi) };
   }
 
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
@@ -177,15 +278,44 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
+   * What the Zotero Local API answers has moved: another capability, another
+   * Zotero database, or the Companion's Freshness Signal saying the library
+   * changed. Its whole partition goes, and every Attachment either partition
+   * holds is announced — a surface reading from the Zotero DB is the one a
+   * switch to the Zotero Local API most concerns.
+   */
+  #sourceMoved(): void {
+    this.#queries.invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
+    const held = this.#attachmentsHeld([ANNOTATIONS]);
+    logger.debug("The Zotero Local API source moved", {
+      attachments: held.length,
+      source: this.#localApi.demandSource(),
+    });
+    for (const attachmentKey of held) {
+      this.#emitter.emit("annotations-changed", attachmentKey);
+    }
+  }
+
+  /**
+   * Every Attachment one prefix holds a list for. Both partitions key by
+   * Indexed Key last — the Zotero Local API one behind its server id — so the
+   * last element names the Attachment whichever source answered.
+   */
+  #attachmentsHeld(prefix: QueryKey): string[] {
+    const keys = this.#queries
+      .keysUnder(prefix)
+      .map((queryKey) => queryKey.at(-1))
+      .filter((key) => typeof key === "string");
+    return [...new Set(keys)];
+  }
+
+  /**
    * A refreshed database replaces every row the partition held, so the whole
    * partition goes rather than the rows a comparison would call changed.
    */
   #dropDatabasePartition(): void {
     const prefix = [ANNOTATIONS, ZOTERO_DB];
-    const held = this.#queries
-      .keysUnder(prefix)
-      .map((queryKey) => queryKey[prefix.length])
-      .filter((key) => typeof key === "string");
+    const held = this.#attachmentsHeld(prefix);
     this.#queries.invalidate(prefix);
     logger.debug("Zotero database annotation partition dropped", {
       attachments: held.length,
@@ -234,5 +364,21 @@ function toRecord(
     comment: annotation.comment,
     text: annotation.text,
     position: parseAnnotationPosition(annotation.position, contentType),
+    // The Zotero DB keeps no object version, which is why the Zotero DB source
+    // refuses a write rather than sending a precondition it cannot supply.
+    version: null,
   };
+}
+
+/** The Sort Index stays with the client: it ordered the list and nothing else reads it. */
+function fromLocalApi({
+  key,
+  type,
+  color,
+  comment,
+  text,
+  position,
+  version,
+}: LocalApiAnnotation): AnnotationRecord {
+  return { key, type, color, comment, text, position, version };
 }

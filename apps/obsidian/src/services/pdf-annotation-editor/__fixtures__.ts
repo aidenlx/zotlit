@@ -134,6 +134,7 @@ export function annotation(
       position as AnnotationPositionRaw,
       "application/pdf",
     ),
+    version: null,
   };
 }
 
