@@ -30,6 +30,7 @@ import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
+import { PdfAnnotationEditor } from "./pdf-annotation-editor/service";
 import { ProfileService } from "./profile/service";
 import { QueryClientService } from "./query-client/service";
 import { ReleaseService } from "./release/service";
@@ -123,6 +124,15 @@ export function buildServices(
     .use({
       db: ({ settings, zoteroPref }) =>
         new DatabaseService({ settings, zoteroPref }),
+    })
+    .use({
+      pdfAnnotationEditor: () =>
+        new PdfAnnotationEditor({
+          app: plugin.app,
+          // Stubbed until the attachment resolver lands, so every PDF opens as
+          // it did before. See https://github.com/aidenlx/zotlit/issues/1141.
+          resolveAttachment: () => ({ kind: "unresolved" }),
+        }),
     })
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
