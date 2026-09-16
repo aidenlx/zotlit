@@ -107,6 +107,9 @@ settings:
 
 catalogs:
   default:
+    '@base-ui/react':
+      specifier: ^1.7.0
+      version: 1.7.0
     '@codemirror/commands':
       specifier: 6.11.0
       version: 6.11.0
@@ -314,7 +317,7 @@ importers:
   apps/docs:
     dependencies:
       '@base-ui/react':
-        specifier: ^1.7.0
+        specifier: 'catalog:'
         version: 1.7.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@codemirror/autocomplete':
         specifier: 6.20.3
@@ -524,6 +527,9 @@ importers:
 
   apps/obsidian:
     dependencies:
+      '@base-ui/react':
+        specifier: 'catalog:'
+        version: 1.7.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@bjorn3/browser_wasi_shim':
         specifier: ^0.4.2
         version: 0.4.2

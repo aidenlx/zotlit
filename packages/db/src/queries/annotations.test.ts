@@ -71,6 +71,15 @@ describe("getAnnotationsByParent", () => {
   });
 });
 
+describe("getAnnotationsByParent tags", () => {
+  it("returns the annotation's tags by name, in Zotero's own order", () => {
+    const result = getAnnotationsByParent(db, 9058);
+
+    const annotation = result.find((a) => a.key === "JDJKX3N6");
+    expect(annotation?.tags).toEqual(["first-tag", "second-tag"]);
+  });
+});
+
 describe("getAnnotationsByKey", () => {
   it("returns requested visible annotation keys", () => {
     const result = getAnnotationsByKey(
@@ -216,5 +225,10 @@ function seed(sqlite: DatabaseSync): void {
 
     insert into deletedItems (itemID, dateDeleted)
       values (9066, '2026-05-28 02:22:01');
+
+    insert into tags (tagID, name)
+      values (1, 'first-tag'), (2, 'second-tag');
+    insert into itemTags (itemID, tagID, type)
+      values (9060, 1, 0), (9060, 2, 0);
   `);
 }

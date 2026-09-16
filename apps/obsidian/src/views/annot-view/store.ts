@@ -3,17 +3,29 @@ import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
 
-import type { AnnotViewAttachment, AnnotViewItem, ItemRef } from "@zotlit/db";
+import type { AnnotViewAttachment } from "@zotlit/db";
 
-import type { ReaderTarget } from "@/services/local-server/service";
+import type {
+  AnnotationRecord,
+  AnnotationSource,
+} from "@/services/annotation-repository/service";
 
 import type { AnnotFilter } from "./filter";
 
 /**
- * What the view tracks: the active literature note (default), the active Zotero
- * reader (push-driven, server-gated), or a manually pinned item.
+ * What one Annotation View instance follows: the active tab (default), the
+ * Zotero Reader, or an Item the user pinned. It changes on a user gesture
+ * alone — never because a source stopped answering.
+ *
+ * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
  */
-export type FollowMode = "note" | "reader" | "linked";
+export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
+
+/**
+ * Why the view cannot change the Attachment on screen: an Obsidian PDF view or
+ * the Zotero Reader chose it, and the picker stands down while it does.
+ */
+export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
 /**
  * Whether a card can be dragged into the active note: `ready` once the
@@ -24,21 +36,38 @@ export type DragTarget = "ready" | "preparing" | "none";
 
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
-  selectedAttachmentID: number | null;
-  annotations: AnnotViewItem[] | null;
-  /** Synced mirror of {@link LocalServerService.readerTarget} for reactive rendering. */
-  readerTarget: ReaderTarget | null;
-  /** Indexed key of the item currently displayed; `null` when none resolves. */
+  /** Indexed Key of the Attachment on screen. */
+  selectedAttachmentKey: string | null;
+  /** Why the Attachment cannot be chosen here; `null` while the picker is live. */
+  attachmentLock: AttachmentLock;
+  annotations: readonly AnnotationRecord[] | null;
+  /** Which Annotation Source answered for {@link annotations}. */
+  annotationSource: AnnotationSource | null;
+  /** Indexed Keys of the Annotations selected in the reader the view follows. */
+  selectedAnnotationKeys: readonly string[];
+  /**
+   * Indexed Key of the Item on screen; `null` for a standalone Attachment and
+   * while nothing resolves. An Attachment can stand without one.
+   */
   itemKey: string | null;
-  /** Pre-formatted identity label for reader/linked modes (e.g. "Title — Author (2024)"). */
+  /** Pre-formatted identity label (e.g. "Title — Author (2024)"). */
   itemDisplayLabel: string | null;
   /** Group library ID for the current item; `null` for user library. */
   groupID: number | null;
   followMode: FollowMode;
-  /** Item pinned via manual-link mode; persists across mode switches. */
-  linked: { target: ItemRef; displayLabel: string } | null;
-  /** Whether the Zotero reader can be followed (server enabled and listening). */
-  serverAvailable: boolean;
+  /** The mode a pin interrupted; Unpin returns the view here. */
+  previousMode: FollowMode;
+  /** Indexed Key of the pinned Item; `null` when nothing is pinned. */
+  pinnedItemKey: string | null;
+  /**
+   * The Item a pin would take, and why it cannot: a standalone Attachment has
+   * no Item to pin, and an unresolved leaf names none.
+   */
+  pinnable: string | null;
+  /** Whether Live updates is on and the listener answers. */
+  liveUpdatesOn: boolean;
+  /** Whether the Zotero Reader closed, its last Attachment still on screen. */
+  zoteroReaderClosed: boolean;
   dragTarget: DragTarget;
   /** Search row visible. */
   searchOpen: boolean;
@@ -46,8 +75,8 @@ export interface AnnotState {
   filterQuery: string;
   /** Selected swatch colors, canonical uppercase "#RRGGBB". */
   selectedColors: string[];
-  /** Selected tag IDs. */
-  selectedTagIDs: number[];
+  /** Selected tags, by name. */
+  selectedTags: string[];
   /** Inline tag panel (below the filter bar) open. */
   panelOpen: boolean;
 }
@@ -55,16 +84,12 @@ export interface AnnotState {
 /** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  | "searchOpen"
-  | "filterQuery"
-  | "selectedColors"
-  | "selectedTagIDs"
-  | "panelOpen"
+  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags" | "panelOpen"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
-  selectedTagIDs: [],
+  selectedTags: [],
   panelOpen: false,
 };
 
@@ -75,15 +100,20 @@ export function createAnnotStore() {
     subscribeWithSelector(
       (): AnnotState => ({
         attachments: null,
-        selectedAttachmentID: null,
+        selectedAttachmentKey: null,
+        attachmentLock: null,
         annotations: null,
-        readerTarget: null,
+        annotationSource: null,
+        selectedAnnotationKeys: [],
         itemKey: null,
         itemDisplayLabel: null,
         groupID: null,
-        followMode: "note",
-        linked: null,
-        serverAvailable: false,
+        followMode: "active-tab",
+        previousMode: "active-tab",
+        pinnedItemKey: null,
+        pinnable: null,
+        liveUpdatesOn: false,
+        zoteroReaderClosed: false,
         dragTarget: "none",
         ...INITIAL_FILTER_STATE,
       }),
@@ -93,11 +123,11 @@ export function createAnnotStore() {
 
 /** Selected attachment, falling back to the first when none is chosen. */
 export function selectActiveAttachment(
-  s: AnnotState,
+  s: Pick<AnnotState, "attachments" | "selectedAttachmentKey">,
 ): AnnotViewAttachment | null {
   if (!s.attachments || s.attachments.length === 0) return null;
   return (
-    s.attachments.find((a) => a.itemID === s.selectedAttachmentID) ??
+    s.attachments.find((a) => a.indexedKey === s.selectedAttachmentKey) ??
     s.attachments[0]!
   );
 }
@@ -117,9 +147,9 @@ export function useAnnotStore<T>(selector: (s: AnnotState) => T): T {
   return useStore(useAnnotStoreApi(), selector);
 }
 
-export function useSetSelectedAttachmentID(): (id: number) => void {
+export function useSetSelectedAttachmentKey(): (key: string) => void {
   const store = useAnnotStoreApi();
-  return (id) => store.setState({ selectedAttachmentID: id });
+  return (key) => store.setState({ selectedAttachmentKey: key });
 }
 
 /**
@@ -143,11 +173,11 @@ export function useSetFilterQuery(): (query: string) => void {
   return (query) => store.setState({ filterQuery: query });
 }
 
-/** Clears filterQuery/selectedColors/selectedTagIDs; leaves searchOpen/panelOpen untouched. */
+/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen/panelOpen untouched. */
 export function useClearFilters(): () => void {
   const store = useAnnotStoreApi();
   return () =>
-    store.setState({ filterQuery: "", selectedColors: [], selectedTagIDs: [] });
+    store.setState({ filterQuery: "", selectedColors: [], selectedTags: [] });
 }
 
 export function useTogglePanel(): () => void {
@@ -170,22 +200,22 @@ export function useToggleSelectedColor(): (color: string) => void {
   };
 }
 
-/** Assembles the {@link AnnotFilter} from the store's query/colors/tagIDs slices. */
+/** Assembles the {@link AnnotFilter} from the store's query/colors/tags slices. */
 export function useAnnotFilter(): AnnotFilter {
   const query = useAnnotStore((s) => s.filterQuery);
   const colors = useAnnotStore((s) => s.selectedColors);
-  const tagIDs = useAnnotStore((s) => s.selectedTagIDs);
-  return useMemo(() => ({ query, colors, tagIDs }), [query, colors, tagIDs]);
+  const tags = useAnnotStore((s) => s.selectedTags);
+  return useMemo(() => ({ query, colors, tags }), [query, colors, tags]);
 }
 
-export function useToggleSelectedTagID(): (tagID: number) => void {
+export function useToggleSelectedTag(): (tag: string) => void {
   const store = useAnnotStoreApi();
-  return (tagID) => {
-    const { selectedTagIDs } = store.getState();
+  return (tag) => {
+    const { selectedTags } = store.getState();
     store.setState({
-      selectedTagIDs: selectedTagIDs.includes(tagID)
-        ? selectedTagIDs.filter((id) => id !== tagID)
-        : [...selectedTagIDs, tagID],
+      selectedTags: selectedTags.includes(tag)
+        ? selectedTags.filter((name) => name !== tag)
+        : [...selectedTags, tag],
     });
   };
 }

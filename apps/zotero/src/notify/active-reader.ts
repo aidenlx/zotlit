@@ -19,7 +19,11 @@ const MAIN_WINDOW_URL = "chrome://zotero/content/zoteroPane.xhtml";
 type ReaderWindow = Window & { reader?: _ZoteroTypes.ReaderInstance };
 
 /**
- * Push the active reader to the Obsidian listener without monkey-patching.
+ * Push the active reader to the Obsidian listener without monkey-patching, and
+ * `reader/inactive` when the same paths report a focused tab or window that is
+ * no longer a reader, so the listener can keep the last attachment on screen
+ * and say that the reader closed.
+ *
  * Two independent paths feed the same flush, since a reader can be focused
  * either as a main-window tab or as its own top-level window:
  *
@@ -43,9 +47,24 @@ type ReaderWindow = Window & { reader?: _ZoteroTypes.ReaderInstance };
 export function registerActiveReaderNotify(send: Send): Disposable {
   let lastActiveAttachment: number | null = null;
 
+  /**
+   * The focus moved to something that is not a reader. One event goes out per
+   * departure, and the same `lastActiveAttachment` that dedupes reader pushes
+   * keeps a second one from following it.
+   */
+  const flushInactive = () => {
+    if (lastActiveAttachment === null) return;
+    lastActiveAttachment = null;
+    logger.debug("focused tab or window is no longer a reader");
+    void send({ event: "reader/inactive" });
+  };
+
   const flushReader = (reader: _ZoteroTypes.ReaderInstance | undefined) => {
     if (!notifyEnabled()) return;
-    if (!reader) return;
+    if (!reader) {
+      flushInactive();
+      return;
+    }
     const attachmentID = reader.itemID;
     if (typeof attachmentID !== "number") return; // reader missing, or its item hasn't loaded yet
     if (attachmentID === lastActiveAttachment) return;

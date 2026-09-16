@@ -1,7 +1,7 @@
 import { join, posix } from "node:path";
 
 import { annotationHasCacheImage } from "./zt-annot";
-import type { Annotation } from "./zt-annot";
+import type { AnnotationType, ResolvedAnnotationTypeName } from "./zt-annot";
 import { parseAttachmentPath } from "./zt-attach";
 import type { Attachment } from "./zt-attach";
 
@@ -38,7 +38,10 @@ export interface AnnotCachePathContext {
  * @see https://github.com/zotero/zotero/blob/9.0.3/chrome/content/zotero/xpcom/annotations.js#L62
  */
 export function resolveAnnotCachePath(
-  annotation: Pick<Annotation, "key" | "type">,
+  annotation: {
+    key: string;
+    type: AnnotationType | ResolvedAnnotationTypeName;
+  },
   { dataDir, groupID }: AnnotCachePathContext,
 ): string | null {
   if (!annotationHasCacheImage(annotation.type)) return null;

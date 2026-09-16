@@ -62,6 +62,7 @@ export {
 } from "./queries/annotations";
 export {
   getAllAttachments,
+  getAttachmentByItemId,
   getAttachmentByKey,
   getAttachmentsByParents,
   type AttachmentWithParentKey,
@@ -90,10 +91,9 @@ export {
   type CollectionNode,
 } from "./queries/collections";
 export {
-  getAnnotViewAnnotations,
+  getAttachmentAnnotationCount,
   getAnnotViewAttachments,
   type AnnotViewAttachment,
-  type AnnotViewItem,
 } from "./queries/annot-view";
 export { type ItemTag, type TemplateTag } from "./lib/zt-tag";
 export { type Attachment } from "./lib/zt-attach";

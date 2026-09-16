@@ -1,24 +1,40 @@
 import { ItemView } from "obsidian";
-import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import type {
+  Menu as ObsidianMenu,
+  App,
+  ViewStateResult,
+  WorkspaceLeaf,
+} from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import {
-  getAnnotViewAnnotations,
+  annotationOpenUri,
+  getAnnotationsByKey,
+  getAnnotationsByParent,
   getAnnotViewAttachments,
-  getItemDisplayInfoByID,
+  getAttachmentAnnotationCount,
+  getAttachmentByItemId,
+  getAttachmentByKey,
   getItemRefByID,
   getItemsByKey,
   getLibraries,
   isChildItemFields,
   parseIndexedKey,
+  resolveIndexedKeyLibrary,
 } from "@zotlit/db";
-import type { AnnotViewItem, Item, ItemRef, Library } from "@zotlit/db";
+import type { AnnotViewAttachment, Library } from "@zotlit/db";
+import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { MenuContainerProvider } from "@/components/obsidian/menu-container";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type {
+  AnnotationRecord,
+  AnnotationRepository,
+} from "@/services/annotation-repository/service";
 import type {
   AttachmentImport,
   AttachmentImportService,
@@ -26,10 +42,16 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LocalServerService } from "@/services/local-server/service";
+import type {
+  LocalServerService,
+  ReaderTarget,
+} from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
+import { ZoteroReaderSession } from "@/services/reader-session/zotero";
+import type { ZoteroReaderResolution } from "@/services/reader-session/zotero";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
@@ -41,14 +63,22 @@ import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
-import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
-import type { LoadTarget } from "./resolve-target";
+import { buildPaneMenu } from "./pane-menu";
+import { resolveLoadTarget } from "./resolve-target";
+import type { ActiveLeafTarget, LoadTarget } from "./resolve-target";
 import {
   AnnotStoreProvider,
   createAnnotStore,
   INITIAL_FILTER_STATE,
 } from "./store";
-import type { FollowMode } from "./store";
+import type { AnnotState, FollowMode } from "./store";
+import {
+  DEFAULT_FOLLOW_MODE,
+  parseAnnotViewState,
+  serializeAnnotViewState,
+  unpinnedMode,
+} from "./view-state";
+import type { AnnotViewState } from "./view-state";
 
 export const ANNOT_VIEW_TYPE = "zotero-annotation-view";
 
@@ -60,14 +90,28 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
 /**
  * Every member is a structural `Pick` of the full service sized to what the view
  * touches, so the real services satisfy it as-is and target-resolution logic can
- * be unit-tested against plain stubs. DB reads run synchronously within one tick
- * (no `await` boundary a refresh swap could interleave with), matching the
- * house sync-read pattern (`protocol`, `citekey-editor`).
+ * be unit-tested against plain stubs.
+ *
+ * The database reads here run synchronously within one tick (no `await` a
+ * refresh swap could interleave with), matching the house sync-read pattern
+ * (`protocol`, `citekey-editor`). The Annotations are the exception: they come
+ * from the repository, which may answer from the Zotero Local API, so that one
+ * read is awaited under a serial guard.
  */
 export interface AnnotViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "on" | "ready" | "refresh">;
-  liveUpdate: Pick<LocalServerService, "available" | "readerTarget" | "on">;
+  liveUpdate: Pick<
+    LocalServerService,
+    "available" | "readerTarget" | "readerClosed" | "on"
+  >;
+  /** Every open Obsidian PDF view, as the Reader Session it exposes. */
+  pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath">;
+  /**
+   * The one read path for an Attachment's Annotations, so the cards and the
+   * reader overlay show one Annotation Source's records rather than two.
+   */
+  annotations: Pick<AnnotationRepository, "read" | "on">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   noteFeature: Pick<
     NoteFeature,
@@ -84,15 +128,31 @@ export class AnnotationView extends ItemView {
   readonly #deps: AnnotViewDeps;
   #root: Root | null = null;
   #actions: AnnotActions | null = null;
-  #groupID: number | null = null;
   #librariesCache: Library[] | null = null;
   #loadDisposables: DisposableStack | null = null;
+  /** The Zotero Reader, translated into Indexed Keys. */
+  #zoteroReader: ZoteroReaderSession | null = null;
+  /** The active leaf's PDF view session, while one is being followed. */
+  #leafSession: (() => void) | null = null;
+  /** What the attachment choice and the saved filter are remembered against. */
+  #memoryKey: string | null = null;
   #itemKey: string | null = null;
   #importHandle: AttachmentImport | null = null;
   /** Note path the standing (or in-flight) import handle was prepared for. */
   #importHandlePath: string | null = null;
   /** Monotonic prepare token, so a slow prepare cannot overwrite a newer one. */
   #importHandleGen = 0;
+  /** Counts the annotation reads, so a slower one never lands after a later one. */
+  #reads = 0;
+  #reading = Promise.resolve();
+
+  /**
+   * Settles once the list on screen matches the last read this view started.
+   * Never rejects.
+   */
+  get read(): Promise<void> {
+    return this.#reading;
+  }
 
   /** Follow mode lives in the store (single source of truth); read it here. */
   get #followMode(): FollowMode {
@@ -118,14 +178,8 @@ export class AnnotationView extends ItemView {
   }
 
   override getState(): Record<string, unknown> {
-    const s = this.#store.getState();
-    const state: Record<string, unknown> = {
-      followMode: s.followMode,
-    };
-    if (s.linked) {
-      state.linkedIndexedKey = s.linked.target.indexedKey;
-    }
-    return state;
+    const { followMode, previousMode, pinnedItemKey } = this.#store.getState();
+    return serializeAnnotViewState({ followMode, previousMode, pinnedItemKey });
   }
 
   override async setState(
@@ -133,45 +187,69 @@ export class AnnotationView extends ItemView {
     result: ViewStateResult,
   ): Promise<void> {
     await super.setState(state, result);
-    if (!state || typeof state !== "object") return;
-    const s = state as Record<string, unknown>;
-
-    const followMode = s.followMode;
-    if (
-      followMode === "note" ||
-      followMode === "reader" ||
-      followMode === "linked"
-    ) {
-      if (followMode === "reader" && !this.#deps.liveUpdate.available) {
-        this.#store.setState({ followMode: "note" });
-      } else if (
-        followMode === "linked" &&
-        typeof s.linkedIndexedKey === "string"
-      ) {
-        this.#restoreLinkedTarget(s.linkedIndexedKey);
-      } else {
-        this.#store.setState({ followMode });
-      }
-    }
-
+    // A mode this build cannot name, or a pin with no Item, takes the default
+    // rather than a source that cannot answer. Every other stored mode is kept
+    // whether or not its source answers right now.
+    this.#store.setState(parseAnnotViewState(state));
     this.#reload();
   }
 
+  /**
+   * What this view is showing, as its own surfaces read it: the pane menu, the
+   * React tree through the store, and the commands through the accessors below.
+   */
+  get snapshot(): Readonly<AnnotState> {
+    return this.#store.getState();
+  }
+
+  /**
+   * The gestures this view publishes to its React tree and its pane menu — the
+   * mode switches, the pin, "Turn on live updates", "Refresh data". `null`
+   * before the view opens.
+   *
+   * Named apart from `actions`, which `ItemView` itself uses for the view
+   * header's action buttons.
+   */
+  get gestures(): AnnotActions | null {
+    return this.#actions;
+  }
+
+  /** "Refresh data" and the mode switches live here, off the toolbar row. */
+  override onPaneMenu(menu: ObsidianMenu, source: string): void {
+    super.onPaneMenu(menu, source);
+    if (source !== "more-options") return;
+    const actions = this.#actions;
+    if (!actions) return;
+    buildPaneMenu(menu, { state: this.snapshot, actions });
+  }
+
   protected override async onOpen(): Promise<void> {
+    this.#zoteroReader = new ZoteroReaderSession({
+      liveUpdate: this.#deps.liveUpdate,
+      resolve: (target) => this.#resolveZoteroReader(target),
+      navigate: (annotationKey) => this.#openInZotero(annotationKey),
+    });
+    this.register(() => this.#zoteroReader?.[Symbol.dispose]());
+
     this.#actions = createAnnotActions({
       app: this.#deps.app,
-      getGroupID: () => this.#groupID,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
+      resolveAnnotationID: (indexedKey) =>
+        this.#resolveAnnotationID(indexedKey),
       refresh: () => this.#deps.db.refresh(),
       noteFeature: this.#deps.noteFeature,
-      onToggleFollowReader: () => this.#toggleFollowReader(),
-      onLinkItem: () => this.#linkItem(),
-      onUnlinkItem: () => this.#setFollowMode("note"),
+      onSetFollowMode: (mode) => this.#setFollowMode(mode),
+      onPinCurrentItem: () => this.#pinCurrentItem(),
+      onPinItem: () => this.#pickItemToPin(),
+      onUnpin: () => this.#unpin(),
+      onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onDragStart: createDragInsertHandler({
         app: this.#deps.app,
         noteFeature: this.#deps.noteFeature,
         notify: (message) => void new BaseNotice(message),
         getImportHandle: () => this.#importHandle,
+        resolveAnnotationID: (indexedKey) =>
+          this.#resolveAnnotationID(indexedKey),
         onSettled: () => this.#syncImportHandle(),
       }),
       renderComment: createCommentRenderer({
@@ -189,70 +267,77 @@ export class AnnotationView extends ItemView {
     });
 
     this.#store.setState({
-      serverAvailable: this.#deps.liveUpdate.available,
-      readerTarget: this.#deps.liveUpdate.readerTarget,
+      liveUpdatesOn: this.#deps.liveUpdate.available,
+      zoteroReaderClosed: this.#deps.liveUpdate.readerClosed,
     });
 
     this.#root = createRoot(this.contentEl);
     this.#root.render(
-      <AnnotStoreProvider value={this.#store}>
-        <AnnotActionsContext value={this.#actions}>
-          <AnnotView />
-        </AnnotActionsContext>
-      </AnnotStoreProvider>,
+      // A menu's portal mounts into this view's own document, so a pop-out
+      // window shows its menus rather than the main window showing them.
+      <MenuContainerProvider value={this.contentEl.doc.body}>
+        <AnnotStoreProvider value={this.#store}>
+          <AnnotActionsContext value={this.#actions}>
+            <AnnotView />
+          </AnnotActionsContext>
+        </AnnotStoreProvider>
+      </MenuContainerProvider>,
     );
 
     this.register(
       this.#deps.db.on("changed", () => {
         logger.debug("DB changed, refreshing annot view");
         this.#librariesCache = null;
+        this.#zoteroReader?.refresh();
         this.#reload();
       }),
     );
 
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
-        if (this.#followMode === "note") {
+        if (this.#followMode === "active-tab") {
           this.#reload();
           return;
         }
-        // Reader- and linked-follow keep the same item across note switches,
-        // so no reload runs to refresh the drag-insert handle. Sync it here so
-        // it tracks the note a drag would land in.
+        // The other modes keep the same item across tab switches, so no reload
+        // runs to refresh the drag-insert handle. Sync it here so it tracks
+        // the note a drag would land in.
         this.#syncImportHandle();
       }),
     );
 
     this.registerEvent(
       this.#deps.app.metadataCache.on("changed", (file) => {
-        if (this.#followMode !== "note") return;
+        if (this.#followMode !== "active-tab") return;
         const activeFile = this.#deps.app.workspace.getActiveFile();
         if (activeFile && file.path === activeFile.path) this.#reload();
       }),
     );
 
     this.register(
-      this.#deps.liveUpdate.on("reader/target", (target) => {
-        const prev = this.#store.getState().readerTarget;
-        this.#store.setState({ readerTarget: target });
-        logger.debug("Reader target changed", {
-          itemID: target.itemID,
-          attachmentID: target.attachmentID,
-        });
-        if (this.#followMode !== "reader") return;
-        // A new attachment needs a full reload; a re-select only re-highlights.
-        if (target.attachmentID !== prev?.attachmentID) this.#reload();
-        else this.#scrollToSelected(target.selected);
+      this.#zoteroReader.on("target-changed", () => {
+        if (this.#followMode === "zotero-reader") this.#reload();
+      }),
+    );
+    this.register(
+      this.#zoteroReader.on("selection-changed", (selected) => {
+        if (this.#followMode !== "zotero-reader") return;
+        this.#applySelection(selected);
       }),
     );
 
     this.register(
       this.#deps.liveUpdate.on("available", (available) => {
-        this.#store.setState({ serverAvailable: available });
-        if (!available && this.#followMode === "reader") {
-          logger.debug("Server unavailable, leaving reader-follow mode");
-          this.#setFollowMode("note");
-        }
+        // The mode is the user's, so it stands: only the reason the view shows
+        // in place changes with the listener.
+        this.#store.setState({ liveUpdatesOn: available });
+        if (this.#followMode === "zotero-reader") this.#reload();
+      }),
+    );
+
+    this.register(
+      this.#deps.liveUpdate.on("reader/closed", (closed) => {
+        this.#store.setState({ zoteroReaderClosed: closed });
       }),
     );
 
@@ -263,6 +348,8 @@ export class AnnotationView extends ItemView {
   protected override async onClose(): Promise<void> {
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
+    this.#leafSession?.();
+    this.#leafSession = null;
     this.#root?.unmount();
     this.#root = null;
     this.#actions = null;
@@ -270,103 +357,83 @@ export class AnnotationView extends ItemView {
 
   // #region follow mode
 
-  #toggleFollowReader(): void {
-    if (this.#followMode === "reader") {
-      this.#setFollowMode("note");
-      return;
-    }
-    if (!this.#deps.liveUpdate.available) return; // also gated in the UI
-    this.#setFollowMode("reader");
+  /**
+   * Every mode change runs through here, and every caller is a user gesture:
+   * the mode button, the pane menu, or one of the five commands. Nothing else
+   * writes the mode.
+   *
+   * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
+   */
+  #setFollowMode(mode: Exclude<FollowMode, "pinned">): void {
+    if (this.#followMode === mode) return;
+    this.#commitMode({
+      followMode: mode,
+      previousMode: DEFAULT_FOLLOW_MODE,
+      pinnedItemKey: null,
+    });
   }
 
-  #linkItem(): void {
+  /**
+   * Pins the Item on screen. Taken from an Obsidian PDF view this releases that
+   * view's attachment lock, so the choice the PDF made becomes the remembered
+   * one and the picker starts there.
+   */
+  #pinCurrentItem(): void {
+    const { pinnable, selectedAttachmentKey } = this.#store.getState();
+    if (pinnable === null) return; // the control is disabled in place
+    if (selectedAttachmentKey !== null) {
+      this.#saveAttachmentSelection(pinnable, selectedAttachmentKey);
+    }
+    this.#pin(pinnable);
+  }
+
+  #pickItemToPin(): void {
     void pickItem(
       {
         app: this.#deps.app,
         lookup: this.#deps.itemLookup,
         settings: this.#deps.settings,
       },
-      m.annot_view_link_placeholder(),
+      m.annot_view_pin_placeholder(),
     ).then((hit) => {
-      if (!hit) return;
-      const { item } = hit;
-      this.#setLinkedItem(item);
-      this.#reload();
+      // The item index the picker searches excludes every child item type, so
+      // a hit is always an Item a pin can name.
+      // @see packages/db/src/queries/index-items.ts
+      if (hit) this.#pin(hit.item.indexedKey);
     });
   }
 
-  #restoreLinkedTarget(indexedKey: string): void {
-    const parsed = parseIndexedKey(indexedKey);
-    if (!parsed) {
-      this.#store.setState({ followMode: "note" });
-      return;
-    }
-    const libraryID = resolveLibraryID(parsed.groupID, this.#getLibraries());
-    if (libraryID === null) {
-      this.#store.setState({ followMode: "note" });
-      return;
-    }
-    try {
-      const item = getItemsByKey(this.#deps.db.client, libraryID, [
-        parsed.key,
-      ])[0];
-      if (!item) {
-        this.#store.setState({ followMode: "note" });
-        return;
-      }
-      this.#setLinkedItem(item);
-    } catch {
-      this.#store.setState({ followMode: "note" });
-    }
-  }
-
-  #setLinkedItem(item: Item): void {
-    if (isChildItemFields(item.fields)) return;
-
-    const summary = itemSummary(item, item.fields);
-    this.#store.setState({
-      followMode: "linked",
-      linked: {
-        target: {
-          itemID: item.itemID,
-          key: item.key,
-          libraryID: item.libraryID,
-          groupID: item.groupID,
-          indexedKey: item.indexedKey,
-        },
-        displayLabel: summary.formatted,
-      },
+  #pin(itemKey: string): void {
+    this.#commitMode({
+      followMode: "pinned",
+      previousMode: unpinnedMode(this.#followMode),
+      pinnedItemKey: itemKey,
     });
   }
 
-  #setFollowMode(mode: FollowMode): void {
-    if (this.#followMode === mode) return;
-    this.#store.setState({ followMode: mode });
+  #unpin(): void {
+    const { previousMode } = this.#store.getState();
+    this.#commitMode({
+      followMode: unpinnedMode(previousMode),
+      previousMode: DEFAULT_FOLLOW_MODE,
+      pinnedItemKey: null,
+    });
+  }
+
+  #commitMode(next: AnnotViewState): void {
+    logger.debug("Follow mode changed by a gesture", { ...next });
+    // The selection belongs to the reader the old mode followed; the new one
+    // reports its own, or none.
+    this.#store.setState({ ...next, selectedAnnotationKeys: [] });
+    void this.#deps.app.workspace.requestSaveLayout();
     this.#reload();
   }
 
-  #resolveDisplayLabel(): string | null {
-    switch (this.#followMode) {
-      case "note":
-        return null;
-      case "reader": {
-        const readerTarget = this.#deps.liveUpdate.readerTarget;
-        if (!readerTarget) return null;
-        try {
-          const info = getItemDisplayInfoByID(
-            this.#deps.db.client,
-            readerTarget.itemID,
-          );
-          if (!info) return null;
-          const summary = itemSummary(info, info.fields);
-          return summary.formatted;
-        } catch {
-          return null;
-        }
-      }
-      case "linked":
-        return this.#store.getState().linked?.displayLabel ?? null;
-    }
+  #enableLiveUpdates(): void {
+    this.#deps.settings.update({
+      "server.enabled": true,
+      "server.live-update": true,
+    });
   }
 
   // #endregion
@@ -374,6 +441,13 @@ export class AnnotationView extends ItemView {
   // #region resolve + load
 
   #reload(): void {
+    // Only Active Tab follows an open PDF's own session, so the subscription
+    // stands exactly as long as that mode does.
+    this.#followLeafSession(
+      this.#followMode === "active-tab"
+        ? (this.#deps.app.workspace.getActiveFile()?.path ?? null)
+        : null,
+    );
     if (this.#deps.db.state !== "ready") {
       this.#clearState();
       return;
@@ -382,54 +456,94 @@ export class AnnotationView extends ItemView {
   }
 
   #resolveTarget(): LoadTarget | null {
-    const mode = this.#followMode;
-    switch (mode) {
-      case "note": {
-        const activeFile = this.#deps.app.workspace.getActiveFile();
-        if (!activeFile) return null;
-        const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
-        const indexedKey = itemKeyFromFrontmatter(cache);
-        const target = resolveLoadTarget({
-          mode,
-          indexedKey,
-          libraries: this.#getLibraries(),
-        });
-        // Warn only when a well-formed key can't map to a library; a malformed
-        // key is silent (parseIndexedKey rejects it), matching prior behavior.
-        if (indexedKey && !target) {
-          const parsed = parseIndexedKey(indexedKey);
-          if (parsed) {
-            logger.warn("Could not resolve library for group {groupID}", {
-              groupID: parsed.groupID,
-            });
-          }
-        }
-        return target;
-      }
-      case "reader": {
-        const readerTarget = this.#deps.liveUpdate.readerTarget;
+    const libraries = this.#getLibraries();
+    switch (this.#followMode) {
+      case "active-tab":
         return resolveLoadTarget({
-          mode,
-          ref: readerTarget
-            ? this.#resolveReaderRef(readerTarget.itemID)
-            : null,
-          attachmentID: readerTarget?.attachmentID ?? null,
+          mode: "active-tab",
+          leaf: this.#resolveActiveLeaf(),
+          libraries,
         });
-      }
-      case "linked":
+      case "zotero-reader":
+        // Live updates is what carries the reader's position from Zotero, so
+        // with it off this source answers nothing at all and the view offers
+        // to turn it on, rather than showing an attachment no reader is on.
+        return this.#store.getState().liveUpdatesOn
+          ? resolveLoadTarget({
+              mode: "zotero-reader",
+              target: this.#zoteroReader?.target ?? null,
+              libraries,
+            })
+          : null;
+      case "pinned":
         return resolveLoadTarget({
-          mode,
-          linkedTarget: this.#store.getState().linked?.target ?? null,
+          mode: "pinned",
+          pinnedItemKey: this.#store.getState().pinnedItemKey,
+          libraries,
         });
     }
   }
 
-  #resolveReaderRef(itemID: number): ItemRef | null {
+  /**
+   * What the active tab offers: an open Zotero PDF through the Reader Session
+   * the PDF annotation editor holds for it, or a Literature Note through its
+   * frontmatter. A PDF the resolver does not know answers nothing rather than
+   * falling through to the note path.
+   */
+  #resolveActiveLeaf(): ActiveLeafTarget | null {
+    const activeFile = this.#deps.app.workspace.getActiveFile();
+    if (!activeFile) return null;
+    const session = this.#deps.pdfReaders.sessionForPath(activeFile.path);
+    if (session) {
+      return session.target ? { kind: "pdf", target: session.target } : null;
+    }
+    const cache = this.#deps.app.metadataCache.getFileCache(activeFile);
+    const itemKey = itemKeyFromFrontmatter(cache);
+    return itemKey === null ? null : { kind: "note", itemKey };
+  }
+
+  /**
+   * Track the open PDF's own session while the active tab is what we follow,
+   * and drop the subscription as soon as it is not — a session outlives no
+   * mode it does not drive.
+   */
+  #followLeafSession(filePath: string | null): void {
+    this.#leafSession?.();
+    this.#leafSession = null;
+    const session = filePath && this.#deps.pdfReaders.sessionForPath(filePath);
+    if (!session) return;
+    const stack = new DisposableStack();
+    stack.defer(session.on("target-changed", () => this.#reload()));
+    stack.defer(
+      session.on("selection-changed", (selected) => {
+        if (this.#followMode === "active-tab") this.#applySelection(selected);
+      }),
+    );
+    this.#leafSession = () => stack.dispose();
+  }
+
+  /** Names what one companion reader push points at, in Indexed Keys. */
+  #resolveZoteroReader(pushed: ReaderTarget): ZoteroReaderResolution | null {
+    if (this.#deps.db.state !== "ready") return null;
     try {
-      return getItemRefByID(this.#deps.db.client, itemID);
+      const client = this.#deps.db.client;
+      const attachment = getAttachmentByItemId(client, pushed.attachmentID);
+      if (!attachment) return null;
+      // The wire carries a selection as numeric ids, and this is the last
+      // place they are read: the session speaks Indexed Keys from here on.
+      const selected = getAnnotationsByParent(client, attachment.itemID)
+        .filter((annot) => pushed.selected.includes(annot.itemID))
+        .map((annot) => annot.indexedKey);
+      const parent = attachment.parentItemID
+        ? (getItemRefByID(client, attachment.parentItemID)?.indexedKey ?? null)
+        : null;
+      return {
+        target: { attachmentKey: attachment.indexedKey, itemKey: parent },
+        selected,
+      };
     } catch (err) {
-      logger.warn("Failed to resolve reader item {itemID}", {
-        itemID,
+      logger.warn("Failed to name the Zotero reader's attachment", {
+        attachmentID: pushed.attachmentID,
         error: err,
       });
       return null;
@@ -443,97 +557,93 @@ export class AnnotationView extends ItemView {
     }
 
     const { db } = this.#deps;
-    const { indexedKey, key, libraryID, groupID, boundAttachmentID } = target;
-
-    const itemChanged = indexedKey !== this.#itemKey;
-    this.#groupID = groupID;
-    this.#itemKey = indexedKey;
+    const { itemKey, lockedAttachmentKey, lock, key, libraryID, groupID } =
+      target;
+    // A standalone Attachment has no Item, so the Attachment itself is what
+    // the attachment choice and the saved filter are remembered against.
+    const memoryKey = itemKey ?? lockedAttachmentKey ?? key;
+    const memoryChanged = memoryKey !== this.#memoryKey;
+    this.#itemKey = itemKey;
+    this.#memoryKey = memoryKey;
 
     // Dispose the previous load's subscriptions before any state mutation of
     // this load: `subscribeWithSelector` fires synchronously, so the reset
     // below would otherwise trigger the old save subscription (closed over
-    // the previous item's indexedKey) and wipe its persisted filter.
+    // the previous item's key) and wipe its persisted filter.
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = new DisposableStack();
 
     this.#store.setState({
-      ...(itemChanged ? INITIAL_FILTER_STATE : null),
+      ...(memoryChanged ? INITIAL_FILTER_STATE : null),
       groupID,
-      itemKey: indexedKey,
-      itemDisplayLabel: this.#resolveDisplayLabel(),
+      itemKey,
+      attachmentLock: lock,
+      pinnable: itemKey,
+      itemDisplayLabel: this.#resolveDisplayLabel(target),
     });
 
     this.#syncImportHandle();
 
     try {
       const client = db.client;
-      const attachments = getAnnotViewAttachments(client, key, libraryID);
+      const attachments = itemKey
+        ? getAnnotViewAttachments(client, key, libraryID)
+        : standaloneAttachment(client, key, libraryID);
       this.#store.setState({ attachments });
 
-      const valid = (id: number | null): number | null =>
-        id !== null && attachments.some((a) => a.itemID === id) ? id : null;
+      const held = (k: string | null): string | null =>
+        k !== null && attachments.some((a) => a.indexedKey === k) ? k : null;
       const saved =
-        boundAttachmentID !== null
-          ? null
-          : this.#loadAttachmentSelection(indexedKey);
-      const activeAtchID =
-        valid(boundAttachmentID) ??
-        valid(saved) ??
-        attachments[0]?.itemID ??
+        lockedAttachmentKey === null
+          ? this.#loadAttachmentSelection(memoryKey)
+          : null;
+      const activeKey =
+        held(lockedAttachmentKey) ??
+        held(saved) ??
+        attachments[0]?.indexedKey ??
         null;
 
-      if (activeAtchID === null) {
+      if (activeKey === null) {
         this.#store.setState({
-          selectedAttachmentID: null,
+          selectedAttachmentKey: null,
           annotations: null,
+          annotationSource: null,
         });
         return;
       }
 
-      this.#store.setState({ selectedAttachmentID: activeAtchID });
-      const initialAnnotations = getAnnotViewAnnotations(client, activeAtchID);
-      this.#store.setState({ annotations: initialAnnotations });
-
-      if (itemChanged) {
-        const savedFilter = this.#loadFilterSelection(
-          indexedKey,
-          initialAnnotations,
-        );
-        if (savedFilter) {
-          this.#store.setState({
-            selectedColors: savedFilter.colors,
-            selectedTagIDs: savedFilter.tagIDs,
-          });
-        }
-      }
+      this.#store.setState({ selectedAttachmentKey: activeKey });
+      this.#readAnnotations(activeKey, { restoreFilter: memoryChanged });
 
       this.#loadDisposables.defer(
         this.#store.subscribe(
-          (s) => s.selectedAttachmentID,
-          (atchID) => {
-            if (atchID === null) return;
-            if (boundAttachmentID === null) {
-              this.#saveAttachmentSelection(indexedKey, atchID);
+          (s) => s.selectedAttachmentKey,
+          (attachmentKey) => {
+            if (attachmentKey === null) return;
+            if (lockedAttachmentKey === null) {
+              this.#saveAttachmentSelection(memoryKey, attachmentKey);
             }
-            try {
-              this.#store.setState({
-                annotations: getAnnotViewAnnotations(db.client, atchID),
-              });
-            } catch (err) {
-              logger.warn(
-                "Failed to load annotations for attachment {atchID}",
-                { atchID, error: err },
-              );
-            }
+            this.#readAnnotations(attachmentKey, { restoreFilter: false });
           },
         ),
       );
 
+      // The repository's own event is the only word that a list was superseded;
+      // a held read says nothing about an invalidation of its own.
+      this.#loadDisposables.defer(
+        this.#deps.annotations.on("annotations-changed", (changedKey) => {
+          if (changedKey !== this.#store.getState().selectedAttachmentKey) {
+            return;
+          }
+          this.#readAnnotations(changedKey, { restoreFilter: false });
+        }),
+      );
+
       this.#loadDisposables.defer(
         this.#store.subscribe(
-          (s) => [s.selectedColors, s.selectedTagIDs] as const,
-          ([colors, tagIDs]) =>
-            this.#saveFilterSelection(indexedKey, { colors, tagIDs }),
+          (s) => [s.selectedColors, s.selectedTags] as const,
+          ([colors, tags]) =>
+            this.#saveFilterSelection(memoryKey, { colors, tags }),
           {
             equalityFn: ([aColors, aTags], [bColors, bTags]) =>
               aColors === bColors && aTags === bTags,
@@ -553,6 +663,70 @@ export class AnnotationView extends ItemView {
     }
   }
 
+  /**
+   * Reads one Attachment's Annotations through the repository, so the list on
+   * screen comes from whichever Annotation Source is active for it and says
+   * which — the same source, and the same records, the overlay draws from.
+   *
+   * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
+   */
+  #readAnnotations(
+    attachmentKey: string,
+    { restoreFilter }: { restoreFilter: boolean },
+  ): void {
+    const read = ++this.#reads;
+    const memoryKey = this.#memoryKey;
+    this.#store.setState({ annotations: null, annotationSource: null });
+    this.#reading = this.#deps.annotations
+      .read(attachmentKey)
+      .then((list) => {
+        // A slower read never overwrites a later one, and a load that has
+        // moved on leaves this answer where it fell. A null answer is a read
+        // an invalidation cancelled; the same invalidation announces the
+        // change this view re-reads on, so the list is not left waiting.
+        if (read !== this.#reads || list === null) return;
+        this.#store.setState({
+          annotations: list.annotations,
+          annotationSource: list.source,
+        });
+        if (!restoreFilter || memoryKey === null) return;
+        const saved = this.#loadFilterSelection(memoryKey, list.annotations);
+        if (saved) {
+          this.#store.setState({
+            selectedColors: saved.colors,
+            selectedTags: saved.tags,
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        if (read !== this.#reads) return;
+        logger.warn("Failed to read the annotations of an attachment", {
+          attachmentKey,
+          error,
+        });
+        this.#store.setState({ annotations: [] });
+      });
+  }
+
+  /**
+   * The identity block names the Item only where nothing else on screen does:
+   * Active Tab always has the note or the PDF in front of the user.
+   */
+  #resolveDisplayLabel(target: LoadTarget): string | null {
+    if (this.#followMode === "active-tab" || target.itemKey === null) {
+      return null;
+    }
+    try {
+      const item = getItemsByKey(this.#deps.db.client, target.libraryID, [
+        target.key,
+      ])[0];
+      if (!item || isChildItemFields(item.fields)) return null;
+      return itemSummary(item, item.fields).formatted;
+    } catch {
+      return null;
+    }
+  }
+
   // #endregion
 
   /**
@@ -565,16 +739,62 @@ export class AnnotationView extends ItemView {
     return this.#deps.noteIndex.getNotesByItemKey(this.#itemKey)[0]?.path ?? "";
   }
 
-  /** Scroll the first card for the annotations selected in Zotero into view. */
-  #scrollToSelected(selected: readonly number[]): void {
-    for (const id of selected) {
+  /** Mirror the reader's selection and bring its first card into view. */
+  #applySelection(selected: readonly string[]): void {
+    this.#store.setState({ selectedAnnotationKeys: selected });
+    for (const key of selected) {
       const el = this.contentEl.querySelector(
-        `.zt-annot-card[data-id="${id}"]`,
+        `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
       );
       if (el?.instanceOf(HTMLElement)) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
+    }
+  }
+
+  /** Opens an Annotation in Zotero, the one gesture its reader accepts. */
+  #openInZotero(annotationKey: string): void {
+    const annot = this.#store
+      .getState()
+      .annotations?.find((record) => record.key === annotationKey);
+    const annotation = annot && parseIndexedKey(annot.key);
+    const attachment = annot && parseIndexedKey(annot.parentKey);
+    if (!annot || !annotation || !attachment) return;
+    this.contentEl.win.open(
+      annotationOpenUri({
+        attachmentKey: attachment.key,
+        annotationKey: annotation.key,
+        pageLabel: annot.pageLabel,
+        groupID: annotation.groupID,
+      }),
+    );
+  }
+
+  /**
+   * The numeric id the Zotero database holds for an Annotation, for the note
+   * templates that read the database. `null` for an Annotation the Zotero
+   * Local API answered before SQLite caught up — which is the whole reason the
+   * cards are keyed by Indexed Key rather than by this.
+   *
+   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
+   */
+  #resolveAnnotationID(indexedKey: string): number | null {
+    if (this.#deps.db.state !== "ready") return null;
+    try {
+      const client = this.#deps.db.client;
+      const library = resolveIndexedKeyLibrary(client, indexedKey);
+      if (!library) return null;
+      return (
+        getAnnotationsByKey(client, [library.key], library.libraryID)[0]
+          ?.itemID ?? null
+      );
+    } catch (error) {
+      logger.warn("Failed to name an annotation in the Zotero database", {
+        indexedKey,
+        error,
+      });
+      return null;
     }
   }
 
@@ -596,11 +816,15 @@ export class AnnotationView extends ItemView {
       itemKey: null,
       itemDisplayLabel: null,
       attachments: null,
-      selectedAttachmentID: null,
+      selectedAttachmentKey: null,
+      attachmentLock: null,
+      pinnable: null,
       annotations: null,
+      annotationSource: null,
+      selectedAnnotationKeys: [],
     });
-    this.#groupID = null;
     this.#itemKey = null;
+    this.#memoryKey = null;
     this.#dropImportHandle();
   }
 
@@ -610,7 +834,7 @@ export class AnnotationView extends ItemView {
    * the active file rather than the load target.
    */
   #syncImportHandle(): void {
-    if (this.#itemKey === null) return;
+    if (this.#memoryKey === null) return;
     const activeFile = this.#deps.app.workspace.getActiveFile();
     if (activeFile) this.#prepareImportHandle(activeFile.path);
     else this.#dropImportHandle();
@@ -672,44 +896,56 @@ export class AnnotationView extends ItemView {
       });
   }
 
-  #loadAttachmentSelection(indexedKey: string): number | null {
-    const raw = this.#deps.app.loadLocalStorage(
-      STORAGE_KEY_PREFIX + indexedKey,
-    );
-    if (typeof raw === "string") {
-      const n = Number(raw);
-      if (Number.isFinite(n)) return n;
-    }
-    return null;
+  #loadAttachmentSelection(memoryKey: string): string | null {
+    const raw = this.#deps.app.loadLocalStorage(STORAGE_KEY_PREFIX + memoryKey);
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
   }
 
-  #saveAttachmentSelection(indexedKey: string, atchID: number): void {
+  #saveAttachmentSelection(memoryKey: string, attachmentKey: string): void {
     this.#deps.app.saveLocalStorage(
-      STORAGE_KEY_PREFIX + indexedKey,
-      String(atchID),
+      STORAGE_KEY_PREFIX + memoryKey,
+      attachmentKey,
     );
   }
 
   #loadFilterSelection(
-    indexedKey: string,
-    annots: readonly AnnotViewItem[],
+    memoryKey: string,
+    annots: readonly AnnotationRecord[],
   ): SavedFilter | null {
     const raw = this.#deps.app.loadLocalStorage(
-      FILTER_STORAGE_KEY_PREFIX + indexedKey,
+      FILTER_STORAGE_KEY_PREFIX + memoryKey,
     );
     return sanitizeSavedFilter(raw, annots);
   }
 
-  #saveFilterSelection(indexedKey: string, filter: SavedFilter): void {
-    const { colors, tagIDs } = filter;
-    const key = FILTER_STORAGE_KEY_PREFIX + indexedKey;
-    if (colors.length === 0 && tagIDs.length === 0) {
+  #saveFilterSelection(memoryKey: string, filter: SavedFilter): void {
+    const { colors, tags } = filter;
+    const key = FILTER_STORAGE_KEY_PREFIX + memoryKey;
+    if (colors.length === 0 && tags.length === 0) {
       this.#deps.app.saveLocalStorage(key, null);
       return;
     }
-    this.#deps.app.saveLocalStorage(
-      key,
-      JSON.stringify({ colors, tags: tagIDs }),
-    );
+    this.#deps.app.saveLocalStorage(key, JSON.stringify({ colors, tags }));
   }
+}
+
+/**
+ * A standalone Attachment as a one-entry list, so the load path, the picker,
+ * and the card list read the same shape whether or not an Item owns it.
+ */
+function standaloneAttachment(
+  client: NodeDatabaseClient,
+  key: string,
+  libraryID: number,
+): AnnotViewAttachment[] {
+  const attachment = getAttachmentByKey(client, key, libraryID);
+  if (!attachment) return [];
+  return [
+    {
+      itemID: attachment.itemID,
+      indexedKey: attachment.indexedKey,
+      path: attachment.path,
+      annotCount: getAttachmentAnnotationCount(client, attachment.itemID),
+    },
+  ];
 }

@@ -78,6 +78,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     itemID: 100,
     key: "ANNO0001",
     indexedKey: "ANNO0001",
+    tags: [],
     libraryID: USER_LIBRARY_ID,
     groupID: null,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),

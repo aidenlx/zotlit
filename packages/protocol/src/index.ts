@@ -4,6 +4,7 @@ export {
   notifyEventSchema,
   type ReaderActive,
   type ReaderAnnotSelect,
+  type ReaderInactive,
 } from "./notify";
 export {
   type NoteStatusResponse,

@@ -240,3 +240,67 @@ it("answers a mounted route group beside the Live Update routes", async () => {
   });
   expect(liveUpdate.status).toBe(200);
 });
+
+/** POST one companion notify event, the way the Zotero plugin's sender does. */
+async function notify(port: number, event: unknown): Promise<number> {
+  const res = await fetch(`http://127.0.0.1:${port}/notify`, {
+    method: "POST",
+    headers: { ...companionHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify(event),
+  });
+  return res.status;
+}
+
+const READER_ACTIVE = {
+  event: "reader/active",
+  itemID: 11,
+  attachmentID: 22,
+  selected: [33],
+};
+
+it("keeps the last reader target and flags it closed on reader/inactive", async () => {
+  const settings = makeSettings({ "server.enabled": true, "server.port": 0 });
+
+  await using service = new LocalServerService(makeDeps(settings.service));
+  const port = await whenListening(service);
+  const closedEdges: boolean[] = [];
+  service.on("reader/closed", (closed) => closedEdges.push(closed));
+
+  expect(await notify(port, READER_ACTIVE)).toBe(204);
+  expect(service.readerTarget).toEqual({
+    itemID: 11,
+    attachmentID: 22,
+    selected: [33],
+  });
+  expect(service.readerClosed).toBe(false);
+
+  expect(await notify(port, { event: "reader/inactive" })).toBe(204);
+  // The attachment stays on screen; only the presence flag moves.
+  expect(service.readerTarget).toEqual({
+    itemID: 11,
+    attachmentID: 22,
+    selected: [33],
+  });
+  expect(service.readerClosed).toBe(true);
+
+  // A repeat carries no new edge, and the next reader push clears the flag.
+  expect(await notify(port, { event: "reader/inactive" })).toBe(204);
+  expect(await notify(port, { ...READER_ACTIVE, attachmentID: 44 })).toBe(204);
+  expect(service.readerClosed).toBe(false);
+  expect(service.readerTarget?.attachmentID).toBe(44);
+  expect(closedEdges).toEqual([true, false]);
+});
+
+it("holds the reader target past a listener that stops answering", async () => {
+  const settings = makeSettings({ "server.enabled": true, "server.port": 0 });
+
+  await using service = new LocalServerService(makeDeps(settings.service));
+  const port = await whenListening(service);
+  expect(await notify(port, READER_ACTIVE)).toBe(204);
+
+  settings.update({ "server.live-update": false });
+  expect(service.available).toBe(false);
+  // A view following the Zotero reader keeps what it shows and says why,
+  // rather than emptying because the companion cannot reach us.
+  expect(service.readerTarget?.attachmentID).toBe(22);
+});

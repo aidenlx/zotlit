@@ -16,6 +16,12 @@ const annotationFindOptions = {
         dateAdded: true,
         dateModified: true,
       },
+      with: {
+        itemTags: {
+          columns: {},
+          with: { tag: { columns: { name: true } } },
+        },
+      },
     },
     parentAttachment: {
       columns: {},
@@ -120,6 +126,7 @@ function toAnnotation(row: AnnotationRow, groupID: number | null): Annotation {
     comment: row.comment,
     color: row.color,
     pageLabel: row.pageLabel,
+    tags: row.item.itemTags.map((it) => it.tag.name),
     sortIndex: row.sortIndex,
     position: row.position,
     authorName: row.authorName,

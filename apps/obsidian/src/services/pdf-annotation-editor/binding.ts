@@ -13,6 +13,8 @@ import type {
   AttachmentResolution,
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
+import { ReaderSessionHost } from "@/services/reader-session/session";
+import type { ReaderSession } from "@/services/reader-session/session";
 
 import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
 import type { PdfPageAnnotation } from "./render";
@@ -64,6 +66,16 @@ export class PdfViewBinding implements Disposable {
   readonly #attachments;
   readonly #annotations;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
+  /**
+   * This view as a reader: what it holds and what is selected in it. ZotLit
+   * owns the selection here, so a consumer's `setSelectedAnnotations` is
+   * reported straight back.
+   */
+  readonly #session = new ReaderSessionHost({
+    source: "obsidian-pdf",
+    navigate: (annotationKey) => this.#navigate(annotationKey),
+    select: (annotationKeys) => this.#session.reportSelection(annotationKeys),
+  });
   /** Every listener and node this binding added for this view. */
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
@@ -107,6 +119,11 @@ export class PdfViewBinding implements Disposable {
    */
   get attachment(): AttachmentResolution {
     return this.#attachment;
+  }
+
+  /** This PDF view as a Reader Session, for a surface that follows a reader. */
+  get session(): ReaderSession {
+    return this.#session;
   }
 
   /** Whether the reader surfaces may mount: every probe so far passed. */
@@ -162,6 +179,7 @@ export class PdfViewBinding implements Disposable {
   }
 
   [Symbol.dispose](): void {
+    this.#session[Symbol.dispose]();
     this.#surfaces.dispose();
   }
 
@@ -178,6 +196,17 @@ export class PdfViewBinding implements Disposable {
       path: this.#filePath,
       attachment: this.#attachment,
     });
+    // The session names the Attachment even when a probe failed: a probe miss
+    // costs this view its own surfaces, and leaves every consumer that only
+    // follows what the view holds — the Annotation View — reading as before.
+    this.#session.setTarget(
+      this.#attachment.kind === "resolved"
+        ? {
+            attachmentKey: this.#attachment.attachmentKey,
+            itemKey: this.#attachment.itemKey,
+          }
+        : null,
+    );
     if (!this.supported || this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
     this.#surfaces.defer(
@@ -187,6 +216,24 @@ export class PdfViewBinding implements Disposable {
     );
     this.#surfaces.defer(() => this.#unpaint());
     this.#refresh();
+  }
+
+  /**
+   * Obsidian's own page subpath is what moves the reader, so an Annotation the
+   * marks do not place — a position this build draws nowhere — moves nothing.
+   */
+  #navigate(annotationKey: string): void {
+    const pageIndex = [...this.#marks].find(([, annotations]) =>
+      annotations.some((mark) => mark.annotation.key === annotationKey),
+    )?.[0];
+    if (pageIndex === undefined || !this.#controller) {
+      logger.debug("No page holds this annotation", {
+        path: this.filePath,
+        annotationKey,
+      });
+      return;
+    }
+    this.#controller.applySubpath(`#page=${pageIndex + 1}`);
   }
 
   #attach(controller: PDFViewerController): void {

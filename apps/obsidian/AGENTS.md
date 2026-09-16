@@ -29,6 +29,10 @@ Preact provides the UI runtime through `@preact/preset-vite` and its React compa
 
 View/modal state uses a zustand **vanilla store + React context, one per instance** — not the global `create()` hook, not signals. Follow `src/views/annot-view/store.ts`.
 
+Menus, popovers, and toggle groups inside a Preact tree are Base UI primitives dressed in Obsidian's own classes — `src/components/obsidian/menu.tsx` is the pattern. Placement stays with Base UI's positioner (`menu.css` says what that costs Obsidian's own `.menu` rules), and a host that can be popped out supplies its own window through `MenuContainerProvider`, because Base UI portals to the global `document.body` otherwise. Base UI is confined to the Annotation View ([ADR 0042](docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md)); the PDF reader's own surfaces are vanilla DOM on Obsidian's primitives, and no reader code imports it.
+
+**Components are not mounted in tests.** Push the decision out of the component and test the decision — the store transition, and a pure module that answers which entries exist, which state applies, and why a control is blocked. `src/views/annot-view/presentation.ts` is the pattern; a rendered surface is verified by driving the real Obsidian (see the `obsidian-debug` skill), never by mounting in happy-dom.
+
 ## Note feature
 
 `src/services/note-feature/` is composable free functions over an injected `NoteFeatureDeps` bundle — **not a `Service`**, despite living under `src/services/`. `createNoteFeature(deps)` binds them; read `context.ts` (deps) and `operations.ts` (bound ops) before editing. Batch runners fetch shared context (item tags, note path) once and thread it through the stages, so per-item ops take already-fetched data instead of re-reading.

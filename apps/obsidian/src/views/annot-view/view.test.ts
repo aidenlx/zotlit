@@ -2,7 +2,12 @@
 import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AnnotViewItem, Item } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
+
+import type {
+  AnnotationList,
+  AnnotationRecord,
+} from "@/services/annotation-repository/service";
 
 const item = {
   itemID: 1,
@@ -15,16 +20,20 @@ const item = {
   fields: { itemType: "book", title: "A Book" },
 } as unknown as Item;
 
-const annot: AnnotViewItem = {
-  itemID: 42,
-  key: "ANNOTKEY",
-  type: 1, // highlight
+/** The numeric id the Zotero database holds for {@link annot}. */
+const ANNOT_ITEM_ID = 42;
+
+const annot: AnnotationRecord = {
+  key: "ANNT2345",
+  type: "highlight",
   text: "raw highlighted text",
   comment: null,
   color: "#ffd400",
+  parentKey: "ATCH2345",
   pageLabel: "1",
-  parentKey: "ATCHKEY1",
   tags: [],
+  position: { kind: "pdf-rects", pageIndex: 0, rects: [] },
+  version: null,
 };
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -36,9 +45,14 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getItemRefByID: () => null,
     getItemDisplayInfoByID: () => null,
     getAnnotViewAttachments: () => [
-      { itemID: 7, path: "storage:a.pdf", annotCount: 1 },
+      {
+        itemID: 7,
+        indexedKey: "ATCH2345",
+        path: "storage:a.pdf",
+        annotCount: 1,
+      },
     ],
-    getAnnotViewAnnotations: () => [annot],
+    getAnnotationsByKey: () => [{ itemID: ANNOT_ITEM_ID, key: annot.key }],
   };
 });
 
@@ -59,7 +73,7 @@ vi.mock("./store", async (importOriginal) => {
 });
 
 /** Captured from `createAnnotActions` so the test can fire a drag directly. */
-let onDragStart: (evt: unknown, annot: AnnotViewItem) => void;
+let onDragStart: (evt: unknown, annot: AnnotationRecord) => void;
 
 vi.mock("./actions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./actions")>();
@@ -119,6 +133,16 @@ function createDeps() {
     liveUpdate: {
       available: false,
       readerTarget: null,
+      readerClosed: false,
+      on: () => () => undefined,
+    },
+    pdfReaders: { sessionForPath: () => null },
+    annotations: {
+      read: () =>
+        Promise.resolve<AnnotationList>({
+          source: { kind: "zotero-db" },
+          annotations: [annot],
+        }),
       on: () => () => undefined,
     },
     zoteroPref: { dataDir: "/zotero" },

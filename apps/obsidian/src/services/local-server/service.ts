@@ -78,6 +78,19 @@ export interface LocalServerEvents {
    */
   "reader/target": (target: ReaderTarget) => void;
   /**
+   * Edge transitions of {@link LocalServerService.readerClosed}: `true` once
+   * the companion reports that the focused Zotero tab or window is no longer a
+   * reader, `false` again on the next reader push. The held
+   * {@link ReaderTarget} stays put either way, so a surface can keep the last
+   * attachment on screen and say that the reader closed.
+   *
+   * Named with a slash rather than the dash `policies/event-naming.md` asks
+   * for, because the channels on this emitter that relay a wire event keep the
+   * wire's own name — `db/updated` and `reader/target` already do, and one
+   * emitter speaking two conventions would read worse than this one departure.
+   */
+  "reader/closed": (closed: boolean) => void;
+  /**
    * Edge transitions of {@link LocalServerService.available} — fired when the
    * listener starts answering Live Update or stops (either toggle off, a port
    * rebind, or a bind error). Consumers gate reader-follow features on this.
@@ -126,6 +139,7 @@ export class LocalServerService extends Service<void> {
   #boundPort: number | null = null;
   #available = false;
   #readerTarget: ReaderTarget | null = null;
+  #readerClosed = false;
 
   ready: Promise<void>;
 
@@ -172,9 +186,23 @@ export class LocalServerService extends Service<void> {
     this.#app.route(basePath, routes);
   }
 
-  /** Latest reader state pushed by the companion; `null` until the first push. */
+  /**
+   * Latest reader state pushed by the companion; `null` until the first push.
+   * It is held past a closed reader and past a listener that stopped
+   * answering, so a surface following the Zotero reader keeps the attachment
+   * it last had open rather than emptying.
+   */
   get readerTarget(): ReaderTarget | null {
     return this.#readerTarget;
+  }
+
+  /**
+   * `true` while the companion's last word was that the focused Zotero tab or
+   * window is no longer a reader. {@link readerTarget} still names the
+   * attachment that reader had open.
+   */
+  get readerClosed(): boolean {
+    return this.#readerClosed;
   }
 
   on<K extends keyof LocalServerEvents>(
@@ -190,8 +218,6 @@ export class LocalServerService extends Service<void> {
       this.#enabled && this.#liveUpdateEnabled && this.#boundPort !== null;
     if (next === this.#available) return;
     this.#available = next;
-    // The held reader state is only valid while the companion can reach us.
-    if (!next) this.#readerTarget = null;
     logger.debug("Server availability changed", { available: next });
     this.#emitter.emit("available", next);
   }
@@ -206,6 +232,9 @@ export class LocalServerService extends Service<void> {
       case "reader/active":
         this.#emitter.emit("reader/target", this.#trackReader(event));
         break;
+      case "reader/inactive":
+        this.#setReaderClosed(true);
+        break;
     }
   }
 
@@ -217,7 +246,15 @@ export class LocalServerService extends Service<void> {
       selected: event.selected,
     };
     this.#readerTarget = target;
+    this.#setReaderClosed(false);
     return target;
+  }
+
+  #setReaderClosed(closed: boolean): void {
+    if (closed === this.#readerClosed) return;
+    this.#readerClosed = closed;
+    logger.debug("Zotero reader presence changed", { closed });
+    this.#emitter.emit("reader/closed", closed);
   }
 
   async #load(): Promise<void> {

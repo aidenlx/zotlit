@@ -327,6 +327,9 @@ it("drops an annotation whose position is not a PDF position", () => {
       color: "#ffd400",
       comment: null,
       text: null,
+      parentKey: "EPUBBK23",
+      pageLabel: null,
+      tags: [],
       position: parseAnnotationPosition(
         { type: "FragmentSelector", value: "epubcfi(/6/4!/4/2)" },
         "application/epub+zip",

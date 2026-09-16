@@ -67,6 +67,7 @@ export interface WireAnnotation {
   position: unknown;
   parentItem?: string;
   groupID?: number;
+  tags?: string[];
 }
 
 /**
@@ -459,7 +460,8 @@ export function freshnessSignal(
  * which this client never reads and this builder therefore omits — a replay of
  * the fields under test, not a copy of the answer.
  *
- * SYNTHESISED: every `data.annotation*` field, which no capture covers.
+ * SYNTHESISED: every `data.annotation*` field, and `data.tags`, none of which
+ * the recorded run's single-item read covers.
  */
 function wireItem(
   annotation: WireAnnotation,
@@ -487,7 +489,9 @@ function wireItem(
       annotationPageLabel: annotation.pageLabel ?? "",
       annotationSortIndex: annotation.sortIndex,
       annotationPosition: JSON.stringify(annotation.position),
-      tags: [],
+      ...(annotation.tags !== undefined && {
+        tags: annotation.tags.map((tag) => ({ tag })),
+      }),
     },
   };
 }

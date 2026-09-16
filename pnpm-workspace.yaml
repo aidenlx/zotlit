@@ -16,6 +16,7 @@ allowBuilds:
   workerd: true
 
 catalog:
+  "@base-ui/react": ^1.7.0
   "@inlang/plugin-message-format": 4.4.1
   nanoid: ^5.1.16
   "@hono/node-server": ^2.0.10

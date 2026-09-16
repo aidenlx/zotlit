@@ -24,6 +24,7 @@ function makeAnnotation(overrides?: Partial<Annotation>): Annotation {
     comment: null,
     color: "#ffd400",
     pageLabel: "42",
+    tags: [],
     sortIndex: "00000|000000|00000",
     position: { pageIndex: 41 },
     authorName: null,

@@ -3,49 +3,63 @@ import type { App } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
-import { annotationOpenUri } from "@zotlit/db";
-import type { AnnotViewItem } from "@zotlit/db";
+import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
-import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import type { CommentRenderer } from "./comment-render";
+import type { FollowMode } from "./store";
 
 export interface AnnotActions {
-  onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotViewItem): void;
-  onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void;
+  onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotationRecord): void;
+  onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
-  /** Toggle reader-follow on/off; off reverts to following the active note. */
-  onToggleFollowReader(): void;
-  /** Pick a Zotero item to pin the view to (manual-link mode). */
-  onLinkItem(): void;
-  /** Exit linked mode, revert to following the active note. */
-  onUnlinkItem(): void;
-  getImgSrc(annot: AnnotViewItem): string;
-  getBacklink(annot: AnnotViewItem): string | undefined;
+  /** Follow the active tab or the Zotero reader, from a user gesture. */
+  onSetFollowMode(mode: Exclude<FollowMode, "pinned">): void;
+  /** Pin the Item on screen, releasing an Obsidian PDF view's lock. */
+  onPinCurrentItem(): void;
+  /** Search Zotero for an Item to pin. */
+  onPinItem(): void;
+  /** Return to the mode the pin interrupted. */
+  onUnpin(): void;
+  /** Turn Live updates on, so the Zotero reader can reach this view. */
+  onEnableLiveUpdates(): void;
+  getImgSrc(annot: AnnotationRecord): string;
+  getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
 }
 
 export interface AnnotActionDeps {
   app: App;
-  getGroupID: () => number | null;
   getDataDir: () => string;
+  /**
+   * The numeric id the Zotero database holds for an Annotation, or `null` for
+   * one it does not hold yet — an Annotation created through the Zotero Local
+   * API, which the card shows before SQLite knows it. The note templates read
+   * the database, so they can render only what it holds.
+   *
+   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
+   */
+  resolveAnnotationID: (indexedKey: string) => number | null;
   refresh: () => Promise<void>;
   noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
-  onToggleFollowReader: AnnotActions["onToggleFollowReader"];
-  onLinkItem: AnnotActions["onLinkItem"];
-  onUnlinkItem: AnnotActions["onUnlinkItem"];
+  onSetFollowMode: AnnotActions["onSetFollowMode"];
+  onPinCurrentItem: AnnotActions["onPinCurrentItem"];
+  onPinItem: AnnotActions["onPinItem"];
+  onUnpin: AnnotActions["onUnpin"];
+  onEnableLiveUpdates: AnnotActions["onEnableLiveUpdates"];
   onExploreAnnotation: (annotationKey: string) => void;
 }
 
@@ -63,24 +77,33 @@ function resourceUrl(absolutePath: string): string {
 }
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
-  const getBacklink = (annot: AnnotViewItem): string | undefined => {
+  // Every key on a record is an Indexed Key, so the library it names travels
+  // with it: the Zotero URI and the cache path both want the bare key beside
+  // the group the key already carries.
+  const getBacklink = (annot: AnnotationRecord): string | undefined => {
+    const annotation = parseIndexedKey(annot.key);
+    const attachment = parseIndexedKey(annot.parentKey);
+    if (!annotation || !attachment) return undefined;
     return annotationOpenUri({
-      attachmentKey: annot.parentKey,
-      annotationKey: annot.key,
+      attachmentKey: attachment.key,
+      annotationKey: annotation.key,
       pageLabel: annot.pageLabel,
-      groupID: deps.getGroupID(),
+      groupID: annotation.groupID,
     });
   };
 
-  const getImgSrc = (annot: AnnotViewItem): string => {
-    const cachePath = resolveAnnotCachePath(annot, {
-      dataDir: deps.getDataDir(),
-      groupID: deps.getGroupID(),
-    });
+  const getImgSrc = (annot: AnnotationRecord): string => {
+    const parsed = parseIndexedKey(annot.key);
+    const cachePath =
+      parsed &&
+      resolveAnnotCachePath(
+        { key: parsed.key, type: annot.type },
+        { dataDir: deps.getDataDir(), groupID: parsed.groupID },
+      );
     return cachePath ? resourceUrl(cachePath) : IMG_PLACEHOLDER;
   };
 
-  const buildMenu = (annot: AnnotViewItem): Menu => {
+  const buildMenu = (annot: AnnotationRecord): Menu => {
     const menu = new Menu();
 
     const backlink = getBacklink(annot);
@@ -113,10 +136,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     }
 
     addCopyIndexedKeyMenuItem(menu, {
-      indexedKey: indexedKeyForClipboard({
-        key: annot.key,
-        groupID: deps.getGroupID(),
-      }),
+      indexedKey: annot.key,
       kind: "annotation",
     });
 
@@ -125,9 +145,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setTitle(m.annot_view_menu_copy_citation())
         .setIcon("quote")
         .onClick(() => {
+          const annotationID = deps.resolveAnnotationID(annot.key);
+          if (annotationID === null) {
+            new BaseNotice(m.annot_view_annotation_not_in_database());
+            return;
+          }
           let citation: string | null;
           try {
-            citation = deps.noteFeature.renderAnnotationCitation(annot.itemID);
+            citation = deps.noteFeature.renderAnnotationCitation(annotationID);
           } catch (e) {
             if (!(e instanceof InertTemplateError)) throw e;
             new BaseNotice(e.message);
@@ -150,7 +175,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         .setTitle(m.template_data_explorer_menu_explore())
         .setIcon("braces")
         .onClick(() => {
-          deps.onExploreAnnotation(annot.key);
+          const parsed = parseIndexedKey(annot.key);
+          if (parsed) deps.onExploreAnnotation(parsed.key);
         });
     });
 
@@ -173,9 +199,11 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
-    onToggleFollowReader: deps.onToggleFollowReader,
-    onLinkItem: deps.onLinkItem,
-    onUnlinkItem: deps.onUnlinkItem,
+    onSetFollowMode: deps.onSetFollowMode,
+    onPinCurrentItem: deps.onPinCurrentItem,
+    onPinItem: deps.onPinItem,
+    onUnpin: deps.onUnpin,
+    onEnableLiveUpdates: deps.onEnableLiveUpdates,
     onRefresh() {
       void toast.promise(deps.refresh(), {
         loading: m.annot_view_refreshing(),
@@ -189,9 +217,11 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onDragStart: () => {},
-  onToggleFollowReader: () => {},
-  onLinkItem: () => {},
-  onUnlinkItem: () => {},
+  onSetFollowMode: () => {},
+  onPinCurrentItem: () => {},
+  onPinItem: () => {},
+  onUnpin: () => {},
+  onEnableLiveUpdates: () => {},
   onRefresh: () => {},
   getImgSrc: () => IMG_PLACEHOLDER,
   getBacklink: () => undefined,

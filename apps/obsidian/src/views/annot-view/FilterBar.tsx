@@ -21,7 +21,7 @@ import {
   useAnnotStore,
   useClearFilters,
   useToggleSelectedColor,
-  useToggleSelectedTagID,
+  useToggleSelectedTag,
   useTogglePanel,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
@@ -51,7 +51,7 @@ export function FilterBar() {
   const clearFilters = useClearFilters();
   const togglePanel = useTogglePanel();
   const toggleColor = useToggleSelectedColor();
-  const toggleTag = useToggleSelectedTagID();
+  const toggleTag = useToggleSelectedTag();
 
   const filter = useAnnotFilter();
 
@@ -71,7 +71,7 @@ export function FilterBar() {
   const active = isFilterActive(filter);
 
   const firstChip = pickFirstTagChip(tagChips);
-  const selectedTagCount = filter.tagIDs.length;
+  const selectedTagCount = filter.tags.length;
   const vocabSize = tagChips.length;
 
   if (!annotations || annotations.length === 0) return null;
@@ -118,12 +118,7 @@ export function FilterBar() {
         <div className="zt:max-h-57.5 zt:shrink-0 zt:overflow-y-auto zt:border-b zt:border-border zt:bg-popover zt:px-3 zt:py-2">
           <div className="zt:flex zt:flex-wrap zt:gap-1">
             {tagChips.map((chip) => (
-              <TagPill
-                key={chip.tagID}
-                chip={chip}
-                onToggle={toggleTag}
-                dense
-              />
+              <TagPill key={chip.name} chip={chip} onToggle={toggleTag} dense />
             ))}
           </div>
         </div>
@@ -175,7 +170,7 @@ function TagPill({
   dense,
 }: {
   chip: TagChip;
-  onToggle: (tagID: number) => void;
+  onToggle: (tag: string) => void;
   truncate?: boolean;
   dense?: boolean;
 }) {
@@ -190,7 +185,7 @@ function TagPill({
         density: dense ? "dense" : "comfortable",
         truncate,
       })}
-      {...activatable(() => onToggle(chip.tagID), { disabled })}
+      {...activatable(() => onToggle(chip.name), { disabled })}
       {...tooltipAttrs(
         m.annot_view_filter_tag_tooltip({
           name: chip.name,
