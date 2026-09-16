@@ -131,6 +131,33 @@ export interface ZoteroLocalApiEvents {
    * is affected.
    */
   "capability-changed": () => void;
+  /**
+   * Zotero refused a write, for the surface that rolls the change back and says
+   * why. Every refusal is announced; what one means for the change itself is
+   * the caller's (aidenlx/zotlit#1145).
+   *
+   * @param library the library the write targeted, as the route spells it.
+   */
+  "write-refused": (failure: LocalApiFailure, library: string) => void;
+  /**
+   * Another Zotero database now answers on the port than the session held, and
+   * this probe has adopted it. Raised where the change is detected and settled,
+   * so a surface hears it however the change was found: a probe, a read that
+   * quarantined the session, or a write whose `412` sent the probe looking.
+   *
+   * @param serverID the database that answers now.
+   * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
+   */
+  "server-changed": (serverID: string) => void;
+  /**
+   * A Capability Probe retired the write refusals this session remembered: a
+   * library that stood read-only may be writable again. A surface that stood a
+   * control down may stand it up, and a refusal that follows is news rather
+   * than the same refusal twice.
+   *
+   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+   */
+  "write-refusals-retired": () => void;
 }
 
 export interface ZoteroLocalApiDeps {
@@ -499,12 +526,13 @@ export class ZoteroLocalApiClient extends Service<void> {
 
   async #probe(reason: string): Promise<void> {
     const previous = this.#state;
+    const heldServerID = this.#serverID;
     // A re-probe keeps what the last one answered until this one lands, so the
     // Annotation Source does not swap twice for a signal that changed nothing.
     if (previous.kind === "unprobed") this.#state = { kind: "probing" };
     // A library Zotero refused a write to is a session fact the probe is
     // allowed to retire: the group's permissions may well have changed.
-    this.#readOnlyLibraries.clear();
+    this.#retireWriteRefusals();
     const reply = await this.#send("/api/", {
       serverID: null,
       signal: this.#deadline(),
@@ -519,6 +547,28 @@ export class ZoteroLocalApiClient extends Service<void> {
       state: this.#state,
     });
     this.#emitter.emit("capability-changed");
+    // The one place a swapped database is both detected and settled. A read
+    // that quarantined the session and a write that answered `412` both send a
+    // probe looking, so every route to a change ends here.
+    const adopted = this.#serverID;
+    if (adopted !== null && heldServerID !== null && adopted !== heldServerID) {
+      logger.debug("Another Zotero database answers this port", {
+        was: heldServerID,
+        serverID: adopted,
+      });
+      this.#emitter.emit("server-changed", adopted);
+    }
+  }
+
+  /**
+   * Drops the libraries this session saw Zotero refuse writes to, and says so.
+   * Announced rather than silent, because a surface that stood a control down
+   * on the refusal has to know the mark behind it has gone.
+   */
+  #retireWriteRefusals(): void {
+    if (this.#readOnlyLibraries.size === 0) return;
+    this.#readOnlyLibraries.clear();
+    this.#emitter.emit("write-refusals-retired");
   }
 
   /** The session one `GET /api/` answered, or why there is none. */
@@ -659,13 +709,27 @@ export class ZoteroLocalApiClient extends Service<void> {
   /**
    * What a refused write says about the session: a key Zotero no longer honours
    * is invalidated here and the session returns to "authorization required"; a
-   * library that refuses writes is remembered until the next Capability Probe.
-   * Everything else is the caller's to interpret.
+   * library that refuses writes is remembered until the next Capability Probe;
+   * a `501` says this is not the Zotero the session probed, so it probes again.
+   *
+   * Every refusal is announced as `write-refused` whatever it left behind, so
+   * one surface owns both the rollback and the notice.
    */
   async #writeRefused(
     failure: LocalApiFailure,
     library: string,
   ): Promise<void> {
+    this.#emitter.emit("write-refused", failure, library);
+    // Both say the session's reading of this Zotero is out of date: a `501`
+    // that it is the wrong version, a `412` that it is another database. The
+    // probe re-reads it, adopts what it finds, and every surface settles on the
+    // same answer — which is also where a server change is announced.
+    if (
+      failure.kind === "incompatible-zotero" ||
+      failure.kind === "server-changed"
+    ) {
+      void this.#reprobe(`a write met ${failure.kind}`);
+    }
     if (failure.kind === "unauthorized") {
       logger.debug("Zotero no longer honours this write authorization");
       await this.#credentials.forget();

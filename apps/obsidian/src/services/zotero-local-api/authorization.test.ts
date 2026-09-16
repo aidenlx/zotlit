@@ -15,6 +15,8 @@ import {
   localApiDisabled,
   NOW,
   rateLimited,
+  rootOk,
+  serverChanged,
   staleVersion,
   unreachable,
   writeAccepted,
@@ -26,6 +28,9 @@ import type { ZoteroLocalApiClient } from "./service";
 /** One annotation of the personal library, as a write route names it. */
 const ITEM_PATH = "/api/users/0/items/PUPR5FG5";
 const PERSONAL = "users/0";
+
+/** A second Zotero database, for the swap the session has to notice. */
+const OTHER_SERVER_ID = "Zzzz11119999";
 
 it("asks Zotero under the one Client Name, and only when a gesture asks", async () => {
   await using stack = new AsyncDisposableStack();
@@ -291,12 +296,14 @@ it("marks one library read-only for the session, and stops sending to it", async
   expect(client.writeStateFor("PUPR5FG5g12345").libraryReadOnly).toBe(false);
 });
 
-it("lets the next Capability Probe retire a read-only library", async () => {
+it("lets the next Capability Probe retire a read-only library, and says so", async () => {
   await using stack = new AsyncDisposableStack();
   const { client } = await setup(stack, {
     authorize: () => authorized({ remember: true }),
     write: () => libraryReadOnly(),
   });
+  const retired = vi.fn();
+  stack.defer(client.on("write-refusals-retired", retired));
   await client.authorize();
   await client.authorizedSend(ITEM_PATH, {
     library: PERSONAL,
@@ -304,9 +311,56 @@ it("lets the next Capability Probe retire a read-only library", async () => {
   });
 
   expect(client.writeStateFor("PUPR5FG5").libraryReadOnly).toBe(true);
+  // The probe behind the gesture had nothing to retire.
+  expect(retired).not.toHaveBeenCalled();
+
   await client.probe();
 
   expect(client.writeStateFor("PUPR5FG5").libraryReadOnly).toBe(false);
+  // A surface that stood a control down on the refusal has to hear the mark go,
+  // so the control comes back and the next refusal is news rather than a repeat.
+  expect(retired).toHaveBeenCalledOnce();
+
+  // A probe with nothing to retire says nothing.
+  await client.probe();
+  expect(retired).toHaveBeenCalledOnce();
+});
+
+it("announces a swapped Zotero database from the probe that adopts it", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  const { client } = await setup(stack, {
+    root: () => rootOk({ "Zotero-Server-ID": serverID }),
+    authorize: () => authorized({ remember: true }),
+    write: () => serverChanged(OTHER_SERVER_ID),
+  });
+  const changes: string[] = [];
+  stack.defer(client.on("server-changed", (id) => changes.push(id)));
+
+  // The first probe learns a database rather than finding a changed one.
+  await client.probe();
+  expect(changes).toEqual([]);
+
+  // A write that meets another database sends the probe looking on its own;
+  // the probe is what adopts the new one and what names it. The announcement
+  // is the signal a check waits on, not a count of turns of the event loop.
+  await client.authorize();
+  serverID = OTHER_SERVER_ID;
+  const announced = new Promise<string>((resolve) => {
+    const off = client.on("server-changed", (id) => {
+      off();
+      resolve(id);
+    });
+  });
+  await client.authorizedSend(ITEM_PATH, {
+    library: PERSONAL,
+    method: "PATCH",
+  });
+
+  expect(await announced).toBe(OTHER_SERVER_ID);
+  // The session now holds the database that answers, so it says nothing more.
+  await client.probe();
+  expect(changes).toEqual([OTHER_SERVER_ID]);
 });
 
 it("invalidates the record keyless when Zotero rejects the key", async () => {

@@ -42,8 +42,16 @@ export function tooltipAttrs(
   return attrs;
 }
 
-/** Enter/Space activates a `role="button"` element the way a native `<button>` would. */
-function onActivateKey(e: KeyboardEvent, activate: () => void) {
+/**
+ * Enter/Space activates a `role="button"` element the way a native `<button>`
+ * would. {@link activatable} is the React half; a vanilla `keydown` listener
+ * calls this directly, which is why the event is read structurally rather than
+ * as one framework's shape.
+ */
+export function onActivateKey(
+  e: Pick<KeyboardEvent, "key" | "preventDefault">,
+  activate: () => void,
+) {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     activate();

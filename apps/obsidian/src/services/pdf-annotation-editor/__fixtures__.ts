@@ -8,6 +8,7 @@ import { parseAnnotationPosition } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
   AnnotationRecord,
@@ -183,24 +184,52 @@ export function attachmentReads(
   };
 }
 
-/** The annotation repository, reduced to the reads and the change a binding takes. */
-export function annotationReads(records: readonly AnnotationRecord[] = []) {
+/**
+ * The annotation repository, reduced to the reads, the Editing Capability, and
+ * the two changes a binding takes.
+ *
+ * @param records the Annotations every read answers with.
+ * @param capability what every Attachment, and the session, may do.
+ */
+export function annotationReads(
+  records: readonly AnnotationRecord[] = [],
+  capability: EditingCapability = { kind: "writable" },
+) {
   const emitter = createNanoEvents<AnnotationRepositoryEvents>();
   let list: AnnotationList = {
     source: { kind: "zotero-db" },
     annotations: records,
   };
+  let current = capability;
   return {
     read: vi.fn(() => Promise.resolve(list)),
+    capabilityFor: vi.fn(() => current),
+    get capability() {
+      return current;
+    },
+    probe: vi.fn(() => Promise.resolve()),
     on: <K extends keyof AnnotationRepositoryEvents>(
       event: K,
       cb: AnnotationRepositoryEvents[K],
     ) => emitter.on(event, cb),
+    /** What a landed Capability Probe does: another capability, announced. */
+    setCapability(next: EditingCapability): void {
+      current = next;
+      emitter.emit("capability-changed");
+    },
     /** What a dropped Zotero DB partition does: a whole new list, announced. */
     replace(attachmentKey: string, next: readonly AnnotationRecord[]): void {
       list = { source: { kind: "zotero-db" }, annotations: next };
       emitter.emit("annotations-changed", attachmentKey);
     },
+  };
+}
+
+/** The two gestures the Editing Capability affordance hands to its UI seam. */
+export function capabilityGestures() {
+  return {
+    showEditingCapability: vi.fn(),
+    reportBlockedGesture: vi.fn(),
   };
 }
 

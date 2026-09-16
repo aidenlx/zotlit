@@ -59,6 +59,8 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
+import { CapabilitySlotContext } from "./capability-slot";
+import { CapabilityAffordance } from "./CapabilityAffordance";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
@@ -111,7 +113,12 @@ export interface AnnotViewDeps {
    * The one read path for an Attachment's Annotations, so the cards and the
    * reader overlay show one Annotation Source's records rather than two.
    */
-  annotations: Pick<AnnotationRepository, "read" | "on">;
+  annotations: Pick<
+    AnnotationRepository,
+    "capability" | "capabilityFor" | "on" | "read"
+  >;
+  /** The Editing Capability affordance's click, which the UI seam owns. */
+  showEditingCapability: () => void;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   noteFeature: Pick<
     NoteFeature,
@@ -278,7 +285,16 @@ export class AnnotationView extends ItemView {
       <MenuContainerProvider value={this.contentEl.doc.body}>
         <AnnotStoreProvider value={this.#store}>
           <AnnotActionsContext value={this.#actions}>
-            <AnnotView />
+            <CapabilitySlotContext
+              value={
+                <CapabilityAffordance
+                  capabilities={this.#deps.annotations}
+                  onActivate={this.#deps.showEditingCapability}
+                />
+              }
+            >
+              <AnnotView />
+            </CapabilitySlotContext>
           </AnnotActionsContext>
         </AnnotStoreProvider>
       </MenuContainerProvider>,

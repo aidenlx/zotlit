@@ -146,12 +146,15 @@ function createDeps() {
         annotations: attachmentKey === PDF_ATTACHMENT ? [annot] : [],
       });
     },
+    capability: { kind: "writable" } as const,
+    capabilityFor: () => ({ kind: "writable" }) as const,
     on,
   };
 
   const settingsUpdate = vi.fn();
   const deps = {
     app,
+    showEditingCapability: () => undefined,
     db: {
       state: "ready" as const,
       client: {},

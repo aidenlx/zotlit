@@ -122,7 +122,12 @@ export interface AnnotationRepositoryDeps {
   >;
   localApi: Pick<
     ZoteroLocalApiClient,
-    "demandSource" | "listAnnotations" | "on" | "state" | "writeStateFor"
+    | "demandSource"
+    | "listAnnotations"
+    | "on"
+    | "probe"
+    | "state"
+    | "writeStateFor"
   >;
   /** The clock a cooldown deadline in the Editing Capability is read against. */
   now?: () => Temporal.Instant;
@@ -228,6 +233,15 @@ export class AnnotationRepository extends Service<void> {
    */
   get capability(): EditingCapability {
     return this.#capability(null);
+  }
+
+  /**
+   * Re-check Zotero now, from a user gesture: the Editing Capability
+   * affordance's click, and a keystroke that met a block. A probe that changes
+   * anything announces itself through `capability-changed`.
+   */
+  async probe(): Promise<void> {
+    await this.#localApi.probe();
   }
 
   on<K extends keyof AnnotationRepositoryEvents>(
