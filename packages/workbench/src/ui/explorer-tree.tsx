@@ -46,7 +46,10 @@ export interface DisplayTreeProps {
   /** Absent while a filter holds every matching section open. */
   onToggleSection?: (id: string) => void;
   onInsert?: (node: DisplayNode) => void;
+  /** The row's Menu, opened from its own control; anchored under that control. */
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
+  /** The same Menu, opened by a right-click on the row; anchored at the pointer. */
+  onFieldContextMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
 export function DisplayTree({
@@ -56,6 +59,7 @@ export function DisplayTree({
   onToggleSection,
   onInsert,
   onTemplateMenu,
+  onFieldContextMenu,
 }: DisplayTreeProps): React.ReactElement {
   const part = useParts("explorerTree");
   const id = useId();
@@ -87,6 +91,7 @@ export function DisplayTree({
                   onToggle={onToggle}
                   onInsert={onInsert}
                   onTemplateMenu={onTemplateMenu}
+                  onFieldContextMenu={onFieldContextMenu}
                 />
               ))}
             </ul>
@@ -140,6 +145,7 @@ interface TreeNodeProps {
   onToggle: (key: string) => void;
   onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
+  onFieldContextMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
 function TreeNode({
@@ -149,6 +155,7 @@ function TreeNode({
   onToggle,
   onInsert,
   onTemplateMenu,
+  onFieldContextMenu,
 }: TreeNodeProps) {
   const part = useParts("explorerTree");
   const isExpanded = node.kind === "value" && node.children !== undefined;
@@ -165,7 +172,7 @@ function TreeNode({
         {...part("row", isMatched ? "matched" : undefined)}
         onContextMenu={(event) => {
           event.preventDefault();
-          onTemplateMenu(node, event);
+          onFieldContextMenu(node, event);
         }}
       >
         {isExpandable ? (
@@ -193,6 +200,7 @@ function TreeNode({
               onToggle={onToggle}
               onInsert={onInsert}
               onTemplateMenu={onTemplateMenu}
+              onFieldContextMenu={onFieldContextMenu}
             />
           ))}
         </ul>

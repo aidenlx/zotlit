@@ -22,6 +22,7 @@ import type {
   IconName,
   WorkspaceLeaf,
   Instruction,
+  MenuPositionDef,
   Modifier,
   PaneType,
   Point,
@@ -881,7 +882,16 @@ export class Menu {
   readonly items: MenuItem[] = [];
 
   /** Where `showAtPosition` was asked to open, or `null` while it was not. */
-  position: { x: number; y: number } | null = null;
+  position: MenuPositionDef | null = null;
+
+  /** The document `showAtPosition` was given, or `null` for none. */
+  positionDoc: Document | null = null;
+
+  /** The element `setParentElement` anchored this menu to, or `null`. */
+  parentEl: HTMLElement | null = null;
+
+  /** The event `showAtMouseEvent` opened at, or `null` for none. */
+  mouseEvent: MouseEvent | null = null;
 
   constructor() {
     Menu.instances.push(this);
@@ -903,12 +913,19 @@ export class Menu {
     return this;
   }
 
-  showAtMouseEvent(_evt: MouseEvent): this {
+  showAtMouseEvent(evt: MouseEvent): this {
+    this.mouseEvent = evt;
     return this;
   }
 
-  showAtPosition(position: { x: number; y: number }): this {
+  setParentElement(el: HTMLElement): this {
+    this.parentEl = el;
+    return this;
+  }
+
+  showAtPosition(position: MenuPositionDef, doc?: Document): this {
     this.position = position;
+    this.positionDoc = doc ?? null;
     return this;
   }
 }

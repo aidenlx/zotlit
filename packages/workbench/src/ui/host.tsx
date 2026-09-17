@@ -33,6 +33,12 @@ export interface WorkbenchMenuItem {
 export interface WorkbenchMenuRequest {
   /** The element the menu opens from. */
   readonly anchor: HTMLElement;
+  /**
+   * The pointer event when a right-click opened the menu. A right-click anchors
+   * the menu at the pointer, the way Obsidian's own context menus do; a control
+   * leaves this out, and the menu anchors under `anchor`.
+   */
+  readonly pointerEvent?: MouseEvent;
   readonly items: readonly WorkbenchMenuItem[];
   readonly submenus?: readonly {
     label: string;

@@ -8,6 +8,8 @@ import { attachmentOpenUri } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { showMenuAtBox, showMenuAtButton } from "@/lib/menu";
+import type { MenuAnchor } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { ZoteroOpenableAttachment } from "@/services/citation-index/service";
@@ -64,12 +66,12 @@ export type OpenAttachmentsOptions<T extends OpenableRow> =
       reader: AttachmentReader<T>;
       event: AttachmentOpenClickEvent;
       /**
-       * Where a keyboard click anchors its picker. An async handler reaches
-       * its first `await` before the picker opens, and `currentTarget` is null
-       * by then, so such a caller reads the rect while dispatch is still live
-       * and passes it here.
+       * The box and window the picker anchors to when the trigger cannot be
+       * measured at show time. An async handler reaches its first `await`
+       * before the picker opens, and `currentTarget` is null by then, so such a
+       * caller reads the box while dispatch is still live and passes it here.
        */
-      anchor?: DOMRect;
+      anchor?: MenuAnchor;
     }
   | { reader: AttachmentReader<T>; app: App };
 
@@ -152,14 +154,14 @@ export function createObsidianAttachmentReader(
 }
 
 /**
- * Offer one row per Attachment. A keyboard click carries no pointer position
- * (`detail` of `0`), so the menu takes the button's own corner instead of the
- * window's.
+ * Offer one row per Attachment, anchored under the control that asked for it —
+ * so it lands in the same place whether the control was clicked or activated
+ * from the keyboard.
  */
 function showAttachmentMenu<T extends OpenableRow>(
   attachments: readonly T[],
   reader: AttachmentReader<T>,
-  click: { event: AttachmentOpenClickEvent; anchor?: DOMRect },
+  click: { event: AttachmentOpenClickEvent; anchor?: MenuAnchor },
 ): void {
   const menu = new Menu();
   for (const attachment of attachments) {
@@ -172,16 +174,11 @@ function showAttachmentMenu<T extends OpenableRow>(
   }
 
   const { event, anchor } = click;
-  if (event.detail === 0) {
-    const { left, bottom } =
-      anchor ??
-      (
-        event.currentTarget as { getBoundingClientRect: () => DOMRect }
-      ).getBoundingClientRect();
-    menu.showAtPosition({ x: left, y: bottom });
+  if (anchor) {
+    showMenuAtBox(menu, anchor);
     return;
   }
-  menu.showAtMouseEvent(nativeEventOf(event) as MouseEvent);
+  showMenuAtButton(menu, event.currentTarget as HTMLElement);
 }
 
 /** The picker for an event-less invocation: the protocol handler, the command palette, the quick switcher. */

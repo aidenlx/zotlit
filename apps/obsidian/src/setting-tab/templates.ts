@@ -10,6 +10,7 @@ import type {
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import type { AutoTrim } from "@/services/settings/schema";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -159,8 +160,7 @@ export function partialItems(
                     .setWarning(true)
                     .onClick(() => void deletePartial(ctx, partial)),
                 );
-                const bounds = button.extraSettingsEl.getBoundingClientRect();
-                menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+                showMenuAtButton(menu, button.extraSettingsEl);
               }),
           );
         },
