@@ -66,7 +66,11 @@ import {
   VAULT_CASES,
 } from "./build.ts";
 import type { FixtureLayout, PersistedLibraryScope } from "./build.ts";
-import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
+import {
+  BETTER_BIBTEX_PREFS,
+  OBSIDIAN_PROTOCOL_PREFS,
+  QUIET_FIRST_RUN_PREFS,
+} from "./paired-zotero.ts";
 import { PRISTINE_SCHEMA_VERSIONS } from "./pristine.ts";
 
 import { getWorkspaceRoot } from "#package-roots";
@@ -1631,6 +1635,12 @@ describe("the generated Obsidian vault", () => {
     // `firstRun2` is the one that opens the start page; the rest keep the
     // profile quiet in other ways.
     for (const line of QUIET_FIRST_RUN_PREFS) expect(prefs).toContain(line);
+  });
+
+  it("opens obsidian:// backlinks without a confirmation dialog", async () => {
+    const prefs = await readFile(join(layout.profileDir, "prefs.js"), "utf-8");
+
+    for (const line of OBSIDIAN_PROTOCOL_PREFS) expect(prefs).toContain(line);
   });
 
   it("starts the companion without a sideload confirmation", async () => {
