@@ -44,6 +44,7 @@ import {
   profilesPage,
   setProfileControlValue,
 } from "./profiles";
+import { readerPageItems } from "./reader";
 import { resourcesGroup } from "./resources";
 import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
 import { zoteroPageItems } from "./zotero";
@@ -295,6 +296,13 @@ export class ZotLitSettingTab extends PluginSettingTab {
             name: m.settings_page_attachments(),
             desc: m.settings_page_attachments_desc(),
             items: attachmentPageItems(ctx),
+          },
+          {
+            type: "page",
+            id: "settings_page_reader",
+            name: m.settings_page_reader(),
+            desc: m.settings_page_reader_desc(),
+            items: readerPageItems(),
           },
           {
             type: "page",

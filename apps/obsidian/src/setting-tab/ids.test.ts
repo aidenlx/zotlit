@@ -15,6 +15,7 @@ import { citationsPageItems } from "./citations";
 import type { SettingTabContext } from "./context";
 import { noteImportPageItems } from "./note-import";
 import { literatureNoteItems, profilesPage } from "./profiles";
+import { readerPageItems } from "./reader";
 import { resourcesGroup } from "./resources";
 import { zoteroPageItems } from "./zotero";
 
@@ -139,6 +140,12 @@ it("every setting definition carries an id unique among its siblings", () => {
           id: "settings_page_attachments",
           name: m.settings_page_attachments(),
           items: attachmentPageItems(c),
+        },
+        {
+          type: "page",
+          id: "settings_page_reader",
+          name: m.settings_page_reader(),
+          items: readerPageItems(),
         },
         {
           type: "page",

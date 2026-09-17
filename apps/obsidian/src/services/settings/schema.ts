@@ -171,6 +171,8 @@ export const schema = v.object({
   "attachment.folder-path": v.nullable(v.string()),
   "attachment.import": v.boolean(),
 
+  "reader.focus-annot-view": v.boolean(),
+
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
@@ -220,6 +222,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.library-scope": DEFAULT_LIBRARY_SCOPE,
   "attachment.folder-path": null,
   "attachment.import": true,
+  "reader.focus-annot-view": true,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,
