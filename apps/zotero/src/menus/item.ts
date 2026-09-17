@@ -73,6 +73,15 @@ function pdfOpenableItem(context: LibraryMenuContext): Zotero.Item | null {
 }
 
 /**
+ * Whether any submenu entry can show for this selection. Every entry needs a
+ * regular item or a note, so a selection of attachments alone leaves the
+ * submenu with nothing to open.
+ */
+function submenuHasEntries(context: LibraryMenuContext): boolean {
+  return regularItems(context).length >= 1 || noteItems(context).length >= 1;
+}
+
+/**
  * `count` feeds the `$count` plural selector in the `update` label's Fluent
  * message. `setL10nArgs` needs a JSON string, not an object (see the type
  * augmentation in `types/zotero.d.ts`).
@@ -158,6 +167,7 @@ export function registerItemMenu(pluginID: string): Disposable {
         l10nID: "zotlit-menu-submenu",
         onShowing(_event: Event, context: LibraryMenuContext): void {
           context.setVisible(allItems(context).length >= 1);
+          context.setEnabled(submenuHasEntries(context));
         },
         menus: [
           {
