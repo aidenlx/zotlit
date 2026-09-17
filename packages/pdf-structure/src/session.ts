@@ -19,38 +19,22 @@ export interface PdfPageSource extends PageLabelSource {
 }
 
 /**
- * The memo the Reader Session owns. Structuring a page costs a full text
- * extraction plus the line grouping, and a session revisits the same pages, so
- * the work is kept for as long as the session lives and no longer.
- *
- * The default is a plain `Map`; a host with its own per-session store — the
- * Reader Session of ticket #1146 — supplies that instead.
- */
-export interface StructuredPageCache {
-  get(pageIndex: number): Promise<StructuredPage> | undefined;
-  set(pageIndex: number, page: Promise<StructuredPage>): void;
-}
-
-export function createStructuredPageCache(): StructuredPageCache {
-  return new Map<number, Promise<StructuredPage>>();
-}
-
-/**
  * Everything a creation in Obsidian needs to name where it sits in Zotero's
  * reading order. One instance belongs to one Reader Session.
  */
 export class PdfTextStructure {
   readonly #source: PdfPageSource;
-  readonly #cache: StructuredPageCache;
+  /**
+   * The session's own memo. Structuring a page costs a full text extraction
+   * plus the line grouping, and a session revisits the same pages, so the work
+   * is kept for as long as the session lives and no longer.
+   */
+  readonly #cache = new Map<number, Promise<StructuredPage>>();
   readonly #emptyPagesLogged = new Set<number>();
   #pageLabels: Promise<readonly string[]> | null = null;
 
-  constructor(
-    source: PdfPageSource,
-    cache: StructuredPageCache = createStructuredPageCache(),
-  ) {
+  constructor(source: PdfPageSource) {
     this.#source = source;
-    this.#cache = cache;
   }
 
   /** The page's Structured Characters, computed once per Reader Session. */

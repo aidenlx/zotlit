@@ -160,6 +160,22 @@ it("takes an annotation added at either end of the window and no other", () => {
   }
 });
 
+it("takes a create Zotero stamped in the second the request left in", () => {
+  // Zotero stamps `dateAdded` to the second, so a create sent part-way through
+  // a second carries a stamp that reads as earlier than the request itself.
+  const window = {
+    from: Temporal.Instant.from("2026-09-16T15:52:21.4Z"),
+    to: Temporal.Instant.from("2026-09-16T15:52:26Z"),
+  };
+
+  expect(
+    matchCreatedAnnotation(DRAFT, ATTACHMENT, {
+      candidates: [stored({ dateAdded: "2026-09-16T15:52:21Z" })],
+      window,
+    }),
+  ).toMatchObject({ kind: "confirmed" });
+});
+
 it("rejects an annotation whose dateAdded is absent or unreadable", () => {
   for (const dateAdded of [null, "not a date"]) {
     expect(

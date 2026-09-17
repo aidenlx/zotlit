@@ -182,8 +182,12 @@ export interface LocalApiAnnotation {
  * no server id at all.
  *
  * A `404` is its own member rather than an unreadable answer: no read can
- * produce one — the children route answers an empty list for a key Zotero does
- * not hold — so it is always a write meeting an object Zotero has deleted.
+ * produce one — the children route answers an empty list for a valid key
+ * Zotero holds nothing under, and answers another attachment's annotations for
+ * a malformed one, which is why `parseIndexedKey` guards every request — so a
+ * `404` is always a write meeting an object Zotero has deleted.
+ *
+ * @see docs/pdf-annotation-probes.md — "Two wire facts about the children route"
  *
  * @param serverID the server id the session holds, or `null` before a probe has
  *   answered one, which is the one call that may be answered by any database.

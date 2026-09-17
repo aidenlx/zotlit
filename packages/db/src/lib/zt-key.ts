@@ -25,6 +25,13 @@ export function formatIndexedKey(
  * The separator is deliberately handled as a split rather than part of the
  * item-key pattern: the item key validator remains the single source of truth
  * for the former part, while the latter part is validated as a group id.
+ *
+ * Skipping this check costs wrong data rather than no data on the Zotero Local
+ * API: a key outside Zotero's alphabet makes the children route drop its parent
+ * constraint and answer `200` with another attachment's annotations, while a
+ * valid key Zotero holds nothing under answers an empty list.
+ *
+ * @see docs/pdf-annotation-probes.md — "Two wire facts about the children route"
  */
 export function parseIndexedKey(indexedKey: string): ParsedIndexedKey | null {
   const parts = indexedKey.split("g");

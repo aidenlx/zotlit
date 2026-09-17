@@ -8,6 +8,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
 
+import { capabilityReason } from "./capability";
 import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 
@@ -162,7 +163,7 @@ export class CapabilityNoticeLedger {
       spoken = new Set();
       this.#episodes.set(attachmentKey, spoken);
     }
-    const reason = reasonOf(capability);
+    const reason = capabilityReason(capability);
     if (spoken.has(reason)) return null;
     spoken.add(reason);
 
@@ -228,11 +229,4 @@ export class CapabilityNoticeLedger {
       action: m.notice_capability_open_settings(),
     };
   }
-}
-
-/** One capability as the value an episode counts reasons by. */
-function reasonOf(capability: EditingCapability): string {
-  return capability.kind === "read-only"
-    ? `read-only:${capability.reason}`
-    : capability.kind;
 }

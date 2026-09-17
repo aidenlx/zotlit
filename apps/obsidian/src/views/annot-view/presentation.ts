@@ -304,6 +304,24 @@ export function conditionLines(state: ConditionLineState): string[] {
 }
 
 /**
+ * Which source answered, as the source region's tooltip: the whole answer under
+ * the Zotero Local API, where no line is drawn, and the line's own words again
+ * under the Zotero DB. No source yet means no tooltip.
+ */
+export function sourceTooltip(
+  state: Pick<ConditionLineState, "annotationSource">,
+): string | null {
+  switch (state.annotationSource?.kind) {
+    case "zotero-local-api":
+      return m.annot_view_source_zotero();
+    case "zotero-db":
+      return m.annot_view_source_database();
+    default:
+      return null;
+  }
+}
+
+/**
  * The Item's title and creators, shown only where nothing else on screen names
  * the Item — so never while the view follows the active tab.
  */

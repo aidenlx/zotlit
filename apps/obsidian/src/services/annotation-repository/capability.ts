@@ -32,6 +32,18 @@ export type EditingCapability =
     };
 
 /**
+ * One capability as a value that compares by equality: its kind, and the reason
+ * a read-only one names. A cooldown's deadline is deliberately left out — it
+ * moves every second while the reason stands still — so a caller that does care
+ * about the deadline says so on top of this.
+ */
+export function capabilityReason(capability: EditingCapability): string {
+  return capability.kind === "read-only"
+    ? `read-only:${capability.reason}`
+    : capability.kind;
+}
+
+/**
  * The capability one Annotation Source leaves for one Attachment.
  *
  * The two facts read first are the ones a request taught this session rather

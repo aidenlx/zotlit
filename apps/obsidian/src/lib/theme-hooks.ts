@@ -63,6 +63,19 @@ export const themeHook = {
   pdfMarkPopup: "zt-pdf-mark-popup",
   /** The comment sheet the Mark Popup opens under its create-mode row. */
   pdfCommentSheet: "zt-pdf-comment-sheet",
+  /**
+   * The Editing Capability affordance in the Annotation View's toolbar, which
+   * shows the same states as {@link themeHook.pdfCapability} and carries the
+   * same `data-zt-capability-tone`.
+   */
+  annotCapability: "zt-annot-capability",
+  /** The panel an Annotation Card shows while a Write Conflict stands on it. */
+  annotConflict: "zt-annot-conflict",
+  /**
+   * A menu ZotLit draws inside its own Preact surfaces, beside Obsidian's own
+   * `menu` class.
+   */
+  menu: "zt-menu",
 } as const;
 
 /**

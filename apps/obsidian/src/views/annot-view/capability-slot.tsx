@@ -2,11 +2,14 @@
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
 
+import { themeHook } from "@/lib/theme-hooks";
+import { cn } from "@/lib/utils";
+
 /**
  * What the Annotation View's toolbar renders between the mode button and the
- * collapse control. It is empty here: the Editing Capability affordance that
- * fills it arrives with the capability itself, and the seat exists now so the
- * toolbar's shape is settled and nothing has to move when it does.
+ * collapse control. The view fills it with the Editing Capability affordance;
+ * the seat itself names no content, so the toolbar keeps its shape whether or
+ * not one is supplied.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1147
  */
@@ -16,6 +19,8 @@ export const CapabilitySlotContext = createContext<ReactNode>(null);
 export function CapabilitySlot() {
   const content = useContext(CapabilitySlotContext);
   return content === null ? null : (
-    <div className="zt-annot-capability zt:flex zt:items-center">{content}</div>
+    <div className={cn(themeHook.annotCapability, "zt:flex zt:items-center")}>
+      {content}
+    </div>
   );
 }

@@ -952,7 +952,7 @@ it("creates through a one-element multi-object POST carrying a write token", asy
   ]);
 });
 
-it("reads the created Annotation back and drops the Attachment's list", async () => {
+it("sends the create alone and drops the Attachment's list", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(
     stack,
@@ -969,7 +969,7 @@ it("reads the created Annotation back and drops the Attachment's list", async ()
 
   expect(
     requests.slice(sent).map(({ method, url }) => `${method} ${url.pathname}`),
-  ).toEqual(["POST /api/users/0/items", "GET /api/users/0/items/MADE2345"]);
+  ).toEqual(["POST /api/users/0/items"]);
   const list = await repository.read("RGRPDF24");
   expect(list?.annotations.map(({ key }) => key)).toContain("MADE2345");
 });
@@ -1323,7 +1323,6 @@ it("opens Zotero's dialog when the gesture needs one, then goes on", async () =>
     "GET /api/",
     "POST /api/local/authorize",
     "POST /api/users/0/items",
-    "GET /api/users/0/items/MADE2345",
   ]);
   expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
 });

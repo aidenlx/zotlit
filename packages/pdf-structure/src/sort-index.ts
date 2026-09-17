@@ -19,13 +19,6 @@ export interface PdfInkPosition {
 
 export type PdfPosition = PdfInkPosition | PdfRectsPosition;
 
-/**
- * `PPPPP|OOOOOO|TTTTT`, the shape Zotero's backend validates a write against.
- * Belongs at the write boundary, where a Sort Index that came from somewhere
- * other than {@link computeSortIndex} also has to pass.
- */
-export const SORT_INDEX_PATTERN = /^\d{5}\|\d{6}\|\d{5}$/u;
-
 const hasRects = (position: PdfPosition): position is PdfRectsPosition =>
   "rects" in position && position.rects.length > 0;
 

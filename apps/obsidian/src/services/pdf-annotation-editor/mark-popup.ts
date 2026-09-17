@@ -10,13 +10,11 @@
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see apps/obsidian/policies/hover-popover.md
-import { setIcon, setTooltip } from "obsidian";
 import type { HoverParent, IconName } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 import { themeHook } from "@/lib/theme-hooks";
-import { onActivateKey } from "@/lib/utils";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -26,6 +24,7 @@ import {
 } from "@/views/annot-view/card-controls";
 
 import type { Point } from "./hit-test";
+import { renderIconButton } from "./icon-button";
 import "./style.css";
 
 /** Layout only; Obsidian's `clickable-icon` owns the look of each verb. */
@@ -220,23 +219,12 @@ export function markPopupControl(
   },
   activate: (node: HTMLElement) => void,
 ): HTMLElement {
-  const node = row.createDiv({
-    cls: "clickable-icon",
-    attr: { role: "button", tabindex: "0" },
-  });
-  node.dataset.ztVerb = id;
-  setTooltip(node, tooltip);
-  setIcon(node, icon);
-  if (color !== null) node.style.color = color;
-  if (disabled) {
-    node.addClass("is-disabled");
-    node.setAttribute("aria-disabled", "true");
-    return node;
-  }
-  node.addEventListener("click", () => activate(node));
-  node.addEventListener("keydown", (event) =>
-    onActivateKey(event, () => activate(node)),
+  const node = renderIconButton(
+    row,
+    { icon, tooltip, color, disabled },
+    activate,
   );
+  node.dataset.ztVerb = id;
   return node;
 }
 

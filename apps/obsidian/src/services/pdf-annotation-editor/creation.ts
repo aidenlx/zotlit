@@ -7,16 +7,11 @@
 // commits at once in that tool's colour and the popup reopens on the new mark.
 //
 // @see https://github.com/aidenlx/zotlit/issues/1150
-import { Menu } from "obsidian";
 import type { HoverParent } from "obsidian";
 
 import type { PdfTextStructure } from "@zotlit/pdf-structure";
 
-import {
-  ANNOTATION_COLORS,
-  annotationColorLabel,
-  isColor,
-} from "@/lib/annotation-colors";
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -47,6 +42,7 @@ import { MarkPopup } from "./mark-popup";
 import type { OverlayPageView } from "./render";
 import { captureSelection, selectionPagesOf } from "./selection-capture";
 import type { CapturedSelection, SelectionPage } from "./selection-capture";
+import { belowOf, colorMenu, onScreen, selectionCollapsed } from "./surface";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -205,7 +201,8 @@ export class MarkCreation implements CreationGestures, Disposable {
     // The comment sheet takes focus, which collapses the window selection; the
     // geometry the popup is acting on was captured when the drag ended.
     if (this.#commenting || this.#inFlight) return;
-    if (this.#captured !== null && this.#collapsed()) this.#clear();
+    if (this.#captured !== null && selectionCollapsed(this.#deps.containerEl))
+      this.#clear();
   }
 
   key(event: KeyboardEvent): void {
@@ -221,17 +218,21 @@ export class MarkCreation implements CreationGestures, Disposable {
     const swatch = ANNOTATION_COLORS[Number(key) - 1];
     const waiting = this.#captured !== null;
 
+    // Arming a tool and colouring one move controls the block has already
+    // disabled, so under a block they stand still: the binding's own notice is
+    // the whole answer, and a toolbar that moved with it would contradict it.
+    const live = editingLive(this.#capability());
     if (tool !== null) {
       event.preventDefault();
       if (waiting) this.#commit(tool, this.#colors[tool]);
-      else this.#arm(this.#armed === tool ? null : tool);
+      else if (live) this.#arm(this.#armed === tool ? null : tool);
       return;
     }
     if (swatch !== undefined) {
       event.preventDefault();
       const target = this.#armed ?? "highlight";
       if (waiting) this.#commit(target, swatch);
-      else this.#setColor(target, swatch);
+      else if (live) this.#setColor(target, swatch);
       return;
     }
     if (key !== "c" || !waiting) return;
@@ -297,10 +298,10 @@ export class MarkCreation implements CreationGestures, Disposable {
         this.#arm(this.#armed === id ? null : id);
         return;
       case "highlight-color":
-        this.#colorMenu("highlight").showAtPosition(belowOf(node), node.doc);
+        this.#openColorMenu("highlight", node);
         return;
       case "underline-color":
-        this.#colorMenu("underline").showAtPosition(belowOf(node), node.doc);
+        this.#openColorMenu("underline", node);
         return;
       case "visibility":
         this.#marksVisible = !this.#marksVisible;
@@ -312,17 +313,11 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
   }
 
-  #colorMenu(tool: MarkTool): Menu {
-    const menu = new Menu();
-    for (const hex of ANNOTATION_COLORS) {
-      menu.addItem((item) =>
-        item
-          .setTitle(annotationColorLabel(hex))
-          .setChecked(isColor(this.#colors[tool], hex))
-          .onClick(() => this.#setColor(tool, hex)),
-      );
-    }
-    return menu;
+  /** The tool's own colour list, under the swatch that opened it. */
+  #openColorMenu(tool: MarkTool, node: HTMLElement): void {
+    colorMenu(this.#colors[tool], (hex) =>
+      this.#setColor(tool, hex),
+    ).showAtPosition(belowOf(node), node.doc);
   }
 
   #drawToolbar(): void {
@@ -561,19 +556,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       x: rect.left + at.fx * rect.width,
       y: rect.top + at.fy * rect.height,
     };
-    return this.#onScreen(point) ? point : null;
-  }
-
-  #onScreen({ x, y }: Point): boolean {
-    const rect = this.#deps.containerEl.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    return (
-      x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
-    );
-  }
-
-  #collapsed(): boolean {
-    return this.#deps.containerEl.win.getSelection()?.isCollapsed !== false;
+    return onScreen(this.#deps.containerEl, point) ? point : null;
   }
 
   #pageUnder({ x, y }: Point): boolean {
@@ -584,12 +567,6 @@ export class MarkCreation implements CreationGestures, Disposable {
       );
     });
   }
-}
-
-/** Under the control, which is where Obsidian opens a menu from a button. */
-function belowOf(node: HTMLElement): Point {
-  const rect = node.getBoundingClientRect();
-  return { x: rect.left, y: rect.bottom };
 }
 
 /**

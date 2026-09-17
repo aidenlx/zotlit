@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import type { PDFPageViewport } from "obsidian";
 import { expect, it } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
@@ -7,12 +6,9 @@ import { parseAnnotationPosition } from "@zotlit/db";
 import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
-import { annotation } from "./__fixtures__";
+import { annotation, viewport } from "./__fixtures__";
 import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
 import type { OverlayPageView } from "./render";
-
-/** A US Letter page box, `[x1, y1, x2, y2]` in PDF points. */
-const PAGE_BOX = [0, 0, 612, 792] as const;
 
 /** The same page, described from a non-zero origin, as a PDF may do. */
 const OFFSET_BOX = [10, 20, 622, 812] as const;
@@ -365,59 +361,6 @@ function record(
 /** Everything the records place on page zero. */
 function pageAnnotations(records: readonly AnnotationRecord[]) {
   return groupAnnotationsByPage(records).get(0) ?? [];
-}
-
-interface ViewportOptions {
-  rotation?: number;
-  scale?: number;
-  userUnit?: number;
-  box?: readonly [number, number, number, number];
-}
-
-/**
- * A PDF.js `PageViewport` built from the matrix its constructor writes, so the
- * conversions the overlay reads come from PDF.js's own rule and not from the
- * module under test.
- *
- * @see https://github.com/mozilla/pdf.js/blob/v5.3.31/src/display/display_utils.js
- *   `PageViewport` — the nearest tagged release below the 5.3.34 build Obsidian
- *   bundles, whose constructor is unchanged between the two.
- */
-function viewport({
-  rotation = 0,
-  scale = 1,
-  userUnit = 1,
-  box = PAGE_BOX,
-}: ViewportOptions = {}): PDFPageViewport {
-  const total = scale * userUnit;
-  const [x1, y1, x2, y2] = box;
-  const axesSwap = rotation === 90 || rotation === 270;
-  const convertToViewportPoint = (x: number, y: number): [number, number] => {
-    switch (rotation) {
-      case 90:
-        return [total * (y - y1), total * (x - x1)];
-      case 180:
-        return [total * (x2 - x), total * (y - y1)];
-      case 270:
-        return [total * (y2 - y), total * (x2 - x)];
-      default:
-        return [total * (x - x1), total * (y2 - y)];
-    }
-  };
-  return {
-    viewBox: box,
-    userUnit,
-    scale,
-    rotation,
-    offsetX: 0,
-    offsetY: 0,
-    transform: [total, 0, 0, -total, -total * x1, total * y2],
-    width: total * (axesSwap ? y2 - y1 : x2 - x1),
-    height: total * (axesSwap ? x2 - x1 : y2 - y1),
-    convertToViewportPoint,
-    clone: ({ scale: next = scale, rotation: turned = rotation }) =>
-      viewport({ rotation: turned, scale: next, userUnit, box }),
-  };
 }
 
 function pageView(built = viewport()): OverlayPageView {

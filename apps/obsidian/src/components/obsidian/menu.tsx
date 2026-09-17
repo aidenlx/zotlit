@@ -5,6 +5,7 @@ import type { IconName } from "obsidian";
 import { useContext } from "react";
 import type { ReactNode, Ref } from "react";
 
+import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 
 import { Icon } from "./icon";
@@ -36,7 +37,7 @@ export function MenuContent({
   return (
     <BaseMenu.Portal container={container ?? undefined}>
       <BaseMenu.Positioner side={side} align={align} sideOffset={4}>
-        <BaseMenu.Popup className="menu zt-menu">
+        <BaseMenu.Popup className={cn("menu", themeHook.menu)}>
           <div className="menu-scroll">{children}</div>
         </BaseMenu.Popup>
       </BaseMenu.Positioner>

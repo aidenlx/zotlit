@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { ObsidianTextItem } from "@/chars";
 import type { PdfPageSource } from "@/session";
-import { createStructuredPageCache, PdfTextStructure } from "@/session";
+import { PdfTextStructure } from "@/session";
 import type { PdfPosition } from "@/sort-index";
 
 let records: LogRecord[] = [];
@@ -69,16 +69,6 @@ describe("a Reader Session's Structured Characters", () => {
     expect(textCalls).toEqual([1]);
     expect(first).toBe(second);
     expect(first!.chars.map(({ c }) => c)).toEqual(["7"]);
-  });
-
-  it("memoize into the cache the host hands over", async () => {
-    const cache = createStructuredPageCache();
-    const { source, textCalls } = stubSource();
-
-    await new PdfTextStructure(source, cache).page(2);
-    await new PdfTextStructure(source, cache).page(2);
-
-    expect(textCalls).toEqual([2]);
   });
 });
 

@@ -430,6 +430,24 @@ it("sets a colour from the number row, and deletes from the delete key", () => {
   expect(h.annotations.deleteAnnotation).toHaveBeenCalledWith("WORD2222");
 });
 
+it("leaves a modified colour key to whatever else holds it", () => {
+  // `Alt`+`1` is no edit gesture for the block's notice, so it recolours
+  // nothing here either: one keystroke, one answer.
+  using h = setup();
+  click(h.page.div, ON_WORD);
+
+  h.containerEl.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "1",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+
+  expect(h.annotations.patchColor).not.toHaveBeenCalled();
+});
+
 it("leaves every key to a text field it was typed into", () => {
   using h = setup();
   click(h.page.div, ON_WORD);

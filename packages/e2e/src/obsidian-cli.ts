@@ -1,9 +1,9 @@
 // Minimal Obsidian CLI client for the e2e suite. Mirrors the `=> `-prefixed
 // output convention and the "no timeout — bounded polling is the caller's
 // job" caveat documented for `obEval` in
-// packages/scripts/scripts/obsidian-vault.ts. Not importing that script
-// directly: it has no public exports, it's a script, not a library — see
-// docs/obsidian-cli-vault-routing.md for the routing/transport background.
+// packages/scripts/scripts/obsidian-vault.ts, whose own header carries the
+// routing and transport background. Not importing that script directly: it has
+// no public exports, it's a script, not a library.
 
 import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
@@ -33,8 +33,8 @@ function parseReply(text: string): string {
 
 /**
  * Run JavaScript in `vaultId`'s window. `vault=<id>` must be the first argv
- * token — see docs/obsidian-cli-vault-routing.md. No timeout on the reply, so
- * every caller bounds its own wait with {@link waitFor}.
+ * token. No timeout on the reply, so every caller bounds its own wait with
+ * {@link waitFor}.
  */
 export async function obEval(vaultId: string, code: string): Promise<string> {
   const text = await cli([`vault=${vaultId}`, "eval", `code=${code}`]);
