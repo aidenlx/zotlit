@@ -33,12 +33,8 @@ export interface FollowModeMenuInput {
 /**
  * Every Follow Mode switch, the pin, and the item picker — the entries the
  * toolbar's mode button and the pane menu both show, from the one table in
- * `presentation.ts`.
+ * `presentation.ts`. Each is an action with its own icon.
  *
- * A native MenuItem carries no tooltip, so a blocked entry states its reason in
- * a label beside it rather than in one it cannot show.
- *
- * @see apps/obsidian/policies/tooltips.md
  * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
  */
 export function buildFollowModeMenu(
@@ -46,30 +42,12 @@ export function buildFollowModeMenu(
   { state, actions }: FollowModeMenuInput,
 ): void {
   for (const entry of followModeMenu(state)) {
-    if (entry.kind === "separator") {
-      menu.addSeparator();
-      continue;
-    }
-    if (entry.kind === "mode") {
-      const { select } = entry;
-      menu.addItem((item) => {
-        item.setTitle(entry.label).setChecked(entry.checked);
-        if (select !== null)
-          item.onClick(() => actions.onSetFollowMode(select));
-      });
-      continue;
-    }
     menu.addItem((item) =>
       item
         .setTitle(entry.label)
         .setIcon(entry.icon)
-        .setDisabled(entry.reason !== null)
         .onClick(() => runFollowModeAction(actions, entry.action)),
     );
-    if (entry.reason !== null) {
-      const reason = entry.reason;
-      menu.addItem((item) => item.setTitle(reason).setIsLabel(true));
-    }
   }
 }
 
@@ -86,6 +64,9 @@ function runFollowModeAction(
       return;
     case "choose-item":
       actions.onPinItem();
+      return;
+    default:
+      actions.onSetFollowMode(action);
   }
 }
 

@@ -382,10 +382,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       showMenuAtPointer(evt, (menu) => fillCardMenu(menu, annot));
     },
     onFollowModeMenu(evt) {
-      const { followMode, pinnable, selectedAttachmentKey } = deps.getState();
+      const { followMode, pinnable } = deps.getState();
       showMenu(evt, (menu) =>
         buildFollowModeMenu(menu, {
-          state: { followMode, pinnable, selectedAttachmentKey },
+          state: { followMode, pinnable },
           actions: {
             onSetFollowMode: deps.onSetFollowMode,
             onPinCurrentItem: deps.onPinCurrentItem,

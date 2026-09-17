@@ -12,10 +12,9 @@ import {
   followModeLabel,
   followModeMenu,
   identityLabel,
-  pinBlockedReason,
   sourceTooltip,
 } from "./presentation";
-import type { FollowMenuEntry, FollowMenuState } from "./presentation";
+import type { FollowMenuAction, FollowMenuEntry } from "./presentation";
 import { createAnnotStore } from "./store";
 import type { AnnotState } from "./store";
 
@@ -50,17 +49,9 @@ function state(overrides: Partial<AnnotState> = {}): AnnotState {
   return store.getState();
 }
 
-/** The menu's entries as a reader sees them: label, and why it is blocked. */
-function entryLabels(entries: FollowMenuEntry[]): (string | null)[] {
-  return entries.map((entry) =>
-    entry.kind === "separator" ? null : entry.label,
-  );
-}
-
-function action(entries: FollowMenuEntry[], label: string) {
-  return entries.find(
-    (entry) => entry.kind !== "separator" && entry.label === label,
-  );
+/** What the menu runs, in the order it offers it. */
+function entryActions(entries: FollowMenuEntry[]): FollowMenuAction[] {
+  return entries.map((entry) => entry.action);
 }
 
 describe("the Follow Mode table", () => {
@@ -81,101 +72,45 @@ describe("the Follow Mode table", () => {
 });
 
 describe("the Follow Mode menu", () => {
-  it("offers the two modes a gesture can switch to, and checks the one in force", () => {
+  it("offers the two mode switches, the pin, and the item picker", () => {
     const entries = followModeMenu(state({ followMode: "zotero-reader" }));
-    const modes = entries.filter((entry) => entry.kind === "mode");
 
-    expect(
-      modes.map((entry) => [entry.mode, entry.checked, entry.select]),
-    ).toStrictEqual([
-      ["active-tab", false, "active-tab"],
-      ["zotero-reader", true, "zotero-reader"],
+    expect(entries.map((entry) => [entry.action, entry.label])).toStrictEqual([
+      ["active-tab", m.annot_view_mode_active_tab()],
+      ["zotero-reader", m.annot_view_mode_zotero_reader()],
+      ["pin-current-item", m.annot_view_mode_pin_current_item()],
+      ["choose-item", m.annot_view_pin_choose_item()],
     ]);
   });
 
-  it("reports Pinned as the mode in force, and never as a switch", () => {
-    const entries = followModeMenu(state({ followMode: "pinned" }));
-    const pinned = entries.find(
-      (entry) => entry.kind === "mode" && entry.mode === "pinned",
-    );
-
-    expect(pinned).toMatchObject({ checked: true, select: null });
-  });
-
-  it("swaps Pin current item for Unpin while pinned", () => {
-    const pinning = followModeMenu(state());
-    expect(entryLabels(pinning)).toContain(
-      m.annot_view_mode_pin_current_item(),
-    );
-    expect(entryLabels(pinning)).not.toContain(m.annot_view_mode_unpin());
-
-    const pinned = followModeMenu(state({ followMode: "pinned" }));
-    expect(entryLabels(pinned)).toContain(m.annot_view_mode_unpin());
-    expect(entryLabels(pinned)).not.toContain(
-      m.annot_view_mode_pin_current_item(),
-    );
-  });
-
-  it("always offers the item picker", () => {
+  it("pictures every entry, whatever the mode", () => {
     for (const followMode of [
       "active-tab",
       "zotero-reader",
       "pinned",
     ] as const) {
-      expect(
-        action(
-          followModeMenu(state({ followMode })),
-          m.annot_view_pin_choose_item(),
-        ),
-      ).toMatchObject({ action: "choose-item", reason: null });
+      const icons = followModeMenu(state({ followMode })).map(
+        (entry) => entry.icon,
+      );
+      expect(icons.filter((icon) => icon.length > 0)).toStrictEqual(icons);
     }
   });
 
-  it("blocks Pin current item with its reason, and only then", () => {
+  it("swaps Pin current item for Unpin while pinned", () => {
     expect(
-      action(followModeMenu(state()), m.annot_view_mode_pin_current_item()),
-    ).toMatchObject({ action: "pin-current-item", reason: null });
+      entryActions(followModeMenu(state({ followMode: "pinned" }))),
+    ).toStrictEqual(["active-tab", "zotero-reader", "unpin", "choose-item"]);
+  });
 
+  it("leaves out the pin while no Item stands to be pinned", () => {
     // A standalone Attachment: an Attachment stands, but no Item owns it.
     const standalone = state({ itemKey: null, pinnable: null });
-    expect(
-      action(followModeMenu(standalone), m.annot_view_mode_pin_current_item()),
-    ).toMatchObject({ reason: m.annot_view_pin_unavailable_standalone() });
 
-    // Nothing at all resolved, which is a different reason.
-    const nothing = state({
-      itemKey: null,
-      pinnable: null,
-      attachments: null,
-      selectedAttachmentKey: null,
-    });
-    expect(
-      action(followModeMenu(nothing), m.annot_view_mode_pin_current_item()),
-    ).toMatchObject({ reason: m.annot_view_pin_unavailable_none() });
-  });
-
-  it("separates the modes from the gestures", () => {
-    const entries = followModeMenu(state());
-    const separator = entries.findIndex((entry) => entry.kind === "separator");
-
-    expect(separator).toBeGreaterThan(0);
-    expect(
-      entries.slice(0, separator).every((entry) => entry.kind === "mode"),
-    ).toBe(true);
-    expect(
-      entries.slice(separator + 1).every((entry) => entry.kind === "action"),
-    ).toBe(true);
-  });
-});
-
-describe("pinBlockedReason", () => {
-  it("answers null while an Item stands to be pinned", () => {
-    const pinnable: FollowMenuState = {
-      followMode: "active-tab",
-      pinnable: "ABCD2345",
-      selectedAttachmentKey: "ATCH0001",
-    };
-    expect(pinBlockedReason(pinnable)).toBeNull();
+    expect(entryActions(followModeMenu(standalone))).toStrictEqual([
+      "active-tab",
+      "zotero-reader",
+      "choose-item",
+    ]);
   });
 });
 

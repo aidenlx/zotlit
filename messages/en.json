@@ -363,8 +363,6 @@
   "annot_view_mode_unpin": "Unpin",
   "annot_view_pin_choose_item": "Choose item…",
   "annot_view_pin_placeholder": "Search Zotero items to pin…",
-  "annot_view_pin_unavailable_standalone": "This PDF has no Zotero item to pin. Give it a parent item in Zotero first.",
-  "annot_view_pin_unavailable_none": "Open a literature note or a Zotero PDF to pin its item.",
   "annot_view_refresh_data": "Refresh data",
   "annot_view_source_database": "From Zotero database",
   "annot_view_source_zotero": "From Zotero",
