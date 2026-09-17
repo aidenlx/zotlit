@@ -53,7 +53,7 @@ Imports all child notes attached to regular items and all standalone notes in ev
 
 The Zotero entry scopes the import to the row you right-click, subcollections included. That target is exact, so it runs whether or not the row is in your library scope.
 
-## Literature note quick switcher
+## Literature note quick switcher [#quick-switcher]
 
 <Command name={m.command_open_lit_note_name()} />
 
@@ -62,6 +62,17 @@ Opens a modal to search every library in your [library scope](/docs/reference/se
 | Entry point     | Details          |
 | --------------- | ---------------- |
 | Command palette | Always available |
+
+A result takes four chords, listed along the bottom of the modal:
+
+| Chord                                           | Result                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------- |
+| `Enter`                                         | Opens the literature note, creating it first when none exists.   |
+| `Ctrl+Enter` (`Cmd+Enter` on macOS)             | The same, in a new pane.                                         |
+| `Shift+Enter`                                   | Opens the item's PDF in Obsidian's PDF reader, without the note. |
+| `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) | The same, in a new pane.                                         |
+
+The two PDF chords run <UiLabel name={m.command_open_pdf_name()} /> on the selected result, listed under [Literature note actions](#literature-note-actions).
 
 ## Citations
 
@@ -236,6 +247,20 @@ Opens the profile picker for the note, then asks for consent before writing anyt
 | --------------- | --------------------------- |
 | Command palette | Active on a literature note |
 
+<Command name={m.command_open_pdf_name()} />
+
+Opens the item's PDF attachment in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. One PDF opens straight away; several open a picker whose search box reads <UiLabel name={m.modal_select_pdf_placeholder()} />.
+
+Only PDF attachments are offered. An item with none shows <UiLabel name={m.notice_no_pdf_attachment()} /> A PDF whose file is no longer on disk shows <UiLabel name={m.notice_pdf_file_missing()} /> Neither case falls back to Zotero's own reader.
+
+| Entry point     | Details                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Active on a literature note                                                                                                             |
+| File menu       | yes                                                                                                                                     |
+| Quick switcher  | `Shift+Enter` on a result. See [Literature note quick switcher](#quick-switcher).                                                       |
+| Zotero          | Right-click a PDF attachment, or an item that has one > <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> in the top-level menu |
+| Zotero reader   | Right-click inside the PDF you are reading > <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />                                 |
+
 ## Imported note actions
 
 <Command name={m.command_reimport_note_name()} />
@@ -396,6 +421,7 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_copy_item_key_name()} />                   |   yes   |   no   |     yes      | Active on a file with a Zotero key                  |
 | <UiLabel name={m.command_customize_note_template_name()} />         |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_switch_literature_note_profile_name()} />  |   yes   |   no   |      no      | Active on a literature note                         |
+| <UiLabel name={m.command_open_pdf_name()} />                        |   yes   |   no   |     yes      | Active on a literature note                         |
 | <UiLabel name={m.command_reimport_note_name()} />                   |   yes   |   no   |     yes      | Active on an imported note                          |
 | <UiLabel name={m.command_open_annot_view_name()} />                 |   yes   |  yes   |      no      | Always                                              |
 | <UiLabel name={m.command_annot_view_follow_active_tab_name()} />    |   yes   |   no   |      no      | Annotation view open, in another mode               |

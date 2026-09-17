@@ -35,6 +35,8 @@ It searches every library in your [library scope](/docs/reference/settings#libra
 
     - Press `Enter` to open the literature note.
     - Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to open it in a new pane.
+    - Press `Shift+Enter` to open the item's PDF instead. See [Open the item's PDF in Obsidian](#open-pdf).
+    - Press `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) to open that PDF in a new pane.
     - Press `Esc` to dismiss the switcher.
 
     If the item already has a literature note, ZotLit opens it. Otherwise ZotLit creates the note first, showing a brief <UiLabel name={m.notice_creating_note()} /> notice, followed by <UiLabel name={m.notice_created_note()} />
@@ -54,6 +56,31 @@ Once you add a profile, ZotLit selects one by [Profile Match](/docs/reference/te
 A profile that matches the item carries the <UiLabel name={m.modal_profile_match_candidate()} /> badge in the picker. When nothing matched, the Default is preselected. When several profiles match, ZotLit names them above the results and the search box reads <UiLabel name={m.modal_profile_overlap_placeholder()} />.
 
 See [Use a different template for different notes](/docs/how-to/use-different-templates) to add a profile and set the conditions that select it.
+
+## Open the item's PDF in Obsidian [#open-pdf]
+
+ZotLit opens a Zotero PDF attachment in Obsidian's own PDF reader, including a file kept in Zotero's storage folder rather than in your vault. Only PDF attachments open this way; EPUBs, web snapshots, and other file types stay in Zotero.
+
+With the literature note open in Obsidian:
+
+- Open the command palette and run <Command inline name={m.command_open_pdf_name()} />.
+- Or right-click the note's tab and choose <UiLabel name={m.command_open_pdf_name()} /> from the **zotlit** section of the file menu.
+
+From the quick switcher, without opening the note first:
+
+- Press `Shift+Enter` on a result to open that item's PDF.
+- Press `Ctrl+Shift+Enter` (`Cmd+Shift+Enter` on macOS) to open it in a new pane.
+
+From Zotero, with ZotLit Companion, the Zotero add-on, installed:
+
+- Select one PDF attachment, or one item that has a PDF, and choose <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> from the top-level context menu.
+- While reading a PDF in Zotero, right-click inside the page and choose <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />. This opens the PDF you are reading.
+
+When the item has one PDF, it opens straight away. When it has several, ZotLit asks which one to open.
+
+When the item has no PDF, ZotLit shows <UiLabel name={m.notice_no_pdf_attachment()} /> When the file is no longer on disk, it shows <UiLabel name={m.notice_pdf_file_missing()} /> In neither case does ZotLit open the file in Zotero instead.
+
+The annotation view follows the PDF tab you open this way, so the item's highlights appear beside it. See [Use the annotation view](/docs/how-to/use-annotation-view).
 
 ## Open a note from a Pandoc citation
 
@@ -105,7 +132,7 @@ Select a citation excerpt to open its source note at that occurrence. Select <Ui
 
 ## Create or update notes in bulk [#bulk]
 
-You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires ZotLit Companion, the Zotero add-on.
+You can create or update literature notes for many Zotero items at once from the Zotero right-click menu. This action requires the Companion.
 
 ### Choose the profile for new notes [#bulk-profiles]
 
