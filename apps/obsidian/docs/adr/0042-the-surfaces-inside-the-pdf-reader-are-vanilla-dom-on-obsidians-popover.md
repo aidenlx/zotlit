@@ -1,12 +1,12 @@
 # The surfaces inside the PDF reader are vanilla DOM on Obsidian's popover
 
-Every other ZotLit surface is a Preact root. The three surfaces ZotLit puts inside Obsidian's native PDF reader are not: the Annotation Marks on each page, the Creation Toolbar in the reader's own toolbar slot, and the Mark Popup are vanilla DOM, and the Mark Popup is Obsidian's `HoverPopover` on the plugin's popout-aware base. No Preact root lives in the reader, and Base UI stays confined to the Annotation View.
+Every other ZotLit surface is a Preact root. The three surfaces ZotLit puts inside Obsidian's native PDF reader are not: the Annotation Marks on each page, the Creation Toolbar in the reader's own toolbar slot, and the Mark Popup are vanilla DOM, and the Mark Popup is Obsidian's `HoverPopover` on the plugin's popout-aware base. No Preact root lives in the reader.
 
 ## Considered Options
 
 - **Preact for the Annotation Marks** (rejected): PDF.js `reset()` removes every child of a page that is not on its keep-list on zoom, rotation, and page recycle, so each render is a full rebuild from data. A diff has nothing to reconcile, and a Preact root would need a re-append trick to survive the wipe.
 - **A Preact root in the reader's toolbar slot** (rejected): six flat controls (tool, colour, visibility, Editing Capability) need one render function that sets classes, `aria-pressed`, `aria-disabled`, and tooltips. A component tree is more machinery than the surface needs.
-- **A Base UI Popover for the Mark Popup** (rejected): a second positioning engine beside Obsidian's, its own dismissal rules to override, and a portal to manage. The selection prototype had to fix two dismissal defects in it.
+- **A headless popover library for the Mark Popup** (rejected): a second positioning engine beside Obsidian's, its own dismissal rules to override, and a portal to manage. The selection prototype had to fix two dismissal defects in it. [ADR 0044](0044-menus-and-popovers-are-obsidians-own-primitives.md) rejects the same library for the same reasons on every other surface.
 - **Vanilla DOM on Obsidian's own primitives** (chosen): the Annotation Mark renderer is already a tested pure function, the toolbar reuses `clickable-icon`, `setTooltip`, and `Menu`, and Obsidian owns the popup's placement, viewport clamping, theme, and chrome.
 
 ## Consequences

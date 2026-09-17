@@ -1650,6 +1650,69 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     });
   });
 
+  // A geometry assertion, not a DOM one: the menu this replaced put every entry
+  // in the DOM inside a popup collapsed onto its own border, so counting
+  // entries passed while the menu read as empty on screen.
+  //
+  // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+  it("renders the Follow Mode entries inside the popup's own box", async () => {
+    const trigger = `app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.annot_view_mode_active_tab())}]')`;
+    const popup =
+      "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc.querySelector('.menu')";
+
+    // A menu is an OS menu, with no DOM to measure, while Obsidian's "Native
+    // menus" setting stands. This vault is the suite's own, so it is turned off
+    // rather than worked around.
+    await obEval(vaultId, "app.vault.setConfig('nativeMenus',false);true");
+    await obEval(
+      vaultId,
+      "(async function(){var type='zotero-annotation-view';var leaf=app.workspace.getLeavesOfType(type)[0];if(!leaf){leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:type,active:true});}app.workspace.revealLeaf(leaf);return true;})()",
+    );
+    expect(
+      await obEvalUntil(vaultId, `String(!!${trigger})`, { expected: "true" }),
+    ).toBe(true);
+    await obEval(vaultId, `(function(){${trigger}.click();return true;})()`);
+    expect(
+      await obEvalUntil(vaultId, `String(!!${popup})`, { expected: "true" }),
+    ).toBe(true);
+
+    const report = JSON.parse(
+      await obEval(
+        vaultId,
+        `(function(){var popup=${popup};var box=popup.getBoundingClientRect();var anchor=${trigger}.getBoundingClientRect();var items=Array.from(popup.querySelectorAll('.menu-item'));return JSON.stringify({labels:items.map(function(item){return item.textContent.trim();}),covered:items.filter(function(item){var rect=item.getBoundingClientRect();return rect.height>0&&rect.top>=box.top-1&&rect.bottom<=box.bottom+1;}).length,belowTriggerBy:Math.round(box.top-anchor.bottom),overlapsTriggerX:box.left<anchor.right&&box.right>anchor.left});})()`,
+      ),
+    ) as {
+      labels: string[];
+      covered: number;
+      belowTriggerBy: number;
+      overlapsTriggerX: boolean;
+    };
+
+    // The two modes lead, always in this order. The pin's row is followed by a
+    // reason line whenever this vault has nothing to pin, so what comes after
+    // them is asserted by presence rather than by position.
+    expect(report.labels.slice(0, 2)).toEqual([
+      m.annot_view_mode_active_tab(),
+      m.annot_view_mode_zotero_reader(),
+    ]);
+    expect(report.labels).toContain(m.annot_view_mode_pin_current_item());
+    expect(report.labels).toContain(m.annot_view_pin_choose_item());
+    // The assertion this test exists for: every entry the menu holds sits
+    // inside the box the menu draws, so none is clipped out of sight.
+    expect(report.covered).toBe(report.labels.length);
+    // And it hangs off the button that opened it, rather than off a pointer
+    // position the button never supplied. Which of the button's edges it lines
+    // up with is Obsidian's call — it right-aligns a menu that would otherwise
+    // overflow — so the assertion is that the two overlap at all.
+    expect(report.belowTriggerBy).toBe(2);
+    expect(report.overlapsTriggerX).toBe(true);
+
+    await obEval(
+      vaultId,
+      "(function(){var doc=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc;doc.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));app.workspace.detachLeavesOfType('zotero-annotation-view');return true;})()",
+    );
+  });
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(

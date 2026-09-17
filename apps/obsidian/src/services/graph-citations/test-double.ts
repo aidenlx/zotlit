@@ -20,7 +20,7 @@ export const NATIVE_DEFAULT_OPTIONS: GraphOptions = {
  * enumerates the listeners rather than the engine's options.
  */
 export class FakeControlSection implements GraphControlSection {
-  readonly childrenEl: HTMLElement = document.createElement("div");
+  readonly childrenEl: HTMLElement = createDiv();
   readonly optionListeners: Record<string, GraphOptionListener> = {};
   /** How many times the native "Restore default settings" path ran. */
   natives = 0;
@@ -54,7 +54,7 @@ export class FakeControlSection implements GraphControlSection {
  * so the fake models the rows as a list alone.
  */
 export class FakeColorGroupSection implements GraphColorGroupSection {
-  readonly childrenEl: HTMLElement = document.createElement("div");
+  readonly childrenEl: HTMLElement = createDiv();
   #groups: GraphColorGroup[] = [];
 
   getColoredQueries(): GraphColorGroup[] {

@@ -5,6 +5,7 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 import { IDLE } from "@/services/annotation-repository/write";
 
 import { createAnnotActions } from "./actions";
+import { createAnnotStore } from "./store";
 
 const annotation: AnnotationRecord = {
   key: "ANNT2345g42",
@@ -54,6 +55,9 @@ function setup(
     annotations,
     deleteControl: () => ({ disabled: false, tooltip: "Delete annotation" }),
     resolveAnnotationID: () => 1,
+    getState: () => createAnnotStore().getState(),
+    setSelectedAttachmentKey: vi.fn(),
+    toggleSelectedTag: vi.fn(),
     refresh: vi.fn(),
     noteFeature: { renderAnnotationCitation: () => null },
     onDragStart: vi.fn(),
@@ -70,11 +74,25 @@ function setup(
   return { actions, annotations };
 }
 
+/**
+ * A click on the card's overflow control. The menu anchors under the control,
+ * so the gesture carries the element and the box layout measured for it; where
+ * the menu lands is `lib/menu.test.ts`'s subject, not this file's.
+ */
+function fromOverflowControl() {
+  return {
+    type: "click",
+    currentTarget: {
+      getBoundingClientRect: () => ({ x: 0, y: 0, width: 0, bottom: 0 }),
+    },
+  } as never;
+}
+
 describe("Annotation View menu", () => {
   it("offers the selected annotation's key", () => {
     const { actions } = setup();
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    actions.onMoreOptions(fromOverflowControl(), annotation);
 
     const menu = Menu.instances[0]!;
     const copyKey = menu.items.find(
@@ -92,7 +110,7 @@ describe("Annotation View menu", () => {
   it("deletes through the repository, by key alone", () => {
     const { actions, annotations } = setup();
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    actions.onMoreOptions(fromOverflowControl(), annotation);
     const menu = Menu.instances[0]!;
     const remove = menu.items.find(
       (item) => item.title === "Delete annotation",
@@ -109,7 +127,7 @@ describe("Annotation View menu", () => {
       deleteControl: () => ({ disabled: true, tooltip: reason }),
     });
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    actions.onMoreOptions(fromOverflowControl(), annotation);
     const menu = Menu.instances[0]!;
     const remove = menu.items.find(
       (item) => item.title === "Delete annotation",

@@ -26,7 +26,6 @@ import {
 import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import { MenuContainerProvider } from "@/components/obsidian/menu-container";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -76,6 +75,7 @@ import {
   AnnotStoreProvider,
   createAnnotStore,
   INITIAL_FILTER_STATE,
+  toggledTags,
 } from "./store";
 import type { AnnotState, FollowMode } from "./store";
 import {
@@ -262,6 +262,13 @@ export class AnnotationView extends ItemView {
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
+      getState: () => this.#store.getState(),
+      setSelectedAttachmentKey: (key) =>
+        this.#store.setState({ selectedAttachmentKey: key }),
+      toggleSelectedTag: (tag) =>
+        this.#store.setState({
+          selectedTags: toggledTags(this.#store.getState().selectedTags, tag),
+        }),
       refresh: () => this.#deps.db.refresh(),
       noteFeature: this.#deps.noteFeature,
       onSetFollowMode: (mode) => this.#setFollowMode(mode),
@@ -301,24 +308,20 @@ export class AnnotationView extends ItemView {
 
     this.#root = createRoot(this.contentEl);
     this.#root.render(
-      // A menu's portal mounts into this view's own document, so a pop-out
-      // window shows its menus rather than the main window showing them.
-      <MenuContainerProvider value={this.contentEl.doc.body}>
-        <AnnotStoreProvider value={this.#store}>
-          <AnnotActionsContext value={this.#actions}>
-            <CapabilitySlotContext
-              value={
-                <CapabilityAffordance
-                  capabilities={this.#deps.annotations}
-                  onActivate={this.#deps.showEditingCapability}
-                />
-              }
-            >
-              <AnnotView />
-            </CapabilitySlotContext>
-          </AnnotActionsContext>
-        </AnnotStoreProvider>
-      </MenuContainerProvider>,
+      <AnnotStoreProvider value={this.#store}>
+        <AnnotActionsContext value={this.#actions}>
+          <CapabilitySlotContext
+            value={
+              <CapabilityAffordance
+                capabilities={this.#deps.annotations}
+                onActivate={this.#deps.showEditingCapability}
+              />
+            }
+          >
+            <AnnotView />
+          </CapabilitySlotContext>
+        </AnnotActionsContext>
+      </AnnotStoreProvider>,
     );
 
     this.register(

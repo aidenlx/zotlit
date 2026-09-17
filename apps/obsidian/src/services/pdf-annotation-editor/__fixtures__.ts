@@ -136,7 +136,7 @@ export interface FakePageView {
  */
 export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
   return {
-    div: document.createElement("div"),
+    div: createDiv(),
     viewport: viewport({ scale: 1.5 }),
     pdfPage: {
       view: [0, 0, 612, 792],
@@ -151,7 +151,7 @@ export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
 
 /** The viewer child, its toolbar slot, and the page renders it dispatches. */
 export function pdfReader(page = pageView()) {
-  const toolbarRightEl = document.createElement("div");
+  const toolbarRightEl = createDiv();
   const listeners: ((event: unknown) => void)[] = [];
   const child: Record<string, unknown> = {
     // `on` and `off` read the event bus through this, and Obsidian's `unload`

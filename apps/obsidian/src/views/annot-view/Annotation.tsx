@@ -4,12 +4,6 @@ import type { KeyboardEvent } from "react";
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
-import { Menu } from "@/components/obsidian/menu";
-import {
-  ANNOTATION_COLORS,
-  annotationColorLabel,
-  isColor,
-} from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
@@ -20,12 +14,7 @@ import { AnnotActionsContext } from "./actions";
 import { conflictPanel } from "./card-conflict";
 import { cardControls, commentIcon } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
-import {
-  useAnnotStore,
-  useMutation,
-  useSetEditingComment,
-  useToggleSelectedTag,
-} from "./store";
+import { useAnnotStore, useMutation, useSetEditingComment } from "./store";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -279,8 +268,6 @@ function ColorControl({
   control: CardControl;
 }) {
   const actions = useContext(AnnotActionsContext);
-  const current =
-    ANNOTATION_COLORS.find((hex) => isColor(annot.color, hex)) ?? "";
 
   if (control.disabled) {
     return (
@@ -294,29 +281,13 @@ function ColorControl({
     );
   }
   return (
-    <Menu.Root>
-      <Menu.Trigger
-        className="zt:flex zt:cursor-pointer zt:items-center"
-        {...tooltipAttrs(control.tooltip)}
-      >
-        <ColorDot color={annot.color} />
-      </Menu.Trigger>
-      <Menu.Content>
-        <Menu.RadioGroup
-          value={current}
-          onValueChange={(hex) => actions.onSetColor(annot, hex)}
-        >
-          {ANNOTATION_COLORS.map((hex) => (
-            <Menu.RadioItem key={hex} value={hex}>
-              <span className="zt:flex zt:items-center zt:gap-2">
-                <ColorDot color={hex} />
-                {annotationColorLabel(hex)}
-              </span>
-            </Menu.RadioItem>
-          ))}
-        </Menu.RadioGroup>
-      </Menu.Content>
-    </Menu.Root>
+    <button
+      className="zt:flex zt:cursor-pointer zt:items-center"
+      onClick={(evt) => actions.onColorMenu(evt, annot)}
+      {...tooltipAttrs(control.tooltip)}
+    >
+      <ColorDot color={annot.color} />
+    </button>
   );
 }
 
@@ -335,32 +306,17 @@ function ColorDot({ color }: { color: string | null }) {
  * Selecting one filters the list by it, which is what the chips did.
  */
 function TagMenu({ annot }: { annot: AnnotationRecord }) {
-  const selectedTags = useAnnotStore((s) => s.selectedTags);
-  const toggleTag = useToggleSelectedTag();
+  const actions = useContext(AnnotActionsContext);
   if (annot.tags.length === 0) return null;
 
   return (
-    <Menu.Root>
-      <Menu.Trigger
-        className="zt:flex zt:cursor-pointer zt:items-center zt:text-muted-foreground zt:transition-colors zt:hover:text-foreground"
-        {...tooltipAttrs(m.annot_view_card_tags())}
-      >
-        <Icon name="tags" size={16} />
-      </Menu.Trigger>
-      <Menu.Content>
-        <Menu.Group>
-          {annot.tags.map((tag) => (
-            <Menu.Item
-              key={tag}
-              icon={selectedTags.includes(tag) ? "check" : undefined}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </Menu.Item>
-          ))}
-        </Menu.Group>
-      </Menu.Content>
-    </Menu.Root>
+    <button
+      className="zt:flex zt:cursor-pointer zt:items-center zt:text-muted-foreground zt:transition-colors zt:hover:text-foreground"
+      onClick={(evt) => actions.onTagMenu(evt, annot)}
+      {...tooltipAttrs(m.annot_view_card_tags())}
+    >
+      <Icon name="tags" size={16} />
+    </button>
   );
 }
 
