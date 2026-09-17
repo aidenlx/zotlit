@@ -40,96 +40,66 @@ export function followModeIcon(mode: FollowMode): IconName {
 }
 
 /** What the Follow Mode menu and the pin controls read. */
-export type FollowMenuState = Pick<
-  AnnotState,
-  "followMode" | "pinnable" | "selectedAttachmentKey"
->;
+export type FollowMenuState = Pick<AnnotState, "followMode" | "pinnable">;
 
-/** The gestures a Follow Mode menu entry can carry, beside the three modes. */
-export type FollowMenuAction = "pin-current-item" | "unpin" | "choose-item";
+/** The gesture a Follow Mode menu entry runs. */
+export type FollowMenuAction =
+  | Exclude<FollowMode, "pinned">
+  | "pin-current-item"
+  | "unpin"
+  | "choose-item";
 
 /** One entry of the Follow Mode menu, in the shape both renderers read. */
-export type FollowMenuEntry =
-  | {
-      kind: "mode";
-      mode: FollowMode;
-      label: string;
-      checked: boolean;
-      /**
-       * The mode this entry switches to, or `null` for one that only reports
-       * the mode in force. Pinned is reached by pinning an Item, so its row
-       * says where the view is rather than offering to take it there.
-       */
-      select: Exclude<FollowMode, "pinned"> | null;
-    }
-  | { kind: "separator" }
-  | {
-      kind: "action";
-      action: FollowMenuAction;
-      label: string;
-      icon: IconName;
-      /** The reason the entry is unavailable; `null` while it is available. */
-      reason: string | null;
-    };
-
-/**
- * Why "Pin current item" is unavailable, or `null` when it is available. A
- * standalone Attachment cannot be pinned, because Pinned is an Item plus a
- * remembered attachment choice and a standalone Attachment has no Item.
- *
- * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
- * @see https://github.com/aidenlx/zotlit/issues/1141
- */
-export function pinBlockedReason(state: FollowMenuState): string | null {
-  if (state.pinnable !== null) return null;
-  return state.selectedAttachmentKey !== null
-    ? m.annot_view_pin_unavailable_standalone()
-    : m.annot_view_pin_unavailable_none();
+export interface FollowMenuEntry {
+  action: FollowMenuAction;
+  label: string;
+  icon: IconName;
 }
 
 /**
- * Every switch the mode button and the pane menu offer, in order. Pinned is
- * listed as a mode only while it is the one in force: it is reached by pinning
- * an Item, never by choosing a mode with nothing behind it.
+ * Every gesture the mode button and the pane menu offer, in order. Each entry
+ * is an action the user can run now: the toolbar button names the mode in
+ * force, so the menu itself reports no state.
+ *
+ * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
  */
 export function followModeMenu(state: FollowMenuState): FollowMenuEntry[] {
-  const mode = (
-    followMode: FollowMode,
-    select: Exclude<FollowMode, "pinned"> | null,
-  ): FollowMenuEntry => ({
-    kind: "mode",
-    mode: followMode,
-    label: followModeLabel(followMode),
-    checked: state.followMode === followMode,
-    select,
+  const switchTo = (mode: Exclude<FollowMode, "pinned">): FollowMenuEntry => ({
+    action: mode,
+    label: followModeLabel(mode),
+    icon: followModeIcon(mode),
   });
-  const pinned = state.followMode === "pinned";
   return [
-    mode("active-tab", "active-tab"),
-    mode("zotero-reader", "zotero-reader"),
-    ...(pinned ? [mode("pinned", null)] : []),
-    { kind: "separator" },
-    pinned
-      ? {
-          kind: "action",
-          action: "unpin",
-          label: m.annot_view_mode_unpin(),
-          icon: "pin-off",
-          reason: null,
-        }
-      : {
-          kind: "action",
-          action: "pin-current-item",
-          label: m.annot_view_mode_pin_current_item(),
-          icon: "pin",
-          reason: pinBlockedReason(state),
-        },
+    switchTo("active-tab"),
+    switchTo("zotero-reader"),
+    ...pinEntry(state),
     {
-      kind: "action",
       action: "choose-item",
       label: m.annot_view_pin_choose_item(),
       icon: "search",
-      reason: null,
+    },
+  ];
+}
+
+/**
+ * The pin gesture the state allows: release the pin in force, or take the Item
+ * on screen. Pinned is an Item plus a remembered attachment choice, so with no
+ * Item to pin the menu offers the item picker alone.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1141
+ */
+function pinEntry(state: FollowMenuState): FollowMenuEntry[] {
+  if (state.followMode === "pinned") {
+    return [
+      { action: "unpin", label: m.annot_view_mode_unpin(), icon: "pin-off" },
+    ];
+  }
+  if (state.pinnable === null) return [];
+  return [
+    {
+      action: "pin-current-item",
+      label: m.annot_view_mode_pin_current_item(),
+      icon: "pin",
     },
   ];
 }

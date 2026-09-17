@@ -780,6 +780,7 @@ export const apiVersion = "1.0.0-test";
  * registered handler. */
 export class MenuItem {
   #title: string | DocumentFragment = "";
+  #icon: string | null = null;
   #section = "";
   #checked: boolean | null = null;
   #disabled = false;
@@ -799,6 +800,11 @@ export class MenuItem {
   /** The fragment a rich title was built from, or `null` for a plain one. */
   get titleFragment(): DocumentFragment | null {
     return typeof this.#title === "string" ? null : this.#title;
+  }
+
+  /** `null` for an item that carries no icon, as in Obsidian. */
+  get icon(): string | null {
+    return this.#icon;
   }
 
   /** `null` for an item that carries no check mark, as in Obsidian. */
@@ -826,7 +832,8 @@ export class MenuItem {
     return this;
   }
 
-  setIcon(_icon: string | null): this {
+  setIcon(icon: string | null): this {
+    this.#icon = icon;
     return this;
   }
 

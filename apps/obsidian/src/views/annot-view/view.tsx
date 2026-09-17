@@ -452,7 +452,7 @@ export class AnnotationView extends ItemView {
    */
   #pinCurrentItem(): void {
     const { pinnable, selectedAttachmentKey } = this.#store.getState();
-    if (pinnable === null) return; // the control is disabled in place
+    if (pinnable === null) return; // nothing on screen carries an Item
     if (selectedAttachmentKey !== null) {
       this.#saveAttachmentSelection(pinnable, selectedAttachmentKey);
     }

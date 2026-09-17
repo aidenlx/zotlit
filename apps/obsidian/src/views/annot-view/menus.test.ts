@@ -21,7 +21,6 @@ import type { FollowMenuState } from "./presentation";
 const ON_AN_ITEM: FollowMenuState = {
   followMode: "active-tab",
   pinnable: "ABCD2345",
-  selectedAttachmentKey: "ATCH2345",
 };
 
 function followMenu(overrides: Partial<FollowMenuState> = {}) {
@@ -44,21 +43,12 @@ beforeEach(() => {
 });
 
 describe("the Follow Mode menu", () => {
-  it("offers every entry the one table answers, in its order", () => {
+  it("offers every entry the one table answers, in its order, with its icon", () => {
     const { menu, state } = followMenu();
 
-    expect(menu.items.map((entry) => entry.title)).toStrictEqual(
-      followModeMenu(state)
-        .filter((entry) => entry.kind !== "separator")
-        .map((entry) => entry.label),
+    expect(menu.items.map((entry) => [entry.title, entry.icon])).toStrictEqual(
+      followModeMenu(state).map((entry) => [entry.label, entry.icon]),
     );
-  });
-
-  it("checks the mode the view is following", () => {
-    const { item } = followMenu({ followMode: "zotero-reader" });
-
-    expect(item(m.annot_view_mode_zotero_reader())?.checked).toBe(true);
-    expect(item(m.annot_view_mode_active_tab())?.checked).toBe(false);
   });
 
   it("switches the mode from the entry", () => {
@@ -66,13 +56,6 @@ describe("the Follow Mode menu", () => {
 
     item(m.annot_view_mode_zotero_reader())!.click();
     expect(actions.onSetFollowMode).toHaveBeenCalledWith("zotero-reader");
-  });
-
-  it("leaves the Pinned row inert, because pinning is what reaches it", () => {
-    const { actions, item } = followMenu({ followMode: "pinned" });
-
-    item(m.annot_view_mode_pinned())!.click();
-    expect(actions.onSetFollowMode).not.toHaveBeenCalled();
   });
 
   it("offers Unpin in place of Pin while pinned", () => {
@@ -83,14 +66,18 @@ describe("the Follow Mode menu", () => {
     expect(actions.onUnpin).toHaveBeenCalledTimes(1);
   });
 
-  it("blocks the pin in place and says why, because a native item has no tooltip", () => {
-    const { actions, item } = followMenu({ pinnable: null });
-    const pin = item(m.annot_view_mode_pin_current_item())!;
+  it("pins the Item on screen from the entry", () => {
+    const { actions, item } = followMenu();
 
-    expect(pin.disabled).toBe(true);
-    pin.click();
-    expect(actions.onPinCurrentItem).not.toHaveBeenCalled();
-    expect(item(m.annot_view_pin_unavailable_standalone())?.isLabel).toBe(true);
+    item(m.annot_view_mode_pin_current_item())!.click();
+    expect(actions.onPinCurrentItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the item picker from the entry", () => {
+    const { actions, item } = followMenu();
+
+    item(m.annot_view_pin_choose_item())!.click();
+    expect(actions.onPinItem).toHaveBeenCalledTimes(1);
   });
 });
 
