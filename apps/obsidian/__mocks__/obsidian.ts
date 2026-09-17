@@ -778,7 +778,7 @@ export const apiVersion = "1.0.0-test";
  * chains off `Menu.addItem` plus a test-only `click()` to invoke the
  * registered handler. */
 export class MenuItem {
-  #title = "";
+  #title: string | DocumentFragment = "";
   #section = "";
   #checked: boolean | null = null;
   #disabled = false;
@@ -788,8 +788,16 @@ export class MenuItem {
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
   submenu: Menu | null = null;
 
+  /** The title's text, whether it was set as a string or as a fragment. */
   get title(): string {
-    return this.#title;
+    return typeof this.#title === "string"
+      ? this.#title
+      : (this.#title.textContent ?? "");
+  }
+
+  /** The fragment a rich title was built from, or `null` for a plain one. */
+  get titleFragment(): DocumentFragment | null {
+    return typeof this.#title === "string" ? null : this.#title;
   }
 
   /** `null` for an item that carries no check mark, as in Obsidian. */
@@ -812,7 +820,7 @@ export class MenuItem {
     return this.#isLabel;
   }
 
-  setTitle(title: string): this {
+  setTitle(title: string | DocumentFragment): this {
     this.#title = title;
     return this;
   }
@@ -864,6 +872,15 @@ export class MenuItem {
   }
 }
 
+/** The shape Obsidian's `showAtPosition` takes; mirrors `MenuPositionDef`. */
+export interface MenuPositionDef {
+  x: number;
+  y: number;
+  width?: number;
+  overlap?: boolean;
+  left?: boolean;
+}
+
 /**
  * Minimal stand-in for `Menu`. Records every constructed instance on
  * `Menu.instances` so tests can inspect the menu built by code under test
@@ -881,7 +898,13 @@ export class Menu {
   readonly items: MenuItem[] = [];
 
   /** Where `showAtPosition` was asked to open, or `null` while it was not. */
-  position: { x: number; y: number } | null = null;
+  position: MenuPositionDef | null = null;
+
+  /** The document `showAtPosition` was given, or `null` for none. */
+  positionDoc: Document | null = null;
+
+  /** The element `setParentElement` anchored this menu to, or `null`. */
+  parentEl: HTMLElement | null = null;
 
   constructor() {
     Menu.instances.push(this);
@@ -907,8 +930,14 @@ export class Menu {
     return this;
   }
 
-  showAtPosition(position: { x: number; y: number }): this {
+  setParentElement(el: HTMLElement): this {
+    this.parentEl = el;
+    return this;
+  }
+
+  showAtPosition(position: MenuPositionDef, doc?: Document): this {
     this.position = position;
+    this.positionDoc = doc ?? null;
     return this;
   }
 }

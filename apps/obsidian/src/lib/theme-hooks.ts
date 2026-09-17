@@ -71,11 +71,6 @@ export const themeHook = {
   annotCapability: "zt-annot-capability",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
-  /**
-   * A menu ZotLit draws inside its own Preact surfaces, beside Obsidian's own
-   * `menu` class.
-   */
-  menu: "zt-menu",
 } as const;
 
 /**

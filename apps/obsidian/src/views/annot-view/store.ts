@@ -252,14 +252,20 @@ export function useAnnotFilter(): AnnotFilter {
   return useMemo(() => ({ query, colors, tags }), [query, colors, tags]);
 }
 
+/**
+ * The tag filter after one tag is toggled. Named apart from the hook because
+ * the card's tag menu is built outside React, from the view's own store handle.
+ */
+export function toggledTags(selectedTags: string[], tag: string): string[] {
+  return selectedTags.includes(tag)
+    ? selectedTags.filter((name) => name !== tag)
+    : [...selectedTags, tag];
+}
+
 export function useToggleSelectedTag(): (tag: string) => void {
   const store = useAnnotStoreApi();
-  return (tag) => {
-    const { selectedTags } = store.getState();
+  return (tag) =>
     store.setState({
-      selectedTags: selectedTags.includes(tag)
-        ? selectedTags.filter((name) => name !== tag)
-        : [...selectedTags, tag],
+      selectedTags: toggledTags(store.getState().selectedTags, tag),
     });
-  };
 }

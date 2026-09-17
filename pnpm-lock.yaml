@@ -527,9 +527,6 @@ importers:
 
   apps/obsidian:
     dependencies:
-      '@base-ui/react':
-        specifier: 'catalog:'
-        version: 1.7.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@bjorn3/browser_wasi_shim':
         specifier: ^0.4.2
         version: 0.4.2

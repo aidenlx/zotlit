@@ -7,6 +7,8 @@ import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { showMenuAtButton } from "@/lib/menu";
+import type { MenuAlign } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type {
@@ -24,10 +26,28 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import type { CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
-import type { FollowMode } from "./store";
+import {
+  buildAttachmentMenu,
+  buildColorMenu,
+  buildFollowModeMenu,
+  buildTagMenu,
+} from "./menus";
+import { attachmentLine } from "./presentation";
+import type { AnnotState, FollowMode } from "./store";
 
 export interface AnnotActions {
-  onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotationRecord): void;
+  onMoreOptions(
+    evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    annot: AnnotationRecord,
+  ): void;
+  /** Open the Follow Mode menu from the toolbar's mode button. */
+  onFollowModeMenu(evt: MouseEvent<HTMLElement>): void;
+  /** Open the Attachment picker from the slot under the toolbar. */
+  onAttachmentMenu(evt: MouseEvent<HTMLElement>): void;
+  /** Open Zotero's eight swatches from a card's colour dot. */
+  onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
+  /** Open a card's own tags, each one a filter toggle. */
+  onTagMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
   /** Follow the active tab or the Zotero reader, from a user gesture. */
@@ -109,6 +129,16 @@ export interface AnnotActionDeps {
    * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
    */
   resolveAnnotationID: (indexedKey: string) => number | null;
+  /**
+   * What the view is showing right now. A native menu is built at the moment
+   * the gesture opens it, so its entries are read then rather than subscribed
+   * to — the same reason {@link AnnotActionDeps.deleteControl} is a callback.
+   */
+  getState: () => AnnotState;
+  /** Show another Attachment of the Item on screen, from the picker. */
+  setSelectedAttachmentKey: (key: string) => void;
+  /** Add or drop one tag from the list filter, from a card's tag menu. */
+  toggleSelectedTag: (tag: string) => void;
   refresh: () => Promise<void>;
   noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
@@ -208,9 +238,37 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     return cachePath ? resourceUrl(cachePath) : IMG_PLACEHOLDER;
   };
 
-  const buildMenu = (annot: AnnotationRecord): Menu => {
+  /**
+   * A menu opened from a control, anchored under the control itself — so it
+   * lands in the same place however the control was activated.
+   *
+   * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+   */
+  const showMenu = (
+    evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    fill: (menu: Menu) => void,
+    align?: MenuAlign,
+  ): void => {
     const menu = new Menu();
+    fill(menu);
+    showMenuAtButton(menu, evt.currentTarget, align);
+  };
 
+  /** A menu opened by a right-click, which belongs at the pointer. */
+  const showMenuAtPointer = (
+    evt: MouseEvent<HTMLElement>,
+    fill: (menu: Menu) => void,
+  ): void => {
+    const menu = new Menu();
+    fill(menu);
+    // `MouseEvent` is shadowed by the React import above; `globalThis.` here is
+    // a type qualifier for the DOM type, not a runtime access, so the
+    // `window`/`activeWindow` popout-compatibility guidance doesn't apply.
+    // eslint-disable-next-line obsidianmd/no-global-this
+    menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
+  };
+
+  const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
     const backlink = getBacklink(annot);
     if (backlink) {
       menu.addItem((item) => {
@@ -299,8 +357,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     if (control.disabled) {
       menu.addItem((item) => item.setTitle(control.tooltip).setIsLabel(true));
     }
-
-    return menu;
   };
 
   return {
@@ -314,15 +370,54 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onRetryCreate,
     onDiscardCreate,
     onMoreOptions(evt, annot) {
-      const menu = buildMenu(annot);
-      if ("nativeEvent" in evt) {
-        // `MouseEvent` is shadowed by the React import above; `globalThis.`
-        // here is a type qualifier for the DOM type, not a runtime access,
-        // so the `window`/`activeWindow` popout-compatibility guidance
-        // doesn't apply.
-        // eslint-disable-next-line obsidianmd/no-global-this
-        menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
-      }
+      const fill = (menu: Menu): void => fillCardMenu(menu, annot);
+      // The card's own right-click carries a pointer to open at; the overflow
+      // control is a control, so it anchors under itself.
+      if (evt.type === "contextmenu")
+        showMenuAtPointer(evt as MouseEvent<HTMLElement>, fill);
+      else showMenu(evt, fill, "end");
+    },
+    onFollowModeMenu(evt) {
+      const { followMode, pinnable, selectedAttachmentKey } = deps.getState();
+      showMenu(evt, (menu) =>
+        buildFollowModeMenu(menu, {
+          state: { followMode, pinnable, selectedAttachmentKey },
+          actions: {
+            onSetFollowMode: deps.onSetFollowMode,
+            onPinCurrentItem: deps.onPinCurrentItem,
+            onPinItem: deps.onPinItem,
+            onUnpin: deps.onUnpin,
+          },
+        }),
+      );
+    },
+    onAttachmentMenu(evt) {
+      const line = attachmentLine(deps.getState());
+      if (line.kind !== "picker") return;
+      showMenu(evt, (menu) =>
+        buildAttachmentMenu(menu, {
+          options: line.options,
+          selectedKey: line.selectedKey,
+          onSelect: deps.setSelectedAttachmentKey,
+        }),
+      );
+    },
+    onColorMenu(evt, annot) {
+      showMenu(evt, (menu) =>
+        buildColorMenu(menu, {
+          color: annot.color,
+          onSelect: (hex) => onSetColor(annot, hex),
+        }),
+      );
+    },
+    onTagMenu(evt, annot) {
+      showMenu(evt, (menu) =>
+        buildTagMenu(menu, {
+          tags: annot.tags,
+          selectedTags: deps.getState().selectedTags,
+          onToggle: deps.toggleSelectedTag,
+        }),
+      );
     },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
@@ -344,6 +439,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
+  onFollowModeMenu: () => {},
+  onAttachmentMenu: () => {},
+  onColorMenu: () => {},
+  onTagMenu: () => {},
   onDragStart: () => {},
   onSetFollowMode: () => {},
   onPinCurrentItem: () => {},

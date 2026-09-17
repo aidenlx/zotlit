@@ -2,14 +2,12 @@ import { useContext, useMemo, useState } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import { Menu } from "@/components/obsidian/menu";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
-import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
 import { CapabilitySlot } from "./capability-slot";
 import { uncertainCard } from "./card-conflict";
@@ -21,7 +19,6 @@ import {
   conditionLines,
   followModeIcon,
   followModeLabel,
-  followModeMenu,
   identityLabel,
   sourceTooltip,
 } from "./presentation";
@@ -29,15 +26,12 @@ import type {
   AnnotViewBody,
   AttachmentLine as AttachmentSlot,
   EmptyStateAction,
-  FollowMenuAction,
-  FollowMenuEntry,
 } from "./presentation";
 import {
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
-  useSetSelectedAttachmentKey,
   useToggleSearchOpen,
 } from "./store";
 
@@ -47,16 +41,6 @@ import {
  * selector that builds one on every call never settles. So each is built from
  * the slices it depends on and held while those are unchanged.
  */
-function useFollowMenu(): FollowMenuEntry[] {
-  const followMode = useAnnotStore((s) => s.followMode);
-  const pinnable = useAnnotStore((s) => s.pinnable);
-  const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
-  return useMemo(
-    () => followModeMenu({ followMode, pinnable, selectedAttachmentKey }),
-    [followMode, pinnable, selectedAttachmentKey],
-  );
-}
-
 function useAttachmentSlot(): AttachmentSlot {
   const attachments = useAnnotStore((s) => s.attachments);
   const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
@@ -176,73 +160,26 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
   );
 }
 
-/** Runs one entry of the Follow Mode menu against the view's actions. */
-function runMenuAction(actions: AnnotActions, action: FollowMenuAction): void {
-  switch (action) {
-    case "pin-current-item":
-      actions.onPinCurrentItem();
-      return;
-    case "unpin":
-      actions.onUnpin();
-      return;
-    case "choose-item":
-      actions.onPinItem();
-  }
-}
-
 /**
  * The one button that changes the Follow Mode, beside the native pane menu and
- * the five commands. Nothing else writes the mode, and the entries it renders
- * are the ones the pane menu renders.
+ * the five commands. Nothing else writes the mode, and the entries it opens are
+ * the ones the pane menu renders.
  *
  * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
  */
 function FollowModeMenu() {
   const actions = useContext(AnnotActionsContext);
   const followMode = useAnnotStore((s) => s.followMode);
-  const entries = useFollowMenu();
-  const modes = entries.filter((entry) => entry.kind === "mode");
-  const actionEntries = entries.filter((entry) => entry.kind === "action");
 
   return (
-    <Menu.Root>
-      <Menu.Trigger
-        className="clickable-icon zt:flex zt:items-center zt:gap-0.5"
-        {...tooltipAttrs(followModeLabel(followMode))}
-      >
-        <Icon name={followModeIcon(followMode)} />
-        <Icon name="chevron-down" size={12} />
-      </Menu.Trigger>
-      <Menu.Content>
-        <Menu.RadioGroup
-          value={followMode}
-          onValueChange={(next) => {
-            const select = modes.find((entry) => entry.mode === next)?.select;
-            if (select) actions.onSetFollowMode(select);
-          }}
-        >
-          {modes.map((entry) => (
-            <Menu.RadioItem key={entry.mode} value={entry.mode}>
-              {entry.label}
-            </Menu.RadioItem>
-          ))}
-        </Menu.RadioGroup>
-        <Menu.Separator />
-        <Menu.Group>
-          {actionEntries.map((entry) => (
-            <Menu.Item
-              key={entry.action}
-              icon={entry.icon}
-              disabled={entry.reason !== null}
-              reason={entry.reason ?? undefined}
-              onClick={() => runMenuAction(actions, entry.action)}
-            >
-              {entry.label}
-            </Menu.Item>
-          ))}
-        </Menu.Group>
-      </Menu.Content>
-    </Menu.Root>
+    <button
+      className="clickable-icon zt:flex zt:items-center zt:gap-0.5"
+      onClick={(evt) => actions.onFollowModeMenu(evt)}
+      {...tooltipAttrs(followModeLabel(followMode))}
+    >
+      <Icon name={followModeIcon(followMode)} />
+      <Icon name="chevron-down" size={12} />
+    </button>
   );
 }
 
@@ -266,8 +203,8 @@ function ItemIdentityLabel() {
  * control disabled in place, with the reason, while a reader holds it.
  */
 function AttachmentLine() {
+  const actions = useContext(AnnotActionsContext);
   const line = useAttachmentSlot();
-  const setAttachmentKey = useSetSelectedAttachmentKey();
 
   if (line.kind === "hidden") return null;
   if (line.kind === "locked") {
@@ -291,29 +228,16 @@ function AttachmentLine() {
   );
   return (
     <div className="zt:px-3 zt:pb-1">
-      <Menu.Root>
-        <Menu.Trigger
-          className="clickable-icon zt:flex zt:w-full zt:items-center zt:gap-1 zt:text-xs"
-          {...tooltipAttrs(m.annot_view_attachment_tooltip())}
-        >
-          <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
-            {selected?.label}
-          </span>
-          <Icon name="chevron-down" size={12} />
-        </Menu.Trigger>
-        <Menu.Content>
-          <Menu.RadioGroup
-            value={line.selectedKey}
-            onValueChange={setAttachmentKey}
-          >
-            {line.options.map((option) => (
-              <Menu.RadioItem key={option.key} value={option.key}>
-                {option.label}
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-        </Menu.Content>
-      </Menu.Root>
+      <button
+        className="clickable-icon zt:flex zt:w-full zt:items-center zt:gap-1 zt:text-xs"
+        onClick={(evt) => actions.onAttachmentMenu(evt)}
+        {...tooltipAttrs(m.annot_view_attachment_tooltip())}
+      >
+        <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
+          {selected?.label}
+        </span>
+        <Icon name="chevron-down" size={12} />
+      </button>
     </div>
   );
 }

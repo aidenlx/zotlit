@@ -180,13 +180,10 @@ The Annotation View lists a Zotero attachment's Annotations beside the reader, w
 | --------------------- | ----------------------------------------------------------------------- |
 | `zt-annot-capability` | The Editing Capability affordance in the Annotation View's toolbar.     |
 | `zt-annot-conflict`   | The panel an Annotation Card shows while a Write Conflict stands on it. |
-| `zt-menu`             | A menu ZotLit draws itself, beside Obsidian's own `menu` class.         |
 
 `zt-annot-capability` holds the same affordance the reader shows, and carries the same `data-zt-capability-tone`: `ready`, `action`, `busy`, or `warning`.
 
 `zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
-
-`zt-menu` sits on ZotLit's own menus, which wear Obsidian's `menu` chrome. The class marks the menus ZotLit places itself, so a theme can reach them without reaching Obsidian's.
 
 These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
 

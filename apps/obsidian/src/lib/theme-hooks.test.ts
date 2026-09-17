@@ -13,10 +13,8 @@ it("promises the Annotation View and menu hooks by literal name", () => {
   expect({
     capability: themeHook.annotCapability,
     conflict: themeHook.annotConflict,
-    menu: themeHook.menu,
   }).toEqual({
     capability: "zt-annot-capability",
     conflict: "zt-annot-conflict",
-    menu: "zt-menu",
   });
 });
