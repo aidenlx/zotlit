@@ -7,6 +7,7 @@ import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type {
@@ -27,7 +28,16 @@ import type { CommentRenderer } from "./comment-render";
 import type { FollowMode } from "./store";
 
 export interface AnnotActions {
-  onMoreOptions(evt: MouseEvent | KeyboardEvent, annot: AnnotationRecord): void;
+  /** Open a card's overflow menu, from the control that carries it. */
+  onMoreOptions(
+    evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    annot: AnnotationRecord,
+  ): void;
+  /** The same entries, from a right-click anywhere on the card's header. */
+  onCardContextMenu(
+    evt: MouseEvent<HTMLElement>,
+    annot: AnnotationRecord,
+  ): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
   /** Follow the active tab or the Zotero reader, from a user gesture. */
@@ -314,15 +324,17 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onRetryCreate,
     onDiscardCreate,
     onMoreOptions(evt, annot) {
-      const menu = buildMenu(annot);
-      if ("nativeEvent" in evt) {
-        // `MouseEvent` is shadowed by the React import above; `globalThis.`
-        // here is a type qualifier for the DOM type, not a runtime access,
-        // so the `window`/`activeWindow` popout-compatibility guidance
-        // doesn't apply.
-        // eslint-disable-next-line obsidianmd/no-global-this
-        menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
-      }
+      // The overflow control anchors its menu under itself, so a keyboard
+      // activation lands there too.
+      showMenuAtButton(buildMenu(annot), evt.currentTarget, "end");
+    },
+    onCardContextMenu(evt, annot) {
+      // `MouseEvent` is shadowed by the React import above; `globalThis.` here
+      // is a type qualifier for the DOM type, not a runtime access, so the
+      // `window`/`activeWindow` popout-compatibility guidance doesn't apply.
+      // eslint-disable-next-line obsidianmd/no-global-this
+      const nativeEvent = evt.nativeEvent as globalThis.MouseEvent;
+      buildMenu(annot).showAtMouseEvent(nativeEvent);
     },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
@@ -344,6 +356,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
+  onCardContextMenu: () => {},
   onDragStart: () => {},
   onSetFollowMode: () => {},
   onPinCurrentItem: () => {},

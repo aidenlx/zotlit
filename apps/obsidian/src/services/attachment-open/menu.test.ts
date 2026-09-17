@@ -93,7 +93,14 @@ function markdownFile(): TFile {
 
 /** A rendered bounding rect a keyboard-driven click's `currentTarget` answers with. */
 function anchorRect(): DOMRect {
-  return { left: 10, bottom: 20 } as DOMRect;
+  return {
+    x: 10,
+    y: 0,
+    left: 10,
+    width: 100,
+    height: 20,
+    bottom: 20,
+  } as DOMRect;
 }
 
 describe("Literature Note attachment-open file menu", () => {
@@ -184,11 +191,11 @@ describe("Literature Note attachment-open file menu", () => {
   /**
    * `evt.currentTarget` is nulled once dispatch ends, which for an async
    * `onClick` happens at the very `await` this handler carries — before the
-   * keyboard branch (`event.detail === 0`) of `showAttachmentMenu` ever reads
-   * it. Exercises the real `openAttachments` / `createObsidianAttachmentReader`
+   * picker opens. The box is read before that gap and carried through it.
+   * Exercises the real `openAttachments` / `createObsidianAttachmentReader`
    * pair (not the module-level mocks) so the regression is caught end to end.
    */
-  it("shows the picker at the button's own corner for a keyboard click, after the async db.ready gap", async () => {
+  it("shows the picker at the button's own box for a keyboard click, after the async db.ready gap", async () => {
     const actual = await vi.importActual<
       typeof import("@/lib/attachment-open")
     >("@/lib/attachment-open");
@@ -224,8 +231,11 @@ describe("Literature Note attachment-open file menu", () => {
 
     await vi.waitFor(() => expect(Menu.instances).toHaveLength(2));
     expect(Menu.instances[1]!.position).toStrictEqual({
-      x: rect.left,
+      x: rect.x,
       y: rect.bottom,
+      width: rect.width,
+      overlap: true,
+      left: false,
     });
   });
 });

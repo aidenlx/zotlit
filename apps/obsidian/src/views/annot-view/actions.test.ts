@@ -70,11 +70,27 @@ function setup(
   return { actions, annotations };
 }
 
+/**
+ * A click on the card's overflow control. The menu anchors under the control,
+ * so the gesture carries the element and the box layout measured for it; where
+ * the menu lands is `lib/menu.test.ts`'s subject, not this file's.
+ */
+function fromOverflowControl() {
+  return {
+    type: "click",
+    currentTarget: {
+      getBoundingClientRect: () => ({ x: 0, y: 0, width: 0, bottom: 0 }),
+      // No menu of its own stands open, so the press opens one.
+      hasClass: () => false,
+    },
+  } as never;
+}
+
 describe("Annotation View menu", () => {
   it("offers the selected annotation's key", () => {
     const { actions } = setup();
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    actions.onMoreOptions(fromOverflowControl(), annotation);
 
     const menu = Menu.instances[0]!;
     const copyKey = menu.items.find(
@@ -92,7 +108,7 @@ describe("Annotation View menu", () => {
   it("deletes through the repository, by key alone", () => {
     const { actions, annotations } = setup();
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    actions.onMoreOptions(fromOverflowControl(), annotation);
     const menu = Menu.instances[0]!;
     const remove = menu.items.find(
       (item) => item.title === "Delete annotation",
@@ -109,7 +125,7 @@ describe("Annotation View menu", () => {
       deleteControl: () => ({ disabled: true, tooltip: reason }),
     });
 
-    actions.onMoreOptions({ nativeEvent: {} } as never, annotation);
+    actions.onMoreOptions(fromOverflowControl(), annotation);
     const menu = Menu.instances[0]!;
     const remove = menu.items.find(
       (item) => item.title === "Delete annotation",
@@ -123,5 +139,18 @@ describe("Annotation View menu", () => {
     ).toBe(true);
     remove!.click();
     expect(annotations.deleteAnnotation).not.toHaveBeenCalled();
+  });
+
+  it("opens a right-click's menu at the pointer, not under the card", () => {
+    const { actions } = setup();
+    const nativeEvent = { type: "contextmenu" } as MouseEvent;
+
+    actions.onCardContextMenu({ nativeEvent } as never, annotation);
+
+    const menu = Menu.instances[0]!;
+    expect(menu.mouseEvent).toBe(nativeEvent);
+    // The control path leaves these unset; the pointer path takes neither.
+    expect(menu.position).toBeNull();
+    expect(menu.parentEl).toBeNull();
   });
 });

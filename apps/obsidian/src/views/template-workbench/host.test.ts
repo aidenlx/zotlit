@@ -53,10 +53,35 @@ describe("Template Workbench host", () => {
       items: [{ label: "Move up", icon: "move-up", onSelect }],
     });
     const menu = Menu.instances.at(-1)!;
-    expect(menu.position).toEqual({ x: 20, y: 55 });
+    expect(menu.position).toEqual({
+      x: 20,
+      y: 55,
+      width: 100,
+      overlap: true,
+      left: false,
+    });
     expect(menu.items[0]!.title).toBe("Move up");
     menu.items[0]!.click();
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it("opens a right-click's menu at the pointer, not under the row", () => {
+    const { host } = setup();
+    const anchor = document.createElement("button");
+    const pointerEvent = new MouseEvent("contextmenu", {
+      clientX: 12,
+      clientY: 34,
+    });
+    host.menu({
+      anchor,
+      pointerEvent,
+      items: [{ label: "Move up", onSelect: () => {} }],
+    });
+    const menu = Menu.instances.at(-1)!;
+    expect(menu.mouseEvent).toBe(pointerEvent);
+    // The control path leaves these unset; the pointer path takes neither.
+    expect(menu.position).toBeNull();
+    expect(menu.parentEl).toBeNull();
   });
 
   it("binds dialogs to Modal and reports dismissal", () => {

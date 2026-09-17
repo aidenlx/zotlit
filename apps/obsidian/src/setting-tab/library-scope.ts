@@ -6,6 +6,7 @@ import type {
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { showMenuAtButton } from "@/lib/menu";
 import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
 import {
   compareSelectors,
@@ -193,8 +194,7 @@ function openAddMenu(
         .onClick(() => addSelector(ctx, scope, library.selector)),
     );
   }
-  const rect = el.getBoundingClientRect();
-  menu.showAtPosition({ x: rect.left, y: rect.bottom });
+  showMenuAtButton(menu, el);
 }
 
 function addSelector(

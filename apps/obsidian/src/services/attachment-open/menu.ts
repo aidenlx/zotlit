@@ -40,10 +40,10 @@ export function registerAttachmentOpenFileMenu(
           .onClick((evt) => {
             // Dispatch ends at the first `await` below and nulls
             // `currentTarget`, so the picker's anchor is read now.
-            const target = evt.currentTarget as {
-              getBoundingClientRect?: () => DOMRect;
-            } | null;
-            const anchor = target?.getBoundingClientRect?.();
+            const target = evt.currentTarget as HTMLElement | null;
+            const anchor = target
+              ? { rect: target.getBoundingClientRect(), doc: target.doc }
+              : undefined;
             void (async () => {
               await deps.db.ready;
               const attachments = resolveLiteratureNoteAttachments(

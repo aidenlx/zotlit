@@ -38,6 +38,7 @@ import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
+import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 import {
@@ -314,7 +315,7 @@ export function createTemplateWorkbenchHost(
         extractPartial ? extractPartialMenu(read, extractPartial) : [],
       ];
     },
-    menu({ anchor, items, submenus }) {
+    menu({ anchor, pointerEvent, items, submenus }) {
       const menu = new Menu();
       for (const item of items)
         menu.addItem((entry) =>
@@ -336,8 +337,14 @@ export function createTemplateWorkbenchHost(
                 .onClick(item.onSelect),
             );
         });
-      const bounds = anchor.getBoundingClientRect();
-      menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+      // A right-click belongs at the pointer, where the reader clicked; a
+      // control's menu belongs under the control, so a keyboard activation
+      // lands there too.
+      if (pointerEvent) {
+        menu.showAtMouseEvent(pointerEvent);
+        return;
+      }
+      showMenuAtButton(menu, anchor);
     },
     dialog(request) {
       const modal = new EditorDialog(app, {

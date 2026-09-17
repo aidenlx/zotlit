@@ -178,7 +178,7 @@ export function DataExplorer({
       () => host.notice(m.workbench_field_copy_failed()),
     );
   };
-  const menu = (node: DisplayNode, event: React.MouseEvent) => {
+  const menuEntries = (node: DisplayNode) => {
     const value = copyValue(node);
     const items: WorkbenchMenuItem[] = [
       {
@@ -224,7 +224,22 @@ export function DataExplorer({
         label: m.workbench_explorer_menu_explore_annotation(),
         onSelect: () => onExploreAnnotation(node),
       });
-    host.menu({ anchor: event.currentTarget as HTMLElement, items, submenus });
+    return { items, submenus };
+  };
+  /** The row's Menu from its own control, anchored under that control. */
+  const openTemplateMenu = (node: DisplayNode, event: React.MouseEvent) => {
+    host.menu({
+      anchor: event.currentTarget as HTMLElement,
+      ...menuEntries(node),
+    });
+  };
+  /** The same Menu from a right-click on the row, anchored at the pointer. */
+  const openFieldContextMenu = (node: DisplayNode, event: React.MouseEvent) => {
+    host.menu({
+      anchor: event.currentTarget as HTMLElement,
+      pointerEvent: event.nativeEvent,
+      ...menuEntries(node),
+    });
   };
   const search = m[SEARCH_LABELS[root]]();
   return (
@@ -280,7 +295,8 @@ export function DataExplorer({
             onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
             onToggleSection={filtering ? undefined : toggleSection}
             onInsert={!disabled ? insertNode : undefined}
-            onTemplateMenu={menu}
+            onTemplateMenu={openTemplateMenu}
+            onFieldContextMenu={openFieldContextMenu}
           />
         )}
       </div>

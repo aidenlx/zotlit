@@ -144,7 +144,13 @@ describe("createCitationPopoverActions", () => {
       click({ detail: 0 }),
     );
 
-    expect(menuMock.instances[0]?.position).toEqual({ x: 0, y: 0 });
+    expect(menuMock.instances[0]?.position).toEqual({
+      x: 0,
+      y: 0,
+      width: 0,
+      overlap: true,
+      left: false,
+    });
   });
 
   it("hides the popover once an action has run", () => {
