@@ -9,6 +9,7 @@
     "export-with-native-pandoc",
     "keep-notes-updated",
     "import-zotero-notes",
+    "open-pdf-in-obsidian",
     "use-annotation-view",
     "set-up-live-updates",
     "sync-across-devices",
