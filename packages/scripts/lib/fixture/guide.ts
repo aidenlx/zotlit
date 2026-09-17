@@ -252,6 +252,10 @@ Either command closes a Paired Zotero that still holds this Fixture, then
 rebuilds and starts a fresh one. It waits for that instance to release the
 database, and reports the process it closed.
 
+The Fixture profile grants obsidian:// standing permission through
+network.protocol-handler.external.obsidian, so a ZotLit backlink reaches the
+vault without Zotero's confirmation dialog.
+
 Fixture builds and Paired Zotero launches install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from its
 verified, cached XPI.
 The Fixture Spec supplies native Citation Keys. Better BibTeX keeps those keys

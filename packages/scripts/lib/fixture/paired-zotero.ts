@@ -363,6 +363,20 @@ export const QUIET_FIRST_RUN_PREFS = [
   'user_pref("app.update.auto", false);',
 ] as const;
 
+/**
+ * What Zotero asks before it hands an `obsidian://` link to Obsidian: a
+ * confirmation dialog, on every click of a ZotLit backlink. Gecko reads
+ * `network.protocol-handler.external.<scheme>` as standing permission for that
+ * scheme, so the Fixture grants it and a smoke test reaches the vault in one
+ * click. The same preference is what the how-to asks a reader to add by hand.
+ *
+ * @see {@link https://searchfox.org/mozilla-central/source/uriloader/exthandler/ContentDispatchChooser.sys.mjs}
+ * for `_hasProtocolHandlerPermission`, which reads this preference.
+ */
+export const OBSIDIAN_PROTOCOL_PREFS = [
+  'user_pref("network.protocol-handler.external.obsidian", true);',
+] as const;
+
 /** The profile and data directory a Zotero process opens. */
 export interface ZoteroTarget {
   profileDir: string;
