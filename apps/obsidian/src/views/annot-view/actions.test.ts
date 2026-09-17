@@ -144,4 +144,17 @@ describe("Annotation View menu", () => {
     remove!.click();
     expect(annotations.deleteAnnotation).not.toHaveBeenCalled();
   });
+
+  it("opens a right-click's menu at the pointer, not under the card", () => {
+    const { actions } = setup();
+    const nativeEvent = { type: "contextmenu" } as MouseEvent;
+
+    actions.onCardContextMenu({ nativeEvent } as never, annotation);
+
+    const menu = Menu.instances[0]!;
+    expect(menu.mouseEvent).toBe(nativeEvent);
+    // The control path leaves these unset; the pointer path takes neither.
+    expect(menu.position).toBeNull();
+    expect(menu.parentEl).toBeNull();
+  });
 });

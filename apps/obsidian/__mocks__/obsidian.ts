@@ -905,6 +905,9 @@ export class Menu {
   /** The element `setParentElement` anchored this menu to, or `null`. */
   parentEl: HTMLElement | null = null;
 
+  /** The event `showAtMouseEvent` opened at, or `null` for none. */
+  mouseEvent: MouseEvent | null = null;
+
   constructor() {
     Menu.instances.push(this);
   }
@@ -925,7 +928,8 @@ export class Menu {
     return this;
   }
 
-  showAtMouseEvent(_evt: MouseEvent): this {
+  showAtMouseEvent(evt: MouseEvent): this {
+    this.mouseEvent = evt;
     return this;
   }
 

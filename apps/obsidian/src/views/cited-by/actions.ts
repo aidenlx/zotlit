@@ -5,6 +5,7 @@ import { createContext, useContext } from "react";
 import type { MouseEvent } from "react";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { showMenuAtButton } from "@/lib/menu";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type {
   CitedByGroup,
@@ -56,7 +57,7 @@ export interface CitedByActions {
     direction: ExpandDirection;
   }) => void;
   /** Offer the six sort modes, with the one in force marked. */
-  showSortMenu: (event: MouseEvent) => void;
+  showSortMenu: (event: MouseEvent<HTMLElement>) => void;
   /** Order source groups by one mode, reading vault metadata now. */
   sortGroups: (
     groups: readonly CitedByGroup[],
@@ -281,12 +282,11 @@ export function createCitedByActions(options: {
 }
 
 /**
- * The sort menu, one section per Backlinks mode pair. A keyboard click carries
- * no pointer position (`detail` of `0`), so the menu takes the button's own
- * corner instead of the window's.
+ * The sort menu, one section per Backlinks mode pair, anchored under the button
+ * that opened it.
  */
 function openSortMenu(
-  event: MouseEvent,
+  event: MouseEvent<HTMLElement>,
   options: {
     current: CitedBySortMode;
     select: (mode: CitedBySortMode) => void;
@@ -305,12 +305,7 @@ function openSortMenu(
     menu.addSeparator();
   }
 
-  if (event.detail === 0) {
-    const { left, bottom } = event.currentTarget.getBoundingClientRect();
-    menu.showAtPosition({ x: left, y: bottom });
-    return;
-  }
-  menu.showAtMouseEvent(event.nativeEvent);
+  showMenuAtButton(menu, event.currentTarget);
 }
 
 function contextsFrom(options: {
