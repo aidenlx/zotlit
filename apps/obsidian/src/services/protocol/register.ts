@@ -1,6 +1,10 @@
 import type { ObsidianProtocolData, PaneType, Plugin } from "obsidian";
 
-import { getItemRefByID } from "@zotlit/db";
+import {
+  getAttachmentByItemId,
+  getAttachmentsByParents,
+  getItemRefByID,
+} from "@zotlit/db";
 import type { ItemRef } from "@zotlit/db";
 import {
   batchProtocolActionId,
@@ -9,11 +13,13 @@ import {
   importManyProtocolActionId,
   importProtocolActionId,
   importProfileProtocolActionId,
+  openAttachmentProtocolActionId,
   parseImportProfileProtocolQuery,
   parseExploreProtocolQuery,
   parseImportAllNotesProtocolQuery,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
+  parseOpenAttachmentProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
   parseUpdateAllProtocolQuery,
@@ -24,6 +30,12 @@ import {
 } from "@zotlit/protocol";
 import type { ProtocolAction } from "@zotlit/protocol";
 
+import {
+  createObsidianAttachmentReader,
+  openAttachments,
+  withFixedPane,
+} from "@/lib/attachment-open";
+import type { AttachmentReader } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -33,6 +45,8 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
+import { toObsidianOpenable } from "@/services/attachment-open/actions";
+import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { LocalServerService } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
 import type { CompanionNoteDeps } from "@/services/note-feature";
@@ -96,6 +110,12 @@ export function registerProtocolHandlers(
   plugin.registerObsidianProtocolHandler(exploreProtocolActionId, (data) => {
     void handleExploreProtocol(data, deps);
   });
+  plugin.registerObsidianProtocolHandler(
+    openAttachmentProtocolActionId,
+    (data) => {
+      void handleOpenAttachmentProtocol(data, deps);
+    },
+  );
   plugin.registerObsidianProtocolHandler(updateAllProtocolActionId, (data) => {
     void handleUpdateAllProtocol(data, deps);
   });
@@ -290,6 +310,57 @@ async function handleExploreProtocol(
     },
     { paneType: query.paneType },
   );
+}
+
+/**
+ * Handle `obsidian://zotlit/open-attachment`. `query.item` may name either a
+ * regular Item or an Attachment directly — `resolveProtocolItem` assumes a
+ * regular item, so this branches for itself instead.
+ */
+async function handleOpenAttachmentProtocol(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+): Promise<void> {
+  const action = "open-attachment";
+  const query = parseProtocolData(data, deps, {
+    action,
+    parse: parseOpenAttachmentProtocolQuery,
+  });
+  if (!query) return;
+
+  if (deps.db.state !== "ready") {
+    logger.warn("Protocol handler: database not ready", { action });
+    new BaseNotice(m.notice_protocol_db_unavailable());
+    return;
+  }
+
+  const client = deps.db.client;
+  const asAttachment = getAttachmentByItemId(client, query.item);
+  const attachments = asAttachment
+    ? [asAttachment]
+    : getAttachmentsByParents(client, [query.item]);
+
+  const openable = toObsidianOpenable(attachments, deps);
+
+  openAttachments(openable, {
+    reader: withPaneOverride(
+      createObsidianAttachmentReader(deps.app),
+      query.paneType,
+    ),
+    app: deps.app,
+  });
+}
+
+/**
+ * The Suggest modal's own click decides the pane (Mod-click/Mod-Enter) when
+ * the link names none; a named `paneType` wins outright, since the link's own
+ * request should not be second-guessed by how the picker was clicked.
+ */
+function withPaneOverride(
+  reader: AttachmentReader<ObsidianOpenableAttachment>,
+  paneType: PaneType | undefined,
+): AttachmentReader<ObsidianOpenableAttachment> {
+  return paneType ? withFixedPane(reader, paneType) : reader;
 }
 
 async function handleUpdateAllProtocol(

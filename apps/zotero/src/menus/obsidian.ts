@@ -4,6 +4,7 @@ import {
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
+  buildOpenAttachmentProtocolUrl,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
   PROTOCOL_VERSION,
@@ -53,6 +54,15 @@ export function openInObsidian(
     paneType: preferredPaneType(),
   });
   logger.info("opening obsidian", { action, itemID: item.id, scope, url });
+  launchExternalUrl(url);
+}
+
+export function openAttachmentInObsidian(item: Zotero.Item): void {
+  const url = buildOpenAttachmentProtocolUrl(item.id, {
+    sourceId: sourceId(),
+    paneType: preferredPaneType(),
+  });
+  logger.info("opening obsidian (open-attachment)", { itemID: item.id, url });
   launchExternalUrl(url);
 }
 

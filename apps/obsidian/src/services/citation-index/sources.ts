@@ -20,7 +20,7 @@ import type { Citation } from "./query";
 const logger = getLogger(["citation-index", "sources"]);
 
 /** One Attachment the Item offers to open in Zotero's reader. */
-export interface OpenableAttachment {
+export interface ZoteroOpenableAttachment {
   /** Bare Zotero key of the Attachment itself, for `zotero://open`. */
   key: string;
   /** Group library ID, or `null` for the personal library. */
@@ -59,8 +59,8 @@ export interface ReferenceSource {
   citekey: string | null;
   /** Linkpath the Citation carries, or `null` when the Item has no Literature Note yet. */
   linkpath: string | null;
-  /** Openable Attachments of the Item, in library order; empty hides the action. */
-  attachments: readonly OpenableAttachment[];
+  /** Zotero-Openable Attachments of the Item, in library order; empty hides the action. */
+  attachments: readonly ZoteroOpenableAttachment[];
 }
 
 /**
@@ -71,10 +71,10 @@ export interface ReferenceSource {
  * linked-file forms. A bare web link carries no file, and a row whose path does
  * not parse names none either, so neither is offered.
  */
-export function toOpenableAttachments(
+export function toZoteroOpenableAttachments(
   attachments: readonly Attachment[],
-): OpenableAttachment[] {
-  const openable: OpenableAttachment[] = [];
+): ZoteroOpenableAttachment[] {
+  const openable: ZoteroOpenableAttachment[] = [];
   for (const { key, groupID, path, linkMode } of attachments) {
     const parsed = parseAttachmentPath(path, linkMode, key);
     switch (parsed.kind) {
@@ -156,7 +156,7 @@ export function readReferenceSources(
       });
     }
 
-    const attachments = new Map<number, OpenableAttachment[]>();
+    const attachments = new Map<number, ZoteroOpenableAttachment[]>();
     try {
       const rows = getAttachmentsByParents(
         db.client,
@@ -166,7 +166,7 @@ export function readReferenceSources(
         rows,
         (row) => row.parentItemID,
       )) {
-        attachments.set(itemID, toOpenableAttachments(group));
+        attachments.set(itemID, toZoteroOpenableAttachments(group));
       }
     } catch (error) {
       logger.warn("Cannot read the attachments of the cited items", { error });

@@ -42,11 +42,13 @@ export type FluentMessages = {
   "zotlit-menu-item-import-child-notes": never;
   "zotlit-menu-item-import-notes": { count: number };
   "zotlit-menu-item-open": never;
+  "zotlit-menu-item-open-pdf": never;
   "zotlit-menu-item-update": { count: number };
   "zotlit-menu-item-update-metadata": never;
   "zotlit-menu-reader-annot-copy-key": never;
   "zotlit-menu-reader-annot-explore": never;
   "zotlit-menu-reader-page-open": never;
+  "zotlit-menu-reader-page-open-pdf": never;
   "zotlit-menu-submenu": never;
   "zotlit-menu-tools-refresh-note-status": never;
   "zotlit-note-status-refresh-failed-message": never;

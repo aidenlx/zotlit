@@ -2,7 +2,12 @@ import { Keymap, Platform } from "obsidian";
 import type { App, Instruction, Modifier, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  createObsidianAttachmentReader,
+  openAttachments,
+} from "@/lib/attachment-open";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
 import { defaults } from "@/services/settings/schema";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
@@ -12,6 +17,19 @@ import type { QuickSwitchDeps } from "./register";
 
 vi.mock("./profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
+}));
+
+vi.mock("@/services/attachment-open/actions", () => ({
+  resolveLiteratureNoteAttachments: vi.fn(),
+}));
+
+vi.mock("@/lib/attachment-open", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/attachment-open")>()),
+  openAttachments: vi.fn(),
+  createObsidianAttachmentReader: vi.fn(() => ({
+    icon: "file-text",
+    open: vi.fn(),
+  })),
 }));
 
 beforeEach(() => vi.clearAllMocks());
@@ -57,6 +75,26 @@ function findHandler(
   )?.func;
 }
 
+/** Finds the handler registered for exactly this modifier set, not just one that includes it. */
+function findExactHandler(
+  modal: QuickSwitchModal,
+  modifiers: Modifier[],
+): ((evt: KeyboardEvent) => boolean | void) | undefined {
+  const scope = modal.scope as unknown as {
+    handlers: {
+      modifiers: Modifier[] | null;
+      key: string | null;
+      func: (evt: KeyboardEvent) => boolean | void;
+    }[];
+  };
+  return scope.handlers.find(
+    (h) =>
+      h.key === "Enter" &&
+      h.modifiers?.length === modifiers.length &&
+      modifiers.every((mod) => h.modifiers?.includes(mod)),
+  )?.func;
+}
+
 /**
  * Same defect as discussion #644, in the quick switcher: the modal advertised
  * a Mod+Enter chord for "open in new pane", but Obsidian's suggestion popup
@@ -84,6 +122,16 @@ describe("QuickSwitchModal keymap", () => {
     // Returning false tells Obsidian the chord was consumed.
     expect(result).toBe(false);
   });
+
+  it("registers a Shift+Enter handler for the PDF chord", () => {
+    onPlatform(true);
+    expect(findExactHandler(makeModal(), ["Shift"])).toBeDefined();
+  });
+
+  it("registers a Mod+Shift+Enter handler for the PDF-in-new-pane chord", () => {
+    onPlatform(true);
+    expect(findExactHandler(makeModal(), ["Mod", "Shift"])).toBeDefined();
+  });
 });
 
 describe("QuickSwitchModal instructions", () => {
@@ -107,6 +155,78 @@ describe("QuickSwitchModal instructions", () => {
     // The reporter of #644 was on Linux, where a hardcoded ⌘ names a key the
     // keyboard does not have.
     expect(capture(false)).toContain("Ctrl↵");
+  });
+
+  it("advertises the PDF chord with the macOS shift glyph", () => {
+    expect(capture(true)).toContain("⇧↵");
+  });
+
+  it("advertises the PDF chord as Shift off macOS", () => {
+    expect(capture(false)).toContain("Shift↵");
+  });
+});
+
+describe("QuickSwitchModal PDF chord", () => {
+  function pdfDeps(): {
+    deps: QuickSwitchDeps;
+    modal: QuickSwitchModal;
+    getNotesByItemKey: ReturnType<typeof vi.fn>;
+  } {
+    onPlatform(true);
+    const getNotesByItemKey = vi.fn().mockReturnValue([]);
+    const deps = {
+      app: {},
+      lookup: { search: vi.fn().mockReturnValue([]) },
+      noteFeature: { createNote: vi.fn() },
+      noteIndex: { getNotesByItemKey, whenIndexed: vi.fn() },
+      settings: { current: {} },
+      db: { state: "ready", client: {} },
+      zoteroPref: { dataDir: null, baseAttachmentPath: null },
+    } as unknown as QuickSwitchDeps;
+    return { deps, modal: new QuickSwitchModal(deps), getNotesByItemKey };
+  }
+
+  it("resolves the Item's Attachments instead of its note on Shift+Enter", async () => {
+    const { deps, modal, getNotesByItemKey } = pdfDeps();
+    const openable = [{ indexedKey: "ATCH1" }];
+    vi.mocked(resolveLiteratureNoteAttachments).mockReturnValue(
+      openable as never,
+    );
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      { shiftKey: true } as KeyboardEvent,
+    );
+
+    expect(resolveLiteratureNoteAttachments).toHaveBeenCalledWith(
+      deps,
+      "PAPER234",
+    );
+    expect(openAttachments).toHaveBeenCalledExactlyOnceWith(openable, {
+      reader: expect.anything(),
+      app: deps.app,
+    });
+    expect(getNotesByItemKey).not.toHaveBeenCalled();
+  });
+
+  it("honors Mod+Shift+Enter's new-pane request, however many Attachments resolve", async () => {
+    const { modal } = pdfDeps();
+    const opened = { indexedKey: "ATCH1" };
+    vi.mocked(resolveLiteratureNoteAttachments).mockReturnValue([
+      opened,
+    ] as never);
+    using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(true);
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      { shiftKey: true, metaKey: true } as KeyboardEvent,
+    );
+
+    const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
+    void reader.open(opened as never, false);
+    const baseOpen = vi.mocked(createObsidianAttachmentReader).mock.results[0]!
+      .value.open;
+    expect(baseOpen).toHaveBeenCalledWith(opened, true);
   });
 });
 

@@ -783,7 +783,7 @@ export class MenuItem {
   #checked: boolean | null = null;
   #disabled = false;
   #isLabel = false;
-  #onClick: ((evt: MouseEvent) => unknown) | null = null;
+  #onClick: ((evt: MouseEvent | KeyboardEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
   submenu: Menu | null = null;
@@ -850,16 +850,17 @@ export class MenuItem {
     return this.submenu;
   }
 
-  onClick(cb: (evt: MouseEvent) => unknown): this {
+  onClick(cb: (evt: MouseEvent | KeyboardEvent) => unknown): this {
     this.#onClick = cb;
     return this;
   }
 
-  /** Test helper: invoke the registered `onClick` handler; a no-op while
+  /** Test helper: invoke the registered `onClick` handler with the given
+   * event (a plain `{}` when the test does not care), or a no-op while
    * disabled, as Obsidian ignores clicks on disabled items. */
-  click(): void {
+  click(evt: Partial<MouseEvent | KeyboardEvent> = {}): void {
     if (this.#disabled) return;
-    this.#onClick?.({} as MouseEvent);
+    this.#onClick?.(evt as MouseEvent);
   }
 }
 

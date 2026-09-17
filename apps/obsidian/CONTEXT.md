@@ -284,6 +284,10 @@ _Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annot
 One open reading of an Attachment, whichever reader hosts it — the Zotero Reader or Obsidian's PDF view. Names its source, the Attachment's Indexed Key, the parent Item's Indexed Key, and the selected Annotations' Indexed Keys, and accepts navigation and selection.
 _Avoid_: reader target, PDF reader target, annotation target
 
+**Obsidian-Openable Attachment**:
+An Attachment whose file is a PDF on this device, so Obsidian's PDF view can host a Reader Session for it. The reader decides the rule rather than the concept: Obsidian's view renders PDFs alone, which is what separates this from a Zotero-Openable Attachment, where any file the path names qualifies.
+_Avoid_: Openable Attachment (the Zotero-reader sense), Readable Attachment, reader target (see Reader Session)
+
 **Annotation Source**:
 Where the plugin's Annotation reads for an Attachment come from at one moment: the Zotero Local API while Zotero answers, otherwise the Zotero DB. One source at a time for every Attachment; the two never join. A read result carries its source.
 _Avoid_: fallback (that is the switch, not the source), primary/secondary source, merged source
@@ -377,9 +381,9 @@ _Avoid_: serial number, reference index, gutter number, Entry Serial (ZotLit's p
 The 1-based position of a rendered entry in the References Sidebar's bibliography-ordered list — ZotLit-assigned and occurrence-independent, unlike the style-owned Entry Marker and the first-occurrence Reference Number. When a citation's formatted text contains a footnote the inline surfaces cannot render, the Entry Serial of each cited entry appears superscript in place of that footnote and in the sidebar gutter, an entry's own Entry Marker keeping precedence in the gutter.
 _Avoid_: serial number, footnote number (the document format's counter, which never renders here), fallback marker (names the mechanism, not the number)
 
-**Openable Attachment**:
+**Zotero-Openable Attachment**:
 An Attachment of a cited Item whose path names a file, so Zotero's reader can be sent to it — the stored modes and both linked-file forms. A bare web link carries no file, and neither does a row whose path does not parse, so the References Sidebar offers neither. The file's format does not decide it: a PDF, an EPUB, a web snapshot, and an office document all qualify, and Zotero owns what happens to a format its reader cannot render.
-_Avoid_: PDF attachment (the format is not the rule), openable file
+_Avoid_: Openable Attachment (ambiguous once Obsidian's reader gained a rule of its own), PDF attachment (the format is not the rule), openable file
 
 **Reference Number**:
 An active-document identifier assigned to each distinct Literature Note Citation by first occurrence. It appears in editor widgets and in the References Sidebar's minimal reference list when no engine renders; repeated Citations share the same number, and the Markdown source stays unchanged.
@@ -390,7 +394,7 @@ A References Sidebar entry for an unresolved or ambiguous Citation Key, a missin
 _Avoid_: broken reference, missing reference (names only one cause)
 
 **References Sidebar** _(Obsidian)_:
-The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Openable Attachments. Its engine-rendered form follows the Citation and References Style's bibliography order and Entry Markers. Its minimal form follows first-occurrence order and Reference Numbers when the Pandoc Engine or selected style is unavailable; a rendering failure also shows its error instead of retaining stale formatted entries.
+The active-document view of each distinct Literature Note Citation and its occurrences, cited Item, and Zotero-Openable Attachments. Its engine-rendered form follows the Citation and References Style's bibliography order and Entry Markers. Its minimal form follows first-occurrence order and Reference Numbers when the Pandoc Engine or selected style is unavailable; a rendering failure also shows its error instead of retaining stale formatted entries.
 _Avoid_: bibliography sidebar, reference list pane
 
 **Copied Bibliography** _(Obsidian)_:
@@ -697,4 +701,4 @@ release locations, consent copy, notices, and settings UI.
 ### Protocol
 
 **Protocol Action**:
-A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.
+A URL-scheme verb (`obsidian://zotlit/<action>`) sent by the Companion to trigger an operation in Obsidian. Single-item actions: `open` (open or create), `update` (update or create). Batch actions: `update-many`, `import-notes`. Note-import action: `import-note`. Explorer action: `explore` (open the Template Data Explorer at an Item or an Annotation). Attachment action: `open-attachment` (open an Obsidian-Openable Attachment in Obsidian's PDF view). Long URLs fall back to HTTP PUT on the plugin's local server, which also serves the Companion's `GET /literature-notes` note-status query from the Note Index.

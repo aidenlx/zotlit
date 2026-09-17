@@ -12,12 +12,14 @@ import {
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
+  buildOpenAttachmentProtocolUrl,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
   parseExploreProtocolQuery,
   parseImportAllNotesProtocolQuery,
   parseImportManyProtocolQuery,
   parseImportProtocolQuery,
+  parseOpenAttachmentProtocolQuery,
   parseProtocolBatchQuery,
   parseProtocolQuery,
   parseUpdateAllProtocolQuery,
@@ -398,6 +400,69 @@ describe("zotlit explore protocol", () => {
       ).toThrow();
     },
   );
+});
+
+describe("zotlit open-attachment protocol", () => {
+  it("builds + round-trips an item-only link", () => {
+    const url = buildOpenAttachmentProtocolUrl(42, { sourceId: SOURCE });
+    expect(url).toBe(
+      `obsidian://zotlit/open-attachment?item=42&source-id=${SOURCE}`,
+    );
+    expect(decode(url).action).toBe("zotlit/open-attachment");
+    expect(parseOpenAttachmentProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      sourceId: SOURCE,
+    });
+  });
+
+  it("builds + round-trips a link with a pane", () => {
+    const url = buildOpenAttachmentProtocolUrl(42, {
+      sourceId: SOURCE,
+      paneType: "split",
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/open-attachment?item=42&source-id=${SOURCE}&paneType=split`,
+    );
+    expect(parseOpenAttachmentProtocolQuery(decode(url))).toEqual({
+      item: 42,
+      sourceId: SOURCE,
+      paneType: "split",
+    });
+  });
+
+  it("omits paneType when the builder names no pane", () => {
+    expect(
+      buildOpenAttachmentProtocolUrl(42, { sourceId: SOURCE }),
+    ).not.toContain("paneType");
+  });
+
+  it("omits a version param, since a Public URI Link is unversioned", () => {
+    expect(
+      buildOpenAttachmentProtocolUrl(42, { sourceId: SOURCE }),
+    ).not.toContain("version");
+  });
+
+  it("rejects a missing item", () => {
+    expect(() =>
+      parseOpenAttachmentProtocolQuery({ "source-id": SOURCE }),
+    ).toThrow();
+  });
+
+  it("rejects a malformed item", () => {
+    expect(() =>
+      parseOpenAttachmentProtocolQuery({ item: "abc", "source-id": SOURCE }),
+    ).toThrow();
+  });
+
+  it("rejects a missing source-id", () => {
+    expect(() => parseOpenAttachmentProtocolQuery({ item: "42" })).toThrow();
+  });
+
+  it("rejects a malformed source-id", () => {
+    expect(() =>
+      parseOpenAttachmentProtocolQuery({ item: "42", "source-id": "nope" }),
+    ).toThrow();
+  });
 });
 
 describe.each([

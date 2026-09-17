@@ -6,6 +6,7 @@ import type { Attachment } from "./zt-attach";
 import {
   attachmentAbsPath,
   attachmentPathKey,
+  normalizeAbsolutePath,
   resolveAnnotCachePath,
 } from "./zt-path";
 
@@ -149,6 +150,37 @@ describe("attachmentAbsPath", () => {
     expect(
       attachmentAbsPath(attachment({ path: null, linkMode: 0 }), ctx),
     ).toBeNull();
+  });
+});
+
+describe("normalizeAbsolutePath", () => {
+  // Worked examples: the un-folded rule attachmentPathKey folds afterward.
+  it.each([
+    [
+      "collapses a doubled separator",
+      "/zotero//storage/RGRPDF24//rougier-2014.pdf",
+      "/zotero/storage/RGRPDF24/rougier-2014.pdf",
+    ],
+    [
+      "turns backslashes into forward slashes",
+      "C:\\Users\\me\\Zotero\\storage\\RGRPDF24\\rougier-2014.pdf",
+      "C:/Users/me/Zotero/storage/RGRPDF24/rougier-2014.pdf",
+    ],
+    [
+      "resolves a parent segment",
+      "/vault/attachments/../linked-files/rougier-2014.pdf",
+      "/vault/linked-files/rougier-2014.pdf",
+    ],
+    ["drops a trailing separator", "/vault/attachments/", "/vault/attachments"],
+    ["keeps the separator of a root path", "/", "/"],
+  ])("%s", (_name, path, expected) => {
+    expect(normalizeAbsolutePath(path)).toBe(expected);
+  });
+
+  it("keeps casing as written, unlike attachmentPathKey", () => {
+    expect(normalizeAbsolutePath("/Vault/Attachments/Rougier-2014.PDF")).toBe(
+      "/Vault/Attachments/Rougier-2014.PDF",
+    );
   });
 });
 

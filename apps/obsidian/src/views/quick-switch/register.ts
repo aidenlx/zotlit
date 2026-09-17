@@ -1,6 +1,7 @@
 import type { App, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { DatabaseService } from "@/services/database/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -14,6 +15,7 @@ export interface QuickSwitchDeps {
   createProfile: CreateProfile;
   importProfile: ImportProfile;
   app: App;
+  db: Pick<DatabaseService, "state" | "client">;
   lookup: ItemLookup;
   noteIndex: NoteIndex;
   noteFeature: Pick<
@@ -21,7 +23,7 @@ export interface QuickSwitchDeps {
     "createNote" | "resolveCreationProfile" | "prepareCreationProfiles"
   >;
   settings: SettingsService;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
 }
 
 export function registerQuickSwitch(
