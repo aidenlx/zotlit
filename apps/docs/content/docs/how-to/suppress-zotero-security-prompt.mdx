@@ -23,25 +23,25 @@ Zotero shows a security confirmation dialog each time it opens an `obsidian://` 
   <Step>
     ### Open the Config Editor
 
-    Click the **Advanced** tab, then click **Config Editor**. Click **Accept Risk and Continue** when prompted.
+    Select the **Advanced** pane, then click **Config Editor**. Click **Accept the Risk and Continue**. The Config Editor opens in its own window.
 
   </Step>
   <Step>
     ### Search for the preference
 
-    In the search field, type:
+    In **Search preference name**, type:
 
     ```
     network.protocol-handler.external.obsidian
     ```
 
-    No matching entry appears because this preference does not exist by default.
+    This preference does not exist by default, so no saved entry matches. Zotero adds a row for the name you typed, with the three types **Boolean**, **Number**, and **String**.
 
   </Step>
   <Step>
     ### Create the preference
 
-    Click the **+** (New) button on the right side of the search bar. The type defaults to **Boolean** and the value to **true**. Confirm the entry is created.
+    Keep **Boolean** selected, then click the **+** (Add) button at the end of that row. Zotero creates the preference with the value `true`.
 
     ![Zotero Config Editor showing the new network.protocol-handler.external.obsidian preference set to Boolean](/img/how-to/config-editor.webp)
 
@@ -52,10 +52,11 @@ Zotero now opens `obsidian://` links without a confirmation dialog.
 
 <Callout type="info" title="Links triggered from outside Zotero">
   If prompts still appear for links opened from other applications (not from
-  within Zotero itself), additionally create the preference
-  `network.protocol-handler.prompt-from-external` and set it to **false** using
-  the same procedure: search for the key, click **+** (New), set the type to
-  **Boolean**, and set the value to **false**.
+  within Zotero itself), also create the preference
+  `network.protocol-handler.prompt-from-external`: search for the name, keep
+  **Boolean** selected, and click **+** (Add). The new preference holds `true`,
+  so click the **Toggle** button at the end of its row to change the value to
+  `false`.
 </Callout>
 
 <Callout type="info" title="Credit">
