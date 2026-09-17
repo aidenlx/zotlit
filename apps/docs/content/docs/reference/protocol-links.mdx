@@ -18,7 +18,7 @@ If the Zotero database is not yet loaded, ZotLit shows <UiLabel name={m.notice_p
 
 ## Where the link opens [#pane-type]
 
-Three actions put something in front of you: `open`, `update`, and `explore`. Each takes an optional `paneType`, spelled as [Obsidian's own URI links](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI) spell it.
+Four actions put something in front of you: `open`, `update`, `explore`, and `open-attachment`. Each takes an optional `paneType`, spelled as [Obsidian's own URI links](https://help.obsidian.md/Extending+Obsidian/Obsidian+URI) spell it.
 
 | Value    | Result                                |
 | -------- | ------------------------------------- |
@@ -30,7 +30,7 @@ Three actions put something in front of you: `open`, `update`, and `explore`. Ea
 obsidian://zotlit/open?item=<id>&source-id=<hash>&paneType=tab
 ```
 
-Omit the parameter to keep each action's usual placement: `open` and `update` replace the last active tab, and `explore` reuses the Template Data Explorer already in the sidebar. A value outside the three shows <UiLabel name={m.notice_protocol_invalid()} /> and stops the action.
+Omit the parameter to keep each action's usual placement: `open`, `update`, and `open-attachment` replace the last active tab, and `explore` reuses the Template Data Explorer already in the sidebar. A value outside the three shows <UiLabel name={m.notice_protocol_invalid()} /> and stops the action.
 
 ZotLit Companion writes the parameter onto the links its own Zotero menus open. Under the <UiLabel name={m["zotero.prefs_open_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane in Zotero's settings, <UiLabel name={m["zotero.prefs_pane_type"]()} /> picks the pane. <UiLabel name={m["zotero.prefs_pane_type_active.label"]()} />, the default, leaves the parameter off the link.
 
@@ -201,6 +201,28 @@ obsidian://zotlit/explore?item=<id>&source-id=<hash>
 | `annotation` | 8-char key | No       | Zotero annotation key (charset: `23456789A-NP-Z`). When provided, the explorer focuses on this annotation. |
 | `paneType`   | Pane value | No       | Where the explorer opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type).             |
 
+---
+
+### open-attachment [#open-attachment]
+
+Opens a Zotero PDF attachment in Obsidian's own PDF reader.
+
+```
+obsidian://zotlit/open-attachment?item=<id>&source-id=<hash>
+```
+
+| Parameter   | Type       | Required | Description                                                                               |
+| ----------- | ---------- | -------- | ----------------------------------------------------------------------------------------- |
+| `item`      | Integer    | Yes      | Zotero item ID, naming either a PDF attachment or a regular item that has one             |
+| `source-id` | 8-char hex | Yes      | Zotero install identifier                                                                 |
+| `paneType`  | Pane value | No       | Where the PDF opens: `tab`, `split`, or `window`. See [Where the link opens](#pane-type). |
+
+`item` may name an attachment directly or the regular item it hangs from; ZotLit decides which it found and resolves the PDF from there. One PDF opens straight away. Several open a picker that lists them by file name.
+
+Only PDF attachments are offered; the action passes over EPUBs, web snapshots, and other file types. An item with no PDF shows <UiLabel name={m.notice_no_pdf_attachment()} /> A PDF whose file is no longer on disk shows <UiLabel name={m.notice_pdf_file_missing()} /> Neither case falls back to Zotero's own reader.
+
+The PDF opens whether the file sits inside the vault or in Zotero's storage folder.
+
 ## Action summary
 
 | Action             | Single item | Batch | Scope param | Mode param | Library param | profile param | paneType param |
@@ -213,8 +235,9 @@ obsidian://zotlit/explore?item=<id>&source-id=<hash>
 | `update-all`       |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
 | `import-all-notes` |      —      |  yes  |      —      |     —      |      yes      |       —       |       —        |
 | `explore`          |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
+| `open-attachment`  |     yes     |   —   |      —      |     —      |       —       |       —       |      yes       |
 
-`profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none. `paneType` belongs to the actions that put something on screen: `open`, `update`, and `explore`. Every other action ends in a notice or a confirmation modal rather than an opened pane, so it takes none.
+`profile` belongs to the literature-note actions: `open`, `update`, and `update-many`, whose `PUT {host}/literature-notes` body carries it too. The note-import actions take none. `paneType` belongs to the actions that put something on screen: `open`, `update`, `explore`, and `open-attachment`. Every other action ends in a notice or a confirmation modal rather than an opened pane, so it takes none.
 
 ## See also
 
