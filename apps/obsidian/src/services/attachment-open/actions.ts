@@ -14,10 +14,13 @@ import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
+import type { AttachmentReader } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { activateAnnotView } from "@/views/annot-view/register";
 
 import type { ObsidianOpenableAttachment } from "./resolve";
 import { toObsidianOpenableAttachments } from "./resolve";
@@ -27,6 +30,28 @@ export interface AttachmentOpenLookupDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  settings: Pick<SettingsService, "current">;
+}
+
+/** What opening a PDF in Obsidian needs, wherever the gesture came from. */
+export type PdfReaderDeps = Pick<AttachmentOpenLookupDeps, "app" | "settings">;
+
+/**
+ * The reader behind every ZotLit gesture that opens a PDF in Obsidian: the
+ * file opens, and the annotation view comes forward beside it so the Item's
+ * Annotations are on screen. `reader.focus-annot-view` drops the second
+ * step for a user who keeps the sidebar arranged their own way.
+ */
+export function createPdfReader(
+  deps: PdfReaderDeps,
+): AttachmentReader<ObsidianOpenableAttachment> {
+  return createObsidianAttachmentReader(deps.app, {
+    onOpened: () => {
+      if (deps.settings.current?.["reader.focus-annot-view"] ?? true) {
+        void activateAnnotView(deps.app);
+      }
+    },
+  });
 }
 
 export interface AttachmentOpenDeps extends AttachmentOpenLookupDeps {
@@ -85,7 +110,7 @@ async function runOpenPdfCommand(
   await deps.db.ready;
   const attachments = resolveLiteratureNoteAttachments(deps, indexedKey);
   openAttachments(attachments, {
-    reader: createObsidianAttachmentReader(deps.app),
+    reader: createPdfReader(deps),
     app: deps.app,
   });
 }

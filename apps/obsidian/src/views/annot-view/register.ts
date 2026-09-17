@@ -27,7 +27,7 @@ export function registerAnnotView(
   );
 
   const open = () => {
-    void activateView(plugin);
+    void activateAnnotView(plugin.app);
   };
 
   plugin.addCommand({
@@ -53,7 +53,7 @@ export async function revealAnnotationInView(
   annotationKey: string,
   { comment }: { comment: boolean },
 ): Promise<void> {
-  await activateView(plugin);
+  await activateAnnotView(plugin.app);
   targetView(plugin.app)?.revealAnnotation(annotationKey, { comment });
 }
 
@@ -175,8 +175,12 @@ function targetView(app: App): AnnotationView | null {
   return view instanceof AnnotationView ? view : null;
 }
 
-async function activateView(plugin: AnnotViewPlugin): Promise<void> {
-  const { workspace } = plugin.app;
+/**
+ * Bring the Annotation View forward in the sidebar, opening one on the right
+ * when the vault has none. A vault whose right sidebar is gone keeps none.
+ */
+export async function activateAnnotView(app: App): Promise<void> {
+  const { workspace } = app;
   let leaf = workspace.getLeavesOfType(ANNOT_VIEW_TYPE)[0];
   if (!leaf) {
     const right = workspace.getRightLeaf(false);

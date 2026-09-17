@@ -172,4 +172,44 @@ describe("createObsidianAttachmentReader", () => {
 
     expect(openFile).not.toHaveBeenCalled();
   });
+
+  it("runs onOpened once the file is on screen", async () => {
+    const absolutePath = join(dir, "Doe 2024.pdf");
+    await writeFile(absolutePath, "");
+    const { app } = fakeApp(() => new TFile());
+    const onOpened = vi.fn();
+    const reader = createObsidianAttachmentReader(app, { onOpened });
+
+    await reader.open(
+      {
+        indexedKey: "ATCH2345",
+        label: "Doe 2024.pdf",
+        openPath: "papers/Doe 2024.pdf",
+        absolutePath,
+      } satisfies ObsidianOpenableAttachment,
+      false,
+    );
+
+    expect(onOpened).toHaveBeenCalledOnce();
+  });
+
+  it("leaves onOpened unrun when no file resolves, so follow-up UI never answers a failed open", async () => {
+    const absolutePath = join(dir, "Doe 2024.pdf");
+    await writeFile(absolutePath, "");
+    const { app } = fakeApp(() => null);
+    const onOpened = vi.fn();
+    const reader = createObsidianAttachmentReader(app, { onOpened });
+
+    await reader.open(
+      {
+        indexedKey: "ATCH2345",
+        label: "Doe 2024.pdf",
+        openPath: "papers/Doe 2024.pdf",
+        absolutePath,
+      } satisfies ObsidianOpenableAttachment,
+      false,
+    );
+
+    expect(onOpened).not.toHaveBeenCalled();
+  });
 });

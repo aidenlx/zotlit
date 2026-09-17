@@ -294,11 +294,13 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
     registerAttachmentOpenFileMenu(this, {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
     const updateAll = () =>
       runBatchUpdateAll({
