@@ -4,7 +4,7 @@ import type {
   AmbiguousCandidate,
   AmbiguousCandidatesOf,
 } from "@/services/citation-index/ambiguity";
-import type { OpenableAttachment } from "@/services/citation-index/service";
+import type { ZoteroOpenableAttachment } from "@/services/citation-index/service";
 import type { HoveredWork } from "@/services/citekey-navigation";
 import type { Inlines } from "@/services/pandoc/ast";
 import type { ReferenceEntry } from "@/views/references/entries";
@@ -26,8 +26,8 @@ export interface CitationEntryBlock {
   itemKey: string;
   /** Group library ID, or `null` for the personal library. */
   groupID: number | null;
-  /** Openable Attachments in library order; empty hides the action. */
-  attachments: readonly OpenableAttachment[];
+  /** Zotero-Openable Attachments in library order; empty hides the action. */
+  attachments: readonly ZoteroOpenableAttachment[];
 }
 
 /** A citekey reaching no Zotero Item, which the popover explains and offers nothing on. */

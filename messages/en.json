@@ -60,6 +60,9 @@
   "command_reimport_note_name": "Update imported note from Zotero",
   "command_update_all_notes_name": "Create or update all literature notes",
   "command_import_all_notes_name": "Import all child and standalone notes",
+  "command_open_pdf_name": "Open PDF",
+  "notice_no_pdf_attachment": "This item has no PDF attachment.",
+  "notice_pdf_file_missing": "The PDF file is missing.",
   "hover_source_citekey": "ZotLit citation key",
   "notice_no_literature_note": "No literature note for @{citekey}.",
   "notice_creating_note": "Creating literature note…",
@@ -245,6 +248,7 @@
   "instruction_insert_citation": "to insert citation",
   "instruction_insert_alternate_citation": "to insert alternate citation",
   "instruction_open_lit_note": "to open literature note",
+  "instruction_open_pdf": "to open PDF",
   "instruction_new_pane": "to open in new pane",
   "instruction_select": "to select",
   "settings_db_file_name": "Zotero database",
@@ -650,6 +654,7 @@
   "profile_match_problem_unknown_item_type": "{text} is not a Zotero item type.",
   "modal_profile_problem_invalid_selector": "The requested profile “{selector}” is unavailable. Choose a profile for this note.",
   "modal_profile_choose_placeholder": "Choose a profile…",
+  "modal_select_pdf_placeholder": "Select a PDF to open",
   "modal_profile_preselected": "Selected",
   "modal_profile_current": "Current",
   "modal_profile_source_link": "From the link",
@@ -1874,6 +1879,9 @@
     "menu_item_open": {
       "label": "Open Literature Note in Obsidian"
     },
+    "menu_item_open_pdf": {
+      "label": "Open PDF in Obsidian"
+    },
     "menu_submenu": {
       "label": "ZotLit"
     },
@@ -1942,6 +1950,7 @@
     "menu_reader_annot_explore": "Explore Annotation in Obsidian",
     "menu_reader_annot_copy_key": "Copy Annotation Key",
     "menu_reader_page_open": "Open Literature Note in Obsidian",
+    "menu_reader_page_open_pdf": "Open PDF in Obsidian",
     "batch_update_server_needed_title": "Can't update literature notes in Obsidian",
     "batch_update_server_needed_message": "This selection is too large to send through a link. Enable the ZotLit server in Obsidian's settings, or select fewer items, and try again.",
     "batch_update_sending_title": "Asking Obsidian to update literature notes…",

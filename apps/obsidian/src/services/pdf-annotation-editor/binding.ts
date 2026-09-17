@@ -11,6 +11,7 @@ import type {
 
 import { PdfTextStructure } from "@zotlit/pdf-structure";
 
+import { EXTERNAL_FILE_PREFIX } from "@/lib/constants";
 import { registerDomEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -56,9 +57,6 @@ import type { MarkGestures } from "./selection";
 import { pdfPageSource } from "./text-structure";
 
 const logger = getLogger("pdf-annotation-editor");
-
-/** Obsidian prefixes an external file's path with this ahead of its absolute path. */
-const EXTERNAL_FILE_PREFIX = "file:";
 
 /** How often the affordance is redrawn while Zotero's rate limit runs. */
 const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });

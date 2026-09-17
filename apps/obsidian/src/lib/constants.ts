@@ -26,6 +26,9 @@ export const RELEASE_ORIGIN = "github.com/aidenlx/zotlit";
 export const resourceReleaseUrl = (pluginVersion: string): string =>
   `https://${RELEASE_ORIGIN}/releases/download/res-${pluginVersion}`;
 
+/** Obsidian prefixes an external file's path with this ahead of its absolute path. */
+export const EXTERNAL_FILE_PREFIX = "file:";
+
 export const FIELD_ZOTERO_KEY = "zotero-key";
 /** Stable Literature Note Profile id. Absence selects the built-in default. */
 export const FIELD_LITERATURE_NOTE_PROFILE = "zotlit-profile";

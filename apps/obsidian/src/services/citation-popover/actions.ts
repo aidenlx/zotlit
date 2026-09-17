@@ -5,7 +5,7 @@ import type { MouseEvent } from "react";
 
 import { itemSelectUri } from "@zotlit/db";
 
-import { openAttachments } from "@/lib/attachment-open";
+import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import { getLogger } from "@/lib/log";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
@@ -78,7 +78,10 @@ export function createCitationPopoverActions({
         itemKey: block.itemKey,
         attachments: block.attachments.length,
       });
-      openAttachments(current.attachments, event);
+      openAttachments(current.attachments, {
+        reader: zoteroAttachmentReader,
+        event,
+      });
     },
     onDone: () => {
       if (completed) hide();

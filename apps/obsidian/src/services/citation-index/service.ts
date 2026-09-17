@@ -46,9 +46,9 @@ export {
 export type { CitekeyResolution, SnapshotItem } from "./snapshot";
 export {
   readReferenceSources,
-  toOpenableAttachments,
+  toZoteroOpenableAttachments,
   type DatabaseReadability,
-  type OpenableAttachment,
+  type ZoteroOpenableAttachment,
   type ReferenceSource,
   type ReferenceSourceJoin,
 } from "./sources";

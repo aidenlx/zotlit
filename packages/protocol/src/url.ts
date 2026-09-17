@@ -567,6 +567,63 @@ export function buildExploreProtocolUrl(
   return `obsidian://${exploreProtocolActionId}?${params}`;
 }
 
+const PROTOCOL_OPEN_ATTACHMENT_ACTION = "open-attachment";
+
+/**
+ * Full Obsidian action string for `registerObsidianProtocolHandler`. Kept out
+ * of {@link protocolActions} because it carries a different handler: the
+ * receiver opens a PDF attachment in Obsidian's own reader, branching on
+ * whether `item` names a regular item or an attachment.
+ */
+export const openAttachmentProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/${PROTOCOL_OPEN_ATTACHMENT_ACTION}` as const;
+
+export const openAttachmentProtocolQuerySchema = v.pipe(
+  v.object({
+    item: itemID,
+    "source-id": sourceIdValue,
+    paneType: paneTypeValue,
+  }),
+  v.transform(({ item, "source-id": sourceId, paneType }) => ({
+    item,
+    sourceId,
+    ...(paneType === undefined ? {} : { paneType }),
+  })),
+);
+
+export type OpenAttachmentProtocolQuery = v.InferOutput<
+  typeof openAttachmentProtocolQuerySchema
+>;
+
+/**
+ * Parse and validate the `ObsidianProtocolData` for a `zotlit/open-attachment`
+ * link.
+ *
+ * @param data decoded query record from Obsidian
+ * @returns the typed query
+ * @throws {v.ValiError} when `item` or `source-id` is missing or malformed
+ */
+export function parseOpenAttachmentProtocolQuery(
+  data: Record<string, unknown>,
+): OpenAttachmentProtocolQuery {
+  return v.parse(openAttachmentProtocolQuerySchema, data);
+}
+
+/**
+ * Build an `obsidian://zotlit/open-attachment?item=<id>&source-id=<hash>` link
+ * for `Zotero.launchURL`. `item` may name either a regular item or an
+ * attachment; the receiver branches on which it finds. A named
+ * {@link PaneType} adds `&paneType=<pane>`.
+ */
+export function buildOpenAttachmentProtocolUrl(
+  item: number,
+  options: { sourceId: string; paneType?: PaneType },
+): string {
+  const params = protocolUrlParams({ item: String(item) }, options.sourceId);
+  appendPaneType(params, options.paneType);
+  return `obsidian://${openAttachmentProtocolActionId}?${params}`;
+}
+
 /**
  * Parse and validate the `ObsidianProtocolData` Obsidian hands a handler.
  *

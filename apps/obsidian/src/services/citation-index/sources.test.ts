@@ -9,7 +9,7 @@ import type { ItemFixtureOptions } from "@zotlit/item-lookup/fixtures";
 import type { DatabaseService } from "@/services/database/service";
 
 import type { Citation } from "./query";
-import { readReferenceSources, toOpenableAttachments } from "./sources";
+import { readReferenceSources, toZoteroOpenableAttachments } from "./sources";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -149,7 +149,7 @@ describe("readReferenceSources", () => {
     expect([...sources.keys()]).toStrictEqual([KEY]);
   });
 
-  it("offers the Openable Attachments of the cited Item", () => {
+  it("offers the Zotero-Openable Attachments of the cited Item", () => {
     const cited = item(KEY);
     vi.mocked(getItemsByKey).mockReturnValue([cited]);
     vi.mocked(getAttachmentsByParents).mockReturnValue([
@@ -203,10 +203,10 @@ describe("readReferenceSources", () => {
   });
 });
 
-describe("toOpenableAttachments", () => {
+describe("toZoteroOpenableAttachments", () => {
   it("names a stored attachment by its filename", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "storage:Rivers_2020.pdf", linkMode: 0 }),
       ]),
     ).toStrictEqual([
@@ -216,7 +216,7 @@ describe("toOpenableAttachments", () => {
 
   it("names a snapshot and a linked file the same way, whatever the format", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "storage:page.html", linkMode: 1 }),
         attachment({ path: "/Papers/thesis.epub", linkMode: 2 }),
         attachment({ path: "attachments:drafts/notes.docx", linkMode: 2 }),
@@ -226,7 +226,7 @@ describe("toOpenableAttachments", () => {
 
   it("names a linked file a Windows library recorded, read on any platform", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "C:\\Papers\\Rivers 2020.pdf", linkMode: 2 }),
       ]).map((a) => a.label),
     ).toStrictEqual(["Rivers 2020.pdf"]);
@@ -234,7 +234,7 @@ describe("toOpenableAttachments", () => {
 
   it("leaves out an attachment that names no file", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         // A bare web link, which Zotero's reader cannot open.
         attachment({ path: "https://example.com/paper", linkMode: 3 }),
         // A stored row whose path lost its `storage:` prefix.
@@ -246,7 +246,7 @@ describe("toOpenableAttachments", () => {
 
   it("keeps the library order, so the menu reads as Zotero lists it", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ key: "ATCHZZZZ", path: "storage:zebra.pdf", linkMode: 0 }),
         attachment({ key: "ATCHAAAA", path: "storage:alpha.pdf", linkMode: 0 }),
       ]).map((a) => a.key),
@@ -255,7 +255,7 @@ describe("toOpenableAttachments", () => {
 
   it("carries the group library through, so the deep link addresses it", () => {
     expect(
-      toOpenableAttachments([
+      toZoteroOpenableAttachments([
         attachment({ path: "storage:shared.pdf", linkMode: 0, groupID: 42 }),
       ]),
     ).toStrictEqual([{ key: "ATCH2345", groupID: 42, label: "shared.pdf" }]);

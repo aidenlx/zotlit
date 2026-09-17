@@ -6,7 +6,7 @@ import type { MouseEvent } from "react";
 
 import { itemSelectUri } from "@zotlit/db";
 
-import { openAttachments } from "@/lib/attachment-open";
+import { openAttachments, zoteroAttachmentReader } from "@/lib/attachment-open";
 import type { ClipboardRepresentation } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -123,7 +123,10 @@ export function createReferenceActions(
       window.open(itemSelectUri(source.itemKey, source.groupID));
     },
     onOpenAttachment(source, event) {
-      openAttachments(source.attachments, event);
+      openAttachments(source.attachments, {
+        reader: zoteroAttachmentReader,
+        event,
+      });
     },
     onOpenEngineSettings: deps.onOpenEngineSettings,
     onChangeStyle: deps.onChangeStyle,

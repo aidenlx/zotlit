@@ -1,8 +1,17 @@
 import type { ObsidianProtocolData } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getItemRefByID } from "@zotlit/db";
+import {
+  getAttachmentByItemId,
+  getAttachmentsByParents,
+  getItemRefByID,
+} from "@zotlit/db";
 
+import {
+  createObsidianAttachmentReader,
+  openAttachments,
+} from "@/lib/attachment-open";
+import { toObsidianOpenableAttachments } from "@/services/attachment-open/resolve";
 import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
@@ -21,11 +30,29 @@ vi.mock("@/services/note-feature/update-batch", () => ({
 vi.mock("@zotlit/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@zotlit/db")>()),
   getItemRefByID: vi.fn(),
+  getAttachmentByItemId: vi.fn(),
+  getAttachmentsByParents: vi.fn(),
 }));
 
 vi.mock("@/services/note-feature", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/services/note-feature")>()),
   openCompanionNote: vi.fn(),
+}));
+
+vi.mock("@/lib/attachment-open", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/attachment-open")>()),
+  openAttachments: vi.fn(),
+  createObsidianAttachmentReader: vi.fn(() => ({
+    icon: "file-text",
+    open: vi.fn(),
+  })),
+}));
+
+vi.mock("@/services/attachment-open/resolve", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/services/attachment-open/resolve")
+  >()),
+  toObsidianOpenableAttachments: vi.fn(),
 }));
 
 vi.mock("@/views/template-workbench/register", () => ({
@@ -88,6 +115,11 @@ beforeEach(() => {
   runBatchImportAll.mockClear();
   vi.mocked(getItemRefByID).mockReset();
   vi.mocked(openCompanionNote).mockReset();
+  vi.mocked(getAttachmentByItemId).mockReset();
+  vi.mocked(getAttachmentsByParents).mockReset();
+  vi.mocked(toObsidianOpenableAttachments).mockReset();
+  vi.mocked(openAttachments).mockReset();
+  vi.mocked(createObsidianAttachmentReader).mockClear();
 });
 
 describe("single-note protocol links", () => {
@@ -165,6 +197,160 @@ describe("paneType", () => {
         { action: "open", scope: "full", paneType: "split" },
       ),
     );
+  });
+});
+
+describe("open-attachment protocol link", () => {
+  const app = {
+    vault: { adapter: { getBasePath: () => "/vault" } },
+  } as unknown as ProtocolDeps["app"];
+
+  function baseDeps(
+    overrides: Partial<ProtocolDeps> = {},
+  ): Partial<ProtocolDeps> {
+    return {
+      app,
+      db: { state: "ready", client: {} },
+      zoteroPref: {
+        sourceId: SOURCE_ID,
+        dataDir: "/data",
+        baseAttachmentPath: null,
+      },
+      ...overrides,
+    } as unknown as Partial<ProtocolDeps>;
+  }
+
+  it("treats the id as the Attachment itself when it names one", () => {
+    const attachment = { itemID: 9 };
+    vi.mocked(getAttachmentByItemId).mockReturnValue(attachment as never);
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
+      { indexedKey: "ATCH1" },
+    ] as never);
+    using _handlers = register(baseDeps());
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "9",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    expect(getAttachmentsByParents).not.toHaveBeenCalled();
+    expect(toObsidianOpenableAttachments).toHaveBeenCalledWith(
+      [attachment],
+      expect.anything(),
+    );
+  });
+
+  it("falls back to the item's own Attachments when the id names a regular item", () => {
+    vi.mocked(getAttachmentByItemId).mockReturnValue(null);
+    vi.mocked(getAttachmentsByParents).mockReturnValue([
+      { itemID: 2 },
+    ] as never);
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
+      { indexedKey: "ATCH2" },
+    ] as never);
+    using _handlers = register(baseDeps());
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "42",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    expect(getAttachmentsByParents).toHaveBeenCalledWith(
+      expect.anything(),
+      [42],
+    );
+  });
+
+  it("hands an empty list to openAttachments when nothing resolves to an Obsidian-Openable Attachment, deferring the notice to the reader", () => {
+    vi.mocked(getAttachmentByItemId).mockReturnValue(null);
+    vi.mocked(getAttachmentsByParents).mockReturnValue([]);
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([]);
+    using _handlers = register(baseDeps());
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "42",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    expect(openAttachments).toHaveBeenCalledExactlyOnceWith([], {
+      reader: expect.anything(),
+      app,
+    });
+  });
+
+  it("shows the db-unavailable notice instead of resolving Attachments", () => {
+    using _handlers = register(
+      baseDeps({ db: { state: "loading", client: {} } } as never),
+    );
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "9",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    expect(getAttachmentByItemId).not.toHaveBeenCalled();
+    expect(openAttachments).not.toHaveBeenCalled();
+  });
+
+  it("offers no event, so the picker is always the Suggest modal", () => {
+    vi.mocked(getAttachmentByItemId).mockReturnValue({} as never);
+    const opened = { indexedKey: "ATCH1" };
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened] as never);
+    using _handlers = register(baseDeps());
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "9",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    expect(openAttachments).toHaveBeenCalledExactlyOnceWith([opened], {
+      reader: expect.anything(),
+      app,
+    });
+  });
+
+  it("passes the base reader through unchanged when the link names no pane", () => {
+    vi.mocked(getAttachmentByItemId).mockReturnValue({} as never);
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([
+      { indexedKey: "ATCH1" },
+    ] as never);
+    using _handlers = register(baseDeps());
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "9",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
+    expect(reader).toBe(
+      vi.mocked(createObsidianAttachmentReader).mock.results[0]!.value,
+    );
+  });
+
+  it("honors the link's paneType even for a single Attachment that would open directly", () => {
+    vi.mocked(getAttachmentByItemId).mockReturnValue({} as never);
+    const opened = { indexedKey: "ATCH1" };
+    vi.mocked(toObsidianOpenableAttachments).mockReturnValue([opened] as never);
+    using _handlers = register(baseDeps());
+
+    handlers.get("zotlit/open-attachment")?.({
+      action: "zotlit/open-attachment",
+      item: "9",
+      paneType: "split",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    const { reader } = vi.mocked(openAttachments).mock.calls[0]![1];
+    void reader.open(opened as never, false);
+    const baseOpen = vi.mocked(createObsidianAttachmentReader).mock.results[0]!
+      .value.open;
+    expect(baseOpen).toHaveBeenCalledWith(opened, "split");
   });
 });
 

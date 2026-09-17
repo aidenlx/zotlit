@@ -15,6 +15,8 @@ import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
+import { addAttachmentOpenActions } from "./services/attachment-open/actions";
+import { registerAttachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { registerCitationsCli } from "./services/citation-index/cli/register";
 import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
@@ -288,6 +290,16 @@ export default class ZotLitPlugin extends Plugin {
       graphCitations: services.graphCitations,
     });
     registerIndexedKeyFileMenu(this);
+    addAttachmentOpenActions(this, {
+      app: this.app,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
+    });
+    registerAttachmentOpenFileMenu(this, {
+      app: this.app,
+      db: services.db,
+      zoteroPref: services.zoteroPref,
+    });
     const updateAll = () =>
       runBatchUpdateAll({
         createProfile: services.createProfile,
@@ -327,6 +339,7 @@ export default class ZotLitPlugin extends Plugin {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
       app: this.app,
+      db: services.db,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,

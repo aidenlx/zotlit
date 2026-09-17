@@ -8,6 +8,7 @@ import {
   exploreInObsidian,
   importInObsidian,
   importManyInObsidian,
+  openAttachmentInObsidian,
   openInObsidian,
   updateManyInObsidian,
 } from "./obsidian.js";
@@ -54,6 +55,21 @@ function kindOf(item: Zotero.Item): SelectedObjectKind {
 function selectedKind(items: Zotero.Item[]): SelectedObjectKind {
   const kinds = new Set(items.map(kindOf));
   return kinds.size === 1 ? [...kinds][0]! : "mixed";
+}
+
+/**
+ * The single selected item openable as a PDF in Obsidian: a PDF attachment
+ * itself, or a regular item with at least one PDF child attachment. File
+ * existence is checked later, on the Obsidian side — `getAttachments` /
+ * `Zotero.Items.get` stay synchronous so this can gate a menu.
+ */
+function pdfOpenableItem(context: LibraryMenuContext): Zotero.Item | null {
+  const items = allItems(context);
+  if (items.length !== 1) return null;
+  const item = items[0]!;
+  if (item.isAttachment()) return item.isPDFAttachment() ? item : null;
+  const children = Zotero.Items.get(item.getAttachments());
+  return children.some((child) => child.isPDFAttachment()) ? item : null;
 }
 
 /**
@@ -105,6 +121,18 @@ export function registerItemMenu(pluginID: string): Disposable {
         l10nID: "zotlit-menu-item-open",
         onShowing: onShowing("open"),
         onCommand: onCommand("open"),
+      },
+      {
+        menuType: "menuitem",
+        l10nID: "zotlit-menu-item-open-pdf",
+        onShowing(_event: Event, context: LibraryMenuContext): void {
+          context.setVisible(pdfOpenableItem(context) !== null);
+        },
+        onCommand(_event: Event, context: LibraryMenuContext): void {
+          const item = pdfOpenableItem(context);
+          if (item === null) return;
+          openAttachmentInObsidian(item);
+        },
       },
       {
         menuType: "menuitem",

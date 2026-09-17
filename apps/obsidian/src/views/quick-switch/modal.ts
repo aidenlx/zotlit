@@ -1,7 +1,13 @@
 import { Keymap, Platform, SuggestModal } from "obsidian";
-import type { TFile } from "obsidian";
+import type { PaneType, TFile } from "obsidian";
 
+import {
+  createObsidianAttachmentReader,
+  openAttachments,
+  withFixedPane,
+} from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
+import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
@@ -15,6 +21,11 @@ function modGlyph(): string {
   return Platform.isMacOS ? "⌘" : "Ctrl";
 }
 
+/** Glyph for the `Shift` modifier, matching how Obsidian labels its own hotkeys. */
+function shiftGlyph(): string {
+  return Platform.isMacOS ? "⇧" : "Shift";
+}
+
 export class QuickSwitchModal extends SuggestModal<SearchHit> {
   readonly #deps: QuickSwitchDeps;
 
@@ -26,12 +37,21 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_open_lit_note() },
       { command: `${modGlyph()}↵`, purpose: m.instruction_new_pane() },
+      { command: `${shiftGlyph()}↵`, purpose: m.instruction_open_pdf() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
     // The suggestion popup registers `Enter` with no modifiers and matches
-    // them exactly, so Mod+Enter reaches no handler unless the modal claims
-    // the chord itself.
+    // them exactly, so Mod+Enter, Shift+Enter, and Mod+Shift+Enter each reach
+    // no handler unless the modal claims the chord itself.
     this.scope.register(["Mod"], "Enter", (evt) => {
+      this.selectActiveSuggestion(evt);
+      return false;
+    });
+    this.scope.register(["Shift"], "Enter", (evt) => {
+      this.selectActiveSuggestion(evt);
+      return false;
+    });
+    this.scope.register(["Mod", "Shift"], "Enter", (evt) => {
       this.selectActiveSuggestion(evt);
       return false;
     });
@@ -49,6 +69,10 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {
+    if (evt.shiftKey) {
+      this.#openAttachment(hit, Keymap.isModEvent(evt));
+      return;
+    }
     await this.#deps.noteIndex.whenIndexed();
     const existing = resolveLiteratureNoteWithWarning(
       this.#deps.noteIndex.getNotesByItemKey(hit.item.indexedKey),
@@ -58,6 +82,28 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       return;
     }
     await this.#open(await createNoteInteractively(this.#deps, hit.item), evt);
+  }
+
+  /**
+   * Shift+Enter's PDF chord: the search index holds regular Items only, so the
+   * Item's Attachments are resolved through the database, as the `open-pdf`
+   * command does. No `event` reaches `openAttachments` — a keyboard-driven
+   * chord carries no pointer to anchor a context menu at — so several
+   * Attachments always fall to the Suggest modal picker; `pane` still honors
+   * the chord's own Mod, wherever the open lands.
+   */
+  #openAttachment(hit: SearchHit, pane: PaneType | boolean): void {
+    const attachments = resolveLiteratureNoteAttachments(
+      this.#deps,
+      hit.item.indexedKey,
+    );
+    openAttachments(attachments, {
+      reader: withFixedPane(
+        createObsidianAttachmentReader(this.#deps.app),
+        pane,
+      ),
+      app: this.#deps.app,
+    });
   }
 
   async #open(

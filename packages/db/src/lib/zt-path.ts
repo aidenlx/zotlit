@@ -112,10 +112,25 @@ const SEPARATOR_RUN_RE = /[\\/]+/g;
 const TRAILING_SEPARATOR_RE = /(?<=.)\/+$/;
 
 /**
- * The comparison key for an absolute attachment path: separators collapsed to
- * `/`, `.` and `..` segments resolved, no trailing separator, and case folded
- * where the filesystem itself folds. Both sides of a lookup go through it, so a
- * Zotero row and an Obsidian view path meet however each was written.
+ * Normalises a path per ADR 0035, short of the case fold: separators
+ * collapsed to `/`, `.` and `..` segments resolved, no trailing separator.
+ * The one place this rule is written — {@link attachmentPathKey} folds this
+ * result for its comparison key, and a caller that needs the un-folded form
+ * (Obsidian's `fileMap` keeps a file's real casing) uses this directly.
+ *
+ * @see apps/obsidian/docs/adr/0035-the-attachment-resolver-case-folds-on-case-insensitive-platforms.md
+ */
+export function normalizeAbsolutePath(path: string): string {
+  return posix
+    .normalize(path.replace(SEPARATOR_RUN_RE, "/"))
+    .replace(TRAILING_SEPARATOR_RE, "");
+}
+
+/**
+ * The comparison key for an absolute attachment path: {@link normalizeAbsolutePath},
+ * case folded where the filesystem itself folds. Both sides of a lookup go
+ * through it, so a Zotero row and an Obsidian view path meet however each was
+ * written.
  *
  * @param platform the filesystem's platform, as `process.platform` names it.
  * @see apps/obsidian/docs/adr/0035-the-attachment-resolver-case-folds-on-case-insensitive-platforms.md
@@ -124,9 +139,7 @@ export function attachmentPathKey(
   path: string,
   platform: NodeJS.Platform,
 ): string {
-  const normalized = posix
-    .normalize(path.replace(SEPARATOR_RUN_RE, "/"))
-    .replace(TRAILING_SEPARATOR_RE, "");
+  const normalized = normalizeAbsolutePath(path);
   return isCaseInsensitivePlatform(platform)
     ? normalized.toLowerCase()
     : normalized;
