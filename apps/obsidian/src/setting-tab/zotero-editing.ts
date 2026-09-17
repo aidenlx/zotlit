@@ -7,11 +7,9 @@ import { BaseNotice } from "@/lib/notice";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type { CapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import { countdownInterval } from "@/services/annotation-repository/cooldown";
 
 import type { SettingsKey, SettingTabContext } from "./context";
-
-/** How often the cooldown line is redrawn while Zotero's rate limit runs. */
-const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });
 
 /** Whether one action is offered at all, and whether it can be selected now. */
 export interface ActionState {
@@ -115,7 +113,7 @@ function renderEditingRow(
   let enableButton: ButtonComponent | undefined;
   let forgetButton: ButtonComponent | undefined;
   let remembered = false;
-  let countdown: number | null = null;
+  let stopCountdown: (() => void) | null = null;
 
   const apply = (): void => {
     const model = editingRowModel({
@@ -130,13 +128,10 @@ function renderEditingRow(
     applyAction(enableButton, model.enable);
     applyAction(forgetButton, model.forget);
     if (model.countsDown) {
-      countdown ??= window.setInterval(
-        apply,
-        COUNTDOWN_INTERVAL.total("milliseconds"),
-      );
-    } else if (countdown !== null) {
-      window.clearInterval(countdown);
-      countdown = null;
+      stopCountdown ??= countdownInterval(window, apply);
+    } else {
+      stopCountdown?.();
+      stopCountdown = null;
     }
   };
 
@@ -173,9 +168,7 @@ function renderEditingRow(
   apply();
   refreshRemembered();
   stack.defer(ctx.annotations.on("capability-changed", apply));
-  stack.defer(() => {
-    if (countdown !== null) window.clearInterval(countdown);
-  });
+  stack.defer(() => stopCountdown?.());
 
   return () => stack.dispose();
 }

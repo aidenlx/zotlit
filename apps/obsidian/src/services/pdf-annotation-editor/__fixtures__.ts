@@ -1,6 +1,7 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
+import type { PDFPageViewport } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -43,33 +44,79 @@ export const SCANNED_CONTENT = { items: [] };
 /** What a build that lost the `includeChars` patch answers: items, but no `chars`. */
 export const UNPATCHED_CONTENT = { items: [{ ...TEXT_CHUNK, str: "E" }] };
 
+/** A US Letter page box, `[x1, y1, x2, y2]` in PDF points. */
+export const PAGE_BOX = [0, 0, 612, 792] as const;
+
+export interface ViewportOptions {
+  rotation?: number;
+  scale?: number;
+  userUnit?: number;
+  box?: readonly [number, number, number, number];
+}
+
 /**
- * A PDF.js `PageViewport` as the bundled 5.3.34 builds one over a US Letter
- * page, at 150 % zoom by default.
+ * A PDF.js `PageViewport` built from the matrix its constructor writes, so the
+ * conversions every suite reads come from PDF.js's own rule and not from the
+ * module under test. Rotation and `/UserUnit` are carried, and a `clone` keeps
+ * both — a double that dropped them would let a rotated page pass untested.
+ *
+ * @see https://github.com/mozilla/pdf.js/blob/v5.3.31/src/display/display_utils.js
+ *   `PageViewport` — the nearest tagged release below the 5.3.34 build Obsidian
+ *   bundles, whose constructor is unchanged between the two.
  */
-export function viewport(scale = 1.5): Record<string, unknown> {
+export function viewport({
+  rotation = 0,
+  scale = 1,
+  userUnit = 1,
+  box = PAGE_BOX,
+}: ViewportOptions = {}): PDFPageViewport {
+  const total = scale * userUnit;
+  const [x1, y1, x2, y2] = box;
+  const axesSwap = rotation === 90 || rotation === 270;
+  const convertToViewportPoint = (x: number, y: number): [number, number] => {
+    switch (rotation) {
+      case 90:
+        return [total * (y - y1), total * (x - x1)];
+      case 180:
+        return [total * (x2 - x), total * (y - y1)];
+      case 270:
+        return [total * (y2 - y), total * (x2 - x)];
+      default:
+        return [total * (x - x1), total * (y2 - y)];
+    }
+  };
+  const convertToPdfPoint = (x: number, y: number): [number, number] => {
+    switch (rotation) {
+      case 90:
+        return [x1 + y / total, y1 + x / total];
+      case 180:
+        return [x2 - x / total, y1 + y / total];
+      case 270:
+        return [x2 - y / total, y2 - x / total];
+      default:
+        return [x1 + x / total, y2 - y / total];
+    }
+  };
   return {
-    viewBox: [0, 0, 612, 792],
-    userUnit: 1,
+    viewBox: box,
+    userUnit,
     scale,
-    rotation: 0,
+    rotation,
     offsetX: 0,
     offsetY: 0,
-    transform: [scale, 0, 0, -scale, 0, 792 * scale],
-    width: 612 * scale,
-    height: 792 * scale,
-    convertToViewportPoint: (x: number, y: number) => [
-      x * scale,
-      (792 - y) * scale,
-    ],
-    convertToPdfPoint: (x: number, y: number) => [x / scale, 792 - y / scale],
-    clone: ({ scale: next = scale }: { scale?: number }) => viewport(next),
+    transform: [total, 0, 0, -total, -total * x1, total * y2],
+    width: total * (axesSwap ? y2 - y1 : x2 - x1),
+    height: total * (axesSwap ? x2 - x1 : y2 - y1),
+    convertToViewportPoint,
+    convertToPdfPoint,
+    clone: ({ scale: next = scale, rotation: turned = rotation }) =>
+      viewport({ rotation: turned, scale: next, userUnit, box }),
   };
 }
 
 export interface FakePageView {
   div: HTMLElement;
-  viewport: Record<string, unknown>;
+  viewport: PDFPageViewport;
   /** Deleted to stand for a page Obsidian has not finished loading. */
   pdfPage?: {
     view: number[];
@@ -90,7 +137,7 @@ export interface FakePageView {
 export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
   return {
     div: document.createElement("div"),
-    viewport: viewport(),
+    viewport: viewport({ scale: 1.5 }),
     pdfPage: {
       view: [0, 0, 612, 792],
       commonObjs: {

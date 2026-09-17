@@ -41,7 +41,7 @@ const UNDERLINE = annotation("K3JRFLFQ", "underline", {
 /** A reader whose one page fails the named viewport probe. */
 function brokenReader(member: string) {
   const page = pageView();
-  delete (page.viewport as Record<string, unknown>)[member];
+  delete (page.viewport as unknown as Record<string, unknown>)[member];
   return pdfReader(page);
 }
 

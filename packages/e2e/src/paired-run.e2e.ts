@@ -78,6 +78,13 @@ const vaultId = await developmentVaultId();
  * would let the ZotLit tier start and then fail on its first `obEval` instead
  * of skipping. Empty output, a failing script and a silent window are all the
  * same answer here, so this never throws.
+ *
+ * The probe itself opens what it finds closed: `obsidian vault=<id> eval` is
+ * the Obsidian CLI's only way to reach a window, and reaching a registered
+ * vault is what opens it. So the skip holds on the first run of a session and
+ * not on the next one — the vault this probe opened answers from then on. A
+ * non-opening liveness check needs the `open` flag the `vault-list` IPC already
+ * carries, which no command of `obsidian-vault.ts` prints today.
  */
 async function developmentVaultId(): Promise<string | null> {
   const script = join(

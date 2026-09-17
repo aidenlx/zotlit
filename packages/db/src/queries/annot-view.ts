@@ -1,5 +1,5 @@
 import { deletedItems, itemAnnotations } from "@drizzle/schema";
-import { and, eq, notExists } from "drizzle-orm";
+import { and, count, eq, notExists } from "drizzle-orm";
 
 import type { NodeDatabaseClient } from "@/client/node";
 import { formatIndexedKey } from "@/lib/zt-key";
@@ -82,13 +82,20 @@ export function getAnnotViewAttachments(
 
 const annotationCountQuery = defineQuery<{ parentItemID: number }>()(
   (db, { placeholder }) =>
-    db.query.itemAnnotations.findMany({
-      where: {
-        parentItemID: placeholder("parentItemID"),
-        item: { deletedItem: false },
-      },
-      columns: { itemID: true },
-    }),
+    db
+      .select({ count: count() })
+      .from(itemAnnotations)
+      .where(
+        and(
+          eq(itemAnnotations.parentItemID, placeholder("parentItemID")),
+          notExists(
+            db
+              .select({ _: deletedItems.itemID })
+              .from(deletedItems)
+              .where(eq(deletedItems.itemID, itemAnnotations.itemID)),
+          ),
+        ),
+      ),
 );
 
 /**
@@ -103,7 +110,8 @@ export function getAttachmentAnnotationCount(
   db: NodeDatabaseClient,
   attachmentItemID: number,
 ): number {
-  return annotationCountQuery
+  const row = annotationCountQuery
     .prepared(db)
-    .all({ parentItemID: attachmentItemID }).length;
+    .get({ parentItemID: attachmentItemID });
+  return row?.count ?? 0;
 }

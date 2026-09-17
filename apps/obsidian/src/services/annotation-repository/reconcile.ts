@@ -34,6 +34,24 @@ export interface CreateWindow {
 }
 
 /**
+ * The window as it is compared against a `dateAdded`, with its start floored to
+ * the second.
+ *
+ * Zotero stamps `dateAdded` to second precision, so a create that left at
+ * `…:21.400Z` is stamped `…:21Z` — before its own window starts. Flooring the
+ * start is what lets a fast create match at all, and doing it here rather than
+ * where the window is built keeps every caller on the same comparison.
+ *
+ * @see docs/pdf-annotation-probes.md
+ */
+function comparable({ from, to }: CreateWindow): CreateWindow {
+  return {
+    from: from.round({ smallestUnit: "second", roundingMode: "floor" }),
+    to,
+  };
+}
+
+/**
  * The Annotation one lost create asked Zotero for, if Zotero holds it.
  *
  * The fields matched on are the ones that do not move after a create: the
@@ -55,8 +73,9 @@ export function matchCreatedAnnotation(
     window,
   }: { candidates: readonly LocalApiAnnotation[]; window: CreateWindow },
 ): CreateMatch {
+  const bounds = comparable(window);
   const matched = candidates.filter((candidate) =>
-    isSameAnnotation({ draft, attachmentKey, candidate, window }),
+    isSameAnnotation({ draft, attachmentKey, candidate, window: bounds }),
   );
   const [only] = matched;
   return matched.length === 1 && only

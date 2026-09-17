@@ -9,9 +9,10 @@
 import { setIcon, setTooltip } from "obsidian";
 
 import { themeHook } from "@/lib/theme-hooks";
-import { onActivateKey } from "@/lib/utils";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
+
+import { renderIconButton } from "./icon-button";
 
 /** Layout only; Obsidian's `clickable-icon` owns the rest of the look. */
 const LAYOUT_CLASSES = ["zt:flex", "zt:items-center", "zt:gap-1"];
@@ -58,19 +59,33 @@ export function renderCapabilityAffordance(
   slot: HTMLElement,
   { capability, now, onActivate }: CapabilityAffordanceProps,
 ): HTMLElement {
-  const node = affordanceIn(slot) ?? createAffordance(slot, onActivate);
   const { icon, tone, tooltip, spinning, countdown } =
     editingCapabilityAffordance(capability, now);
+  // The button is built with the state it is about to show, and redrawn by
+  // rebuilding its contents: `setIcon` replaces the node's children, so the
+  // countdown is appended after it rather than patched.
+  const held = affordanceIn(slot);
+  const node =
+    held ??
+    renderIconButton(
+      slot,
+      {
+        icon,
+        tooltip,
+        cls: [themeHook.pdfCapability, ...LAYOUT_CLASSES],
+      },
+      onActivate,
+    );
 
   node.dataset.ztCapabilityTone = tone;
   node.classList.toggle("mod-warning", tone === "warning");
-  setTooltip(node, tooltip);
   if (spinning) node.setAttribute("aria-busy", "true");
   else node.removeAttribute("aria-busy");
 
-  // `setIcon` replaces the node's children, so the countdown is appended after
-  // it and the whole content is rebuilt rather than patched.
-  setIcon(node, icon);
+  if (held) {
+    setTooltip(node, tooltip);
+    setIcon(node, icon);
+  }
   if (spinning) node.querySelector("svg")?.classList.add("zt:animate-spin");
   if (countdown !== null) {
     node.createSpan({
@@ -112,19 +127,6 @@ function affordanceIn(slot: HTMLElement): HTMLElement | null {
   return slot.querySelector<HTMLElement>(
     `:scope > .${themeHook.pdfCapability}`,
   );
-}
-
-function createAffordance(
-  slot: HTMLElement,
-  onActivate: () => void,
-): HTMLElement {
-  const node = slot.createDiv({
-    cls: ["clickable-icon", themeHook.pdfCapability, ...LAYOUT_CLASSES],
-    attr: { role: "button", tabindex: "0" },
-  });
-  node.addEventListener("click", onActivate);
-  node.addEventListener("keydown", (event) => onActivateKey(event, onActivate));
-  return node;
 }
 
 /**

@@ -8,12 +8,10 @@ import { Icon } from "@/components/obsidian/icon";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
+import { countdownInterval } from "@/services/annotation-repository/cooldown";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 
 import { useAnnotStore } from "./store";
-
-/** How often the affordance is redrawn while Zotero's rate limit runs. */
-const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });
 
 /** What the affordance reads its state through, and hears its changes on. */
 export type CapabilityReads = Pick<
@@ -111,11 +109,7 @@ function useCountdown(
     const win = node.current?.win;
     if (!active || !win) return;
     setNow(Temporal.Now.instant());
-    const id = win.setInterval(
-      () => setNow(Temporal.Now.instant()),
-      COUNTDOWN_INTERVAL.total("milliseconds"),
-    );
-    return () => win.clearInterval(id);
+    return countdownInterval(win, () => setNow(Temporal.Now.instant()));
   }, [active, node]);
   return now;
 }

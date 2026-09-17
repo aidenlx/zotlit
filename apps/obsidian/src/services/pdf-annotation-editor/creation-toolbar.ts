@@ -7,16 +7,15 @@
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1150
-import { setIcon, setTooltip } from "obsidian";
 import type { IconName } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
-import { onActivateKey } from "@/lib/utils";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { IDLE } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
+import { renderIconButton } from "./icon-button";
 import "./style.css";
 
 /** Layout only; Obsidian's `clickable-icon` owns the look of each control. */
@@ -156,30 +155,10 @@ export function renderCreationToolbar(
 
   row.empty();
   for (const control of controls) {
-    const node = row.createDiv({
-      cls: "clickable-icon",
-      attr: { role: "button", tabindex: "0" },
-    });
-    node.dataset.ztTool = control.id;
-    setTooltip(node, control.tooltip);
-    setIcon(node, control.icon);
-    // Through the element's own style rather than an attribute on the icon's
-    // SVG, where a stylesheet's rules would be out of reach and `var()` would
-    // not substitute at all.
-    if (control.color !== null) node.style.color = control.color;
-    if (control.pressed !== null) {
-      node.classList.toggle("is-active", control.pressed);
-      node.setAttribute("aria-pressed", String(control.pressed));
-    }
-    if (control.disabled) {
-      node.addClass("is-disabled");
-      node.setAttribute("aria-disabled", "true");
-      continue;
-    }
-    node.addEventListener("click", () => activate(control.id, node));
-    node.addEventListener("keydown", (event) =>
-      onActivateKey(event, () => activate(control.id, node)),
+    const node = renderIconButton(row, control, (pressed) =>
+      activate(control.id, pressed),
     );
+    node.dataset.ztTool = control.id;
   }
   return nodes;
 }

@@ -13,6 +13,7 @@ import {
   followModeMenu,
   identityLabel,
   pinBlockedReason,
+  sourceTooltip,
 } from "./presentation";
 import type { FollowMenuEntry, FollowMenuState } from "./presentation";
 import { createAnnotStore } from "./store";
@@ -379,6 +380,26 @@ describe("the condition lines", () => {
         }),
       ),
     ).not.toContain(m.annot_view_reader_closed());
+  });
+});
+
+describe("the source region's tooltip", () => {
+  it("names Zotero while the Zotero Local API answered, where no line does", () => {
+    expect(
+      sourceTooltip({
+        annotationSource: {
+          kind: "zotero-local-api",
+          serverID: "abcdef012345",
+        },
+      }),
+    ).toBe(m.annot_view_source_zotero());
+  });
+
+  it("names the database under the DB source, and nothing with no source", () => {
+    expect(sourceTooltip({ annotationSource: { kind: "zotero-db" } })).toBe(
+      m.annot_view_source_database(),
+    );
+    expect(sourceTooltip({ annotationSource: null })).toBeNull();
   });
 });
 

@@ -118,7 +118,7 @@ export function createPopupRow({
     creating({
       id: "comment",
       icon: "message-square-plus",
-      label: m.pdf_create_popup_comment(),
+      label: m.annot_view_card_add_comment(),
       action: { kind: "comment" },
       color: null,
       pressed: commenting,
@@ -184,8 +184,8 @@ export function renderCommentSheet(
     cls: ["zt:w-full", "zt:resize-none"],
     attr: {
       rows: "3",
-      placeholder: m.pdf_create_popup_comment_placeholder(),
-      "aria-label": m.pdf_create_popup_comment(),
+      placeholder: m.annot_view_card_comment_placeholder(),
+      "aria-label": m.annot_view_card_add_comment(),
     },
   });
   editor.value = value;

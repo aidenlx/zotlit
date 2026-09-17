@@ -33,7 +33,7 @@ import {
   readCreateResult,
 } from "@/services/zotero-local-api/wire";
 
-import { editingCapabilityOf } from "./capability";
+import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
 import { matchCreatedAnnotation, resolvesSilently } from "./reconcile";
 import type { CreateMatch } from "./reconcile";
@@ -567,16 +567,6 @@ export class AnnotationRepository extends Service<void> {
     }
 
     const annotationKey = formatIndexedKey(created.value, parsed.groupID);
-    const fresh = await this.#localApi.readAnnotation(
-      annotationKey,
-      attachmentKey,
-    );
-    if ("failure" in fresh) {
-      logger.debug("A created annotation could not be read back", {
-        annotationKey,
-        failure: fresh.failure,
-      });
-    }
     logger.debug("Zotero created an annotation", {
       attachmentKey,
       annotationKey,
@@ -1239,16 +1229,15 @@ function freshValueOf(
   }
 }
 
-/** One capability as a value that compares by equality, for the change log. */
+/**
+ * One capability as the value the change log compares by, which is the shared
+ * reason plus a cooldown's own deadline: a log line per new deadline is what
+ * says the rate limit was met again, where a notice counts one cooldown once.
+ */
 function describeCapability(capability: EditingCapability): string {
-  switch (capability.kind) {
-    case "read-only":
-      return `read-only:${capability.reason}`;
-    case "cooldown":
-      return `cooldown:${capability.retryAfter.toString()}`;
-    default:
-      return capability.kind;
-  }
+  return capability.kind === "cooldown"
+    ? `cooldown:${capability.retryAfter.toString()}`
+    : capabilityReason(capability);
 }
 
 /**

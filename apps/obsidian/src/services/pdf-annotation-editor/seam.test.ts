@@ -146,7 +146,7 @@ it.each([
   "convertToViewportPoint",
 ])("fails P9 when the viewport lost %s", (member) => {
   const page = pageView();
-  delete (page.viewport as Record<string, unknown>)[member];
+  delete (page.viewport as unknown as Record<string, unknown>)[member];
 
   expect(failedIn(probePageView(page))).toEqual(["P9"]);
 });
@@ -155,7 +155,7 @@ it.each(["clone", "convertToPdfPoint"])(
   "fails P9 when %s is present but is no longer a method",
   (member) => {
     const page = pageView();
-    (page.viewport as Record<string, unknown>)[member] = "scale";
+    (page.viewport as unknown as Record<string, unknown>)[member] = "scale";
 
     expect(failedIn(probePageView(page))).toEqual(["P9"]);
   },
@@ -165,7 +165,7 @@ it.each(["clone", "convertToPdfPoint"])(
   "passes P9 on a viewport with no %s, which the overlay covers with a fallback",
   (member) => {
     const page = pageView();
-    delete (page.viewport as Record<string, unknown>)[member];
+    delete (page.viewport as unknown as Record<string, unknown>)[member];
 
     expect(failedIn(probePageView(page))).toEqual([]);
   },

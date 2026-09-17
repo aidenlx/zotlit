@@ -23,6 +23,7 @@ import {
   followModeLabel,
   followModeMenu,
   identityLabel,
+  sourceTooltip,
 } from "./presentation";
 import type {
   AnnotViewBody,
@@ -317,13 +318,24 @@ function AttachmentLine() {
   );
 }
 
-/** What the list on screen cannot say for itself: its reader, and its source. */
+/**
+ * What the list on screen cannot say for itself: its reader, and its source.
+ *
+ * The region is the source region as well, so it stands while a source is known
+ * even where that source draws no line — under the Zotero Local API the words
+ * "From Zotero" live in this tooltip alone.
+ */
 function ConditionLines() {
   const lines = useConditionLines();
-  if (lines.length === 0) return null;
+  const annotationSource = useAnnotStore((s) => s.annotationSource);
+  const tooltip = sourceTooltip({ annotationSource });
+  if (lines.length === 0 && tooltip === null) return null;
 
   return (
-    <div className="zt:flex zt:flex-col zt:gap-0.5 zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
+    <div
+      className="zt:flex zt:flex-col zt:gap-0.5 zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground"
+      {...(tooltip === null ? {} : tooltipAttrs(tooltip))}
+    >
       {lines.map((line) => (
         <div key={line}>{line}</div>
       ))}

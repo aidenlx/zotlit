@@ -8,14 +8,9 @@
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
-import { Menu } from "obsidian";
 import type { HoverParent } from "obsidian";
 
-import {
-  ANNOTATION_COLORS,
-  annotationColorLabel,
-  isColor,
-} from "@/lib/annotation-colors";
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -29,7 +24,7 @@ import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingLive } from "@/views/annot-view/card-controls";
 
-import { inTextEntry } from "./capability-affordance";
+import { inTextEntry, isEditGesture } from "./capability-affordance";
 import type { CreationGestures } from "./creation";
 import {
   distance,
@@ -43,6 +38,7 @@ import type { MarkPopupControlId } from "./mark-popup";
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import { markTargets, pageUnitSize } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
+import { belowOf, colorMenu, onScreen, selectionCollapsed } from "./surface";
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
@@ -182,7 +178,11 @@ export class MarkSelection implements Disposable {
     // one the browser is already showing.
     this.#surfaces.use(
       registerDomEvent(containerEl.doc, "selectionchange", () => {
-        if (this.#selected !== null && !this.#collapsed()) this.#apply(null);
+        if (
+          this.#selected !== null &&
+          !selectionCollapsed(this.#deps.containerEl)
+        )
+          this.#apply(null);
         this.#deps.creation?.changed();
       }),
     );
@@ -280,7 +280,7 @@ export class MarkSelection implements Disposable {
     const outcome = resolveMarkClick({
       page,
       travel: pressed === null ? 0 : distance(pressed, client),
-      collapsed: this.#collapsed(),
+      collapsed: selectionCollapsed(this.#deps.containerEl),
       onLink: linkUnder(event.target),
       altKey: event.altKey,
       previous: this.#at,
@@ -332,6 +332,10 @@ export class MarkSelection implements Disposable {
     // name different colours.
     const swatch = ANNOTATION_COLORS[Number(event.key) - 1];
     if (swatch !== undefined) {
+      // A colour key is one of the shared edit keymap's keys, so whether this
+      // keystroke is one of them is read from there rather than decided again:
+      // `Alt`+`1` is no edit gesture for the block's notice, and none here.
+      if (!isEditGesture(event)) return;
       // A blocked colour key is answered by the binding's own edit-gesture
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
@@ -389,7 +393,9 @@ export class MarkSelection implements Disposable {
     const { annotations, gestures } = this.#deps;
     switch (id) {
       case "color":
-        this.#colorMenu(annotation).showAtPosition(belowOf(node), node.doc);
+        colorMenu(annotation.color, (hex) =>
+          this.#write(annotations.patchColor(annotation.key, hex)),
+        ).showAtPosition(belowOf(node), node.doc);
         return;
       case "comment":
         gestures.revealAnnotation(annotation.key, { comment: true });
@@ -426,21 +432,6 @@ export class MarkSelection implements Disposable {
     });
   }
 
-  #colorMenu(annotation: AnnotationRecord): Menu {
-    const menu = new Menu();
-    for (const hex of ANNOTATION_COLORS) {
-      menu.addItem((item) =>
-        item
-          .setTitle(annotationColorLabel(hex))
-          .setChecked(isColor(annotation.color, hex))
-          .onClick(() =>
-            this.#write(this.#deps.annotations.patchColor(annotation.key, hex)),
-          ),
-      );
-    }
-    return menu;
-  }
-
   /**
    * The seam a write's outcome is rendered at: the repository answers data and
    * the notice is raised here, once, naming the reason. Nothing was drawn ahead
@@ -466,10 +457,6 @@ export class MarkSelection implements Disposable {
   #record(): AnnotationRecord | null {
     const key = this.#selected;
     return this.#deps.records().find((record) => record.key === key) ?? null;
-  }
-
-  #collapsed(): boolean {
-    return this.#deps.containerEl.win.getSelection()?.isCollapsed !== false;
   }
 
   /** The page with marks under a client point, and where the point fell on it. */
@@ -500,24 +487,10 @@ export class MarkSelection implements Disposable {
       if (!page) continue;
       const [target] = markTargets(page, drawn);
       const point = target && markAnchor(target.rects, pageBoxOf(page));
-      if (point && this.#onScreen(point)) return point;
+      if (point && onScreen(this.#deps.containerEl, point)) return point;
     }
     return null;
   }
-
-  #onScreen({ x, y }: Point): boolean {
-    const rect = this.#deps.containerEl.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    return (
-      x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
-    );
-  }
-}
-
-/** Under the control, which is where Obsidian opens a menu from a button. */
-function belowOf(node: HTMLElement): Point {
-  const rect = node.getBoundingClientRect();
-  return { x: rect.left, y: rect.bottom };
 }
 
 function pageBoxOf(page: OverlayPageView): PageBox {

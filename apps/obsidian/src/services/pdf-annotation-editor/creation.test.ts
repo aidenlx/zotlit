@@ -419,6 +419,22 @@ it("writes nothing under a block, and leaves the notice to the binding", async (
   expect(open.drafts).toEqual([]);
 });
 
+it("arms nothing under a block, so the toolbar does not answer the notice back", () => {
+  using open = reader({
+    capability: { kind: "read-only", reason: "zotero-unavailable" },
+  });
+  open.creation.mountToolbar(open.slot);
+
+  open.press("u");
+  open.press("5");
+
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="underline"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
 it("dismisses the popup on the next press", () => {
   using open = reader();
   open.selectText();

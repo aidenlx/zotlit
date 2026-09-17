@@ -12,6 +12,7 @@ import {
 } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
+import { themeHook } from "@/lib/theme-hooks";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
@@ -150,7 +151,12 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   if (!panel) return null;
 
   return (
-    <div className="zt-annot-conflict zt:flex zt:flex-col zt:gap-1 zt:bg-secondary zt:px-2 zt:py-1.5">
+    <div
+      className={cn(
+        themeHook.annotConflict,
+        "zt:flex zt:flex-col zt:gap-1 zt:bg-secondary zt:px-2 zt:py-1.5",
+      )}
+    >
       <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
         <Icon name="alert-triangle" size={14} />
         {panel.title}

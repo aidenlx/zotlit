@@ -144,7 +144,7 @@ A control that cannot write right now keeps its seat: it carries `aria-disabled`
 
 Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.pdf_mark_popup_add_comment()} /> or <UiLabel name={m.pdf_mark_popup_edit_comment()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `comment`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`.
 
-Over a fresh text selection, the row instead offers <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} /> (`data-zt-verb` `highlight` or `underline`), Zotero's eight colors (`data-zt-verb` `color-1` through `color-8`), <UiLabel name={m.pdf_create_popup_comment()} /> (`data-zt-verb="comment"`), and <UiLabel name={m.pdf_create_popup_copy()} /> (`data-zt-verb="copy"`). Selecting <UiLabel name={m.pdf_create_popup_comment()} /> opens `zt-pdf-comment-sheet` under the row.
+Over a fresh text selection, the row instead offers <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} /> (`data-zt-verb` `highlight` or `underline`), Zotero's eight colors (`data-zt-verb` `color-1` through `color-8`), <UiLabel name={m.annot_view_card_add_comment()} /> (`data-zt-verb="comment"`), and <UiLabel name={m.pdf_create_popup_copy()} /> (`data-zt-verb="copy"`). Selecting <UiLabel name={m.annot_view_card_add_comment()} /> opens `zt-pdf-comment-sheet` under the row.
 
 A control that cannot write right now keeps its seat, disabled, with the reason in its tooltip. Copying and revealing never write, so neither ever stands down.
 
@@ -171,6 +171,24 @@ The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsi
 ```
 
 These class names, data attribute values, and default styles are ZotLit's public theme contract for the PDF reader. DOM structure remains private.
+
+## Annotation View hooks [#annot-view]
+
+The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar and its own menus.
+
+| Class                 | Marks                                                                   |
+| --------------------- | ----------------------------------------------------------------------- |
+| `zt-annot-capability` | The Editing Capability affordance in the Annotation View's toolbar.     |
+| `zt-annot-conflict`   | The panel an Annotation Card shows while a Write Conflict stands on it. |
+| `zt-menu`             | A menu ZotLit draws itself, beside Obsidian's own `menu` class.         |
+
+`zt-annot-capability` holds the same affordance the reader shows, and carries the same `data-zt-capability-tone`: `ready`, `action`, `busy`, or `warning`.
+
+`zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
+
+`zt-menu` sits on ZotLit's own menus, which wear Obsidian's `menu` chrome. The class marks the menus ZotLit places itself, so a theme can reach them without reaching Obsidian's.
+
+These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
 
 ## Template editor hooks [#template-editor]
 

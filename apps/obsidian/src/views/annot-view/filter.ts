@@ -1,4 +1,5 @@
 // Pure filtering and derived data for the annotation view's search & filter surfaces.
+import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 export interface AnnotFilter {
@@ -11,19 +12,12 @@ export interface AnnotFilter {
 }
 
 /**
- * Ordering for {@link deriveSwatchColors} — the Zotero reader's swatch order.
- * @see packages/db/src/lib/zt-color.ts for provenance of each hex value.
+ * Ordering for {@link deriveSwatchColors} — the Zotero reader's swatch order,
+ * taken from the one palette and raised to the case this module keys colours in.
  */
-const SWATCH_PALETTE_ORDER = [
-  "#FFD400",
-  "#FF6666",
-  "#5FB236",
-  "#2EA8E5",
-  "#A28AE5",
-  "#E56EEE",
-  "#F19837",
-  "#AAAAAA",
-];
+const SWATCH_PALETTE_ORDER = ANNOTATION_COLORS.map((color) =>
+  color.toUpperCase(),
+);
 
 const HTML_TAG = /<[^>]*>/g;
 

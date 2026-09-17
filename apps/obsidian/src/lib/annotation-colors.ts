@@ -53,5 +53,5 @@ export function annotationColorLabel(hex: string): string {
  * mark the colour a record already carries.
  */
 export function isColor(stored: string | null, swatch: string): boolean {
-  return stored !== null && stored.toLowerCase() === swatch;
+  return stored !== null && stored.toLowerCase() === swatch.toLowerCase();
 }
