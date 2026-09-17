@@ -3,7 +3,7 @@
 import { Menu } from "@mock/obsidian";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { showMenuAtButton } from "./menu";
+import { showMenuAtBox, showMenuAtButton } from "./menu";
 
 /** A trigger whose box is known, the way layout would have measured it. */
 function trigger(rect: {
@@ -90,5 +90,26 @@ describe("showMenuAtButton", () => {
     showMenuAtButton(menu as never, el);
 
     expect(menu.positionDoc).toBe(el.ownerDocument);
+  });
+});
+
+describe("showMenuAtBox", () => {
+  it("opens under a box read earlier, in the window it names", () => {
+    const doc = document;
+    const rect = new DOMRect(BUTTON.x, BUTTON.y, BUTTON.width, BUTTON.height);
+    const menu = new Menu();
+
+    showMenuAtBox(menu as never, { rect, doc });
+
+    expect(menu.position).toStrictEqual({
+      x: BUTTON.x,
+      y: BUTTON.y + BUTTON.height,
+      width: BUTTON.width,
+      overlap: true,
+      left: false,
+    });
+    expect(menu.positionDoc).toBe(doc);
+    // No live trigger is left to mark or to fold a second press into a toggle.
+    expect(menu.parentEl).toBeNull();
   });
 });

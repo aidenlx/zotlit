@@ -24,7 +24,10 @@ function fakeReactMouseEvent(
   overrides: Partial<{
     detail: number;
     nativeEvent: MouseEvent;
-    currentTarget: { getBoundingClientRect: () => DOMRect };
+    currentTarget: {
+      getBoundingClientRect: () => DOMRect;
+      hasClass: () => boolean;
+    };
   }> = {},
 ) {
   return {
@@ -32,6 +35,7 @@ function fakeReactMouseEvent(
     nativeEvent: {} as MouseEvent,
     currentTarget: {
       getBoundingClientRect: () => ({ left: 0, bottom: 0 }) as DOMRect,
+      hasClass: () => false,
     },
     ...overrides,
   } as unknown as AttachmentOpenClickEvent;

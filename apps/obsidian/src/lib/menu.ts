@@ -22,6 +22,38 @@ export type MenuAlign = "start" | "end";
 const ACTIVE_MENU_CLASS = "has-active-menu";
 
 /**
+ * A box to hang a menu under, plus the window to open it in — for a trigger
+ * that is gone by the time the menu shows.
+ */
+export interface MenuAnchor {
+  /** The trigger's box, read while it was still laid out. */
+  rect: DOMRectReadOnly;
+  /**
+   * The trigger's own window. `showAtPosition` falls back to the focused window
+   * without it, which is not necessarily the one the menu belongs in.
+   */
+  doc?: Document;
+}
+
+/**
+ * Open `menu` under the box in `anchor`, 2px below it, aligned to the named
+ * edge — the same geometry {@link showMenuAtButton} uses.
+ *
+ * For a trigger that cannot be measured at show time. Obsidian's own file-menu
+ * item nulls `currentTarget` at the first `await`, so an async handler reads
+ * the box while dispatch is still live and passes it here. Nothing marks the
+ * trigger or folds a second press into a toggle, because there is no trigger
+ * left to press.
+ */
+export function showMenuAtBox(
+  menu: Menu,
+  anchor: MenuAnchor,
+  align: MenuAlign = "start",
+): void {
+  placeMenu(menu, anchor, align);
+}
+
+/**
  * Open `menu` under `trigger`, 2px below it, aligned to the named edge.
  *
  * Anchoring to the element rather than to a pointer is what makes the menu land
@@ -51,8 +83,18 @@ export function showMenuAtButton(
   // would otherwise open it straight back up and the menu would never appear to
   // shut. Obsidian guards its own view-header trigger on this same class.
   if (trigger.hasClass(ACTIVE_MENU_CLASS)) return;
-  const rect = trigger.getBoundingClientRect();
-  menu.setParentElement(trigger).showAtPosition(
+  menu.setParentElement(trigger);
+  placeMenu(
+    menu,
+    { rect: trigger.getBoundingClientRect(), doc: trigger.doc },
+    align,
+  );
+}
+
+/** The one placement both anchoring paths read: the trigger's box, edge, and window. */
+function placeMenu(menu: Menu, anchor: MenuAnchor, align: MenuAlign): void {
+  const { rect } = anchor;
+  menu.showAtPosition(
     {
       x: rect.x,
       y: rect.bottom,
@@ -60,6 +102,6 @@ export function showMenuAtButton(
       overlap: true,
       left: align === "end",
     },
-    trigger.doc,
+    anchor.doc,
   );
 }

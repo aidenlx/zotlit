@@ -120,6 +120,7 @@ describe("shared Data Explorer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_explorer_row_actions() }),
     );
+    expect(host.calls.menus[0]!.pointerEvent).toBeUndefined();
     host.calls.menus[0]!.items.find(
       (item) => item.label === m.workbench_explorer_menu_copy_value(),
     )!.onSelect();
@@ -137,6 +138,9 @@ describe("shared Data Explorer", () => {
     render(ui);
     fireEvent.contextMenu(screen.getByText("A paper"));
     expect(host.calls.menus).toHaveLength(1);
+    // The pointer event travels with the request, so the host can anchor the
+    // menu at the click rather than under the row.
+    expect(host.calls.menus[0]!.pointerEvent?.type).toBe("contextmenu");
   });
   it("inserts the field in the selected template engine", () => {
     const insert = vi.fn<(snippet: string) => void>();

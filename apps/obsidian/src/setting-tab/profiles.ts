@@ -9,6 +9,7 @@ import type {
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
@@ -235,8 +236,7 @@ function profilesList(
                   .setDisabled(locked)
                   .onClick(() => void deleteProfile(ctx, profile.id)),
               );
-              const bounds = button.extraSettingsEl.getBoundingClientRect();
-              menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+              showMenuAtButton(menu, button.extraSettingsEl);
             }),
         );
       },
@@ -492,8 +492,7 @@ function defaultProfileItem(
                   .onClick(() => void restoreDefaultProfile(ctx)),
               );
             }
-            const bounds = button.extraSettingsEl.getBoundingClientRect();
-            menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+            showMenuAtButton(menu, button.extraSettingsEl);
           }),
       );
     },
