@@ -36,8 +36,14 @@ import { attachmentLine } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
 
 export interface AnnotActions {
+  /** Open a card's overflow menu, from the control that carries it. */
   onMoreOptions(
     evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    annot: AnnotationRecord,
+  ): void;
+  /** The same entries, from a right-click anywhere on the card's header. */
+  onCardContextMenu(
+    evt: MouseEvent<HTMLElement>,
     annot: AnnotationRecord,
   ): void;
   /** Open the Follow Mode menu from the toolbar's mode button. */
@@ -370,12 +376,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onRetryCreate,
     onDiscardCreate,
     onMoreOptions(evt, annot) {
-      const fill = (menu: Menu): void => fillCardMenu(menu, annot);
-      // The card's own right-click carries a pointer to open at; the overflow
-      // control is a control, so it anchors under itself.
-      if (evt.type === "contextmenu")
-        showMenuAtPointer(evt as MouseEvent<HTMLElement>, fill);
-      else showMenu(evt, fill, "end");
+      showMenu(evt, (menu) => fillCardMenu(menu, annot), "end");
+    },
+    onCardContextMenu(evt, annot) {
+      showMenuAtPointer(evt, (menu) => fillCardMenu(menu, annot));
     },
     onFollowModeMenu(evt) {
       const { followMode, pinnable, selectedAttachmentKey } = deps.getState();
@@ -439,6 +443,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
+  onCardContextMenu: () => {},
   onFollowModeMenu: () => {},
   onAttachmentMenu: () => {},
   onColorMenu: () => {},

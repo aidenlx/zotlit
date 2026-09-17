@@ -70,6 +70,19 @@ describe("showMenuAtButton", () => {
     expect(menu.parentEl).toBe(el);
   });
 
+  it("leaves a second press to close the menu, rather than reopening it", () => {
+    const el = trigger(BUTTON);
+    // What `setParentElement` leaves while the menu stands; the press that
+    // reaches this handler is the one closing that menu.
+    el.addClass("has-active-menu");
+    const menu = new Menu();
+
+    showMenuAtButton(menu as never, el);
+
+    expect(menu.position).toBeNull();
+    expect(menu.parentEl).toBeNull();
+  });
+
   it("opens in the trigger's own window, which a pop-out host depends on", () => {
     const el = trigger(BUTTON);
     const menu = new Menu();

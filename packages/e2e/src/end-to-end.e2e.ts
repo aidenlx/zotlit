@@ -349,6 +349,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     // to the Fixture profile and database, and confirms the plugin loaded.
     const created = await runVaultScript(["create", e2eVaultPath]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    // A menu is an OS menu, with no DOM to measure, while Obsidian's "Native
+    // menus" setting stands. This vault is the suite's own and is purged in
+    // `afterAll`, so the setting is turned off here rather than worked around
+    // in the one test that measures a menu.
+    await obEval(vaultId, "app.vault.setConfig('nativeMenus',false);true");
     const serverPort = await availableLoopbackPort();
     await obEval(
       vaultId,
@@ -1660,10 +1665,6 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const popup =
       "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc.querySelector('.menu')";
 
-    // A menu is an OS menu, with no DOM to measure, while Obsidian's "Native
-    // menus" setting stands. This vault is the suite's own, so it is turned off
-    // rather than worked around.
-    await obEval(vaultId, "app.vault.setConfig('nativeMenus',false);true");
     await obEval(
       vaultId,
       "(async function(){var type='zotero-annotation-view';var leaf=app.workspace.getLeavesOfType(type)[0];if(!leaf){leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:type,active:true});}app.workspace.revealLeaf(leaf);return true;})()",
@@ -1706,6 +1707,16 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     // overflow — so the assertion is that the two overlap at all.
     expect(report.belowTriggerBy).toBe(2);
     expect(report.overlapsTriggerX).toBe(true);
+
+    // A second press closes it. The press is itself what dismisses an open
+    // menu, so a trigger that does not check for that reopens the menu it just
+    // closed and the menu never appears to shut.
+    await obEval(vaultId, `(function(){${trigger}.click();return true;})()`);
+    expect(
+      await obEvalUntil(vaultId, `String(${popup}===null)`, {
+        expected: "true",
+      }),
+    ).toBe(true);
 
     await obEval(
       vaultId,

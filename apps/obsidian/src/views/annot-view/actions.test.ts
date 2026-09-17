@@ -84,6 +84,8 @@ function fromOverflowControl() {
     type: "click",
     currentTarget: {
       getBoundingClientRect: () => ({ x: 0, y: 0, width: 0, bottom: 0 }),
+      // No menu of its own stands open, so the press opens one.
+      hasClass: () => false,
     },
   } as never;
 }
