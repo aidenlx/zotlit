@@ -15,7 +15,11 @@ import {
 
 import { FIXTURE_PLUGIN_ID } from "./layout.ts";
 import type { FixtureLayout } from "./layout.ts";
-import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
+import {
+  BETTER_BIBTEX_PREFS,
+  OBSIDIAN_PROTOCOL_PREFS,
+  QUIET_FIRST_RUN_PREFS,
+} from "./paired-zotero.ts";
 import {
   assertSchemaVersions,
   writePristineDatabase,
@@ -845,9 +849,10 @@ const LOCAL_API_PREF =
 /**
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
  * profile-directory override in ZotLit switches the whole install over. The
- * same profile carries {@link QUIET_FIRST_RUN_PREFS}, because a Paired Zotero
- * launches on it. Port overrides also configure the Companion's notify URL and
- * Zotero's HTTP server for a Paired Run.
+ * same profile carries {@link QUIET_FIRST_RUN_PREFS} and
+ * {@link OBSIDIAN_PROTOCOL_PREFS}, because a Paired Zotero launches on it. Port
+ * overrides also configure the Companion's notify URL and Zotero's HTTP server
+ * for a Paired Run.
  */
 function writePrefs(
   layout: FixtureLayout,
@@ -857,6 +862,7 @@ function writePrefs(
     'user_pref("extensions.zotero.useDataDir", true);',
     `user_pref("extensions.zotero.dataDir", ${JSON.stringify(layout.dataDir)});`,
     ...QUIET_FIRST_RUN_PREFS,
+    ...OBSIDIAN_PROTOCOL_PREFS,
     ...BETTER_BIBTEX_PREFS,
     ...(options.localApi ? [LOCAL_API_PREF] : []),
     ...(options.zoteroHttpPort === undefined
