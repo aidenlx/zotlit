@@ -13,7 +13,11 @@ import {
 
 import type { AnnotActions } from "./actions";
 import { followModeMenu } from "./presentation";
-import type { FollowMenuAction, FollowMenuState } from "./presentation";
+import type {
+  AttachmentLine,
+  FollowMenuAction,
+  FollowMenuState,
+} from "./presentation";
 
 /** The gestures a Follow Mode entry runs; the view supplies every one. */
 export type FollowModeGestures = Pick<
@@ -69,7 +73,7 @@ export function buildFollowModeMenu(
   }
 }
 
-export function runFollowModeAction(
+function runFollowModeAction(
   actions: FollowModeGestures,
   action: FollowMenuAction,
 ): void {
@@ -86,7 +90,7 @@ export function runFollowModeAction(
 }
 
 export interface AttachmentMenuInput {
-  options: { key: string; label: string }[];
+  options: Extract<AttachmentLine, { kind: "picker" }>["options"];
   selectedKey: string;
   onSelect: (key: string) => void;
 }

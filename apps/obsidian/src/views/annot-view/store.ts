@@ -191,11 +191,6 @@ export function useSetEditingComment(): (key: string | null) => void {
   return (key) => store.setState({ editingCommentKey: key });
 }
 
-export function useSetSelectedAttachmentKey(): (key: string) => void {
-  const store = useAnnotStoreApi();
-  return (key) => store.setState({ selectedAttachmentKey: key });
-}
-
 /**
  * Toggle the search row. Closing must also clear the query so a hidden row
  * never keeps filtering the list.

@@ -15,6 +15,13 @@ import type { Menu } from "obsidian";
 export type MenuAlign = "start" | "end";
 
 /**
+ * What `setParentElement` puts on the trigger while its menu stands. Obsidian's
+ * own themes style it, and its own view-header trigger reads it to tell a
+ * reopen from a toggle.
+ */
+const ACTIVE_MENU_CLASS = "has-active-menu";
+
+/**
  * Open `menu` under `trigger`, 2px below it, aligned to the named edge.
  *
  * Anchoring to the element rather than to a pointer is what makes the menu land
@@ -28,7 +35,8 @@ export type MenuAlign = "start" | "end";
  * necessarily this one.
  *
  * `setParentElement` also marks the trigger `has-active-menu` while the menu
- * stands, and drops the menu if the trigger goes away.
+ * stands, and drops the menu if the trigger goes away. That mark is what makes
+ * a second press on the trigger a toggle rather than a reopen.
  *
  * @see apps/obsidian/policies/popout-windows.md
  * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
@@ -38,6 +46,11 @@ export function showMenuAtButton(
   trigger: HTMLElement,
   align: MenuAlign = "start",
 ): void {
+  // A second press on the trigger closes the menu rather than reopening it.
+  // The press itself is what closes the open menu, so the handler that follows
+  // would otherwise open it straight back up and the menu would never appear to
+  // shut. Obsidian guards its own view-header trigger on this same class.
+  if (trigger.hasClass(ACTIVE_MENU_CLASS)) return;
   const rect = trigger.getBoundingClientRect();
   menu.setParentElement(trigger).showAtPosition(
     {

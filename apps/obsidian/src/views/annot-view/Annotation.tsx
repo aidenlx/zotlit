@@ -88,7 +88,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
     >
       <div
         className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent"
-        onContextMenu={(e) => actions.onMoreOptions(e, annot)}
+        onContextMenu={(e) => actions.onCardContextMenu(e, annot)}
       >
         <span
           className={cn(

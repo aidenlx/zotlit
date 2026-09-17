@@ -22,6 +22,7 @@ import type {
   IconName,
   WorkspaceLeaf,
   Instruction,
+  MenuPositionDef,
   Modifier,
   PaneType,
   Point,
@@ -870,15 +871,6 @@ export class MenuItem {
     if (this.#disabled) return;
     this.#onClick?.(evt as MouseEvent);
   }
-}
-
-/** The shape Obsidian's `showAtPosition` takes; mirrors `MenuPositionDef`. */
-export interface MenuPositionDef {
-  x: number;
-  y: number;
-  width?: number;
-  overlap?: boolean;
-  left?: boolean;
 }
 
 /**
