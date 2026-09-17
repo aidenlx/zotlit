@@ -613,7 +613,10 @@ declare module "obsidian" {
     definition: SettingDefinition;
     /** Innermost page definition; absent at the tab root. */
     page?: SettingDefinitionPage;
-    /** Sub-page `name` values, outermost first. Empty at the tab root. */
+    /**
+     * The key of each sub-page, outermost first: its `id` where it carries one
+     * and its `name` otherwise. Empty at the tab root.
+     */
     pagePath: string[];
   }
 

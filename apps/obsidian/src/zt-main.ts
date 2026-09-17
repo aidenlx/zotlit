@@ -436,7 +436,7 @@ export default class ZotLitPlugin extends Plugin {
         revealSetting(
           this.app,
           this.manifest.id,
-          m.settings_citation_references_style_name(),
+          "settings_citation_references_style",
         );
       }),
     );
@@ -534,11 +534,7 @@ export default class ZotLitPlugin extends Plugin {
     );
     stack.defer(
       registerLibraryScopeNotices(services.libraryScope, () => {
-        revealSetting(
-          this.app,
-          this.manifest.id,
-          m.settings_library_scope_name(),
-        );
+        revealSetting(this.app, this.manifest.id, "settings_library_scope");
       }),
     );
 

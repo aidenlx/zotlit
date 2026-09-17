@@ -1,5 +1,4 @@
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
-import * as m from "@/lib/i18n/generated/messages";
 import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
 import {
@@ -171,7 +170,7 @@ export function buildServices(
             revealSetting(
               plugin.app,
               plugin.manifest.id,
-              m.settings_zotero_editing_name(),
+              "settings_zotero_editing",
             ),
           cardShown: (annotationKey) =>
             annotationCardShown(plugin.app, annotationKey),
