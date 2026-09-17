@@ -1,0 +1,59 @@
+---
+title: "Open an item's PDF in Obsidian"
+description: "Open a Zotero PDF attachment in Obsidian's own PDF reader, from a literature note, the quick switcher, or Zotero."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Read a Zotero item's PDF in an Obsidian tab instead of switching to Zotero.
+
+ZotLit opens the PDF in Obsidian's own PDF reader, whether the file sits inside your vault or in Zotero's storage folder. Only PDF attachments open this way; EPUBs, web snapshots, and other file types stay in Zotero.
+
+## From a literature note
+
+With the literature note open in Obsidian:
+
+- Open the command palette and run <Command inline name={m.command_open_pdf_name()} />.
+- Or right-click the note's tab and choose <UiLabel name={m.command_open_pdf_name()} /> from the **zotlit** section of the file menu.
+
+## From the quick switcher
+
+Run <Command inline name={m.command_open_lit_note_name()} />, search for the item, and press `Shift+Enter` on the result. The PDF opens without the literature note. See [Use the quick switcher](/docs/how-to/create-and-open-notes#quick-switcher) for every chord a result takes.
+
+## From Zotero
+
+These entry points need ZotLit Companion, the Zotero add-on.
+
+- In the library, select one PDF attachment, or one item that has a PDF, and choose <UiLabel name={m["zotero.menu_item_open_pdf.label"]()} /> from the top-level context menu.
+- While reading a PDF in Zotero, right-click inside the page and choose <UiLabel name={m["zotero.menu_reader_page_open_pdf"]()} />. This opens the PDF you are reading.
+
+## What you get
+
+When the item has one PDF, it opens straight away. When it has several, ZotLit asks which one to open; the picker lists them by file name and its search box reads <UiLabel name={m.modal_select_pdf_placeholder()} />.
+
+When the item has no PDF, ZotLit shows <UiLabel name={m.notice_no_pdf_attachment()} /> When the file is no longer on disk, it shows <UiLabel name={m.notice_pdf_file_missing()} /> In neither case does ZotLit open the file in Zotero instead.
+
+The annotation view follows the PDF tab you open this way, so the item's highlights appear beside it.
+
+## See also
+
+<Cards>
+  <Card
+    title="Use the annotation view"
+    description="Browse an item's highlights beside the PDF and drag them into your notes."
+    href="/docs/how-to/use-annotation-view"
+  />
+  <Card
+    title="Create and open literature notes"
+    description="Open or create a literature note from the quick switcher, a citation, or Zotero."
+    href="/docs/how-to/create-and-open-notes"
+  />
+  <Card
+    title="Commands"
+    description="Every ZotLit command, with the entry points that reach it."
+    href="/docs/reference/commands#literature-note-actions"
+  />
+</Cards>
