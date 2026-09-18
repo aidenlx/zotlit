@@ -70,7 +70,7 @@ class AnnotationView extends ItemView {
 }
 ```
 
-Inside it, write semantic HTML — `<blockquote>`, `<p>`, `<ul>`/`<li>`, `<h2>`, `<hr>` — and a width utility is a full border (`zt:border-l-2`, `zt:divide-y zt:divide-border`) because preflight supplies `border-style: solid`. For a data-driven color keep the width in the utility and set `style={{ borderLeftColor: color }}`.
+Inside it, write semantic HTML — `<blockquote>`, `<p>`, `<ul>`/`<li>`, `<h2>`, `<hr>` — and a width utility is a full border (`zt:border-l-2`, `zt:divide-y zt:divide-border`) because preflight supplies `border-style: solid`. For a data-driven color keep the width in the utility and pass the value as a custom property — `style={{ "--zt-annot-color": color }}` with `zt:border-l-(--zt-annot-color)`, and a `data-*` attribute where the value is optional.
 
 It is safe because preflight sits in `@layer base`: your `zt:` utilities (`@layer utilities`) outrank it, and Obsidian's unlayered stylesheet outranks every layer. So preflight only clears browser UA defaults — `<blockquote>`'s `margin: 1em 40px`, `<p>`'s `margin: 1em 0`, the 40px list indent.
 

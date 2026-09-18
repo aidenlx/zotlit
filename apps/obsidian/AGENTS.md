@@ -66,7 +66,7 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 ## CSS
 
-Tailwind utilities with the `zt:` prefix are the styling default — [tailwind-first](policies/tailwind-first.md) is the rule, `/obsidian-css` the guide (tokens, native components, `.zt-root` scoped preflight).
+Tailwind utilities with the `zt:` prefix are the styling default — [tailwind-first](policies/tailwind-first.md) is the rule, `/obsidian-css` the guide (tokens, native components, `.zt-root` scoped preflight). A themeable runtime value rides in a custom property on `style`, with a `data-*` attribute for its condition; `style` keeps only what no stylesheet can predict.
 
 Public theme hooks follow [theme-hooks](policies/theme-hooks.md): central semantic `zt-` classes, cross-surface contract tests, and documented activation rules.
 
