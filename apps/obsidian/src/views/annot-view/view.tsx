@@ -65,7 +65,8 @@ import { CapabilityAffordance } from "./CapabilityAffordance";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import { createCommentRenderer } from "./comment-render";
-import { createDragInsertHandler } from "./drag-insert";
+import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
+import type { DragInsertDeps } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
 import { buildPaneMenu } from "./pane-menu";
@@ -255,6 +256,18 @@ export class AnnotationView extends ItemView {
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
+    // One bundle behind both routes into a note: the drag, and the overflow
+    // menu's insert.
+    const insertDeps: DragInsertDeps = {
+      app: this.#deps.app,
+      noteFeature: this.#deps.noteFeature,
+      notify: (message) => void new BaseNotice(message),
+      getImportHandle: () => this.#importHandle,
+      resolveAnnotationID: (indexedKey) =>
+        this.#resolveAnnotationID(indexedKey),
+      onSettled: () => this.#syncImportHandle(),
+    };
+
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
@@ -277,15 +290,8 @@ export class AnnotationView extends ItemView {
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
-      onDragStart: createDragInsertHandler({
-        app: this.#deps.app,
-        noteFeature: this.#deps.noteFeature,
-        notify: (message) => void new BaseNotice(message),
-        getImportHandle: () => this.#importHandle,
-        resolveAnnotationID: (indexedKey) =>
-          this.#resolveAnnotationID(indexedKey),
-        onSettled: () => this.#syncImportHandle(),
-      }),
+      onDragStart: createDragInsertHandler(insertDeps),
+      insertAnnotation: createInsertHandler(insertDeps),
       renderComment: createCommentRenderer({
         app: this.#deps.app,
         component: this,

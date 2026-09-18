@@ -144,6 +144,11 @@ export interface AnnotActionDeps {
   noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
+  /**
+   * Put one Annotation into the active note, from the overflow menu — the same
+   * Markdown the drag drops, on the route a keyboard reaches.
+   */
+  insertAnnotation: (annot: AnnotationRecord) => void;
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
@@ -318,6 +323,24 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
           });
         });
     });
+
+    menu.addSeparator();
+    // The keyboard’s route to what a drag does. A native MenuItem carries no
+    // tooltip, so a blocked insert says why in a label beside it.
+    // @see apps/obsidian/policies/tooltips.md
+    const { dragTarget } = deps.getState();
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_insert())
+        .setIcon("file-input")
+        .setDisabled(dragTarget !== "ready")
+        .onClick(() => deps.insertAnnotation(annot));
+    });
+    if (dragTarget !== "ready") {
+      menu.addItem((item) =>
+        item.setTitle(m.annot_view_insert_no_note()).setIsLabel(true),
+      );
+    }
 
     menu.addSeparator();
     menu.addItem((item) => {

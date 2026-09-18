@@ -36,6 +36,91 @@ export interface DragInsertDeps {
 }
 
 /**
+ * What a render of one Annotation answered.
+ *
+ * `fallback` and `unavailable` have both already told the user why, so a caller
+ * chooses what to do with the text and says nothing more.
+ */
+type AnnotationRender =
+  /** The Annotation through its template, with the handle its excerpt rode in. */
+  | { kind: "rendered"; text: string; handle: AttachmentImport }
+  /** The Annotation's own text, where its Profile could not be read. */
+  | { kind: "fallback"; text: string }
+  /** Nothing to insert. */
+  | { kind: "unavailable" };
+
+/**
+ * Render one Annotation through the `annotation` template, raising the notice
+ * that names the reason where it cannot run. Shared by the drag and by the
+ * overflow menu's insert, so both put the same Markdown into a note.
+ */
+function renderAnnotation(
+  deps: DragInsertDeps,
+  annot: AnnotationRecord,
+): AnnotationRender {
+  const annotationID = deps.resolveAnnotationID(annot.key);
+  if (annotationID === null) {
+    new BaseNotice(m.annot_view_annotation_not_in_database());
+    return { kind: "unavailable" };
+  }
+
+  const handle = deps.getImportHandle();
+  let rendered: string | null = null;
+  try {
+    rendered = handle
+      ? deps.noteFeature.renderAnnotation(annotationID, {
+          attachmentImport: handle,
+        })
+      : null;
+  } catch (error) {
+    if (!(error instanceof ProfileAnnotationError)) throw error;
+    deps.notify(
+      error.diagnostic.code === "unknown-literature-note-profile"
+        ? profileRecoveryNotice(deps.app, error.diagnostic)
+        : error.message,
+    );
+    return { kind: "fallback", text: annot.text ?? annot.key };
+  }
+
+  if (rendered == null || handle == null) {
+    logger.warn("Annotation insert cancelled", {
+      annotationKey: annot.key,
+      reason: handle == null ? "no-import-handle" : "render-unavailable",
+    });
+    new BaseNotice(m.annot_view_drag_unavailable());
+    return { kind: "unavailable" };
+  }
+  return { kind: "rendered", text: rendered, handle };
+}
+
+/**
+ * Put one Annotation into the note at its cursor — the same Markdown a drag
+ * drops, reached from the card's overflow menu. The menu is what a keyboard
+ * reaches, so a pointer is no longer the only thing that carries an Annotation
+ * into a note.
+ */
+export function createInsertHandler(deps: DragInsertDeps) {
+  return (annot: AnnotationRecord): void => {
+    const editor = deps.app.workspace.activeEditor?.editor;
+    if (!editor) {
+      new BaseNotice(m.annot_view_insert_no_note());
+      return;
+    }
+
+    const render = renderAnnotation(deps, annot);
+    if (render.kind === "unavailable") return;
+
+    editor.replaceSelection(render.text);
+    if (render.kind === "rendered") {
+      void render.handle.flush().catch((error) => {
+        logger.warn("Failed to import inserted annotation image", { error });
+      });
+    }
+    deps.onSettled();
+  };
+}
+
+/**
  * Build the annot-view `onDragStart` handler. On drag start it renders the
  * dragged annotation through the `annotation` template into the `text/plain`
  * payload (Obsidian inserts it natively on drop) and, when the drop lands in an
@@ -48,47 +133,22 @@ export interface DragInsertDeps {
  */
 export function createDragInsertHandler(deps: DragInsertDeps) {
   return (evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void => {
-    const handle = deps.getImportHandle();
-    const annotationID = deps.resolveAnnotationID(annot.key);
     evt.dataTransfer.dropEffect = "copy";
 
-    if (annotationID === null) {
+    const render = renderAnnotation(deps, annot);
+    if (render.kind === "unavailable") {
       evt.preventDefault();
-      new BaseNotice(m.annot_view_annotation_not_in_database());
       return;
     }
-
-    let rendered: string | null = null;
-    try {
-      rendered = handle
-        ? deps.noteFeature.renderAnnotation(annotationID, {
-            attachmentImport: handle,
-          })
-        : null;
-    } catch (error) {
-      if (!(error instanceof ProfileAnnotationError)) throw error;
-      evt.dataTransfer.setData("text/plain", annot.text ?? annot.key);
-      deps.notify(
-        error.diagnostic.code === "unknown-literature-note-profile"
-          ? profileRecoveryNotice(deps.app, error.diagnostic)
-          : error.message,
-      );
+    if (render.kind === "fallback") {
+      evt.dataTransfer.setData("text/plain", render.text);
       deps.onSettled();
       return;
     }
-
-    if (rendered == null || handle == null) {
-      logger.warn("Drag-insert cancelled", {
-        annotationKey: annot.key,
-        reason: handle == null ? "no-import-handle" : "render-unavailable",
-      });
-      evt.preventDefault();
-      new BaseNotice(m.annot_view_drag_unavailable());
-      return;
-    }
+    const { handle } = render;
 
     const timestamp = String(evt.timeStamp);
-    evt.dataTransfer.setData("text/plain", rendered);
+    evt.dataTransfer.setData("text/plain", render.text);
     evt.dataTransfer.setData(SOURCE_TAG, timestamp);
 
     const { workspace } = deps.app;
