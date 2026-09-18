@@ -20,7 +20,6 @@ import {
   followModeIcon,
   followModeLabel,
   identityLabel,
-  sourceTooltip,
 } from "./presentation";
 import type {
   AnnotViewBody,
@@ -192,7 +191,10 @@ function ItemIdentityLabel() {
   if (label === null) return null;
 
   return (
-    <div className="zt:truncate zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
+    <div
+      className="zt:truncate zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground"
+      {...tooltipAttrs(label)}
+    >
       {label}
     </div>
   );
@@ -211,12 +213,15 @@ function AttachmentLine() {
     return (
       <div className="zt:px-3 zt:pb-1">
         <div
-          className="clickable-icon zt:flex zt:w-full zt:items-center zt:text-xs"
+          className="clickable-icon zt:flex zt:w-full zt:items-center zt:gap-1 zt:text-xs"
           aria-disabled="true"
-          {...tooltipAttrs(line.reason)}
+          {...tooltipAttrs(line.label)}
         >
           <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
             {line.label}
+          </span>
+          <span className="zt:flex zt:shrink-0" {...tooltipAttrs(line.reason)}>
+            <Icon name="lock" size={12} />
           </span>
         </div>
       </div>
@@ -242,24 +247,13 @@ function AttachmentLine() {
   );
 }
 
-/**
- * What the list on screen cannot say for itself: its reader, and its source.
- *
- * The region is the source region as well, so it stands while a source is known
- * even where that source draws no line — under the Zotero Local API the words
- * "From Zotero" live in this tooltip alone.
- */
+/** What the list on screen cannot say for itself: its reader, and its source. */
 function ConditionLines() {
   const lines = useConditionLines();
-  const annotationSource = useAnnotStore((s) => s.annotationSource);
-  const tooltip = sourceTooltip({ annotationSource });
-  if (lines.length === 0 && tooltip === null) return null;
+  if (lines.length === 0) return null;
 
   return (
-    <div
-      className="zt:flex zt:flex-col zt:gap-0.5 zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground"
-      {...(tooltip === null ? {} : tooltipAttrs(tooltip))}
-    >
+    <div className="zt:flex zt:flex-col zt:gap-0.5 zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
       {lines.map((line) => (
         <div key={line}>{line}</div>
       ))}
@@ -330,7 +324,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-8 zt:text-xs">
+    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3 zt:text-xs">
       <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
         <UncertainCreateCards />
         {filtered.map((annot) => (

@@ -21,7 +21,13 @@ import { AnnotActionsContext } from "./actions";
 import { conflictPanel } from "./card-conflict";
 import { cardControls, commentIcon } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
-import { useAnnotStore, useMutation, useSetEditingComment } from "./store";
+import {
+  useAnnotStore,
+  useMutation,
+  useSetEditingComment,
+  useToggleSelectedTag,
+} from "./store";
+import { tagChipVariants } from "./tag-chip";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -36,9 +42,17 @@ function typeIcon(type: ResolvedAnnotationTypeName): string {
   return TYPE_ICON[type] ?? "file-question";
 }
 
-function typeLabel(type: ResolvedAnnotationTypeName): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
-}
+/**
+ * What a `clickable-icon` in a card shows for hover and focus. Obsidian paints
+ * both across the control's whole box, and in a 24px header that box is the
+ * row — the fill reaches the row's edges and the ring reaches the next control.
+ * These draw the same two marks on a pseudo-element inset inside the box, so
+ * the control keeps its full 28x24 pointer target while the mark it shows fits
+ * the row. `isolate` holds the mark above the control's own background and
+ * under its glyph. `style.css` takes Obsidian's originals back.
+ */
+const CARD_CONTROL_MARK =
+  "zt:relative zt:isolate zt:before:absolute zt:before:inset-x-px zt:before:inset-y-0.5 zt:before:-z-10 zt:before:rounded-sm zt:before:content-[''] zt:hover:before:bg-muted zt:focus-visible:before:ring-2 zt:focus-visible:before:ring-border-focus";
 
 interface AnnotationProps {
   annot: AnnotationRecord;
@@ -72,23 +86,29 @@ function useCardControls(annot: AnnotationRecord): CardControls {
 
 export function Annotation({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
-  const color = annot.color ?? undefined;
   const selected = useAnnotStore((s) =>
     s.selectedAnnotationKeys.includes(annot.key),
   );
   const dragTarget = useAnnotStore((s) => s.dragTarget);
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
-  const dragTooltip =
-    dragTarget === "ready"
-      ? typeLabel(annot.type)
-      : dragTarget === "preparing"
-        ? m.annot_view_drag_preparing_tooltip()
-        : m.annot_view_drag_no_note_tooltip();
 
   return (
     <div
-      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-selected:border-primary zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:@md:mb-3"
+      className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-s-3 zt:border-border zt:bg-background zt:hover:border-border-hover zt:data-annot-color:border-s-(--zt-annot-color) zt:data-selected:border-e-primary zt:data-selected:border-t-primary zt:data-selected:border-b-primary zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors zt:@md:mb-3"
+      // The Annotation's colour, as the colour itself along the card's leading
+      // edge — the one place the card states it. A glyph cannot hold it:
+      // Zotero's palette carries 1.3:1 to 2.1:1 against this header, so a
+      // tinted icon stops naming its own shape.
+      //
+      // Zotero's hex is data, so it rides in a custom property and
+      // `data-annot-color` says it is there; the declaration that reads them
+      // stays a utility. An Annotation with no colour keeps the border token,
+      // so every card in a column aligns on the same content edge. Selection
+      // names the three sides it owns rather than all four: `border-primary`
+      // outranks this variant, and a selected card would lose its colour.
+      style={{ "--zt-annot-color": annot.color } as React.CSSProperties}
+      data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
       onClick={(e) => {
@@ -98,21 +118,34 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         actions.onSelectAnnotation(annot);
       }}
     >
-      <div className="zt:flex zt:min-h-8 zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent">
-        <span
+      {/* One 24px box metric for every member of the row, so the glyphs, the
+          page link and the verbs sit on one line rather than three. `px-2`
+          is the body's own text edge; each end control pulls back by the
+          `clickable-icon` padding it carries, which lands its glyph on that
+          edge instead of 6px inside it. */}
+      <div className="zt:flex zt:min-h-6 zt:items-center zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent">
+        {/* The card's own click takes the selection, and a pointer is the only
+            thing that can press a card. This is the same gesture as a control:
+            the keyboard reaches it, and `aria-pressed` says what it left.
+            Dragging rides on the same element where a note is open to take it. */}
+        <IconButton
+          icon={typeIcon(annot.type)}
+          aria-pressed={selected}
+          // `.clickable-icon` reads `cursor: var(--cursor)` unlayered, so a
+          // `cursor-*` utility cannot reach it. Feed that variable instead.
           className={cn(
-            "zt:flex zt:items-center",
-            dragTarget === "ready"
-              ? "zt:cursor-grab"
-              : "zt:cursor-not-allowed zt:opacity-40",
+            CARD_CONTROL_MARK,
+            "zt:-ms-1.5 zt:data-drag-ready:[--cursor:grab]",
           )}
+          data-drag-ready={dragTarget === "ready" ? "" : undefined}
           draggable={dragTarget === "ready"}
-          aria-disabled={dragTarget !== "ready"}
           onDragStart={(e) => actions.onDragStart(e, annot)}
-          {...tooltipAttrs(dragTooltip)}
-        >
-          <Icon name={typeIcon(annot.type)} size={16} style={{ color }} />
-        </span>
+          onClick={(e) => {
+            claimClick(e);
+            actions.onSelectAnnotation(annot);
+          }}
+          {...tooltipAttrs(m.annot_view_card_show_in_reader())}
+        />
         <PageLabel
           page={annot.pageLabel}
           backlink={actions.getBacklink(annot)}
@@ -122,9 +155,11 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
       <ConflictSlot annot={annot} />
 
-      <ExcerptBlock annot={annot} collapsed={collapsed} color={color} />
+      <ExcerptBlock annot={annot} collapsed={collapsed} />
 
       <CommentSlot annot={annot} editing={editing} control={controls.comment} />
+
+      <TagRow annot={annot} />
     </div>
   );
 }
@@ -219,45 +254,74 @@ function CardActionBar({
     // The card's own click takes the selection; a verb is not that. The row
     // claims the click once, rather than each control claiming it itself.
     <div
-      className="zt:ml-auto zt:flex zt:shrink-0 zt:items-center zt:gap-0.5"
+      className="zt:-me-1.5 zt:ml-auto zt:flex zt:shrink-0 zt:items-center"
       onClick={claimClick}
     >
       {/* 70% is the floor the resting state can dim to and still read: at it
           the icon carries 3.26:1 against the header, and WCAG 1.4.11 asks 3:1
           of a control. 40% measured 1.84:1. */}
-      <div className="zt:flex zt:items-center zt:gap-0.5 zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
+      <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
         <IconButton
           icon="palette"
+          className={CARD_CONTROL_MARK}
           disabled={controls.color.disabled}
-          // The palette wears the Annotation's own colour, as the Mark Popup's
-          // does; an Annotation with none keeps the default icon colour.
-          style={annot.color === null ? undefined : { color: annot.color }}
           onClick={(evt) => actions.onColorMenu(evt, annot)}
           {...tooltipAttrs(controls.color.tooltip)}
         />
         <IconButton
           icon={commentIcon(hasComment)}
+          className={CARD_CONTROL_MARK}
           active={editing}
           disabled={controls.comment.disabled}
           onClick={() => setEditing(editing ? null : annot.key)}
           {...tooltipAttrs(controls.comment.tooltip)}
         />
-        {/* The Annotation's own tags, as a menu rather than a row of chips: a
-            row grows with the tag count, and the card's height answers to the
-            comment alone. Selecting one filters the list by it. */}
-        {annot.tags.length > 0 && (
-          <IconButton
-            icon="tags"
-            onClick={(evt) => actions.onTagMenu(evt, annot)}
-            {...tooltipAttrs(m.annot_view_card_tags())}
-          />
-        )}
       </div>
       <IconButton
         icon="more-horizontal"
+        className={CARD_CONTROL_MARK}
         onClick={(evt) => actions.onMoreOptions(evt, annot)}
         {...tooltipAttrs(m.annot_view_more_tooltip())}
       />
+    </div>
+  );
+}
+
+/**
+ * The Annotation's own tags, in the card rather than behind a control: a
+ * researcher scanning a column reads what an Annotation is filed under without
+ * opening anything. They wear the same native-tag chip the filter bar and its
+ * drawer draw, dense, because the card is the densest of the three surfaces.
+ *
+ * A chip is a filter toggle, so a tag seen on one card is the gesture that
+ * narrows the list to it, and a chip already in the filter rests in the accent.
+ */
+function TagRow({ annot }: { annot: AnnotationRecord }) {
+  const selectedTags = useAnnotStore((s) => s.selectedTags);
+  const toggleTag = useToggleSelectedTag();
+  if (annot.tags.length === 0) return null;
+
+  return (
+    <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
+      {annot.tags.map((tag) => {
+        const selected = selectedTags.includes(tag);
+        return (
+          <span
+            key={tag}
+            aria-pressed={selected}
+            className={tagChipVariants({
+              state: selected ? "selected" : "resting",
+              density: "dense",
+              truncate: true,
+            })}
+            // The card's own click takes the selection; filtering is not that.
+            {...activatable(() => toggleTag(tag))}
+            {...tooltipAttrs(m.annot_view_card_tag_tooltip({ name: tag }))}
+          >
+            <span className="zt:block zt:truncate">{tag}</span>
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -391,11 +455,9 @@ function ExcerptText({ text }: { text: string }) {
 function ExcerptBlock({
   annot,
   collapsed,
-  color,
 }: {
   annot: AnnotationRecord;
   collapsed: boolean;
-  color: string | undefined;
 }) {
   const actions = useContext(AnnotActionsContext);
   const name = annot.type;
@@ -413,7 +475,12 @@ function ExcerptBlock({
           collapsed && "zt:max-h-20",
         )}
         src={actions.getImgSrc(annot)}
-        alt={annot.text ?? `Area excerpt for page ${annot.pageLabel ?? "?"}`}
+        alt={
+          annot.text ??
+          (annot.pageLabel === null
+            ? m.annot_view_card_image_alt_no_page()
+            : m.annot_view_card_image_alt({ page: annot.pageLabel }))
+        }
       />
     );
   } else if (annot.text) {
@@ -426,14 +493,9 @@ function ExcerptBlock({
     <div className="zt:px-2 zt:py-1">
       <blockquote
         className={cn(
-          "zt:border-l-2 zt:border-l-(--zt-annot-color) zt:pl-2 zt:leading-tight",
+          "zt:leading-tight",
           collapsed && !isImage && "zt:line-clamp-3",
         )}
-        style={
-          {
-            "--zt-annot-color": color ?? "var(--interactive-accent)",
-          } as React.CSSProperties
-        }
       >
         {content}
       </blockquote>
@@ -452,14 +514,27 @@ function PageLabel({
   const label = m.annot_view_page({ page });
   if (backlink) {
     return (
+      // `external-link` keeps the theme's own external-link colour and cursor;
+      // `zt-annot-page-link` is where the view stylesheet takes back the boxed
+      // glyph Obsidian paints with it, so the arrow beside the label is the same
+      // Lucide stroke as every other icon on this row.
       <a
-        className="external-link zt:min-w-0 zt:truncate"
+        className="external-link zt-annot-page-link zt:flex zt:min-w-0 zt:items-center zt:gap-px"
         href={backlink}
         // Opening the page in Zotero is its own verb, not the card's selection.
         onClick={(e) => e.stopPropagation()}
         {...tooltipAttrs(m.annot_view_open_page())}
       >
-        {label}
+        <span className="zt:truncate">{label}</span>
+        {/* 1.5px at 12px carries the optical weight the row's 16px glyphs
+            carry at 2px, so the arrow reads as the same icon set beside 400
+            text rather than a heavier mark. */}
+        <Icon
+          name="arrow-up-right"
+          size={12}
+          strokeWidth={1.5}
+          className="zt:shrink-0"
+        />
       </a>
     );
   }

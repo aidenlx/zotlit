@@ -28,11 +28,7 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import type { CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
-import {
-  buildAttachmentMenu,
-  buildFollowModeMenu,
-  buildTagMenu,
-} from "./menus";
+import { buildAttachmentMenu, buildFollowModeMenu } from "./menus";
 import { attachmentLine } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
 
@@ -48,8 +44,6 @@ export interface AnnotActions {
   onAttachmentMenu(evt: MouseEvent<HTMLElement>): void;
   /** Open Zotero's eight swatches from a card's palette control. */
   onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
-  /** Open a card's own tags, each one a filter toggle. */
-  onTagMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
   /** Follow the active tab or the Zotero reader, from a user gesture. */
@@ -346,22 +340,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
 
     menu.addSeparator();
-    // The keyboard’s route to what a drag does. A native MenuItem carries no
-    // tooltip, so a blocked insert says why in a label beside it.
-    // @see apps/obsidian/policies/tooltips.md
-    const { dragTarget } = deps.getState();
+    // The keyboard's route to what a drag does.
     menu.addItem((item) => {
       item
         .setTitle(m.annot_view_menu_insert())
         .setIcon("file-input")
-        .setDisabled(dragTarget !== "ready")
+        .setDisabled(deps.getState().dragTarget !== "ready")
         .onClick(() => deps.insertAnnotation(annot));
     });
-    if (dragTarget !== "ready") {
-      menu.addItem((item) =>
-        item.setTitle(m.annot_view_insert_no_note()).setIsLabel(true),
-      );
-    }
 
     menu.addSeparator();
     menu.addItem((item) => {
@@ -374,21 +360,17 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         });
     });
 
-    // A native MenuItem carries no tooltip, so a blocked delete says why in a
-    // label beside it rather than in one it cannot show.
-    // @see apps/obsidian/policies/tooltips.md
-    const control = deps.deleteControl(annot);
+    // Every entry here is a verb. A blocked write shows as a dimmed entry and
+    // says why once, in the toolbar's Capability affordance, rather than in a
+    // label under each menu it blocks.
     menu.addItem((item) => {
       item
         .setTitle(m.annot_view_menu_delete())
         .setIcon("trash-2")
         .setWarning(true)
-        .setDisabled(control.disabled)
+        .setDisabled(deps.deleteControl(annot).disabled)
         .onClick(() => void confirmDeleteAnnotation(annot));
     });
-    if (control.disabled) {
-      menu.addItem((item) => item.setTitle(control.tooltip).setIsLabel(true));
-    }
   };
 
   return {
@@ -437,15 +419,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         }),
       );
     },
-    onTagMenu(evt, annot) {
-      showMenu(evt, (menu) =>
-        buildTagMenu(menu, {
-          tags: annot.tags,
-          selectedTags: deps.getState().selectedTags,
-          onToggle: deps.toggleSelectedTag,
-        }),
-      );
-    },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
     onSetFollowMode: deps.onSetFollowMode,
@@ -469,7 +442,6 @@ const NOOP_ACTIONS: AnnotActions = {
   onFollowModeMenu: () => {},
   onAttachmentMenu: () => {},
   onColorMenu: () => {},
-  onTagMenu: () => {},
   onDragStart: () => {},
   onSetFollowMode: () => {},
   onPinCurrentItem: () => {},

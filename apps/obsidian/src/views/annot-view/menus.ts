@@ -84,28 +84,3 @@ export function buildAttachmentMenu(
     );
   }
 }
-
-export interface TagMenuInput {
-  tags: readonly string[];
-  /** The tags the filter holds; a tag in it shows checked. */
-  selectedTags: readonly string[];
-  onToggle: (tag: string) => void;
-}
-
-/**
- * The Annotation's own tags. Selecting one filters the list by it, which is
- * what the card's tag chips did.
- */
-export function buildTagMenu(
-  menu: Menu,
-  { tags, selectedTags, onToggle }: TagMenuInput,
-): void {
-  for (const tag of tags) {
-    menu.addItem((item) =>
-      item
-        .setTitle(tag)
-        .setChecked(selectedTags.includes(tag))
-        .onClick(() => onToggle(tag)),
-    );
-  }
-}
