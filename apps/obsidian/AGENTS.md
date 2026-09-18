@@ -20,7 +20,7 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [tooltips](policies/tooltips.md) — `aria-label` is the tooltip; spread `tooltipAttrs` in React
 - [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
 - [hover-popover](policies/hover-popover.md) — extend `PopoutAwareHoverPopover`; cancel a timer on the window that armed it
-- [tailwind-first](policies/tailwind-first.md) — styling is a `zt:` utility; a stylesheet earns its load where a utility cannot reach
+- [tailwind-first](policies/tailwind-first.md) — styling is a `zt:` utility; `style` carries data, the class list carries declarations; a stylesheet earns its load where a utility cannot reach
 - [ui-seams](policies/ui-seams.md) — functional core, imperative shell; notices render at the seam, tests assert data
 - [ui-testing](policies/ui-testing.md) — unit tests cover only pure logic; a rendered surface is proved in the running app
 - [cli-text](policies/cli-text.md) — `zotlit:*` CLI output is hardcoded English, never sourced from the Language Pack facade
@@ -66,7 +66,7 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 ## CSS
 
-Tailwind utilities with the `zt:` prefix are the styling default — [tailwind-first](policies/tailwind-first.md) is the rule, `/obsidian-css` the guide (tokens, native components, `.zt-root` scoped preflight). A themeable runtime value rides in a custom property on `style`, with a `data-*` attribute for its condition; `style` keeps only what no stylesheet can predict.
+Tailwind utilities with the `zt:` prefix are the styling default — [tailwind-first](policies/tailwind-first.md) is the rule, `/obsidian-css` the guide (tokens, native components, `.zt-root` scoped preflight).
 
 Public theme hooks follow [theme-hooks](policies/theme-hooks.md): central semantic `zt-` classes, cross-surface contract tests, and documented activation rules.
 
