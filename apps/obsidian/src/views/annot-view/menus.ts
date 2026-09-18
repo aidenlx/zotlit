@@ -5,12 +5,6 @@
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 import type { Menu } from "obsidian";
 
-import {
-  ANNOTATION_COLORS,
-  annotationColorLabel,
-  isColor,
-} from "@/lib/annotation-colors";
-
 import type { AnnotActions } from "./actions";
 import { followModeMenu } from "./presentation";
 import type {
@@ -89,44 +83,6 @@ export function buildAttachmentMenu(
         .onClick(() => onSelect(option.key)),
     );
   }
-}
-
-export interface ColorMenuInput {
-  /** The colour the Annotation carries now, in whatever case it was stored. */
-  color: string | null;
-  onSelect: (hex: string) => void;
-}
-
-/**
- * Zotero's eight swatches. Each title is a fragment, so the colour itself
- * stands beside its name the way the card's own dot does — `setTitle` takes a
- * `DocumentFragment`, so this needs nothing private.
- */
-export function buildColorMenu(
-  menu: Menu,
-  { color, onSelect }: ColorMenuInput,
-): void {
-  for (const hex of ANNOTATION_COLORS) {
-    menu.addItem((item) =>
-      item
-        .setTitle(swatchTitle(hex))
-        .setChecked(isColor(color, hex))
-        .onClick(() => onSelect(hex)),
-    );
-  }
-}
-
-function swatchTitle(hex: string): DocumentFragment {
-  return createFragment((frag) => {
-    const row = frag.createSpan({
-      cls: "zt:inline-flex zt:items-center zt:gap-2",
-    });
-    row.createSpan({
-      cls: "zt:size-3 zt:shrink-0 zt:rounded-full zt:ring-1 zt:ring-border",
-      attr: { style: `background-color: ${hex}` },
-    });
-    row.createSpan({ text: annotationColorLabel(hex) });
-  });
 }
 
 export interface TagMenuInput {

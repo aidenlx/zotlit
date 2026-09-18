@@ -6,11 +6,7 @@
 // is written once here and neither can drift from the other.
 import { Menu } from "obsidian";
 
-import {
-  ANNOTATION_COLORS,
-  annotationColorLabel,
-  isColor,
-} from "@/lib/annotation-colors";
+import { buildColorMenu } from "@/lib/annotation-colors";
 
 import type { Point } from "./hit-test";
 
@@ -55,13 +51,6 @@ export function colorMenu(
   onPick: (hex: string) => void,
 ): Menu {
   const menu = new Menu();
-  for (const hex of ANNOTATION_COLORS) {
-    menu.addItem((item) =>
-      item
-        .setTitle(annotationColorLabel(hex))
-        .setChecked(isColor(current, hex))
-        .onClick(() => onPick(hex)),
-    );
-  }
+  buildColorMenu(menu, { color: current, onSelect: onPick });
   return menu;
 }

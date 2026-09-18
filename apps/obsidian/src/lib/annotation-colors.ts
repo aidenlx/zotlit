@@ -1,5 +1,8 @@
-// Zotero's annotation palette: the eight swatches its reader offers, and the
-// name each one goes by wherever ZotLit shows a colour.
+// Zotero's annotation palette: the eight swatches its reader offers, the name
+// each one goes by wherever ZotLit shows a colour, and the one menu every
+// surface that recolours opens.
+
+import type { Menu } from "obsidian";
 
 import { annotationColorToName } from "@zotlit/db";
 import type { AnnotationColorName } from "@zotlit/db";
@@ -54,4 +57,46 @@ export function annotationColorLabel(hex: string): string {
  */
 export function isColor(stored: string | null, swatch: string): boolean {
   return stored !== null && stored.toLowerCase() === swatch.toLowerCase();
+}
+
+export interface ColorMenuInput {
+  /** The colour in hand, in whatever case it was stored; that entry shows checked. */
+  color: string | null;
+  onSelect: (hex: string) => void;
+}
+
+/**
+ * Zotero's eight swatches as menu entries. Each title is a fragment, so the
+ * colour itself stands beside its name the way an Annotation card's own dot
+ * does — `setTitle` takes a `DocumentFragment`, so this needs nothing private.
+ *
+ * Written once here because every surface that recolours — the Annotation
+ * View's card, the reader's mark popup, the reader's creation toolbar — offers
+ * the same palette, and none of them may drift from the others.
+ */
+export function buildColorMenu(
+  menu: Menu,
+  { color, onSelect }: ColorMenuInput,
+): void {
+  for (const hex of ANNOTATION_COLORS) {
+    menu.addItem((item) =>
+      item
+        .setTitle(swatchTitle(hex))
+        .setChecked(isColor(color, hex))
+        .onClick(() => onSelect(hex)),
+    );
+  }
+}
+
+function swatchTitle(hex: string): DocumentFragment {
+  return createFragment((frag) => {
+    const row = frag.createSpan({
+      cls: "zt:inline-flex zt:items-center zt:gap-2",
+    });
+    row.createSpan({
+      cls: "zt:size-3 zt:shrink-0 zt:rounded-full zt:ring-1 zt:ring-border",
+      attr: { style: `background-color: ${hex}` },
+    });
+    row.createSpan({ text: annotationColorLabel(hex) });
+  });
 }
