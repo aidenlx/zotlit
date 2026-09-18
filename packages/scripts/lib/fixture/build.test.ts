@@ -381,6 +381,13 @@ describe("the generated Zotero database", () => {
         title: "Research interfaces conference paper",
         url: null,
       },
+      {
+        key: "CNPVLT26",
+        path: join(layout.vaultDir, "attachments", "research-interfaces.pdf"),
+        charsetID: null,
+        title: "Research interfaces conference paper (linked copy)",
+        url: null,
+      },
     ]);
   });
 
@@ -623,6 +630,33 @@ describe("the generated Zotero database", () => {
     );
   });
 
+  it("carries untagged Annotations in both a vault PDF and a Zotero-storage PDF", async () => {
+    using db = openClient();
+    const storage = getAttachmentsByParents(db, [60]).find(
+      ({ key }) => key === "CNPDF26A",
+    )!;
+    const vault = getAttachmentsByParents(db, [60]).find(
+      ({ key }) => key === "CNPVLT26",
+    )!;
+
+    expect(storage).toMatchObject({
+      linkMode: 0,
+      path: "storage:research-interfaces.pdf",
+    });
+    expect(vault).toMatchObject({
+      linkMode: 2,
+      path: join(layout.vaultDir, "attachments", "research-interfaces.pdf"),
+    });
+
+    const annotations = getAnnotationsByKey(db, ["CNPAN26A", "CNPVL26A"], 1);
+    expect(
+      annotations.map(({ parentKey, tags }) => [parentKey, [...tags]]),
+    ).toEqual([
+      ["CNPDF26A", []],
+      ["CNPVLT26", []],
+    ]);
+  });
+
   it("targets the Development Vault during Paired Run preparation", async () => {
     const pairedLayout = getFixtureLayout(
       await mkdtemp(join(dirname(layout.root), "paired-vault-test-")),
@@ -771,6 +805,20 @@ describe("the generated Zotero database", () => {
         pageLabel: "2",
       },
     ]);
+
+    expect(
+      Object.fromEntries(
+        annotations.map(({ key, tags }) => [key, [...tags].sort()]),
+      ),
+    ).toEqual({
+      TYY6Z6ZF: [],
+      "4PE492KU": [],
+      HRK7BG32: ["figure"],
+      K3JRFLFQ: ["methodology", "visualization"],
+      PUPR5FG5: ["visualization"],
+      C94NJNYG: ["methodology"],
+      FDRFQ7C2: ["figure"],
+    });
 
     expect(
       Object.fromEntries(

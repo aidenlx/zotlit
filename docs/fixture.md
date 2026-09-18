@@ -8,6 +8,8 @@ The Fixture is one disposable test environment. It contains a Zotero data direct
 
 The Fixture Spec is the committed source of truth for the semantic content of the Fixture. It is in `packages/scripts/lib/fixture/spec.ts`. Each build removes the old generated tree and reproduces the environment from this spec.
 
+The Annotation View filter reads three annotated PDFs. `attachments/rougier-2014.pdf` is a linked file in the Fixture Vault, and its Annotations carry the Zotero tags `figure`, `methodology`, and `visualization`, which overlap across the Annotations. The "Research interfaces conference paper" carries one untagged Annotation in two forms: a PDF in Zotero storage, and the linked `attachments/research-interfaces.pdf` in the vault. The filter therefore has a tag vocabulary on the first PDF, and an empty tag vocabulary on the other two.
+
 The [Fixture context glossary](../packages/scripts/CONTEXT.md) defines the required terms for code and documentation.
 
 ## Build the Fixture
