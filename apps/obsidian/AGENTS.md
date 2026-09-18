@@ -20,6 +20,7 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [tooltips](policies/tooltips.md) — `aria-label` is the tooltip; spread `tooltipAttrs` in React
 - [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
 - [hover-popover](policies/hover-popover.md) — extend `PopoutAwareHoverPopover`; cancel a timer on the window that armed it
+- [tailwind-first](policies/tailwind-first.md) — styling is a `zt:` utility; a stylesheet earns its load where a utility cannot reach
 - [ui-seams](policies/ui-seams.md) — functional core, imperative shell; notices render at the seam, tests assert data
 - [ui-testing](policies/ui-testing.md) — unit tests cover only pure logic; a rendered surface is proved in the running app
 - [cli-text](policies/cli-text.md) — `zotlit:*` CLI output is hardcoded English, never sourced from the Language Pack facade
@@ -65,13 +66,11 @@ Run `/i18n-ui-text` for wording style; `/inlang-i18n` for JSON format and runtim
 
 ## CSS
 
-Run `/obsidian-css` for styling decisions (colors, spacing, components, `zt:` prefix, theme tokens, `.zt-root` scoped preflight).
+Tailwind utilities with the `zt:` prefix are the styling default — [tailwind-first](policies/tailwind-first.md) is the rule, `/obsidian-css` the guide (tokens, native components, `.zt-root` scoped preflight).
 
 Public theme hooks follow [theme-hooks](policies/theme-hooks.md): central semantic `zt-` classes, cross-surface contract tests, and documented activation rules.
 
 Mark each plugin UI root (`ItemView.contentEl`, modal `contentEl`, settings pane) with `class="zt-root"` — that scope enables the Tailwind preflight so semantic HTML and border utilities render clean. See the skill's **Scoped preflight** section.
-
-Feature styles live next to the code that owns them and are imported from it — `views/<view>/style.css`, `services/<service>/style.css`. The Tailwind entry and styles that belong to no single feature go in `src/zt-main.css`.
 
 ## Debugging
 
