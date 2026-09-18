@@ -21,6 +21,7 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
 - [hover-popover](policies/hover-popover.md) — extend `PopoutAwareHoverPopover`; cancel a timer on the window that armed it
 - [ui-seams](policies/ui-seams.md) — functional core, imperative shell; notices render at the seam, tests assert data
+- [ui-testing](policies/ui-testing.md) — unit tests cover only pure logic; a rendered surface is proved in the running app
 - [cli-text](policies/cli-text.md) — `zotlit:*` CLI output is hardcoded English, never sourced from the Language Pack facade
 
 ## UI stack
@@ -32,8 +33,6 @@ View/modal state uses a zustand **vanilla store + React context, one per instanc
 Menus and popovers are Obsidian's own `Menu` and popover primitives, built imperatively and shown from the gesture that opens them — inside a Preact tree as much as in vanilla DOM. `src/views/annot-view` is the pattern: `presentation.ts` answers which entries exist, `menus.ts` fills a `Menu` from them, `actions.tsx` shows it, and the component calls the action; `pane-menu.ts` puts the same entries in the pane menu. A menu opened from a control is anchored under it with `showMenuAtButton` from `src/lib/menu.ts`, which keeps a keyboard-activated control and a popout host both correct; `showAtMouseEvent` is for a right-click. Obsidian owns placement, viewport clamping, theme, and chrome ([ADR 0044](docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md)).
 
 The three surfaces inside Obsidian's PDF reader are vanilla DOM, and no reader code imports Preact ([ADR 0042](docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md)).
-
-**Components are not mounted in tests.** Push the decision out of the component and test the decision — the store transition, and a pure module that answers which entries exist, which state applies, and why a control is blocked. `src/views/annot-view/presentation.ts` is the pattern; a rendered surface is verified by driving the real Obsidian (see the `obsidian-debug` skill), never by mounting in happy-dom.
 
 ## Note feature
 
@@ -79,6 +78,8 @@ Feature styles live next to the code that owns them and are imported from it —
 Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian instance.
 
 ## Testing
+
+Unit tests cover pure logic; a rendered surface is proved in the running app — [ui-testing](policies/ui-testing.md) is the rule, `/obsidian-debug` the loop.
 
 Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alias`. Extend the mock when touching new `obsidian` exports; keep the surface minimal.
 
