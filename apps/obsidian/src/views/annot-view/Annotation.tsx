@@ -8,7 +8,13 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
-import { claimClick, clickClaimed, cn, tooltipAttrs } from "@/lib/utils";
+import {
+  activatable,
+  claimClick,
+  clickClaimed,
+  cn,
+  tooltipAttrs,
+} from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { AnnotActionsContext } from "./actions";
@@ -165,18 +171,19 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
       ))}
       <div className="zt:flex zt:gap-2">
         {panel.actions.map((action) => (
-          <button
+          <span
             key={action.kind}
-            className="zt:underline"
-            onClick={(e) => {
-              // The card's own click takes the selection; a verb is not that.
-              e.stopPropagation();
-              if (action.kind === "discard") actions.onDiscardConflict(annot);
-              else actions.onApplyAgain(annot);
-            }}
+            className="zt:cursor-link zt:rounded-sm zt:text-link zt:underline zt:underline-offset-2 zt:hover:text-link-hover zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
+            // The card's own click takes the selection; a verb is not that, and
+            // `activatable` stops the click before the card sees it.
+            {...activatable(() =>
+              action.kind === "discard"
+                ? actions.onDiscardConflict(annot)
+                : actions.onApplyAgain(annot),
+            )}
           >
             {action.label}
-          </button>
+          </span>
         ))}
       </div>
     </div>
