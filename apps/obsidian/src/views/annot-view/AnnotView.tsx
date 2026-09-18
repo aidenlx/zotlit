@@ -5,7 +5,7 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { activatable, tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
@@ -276,11 +276,10 @@ function EmptyPane({
 }) {
   const actions = useContext(AnnotActionsContext);
   return (
-    <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
+    <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
       <div>{message}</div>
       {action && (
         <button
-          className="zt:underline"
           onClick={() =>
             action.action === "enable-live-updates"
               ? actions.onEnableLiveUpdates()
@@ -323,11 +322,9 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
-      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
+      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
         <div>{m.annot_view_filter_no_match()}</div>
-        <button className="zt:underline" onClick={clearFilters}>
-          {m.annot_view_clear_filters()}
-        </button>
+        <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
       </div>
     );
   }
@@ -383,19 +380,20 @@ function UncertainCreateCards() {
         )}
         <div className="zt:flex zt:gap-2">
           {card.actions.map((action) => (
-            <button
+            <span
               key={action.kind}
-              className="zt:underline"
+              className="zt:cursor-link zt:rounded-sm zt:text-link zt:underline zt:underline-offset-2 zt:hover:text-link-hover zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-70"
               aria-disabled={action.disabled || undefined}
-              disabled={action.disabled}
-              onClick={() =>
-                action.kind === "retry"
-                  ? actions.onRetryCreate(create.writeToken)
-                  : actions.onDiscardCreate(create.writeToken)
-              }
+              {...activatable(
+                () =>
+                  action.kind === "retry"
+                    ? actions.onRetryCreate(create.writeToken)
+                    : actions.onDiscardCreate(create.writeToken),
+                { disabled: action.disabled },
+              )}
             >
               {action.label}
-            </button>
+            </span>
           ))}
         </div>
       </div>
