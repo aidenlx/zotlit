@@ -7,6 +7,7 @@ import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
+import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
@@ -197,6 +198,26 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     report(deps.annotations.patchComment(annot.key, comment));
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
+  /**
+   * Nothing ZotLit holds can put a deleted Annotation back, so the erase asks
+   * once against the card the user can see.
+   *
+   * @see apps/obsidian/policies/ui-seams.md
+   */
+  const confirmDeleteAnnotation = async (
+    annot: AnnotationRecord,
+  ): Promise<void> => {
+    const confirmed = await confirm(
+      {
+        title: m.annot_view_delete_confirm_title(),
+        content: m.annot_view_delete_confirm_content(),
+        action: m.annot_view_delete_confirm_action(),
+        destructive: true,
+      },
+      deps.app,
+    );
+    if (confirmed) onDeleteAnnotation(annot);
+  };
   const onApplyAgain = (annot: AnnotationRecord): void =>
     report(deps.annotations.retryWrite(annot.key));
   const onDiscardConflict = (annot: AnnotationRecord): void =>
@@ -361,8 +382,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       item
         .setTitle(m.annot_view_menu_delete())
         .setIcon("trash-2")
+        .setWarning(true)
         .setDisabled(control.disabled)
-        .onClick(() => onDeleteAnnotation(annot));
+        .onClick(() => void confirmDeleteAnnotation(annot));
     });
     if (control.disabled) {
       menu.addItem((item) => item.setTitle(control.tooltip).setIsLabel(true));
