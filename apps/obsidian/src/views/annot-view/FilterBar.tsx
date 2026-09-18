@@ -2,6 +2,7 @@
 // cluster; toggles an inline tag-cloud panel rendered directly beneath it.
 import { useMemo } from "react";
 
+import { Icon } from "@/components/obsidian/icon";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { activatable, cn, tooltipAttrs } from "@/lib/utils";
@@ -121,22 +122,31 @@ function SwatchRow({
   small,
 }: SwatchRowProps) {
   return (
-    <div className="zt:flex zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-1.5">
+    <div className="zt:flex zt:shrink-0 zt:flex-wrap zt:items-center">
       {colors.map((hex) => {
         const selected = selectedColors.includes(hex);
         return (
+          // The box is the pointer target and the focus ring; the swatch
+          // inside it is the colour. Fixing the box at 20x24 keeps six colours
+          // in one compact strip — the row is `shrink-0`, so every pixel it
+          // takes comes off the tag name beside it.
           <span
             key={hex}
             aria-pressed={selected}
-            className={cn(
-              "zt:shrink-0 zt:cursor-pointer zt:rounded-sm zt:ring-offset-1 zt:ring-offset-background zt:motion-safe:transition-shadow",
-              small ? "zt:size-3" : "zt:size-4",
-              selected && "zt:ring-2 zt:ring-primary",
-            )}
-            style={{ backgroundColor: hex }}
+            className="zt:flex zt:h-6 zt:w-5 zt:shrink-0 zt:cursor-pointer zt:items-center zt:justify-center zt:rounded-sm zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
             {...activatable(() => onToggle(hex))}
             {...tooltipAttrs(annotationColorLabel(hex))}
-          />
+          >
+            <span
+              className={cn(
+                "zt:rounded-sm zt:ring-offset-1 zt:ring-offset-background zt:motion-safe:transition-shadow",
+                "zt:bg-(--zt-swatch-color)",
+                small ? "zt:size-3.5" : "zt:size-4",
+                selected && "zt:ring-2 zt:ring-primary",
+              )}
+              style={{ "--zt-swatch-color": hex } as React.CSSProperties}
+            />
+          </span>
         );
       })}
     </div>
@@ -184,8 +194,10 @@ function TagPill({
 
 /**
  * Dashed action chip that opens/closes the tag panel. Counting (k = selected
- * tag count ≥ 2) shows "+{k-1}" in accent styling; otherwise shows "+{n-1}"
- * (n = vocabulary size) in muted styling. Never shrinks or wraps.
+ * tag count ≥ 2) shows a filter icon and k in accent styling; otherwise shows
+ * "+{n-1}" (n = vocabulary size) in muted styling. The two states carry two
+ * different meanings, so each one gets its own glyph rather than its own
+ * colour. Never shrinks or wraps.
  */
 function TagsTrigger({
   selectedCount,
@@ -199,7 +211,7 @@ function TagsTrigger({
   onToggle: () => void;
 }) {
   const counting = selectedCount >= 2;
-  const count = counting ? selectedCount - 1 : vocabSize - 1;
+  const count = counting ? selectedCount : vocabSize - 1;
   const ariaLabel = counting
     ? m.annot_view_filter_trigger_selected({ count })
     : m.annot_view_filter_trigger_show_all();
@@ -211,13 +223,14 @@ function TagsTrigger({
       className={cn(
         // Shares the tag pills' radius, but stays a dashed *action* chip — a solid
         // 1px border and muted fill keep it distinct from the native data chips.
-        "zt:inline-flex zt:shrink-0 zt:cursor-pointer zt:items-center zt:gap-0.75 zt:rounded-(--tag-radius) zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2.5 zt:py-0.5 zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground",
+        "zt:inline-flex zt:shrink-0 zt:cursor-pointer zt:items-center zt:gap-0.75 zt:rounded-(--tag-radius) zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2.5 zt:py-0.5 zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus",
         "zt:data-counting:border-primary zt:data-counting:bg-[color-mix(in_srgb,var(--interactive-accent)_12%,var(--background-primary))] zt:data-counting:text-accent-foreground",
       )}
       {...activatable(onToggle)}
       {...tooltipAttrs(ariaLabel)}
     >
-      +{count}
+      {counting ? <Icon name="filter" size={10} /> : "+"}
+      {count}
       <svg
         width="8"
         height="8"
@@ -239,7 +252,7 @@ function TagsTrigger({
 function ClearLink({ onClear }: { onClear: () => void }) {
   return (
     <span
-      className="zt:cursor-pointer zt:text-xs zt:text-accent-foreground zt:hover:underline"
+      className="zt:cursor-pointer zt:rounded-sm zt:text-xs zt:text-accent-foreground zt:hover:underline zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
       {...activatable(onClear)}
     >
       {m.annot_view_filter_clear()}
