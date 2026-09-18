@@ -1160,6 +1160,20 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "rougier-2014/rougier-2014.pdf",
     dateModified: "2025-01-03 11:00:00",
   },
+  {
+    itemID: 80,
+    libraryID: 1,
+    key: "CNPVLT26",
+    parentItemID: 60,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Research interfaces conference paper (linked copy)",
+    path: "attachments/research-interfaces.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-01-03 11:30:00",
+  },
 ];
 
 interface FixtureAnnotationBase {
@@ -1171,6 +1185,8 @@ interface FixtureAnnotationBase {
   text: string | null;
   comment: string | null;
   color: string;
+  /** Manual (`0`) or automatic (`1`) Zotero tags on the Annotation. */
+  tags?: readonly { name: string; type: 0 | 1 }[];
   pageLabel: string;
   sortIndex: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
@@ -1269,6 +1285,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: "Identify Your Message",
     comment: null,
     color: "#2ea8e5",
+    tags: [{ name: "visualization", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|002041|00170",
     position: {
@@ -1288,6 +1305,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: null,
     color: "#ffd400",
+    tags: [{ name: "figure", type: 0 }],
     pageLabel: "2",
     sortIndex: "00001|001860|00047",
     position: {
@@ -1307,6 +1325,10 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
     comment: null,
     color: "#ff6666",
+    tags: [
+      { name: "visualization", type: 0 },
+      { name: "methodology", type: 0 },
+    ],
     pageLabel: "1",
     sortIndex: "00000|000434|00180",
     position: {
@@ -1330,6 +1352,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: "Making figures is hard :(",
     color: "#a28ae5",
+    tags: [{ name: "figure", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|000191|00088",
     position: {
@@ -1351,6 +1374,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: "some text comment",
     color: "#ffd400",
+    tags: [{ name: "methodology", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|003354|00170",
     position: {
@@ -1436,6 +1460,22 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     type: 1,
     text: "A reproducible interface makes its inputs and outputs inspectable.",
     comment: "Reviewed Fixture text; it contains no personal library data.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000001|00000",
+    position: { pageIndex: 0, rects: [[58, 590, 375, 610]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-01-03 11:30:00",
+    dateModified: "2025-01-03 11:30:00",
+  },
+  {
+    itemID: 81,
+    libraryID: 1,
+    key: "CNPVL26A",
+    parentItemID: 80,
+    type: 1,
+    text: "A reproducible interface makes its inputs and outputs inspectable.",
+    comment: null,
     color: "#ffd400",
     pageLabel: "1",
     sortIndex: "00000|000001|00000",
