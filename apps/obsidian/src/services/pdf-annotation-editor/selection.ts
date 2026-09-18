@@ -13,6 +13,7 @@ import type { HoverParent } from "obsidian";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
+import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -38,7 +39,7 @@ import type { MarkPopupControlId } from "./mark-popup";
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import { markTargets, pageUnitSize } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
-import { belowOf, colorMenu, onScreen, selectionCollapsed } from "./surface";
+import { colorMenu, onScreen, selectionCollapsed } from "./surface";
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
@@ -393,9 +394,12 @@ export class MarkSelection implements Disposable {
     const { annotations, gestures } = this.#deps;
     switch (id) {
       case "color":
-        colorMenu(annotation.color, (hex) =>
-          this.#write(annotations.patchColor(annotation.key, hex)),
-        ).showAtPosition(belowOf(node), node.doc);
+        showMenuAtButton(
+          colorMenu(annotation.color, (hex) =>
+            this.#write(annotations.patchColor(annotation.key, hex)),
+          ),
+          node,
+        );
         return;
       case "comment":
         gestures.revealAnnotation(annotation.key, { comment: true });

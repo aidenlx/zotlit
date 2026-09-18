@@ -57,9 +57,9 @@
 
 /*
  * The Creation Toolbar sits in Obsidian's own right toolbar slot, so it takes
- * that toolbar's rhythm rather than setting one of its own. A swatch keeps its
- * Annotation colour when it is pressed, which `clickable-icon.is-active` would
- * otherwise repaint in the accent colour.
+ * that toolbar's rhythm rather than setting one of its own. An armed tool keeps
+ * its Annotation colour, which `clickable-icon.is-active` would otherwise
+ * repaint in the accent colour.
  */
 :where(.zt-pdf-creation-toolbar) {
   display: flex;
@@ -69,6 +69,56 @@
 
 :where(.zt-pdf-creation-toolbar .clickable-icon.is-active) {
   background-color: var(--background-modifier-hover);
+}
+
+/*
+ * One tool is one split button: the toggle that arms it, and the chevron that
+ * opens its colours. The seat is what reads as the button — it owns the shape
+ * and the armed fill — and each half owns its own hover, so the pair fills as
+ * one control and answers the pointer in two places.
+ *
+ * Obsidian states `border-radius`, `padding` and `--icon-size` on
+ * `.clickable-icon` itself, outside any cascade layer, so a utility class
+ * cannot reach them and these longhands answer it here instead.
+ */
+:where(.zt-pdf-tool) {
+  border-radius: var(--clickable-icon-radius);
+  overflow: hidden;
+}
+
+:where(.zt-pdf-tool.is-active) {
+  background-color: var(--background-modifier-active-hover);
+}
+
+/* The seat carries the corners, so the halves meet square and flush. */
+:where(.zt-pdf-tool) > .clickable-icon {
+  border-radius: 0;
+}
+
+/* The armed tool's own colour stays on its toggle, through the inline style. */
+:where(.zt-pdf-tool.is-active) > .clickable-icon {
+  color: var(--icon-color-active);
+}
+
+/*
+ * Obsidian holds an active `clickable-icon` at its active fill under the
+ * pointer, rather than lighting it further. The seat carries that fill here, so
+ * the half under the pointer stands aside and lets the seat show through — the
+ * armed tool answers the way every other active icon in the app does.
+ */
+:where(.zt-pdf-tool.is-active) > .clickable-icon:hover {
+  background-color: transparent;
+}
+
+/* Halved where the two meet, which is what makes the pair read as compact. */
+:where(.zt-pdf-tool) > .clickable-icon:first-child {
+  padding-inline-end: var(--size-2-1);
+}
+
+:where(.zt-pdf-tool) > .clickable-icon:last-child {
+  padding-inline-start: var(--size-2-1);
+  /* The chevron names a menu rather than a colour, so it reads one step down. */
+  --icon-size: var(--icon-xs);
 }
 
 /* The comment sheet is an editor, so it is as wide as one rather than as wide

@@ -185,11 +185,13 @@ export function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
+        settings,
       }) =>
         new PdfAnnotationEditor({
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
+          settings,
           capabilityGestures: {
             showEditingCapability: () =>
               void capabilityNotices.showEditingCapability(),

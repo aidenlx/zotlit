@@ -21,6 +21,12 @@ import type {
   AttachmentResolution,
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+
+import { resolveToolColors } from "./tools";
+import type { AnnotationToolColors, ToolColorStore } from "./tools";
 
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
@@ -319,6 +325,38 @@ export function capabilityGestures() {
 /** The one gesture the Mark Popup hands to its UI seam. */
 export function markGestures() {
   return { revealAnnotation: vi.fn() };
+}
+
+/**
+ * The settings the reader keeps each tool's colour in: the shipped defaults,
+ * with a write held in memory the way a save holds it on disk.
+ */
+export function readerSettings(): Pick<SettingsService, "current" | "update"> {
+  let current: Settings = { ...defaults };
+  return {
+    get current() {
+      return current;
+    },
+    update: (patchOrUpdater) => {
+      const patch =
+        typeof patchOrUpdater === "function"
+          ? patchOrUpdater(current)
+          : patchOrUpdater;
+      current = { ...current, ...patch } as Settings;
+      return current;
+    },
+  };
+}
+
+/** Each tool's colour, held the way the settings-backed store holds it. */
+export function toolColors(): ToolColorStore {
+  let stored: AnnotationToolColors = {};
+  return {
+    current: () => resolveToolColors(stored),
+    set: (tool, color) => {
+      stored = { ...stored, [tool]: color };
+    },
+  };
 }
 
 /** The ids of the probes that failed, in the order they were recorded. */

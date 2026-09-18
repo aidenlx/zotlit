@@ -18,8 +18,8 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
-import type { MarkTool } from "./creation-toolbar";
 import { markPopupControl } from "./mark-popup";
+import type { AnnotationTool, MarkTool } from "./tools";
 
 /** What a pressed control of the create-mode row asks for. */
 export type CreatePopupAction =
@@ -50,7 +50,7 @@ export interface CreatePopupControl {
 export interface CreatePopupRowInput {
   /** The armed tool, which a colour commits with; highlight where none is. */
   armed: MarkTool | null;
-  colors: Readonly<Record<MarkTool, string>>;
+  colors: Readonly<Record<AnnotationTool, string>>;
   /** What this Attachment's Annotations may be edited to right now. */
   capability: EditingCapability;
   /** What the create in flight, if any, left on the selection. */
