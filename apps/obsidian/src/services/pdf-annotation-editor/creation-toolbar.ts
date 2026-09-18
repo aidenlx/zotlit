@@ -17,25 +17,30 @@ import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
 import { renderIconButton } from "./icon-button";
 import "./style.css";
+import { MARK_TOOLS } from "./tools";
+import type { MarkTool } from "./tools";
 
 /** Layout only; Obsidian's `clickable-icon` owns the look of each control. */
 const LAYOUT_CLASSES = ["zt:flex", "zt:items-center", "zt:gap-0.5"];
 
-/** The two marks ZotLit creates. Underline is a peer of highlight throughout. */
-export type MarkTool = "highlight" | "underline";
-
-export const MARK_TOOLS: readonly MarkTool[] = ["highlight", "underline"];
+/**
+ * The seat one tool's two halves share. They stretch to one height, and
+ * `style.css` gives the seat the button's shape and its armed fill, so the pair
+ * reads as one button while each half keeps `clickable-icon`'s own hover.
+ */
+const SPLIT_CLASSES = [themeHook.pdfTool, "zt:flex", "zt:items-stretch"];
 
 /**
- * Every control the toolbar holds, in the order it draws them.
+ * Every control the toolbar holds, in the order it draws them: two per tool —
+ * the toggle that arms it and the chevron that opens its colours — and then
+ * mark visibility.
  *
  * "Clear all annotations" is deliberately absent: the reader's toolbar offers
  * no verb that erases Annotations ZotLit did not create in this gesture.
  */
 export type CreationToolbarControlId =
   | MarkTool
-  | "highlight-color"
-  | "underline-color"
+  | `${MarkTool}-color`
   | "visibility";
 
 /** One control, decided as data so nothing about it is settled in the DOM. */
@@ -47,6 +52,12 @@ export interface CreationToolbarControl {
   /** A toggle's state, or `null` for a control that is not a toggle. */
   pressed: boolean | null;
   disabled: boolean;
+  /**
+   * The tool whose split button this control is one half of — its toggle and
+   * the chevron that opens its colours share a seat. `null` for a control that
+   * stands on its own.
+   */
+  split: MarkTool | null;
   /** The swatch this control wears, or `null` for one that wears none. */
   color: string | null;
 }
@@ -64,10 +75,22 @@ export interface CreationToolbarProps {
   now: Temporal.Instant;
 }
 
+/** Each tool's icon and the name it goes by, as Zotero's own reader names it. */
+const TOOL_FACE: Record<MarkTool, { icon: IconName; label: () => string }> = {
+  highlight: { icon: "highlighter", label: m.pdf_toolbar_highlight },
+  underline: { icon: "underline", label: m.pdf_toolbar_underline },
+};
+
 /**
- * The toolbar as data. A control that cannot write keeps its seat and carries
- * the reason in its tooltip and its accessible state; mark visibility changes
- * nothing in Zotero, so it never stands down.
+ * The toolbar as data. A control a capability block stands down keeps its seat
+ * and carries the reason in its tooltip and its accessible state; mark
+ * visibility changes nothing in Zotero, so it never stands down.
+ *
+ * The tools are a toggle group over what ZotLit writes today: one is armed at a
+ * time, and arming the armed one stands it down again. Each tool is split in
+ * two — the toggle wearing the tool's own colour, and a chevron opening that
+ * colour's list — so a colour is chosen for the tool it belongs to whether or
+ * not that tool is armed.
  *
  * @see apps/obsidian/policies/tooltips.md
  */
@@ -79,35 +102,35 @@ export function creationToolbar({
   now,
 }: CreationToolbarProps): readonly CreationToolbarControl[] {
   const blocked = editingBlockedReason(capability, IDLE, now);
-  const tool = (
-    id: MarkTool,
-    icon: IconName,
-    label: string,
-  ): CreationToolbarControl => ({
-    id,
-    icon,
-    tooltip: blocked ?? label,
-    pressed: armed === id,
-    disabled: blocked !== null,
-    color: colors[id],
-  });
-  const swatch = (
-    id: "highlight-color" | "underline-color",
-    of: MarkTool,
-    label: string,
-  ): CreationToolbarControl => ({
-    id,
-    icon: "circle",
-    tooltip: blocked ?? label,
-    pressed: null,
-    disabled: blocked !== null,
-    color: colors[of],
-  });
+  const tool = (id: MarkTool): CreationToolbarControl[] => {
+    const { icon, label } = TOOL_FACE[id];
+    const name = label();
+    const half = { disabled: blocked !== null, split: id };
+    return [
+      {
+        ...half,
+        id,
+        icon,
+        tooltip: blocked ?? name,
+        pressed: armed === id,
+        // The toggle wears the colour, so the tool on screen says which colour
+        // it draws in without a swatch of its own.
+        color: colors[id],
+      },
+      {
+        ...half,
+        id: `${id}-color`,
+        icon: "chevron-down",
+        tooltip: blocked ?? m.pdf_toolbar_tool_color({ tool: name }),
+        pressed: null,
+        // Left uncoloured: the chevron says a menu opens here, and the glyph
+        // beside it is what shows the colour that menu is choosing.
+        color: null,
+      },
+    ];
+  };
   return [
-    tool("highlight", "highlighter", m.pdf_toolbar_highlight()),
-    swatch("highlight-color", "highlight", m.pdf_toolbar_highlight_color()),
-    tool("underline", "underline", m.pdf_toolbar_underline()),
-    swatch("underline-color", "underline", m.pdf_toolbar_underline_color()),
+    ...MARK_TOOLS.flatMap(tool),
     {
       id: "visibility",
       icon: marksVisible ? "eye" : "eye-off",
@@ -116,6 +139,7 @@ export function creationToolbar({
         : m.pdf_toolbar_show_marks(),
       pressed: marksVisible,
       disabled: false,
+      split: null,
       color: null,
     },
   ];
@@ -137,6 +161,17 @@ export interface CreationToolbarNodes {
   capabilitySlot: HTMLElement;
 }
 
+/** Everything the toolbar builds once, and redraws its controls into. */
+interface ToolbarShape extends CreationToolbarNodes {
+  /** The tool toggle group, named by the hidden element beside it. */
+  tools: HTMLElement;
+  /** The controls that stand outside the group, which is mark visibility. */
+  actions: HTMLElement;
+}
+
+/** Names one tool group apart from another reader's, for `aria-labelledby`. */
+let groupSerial = 0;
+
 /**
  * Draws the toolbar into the reader's right toolbar slot, building its nodes on
  * the first call and rewriting the controls on every call after — so a caller
@@ -149,18 +184,25 @@ export function renderCreationToolbar(
   controls: readonly CreationToolbarControl[],
   activate: CreationToolbarActivate,
 ): CreationToolbarNodes {
-  const nodes = toolbarIn(slot) ?? createToolbar(slot);
-  const [row] = nodes.root.children;
-  if (!row?.instanceOf(HTMLElement)) return nodes;
+  const shape = toolbarIn(slot) ?? createToolbar(slot);
+  shape.tools.empty();
+  shape.actions.empty();
+  const seats = new Map<MarkTool, HTMLElement>();
 
-  row.empty();
   for (const control of controls) {
-    const node = renderIconButton(row, control, (pressed) =>
+    const seat = seatFor(shape, seats, control.split);
+    const node = renderIconButton(seat, control, (pressed) =>
       activate(control.id, pressed),
     );
     node.dataset.ztTool = control.id;
+    if (control.split === null) continue;
+    // A split tool is one button, so the armed fill is the seat's and covers
+    // both halves at once. Only the toggle reports the state, because only it
+    // answers a press.
+    node.removeClass("is-active");
+    if (control.pressed === true) seat.addClass("is-active");
   }
-  return nodes;
+  return { root: shape.root, capabilitySlot: shape.capabilitySlot };
 }
 
 /**
@@ -173,21 +215,52 @@ export function removeCreationToolbar(slot: HTMLElement): void {
   toolbarIn(slot)?.root.remove();
 }
 
-function toolbarIn(slot: HTMLElement): CreationToolbarNodes | null {
+/**
+ * Where one control is drawn: the seat its tool's two halves share, built on
+ * the first half to ask for it, or the row a control that stands alone takes.
+ */
+function seatFor(
+  shape: ToolbarShape,
+  seats: Map<MarkTool, HTMLElement>,
+  split: MarkTool | null,
+): HTMLElement {
+  if (split === null) return shape.actions;
+  const seat =
+    seats.get(split) ?? shape.tools.createDiv({ cls: SPLIT_CLASSES });
+  seats.set(split, seat);
+  return seat;
+}
+
+function toolbarIn(slot: HTMLElement): ToolbarShape | null {
   const root = slot.querySelector<HTMLElement>(
     `:scope > .${themeHook.pdfCreationToolbar}`,
   );
-  const capabilitySlot = root?.lastElementChild;
-  return root && capabilitySlot?.instanceOf(HTMLElement)
-    ? { root, capabilitySlot }
+  if (!root) return null;
+  const [, tools, actions, capabilitySlot] = root.children;
+  return tools?.instanceOf(HTMLElement) &&
+    actions?.instanceOf(HTMLElement) &&
+    capabilitySlot?.instanceOf(HTMLElement)
+    ? { root, tools, actions, capabilitySlot }
     : null;
 }
 
-function createToolbar(slot: HTMLElement): CreationToolbarNodes {
+function createToolbar(slot: HTMLElement): ToolbarShape {
   const root = slot.createDiv({
     cls: [themeHook.pdfCreationToolbar, ...LAYOUT_CLASSES],
   });
-  root.createDiv({ cls: LAYOUT_CLASSES });
+  // The group's name is a hidden element rather than an `aria-label`, so it
+  // reaches assistive technology without hanging a tooltip over the gaps
+  // between the tools. @see apps/obsidian/policies/tooltips.md
+  const label = root.createSpan({
+    cls: "zt:sr-only",
+    text: m.pdf_toolbar_tools(),
+    attr: { id: `zt-pdf-tool-group-${++groupSerial}` },
+  });
+  const tools = root.createDiv({
+    cls: LAYOUT_CLASSES,
+    attr: { role: "group", "aria-labelledby": label.id },
+  });
+  const actions = root.createDiv({ cls: LAYOUT_CLASSES });
   const capabilitySlot = root.createDiv({ cls: LAYOUT_CLASSES });
-  return { root, capabilitySlot };
+  return { root, tools, actions, capabilitySlot };
 }

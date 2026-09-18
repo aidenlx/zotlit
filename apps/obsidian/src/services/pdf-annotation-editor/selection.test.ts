@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Menu } from "@mock/obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -239,6 +240,21 @@ it("steps the stack forward from the popup's own stepper", () => {
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='stack']")!.click();
 
   expect([...h.selection.selected]).toEqual(["PARA1111"]);
+});
+
+it("opens the mark's colours under the popup verb that opened them", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const verb = popup.hoverEl.querySelector<HTMLElement>(
+    "[data-zt-verb='color']",
+  )!;
+
+  verb.click();
+
+  const menu = Menu.instances.at(-1)!;
+  expect(menu.parentEl).toBe(verb);
+  expect(menu.items).not.toHaveLength(0);
 });
 
 it("leaves a drag across a mark to the browser's own text selection", () => {

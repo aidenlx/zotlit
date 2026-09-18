@@ -111,16 +111,17 @@ body {
 
 Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and offers its own toolbar and popups for creating and editing them. ZotLit draws every one of these surfaces itself, on Obsidian's own toolbar and popover primitives.
 
-| Class                         | Marks                                                                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `zt-pdf-annotation-overlay`   | The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page.                                       |
-| `zt-pdf-annotation-mark`      | One Annotation Mark inside that overlay.                                                                         |
-| `zt-pdf-annotation-highlight` | The filled rectangle of a highlight Annotation Mark.                                                             |
-| `zt-pdf-annotation-note-fold` | The folded corner of a note Annotation Mark.                                                                     |
-| `zt-pdf-capability`           | The always-present Editing Capability affordance in the reader's own toolbar.                                    |
-| `zt-pdf-creation-toolbar`     | The Creation Toolbar in the reader's own right toolbar slot, which also holds the Editing Capability affordance. |
-| `zt-pdf-mark-popup`           | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                           |
-| `zt-pdf-comment-sheet`        | The comment sheet the Mark Popup opens under its create-mode row.                                                |
+| Class                         | Marks                                                                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zt-pdf-annotation-overlay`   | The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page.                                                                         |
+| `zt-pdf-annotation-mark`      | One Annotation Mark inside that overlay.                                                                                                           |
+| `zt-pdf-annotation-highlight` | The filled rectangle of a highlight Annotation Mark.                                                                                               |
+| `zt-pdf-annotation-note-fold` | The folded corner of a note Annotation Mark.                                                                                                       |
+| `zt-pdf-capability`           | The always-present Editing Capability affordance in the reader's own toolbar.                                                                      |
+| `zt-pdf-creation-toolbar`     | The Creation Toolbar in the reader's own right toolbar slot, which also holds the Editing Capability affordance.                                   |
+| `zt-pdf-tool`                 | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
+| `zt-pdf-mark-popup`           | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
+| `zt-pdf-comment-sheet`        | The comment sheet the Mark Popup opens under its create-mode row.                                                                                  |
 
 ### Annotation Marks [#pdf-annotation-marks]
 
@@ -134,7 +135,9 @@ Each mark carries `data-zotero-annotation-type` (one of `highlight`, `underline`
 
 ### Creation Toolbar [#pdf-creation-toolbar]
 
-`zt-pdf-creation-toolbar` holds the controls that create and manage Annotation Marks: <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} />, each paired with a color swatch (<UiLabel name={m.pdf_toolbar_highlight_color()} />, <UiLabel name={m.pdf_toolbar_underline_color()} />), and a toggle that shows or hides Annotation Marks (<UiLabel name={m.pdf_toolbar_show_marks()} /> or <UiLabel name={m.pdf_toolbar_hide_marks()} />). Each control carries `data-zt-tool`, one of `highlight`, `highlight-color`, `underline`, `underline-color`, or `visibility`.
+`zt-pdf-creation-toolbar` holds the controls that create and manage Annotation Marks. A <UiLabel name={m.pdf_toolbar_tools()} /> group comes first, holding one tool per annotation type ZotLit can write — today <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} />. Each tool is a split button of two `clickable-icon` halves sharing one seat: the toggle that arms it, under `data-zt-tool` `highlight` or `underline`, and a chevron that opens that tool's colors, under `highlight-color` or `underline-color`. The halves hover separately. One tool is armed at a time, and selecting the armed tool stands it down; a tool's colors are reachable from its chevron whether or not it is armed. Outside the group sits a toggle that shows or hides Annotation Marks (<UiLabel name={m.pdf_toolbar_show_marks()} /> or <UiLabel name={m.pdf_toolbar_hide_marks()} />, `data-zt-tool="visibility"`).
+
+Zotero's remaining annotation types — <UiLabel name={m.pdf_toolbar_note()} />, <UiLabel name={m.pdf_toolbar_text()} />, <UiLabel name={m.pdf_toolbar_area()} /> and <UiLabel name={m.pdf_toolbar_draw()} /> — join the group as ZotLit learns to write them, under `data-zt-tool` values `note`, `text`, `image` and `ink` and their `-color` halves. Each tool remembers its own color across PDFs and sessions.
 
 A control that cannot write right now keeps its seat: it carries `aria-disabled` and states why in its tooltip, rather than leaving the toolbar.
 
@@ -152,7 +155,7 @@ A control that cannot write right now keeps its seat, disabled, with the reason 
 
 A highlight mark blends with the page: 40% opacity with `multiply` blending in light themes, 30% opacity with `plus-lighter` blending in dark themes. A note's folded corner takes `--background-primary` at 55% opacity, so the paper shows through. A selected mark keeps its own color and gains a drop-shadow ring in `--text-accent`.
 
-The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; a pressed color swatch keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. The Editing Capability affordance is a bare `clickable-icon`; ZotLit adds Obsidian's own `mod-warning` class when its tone is `warning`, and leaves color otherwise to Obsidian and the theme.
+The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The Editing Capability affordance is a bare `clickable-icon`; ZotLit adds Obsidian's own `mod-warning` class when its tone is `warning`, and leaves color otherwise to Obsidian and the theme.
 
 The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsidian's default hover-popover sizing. The comment sheet is 15em wide, wider than the row above it, since it holds a text editor.
 

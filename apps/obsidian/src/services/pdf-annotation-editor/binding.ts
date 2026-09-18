@@ -55,6 +55,7 @@ import type { PdfSeamProbeResult } from "./seam";
 import { MarkSelection } from "./selection";
 import type { MarkGestures } from "./selection";
 import { pdfPageSource } from "./text-structure";
+import type { ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -111,6 +112,8 @@ export interface PdfViewBindingDeps {
    * a block it meets is answered by the binding's own edit-gesture path.
    */
   markGestures: Pick<MarkGestures, "revealAnnotation">;
+  /** Each annotation tool's own colour, which every open PDF view shares. */
+  toolColors: ToolColorStore;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -137,6 +140,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #annotations;
   readonly #gestures;
   readonly #markGestures;
+  readonly #toolColors;
   readonly #now;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /**
@@ -197,6 +201,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     annotations,
     capabilityGestures,
     markGestures,
+    toolColors,
     now = () => Temporal.Now.instant(),
   }: PdfViewBindingDeps) {
     this.#view = view;
@@ -205,6 +210,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#annotations = annotations;
     this.#gestures = capabilityGestures;
     this.#markGestures = markGestures;
+    this.#toolColors = toolColors;
     this.#now = now;
   }
 
@@ -488,6 +494,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#capabilitySlot = slot;
         this.#drawCapability();
       },
+      colors: this.#toolColors,
       annotations: this.#annotations,
       now: this.#now,
     });

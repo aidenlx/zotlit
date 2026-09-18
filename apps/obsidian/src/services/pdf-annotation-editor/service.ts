@@ -4,6 +4,7 @@ import type { App, FileSystemAdapter, PDFFileView } from "obsidian";
 import { registerEvent } from "@/lib/disposables";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
+import type { SettingsService } from "@/services/settings/service";
 
 import { PdfViewBinding } from "./binding";
 import type {
@@ -13,6 +14,8 @@ import type {
 } from "./binding";
 import { openFilePathOf } from "./seam";
 import type { MarkGestures } from "./selection";
+import { resolveToolColors, TOOL_COLORS_SETTING } from "./tools";
+import type { AnnotationTool, ToolColorStore } from "./tools";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
@@ -41,6 +44,8 @@ export interface PdfAnnotationEditorDeps {
   capabilityGestures: CapabilityGestures;
   /** What the Mark Popup's reveal and comment verbs reach in the sidebar. */
   markGestures: Pick<MarkGestures, "revealAnnotation">;
+  /** Where each annotation tool's colour is kept, so it holds across PDFs. */
+  settings: Pick<SettingsService, "current" | "update">;
   /** The clock each binding's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -61,6 +66,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #annotations;
   readonly #capabilityGestures;
   readonly #markGestures;
+  readonly #toolColors;
   readonly #now;
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
@@ -73,6 +79,7 @@ export class PdfAnnotationEditor extends Service<void> {
     annotations,
     capabilityGestures,
     markGestures,
+    settings,
     now = () => Temporal.Now.instant(),
   }: PdfAnnotationEditorDeps) {
     super();
@@ -81,6 +88,7 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#annotations = annotations;
     this.#capabilityGestures = capabilityGestures;
     this.#markGestures = markGestures;
+    this.#toolColors = toolColorStore(settings);
     this.#now = now;
     this.ready = this.#load();
   }
@@ -150,10 +158,29 @@ export class PdfAnnotationEditor extends Service<void> {
         annotations: this.#annotations,
         capabilityGestures: this.#capabilityGestures,
         markGestures: this.#markGestures,
+        toolColors: this.#toolColors,
         now: this.#now,
       });
       this.#bindings.set(view, binding);
       binding.load();
     }
   }
+}
+
+/**
+ * Each tool's colour, read and written through the settings file, so a colour
+ * chosen in one PDF is the colour the next one opens with. A choice made before
+ * the settings have loaded is dropped rather than written over what is on disk.
+ */
+function toolColorStore(
+  settings: Pick<SettingsService, "current" | "update">,
+): ToolColorStore {
+  return {
+    current: () => resolveToolColors(settings.current?.[TOOL_COLORS_SETTING]),
+    set: (tool: AnnotationTool, color: string) => {
+      const stored = settings.current?.[TOOL_COLORS_SETTING];
+      if (!stored) return;
+      settings.update({ [TOOL_COLORS_SETTING]: { ...stored, [tool]: color } });
+    },
+  };
 }

@@ -1,6 +1,6 @@
-// What the reader's two gesture modules both read off the surface: where a menu
-// opens under a control, whether a point is on screen, whether the window holds
-// a text selection, and Zotero's palette as a menu.
+// What the reader's two gesture modules both read off the surface: whether a
+// point is on screen, whether the window holds a text selection, and Zotero's
+// palette as a menu.
 //
 // Creation and selection ask the same questions of the same view, so the answer
 // is written once here and neither can drift from the other.
@@ -9,12 +9,6 @@ import { Menu } from "obsidian";
 import { buildColorMenu } from "@/lib/annotation-colors";
 
 import type { Point } from "./hit-test";
-
-/** Under the control, which is where Obsidian opens a menu from a button. */
-export function belowOf(node: HTMLElement): Point {
-  const rect = node.getBoundingClientRect();
-  return { x: rect.left, y: rect.bottom };
-}
 
 /**
  * Whether a client point falls inside the view's own box. A view with no box at

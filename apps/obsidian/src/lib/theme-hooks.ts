@@ -48,10 +48,19 @@ export const themeHook = {
   /**
    * The Creation Toolbar in the PDF reader's own right toolbar slot, which
    * also holds the Editing Capability affordance. Each control inside it
-   * carries `data-zt-tool` — `highlight`, `highlight-color`, `underline`,
-   * `underline-color`, or `visibility`.
+   * carries `data-zt-tool`. Each tool of its tool group is split in two — the
+   * toggle under the tool's own name and the chevron that opens its colours
+   * under `<tool>-color` — which today is `highlight`, `highlight-color`,
+   * `underline` and `underline-color`. `visibility` stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",
+  /**
+   * One tool of that toolbar: the toggle that arms it and the chevron that
+   * opens its colours, joined into a single split button. It carries Obsidian's
+   * own `is-active` while that tool is armed, so the pair fills as one control;
+   * the two halves stay separate controls and hover separately.
+   */
+  pdfTool: "zt-pdf-tool",
   /**
    * The Mark Popup, on Obsidian's own hover popover, in both of its modes.
    * Each control inside it carries `data-zt-verb` — `color`, `comment`,

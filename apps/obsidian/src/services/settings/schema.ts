@@ -13,6 +13,7 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
 } from "@/services/library-scope/scope";
+import { annotationToolColorsSchema } from "@/services/pdf-annotation-editor/tools";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -172,6 +173,11 @@ export const schema = v.object({
   "attachment.import": v.boolean(),
 
   "reader.focus-annot-view": v.boolean(),
+  /**
+   * The colour each PDF reader annotation tool draws in. Sparse, so a tool
+   * never recoloured follows Zotero's own default.
+   */
+  "reader.annotation-colors": annotationToolColorsSchema,
 
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
@@ -223,6 +229,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "attachment.folder-path": null,
   "attachment.import": true,
   "reader.focus-annot-view": true,
+  "reader.annotation-colors": {},
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

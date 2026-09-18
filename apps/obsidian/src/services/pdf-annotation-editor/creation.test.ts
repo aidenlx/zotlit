@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { Menu } from "@mock/obsidian";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
@@ -9,7 +10,7 @@ import type {
 } from "@/services/annotation-repository/service";
 import { createRequest } from "@/services/annotation-repository/write";
 
-import { annotation } from "./__fixtures__";
+import { annotation, toolColors } from "./__fixtures__";
 import { MarkCreation } from "./creation";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
@@ -104,6 +105,7 @@ function reader(
     repaint: vi.fn(),
     reveal: (annotationKey) => revealed.push(annotationKey),
     renderCapability: vi.fn(),
+    colors: toolColors(),
     annotations: {
       capabilityFor: () => capability,
       createAnnotation: vi.fn(async (_key: string, draft) => {
@@ -331,6 +333,36 @@ it("colours the armed tool with 1 to 8 while no selection is waiting", async () 
   ]);
 });
 
+it("opens a tool's colours from its own chevron, whether or not it is armed", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  const chevron = open.slot.querySelector<HTMLElement>(
+    '[data-zt-tool="underline-color"]',
+  )!;
+
+  chevron.click();
+
+  const menu = Menu.instances.at(-1)!;
+  expect(menu.parentEl).toBe(chevron);
+  expect(menu.items).toHaveLength(ANNOTATION_COLORS.length);
+});
+
+it("recolours the tool its own chevron opened, leaving the other alone", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  const colorOf = (tool: string) =>
+    open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)?.style
+      .color;
+
+  open.slot
+    .querySelector<HTMLElement>('[data-zt-tool="underline-color"]')!
+    .click();
+  Menu.instances.at(-1)!.items[2]!.click();
+
+  expect(colorOf("underline")).toBe(ANNOTATION_COLORS[2]);
+  expect(colorOf("highlight")).toBe(ANNOTATION_COLORS[0]);
+});
+
 it("commits a released selection at once while a tool is armed", async () => {
   using open = reader();
 
@@ -350,8 +382,62 @@ it("writes a popup colour back as the tool it commits with", () => {
   open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-6"]')!.click();
 
   expect(
-    open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight-color"]')
-      ?.style.color,
+    open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight"]')?.style
+      .color,
+  ).toBe(ANNOTATION_COLORS[5]);
+});
+
+it("opens a tool's colours from its own chevron, armed or not", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  const chevron = open.slot.querySelector<HTMLElement>(
+    '[data-zt-tool="underline-color"]',
+  )!;
+
+  chevron.click();
+
+  const menu = Menu.instances.at(-1)!;
+  expect(menu.parentEl).toBe(chevron);
+  expect(menu.items).toHaveLength(ANNOTATION_COLORS.length);
+});
+
+it("recolours the tool its own chevron opened, leaving the other alone", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  const colorOf = (tool: string) =>
+    open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)?.style
+      .color;
+
+  open.slot
+    .querySelector<HTMLElement>('[data-zt-tool="underline-color"]')!
+    .click();
+  Menu.instances.at(-1)!.items[2]!.click();
+
+  expect(colorOf("underline")).toBe(ANNOTATION_COLORS[2]);
+  expect(colorOf("highlight")).toBe(ANNOTATION_COLORS[0]);
+});
+
+it("commits a released selection at once while a tool is armed", async () => {
+  using open = reader();
+
+  open.press("u");
+  open.selectText();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ type }) => type)).toEqual(["underline"]);
+  expect(open.popup()).toBeNull();
+});
+
+it("writes a popup colour back as the tool it commits with", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  open.selectText();
+
+  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-6"]')!.click();
+
+  expect(
+    open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight"]')?.style
+      .color,
   ).toBe(ANNOTATION_COLORS[5]);
 });
 

@@ -13,10 +13,14 @@ import {
   renderCreatePopupRow,
 } from "./create-popup";
 import type { CreatePopupAction, CreatePopupControl } from "./create-popup";
+import { resolveToolColors } from "./tools";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
-const COLORS = { highlight: "#ffd400", underline: "#2ea8e5" } as const;
+const COLORS = resolveToolColors({
+  highlight: "#ffd400",
+  underline: "#2ea8e5",
+});
 
 function row(
   overrides: {
