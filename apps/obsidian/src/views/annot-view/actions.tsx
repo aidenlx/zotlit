@@ -41,16 +41,11 @@ export interface AnnotActions {
     evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
     annot: AnnotationRecord,
   ): void;
-  /** The same entries, from a right-click anywhere on the card's header. */
-  onCardContextMenu(
-    evt: MouseEvent<HTMLElement>,
-    annot: AnnotationRecord,
-  ): void;
   /** Open the Follow Mode menu from the toolbar's mode button. */
   onFollowModeMenu(evt: MouseEvent<HTMLElement>): void;
   /** Open the Attachment picker from the slot under the toolbar. */
   onAttachmentMenu(evt: MouseEvent<HTMLElement>): void;
-  /** Open Zotero's eight swatches from a card's colour dot. */
+  /** Open Zotero's eight swatches from a card's palette control. */
   onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   /** Open a card's own tags, each one a filter toggle. */
   onTagMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
@@ -260,20 +255,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     showMenuAtButton(menu, evt.currentTarget, align);
   };
 
-  /** A menu opened by a right-click, which belongs at the pointer. */
-  const showMenuAtPointer = (
-    evt: MouseEvent<HTMLElement>,
-    fill: (menu: Menu) => void,
-  ): void => {
-    const menu = new Menu();
-    fill(menu);
-    // `MouseEvent` is shadowed by the React import above; `globalThis.` here is
-    // a type qualifier for the DOM type, not a runtime access, so the
-    // `window`/`activeWindow` popout-compatibility guidance doesn't apply.
-    // eslint-disable-next-line obsidianmd/no-global-this
-    menu.showAtMouseEvent(evt.nativeEvent as globalThis.MouseEvent);
-  };
-
   const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
     const backlink = getBacklink(annot);
     if (backlink) {
@@ -378,9 +359,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onMoreOptions(evt, annot) {
       showMenu(evt, (menu) => fillCardMenu(menu, annot), "end");
     },
-    onCardContextMenu(evt, annot) {
-      showMenuAtPointer(evt, (menu) => fillCardMenu(menu, annot));
-    },
     onFollowModeMenu(evt) {
       const { followMode, pinnable } = deps.getState();
       showMenu(evt, (menu) =>
@@ -443,7 +421,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
-  onCardContextMenu: () => {},
   onFollowModeMenu: () => {},
   onAttachmentMenu: () => {},
   onColorMenu: () => {},

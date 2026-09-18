@@ -4,10 +4,11 @@ import type { KeyboardEvent } from "react";
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
-import { activatable, cn, tooltipAttrs } from "@/lib/utils";
+import { claimClick, clickClaimed, cn, tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { AnnotActionsContext } from "./actions";
@@ -84,12 +85,14 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       className="zt-annot-card zt:group zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:divide-y zt:divide-border zt:overflow-hidden zt:rounded-sm zt:border zt:border-border zt:bg-background zt:transition-colors zt:hover:border-border-hover zt:data-selected:border-primary zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:@md:mb-3"
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
-      onClick={() => actions.onSelectAnnotation(annot)}
+      onClick={(e) => {
+        // A control inside the card already answered this click; the card's
+        // selection is not it.
+        if (clickClaimed(e)) return;
+        actions.onSelectAnnotation(annot);
+      }}
     >
-      <div
-        className="zt:flex zt:h-8 zt:cursor-context-menu zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent"
-        onContextMenu={(e) => actions.onCardContextMenu(e, annot)}
-      >
+      <div className="zt:flex zt:min-h-8 zt:items-center zt:gap-1.5 zt:bg-card zt:px-2 zt:group-data-selected:bg-transparent">
         <span
           className={cn(
             "zt:flex zt:items-center",
@@ -108,7 +111,6 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
           page={annot.pageLabel}
           backlink={actions.getBacklink(annot)}
         />
-        <div className="zt:flex-1" />
         <CardActionBar annot={annot} controls={controls} editing={editing} />
       </div>
 
@@ -182,10 +184,16 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
 }
 
 /**
- * The editing verbs, layered into the header row the card already had: they
- * take no space of their own, so the card never changes size for them. They
- * appear on hover, while focus is inside the card so the keyboard reaches
- * them, and stay pinned while the card is selected.
+ * The card's verbs, as the same `clickable-icon` row the Mark Popup draws over
+ * a selected mark — colour, comment and delete are the same three writes
+ * reached from another surface, so they wear the same control.
+ *
+ * The three editing verbs rest dimmed and come up to full on hover, while
+ * focus is inside the card so the keyboard reaches them, and while the card is
+ * selected. The overflow control never dims: it is the only route to copying,
+ * revealing and deleting.
+ *
+ * @see apps/obsidian/src/services/pdf-annotation-editor/mark-popup.ts
  */
 function CardActionBar({
   annot,
@@ -201,122 +209,49 @@ function CardActionBar({
   const hasComment = annot.comment !== null;
 
   return (
-    <div className="zt:flex zt:items-center zt:gap-0.5 zt:opacity-0 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
-      <ColorControl annot={annot} control={controls.color} />
-      <CardButton
-        control={controls.comment}
-        active={editing}
-        onClick={() => setEditing(editing ? null : annot.key)}
-      >
-        <Icon name={commentIcon(hasComment)} size={16} />
-      </CardButton>
-      <TagMenu annot={annot} />
-      <span
-        role="button"
-        tabIndex={0}
-        className="zt:flex zt:cursor-pointer zt:items-center zt:text-muted-foreground zt:transition-colors zt:hover:text-foreground"
-        onClick={(e) => actions.onMoreOptions(e, annot)}
+    // The card's own click takes the selection; a verb is not that. The row
+    // claims the click once, rather than each control claiming it itself.
+    <div
+      className="zt:ml-auto zt:flex zt:shrink-0 zt:items-center zt:gap-0.5"
+      onClick={claimClick}
+    >
+      {/* 70% is the floor the resting state can dim to and still read: at it
+          the icon carries 3.26:1 against the header, and WCAG 1.4.11 asks 3:1
+          of a control. 40% measured 1.84:1. */}
+      <div className="zt:flex zt:items-center zt:gap-0.5 zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
+        <IconButton
+          icon="palette"
+          disabled={controls.color.disabled}
+          // The palette wears the Annotation's own colour, as the Mark Popup's
+          // does; an Annotation with none keeps the default icon colour.
+          style={annot.color === null ? undefined : { color: annot.color }}
+          onClick={(evt) => actions.onColorMenu(evt, annot)}
+          {...tooltipAttrs(controls.color.tooltip)}
+        />
+        <IconButton
+          icon={commentIcon(hasComment)}
+          active={editing}
+          disabled={controls.comment.disabled}
+          onClick={() => setEditing(editing ? null : annot.key)}
+          {...tooltipAttrs(controls.comment.tooltip)}
+        />
+        {/* The Annotation's own tags, as a menu rather than a row of chips: a
+            row grows with the tag count, and the card's height answers to the
+            comment alone. Selecting one filters the list by it. */}
+        {annot.tags.length > 0 && (
+          <IconButton
+            icon="tags"
+            onClick={(evt) => actions.onTagMenu(evt, annot)}
+            {...tooltipAttrs(m.annot_view_card_tags())}
+          />
+        )}
+      </div>
+      <IconButton
+        icon="more-horizontal"
+        onClick={(evt) => actions.onMoreOptions(evt, annot)}
         {...tooltipAttrs(m.annot_view_more_tooltip())}
-      >
-        <Icon name="more-horizontal" size={16} />
-      </span>
+      />
     </div>
-  );
-}
-
-/**
- * One header verb. A blocked one keeps its seat and carries the reason in its
- * tooltip and its accessible state rather than leaving the row.
- *
- * @see apps/obsidian/policies/tooltips.md
- */
-function CardButton({
-  control,
-  active,
-  onClick,
-  children,
-}: {
-  control: CardControl;
-  active?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={cn(
-        "zt:flex zt:items-center zt:text-muted-foreground zt:transition-colors",
-        control.disabled
-          ? "zt:cursor-not-allowed zt:opacity-40"
-          : "zt:cursor-pointer zt:hover:text-foreground",
-        active && "zt:text-accent-foreground",
-      )}
-      aria-disabled={control.disabled || undefined}
-      {...activatable(onClick, { disabled: control.disabled })}
-      {...tooltipAttrs(control.tooltip)}
-    >
-      {children}
-    </span>
-  );
-}
-
-/** A filled dot in the Annotation's own colour, opening Zotero's eight. */
-function ColorControl({
-  annot,
-  control,
-}: {
-  annot: AnnotationRecord;
-  control: CardControl;
-}) {
-  const actions = useContext(AnnotActionsContext);
-
-  if (control.disabled) {
-    return (
-      <span
-        className="zt:flex zt:cursor-not-allowed zt:items-center zt:opacity-40"
-        aria-disabled="true"
-        {...tooltipAttrs(control.tooltip)}
-      >
-        <ColorDot color={annot.color} />
-      </span>
-    );
-  }
-  return (
-    <button
-      className="zt:flex zt:cursor-pointer zt:items-center"
-      onClick={(evt) => actions.onColorMenu(evt, annot)}
-      {...tooltipAttrs(control.tooltip)}
-    >
-      <ColorDot color={annot.color} />
-    </button>
-  );
-}
-
-function ColorDot({ color }: { color: string | null }) {
-  return (
-    <span
-      className="zt:size-3 zt:shrink-0 zt:rounded-full zt:ring-1 zt:ring-border"
-      style={{ backgroundColor: color ?? "var(--interactive-accent)" }}
-    />
-  );
-}
-
-/**
- * The Annotation's own tags, as a menu rather than a row of chips: a row grows
- * with the tag count, and the card's height answers to the comment alone.
- * Selecting one filters the list by it, which is what the chips did.
- */
-function TagMenu({ annot }: { annot: AnnotationRecord }) {
-  const actions = useContext(AnnotActionsContext);
-  if (annot.tags.length === 0) return null;
-
-  return (
-    <button
-      className="zt:flex zt:cursor-pointer zt:items-center zt:text-muted-foreground zt:transition-colors zt:hover:text-foreground"
-      onClick={(evt) => actions.onTagMenu(evt, annot)}
-      {...tooltipAttrs(m.annot_view_card_tags())}
-    >
-      <Icon name="tags" size={16} />
-    </button>
   );
 }
 
@@ -372,6 +307,8 @@ function Comment({
         const target = e.target as Node | null;
         if (target?.instanceOf(HTMLElement) && target.closest("a")) return;
         if (e.currentTarget.win.getSelection()?.isCollapsed === false) return;
+        // Opening the editor is a verb; the card's own click is not that.
+        e.stopPropagation();
         setEditing(annot.key);
       }}
     />
@@ -417,7 +354,8 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   };
 
   return (
-    <div className="zt:px-2 zt:py-1">
+    // Placing the caret is not the card's selection.
+    <div className="zt:px-2 zt:py-1" onClick={(e) => e.stopPropagation()}>
       <textarea
         ref={focusEnd}
         className="zt:w-full zt:resize-none zt:bg-transparent zt:text-xs"
@@ -508,13 +446,15 @@ function PageLabel({
   if (backlink) {
     return (
       <a
-        className="external-link zt:font-medium"
+        className="external-link zt:min-w-0 zt:truncate"
         href={backlink}
+        // Opening the page in Zotero is its own verb, not the card's selection.
+        onClick={(e) => e.stopPropagation()}
         {...tooltipAttrs(m.annot_view_open_page())}
       >
         {label}
       </a>
     );
   }
-  return <span className="zt:font-medium">{label}</span>;
+  return <span className="zt:min-w-0 zt:truncate">{label}</span>;
 }
