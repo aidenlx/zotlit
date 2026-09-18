@@ -6,6 +6,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 import { resolveAnnotCachePath } from "@zotlit/db/path";
 
+import { buildColorMenu } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
@@ -28,7 +29,6 @@ import type { CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import {
   buildAttachmentMenu,
-  buildColorMenu,
   buildFollowModeMenu,
   buildTagMenu,
 } from "./menus";
