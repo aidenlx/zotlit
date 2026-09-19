@@ -10,12 +10,20 @@ import type {
 import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
+import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 /** Obsidian's own state class, which ADR 0042 keeps as the mark's one mutable bit. */
 const SELECTED_CLASS = "is-selected";
+
+/**
+ * The gap the selected outline hugs the mark's own rects by, in page units —
+ * a hairline's worth of daylight rather than Zotero's own 10pt bounding-box
+ * frame, since this outline follows the run's actual shape.
+ */
+const SELECTION_OUTLINE_PADDING = 1.5;
 
 /** A PDF position, which is every position an Annotation Mark can be drawn from. */
 type PdfPosition = PdfRectsPosition | PdfInkPosition | PdfTextPosition;
@@ -141,6 +149,18 @@ export function renderAnnotationOverlay(
     }
   }
 
+  // Appended last, above every mark, so the ring round a selected run's own
+  // silhouette never sits under a neighbour's mark.
+  for (const placement of annotations) {
+    if (selected?.has(placement.annotation.key) !== true) continue;
+    const outline = renderSelectionOutline(unitPage, placement);
+    if (!outline) continue;
+    // A pen stroke's casing is the one outline that goes under its own mark,
+    // since the pen is what draws over it to leave a band either side.
+    if (isInk(placement)) overlay.prepend(outline);
+    else overlay.append(outline);
+  }
+
   // Appended last, so nothing PDF.js paints later sits over the marks.
   if (overlay.childElementCount > 0) page.div.append(overlay);
 }
@@ -184,6 +204,91 @@ export function pageUnitSize(page: OverlayPageView): {
   return { width: viewport.width, height: viewport.height };
 }
 
+/**
+ * The ring round a selected Annotation's own merged silhouette: one hairline
+ * outline that hugs the actual staircase shape of its rects, rather than a
+ * glow on every one of them or a box round their bounds.
+ *
+ * A highlight's outline follows its own text lines, from the same rects the
+ * hit test measures; an ink stroke carries no rects, so its own path is
+ * painted underneath it, wider, as a casing that hugs the squiggle.
+ * `vector-effect="non-scaling-stroke"` keeps the ring a true hairline at
+ * every zoom step, since the overlay's `viewBox` maps page units onto the
+ * browser's own page box with `preserveAspectRatio="none"`.
+ */
+function renderSelectionOutline(
+  page: OverlayPage,
+  placement: PdfPageAnnotation,
+): SVGPathElement | undefined {
+  if (isInk(placement)) return renderInkCasing(page, placement.position);
+
+  const d = unionOutlinePath(
+    hitRectsOf(page, placement),
+    SELECTION_OUTLINE_PADDING,
+  );
+  if (d.length === 0) return undefined;
+
+  const element = page.document.createElementNS(SVG_NS, "path");
+  element.setAttribute("d", d);
+  element.setAttribute("fill", "none");
+  element.setAttribute("stroke-linejoin", "round");
+  element.setAttribute("vector-effect", "non-scaling-stroke");
+  // The stroke colour comes from the stylesheet: an SVG presentation
+  // attribute never substitutes `var()`, so a `stroke` attribute here would
+  // render black in either theme.
+  element.classList.add(themeHook.pdfAnnotationSelectionOutline);
+  return element;
+}
+
+/**
+ * A selected pen stroke's own casing: the path the stroke already draws,
+ * painted underneath it at the padding either side, so the accent reads as a
+ * band following the squiggle.
+ *
+ * The browser carries the caps and joins, which is why this outline is the
+ * stroke's own `d` rather than a traced one: a hand-drawn curve stays a curve
+ * and a sharp turn stays sharp, at every zoom step and on any shape.
+ */
+function renderInkCasing(
+  page: OverlayPage,
+  position: PdfInkPosition,
+): SVGPathElement {
+  const element = page.document.createElementNS(SVG_NS, "path");
+  element.setAttribute("d", inkPathOf(page, position));
+  element.setAttribute("fill", "none");
+  element.setAttribute("stroke-linecap", "round");
+  element.setAttribute("stroke-linejoin", "round");
+  // The width is the pen's own plus the padding, so it rides the page units
+  // the pen is measured in; the stylesheet's hairline default is for the
+  // traced rings, and an inline width is what overrides a `:where()` rule.
+  element.style.strokeWidth = String(
+    position.width + 2 * SELECTION_OUTLINE_PADDING,
+  );
+  element.classList.add(themeHook.pdfAnnotationSelectionOutline);
+  return element;
+}
+
+/** Whether the placement is a pen stroke, which carries its own path in place
+ * of the rectangles every other mark is measured by. */
+function isInk(
+  placement: PdfPageAnnotation,
+): placement is PdfPageAnnotation & { position: PdfInkPosition } {
+  return placement.rects.length === 0 && placement.position.kind === "pdf-ink";
+}
+
+/** One stored stroke's flat `[x, y, x, y, …]` run, in the page's own units. */
+function pagePoints(page: OverlayPage, path: readonly number[]): PagePoint[] {
+  const points: PagePoint[] = [];
+  for (let index = 0; index + 1 < path.length; index += 2) {
+    const [x, y] = page.viewport.convertToViewportPoint(
+      path[index]!,
+      path[index + 1]!,
+    );
+    points.push([x, y]);
+  }
+  return points;
+}
+
 function hitRectsOf(
   page: OverlayPage,
   { position, rects }: PdfPageAnnotation,
@@ -204,17 +309,7 @@ function hitRectsOf(
 }
 
 function inkBounds(page: OverlayPage, position: PdfInkPosition): PageRect[] {
-  const points = position.paths.flatMap((path) => {
-    const converted: [number, number][] = [];
-    for (let index = 0; index + 1 < path.length; index += 2) {
-      const [x, y] = page.viewport.convertToViewportPoint(
-        path[index]!,
-        path[index + 1]!,
-      );
-      converted.push([x, y]);
-    }
-    return converted;
-  });
+  const points = position.paths.flatMap((path) => pagePoints(page, path));
   if (points.length === 0) return [];
   // Half the stroke width spills either side of the path, which is what makes a
   // one-pixel-thin stroke reachable at all.
@@ -305,8 +400,9 @@ function renderUnderline(
  * replaces already was: a translate to the rect's own origin, then a scale to
  * its own width and
  * height. `vector-effect="non-scaling-stroke"` on each keeps the stroke a
- * true hairline width at every zoom step, since the overlay's `viewBox` maps
- * page units onto the browser's own page box with `preserveAspectRatio="none"`.
+ * true hairline width at every zoom step, for the same reason the selection
+ * outline needs it: the overlay's `viewBox` maps page units onto the
+ * browser's own page box with `preserveAspectRatio="none"`.
  *
  * @see https://lucide.dev/icons/sticky-note — the icon whose idiom this
  *   follows. The fold is cut at the bottom right, so the glyph reads as a
@@ -375,24 +471,25 @@ function renderInk(
   position: PdfInkPosition,
 ): SVGPathElement {
   const element = page.document.createElementNS(SVG_NS, "path");
-  const paths = position.paths.map((path) => {
-    const points: string[] = [];
-    for (let index = 0; index + 1 < path.length; index += 2) {
-      const [x, y] = page.viewport.convertToViewportPoint(
-        path[index]!,
-        path[index + 1]!,
-      );
-      points.push(`${points.length === 0 ? "M" : "L"} ${x} ${y}`);
-    }
-    return points.join(" ");
-  });
-  element.setAttribute("d", paths.join(" "));
+  element.setAttribute("d", inkPathOf(page, position));
   element.setAttribute("fill", "none");
   element.setAttribute("stroke", colorOf(annotation));
   element.setAttribute("stroke-width", String(position.width));
   element.setAttribute("stroke-linecap", "round");
   element.setAttribute("stroke-linejoin", "round");
   return element;
+}
+
+/** Every stroke of one ink mark as one `d`, which both the pen and the casing
+ * under it are drawn from. */
+function inkPathOf(page: OverlayPage, position: PdfInkPosition): string {
+  return position.paths
+    .map((path) =>
+      pagePoints(page, path)
+        .map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`)
+        .join(" "),
+    )
+    .join(" ");
 }
 
 /**
@@ -441,6 +538,9 @@ function createRect(
 function colorOf(annotation: AnnotationRecord): string {
   return annotation.color ?? "currentColor";
 }
+
+/** A point in one page's own units, `[x, y]`. */
+type PagePoint = readonly [number, number];
 
 /** A box in one page's own units, `[left, top, right, bottom]`. */
 export type PageRect = readonly [number, number, number, number];
