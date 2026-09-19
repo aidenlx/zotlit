@@ -109,7 +109,7 @@ describe("decideMarkLanding", () => {
   });
 
   it("leaves the page to Obsidian for an Annotation Zotero no longer has", () => {
-    expect(landing({ page: 4, annotation: "GONEE234" })).toEqual({
+    expect(landing({ page: 4, annotation: "MISSING2" })).toEqual({
       kind: "page",
       reason: "annotation-unknown",
     });

@@ -7,7 +7,11 @@ import { DatabaseSync } from "node:sqlite";
 import type { SQLInputValue } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 
-import { formatIndexedKey, USER_LIBRARY_ID } from "@zotlit/db";
+import {
+  formatAnnotationSubpath,
+  formatIndexedKey,
+  USER_LIBRARY_ID,
+} from "@zotlit/db";
 import {
   DEFAULT_CITATION_BRANCHES,
   formatPlainTemplateDocument,
@@ -1078,6 +1082,10 @@ async function writeVaultNotes(
     );
   }
   await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
+  await writeFile(
+    join(layout.vaultDir, "mark-landing-test.md"),
+    markLandingPage(layout, options),
+  );
 
   // Literature Notes for the My Library items give an update batch existing
   // notes to act on and leave every other Fixture item as create work.
@@ -1295,6 +1303,9 @@ function literatureNote(
           "%%/zt-managed%%",
           "",
         ]),
+    ...(item.literatureNoteStaleAnnotations === true
+      ? staleAnnotationRegion(item)
+      : []),
     ...(item.literatureNoteCitations === undefined
       ? []
       : [
@@ -1306,6 +1317,154 @@ function literatureNote(
     ...attachments,
     ...(attachments.length === 0 ? [] : [""]),
   ].join("\n");
+}
+
+/**
+ * The Mark Landing walkthrough (#1156). Generated rather than committed,
+ * because a `file://` link names an absolute path and the Fixture learns its
+ * own paths only at build time. The Anchors come from the shipped codec, so
+ * the page cannot spell one differently from the reader that reads it.
+ */
+function markLandingPage(layout: FixtureLayout, options: BuildOptions): string {
+  const link = (
+    attachmentKey: string,
+    label: string,
+    anchor: { page?: number | null; annotation?: string | null },
+  ): string => {
+    const attachment = ATTACHMENTS.find(({ key }) => key === attachmentKey)!;
+    const path = attachmentFilePath(
+      attachment,
+      layout,
+      options.linkedAttachmentVaultDir,
+    )!;
+    const href = pathToFileURL(path).href;
+    return `[${label}](${href}${formatAnnotationSubpath(anchor)})`;
+  };
+  const rougier = (label: string, anchor: Parameters<typeof link>[2]): string =>
+    link("RGRPDF24", label, anchor);
+
+  return `---
+title: Mark Landing Test
+---
+
+# Mark Landing Test
+
+This note exercises Mark Landing (#1156): an Attachment File Link carrying an
+Annotation Anchor opens the PDF in Obsidian's reader, selects the Annotation's
+own Mark, and scrolls it into view.
+
+**Settings for a full pass**: **Open PDF file links in Obsidian** on, in
+**Settings → ZotLit → Reader**. Zotero running, so the Annotations resolve.
+
+**Pass condition for every landing case below**: the reader opens on the page
+the Annotation sits on, exactly one Mark carries the selection outline, that
+Mark is on screen, and no Mark Popup opens.
+
+## A Mark on the page the reader opens
+
+\`PUPR5FG5\` is a highlight on page 1 of the Rougier PDF, a linked file inside
+the vault. Page 1 has rendered by the time the Landing resolves, so the Mark is
+selected at once.
+
+- File link: ${rougier("rougier-2014.pdf", { page: 1, annotation: "PUPR5FG5" })}
+- Wikilink: [[attachments/rougier-2014.pdf#page=1&zt-annotation=PUPR5FG5]]
+
+Both cross \`WorkspaceLeaf.setEphemeralState\`, so both land the same way. The
+wikilink proves the notation is writable by hand, not an internal detail.
+
+## A Mark on a page that has not rendered
+
+\`FDRFQ7C2\` is the image annotation on page 2. That page is unbuilt when the
+reader opens, so the Landing waits for its render instead of for an event that
+never comes.
+
+- ${rougier("rougier-2014.pdf", { page: 2, annotation: "FDRFQ7C2" })}
+
+## The Annotation wins over the page the link names
+
+This link names page 1 and an Annotation that sits on page 2. The Indexed Key is
+the durable identity and the page is a hint, so the reader lands on page 2 — the
+behaviour a replaced PDF depends on.
+
+- ${rougier("rougier-2014.pdf", { page: 1, annotation: "FDRFQ7C2" })}
+
+## A reader that is already open re-aims
+
+Click the page 1 case, then this one, without closing the tab. The open reader
+takes the new Annotation. Obsidian's own **Copy link to annotation** lands on
+the first click and does nothing on the second; this one lands every time.
+
+- ${rougier("rougier-2014.pdf", { page: 1, annotation: "K3JRFLFQ" })}
+
+Click the same link twice. The second click lands exactly like the first.
+
+## A PDF in Zotero storage, outside the vault
+
+\`HIGHLGHT\` is on the Sakima's Song PDF, imported into Zotero's storage rather
+than linked into the vault.
+
+- ${link("PDFSTR22", "sakimas-song.pdf", { page: 2, annotation: "HIGHLGHT" })}
+
+## Degrades to the page, in silence
+
+Each case here lands on the page Obsidian jumped to, selects nothing, and shows
+no notice. Each writes one \`debug\` record naming the reason.
+
+- An Annotation Zotero does not have: ${rougier("rougier-2014.pdf", { page: 1, annotation: "MISSING2" })}
+- An Annotation of another Attachment: ${rougier("rougier-2014.pdf", { page: 1, annotation: "HIGHLGHT" })}
+- No Anchor at all: ${rougier("rougier-2014.pdf", { page: 2 })}
+
+## Zotero's own annotation link stays Zotero's
+
+ZotLit does not claim Zotero's own annotation deep link. ADR 0046 defers that as
+the next step rather than rejecting it.
+
+- [Ten Simple Rules for Better Figures](zotero://open/library/items/RGRPDF24?annotation=FDRFQ7C2&page=2)
+
+**Pass condition**: Zotero comes forward and opens its own reader on that
+annotation. Obsidian's reader does not open, and no ZotLit notice appears.
+
+## Update Note reaches notes that already exist
+
+\`literatures/rougierTenSimpleRules2014.md\` ships with the per-Annotation output
+ZotLit wrote before this feature: a plain page label, no link. Run **Update all
+notes** and confirm the batch.
+
+**Pass condition**: every Annotation callout now titles on a linked page label
+carrying its own Anchor, and each of those links lands on its own Mark. The
+attachment link at the top of the note keeps the shape it had, because it sits
+outside the managed region.
+`;
+}
+
+/**
+ * The per-Annotation output ZotLit wrote before Mark Landing (#1156): a plain
+ * page label, with no link and no Annotation Anchor. It sits in the managed
+ * region, so **Update Note** rewrites it — which is how the capability reaches
+ * notes a reader already has.
+ */
+function staleAnnotationRegion(item: FixtureItem): string[] {
+  const attachmentIDs = new Set(
+    ATTACHMENTS.filter(({ parentItemID }) => parentItemID === item.itemID).map(
+      ({ itemID }) => itemID,
+    ),
+  );
+  const callouts = ANNOTATIONS.filter(({ parentItemID }) =>
+    attachmentIDs.has(parentItemID),
+  ).flatMap(({ pageLabel, text, comment }) => [
+    "",
+    `> [!note] Page ${pageLabel ?? ""}`,
+    ">",
+    `> ${text ?? comment ?? ""}`,
+    "",
+  ]);
+  return [
+    "%%zt-managed%%",
+    "## Annotations",
+    ...callouts,
+    "%%/zt-managed%%",
+    "",
+  ];
 }
 
 function fixtureIndexedKey(note: FixtureNote): string {
