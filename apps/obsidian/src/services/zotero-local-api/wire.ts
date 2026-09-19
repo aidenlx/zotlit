@@ -160,13 +160,7 @@ export interface LocalApiAnnotation {
   parentKey: string;
   /** Zotero's printed-page label, as Zotero stored it. */
   pageLabel: string | null;
-  /**
-   * When Zotero first stored this Annotation, in ISO 8601 UTC. It never moves
-   * afterwards, which is what makes it the window an Uncertain Create is
-   * matched inside. `null` for an answer that named none.
-   *
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
+  /** When Zotero first stored this Annotation, or `null` where it named none. */
   dateAdded: string | null;
   /** The Annotation's Zotero tags, by name, in the order Zotero answered them. */
   tags: string[];
@@ -423,8 +417,7 @@ const itemSchema = v.object({
     annotationPosition: v.string(),
     annotationPageLabel: v.optional(v.string()),
     // Zotero writes `dateAdded` for every stored object, but an answer that
-    // omits it is still a believable Annotation: only the Uncertain Create
-    // reconciliation reads it, and it answers "no match" without one.
+    // omits it is still a believable Annotation.
     dateAdded: v.optional(v.string()),
     tags: v.optional(v.array(v.object({ tag: v.string() }))),
   }),

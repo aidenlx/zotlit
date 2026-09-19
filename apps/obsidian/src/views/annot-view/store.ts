@@ -10,7 +10,6 @@ import type {
   AnnotationSource,
   EditingCapability,
   MutationState,
-  UncertainCreate,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 
@@ -54,14 +53,6 @@ export interface AnnotState {
    * entry is idle, so the map holds only the few this session has edited.
    */
   mutations: ReadonlyMap<string, MutationState>;
-  /**
-   * The creates on the Attachment on screen whose answer was lost, in the
-   * order they were made. Each stands as a badged card under the list until
-   * the user tries again or discards it.
-   *
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
-  uncertainCreates: readonly UncertainCreate[];
   /**
    * The Annotation whose comment is open in its card's editor; `null` while
    * none is. One at a time: the editor takes the caret.
@@ -131,7 +122,6 @@ export function createAnnotStore() {
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
-        uncertainCreates: [],
         editingCommentKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,

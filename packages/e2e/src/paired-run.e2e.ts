@@ -27,7 +27,7 @@ import {
 } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
 import {
   authorizationCount,
   authorize,
@@ -88,7 +88,7 @@ const vaultId = await developmentVaultId();
  */
 async function developmentVaultId(): Promise<string | null> {
   const script = join(
-    workspaceRoot,
+    pairedWorkspaceRoot,
     "packages",
     "scripts",
     "scripts",
@@ -475,9 +475,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       let createdKey = "";
       let readerTabID = "";
       let pdfDigestBefore = "";
+      let workspaceLayout = "";
 
       beforeAll(async () => {
         rdp = await openZoteroRdp(debuggerPort!);
+        workspaceLayout = await obEval(
+          vaultId!,
+          "JSON.stringify(app.workspace.getLayout())",
+        );
         // The PDF is a `vault`-rooted linked file, so it is only readable where
         // a Development Vault stands — which is exactly this block's gate.
         pdfDigestBefore = await digestAttachmentPdf();
@@ -557,6 +562,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
       }, 120000);
 
+      afterEach(async () => {
+        await restoreWriteOutcomeProbe(vaultId!);
+      });
+
       afterAll(async () => {
         // Every Annotation this block created leaves with it, through Zotero
         // rather than through ZotLit, so cleanup does not depend on the code
@@ -583,11 +592,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           vaultId!,
           "(async()=>{await app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization();return true;})()",
         ).catch(() => "");
-        // Leave the workspace as it was found.
-        await obEval(
-          vaultId!,
-          "app.workspace.getLeavesOfType('pdf').forEach(leaf=>leaf.detach());app.workspace.detachLeavesOfType('zotero-annotation-view');true",
-        ).catch(() => "");
+        if (workspaceLayout) {
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(workspaceLayout)}));return true;})()`,
+          );
+        }
         rdp[Symbol.dispose]();
       }, 120000);
 
@@ -685,7 +695,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `String(document.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')?.getAttribute('fill'))`,
+            `String(app.workspace.getLeavesOfType('pdf').map(leaf=>leaf.view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.getAttribute('fill'))`,
             { expected: edited },
           ),
         ).toBe(true);
@@ -693,7 +703,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(function(){var card=document.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]');if(!card)return 'no card';return String(Array.from(card.querySelectorAll('*')).some(function(node){return node.style.backgroundColor===${JSON.stringify(hexToRgb(edited))}||node.getAttribute('fill')===${JSON.stringify(edited)};}));})()`,
+            `(function(){var card=app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean);if(!card)return 'no card';return String(card.getAttribute('data-annot-color')===${JSON.stringify(edited)});})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -722,6 +732,96 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           ),
         ).toBe(true);
+      }, 120000);
+
+      it("keeps confirmed surfaces after a committed write loses its response and reread", async () => {
+        const before = await annotationState(api, serverID, createdKey);
+        const committed = "#e56b6f";
+        await installLostWriteProbe(vaultId!);
+
+        const state = await obJson<{
+          kind: string;
+          failure?: { kind: string };
+        }>(
+          `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.patchColor(${JSON.stringify(createdKey)},${JSON.stringify(committed)});return JSON.stringify(state);})()`,
+        );
+        expect(state).toEqual({
+          kind: "failed",
+          failure: { kind: "unknown-outcome" },
+        });
+        const stored = await annotationState(api, serverID, createdKey);
+        expect(stored).toMatchObject({ color: committed });
+        expect(stored.version).toBeGreaterThan(before.version);
+        expect(await writeOutcomeCalls(vaultId!)).toBe(1);
+
+        // The failed ordinary refresh holds both rendered consumers on their
+        // last confirmed value; the independent Local API read above proves
+        // Zotero already committed a different one.
+        expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
+          card: before.color,
+          mark: before.color,
+        });
+
+        await restoreWriteOutcomeProbe(vaultId!);
+        await cli([`vault=${vaultId!}`, "plugin:reload", "id=zotlit"]);
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(async()=>{const services=app.plugins.plugins.zotlit?.services;if(!services)return 'loading';await services.annotationRepository.probe();const list=await services.annotationRepository.read(${JSON.stringify(attachment.key)});return String(list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)})?.color);})()`,
+            { expected: committed },
+          ),
+        ).toBe(true);
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `JSON.stringify((()=>{const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean);const mark=app.workspace.getLeavesOfType('pdf').map(leaf=>leaf.view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean);return {card:card?.getAttribute('data-annot-color')??null,mark:mark?.getAttribute('fill')??null}})())`,
+            { expected: JSON.stringify({ card: committed, mark: committed }) },
+          ),
+        ).toBe(true);
+        // Restart reads Zotero; it does not replay the session-only attempt.
+        expect(await annotationState(api, serverID, createdKey)).toEqual(
+          stored,
+        );
+      }, 120000);
+
+      it("finishes a repository write after both panes close", async () => {
+        const committed = "#2ea8e5";
+        const savedLayout = await obEval(
+          vaultId!,
+          "JSON.stringify(app.workspace.getLayout())",
+        );
+        try {
+          await installClosingPaneProbe(vaultId!, createdKey, committed);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              "String(window.__zotlitWriteOutcomeProbe?.reached)",
+              { expected: "true" },
+            ),
+          ).toBe(true);
+
+          await obEval(
+            vaultId!,
+            "app.workspace.getLeavesOfType('pdf').forEach(leaf=>leaf.detach());app.workspace.detachLeavesOfType('zotero-annotation-view');window.__zotlitWriteOutcomeProbe.release();true",
+          );
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              "String(window.__zotlitWriteOutcomeProbe?.outcome?.kind)",
+              { expected: "idle" },
+            ),
+          ).toBe(true);
+          expect(await writeOutcomeCalls(vaultId!)).toBe(1);
+          expect(await annotationColor(api, serverID, createdKey)).toBe(
+            committed,
+          );
+        } finally {
+          await restoreWriteOutcomeProbe(vaultId!);
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(savedLayout)}));return true;})()`,
+          );
+        }
       }, 120000);
 
       it("degrades to the Zotero database when the Local API is turned off, and recovers", async () => {
@@ -864,14 +964,6 @@ async function annotationParents(
   );
 }
 
-/** Hex as the browser reports a computed background colour. */
-function hexToRgb(hex: string): string {
-  const [red, green, blue] = [1, 3, 5].map((start) =>
-    Number.parseInt(hex.slice(start, start + 2), 16),
-  );
-  return `rgb(${red}, ${green}, ${blue})`;
-}
-
 /** The colour Zotero's own Reader is showing for one Annotation. */
 function readerAnnotationColor(
   rdp: ZoteroRdp,
@@ -907,6 +999,147 @@ async function annotationColor(
     data: { annotationColor?: string };
   };
   return record.data.annotationColor ?? null;
+}
+
+async function annotationState(
+  api: string,
+  serverID: string,
+  key: string,
+): Promise<{ version: number; color: string | null }> {
+  const reply = await zoteroFetch(api, `users/0/items/${key}`, {
+    headers: { "Zotero-Server-ID": serverID },
+  });
+  expect(reply.status).toBe(200);
+  const record = (await reply.json()) as {
+    version: number;
+    data: { annotationColor?: string };
+  };
+  return {
+    version: record.version,
+    color: record.data.annotationColor ?? null,
+  };
+}
+
+/**
+ * Let one real write commit, then replace its reply with a lost-response
+ * outcome and fail the ordinary follow-up list read once.
+ */
+async function installLostWriteProbe(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    `(() => {
+      const services = app.plugins.plugins.zotlit.services;
+      const api = services.zoteroLocalApi;
+      const probe = {
+        api,
+        authorizedSend: api.authorizedSend.bind(api),
+        listAnnotations: api.listAnnotations.bind(api),
+        calls: 0,
+        failRead: false,
+      };
+      window.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = async (...args) => {
+        probe.calls += 1;
+        const reply = await probe.authorizedSend(...args);
+        if ('value' in reply) {
+          probe.failRead = true;
+          return { failure: { kind: 'unknown-outcome' } };
+        }
+        return reply;
+      };
+      api.listAnnotations = async (...args) => {
+        if (!probe.failRead) return await probe.listAnnotations(...args);
+        probe.failRead = false;
+        return { failure: { kind: 'unreachable' } };
+      };
+      return true;
+    })()`,
+  );
+}
+
+/** Hold the reply after a real write commits, until both owning panes close. */
+async function installClosingPaneProbe(
+  vaultId: string,
+  annotationKey: string,
+  color: string,
+): Promise<void> {
+  await obEval(
+    vaultId,
+    `(() => {
+      const services = app.plugins.plugins.zotlit.services;
+      const api = services.zoteroLocalApi;
+      const gate = Promise.withResolvers();
+      const probe = {
+        api,
+        authorizedSend: api.authorizedSend.bind(api),
+        listAnnotations: api.listAnnotations.bind(api),
+        calls: 0,
+        reached: false,
+        release: gate.resolve,
+        outcome: null,
+      };
+      window.__zotlitWriteOutcomeProbe = probe;
+      api.authorizedSend = async (...args) => {
+        probe.calls += 1;
+        const reply = await probe.authorizedSend(...args);
+        probe.reached = true;
+        await gate.promise;
+        return reply;
+      };
+      probe.pending = services.annotationRepository
+        .patchColor(${JSON.stringify(annotationKey)}, ${JSON.stringify(color)})
+        .then((outcome) => { probe.outcome = outcome; });
+      return true;
+    })()`,
+  );
+}
+
+async function restoreWriteOutcomeProbe(vaultId: string): Promise<void> {
+  await obEval(
+    vaultId,
+    `(async () => {
+      const probe = window.__zotlitWriteOutcomeProbe;
+      if (!probe) return 'clean';
+      try {
+        probe.release?.();
+        await probe.pending;
+      } finally {
+        probe.api.authorizedSend = probe.authorizedSend;
+        probe.api.listAnnotations = probe.listAnnotations;
+        delete window.__zotlitWriteOutcomeProbe;
+      }
+      return 'restored';
+    })()`,
+  );
+}
+
+async function writeOutcomeCalls(vaultId: string): Promise<number> {
+  return Number(
+    await obEval(
+      vaultId,
+      "String(window.__zotlitWriteOutcomeProbe?.calls ?? -1)",
+    ),
+  );
+}
+
+function visibleAnnotationColors(
+  vaultId: string,
+  annotationKey: string,
+): Promise<{ card: string | null; mark: string | null }> {
+  return obJson(
+    `(() => {
+      const card = app.workspace.getLeavesOfType('zotero-annotation-view')
+        .map((leaf) => leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]'))
+        .find(Boolean);
+      const mark = app.workspace.getLeavesOfType('pdf')
+        .map((leaf) => leaf.view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]'))
+        .find(Boolean);
+      return JSON.stringify({
+        card: card?.getAttribute('data-annot-color') ?? null,
+        mark: mark?.getAttribute('fill') ?? null,
+      });
+    })()`,
+  );
 }
 
 const ATTACHMENT_ITEM = `Zotero.Items.getByLibraryAndKey(

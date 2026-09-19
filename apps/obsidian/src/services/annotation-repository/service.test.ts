@@ -26,7 +26,6 @@ import {
   staleVersion,
   unreachable,
   writeAccepted,
-  writeTokenUsed,
 } from "@/services/zotero-local-api/__fixtures__";
 import type {
   ClientOptions,
@@ -842,6 +841,36 @@ it("reads a 404 on the conflict's own re-read as a deletion too", async () => {
   expect(outcome).toEqual({ kind: "failed", failure: { kind: "not-found" } });
 });
 
+it("refreshes after a lost ordinary write response without replaying it", async () => {
+  await using stack = new AsyncDisposableStack();
+  let reads = 0;
+  const { repository, requests } = await writable(stack, {
+    write: () => Promise.reject(new AbortError("reader closed")),
+    children: () => {
+      reads += 1;
+      return annotationPage(ROUGIER_ANNOTATIONS);
+    },
+  });
+  const sent = requests.length;
+  const readsBefore = reads;
+
+  const outcome = await repository.patchComment("PUPR5FG5", "Attempted");
+
+  expect(outcome).toEqual({
+    kind: "failed",
+    failure: { kind: "unknown-outcome" },
+  });
+  expect(
+    requests
+      .slice(sent)
+      .filter(
+        ({ method, url }) =>
+          method === "PATCH" && url.pathname.endsWith("/PUPR5FG5"),
+      ),
+  ).toHaveLength(1);
+  expect(reads).toBeGreaterThan(readsBefore);
+});
+
 it("opens Zotero's dialog for a card gesture, then goes on — colour, comment, delete", async () => {
   for (const verb of ["color", "comment", "delete"] as const) {
     await using stack = new AsyncDisposableStack();
@@ -1046,7 +1075,6 @@ it("fails the create on an object Zotero refused under its own 200", async () =>
     kind: "failed",
     failure: { kind: "invalid-response" },
   });
-  expect(repository.pendingCreates.size).toBe(0);
 });
 
 it("refuses a create under the Zotero DB source before any request", async () => {
@@ -1089,272 +1117,59 @@ it("refuses a position longer than Zotero accepts before the write", async () =>
  *
  * @see policies/test-timing.md
  */
-function movingClock(start: Temporal.Instant = NOW) {
-  let at = start;
-  return {
-    now: () => at,
-    advance: (seconds: number) => {
-      at = at.add({ seconds });
-    },
-  };
-}
-
-/** The Annotation Zotero stored for a create whose answer never arrived. */
-const LANDED: WireAnnotation = {
-  ...MADE,
-  // Inside the window: the request left at NOW and the clock moved five
-  // seconds while it was in flight.
-  dateAdded: "2026-09-16T15:52:23Z",
-};
-
-/**
- * A create whose answer is lost, with the Attachment answering `candidates`
- * when the reconciliation re-reads it. The clock moves while the request is in
- * flight, so the window the match runs against is a real interval.
- */
-async function lostCreate(
-  stack: AsyncDisposableStack,
-  candidates: readonly WireAnnotation[],
-) {
-  const clock = movingClock();
-  const harness = await writable(
-    stack,
-    {
-      write: () => {
-        clock.advance(5);
-        return Promise.reject(new AbortError("reader closed"));
-      },
-      children: () => annotationPage([...ROUGIER_ANNOTATIONS, ...candidates]),
-    },
-    { writeToken: () => TOKEN, repositoryNow: clock.now },
-  );
-  const outcome = await harness.repository.createAnnotation("RGRPDF24", DRAFT);
-  return { ...harness, clock, outcome };
-}
-
-it("confirms a lost create when exactly one candidate matches", async () => {
+it("reports a lost create response and refreshes without replaying it", async () => {
   await using stack = new AsyncDisposableStack();
-  const { repository, outcome } = await lostCreate(stack, [LANDED]);
-
-  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
-  expect(repository.pendingCreates.size).toBe(0);
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
-  expect(
-    (await repository.read("RGRPDF24"))?.annotations.map(({ key }) => key),
-  ).toContain("MADE2345");
-});
-
-it("leaves a badged card when no candidate matches", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, outcome } = await lostCreate(stack, []);
-
-  expect(outcome).toEqual({ kind: "uncertain" });
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([
-    {
-      writeToken: TOKEN,
-      attachmentKey: "RGRPDF24",
-      draft: { ...DRAFT, parentKey: "RGRPDF24" },
-      state: { kind: "uncertain" },
-    },
-  ]);
-});
-
-it("leaves a badged card when two candidates match", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, outcome } = await lostCreate(stack, [
-    { ...LANDED, key: "TWINAAA2" },
-    { ...LANDED, key: "TWINAAA3" },
-  ]);
-
-  expect(outcome).toEqual({ kind: "uncertain" });
-  expect(
-    repository.uncertainCreatesFor("RGRPDF24").map(({ state }) => state),
-  ).toEqual([{ kind: "uncertain" }]);
-});
-
-it("leaves a badged card when the dateAdded window rules the candidate out", async () => {
-  await using stack = new AsyncDisposableStack();
-  // Everything about it matches except when Zotero stored it: this Annotation
-  // was already there before the request left.
-  const { outcome } = await lostCreate(stack, [
-    { ...LANDED, dateAdded: "2026-09-16T15:52:20Z" },
-  ]);
-
-  expect(outcome).toEqual({ kind: "uncertain" });
-});
-
-it("sends nothing more of its own accord while a create stands uncertain", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { requests } = await lostCreate(stack, []);
-  const writes = () => requests.filter(({ method }) => method !== "GET").length;
-  const sent = writes();
-
-  await Promise.resolve();
-
-  // The reconciliation read is a read; nothing else leaves until the user asks.
-  expect(writes()).toBe(sent);
-});
-
-it("re-sends the same request on the same write token when the user tries again", async () => {
-  await using stack = new AsyncDisposableStack();
-  const clock = movingClock();
-  let answer: () => Response | Promise<Response> = () => {
-    clock.advance(5);
-    return Promise.reject(new AbortError("reader closed"));
-  };
+  let reads = 0;
   const { repository, requests } = await writable(
     stack,
     {
-      write: (request) =>
-        request.method === "POST" ? answer() : writeAccepted(),
-      item: () => annotationItem(LANDED),
-      children: () => annotationPage(ROUGIER_ANNOTATIONS),
-    },
-    { writeToken: () => TOKEN, repositoryNow: clock.now },
-  );
-  const first = await repository.createAnnotation("RGRPDF24", DRAFT);
-  expect(first).toEqual({ kind: "uncertain" });
-  const sent = requests.length;
-
-  answer = () => createAccepted(LANDED);
-  const outcome = await repository.retryCreate(TOKEN);
-
-  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
-  const [retry] = requests.slice(sent);
-  expect([retry?.method, retry?.headers.get("Zotero-Write-Token")]).toEqual([
-    "POST",
-    TOKEN,
-  ]);
-  expect(retry?.body).toBe(
-    requests.find(({ method }) => method === "POST")?.body,
-  );
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
-});
-
-it("reads 412 Write token already used as the first create having landed", async () => {
-  await using stack = new AsyncDisposableStack();
-  const clock = movingClock();
-  let landed = false;
-  let retried = false;
-  const { repository } = await writable(
-    stack,
-    {
-      write: (request) => {
-        if (request.method !== "POST") return writeAccepted();
-        if (landed) return writeTokenUsed();
-        clock.advance(5);
-        landed = true;
-        return Promise.reject(new AbortError("reader closed"));
+      write: () => Promise.reject(new AbortError("reader closed")),
+      children: () => {
+        reads += 1;
+        return annotationPage(ROUGIER_ANNOTATIONS);
       },
-      // The first write did land, but Zotero had not committed it by the time
-      // the first reconciliation read the list; the retry's own `412` is what
-      // says it exists, and the read that follows is what names it.
-      children: () =>
-        annotationPage(
-          retried ? [...ROUGIER_ANNOTATIONS, LANDED] : ROUGIER_ANNOTATIONS,
-        ),
     },
-    { writeToken: () => TOKEN, repositoryNow: clock.now },
-  );
-  expect(await repository.createAnnotation("RGRPDF24", DRAFT)).toEqual({
-    kind: "uncertain",
-  });
-
-  retried = true;
-  const announced = nextChange(repository);
-  const outcome = await repository.retryCreate(TOKEN);
-
-  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
-  expect(await announced).toContain("RGRPDF24");
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
-});
-
-it("drops a badged card the user discards, and asks Zotero nothing", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await lostCreate(stack, []);
-  const sent = requests.length;
-  let announced = 0;
-  stack.defer(
-    repository.on("uncertain-creates-changed", () => {
-      announced += 1;
-    }),
-  );
-
-  repository.discardCreate(TOKEN);
-
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
-  expect(announced).toBe(1);
-  expect(requests.slice(sent)).toEqual([]);
-});
-
-it("drops every badged card when the Zotero DB source answers instead", async () => {
-  await using stack = new AsyncDisposableStack();
-  const clock = movingClock();
-  let answering = true;
-  const { repository } = await writable(
-    stack,
-    {
-      root: () => (answering ? rootOk() : unreachable()),
-      write: () => {
-        clock.advance(5);
-        return Promise.reject(new AbortError("reader closed"));
-      },
-      children: () => annotationPage(ROUGIER_ANNOTATIONS),
-    },
-    { writeToken: () => TOKEN, repositoryNow: clock.now },
-  );
-  await repository.createAnnotation("RGRPDF24", DRAFT);
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toHaveLength(1);
-
-  // Zotero stopped answering, so the Zotero DB is the only source left — and
-  // it can neither reconcile a create nor retry one.
-  answering = false;
-  await repository.probe();
-
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
-});
-
-it("drops every badged card when another Zotero database answers the port", async () => {
-  await using stack = new AsyncDisposableStack();
-  const clock = movingClock();
-  let serverID = SERVER_ID;
-  const { repository } = await writable(
-    stack,
-    {
-      root: () => rootOk({ "Zotero-Server-ID": serverID }),
-      write: () => {
-        clock.advance(5);
-        return Promise.reject(new AbortError("reader closed"));
-      },
-      children: () => annotationPage(ROUGIER_ANNOTATIONS),
-    },
-    { writeToken: () => TOKEN, repositoryNow: clock.now },
-  );
-  await repository.createAnnotation("RGRPDF24", DRAFT);
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toHaveLength(1);
-
-  serverID = "Zzzz11119999";
-  await repository.probe();
-
-  expect(repository.uncertainCreatesFor("RGRPDF24")).toEqual([]);
-});
-
-it("keeps the write token and the request start instant while an answer is lost", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository } = await writable(
-    stack,
-    { write: () => Promise.reject(new AbortError("reader closed")) },
     { writeToken: () => TOKEN },
   );
+  const sent = requests.length;
+  const readsBefore = reads;
 
   const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
 
-  expect(outcome).toEqual({ kind: "uncertain" });
-  const pending = repository.pendingCreates.get(TOKEN);
-  expect(pending?.attachmentKey).toBe("RGRPDF24");
-  expect(pending?.startedAt).toEqual(NOW);
-  expect(pending?.request.writeToken).toBe(TOKEN);
-  expect(pending?.draft.parentKey).toBe("RGRPDF24");
+  expect(outcome).toEqual({
+    kind: "failed",
+    failure: { kind: "unknown-outcome" },
+  });
+  expect(
+    requests
+      .slice(sent)
+      .filter(
+        ({ method, url }) =>
+          method === "POST" && url.pathname === "/api/users/0/items",
+      ),
+  ).toHaveLength(1);
+  expect(reads).toBeGreaterThan(readsBefore);
+});
+
+it("refreshes the collection after Zotero definitely rejects a create", async () => {
+  await using stack = new AsyncDisposableStack();
+  let reads = 0;
+  const { repository } = await writable(stack, {
+    write: () => new Response("no", { status: 400 }),
+    children: () => {
+      reads += 1;
+      return annotationPage(ROUGIER_ANNOTATIONS);
+    },
+  });
+  const readsBefore = reads;
+
+  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  expect(outcome).toEqual({
+    kind: "failed",
+    failure: { kind: "invalid-response", issue: "400 no" },
+  });
+  expect(reads).toBeGreaterThan(readsBefore);
 });
 
 it("opens Zotero's dialog when the gesture needs one, then goes on", async () => {

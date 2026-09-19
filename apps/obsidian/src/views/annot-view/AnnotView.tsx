@@ -5,12 +5,11 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
-import { activatable, tooltipAttrs } from "@/lib/utils";
+import { tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
 import { CapabilitySlot } from "./capability-slot";
-import { uncertainCard } from "./card-conflict";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import {
@@ -324,71 +323,10 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
   return (
     <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3 zt:text-xs">
       <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
-        <UncertainCreateCards />
         {filtered.map((annot) => (
           <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
         ))}
       </div>
     </div>
   );
-}
-
-/**
- * The creates on this Attachment whose answer was lost, each as a badged card
- * carrying what it asked Zotero for. They stand above the list because they
- * have no Sort Index to place them by: Zotero never confirmed them.
- *
- * Nothing retries on its own — both verbs are the user's — and the cards are
- * in memory only, so a reload drops them and the re-read shows whichever
- * Annotations did land.
- *
- * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
- */
-function UncertainCreateCards() {
-  const actions = useContext(AnnotActionsContext);
-  const creates = useAnnotStore((s) => s.uncertainCreates);
-
-  return creates.map((create) => {
-    const card = uncertainCard(create.state, Temporal.Now.instant());
-    return (
-      <div
-        key={create.writeToken}
-        className="zt-annot-card zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:gap-1 zt:overflow-hidden zt:rounded-sm zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2 zt:py-1.5 zt:@md:mb-3"
-      >
-        <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
-          <Icon name="alert-triangle" size={14} />
-          {card.title}
-        </div>
-        <div className="zt:text-muted-foreground">{card.detail}</div>
-        {create.draft.text !== "" && (
-          <blockquote
-            className="zt:border-l-2 zt:border-l-(--zt-annot-color) zt:pl-2 zt:leading-tight"
-            style={
-              { "--zt-annot-color": create.draft.color } as React.CSSProperties
-            }
-          >
-            {create.draft.text}
-          </blockquote>
-        )}
-        <div className="zt:flex zt:gap-2">
-          {card.actions.map((action) => (
-            <span
-              key={action.kind}
-              className="zt:cursor-link zt:rounded-sm zt:text-link zt:underline zt:underline-offset-2 zt:hover:text-link-hover zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:aria-disabled:cursor-not-allowed zt:aria-disabled:opacity-70"
-              aria-disabled={action.disabled || undefined}
-              {...activatable(
-                () =>
-                  action.kind === "retry"
-                    ? actions.onRetryCreate(create.writeToken)
-                    : actions.onDiscardCreate(create.writeToken),
-                { disabled: action.disabled },
-              )}
-            >
-              {action.label}
-            </span>
-          ))}
-        </div>
-      </div>
-    );
-  });
 }

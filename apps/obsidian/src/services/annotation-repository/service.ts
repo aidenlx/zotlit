@@ -37,8 +37,7 @@ import {
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
-import { matchCreatedAnnotation, resolvesSilently } from "./reconcile";
-import type { CreateMatch } from "./reconcile";
+import { resolvesSilently } from "./reconcile";
 import {
   colorPatch,
   commentPatch,
@@ -47,13 +46,11 @@ import {
   IDLE,
   MAX_POSITION_LENGTH,
   newWriteToken,
-  UNCERTAIN,
   writePosition,
 } from "./write";
 import type {
   AnnotationDraft,
   ConflictedWrite,
-  CreateRequest,
   MutationState,
   WriteFailure,
   WriteRequest,
@@ -182,12 +179,6 @@ export interface AnnotationRepositoryEvents {
    * @param attachmentKey the Attachment it hangs from.
    */
   "write-conflict": (annotationKey: string, attachmentKey: string) => void;
-  /**
-   * The Uncertain Creates standing on some Attachment moved: one appeared, was
-   * confirmed, was retried, or was discarded. A consumer re-reads
-   * {@link AnnotationRepository.uncertainCreatesFor}.
-   */
-  "uncertain-creates-changed": () => void;
 }
 
 export interface AnnotationRepositoryDeps {
@@ -226,59 +217,10 @@ interface HeldAnnotation {
   record: AnnotationRecord;
 }
 
-/**
- * One create whose outcome is not yet known, kept with the write token that
- * made it and the instant it left. An answer that never arrives leaves this
- * entry standing, which is what an Uncertain Create is reconciled from: the
- * `dateAdded` window starts at {@link PendingCreate.startedAt}, and "Try again"
- * re-sends {@link PendingCreate.request} on the same token.
- *
- * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
- * @see https://github.com/aidenlx/zotlit/issues/1151
- */
-export interface PendingCreate {
-  /** The Attachment's Indexed Key. */
-  attachmentKey: string;
-  /** What the create asked Zotero for, as the stable fields to match on. */
-  draft: AnnotationDraft;
-  /** The request as sent, so a retry is the same request on the same token. */
-  request: CreateRequest;
-  startedAt: Temporal.Instant;
-  /**
-   * Whether an answer has already been lost. Only then is there a card: a
-   * create still waiting for its first answer shows as disabled verbs on the
-   * surface that started it, and nothing is drawn ahead of Zotero.
-   */
-  uncertain: boolean;
-  /**
-   * What this create leaves on its badged card: `uncertain` while it stands,
-   * `pending` while the user's retry is in flight, `failed` where that retry
-   * was refused.
-   */
-  state: MutationState;
-}
-
-/** One Uncertain Create as a surface reads it, beside the token that names it. */
-export interface UncertainCreate {
-  /** Zotero remembers this for twelve hours, so a retry cannot create twice. */
-  writeToken: string;
-  /** The Attachment's Indexed Key. */
-  attachmentKey: string;
-  /** What the create asked Zotero for, which is what the badged card shows. */
-  draft: AnnotationDraft;
-  state: MutationState;
-}
-
 /** What one create ended with. */
 export type CreateOutcome =
   /** @param annotationKey the Indexed Key Zotero generated. */
   | { kind: "created"; annotationKey: string }
-  /**
-   * The answer never arrived, so the Annotation may or may not exist. The
-   * create stays in {@link AnnotationRepository.pendingCreates} until a
-   * reconciliation settles it.
-   */
-  | { kind: "uncertain" }
   | { kind: "failed"; failure: WriteFailure };
 
 /** One partition's key and the read that fills it. */
@@ -337,12 +279,6 @@ export class AnnotationRepository extends Service<void> {
    * few a session has edited.
    */
   readonly #mutations = new Map<string, MutationState>();
-  /**
-   * Every create whose outcome is not yet known, by write token. An entry
-   * leaves as soon as Zotero says what happened; one whose answer never
-   * arrived stays, and is what aidenlx/zotlit#1151 reconciles.
-   */
-  readonly #creates = new Map<string, PendingCreate>();
   /** One explicit revalidation per visible Attachment. */
   readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
   readonly #writeToken;
@@ -460,43 +396,6 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * Every create whose outcome is still unknown, by write token. Empty in a
-   * session where every create was answered.
-   */
-  get pendingCreates(): ReadonlyMap<string, PendingCreate> {
-    return this.#creates;
-  }
-
-  /**
-   * The Uncertain Creates one Attachment carries, in the order they were made
-   * — the badged cards the Annotation View shows under its list. A create
-   * still waiting for its first answer is not one of them: nothing is drawn
-   * ahead of Zotero.
-   *
-   * They live in memory alone, so they are gone after a reload; a switch to
-   * the Zotero DB source and a Zotero database change drop them too, because
-   * neither can answer for the create that made them.
-   *
-   * @param attachmentKey the Attachment's Indexed Key.
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
-  uncertainCreatesFor(attachmentKey: string): readonly UncertainCreate[] {
-    const standing: UncertainCreate[] = [];
-    for (const [writeToken, pending] of this.#creates) {
-      if (!pending.uncertain || pending.attachmentKey !== attachmentKey) {
-        continue;
-      }
-      standing.push({
-        writeToken,
-        attachmentKey: pending.attachmentKey,
-        draft: pending.draft,
-        state: pending.state,
-      });
-    }
-    return standing;
-  }
-
-  /**
    * Create one highlight or underline on an Attachment, from a user gesture.
    *
    * The gesture is what may open Zotero's dialog, so a session that has not
@@ -538,68 +437,6 @@ export class AnnotationRepository extends Service<void> {
 
     const library = libraryPath(parsed);
     const request = createRequest(library, whole, this.#writeToken());
-    const pending: PendingCreate = {
-      attachmentKey,
-      draft: whole,
-      request,
-      startedAt: this.#now(),
-      uncertain: false,
-      state: { kind: "pending" },
-    };
-    this.#creates.set(request.writeToken, pending);
-    return await this.#sendCreate(request.writeToken, pending);
-  }
-
-  /**
-   * Send one Uncertain Create again, from the user's "Try again" and from
-   * nothing else. The request and its `Zotero-Write-Token` are the original
-   * ones, so a first write that did land answers `412 Write token already
-   * used` rather than creating a second Annotation.
-   *
-   * A One-time Authorization is spent by the request that lost its answer, so
-   * this asks Zotero's dialog again where the session no longer holds a key —
-   * the retry is a user gesture like the create was.
-   *
-   * @param writeToken the token {@link AnnotationRepository.uncertainCreatesFor} named.
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
-  async retryCreate(writeToken: string): Promise<CreateOutcome> {
-    const pending = this.#creates.get(writeToken);
-    if (!pending) {
-      return { kind: "failed", failure: { kind: "unknown-annotation" } };
-    }
-    this.#createSettled(writeToken, pending, { kind: "pending" });
-    return await this.#sendCreate(writeToken, pending);
-  }
-
-  /**
-   * Drop one Uncertain Create, from the user's "Discard". Zotero is not asked
-   * anything: the Annotation either landed, and the next read shows it, or it
-   * never did.
-   *
-   * @param writeToken the token {@link AnnotationRepository.uncertainCreatesFor} named.
-   */
-  discardCreate(writeToken: string): void {
-    if (!this.#creates.delete(writeToken)) return;
-    logger.debug("An uncertain create was discarded", { writeToken });
-    this.#emitter.emit("uncertain-creates-changed");
-  }
-
-  /**
-   * One create request, and everything its answer settles — shared by the
-   * first send and by the user's retry, because the two differ only in what
-   * came before them.
-   */
-  async #sendCreate(
-    writeToken: string,
-    pending: PendingCreate,
-  ): Promise<CreateOutcome> {
-    const { attachmentKey, draft, request } = pending;
-    const parsed = parseIndexedKey(attachmentKey);
-    if (!parsed) {
-      return { kind: "failed", failure: { kind: "unknown-annotation" } };
-    }
-    const library = libraryPath(parsed);
     const reply = await this.#localApi.authorizedSend(request.path, {
       library,
       method: request.method,
@@ -607,133 +444,31 @@ export class AnnotationRepository extends Service<void> {
       body: request.body,
     });
     if ("failure" in reply) {
-      return await this.#createRefused(writeToken, pending, reply.failure);
+      logger.debug("Zotero did not confirm an annotation create", {
+        attachmentKey,
+        failure: reply.failure,
+      });
+      await this.refresh(attachmentKey);
+      return { kind: "failed", failure: reply.failure };
     }
 
     const created = readCreateResult(reply.value.text, {
       parentKey: parsed.key,
-      type: draft.type,
+      type: whole.type,
     });
     if ("failure" in created) {
-      return this.#createFailed(writeToken, pending, created.failure);
+      await this.refresh(attachmentKey);
+      return { kind: "failed", failure: created.failure };
     }
 
     const annotationKey = formatIndexedKey(created.value, parsed.groupID);
     logger.debug("Zotero created an annotation", {
       attachmentKey,
       annotationKey,
-      type: draft.type,
+      type: whole.type,
     });
-    return await this.#createLanded(writeToken, pending, annotationKey);
-  }
-
-  /**
-   * What a refused create leaves behind.
-   *
-   * A lost answer is the one refusal that leaves the create standing: the
-   * Annotation may exist, so ZotLit re-reads the Attachment and matches the
-   * intended create on its stable fields. A `412 Write token already used`
-   * says the first write did land, so the same match names what it created.
-   * Every other refusal is an answer: the create did not land.
-   */
-  async #createRefused(
-    writeToken: string,
-    pending: PendingCreate,
-    failure: WriteFailure,
-  ): Promise<CreateOutcome> {
-    const { attachmentKey } = pending;
-    if (
-      failure.kind !== "unknown-outcome" &&
-      failure.kind !== "write-token-used"
-    ) {
-      return this.#createFailed(writeToken, pending, failure);
-    }
-    logger.debug(
-      failure.kind === "unknown-outcome"
-        ? "A create lost its answer"
-        : "A retried create met its own write token",
-      { attachmentKey },
-    );
-
-    const match = await this.#matchCreate(pending);
-    if (match?.kind === "confirmed") {
-      return await this.#createLanded(writeToken, pending, match.annotationKey);
-    }
-    // A write token Zotero has already spent says the Annotation exists even
-    // where the match cannot name it, so the list is dropped either way and
-    // the next read shows whatever Zotero holds.
-    if (failure.kind === "write-token-used")
-      this.#dropAttachment(attachmentKey);
-    this.#createSettled(writeToken, { ...pending, uncertain: true }, UNCERTAIN);
-    return { kind: "uncertain" };
-  }
-
-  /**
-   * The Annotation one create asked for, if exactly one of the Attachment's
-   * Annotations carries every stable field and was added while the request ran.
-   *
-   * @returns the match, or `null` where Zotero could not be re-read at all —
-   *   which says nothing about the create and so leaves it uncertain.
-   */
-  async #matchCreate(pending: PendingCreate): Promise<CreateMatch | null> {
-    const { attachmentKey, draft, startedAt } = pending;
-    const listed = await this.#localApi.listAnnotations(attachmentKey);
-    if ("failure" in listed) {
-      logger.debug("An uncertain create could not be reconciled", {
-        attachmentKey,
-        failure: listed.failure,
-      });
-      return null;
-    }
-    const match = matchCreatedAnnotation(draft, attachmentKey, {
-      candidates: listed.value,
-      window: { from: startedAt, to: this.#now() },
-    });
-    logger.debug("An uncertain create was matched against Zotero", {
-      attachmentKey,
-      match,
-    });
-    return match;
-  }
-
-  /** One create that is known to have landed: the entry goes and the list drops. */
-  async #createLanded(
-    writeToken: string,
-    pending: PendingCreate,
-    annotationKey: string,
-  ): Promise<CreateOutcome> {
-    this.#creates.delete(writeToken);
-    await this.refresh(pending.attachmentKey);
-    if (pending.uncertain) this.#emitter.emit("uncertain-creates-changed");
+    await this.refresh(attachmentKey);
     return { kind: "created", annotationKey };
-  }
-
-  /**
-   * One create Zotero refused outright. A first send that is refused never
-   * landed, so its entry goes; a retry that is refused says nothing about the
-   * original create, so the badged card stands and carries the refusal.
-   */
-  #createFailed(
-    writeToken: string,
-    pending: PendingCreate,
-    failure: WriteFailure,
-  ): CreateOutcome {
-    if (pending.uncertain) {
-      this.#createSettled(writeToken, pending, { kind: "failed", failure });
-    } else {
-      this.#creates.delete(writeToken);
-    }
-    return { kind: "failed", failure };
-  }
-
-  /** Records what one create left on its badged card and announces it. */
-  #createSettled(
-    writeToken: string,
-    pending: PendingCreate,
-    state: MutationState,
-  ): void {
-    this.#creates.set(writeToken, { ...pending, state });
-    this.#emitter.emit("uncertain-creates-changed");
   }
 
   /**
@@ -838,29 +573,7 @@ export class AnnotationRepository extends Service<void> {
         this.#emitter.emit("capability-changed");
       }),
     );
-    // A create belongs to the database that was asked to make it, so another
-    // one answering the port takes every Uncertain Create with it.
-    stack.defer(
-      this.#localApi.on("server-changed", () => {
-        this.#dropUncertainCreates("the Zotero database changed");
-      }),
-    );
     this.commit(stack.move());
-  }
-
-  /**
-   * Every Uncertain Create goes: the source that could reconcile them is no
-   * longer the one that was asked to make them, and a retry against another
-   * database or against the Zotero DB source means nothing.
-   */
-  #dropUncertainCreates(reason: string): void {
-    if (this.#creates.size === 0) return;
-    logger.debug("Uncertain creates dropped", {
-      reason,
-      creates: this.#creates.size,
-    });
-    this.#creates.clear();
-    this.#emitter.emit("uncertain-creates-changed");
   }
 
   /**
@@ -972,6 +685,7 @@ export class AnnotationRepository extends Service<void> {
         attempted: command.attempted,
         failure: reply.failure,
       });
+      if (state.kind === "failed") await this.refresh(held.attachmentKey);
       this.#settle(annotationKey, state);
       if (state.kind === "conflict") {
         this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
@@ -1228,9 +942,6 @@ export class AnnotationRepository extends Service<void> {
     this.#queries.invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
     const held = this.#attachmentsHeld([ANNOTATIONS]);
     const source = this.#localApi.demandSource();
-    if (source === null) {
-      this.#dropUncertainCreates("the Zotero DB source answers now");
-    }
     logger.debug("The Zotero Local API source moved", {
       attachments: held.length,
       source,

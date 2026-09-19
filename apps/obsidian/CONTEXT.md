@@ -328,10 +328,6 @@ _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover 
 The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
-**Uncertain Create**:
-An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero.
-_Avoid_: pending create (a pending write has an outcome coming), orphaned write, lost write
-
 **Annotation Draft**:
 The shared unsaved comment for one Annotation, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
 _Avoid_: pending write (the draft has not been submitted), cached comment
