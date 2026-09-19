@@ -48,6 +48,9 @@ import type { ZoteroRdp } from "./paired-zotero.ts";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+/** A prepared Paired Run may belong to another worktree under review. */
+const pairedWorkspaceRoot =
+  process.env.ZOTLIT_PAIRED_WORKSPACE_ROOT ?? workspaceRoot;
 
 /** The Fixture Attachment this scenario reads, writes and never rewrites. */
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
@@ -66,7 +69,7 @@ const KEY_SHAPE = expect.stringMatching(
   /^[0-9A-Za-z]{32}$/,
 ) as unknown as string;
 
-const reach = await probePairedRun(getFixtureRoot(workspaceRoot)).catch(
+const reach = await probePairedRun(getFixtureRoot(pairedWorkspaceRoot)).catch(
   () => null,
 );
 const vaultId = await developmentVaultId();
@@ -462,6 +465,165 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       expect(reply.body).toEqual({ key: KEY_SHAPE, remember: true });
       await expect(authorizationCount(rdp)).resolves.toBe(1);
     });
+  });
+
+  // ── Tier 4 ────────────────────────────────────────────────────────────────
+  // The native concurrency boundary. Each case pauses one Zotero operation at
+  // a controlled completion point, then drives the competing operation through
+  // the real Reader or Local API before it releases the first one.
+  describe.skipIf(!debuggerPort)("Tier 4 — native concurrent writes", () => {
+    let rdp: ZoteroRdp;
+    let key = "";
+    let cleanup: AsyncDisposableStack | null = null;
+
+    beforeAll(async () => {
+      const resources = new AsyncDisposableStack();
+      cleanup = resources;
+      rdp = await openZoteroRdp(debuggerPort!);
+      resources.defer(() => rdp[Symbol.dispose]());
+      const pdfDigestBefore = await digestAttachmentPdf();
+      expect(pdfDigestBefore).toHaveLength(64);
+      resources.defer(async () => {
+        expect(await digestAttachmentPdf()).toBe(pdfDigestBefore);
+      });
+      const readerWasOpen = await isZoteroReaderOpen(rdp);
+      const readerTabID = await openZoteroReader(rdp);
+      if (!readerWasOpen) {
+        resources.defer(async () => {
+          await closeZoteroReader(rdp, readerTabID);
+        });
+      }
+      resources.defer(async () => {
+        await resetAuthorizations(rdp);
+      });
+      await resetAuthorizations(rdp);
+      resources.defer(async () => {
+        await restorePrompt(rdp);
+      });
+      key = await grantRememberedKey(api, rdp, {
+        serverID,
+        appName: `${APP_NAME} concurrency`,
+      });
+      resources.defer(async () => {
+        await eraseConcurrencyAnnotations(rdp);
+      });
+      resources.defer(async () => {
+        await restoreConcurrencyHooks(rdp);
+      });
+    }, 120000);
+
+    afterEach(async () => {
+      await restoreConcurrencyHooks(rdp);
+    });
+
+    afterAll(async () => {
+      await cleanup?.disposeAsync();
+    }, 120000);
+
+    it("records whether a native PATCH loses a concurrent Reader comment", async () => {
+      const annotation = await createConcurrencyAnnotation(
+        rdp,
+        "Concurrency PATCH baseline",
+      );
+      const readerComment = "Reader concurrent comment";
+      const apiComment = "Local API concurrent comment";
+      const paused = await pauseReaderCommentSave(
+        rdp,
+        annotation.key,
+        readerComment,
+      );
+      expect(paused).toEqual({
+        version: annotation.version,
+        comment: readerComment,
+      });
+
+      const patched = await zoteroFetch(
+        api,
+        `users/0/items/${annotation.key}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Zotero-Server-ID": serverID,
+            "Zotero-API-Key": key,
+            "Content-Type": "application/json",
+            "If-Unmodified-Since-Version": String(annotation.version),
+          },
+          body: JSON.stringify({ annotationComment: apiComment }),
+        },
+      );
+      expect(patched.status).toBe(204);
+
+      const readerOutcome = await releaseReaderCommentSave(rdp, annotation.key);
+      expect(readerOutcome).toEqual({ ok: true });
+      const final = await readAnnotationState(api, serverID, annotation.key);
+
+      // Zotero 10.0 acknowledges both writes, but the API value stands. The
+      // Reader's distinct accepted value is gone without a conflict response.
+      expect(final).toMatchObject({
+        status: 200,
+        comment: apiComment,
+      });
+      expect(final.version).toBeGreaterThan(annotation.version);
+      expect(final.comment).not.toBe(readerComment);
+      console.info("Native PATCH concurrency evidence", {
+        initialVersion: annotation.version,
+        apiStatus: patched.status,
+        readerOutcome,
+        final,
+        readerComment,
+        apiComment,
+      });
+    }, 120000);
+
+    it("records whether DELETE honors a Reader change after its version check", async () => {
+      const annotation = await createConcurrencyAnnotation(
+        rdp,
+        "Concurrency DELETE baseline",
+      );
+      const readerComment = "Reader comment before paused delete";
+      await pauseAnnotationErase(rdp, annotation.key);
+
+      const deleting = zoteroFetch(api, `users/0/items/${annotation.key}`, {
+        method: "DELETE",
+        headers: {
+          "Zotero-Server-ID": serverID,
+          "Zotero-API-Key": key,
+          "If-Unmodified-Since-Version": String(annotation.version),
+        },
+      });
+      expect(
+        await waitFor(() => annotationErasePaused(rdp, annotation.key)),
+      ).toBe(true);
+
+      await saveReaderComment(rdp, annotation.key, readerComment);
+      const afterReader = await readAnnotationState(
+        api,
+        serverID,
+        annotation.key,
+      );
+      expect(afterReader).toMatchObject({
+        status: 200,
+        comment: readerComment,
+      });
+      expect(afterReader.version).toBeGreaterThan(annotation.version);
+
+      await releaseAnnotationErase(rdp, annotation.key);
+      const deleted = await deleting;
+      expect(deleted.status).toBe(204);
+      const final = await readAnnotationState(api, serverID, annotation.key);
+      expect(final).toEqual({
+        status: 404,
+        version: null,
+        comment: null,
+      });
+      console.info("Native DELETE concurrency evidence", {
+        initialVersion: annotation.version,
+        afterReader,
+        deleteStatus: deleted.status,
+        final,
+        readerComment,
+      });
+    }, 120000);
   });
 
   // ── ZotLit's surfaces ─────────────────────────────────────────────────────
@@ -879,7 +1041,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
  * in the Development Vault a Paired Run opened.
  */
 async function digestAttachmentPdf(): Promise<string> {
-  const file = join(getDevVaultDir(workspaceRoot), attachmentPath);
+  const file = join(getDevVaultDir(pairedWorkspaceRoot), attachmentPath);
   return createHash("sha256")
     .update(await readFile(file))
     .digest("hex");
@@ -1147,6 +1309,12 @@ const ATTACHMENT_ITEM = `Zotero.Items.getByLibraryAndKey(
   ${JSON.stringify(attachment.key)},
 )`;
 
+function isZoteroReaderOpen(rdp: ZoteroRdp): Promise<boolean> {
+  return rdp.json<boolean>(`Zotero.Reader._readers.some(
+    (candidate) => candidate.itemID === ${ATTACHMENT_ITEM}.id,
+  )`);
+}
+
 /** Open Zotero's Reader on the Fixture Attachment; answers its tab id. */
 function openZoteroReader(rdp: ZoteroRdp): Promise<string> {
   return rdp.json<string>(`(async () => {
@@ -1184,4 +1352,235 @@ function setLocalApi(rdp: ZoteroRdp, enabled: boolean): Promise<string> {
     Zotero.Prefs.set("httpServer.localAPI.enabled", ${String(enabled)});
     return "set";
   })()`);
+}
+
+interface ConcurrencyAnnotation {
+  key: string;
+  version: number;
+}
+
+/** Create one unique disposable Annotation from the Fixture's seeded shape. */
+function createConcurrencyAnnotation(
+  rdp: ZoteroRdp,
+  comment: string,
+): Promise<ConcurrencyAnnotation> {
+  return rdp.json<ConcurrencyAnnotation>(`(async () => {
+    const attachment = ${ATTACHMENT_ITEM};
+    const seeded = attachment.getAnnotations()[0];
+    const json = await Zotero.Annotations.toJSON(seeded);
+    json.key = Zotero.DataObjectUtilities.generateKey();
+    json.comment = ${JSON.stringify(comment)};
+    const item = await Zotero.Annotations.saveFromJSON(attachment, json);
+    globalThis.__zlConcurrencyKeys ??= [];
+    globalThis.__zlConcurrencyKeys.push(item.key);
+    return { key: item.key, version: item.clientVersion };
+  })()`);
+}
+
+/** Pause the Reader's real save after `_initSave`, before its transaction. */
+function pauseReaderCommentSave(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+  comment: string,
+): Promise<{ version: number; comment: string }> {
+  return rdp.json(`(async () => {
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      ${JSON.stringify(annotationKey)},
+    );
+    const reader = Zotero.Reader._readers.find(
+      (candidate) => candidate.itemID === ${ATTACHMENT_ITEM}.id,
+    );
+    await reader._initPromise;
+    const json = await reader._getAnnotation(item);
+    json.comment = ${JSON.stringify(comment)};
+    json.onlyTextOrComment = true;
+    const original = item._initSave;
+    const reached = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const state = {
+      kind: "reader-save",
+      item,
+      original,
+      reached: false,
+      release: release.resolve,
+      completed: null,
+    };
+    globalThis.__zlConcurrencyHook = state;
+    item._initSave = async function (env) {
+      const proceed = await original.call(this, env);
+      if (!state.reached) {
+        state.reached = true;
+        reached.resolve();
+        await release.promise;
+      }
+      return proceed;
+    };
+    state.completed = reader._internalReader
+      ._onSaveAnnotations([json], () => {})
+      .then(() => ({ ok: true }), (error) => ({ ok: false, error: String(error) }));
+    await reached.promise;
+    return { version: item.clientVersion, comment: item.annotationComment };
+  })()`);
+}
+
+/** Release and observe the paused Reader save, restoring the patched method. */
+function releaseReaderCommentSave(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+): Promise<{ ok: boolean; error?: string }> {
+  return rdp.json(`(async () => {
+    const state = globalThis.__zlConcurrencyHook;
+    if (!state || state.kind !== "reader-save" || state.item.key !== ${JSON.stringify(annotationKey)}) {
+      throw new Error("No matching Reader save is paused");
+    }
+    state.release();
+    const outcome = await state.completed;
+    state.item._initSave = state.original;
+    delete globalThis.__zlConcurrencyHook;
+    return outcome;
+  })()`);
+}
+
+/** Save through the same callback the initialized Zotero Reader uses. */
+function saveReaderComment(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+  comment: string,
+): Promise<string> {
+  return rdp.json(`(async () => {
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      ${JSON.stringify(annotationKey)},
+    );
+    const reader = Zotero.Reader._readers.find(
+      (candidate) => candidate.itemID === ${ATTACHMENT_ITEM}.id,
+    );
+    await reader._initPromise;
+    const json = await reader._getAnnotation(item);
+    json.comment = ${JSON.stringify(comment)};
+    json.onlyTextOrComment = true;
+    await reader._internalReader._onSaveAnnotations([json], () => {});
+    return "saved";
+  })()`);
+}
+
+/** Pause the next erase of one Annotation before its database transaction. */
+function pauseAnnotationErase(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+): Promise<string> {
+  return rdp.json(`(() => {
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      ${JSON.stringify(annotationKey)},
+    );
+    const original = item.eraseTx;
+    const release = Promise.withResolvers();
+    const completed = Promise.withResolvers();
+    const state = {
+      kind: "erase",
+      item,
+      original,
+      reached: false,
+      release: release.resolve,
+      completed: completed.promise,
+    };
+    globalThis.__zlConcurrencyHook = state;
+    item.eraseTx = async function (options) {
+      state.reached = true;
+      await release.promise;
+      try {
+        return await original.call(this, options);
+      }
+      finally {
+        completed.resolve();
+      }
+    };
+    return "armed";
+  })()`);
+}
+
+function annotationErasePaused(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+): Promise<boolean> {
+  return rdp.json(`(() => {
+    const state = globalThis.__zlConcurrencyHook;
+    return Boolean(
+      state?.kind === "erase" &&
+      state.item.key === ${JSON.stringify(annotationKey)} &&
+      state.reached
+    );
+  })()`);
+}
+
+function releaseAnnotationErase(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+): Promise<string> {
+  return rdp.json(`(async () => {
+    const state = globalThis.__zlConcurrencyHook;
+    if (!state || state.kind !== "erase" || state.item.key !== ${JSON.stringify(annotationKey)}) {
+      throw new Error("No matching erase is paused");
+    }
+    state.release();
+    await state.completed;
+    state.item.eraseTx = state.original;
+    delete globalThis.__zlConcurrencyHook;
+    return "released";
+  })()`);
+}
+
+/** Release any failed case's gate and restore the patched native method. */
+function restoreConcurrencyHooks(rdp: ZoteroRdp): Promise<string> {
+  return rdp.json(`(async () => {
+    const state = globalThis.__zlConcurrencyHook;
+    if (!state) return "clean";
+    state.release();
+    if (state.reached && state.completed) await state.completed;
+    if (state.kind === "reader-save") state.item._initSave = state.original;
+    if (state.kind === "erase") state.item.eraseTx = state.original;
+    delete globalThis.__zlConcurrencyHook;
+    return "restored";
+  })()`);
+}
+
+/** Erase every disposable Annotation this scenario created. */
+function eraseConcurrencyAnnotations(rdp: ZoteroRdp): Promise<string> {
+  return rdp.json(`(async () => {
+    for (const key of globalThis.__zlConcurrencyKeys ?? []) {
+      const item = Zotero.Items.getByLibraryAndKey(
+        Zotero.Libraries.userLibraryID,
+        key,
+      );
+      if (item) await item.eraseTx();
+    }
+    delete globalThis.__zlConcurrencyKeys;
+    return "erased";
+  })()`);
+}
+
+/** Independent Local API read used as the final-state oracle. */
+async function readAnnotationState(
+  api: string,
+  serverID: string,
+  annotationKey: string,
+): Promise<{ status: number; version: number | null; comment: string | null }> {
+  const response = await zoteroFetch(api, `users/0/items/${annotationKey}`, {
+    headers: { "Zotero-Server-ID": serverID },
+  });
+  if (response.status === 404) {
+    return { status: 404, version: null, comment: null };
+  }
+  expect(response.status).toBe(200);
+  const record = (await response.json()) as {
+    version: number;
+    data: { annotationComment?: string };
+  };
+  return {
+    status: response.status,
+    version: record.version,
+    comment: record.data.annotationComment ?? "",
+  };
 }
