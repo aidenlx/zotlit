@@ -6,6 +6,8 @@ import {
   formatIndexedKey,
   getAnnotationsByParent,
   getAttachmentByKey,
+  getLibraries,
+  getZoteroDatabaseIdentity,
   parseAnnotationPosition,
   parseIndexedKey,
   resolveIndexedKeyLibrary,
@@ -86,7 +88,20 @@ const ZOTERO_LOCAL_API = "zotero-local-api";
  *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  */
-export type AnnotationSource = { kind: "zotero-db" } | LocalApiSource;
+export interface DatabaseAnnotationSource {
+  kind: "zotero-db";
+  /** Standalone database identity, available before a Local API Server ID. */
+  database: {
+    userID: number | null;
+    localUserKey: string | null;
+    serverID: string | null;
+  };
+  libraryID: number;
+  /** Committed Zotero Library revision held by this database snapshot. */
+  libraryRevision: number | null;
+}
+
+export type AnnotationSource = DatabaseAnnotationSource | LocalApiSource;
 
 /**
  * One Annotation as both sources describe it: Indexed Keys, a type name, and a
@@ -877,11 +892,9 @@ export class AnnotationRepository extends Service<void> {
    * leaves on the card.
    *
    * Everything a write needs comes from the list the active source already
-   * answered, which is what makes a command take keys alone. A record with no
-   * version came from the Zotero DB partition, which keeps none, so the write
-   * is refused there and then — before any request, because there is no
-   * precondition to send and an unconditional write would overwrite whatever
-   * Zotero holds.
+   * answered, which is what makes a command take keys alone. The database
+   * partition supplies committed versions for source handoff, but writes wait
+   * for an active Local API source and its authorization state.
    *
    * The gesture behind the command is what may open Zotero's dialog, exactly as
    * it is for a create: under `authorization-required` the write waits on the
@@ -911,6 +924,12 @@ export class AnnotationRepository extends Service<void> {
       return this.#settle(annotationKey, {
         kind: "failed",
         failure: { kind: "unknown-annotation" },
+      });
+    }
+    if (!this.#localApi.demandSource()) {
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "db-source" },
       });
     }
     const { version } = held.record;
@@ -1190,11 +1209,12 @@ export class AnnotationRepository extends Service<void> {
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
     using lease = await this.#db.acquireRead();
     const annotations = readAttachmentAnnotations(lease.client, attachmentKey);
+    const source = databaseAnnotationSource(lease.client, attachmentKey);
     logger.debug("Annotations read from the Zotero database", {
       attachmentKey,
       annotations: annotations.length,
     });
-    return { source: { kind: "zotero-db" }, annotations };
+    return { source, annotations };
   }
 
   /**
@@ -1305,6 +1325,27 @@ function readAttachmentAnnotations(
   );
 }
 
+function databaseAnnotationSource(
+  client: NodeDatabaseClient,
+  attachmentKey: string,
+): DatabaseAnnotationSource {
+  const target = resolveIndexedKeyLibrary(client, attachmentKey);
+  if (!target)
+    throw new Error(
+      `Cannot resolve the Annotation Library for ${attachmentKey}`,
+    );
+  const library = getLibraries(client).find(
+    ({ libraryID }) => libraryID === target.libraryID,
+  );
+  const database = getZoteroDatabaseIdentity(client);
+  return {
+    kind: "zotero-db",
+    database,
+    libraryID: target.libraryID,
+    libraryRevision: library?.clientVersion ?? null,
+  };
+}
+
 function toRecord(
   annotation: Annotation,
   {
@@ -1322,9 +1363,7 @@ function toRecord(
     pageLabel: annotation.pageLabel,
     tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
-    // The Zotero DB keeps no object version, which is why the Zotero DB source
-    // refuses a write rather than sending a precondition it cannot supply.
-    version: null,
+    version: annotation.version,
   };
 }
 

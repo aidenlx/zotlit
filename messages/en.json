@@ -277,7 +277,7 @@
   "settings_db_read_mode_copy": "Full copy",
   "settings_db_read_mode_copy_desc": "Full database copy: sees recent edits, but slower and uses more disk space",
   "settings_db_read_mode_immutable": "Immutable source",
-  "settings_db_read_mode_immutable_desc": "Reads the database directly: recent edits may not appear immediately",
+  "settings_db_read_mode_immutable_desc": "Reads an owned snapshot of the main Zotero database file. Recent edits may not appear immediately",
   "settings_db_active_read_mode": "Active mode: {mode}",
   "settings_db_status_loading": "Loading…",
   "settings_db_status_refreshing": "Refreshing…",

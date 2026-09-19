@@ -279,8 +279,14 @@ export function annotationReads(
   capability: EditingCapability = { kind: "writable" },
 ) {
   const emitter = createNanoEvents<AnnotationRepositoryEvents>();
+  const databaseSource = {
+    kind: "zotero-db" as const,
+    database: { userID: null, localUserKey: null, serverID: null },
+    libraryID: 1,
+    libraryRevision: 0,
+  };
   let list: AnnotationList = {
-    source: { kind: "zotero-db" },
+    source: databaseSource,
     annotations: records,
   };
   let current = capability;
@@ -309,7 +315,7 @@ export function annotationReads(
     },
     /** What a dropped Zotero DB partition does: a whole new list, announced. */
     replace(attachmentKey: string, next: readonly AnnotationRecord[]): void {
-      list = { source: { kind: "zotero-db" }, annotations: next };
+      list = { source: databaseSource, annotations: next };
       emitter.emit("annotations-changed", attachmentKey);
     },
   };

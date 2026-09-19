@@ -95,6 +95,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     parentItemID: 10,
     parentKey: "ATCH2345",
     ...overrides,
+    version: overrides.version ?? 0,
   };
 }
 

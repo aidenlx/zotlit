@@ -106,13 +106,23 @@ const READING_ORDER = [
   ["FDRFQ7C2", "image"],
 ];
 
+const DATABASE_SOURCE = {
+  kind: "zotero-db",
+  database: { userID: null, localUserKey: null, serverID: SERVER_ID },
+  libraryID: 1,
+  libraryRevision: 37,
+} as const;
+
 it("reads every type the Fixture carries on one attachment, in Zotero's reading order", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository } = await setup(stack);
 
   const list = await repository.read("RGRPDF24");
 
-  expect(list?.source).toEqual({ kind: "zotero-db" });
+  expect(list?.source).toEqual(DATABASE_SOURCE);
+  expect(list?.annotations.find(({ key }) => key === "PUPR5FG5")?.version).toBe(
+    29,
+  );
   expect(list?.annotations.map(({ key, type }) => [key, type])).toEqual(
     READING_ORDER,
   );
@@ -132,7 +142,7 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
       rotation: 0,
       rects: [[398.804, 685.107, 560.804, 702.107]],
     },
-    version: null,
+    version: 0,
   });
 });
 
@@ -243,8 +253,8 @@ it("answers an empty list for a key the database does not hold", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository } = await setup(stack);
 
-  expect(await repository.read("NOSUCH24")).toEqual({
-    source: { kind: "zotero-db" },
+  expect(await repository.read("N2SUCH24")).toEqual({
+    source: DATABASE_SOURCE,
     annotations: [],
   });
 });
@@ -275,7 +285,7 @@ it("switches to the Zotero Local API when it answers, and says which source did"
   const switched = await announced;
   const second = await repository.read("RGRPDF24");
 
-  expect(first?.source).toEqual({ kind: "zotero-db" });
+  expect(first?.source).toEqual(DATABASE_SOURCE);
   expect(switched).toEqual(["RGRPDF24"]);
   expect(second?.source).toEqual({
     kind: "zotero-local-api",
@@ -297,11 +307,16 @@ it("draws the same mark from either source, the object version apart", async () 
   await announced;
   const fromLocalApi = await repository.read("RGRPDF24");
 
-  // The Zotero DB keeps no version, so the Zotero Local API's is the one
-  // difference a surface can see between the two record sets.
+  // Each source carries its own committed revision, so compare the visible
+  // Annotation data independently from that handoff metadata.
   expect(
     fromLocalApi?.annotations.map((record) => ({ ...record, version: null })),
-  ).toEqual(fromDatabase?.annotations);
+  ).toEqual(
+    fromDatabase?.annotations.map((record) => ({ ...record, version: null })),
+  );
+  expect(fromDatabase?.annotations.map(({ version }) => version)).toEqual([
+    0, 0, 0, 0, 29, 0, 0,
+  ]);
   expect(fromLocalApi?.annotations.map(({ version }) => version)).toEqual([
     16, 17, 14, 13, 11, 15, 12,
   ]);
@@ -352,7 +367,7 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   });
   expect(gone).toEqual(["RGRPDF24"]);
   // The same marks are still on screen, from the source that can still answer.
-  expect(fallback?.source).toEqual({ kind: "zotero-db" });
+  expect(fallback?.source).toEqual(DATABASE_SOURCE);
   expect(fallback?.annotations.map(({ key, type }) => [key, type])).toEqual(
     READING_ORDER,
   );
@@ -370,7 +385,7 @@ it("stands the source down when a list read fails, and answers from the Zotero D
   // Nothing was ever held for this Attachment on the source that failed.
   expect(failed).toBeNull();
   expect((await announced).toSorted()).toEqual(["EPUBBKS2", "RGRPDF24"]);
-  expect(fallback?.source).toEqual({ kind: "zotero-db" });
+  expect(fallback?.source).toEqual(DATABASE_SOURCE);
   expect(fallback?.annotations.map(({ key }) => key)).toEqual(["EPUBMRK2"]);
 });
 
@@ -618,7 +633,7 @@ it("refuses a write under the Zotero DB source before any request", async () => 
 
   const outcome = await repository.patchColor("PUPR5FG5", "#ff6666");
 
-  expect(list?.source).toEqual({ kind: "zotero-db" });
+  expect(list?.source).toEqual(DATABASE_SOURCE);
   expect(outcome).toEqual({ kind: "failed", failure: { kind: "db-source" } });
   expect(repository.mutationFor("PUPR5FG5")).toEqual(outcome);
   // Nothing but reads left ZotLit, and the database is as it was.
@@ -1480,6 +1495,12 @@ async function setup(
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
   client.$client.exec(FIXTURE_ROWS);
+  client.$client.exec(
+    `insert into version (schema, version) values ('userdata', 129), ('compatibility', 9);
+     insert into libraries (libraryID, type, version, clientVersion) values (1, 'user', 0, 37);
+     update items set version = 0, clientVersion = 29 where itemID = 48;
+     insert into settings (setting, key, value) values ('localAPI', 'serverID', '${SERVER_ID}');`,
+  );
 
   const dbEvents = createNanoEvents<DatabaseEvents>();
   const acquireRead = vi.fn(() =>

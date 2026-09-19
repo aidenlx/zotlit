@@ -8,7 +8,11 @@ import { USER_LIBRARY_ID } from "@/lib/constants";
 import { parseAnnotationPosition } from "@/lib/zt-annot-pos";
 import { createFixtureSchema } from "@/test-utils";
 
-import { getAnnotationsByKey, getAnnotationsByParent } from "./annotations";
+import {
+  getAnnotationsByItemId,
+  getAnnotationsByKey,
+  getAnnotationsByParent,
+} from "./annotations";
 
 let sqlite: DatabaseSync;
 let db: NodeDatabaseClient;
@@ -24,6 +28,20 @@ afterEach(() => {
 });
 
 describe("getAnnotationsByParent", () => {
+  it("reads userdata 125 without local client revision columns", () => {
+    sqlite.exec(`
+      update version set version = 125 where schema = 'userdata';
+      alter table items drop column clientVersion;
+    `);
+
+    const result = getAnnotationsByParent(db, 9058);
+
+    expect(result).toHaveLength(6);
+    expect(result.every(({ version }) => version === 0)).toBe(true);
+    expect(getAnnotationsByKey(db, ["JDJKX3N6"], 1)).toHaveLength(1);
+    expect(getAnnotationsByItemId(db, [9060])).toHaveLength(1);
+  });
+
   it("returns visible annotations sorted by sortIndex", () => {
     const result = getAnnotationsByParent(db, 9058);
 
@@ -49,6 +67,8 @@ describe("getAnnotationsByParent", () => {
       true,
     );
     expect(typeof result[0]?.dateAdded.epochMilliseconds).toBe("number");
+    sqlite.exec("update items set clientVersion = 24 where key = 'JDJKX3N6'");
+    expect(getAnnotationsByParent(db, 9058)[0]?.version).toBe(24);
   });
 
   it("narrows fixture PDF positions", () => {
@@ -103,6 +123,7 @@ describe("getAnnotationsByKey", () => {
 function seed(sqlite: DatabaseSync): void {
   createFixtureSchema(sqlite);
   sqlite.exec(`
+    insert into version (schema, version) values ('userdata', 129), ('compatibility', 9);
     insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key)
       values
         (9058, 3, '2025-05-27 14:44:51', '2025-05-27 14:44:51', 1, 'T2P8T29G'),

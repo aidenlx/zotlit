@@ -61,6 +61,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     groupID: null,
     dateAdded: Temporal.Instant.from("2024-01-01T00:00:00Z"),
     dateModified: Temporal.Instant.from("2024-01-01T00:00:00Z"),
+    version: 0,
     type: 1,
     text: "excerpt",
     comment: null,

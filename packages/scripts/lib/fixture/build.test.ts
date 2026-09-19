@@ -928,14 +928,37 @@ describe("the generated Zotero database", () => {
     using db = openClient();
 
     expect(getLibraries(db)).toEqual([
-      { libraryID: 1, type: "user", groupID: null, name: null },
-      { libraryID: 2, type: "group", groupID: 4200309, name: "Shared Reading" },
-      { libraryID: 3, type: "group", groupID: 118, name: "Lab Archive" },
+      {
+        libraryID: 1,
+        type: "user",
+        groupID: null,
+        name: null,
+        version: 0,
+        clientVersion: 0,
+      },
+      {
+        libraryID: 2,
+        type: "group",
+        groupID: 4200309,
+        name: "Shared Reading",
+        version: 0,
+        clientVersion: 0,
+      },
+      {
+        libraryID: 3,
+        type: "group",
+        groupID: 118,
+        name: "Lab Archive",
+        version: 0,
+        clientVersion: 0,
+      },
       {
         libraryID: 4,
         type: "group",
         groupID: 990117,
         name: "Consortium Reading Room",
+        version: 0,
+        clientVersion: 0,
       },
     ]);
 

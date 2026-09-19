@@ -41,7 +41,12 @@ function state(overrides: Partial<AnnotState> = {}): AnnotState {
     attachments: ATTACHMENTS,
     selectedAttachmentKey: "ATCH0001",
     annotations: [],
-    annotationSource: { kind: "zotero-db" },
+    annotationSource: {
+      kind: "zotero-db",
+      database: { userID: null, localUserKey: null, serverID: null },
+      libraryID: 1,
+      libraryRevision: null,
+    },
     liveUpdatesOn: true,
     ...overrides,
   });

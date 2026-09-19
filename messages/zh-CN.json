@@ -425,7 +425,7 @@
   "settings_db_read_mode_copy": "完整副本",
   "settings_db_read_mode_copy_desc": "适用于大多数驱动器的较慢快照",
   "settings_db_read_mode_immutable": "不可变源",
-  "settings_db_read_mode_immutable_desc": "直接读取 Zotero 数据库文件",
+  "settings_db_read_mode_immutable_desc": "读取 Zotero 主数据库文件的独立快照。最新编辑可能不会立即显示",
   "settings_db_active_read_mode": "活动模式：{mode}",
   "settings_db_status_loading": "加载中…",
   "settings_db_status_refreshing": "正在刷新…",
