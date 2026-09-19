@@ -1,4 +1,10 @@
-import { useCallback, useContext, useMemo, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type { KeyboardEvent } from "react";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
@@ -273,7 +279,10 @@ function CardActionBar({
           className={CARD_CONTROL_MARK}
           active={editing}
           disabled={controls.comment.disabled}
-          onClick={() => setEditing(editing ? null : annot.key)}
+          onClick={() => {
+            if (!editing) actions.onOpenComment(annot);
+            setEditing(editing ? null : annot.key);
+          }}
           {...tooltipAttrs(controls.comment.tooltip)}
         />
       </div>
@@ -380,6 +389,7 @@ function Comment({
         if (e.currentTarget.win.getSelection()?.isCollapsed === false) return;
         // Opening the editor is a verb; the card's own click is not that.
         e.stopPropagation();
+        actions.onOpenComment(annot);
         setEditing(annot.key);
       }}
     />
@@ -390,21 +400,51 @@ function Comment({
  * The comment editor, in the slot the rendered comment stood in, with the
  * caret at the end of what is already there.
  *
- * `Escape` leaves the text as Zotero holds it; a blur and `Ctrl/Command+Enter`
- * both store it. Nothing is drawn ahead of Zotero: the slot goes back to the
- * rendered comment, and the new text appears when the write lands.
+ * Escape and blur store the text and close the editor. Ctrl/Command+Enter
+ * stores it and keeps the editor open.
  */
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
   const stored = annot.comment ?? "";
-  const [text, setText] = useState(stored);
+  const text = useAnnotStore(
+    (state) => state.commentDrafts.get(annot.key)?.text ?? stored,
+  );
+  const annotRef = useRef(annot);
+  annotRef.current = annot;
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const editorBinding = useRef<Disposable | null>(null);
 
-  const focusEnd = useCallback((el: HTMLTextAreaElement | null) => {
-    if (!el) return;
+  const focusEnd = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      editorBinding.current?.[Symbol.dispose]();
+      editorBinding.current = null;
+      editor.current = el;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+      editorBinding.current = actions.bindCommentEditor(
+        el,
+        annotRef.current,
+        () => el.value,
+      );
+    },
+    [actions, annot.key],
+  );
+
+  useLayoutEffect(() => {
+    const el = editor.current;
+    if (!el || el.value === text) return;
+    const active = el.doc.activeElement === el;
+    const { selectionStart, selectionEnd } = el;
+    el.value = text;
+    if (!active) return;
     el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
-  }, []);
+    el.setSelectionRange(
+      Math.min(selectionStart, text.length),
+      Math.min(selectionEnd, text.length),
+    );
+  }, [text]);
 
   const save = (): void => {
     setEditing(null);
@@ -430,10 +470,10 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
       <textarea
         ref={focusEnd}
         className="zt:w-full zt:resize-none zt:bg-transparent zt:text-xs"
-        value={text}
+        defaultValue={text}
         rows={Math.min(6, Math.max(2, text.split("\n").length + 1))}
         placeholder={m.annot_view_card_comment_placeholder()}
-        onChange={(e) => setText(e.currentTarget.value)}
+        onChange={(e) => actions.onEditComment(annot, e.currentTarget.value)}
         onKeyDown={onKeyDown}
         onBlur={save}
       />

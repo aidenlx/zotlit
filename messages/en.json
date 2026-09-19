@@ -2390,6 +2390,8 @@
   "annot_view_conflict_no_value": "None",
   "annot_view_conflict_delete_prompt": "Delete the annotation as Zotero holds it now?",
   "annot_view_conflict_apply_again": "Apply again",
+  "annot_view_conflict_use_comment": "Use my comment",
+  "annot_view_conflict_keep_zotero_comment": "Keep Zotero's comment",
   "annot_view_conflict_delete_anyway": "Delete anyway",
   "annot_view_conflict_discard": "Discard",
   "pdf_mark_popup_add_comment": "Add comment in the annotation view",

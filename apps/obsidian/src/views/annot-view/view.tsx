@@ -124,15 +124,19 @@ export interface AnnotViewDeps {
     AnnotationRepository,
     | "capability"
     | "capabilityFor"
+    | "commentDraftFor"
     | "deleteAnnotation"
+    | "discardCommentDraft"
     | "discardConflict"
     | "mutationFor"
     | "on"
     | "patchColor"
-    | "patchComment"
+    | "editComment"
     | "read"
     | "refresh"
     | "retryWrite"
+    | "retryCommentDraft"
+    | "submitComment"
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
@@ -423,6 +427,22 @@ export class AnnotationView extends ItemView {
           this.#deps.annotations.mutationFor(annotationKey),
         );
         this.#store.setState({ mutations });
+      }),
+    );
+    this.register(
+      this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
+        const commentDrafts = new Map(this.#store.getState().commentDrafts);
+        const draft = this.#deps.annotations.commentDraftFor(annotationKey);
+        if (draft) commentDrafts.set(annotationKey, draft);
+        else commentDrafts.delete(annotationKey);
+        this.#store.setState({ commentDrafts });
+      }),
+    );
+    this.register(
+      this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
+        if (this.#store.getState().editingCommentKey === annotationKey) {
+          this.#store.setState({ editingCommentKey: null });
+        }
       }),
     );
 
@@ -769,9 +789,18 @@ export class AnnotationView extends ItemView {
         // an invalidation cancelled; the same invalidation announces the
         // change this view re-reads on, so the list is not left waiting.
         if (read !== this.#reads || list === null) return;
+        const commentDrafts = new Map(
+          list.annotations.flatMap((annotation) => {
+            const draft = this.#deps.annotations.commentDraftFor(
+              annotation.key,
+            );
+            return draft ? [[annotation.key, draft] as const] : [];
+          }),
+        );
         this.#store.setState({
           annotations: list.annotations,
           annotationSource: list.source,
+          commentDrafts,
         });
         if (!restoreFilter || memoryKey === null) return;
         const saved = this.#loadFilterSelection(memoryKey, list.annotations);
@@ -992,6 +1021,7 @@ export class AnnotationView extends ItemView {
       pinnable: null,
       annotations: null,
       annotationSource: null,
+      commentDrafts: new Map(),
       editingCommentKey: null,
       selectedAnnotationKeys: [],
     });

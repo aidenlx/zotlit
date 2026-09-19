@@ -353,6 +353,7 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   });
   await switchToLocalApi(repository);
   const live = await repository.read("RGRPDF24");
+  repository.editComment("PUPR5FG5", "Visible while offline");
 
   answering = false;
   const announced = nextChange(repository);
@@ -369,6 +370,9 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   expect(fallback?.source).toEqual(DATABASE_SOURCE);
   expect(fallback?.annotations.map(({ key, type }) => [key, type])).toEqual(
     READING_ORDER,
+  );
+  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+    "Visible while offline",
   );
 });
 
@@ -418,6 +422,35 @@ it("partitions the cache by server id, so another database answers for itself", 
   expect(second?.annotations.map(({ key }) => key)).toEqual(["PUPR5FG5"]);
 });
 
+it("names comment drafts by Zotero database as well as Annotation key", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  const { repository, prefEvents } = await setup(
+    stack,
+    {
+      root: () => rootOk({ "Zotero-Server-ID": serverID }),
+      children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
+    },
+    { key: REMEMBERED_KEY },
+  );
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+  repository.editComment("PUPR5FG5", "First database");
+
+  serverID = "Zzzz11119999";
+  prefEvents.emit("resolved-changed");
+  await repository.probe();
+  await repository.read("RGRPDF24");
+  repository.editComment("PUPR5FG5", "Second database");
+  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("Second database");
+
+  serverID = SERVER_ID;
+  prefEvents.emit("resolved-changed");
+  await repository.probe();
+  await repository.read("RGRPDF24");
+  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("First database");
+});
+
 it("cancels the read in flight when the partition it fills is dropped", async () => {
   await using stack = new AsyncDisposableStack();
   const held = Promise.withResolvers<Response>();
@@ -445,6 +478,39 @@ it("cancels the read in flight when the partition it fills is dropped", async ()
   expect(
     requests.filter(({ url }) => url.pathname.endsWith("/children")),
   ).toHaveLength(2);
+});
+
+it("ignores a cancelled empty read when reconciling a shared draft", async () => {
+  await using stack = new AsyncDisposableStack();
+  const obsolete = Promise.withResolvers<Response>();
+  const started = Promise.withResolvers<void>();
+  let reads = 0;
+  const { repository, serverEvents } = await setup(stack, {
+    children: () => {
+      reads += 1;
+      if (reads === 2) {
+        started.resolve();
+        return obsolete.promise;
+      }
+      return annotationPage(ROUGIER_ANNOTATIONS);
+    },
+  });
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+  repository.editComment("PUPR5FG5", "Keep this draft");
+
+  let announced = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await announced;
+  const reading = repository.read("RGRPDF24");
+  await started.promise;
+  announced = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await announced;
+  obsolete.resolve(annotationPage([]));
+
+  expect((await reading)?.annotations).toHaveLength(7);
+  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("Keep this draft");
 });
 
 it("answers the Editing Capability the Annotation Source leaves", async () => {
@@ -549,6 +615,231 @@ it("patches a comment with the precondition and nothing else", async () => {
     version: 11,
     annotationComment: "Worth citing",
   });
+});
+
+it("shares one comment draft and preserves it across unrelated refresh changes", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const { repository } = await writable(stack, {
+    children: () => annotationPage(records),
+  });
+
+  const started = repository.editComment("PUPR5FG5", "My draft");
+  repository.editComment("PUPR5FG5");
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, color: "#ff6666", version: 20 }
+      : record,
+  );
+  await repository.refresh("RGRPDF24");
+
+  expect(started?.serverID).toBe(SERVER_ID);
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    baseline: "",
+    text: "My draft",
+    state: { kind: "editing" },
+  });
+  expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
+    "#ff6666",
+  );
+});
+
+it("requires a choice when Zotero changes a drafted comment", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const { repository, requests } = await writable(stack, {
+    children: () => annotationPage(records),
+  });
+  repository.editComment("PUPR5FG5", "My draft");
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, comment: "Zotero draft", version: 20 }
+      : record,
+  );
+
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  await repository.submitComment("PUPR5FG5");
+
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    baseline: "",
+    text: "My draft",
+    state: { kind: "conflict", fresh: "Zotero draft" },
+  });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({
+    kind: "conflict",
+    conflict: {
+      write: "comment",
+      attempted: "My draft",
+      fresh: "Zotero draft",
+    },
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toEqual([]);
+});
+
+it("applies the chosen draft against the fresh version and comment field only", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const { repository, requests } = await writable(stack, {
+    children: () => annotationPage(records),
+    item: () =>
+      annotationItem(
+        afterWrite("PUPR5FG5", { comment: "My latest draft", version: 21 }),
+      ),
+  });
+  repository.editComment("PUPR5FG5", "My draft");
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, comment: "Zotero draft", version: 20 }
+      : record,
+  );
+  await repository.refresh("RGRPDF24");
+  repository.editComment("PUPR5FG5", "My latest draft");
+  const sent = requests.length;
+
+  const outcome = await repository.retryCommentDraft("PUPR5FG5");
+
+  expect(outcome).toEqual({ kind: "idle" });
+  expect(JSON.parse(requests[sent]!.body ?? "")).toEqual({
+    version: 20,
+    annotationComment: "My latest draft",
+  });
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+});
+
+it("requires another choice when the cached comment moved after review", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const { repository, requests } = await writable(stack, {
+    children: () => annotationPage(records),
+    item: () =>
+      annotationItem(
+        afterWrite("PUPR5FG5", {
+          color: "#ff6666",
+          comment: "Newer Zotero draft",
+          version: 21,
+        }),
+      ),
+  });
+  repository.editComment("PUPR5FG5", "My draft");
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, comment: "Zotero draft", version: 20 }
+      : record,
+  );
+  await repository.refresh("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  const sent = requests.length;
+
+  const outcome = await repository.retryCommentDraft("PUPR5FG5");
+
+  expect(outcome).toEqual({
+    kind: "conflict",
+    conflict: {
+      write: "comment",
+      attempted: "My draft",
+      fresh: "Newer Zotero draft",
+    },
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toEqual([]);
+});
+
+it("keeps the reviewed choice through an unrelated version change", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  let writes = 0;
+  const { repository, requests } = await writable(stack, {
+    children: () => annotationPage(records),
+    write: () => (writes++ === 0 ? staleVersion() : writeAccepted()),
+    item: () =>
+      annotationItem(
+        afterWrite("PUPR5FG5", {
+          comment: writes === 1 ? "Zotero draft" : "My draft",
+          version: writes === 1 ? 21 : 22,
+        }),
+      ),
+  });
+  repository.editComment("PUPR5FG5", "My draft");
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, comment: "Zotero draft", version: 20 }
+      : record,
+  );
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  const outcome = await repository.retryCommentDraft("PUPR5FG5");
+
+  expect(outcome).toEqual({ kind: "idle" });
+  expect(
+    requests
+      .slice(sent)
+      .filter(({ method }) => method === "PATCH")
+      .map(({ body }) => JSON.parse(body ?? "")),
+  ).toEqual([
+    { version: 20, annotationComment: "My draft" },
+    { version: 21, annotationComment: "My draft" },
+  ]);
+});
+
+it("settles an equal remote comment without another write", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const { repository, requests } = await writable(stack, {
+    children: () => annotationPage(records),
+  });
+  repository.editComment("PUPR5FG5", "Same words");
+  const sent = requests.length;
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, comment: "Same words", version: 20 }
+      : record,
+  );
+
+  await repository.refresh("RGRPDF24");
+
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toEqual([]);
+});
+
+it("discards a draft only when its own source confirms deletion", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const { repository } = await writable(stack, {
+    children: () => annotationPage(records),
+  });
+  repository.editComment("PUPR5FG5", "Unsaved");
+  const deleted = new Promise<string>((resolve) => {
+    stack.defer(repository.on("annotation-deleted", resolve));
+  });
+  records = records.filter(({ key }) => key !== "PUPR5FG5");
+
+  await repository.refresh("RGRPDF24");
+
+  expect(await deleted).toBe("PUPR5FG5");
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+});
+
+it("keeps a draft when the replacement read fails", async () => {
+  await using stack = new AsyncDisposableStack();
+  let available = true;
+  const { repository } = await writable(stack, {
+    children: () =>
+      available ? annotationPage(ROUGIER_ANNOTATIONS) : unreachable(),
+  });
+  repository.editComment("PUPR5FG5", "Unsaved");
+  available = false;
+
+  await repository.refresh("RGRPDF24");
+
+  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("Unsaved");
 });
 
 it("recolours an ink annotation like any other", async () => {

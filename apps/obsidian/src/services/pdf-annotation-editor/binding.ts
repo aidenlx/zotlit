@@ -89,14 +89,19 @@ export type AnnotationReads = Pick<
   AnnotationRepository,
   | "capability"
   | "capabilityFor"
+  | "commentDraftFor"
   | "createAnnotation"
   | "deleteAnnotation"
+  | "discardCommentDraft"
+  | "editComment"
   | "mutationFor"
   | "on"
   | "patchColor"
   | "probe"
   | "read"
   | "refresh"
+  | "retryCommentDraft"
+  | "submitComment"
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */

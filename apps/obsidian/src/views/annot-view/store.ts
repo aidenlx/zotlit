@@ -8,6 +8,7 @@ import type { AnnotViewAttachment } from "@zotlit/db";
 import type {
   AnnotationRecord,
   AnnotationSource,
+  CommentDraft,
   EditingCapability,
   MutationState,
 } from "@/services/annotation-repository/service";
@@ -53,6 +54,8 @@ export interface AnnotState {
    * entry is idle, so the map holds only the few this session has edited.
    */
   mutations: ReadonlyMap<string, MutationState>;
+  /** Shared comment drafts currently observed by this view. */
+  commentDrafts: ReadonlyMap<string, CommentDraft>;
   /**
    * The Annotation whose comment is open in its card's editor; `null` while
    * none is. One at a time: the editor takes the caret.
@@ -122,6 +125,7 @@ export function createAnnotStore() {
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
+        commentDrafts: new Map(),
         editingCommentKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,

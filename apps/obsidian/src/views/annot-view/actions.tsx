@@ -64,6 +64,8 @@ export interface AnnotActions {
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
   onSaveComment(annot: AnnotationRecord, comment: string): void;
+  onOpenComment(annot: AnnotationRecord): void;
+  onEditComment(annot: AnnotationRecord, comment: string): void;
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
   /**
@@ -89,10 +91,14 @@ export interface AnnotActionDeps {
   annotations: Pick<
     AnnotationRepository,
     | "deleteAnnotation"
+    | "discardCommentDraft"
     | "discardConflict"
     | "patchColor"
-    | "patchComment"
+    | "editComment"
+    | "commentDraftFor"
+    | "retryCommentDraft"
     | "retryWrite"
+    | "submitComment"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
@@ -174,8 +180,16 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   const onSetColor = (annot: AnnotationRecord, color: string): void =>
     report(deps.annotations.patchColor(annot.key, color));
-  const onSaveComment = (annot: AnnotationRecord, comment: string): void =>
-    report(deps.annotations.patchComment(annot.key, comment));
+  const onEditComment = (annot: AnnotationRecord, comment: string): void => {
+    deps.annotations.editComment(annot.key, comment);
+  };
+  const onOpenComment = (annot: AnnotationRecord): void => {
+    deps.annotations.editComment(annot.key);
+  };
+  const onSaveComment = (annot: AnnotationRecord, comment: string): void => {
+    deps.annotations.editComment(annot.key, comment);
+    report(deps.annotations.submitComment(annot.key));
+  };
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
@@ -198,10 +212,28 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     );
     if (confirmed) onDeleteAnnotation(annot);
   };
+  const commentConflict = (annotationKey: string): boolean => {
+    const mutation = deps.getState().mutations.get(annotationKey);
+    return (
+      mutation?.kind === "conflict" && mutation.conflict.write === "comment"
+    );
+  };
   const onApplyAgain = (annot: AnnotationRecord): void =>
-    report(deps.annotations.retryWrite(annot.key));
-  const onDiscardConflict = (annot: AnnotationRecord): void =>
-    deps.annotations.discardConflict(annot.key);
+    report(
+      commentConflict(annot.key) && deps.annotations.commentDraftFor(annot.key)
+        ? deps.annotations.retryCommentDraft(annot.key)
+        : deps.annotations.retryWrite(annot.key),
+    );
+  const onDiscardConflict = (annot: AnnotationRecord): void => {
+    if (
+      commentConflict(annot.key) &&
+      deps.annotations.commentDraftFor(annot.key)
+    ) {
+      deps.annotations.discardCommentDraft(annot.key);
+    } else {
+      deps.annotations.discardConflict(annot.key);
+    }
+  };
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -347,6 +379,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     getImgSrc,
     onSetColor,
     onSaveComment,
+    onOpenComment,
+    onEditComment,
     onDeleteAnnotation,
     onApplyAgain,
     onDiscardConflict,
@@ -418,6 +452,8 @@ const NOOP_ACTIONS: AnnotActions = {
   onSelectAnnotation: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
+  onOpenComment: () => {},
+  onEditComment: () => {},
   onDeleteAnnotation: () => {},
   onApplyAgain: () => {},
   onDiscardConflict: () => {},

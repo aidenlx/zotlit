@@ -58,11 +58,34 @@ function rect({
 
 /** The repository, reduced to what the selection reads and writes through. */
 function annotationEdits(capability: EditingCapability = { kind: "writable" }) {
+  let commentDraft: {
+    annotationKey: string;
+    attachmentKey: string;
+    serverID: string;
+    baseline: string;
+    text: string;
+    state: { kind: "editing" };
+  } | null = null;
   return {
     capabilityFor: vi.fn(() => capability),
     mutationFor: vi.fn((): MutationState => IDLE),
     patchColor: vi.fn(async () => IDLE),
     deleteAnnotation: vi.fn(async () => IDLE),
+    commentDraftFor: vi.fn(() => commentDraft),
+    editComment: vi.fn((annotationKey: string, text = "") => {
+      commentDraft = {
+        annotationKey,
+        attachmentKey: "ABCD2345",
+        serverID: "test",
+        baseline: "",
+        text,
+        state: { kind: "editing" },
+      };
+      return commentDraft;
+    }),
+    submitComment: vi.fn(async () => IDLE),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(async () => IDLE),
     on: vi.fn(() => () => undefined),
   };
 }
@@ -476,18 +499,16 @@ it("leaves every key to a text field it was typed into", () => {
   expect(h.annotations.patchColor).not.toHaveBeenCalled();
 });
 
-it("hands the comment and reveal verbs to the Annotation Card", () => {
+it("hands the reveal verb to the Annotation Card", () => {
   using h = setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='reveal']")!.click();
 
-  expect(h.gestures.revealAnnotation.mock.calls).toEqual([
-    ["WORD2222", { comment: true }],
-    ["WORD2222", { comment: false }],
-  ]);
+  expect(h.gestures.revealAnnotation).toHaveBeenCalledWith("WORD2222", {
+    comment: false,
+  });
 });
 
 it("deletes from the popup's own verb", () => {

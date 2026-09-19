@@ -51,7 +51,10 @@ export interface ConflictPanel {
 export function conflictPanel(conflict: WriteConflict): ConflictPanel {
   const discard: ConflictAction = {
     kind: "discard",
-    label: m.annot_view_conflict_discard(),
+    label:
+      conflict.write === "comment"
+        ? m.annot_view_conflict_keep_zotero_comment()
+        : m.annot_view_conflict_discard(),
   };
   if (conflict.write === "delete") {
     return {
@@ -84,7 +87,13 @@ export function conflictPanel(conflict: WriteConflict): ConflictPanel {
     ],
     prompt: null,
     actions: [
-      { kind: "apply-again", label: m.annot_view_conflict_apply_again() },
+      {
+        kind: "apply-again",
+        label:
+          conflict.write === "comment"
+            ? m.annot_view_conflict_use_comment()
+            : m.annot_view_conflict_apply_again(),
+      },
       discard,
     ],
   };

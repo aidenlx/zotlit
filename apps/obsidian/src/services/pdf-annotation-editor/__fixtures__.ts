@@ -295,6 +295,11 @@ export function annotationReads(
     refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
     mutationFor: vi.fn((): MutationState => IDLE),
+    commentDraftFor: vi.fn(() => null),
+    editComment: vi.fn(() => null),
+    submitComment: vi.fn(() => Promise.resolve(IDLE)),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
     createAnnotation: vi.fn(() =>

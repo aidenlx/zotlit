@@ -23,9 +23,11 @@ import type {
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
+import { conflictPanel } from "@/views/annot-view/card-conflict";
 import { editingLive } from "@/views/annot-view/card-controls";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
+import { renderCommentSheet } from "./create-popup";
 import type { CreationGestures } from "./creation";
 import {
   distance,
@@ -44,7 +46,16 @@ import { colorMenu, onScreen, selectionCollapsed } from "./surface";
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
   AnnotationRepository,
-  "capabilityFor" | "deleteAnnotation" | "mutationFor" | "on" | "patchColor"
+  | "capabilityFor"
+  | "commentDraftFor"
+  | "deleteAnnotation"
+  | "discardCommentDraft"
+  | "editComment"
+  | "mutationFor"
+  | "on"
+  | "patchColor"
+  | "retryCommentDraft"
+  | "submitComment"
 >;
 
 /**
@@ -121,6 +132,8 @@ export class MarkSelection implements Disposable {
   /** The marks under that point, smallest first, which the stepper walks. */
   #stack: readonly string[] = [];
   #popup: MarkPopup | null = null;
+  #commenting = false;
+  #commentEditor: HTMLTextAreaElement | null = null;
   #pressedAt: Point | null = null;
 
   constructor(deps: MarkSelectionDeps) {
@@ -190,13 +203,55 @@ export class MarkSelection implements Disposable {
       }),
     );
     this.#surfaces.defer(
-      this.#deps.annotations.on("capability-changed", () =>
-        this.#popup?.refresh(),
-      ),
+      this.#deps.annotations.on("capability-changed", () => {
+        if (!this.#commenting) this.#popup?.refresh();
+      }),
     );
     this.#surfaces.defer(
       this.#deps.annotations.on("mutation-changed", (annotationKey) => {
-        if (annotationKey === this.#selected) this.#popup?.refresh();
+        if (annotationKey === this.#selected && !this.#commenting) {
+          this.#popup?.refresh();
+        }
+      }),
+    );
+    this.#surfaces.defer(
+      this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
+        if (annotationKey !== this.#selected) return;
+        const draft = this.#deps.annotations.commentDraftFor(annotationKey);
+        if (!draft || draft.state.kind === "conflict") {
+          if (!this.#commenting) return;
+          this.#commenting = false;
+          this.#commentEditor = null;
+          this.#popup?.refresh();
+          return;
+        }
+        if (!this.#commentEditor) return;
+        if (this.#commentEditor.value === draft.text) return;
+        const { selectionStart, selectionEnd } = this.#commentEditor;
+        this.#commentEditor.value = draft.text;
+        this.#commentEditor.setSelectionRange(
+          Math.min(selectionStart, draft.text.length),
+          Math.min(selectionEnd, draft.text.length),
+        );
+      }),
+    );
+    this.#surfaces.defer(
+      this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
+        if (annotationKey === this.#selected) this.#apply(null);
+      }),
+    );
+    this.#surfaces.defer(
+      this.#deps.annotations.on("annotations-changed", (attachmentKey) => {
+        if (
+          attachmentKey === this.#deps.attachmentKey &&
+          this.#commenting &&
+          this.#selected !== null &&
+          !this.#deps.annotations.commentDraftFor(this.#selected)
+        ) {
+          this.#commenting = false;
+          this.#commentEditor = null;
+          this.#popup?.refresh();
+        }
       }),
     );
     this.#surfaces.defer(() => this.#close());
@@ -270,6 +325,10 @@ export class MarkSelection implements Disposable {
     } | null = null,
     { popup = true }: { popup?: boolean } = {},
   ): void {
+    if (key !== this.#selected) {
+      this.#commenting = false;
+      this.#commentEditor = null;
+    }
     this.#quiet = !popup && key !== null;
     this.#selected = key;
     this.#at =
@@ -379,16 +438,28 @@ export class MarkSelection implements Disposable {
     this.#apply(null);
   }
 
-  #renderRow(row: HTMLElement): void {
+  #renderRow(content: HTMLElement): void {
     const annotation = this.#record();
     if (!annotation) return;
+    if (this.#commenting) {
+      this.#renderCommentEditor(content, annotation);
+      return;
+    }
+    content.empty();
+    const column = content.createDiv({
+      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
+    });
+    const row = column.createDiv({
+      cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
+    });
     const stack = this.#stack.indexOf(annotation.key);
+    const mutation = this.#deps.annotations.mutationFor(annotation.key);
     renderMarkPopupRow(
       row,
       markPopupRow({
         annotation,
         capability: this.#capability(),
-        mutation: this.#deps.annotations.mutationFor(annotation.key),
+        mutation,
         stack: {
           index: stack === -1 ? 0 : stack,
           total: stack === -1 ? 1 : this.#stack.length,
@@ -397,6 +468,83 @@ export class MarkSelection implements Disposable {
       }),
       (id, node) => this.#activate(id, node, annotation),
     );
+    if (
+      mutation.kind === "conflict" &&
+      mutation.conflict.write === "comment" &&
+      this.#deps.annotations.commentDraftFor(annotation.key)
+    ) {
+      this.#renderCommentConflict(column, annotation, mutation.conflict);
+    }
+  }
+
+  #renderCommentEditor(
+    content: HTMLElement,
+    annotation: AnnotationRecord,
+  ): void {
+    const draft =
+      this.#deps.annotations.commentDraftFor(annotation.key) ??
+      this.#deps.annotations.editComment(annotation.key);
+    if (!draft) {
+      this.#commenting = false;
+      this.#commentEditor = null;
+      this.#renderRow(content);
+      return;
+    }
+    content.empty();
+    const column = content.createDiv({
+      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
+    });
+    const editor = renderCommentSheet(column, {
+      value: draft.text,
+      onSave: (comment) => {
+        this.#deps.annotations.editComment(annotation.key, comment);
+        this.#write(this.#deps.annotations.submitComment(annotation.key));
+        this.#commenting = false;
+        this.#commentEditor = null;
+        this.#popup?.refresh();
+      },
+      onCancel: () => {
+        this.#commenting = false;
+        this.#commentEditor = null;
+        this.#popup?.refresh();
+      },
+    });
+    editor.addEventListener("input", () => {
+      this.#deps.annotations.editComment(annotation.key, editor.value);
+    });
+    this.#commentEditor = editor;
+    editor.focus();
+    editor.setSelectionRange(editor.value.length, editor.value.length);
+  }
+
+  #renderCommentConflict(
+    content: HTMLElement,
+    annotation: AnnotationRecord,
+    conflict: Extract<MutationState, { kind: "conflict" }>["conflict"],
+  ): void {
+    const panel = conflictPanel(conflict);
+    const box = content.createDiv({
+      cls: ["zt:flex", "zt:flex-col", "zt:gap-1", "zt:px-2", "zt:pb-1"],
+    });
+    box.createDiv({ cls: "zt:font-medium", text: panel.title });
+    for (const value of panel.values) {
+      box.createDiv({ text: `${value.label}: ${value.value}` });
+    }
+    const actions = box.createDiv({ cls: ["zt:flex", "zt:gap-2"] });
+    for (const action of panel.actions) {
+      const button = actions.createEl("button", {
+        cls: "mod-cta",
+        text: action.label,
+      });
+      button.addEventListener("click", () => {
+        if (action.kind === "apply-again") {
+          this.#write(this.#deps.annotations.retryCommentDraft(annotation.key));
+        } else {
+          this.#deps.annotations.discardCommentDraft(annotation.key);
+        }
+        this.#popup?.refresh();
+      });
+    }
   }
 
   #activate(
@@ -415,7 +563,9 @@ export class MarkSelection implements Disposable {
         );
         return;
       case "comment":
-        gestures.revealAnnotation(annotation.key, { comment: true });
+        this.#commenting = true;
+        annotations.editComment(annotation.key);
+        this.#popup?.refresh();
         return;
       case "copy":
         if (annotation.text === null) return;
