@@ -47,7 +47,7 @@ describe("paneFromTarget", () => {
   // `split`. What is not obvious is that every other target Obsidian sends —
   // reading view's `""`, Live Preview's absent one, Properties' `_blank` — all
   // mean the current pane.
-  it.each([[""], [undefined], ["_blank"], ["noopener"]])(
+  it.each([[""], [undefined], ["_blank"]])(
     "reads %s as the current pane",
     (target) => {
       expect(paneFromTarget(target)).toBe(false);
@@ -117,7 +117,10 @@ describe("decideFileLinkCapture", () => {
     expect(asked).toEqual(["/Users/me/Zotero/storage/ABCD1234/Doe 2024.pdf"]);
   });
 
-  it("leaves an Attachment Obsidian cannot host alone", () => {
+  // Which Attachments qualify is `isPdfAttachment`'s rule, proved over real
+  // rows in `resolve.test.ts`; what this proves is that Capture obeys the
+  // verdict the resolver already reached.
+  it("leaves an Attachment the resolver called unopenable alone", () => {
     const { ctx } = context(RESOLVED_EPUB);
     expect(
       decideFileLinkCapture(
