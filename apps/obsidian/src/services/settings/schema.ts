@@ -174,6 +174,11 @@ export const schema = v.object({
 
   "reader.focus-annot-view": v.boolean(),
   /**
+   * Whether a clicked Attachment File Link opens in Obsidian's PDF view
+   * instead of the system handler — File Link Capture, ADR 0045.
+   */
+  "reader.open-file-links": v.boolean(),
+  /**
    * The colour each PDF reader annotation tool draws in. Sparse, so a tool
    * never recoloured follows Zotero's own default.
    */
@@ -229,6 +234,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "attachment.folder-path": null,
   "attachment.import": true,
   "reader.focus-annot-view": true,
+  "reader.open-file-links": true,
   "reader.annotation-colors": {},
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,

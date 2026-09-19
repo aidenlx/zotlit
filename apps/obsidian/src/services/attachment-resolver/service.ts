@@ -6,6 +6,7 @@ import type { AttachmentPathContext } from "@zotlit/db/path";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
+import { isPdfAttachment } from "@/services/attachment-open/resolve";
 import type { DatabaseService } from "@/services/database/service";
 import { Service } from "@/services/service-base";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -29,6 +30,13 @@ export type AttachmentResolution =
       attachmentKey: string;
       /** The parent Item's Indexed Key; `null` for a standalone Attachment. */
       itemKey: string | null;
+      /**
+       * Whether this is an Obsidian-Openable Attachment. The index already
+       * holds the row and the resolved path when it decides identity, so the
+       * two rules a reader gesture needs — is it ours, can Obsidian host it —
+       * travel in one answer instead of being recomputed per lookup.
+       */
+      openable: boolean;
     }
   | { kind: "unresolved" }
   | { kind: "pending" };
@@ -191,26 +199,31 @@ export function buildPathIndex(
     const absolutePath = attachmentAbsPath(attachment, pathContext);
     return absolutePath === null
       ? []
-      : { attachment, pathKey: attachmentPathKey(absolutePath, platform) };
+      : {
+          attachment,
+          absolutePath,
+          pathKey: attachmentPathKey(absolutePath, platform),
+        };
   });
 
   const index = new Map<string, AttachmentResolution>();
   const collisions: PathCollision[] = [];
   for (const [pathKey, entries] of Map.groupBy(located, (e) => e.pathKey)) {
-    const ranked = entries
-      .map((entry) => entry.attachment)
-      .toSorted(byPreference);
-    const chosen = ranked[0]!;
+    const ranked = entries.toSorted((a, b) =>
+      byPreference(a.attachment, b.attachment),
+    );
+    const { attachment: chosen, absolutePath: chosenPath } = ranked[0]!;
     index.set(pathKey, {
       kind: "resolved",
       attachmentKey: chosen.indexedKey,
       itemKey: chosen.parentIndexedKey,
+      openable: isPdfAttachment(chosen.contentType, chosenPath),
     });
     if (ranked.length > 1) {
       collisions.push({
         pathKey,
         chosen: chosen.indexedKey,
-        discarded: ranked.slice(1).map((attachment) => attachment.indexedKey),
+        discarded: ranked.slice(1).map((entry) => entry.attachment.indexedKey),
       });
     }
   }

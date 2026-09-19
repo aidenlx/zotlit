@@ -467,6 +467,8 @@
   "settings_page_reader_desc": "ZotLit 在 Obsidian 阅读器中打开 PDF 时的行为。",
   "settings_reader_focus_annot_view_name": "显示标注视图",
   "settings_reader_focus_annot_view_desc": "ZotLit 打开 PDF 时，在侧边栏中打开标注视图。",
+  "settings_reader_open_file_links_name": "在 Obsidian 中打开 PDF 文件链接",
+  "settings_reader_open_file_links_desc": "当笔记中的文件链接指向 Zotero 库中的 PDF 时，在 Obsidian 的 PDF 阅读器中打开。其他文件链接仍由系统应用打开，右键点击后选择用系统应用打开的链接也是如此。",
   "settings_note_folder_desc": "新文献笔记的创建位置。",
   "settings_note_add_setup_name": "添加另一套文献笔记配置",
   "settings_note_add_setup_desc": "为部分文献笔记使用不同的文件夹或引文样式。",

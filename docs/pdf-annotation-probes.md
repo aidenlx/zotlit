@@ -183,6 +183,19 @@ Read the Live Updates receiver from `services.localServer.available`. `services.
 
 **`itemType=annotation` is load-bearing on the children route.** Without it, `children?sort=dateAdded&direction=asc` answers `Total-Results: 0` for `RGRPDF24`.
 
+## Four undocumented behaviours File Link Capture stands on
+
+File Link Capture ([ADR 0045](../apps/obsidian/docs/adr/0045-file-link-capture-patches-window-open.md)) reads four behaviours Obsidian documents nowhere. All four were read out of the 1.14.2 renderer bundle, `node_modules/.ob-rev-1.14.2/app.js`. **None is live-measured yet**, so they carry no verdict in the tables above; a Paired Run has to confirm them before the release. Re-verify all four against a fresh extraction whenever `minAppVersion` moves.
+
+| Behaviour | Where it is read | Why Capture needs it |
+| --- | --- | --- |
+| Every external-link click ends at `window.open(href, target)` | The reading-view delegate `t.on("click", "a.external-link", ...)` and `onExternalLinkClick`; the Live Preview path `triggerClickableToken`, which reads the URL off the CodeMirror tree because no anchor exists in that view; the Properties and Bases renderers | It is the only symbol all four paths share, so it is the only complete place to take the click |
+| `"_external"` is the target Obsidian's own "Open in default browser" item passes | `handleExternalLinkContextMenu`, which also triggers the public `url-menu` event | Capture hands that target straight back, which is what keeps the per-link way out working |
+| `Vault.getFileByPath("file:<abs>")` falls through to the external file manager | `getFileByPath` → `externalFileManager.getExternalFile`, gated on `Platform.isDesktopApp` | How an Attachment outside the vault reaches Obsidian's reader at all. Already relied on by the four existing open gestures |
+| The PDF view reads a page jump off `eState.subpath` as the string `"#page=N"` | `PDFView.setEphemeralState` → `applySubpath`, which parses the fragment with `URLSearchParams` and also accepts `offset`, `annotation`, `selection`, and `height` | How a link's `#page=N` lands on the right page |
+
+A change to the first two costs Capture its clicks; the link then opens in the system app, which is what happened before the feature existed. A change to the third or fourth is already covered by the reader seam's own failure mode: a notice, not a wrong file.
+
 ## See also
 
 - [The Fixture](fixture.md), for the Paired Run and the Zotero Local API trial.
