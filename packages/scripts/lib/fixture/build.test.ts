@@ -46,6 +46,8 @@ import {
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
+  FIXTURE_LOCAL_API_SERVER_ID,
+  FIXTURE_LOCAL_API_WRITE_KEY,
   FIXTURE_PARTIAL_NAME,
   getFixtureLayout,
   INSTALLED_STYLES,
@@ -1724,7 +1726,11 @@ describe("the generated Obsidian vault", () => {
       await mkdtemp(join(dirname(layout.root), "fixture-test-local-api-")),
     );
     fixture.defer(() => rm(apiLayout.root, { recursive: true, force: true }));
-    await buildFixture(apiLayout, { localApi: true, zoteroHttpPort: 54_323 });
+    await buildFixture(apiLayout, {
+      localApi: true,
+      zoteroHttpPort: 54_323,
+      grantLocalApiWrites: true,
+    });
 
     const prefs = await readFile(
       join(apiLayout.profileDir, "prefs.js"),
@@ -1737,6 +1743,48 @@ describe("the generated Obsidian vault", () => {
     expect(prefs).toContain(
       'user_pref("extensions.zotero.httpServer.port", 54323);',
     );
+
+    using db = new DatabaseSync(apiLayout.databasePath);
+    expect(
+      db
+        .prepare(
+          "select value from settings where setting = 'localAPI' and key = 'serverID'",
+        )
+        .get()?.value,
+    ).toBe(FIXTURE_LOCAL_API_SERVER_ID);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(apiLayout.profileDir, "localAPIKeys.json"),
+          "utf-8",
+        ),
+      ),
+    ).toMatchObject({
+      keys: [
+        {
+          key: FIXTURE_LOCAL_API_WRITE_KEY,
+          appName: "ZotLit Fixture",
+          remember: true,
+        },
+      ],
+    });
+  });
+
+  it("leaves Local API writes ungranted for an authorization trial", async () => {
+    const apiLayout = getFixtureLayout(
+      await mkdtemp(
+        join(dirname(layout.root), "fixture-test-local-api-prompt-"),
+      ),
+    );
+    fixture.defer(() => rm(apiLayout.root, { recursive: true, force: true }));
+    await buildFixture(apiLayout, {
+      localApi: true,
+      grantLocalApiWrites: false,
+    });
+
+    await expect(
+      readFile(join(apiLayout.profileDir, "localAPIKeys.json"), "utf-8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps the shipped network-port defaults without port overrides", async () => {

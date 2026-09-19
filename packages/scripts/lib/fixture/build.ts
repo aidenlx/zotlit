@@ -168,6 +168,13 @@ export interface BuildOptions {
    * from the profile.
    */
   localApi?: boolean;
+  /**
+   * Seed one remembered Zotero Local API write key for the Development Vault.
+   * This applies only when {@link BuildOptions.localApi} is true.
+   *
+   * @default false
+   */
+  grantLocalApiWrites?: boolean;
   /** Development Vault root used by vault-backed linked Attachment rows. */
   linkedAttachmentVaultDir?: string;
 }
@@ -195,7 +202,7 @@ export async function buildFixture(
   await rm(layout.root, { recursive: true, force: true });
   await mkdir(layout.dataDir, { recursive: true });
   await mkdir(layout.profileDir, { recursive: true });
-  await writeDatabase(layout, items, options.linkedAttachmentVaultDir);
+  await writeDatabase(layout, items, options);
   // A Paired Zotero unpacks its bundled styles seconds after it starts, so the
   // build lays them down itself: every Fixture offers the same Citation and
   // References Style choices from the moment it exists, Zotero running or not.
@@ -204,6 +211,7 @@ export async function buildFixture(
   await writeAttachmentFiles(layout);
   await writeAnnotationCacheFiles(layout);
   await writePrefs(layout, options);
+  await writeLocalApiAuthorizations(layout, options);
   await writeVault(layout, options);
 }
 
@@ -330,7 +338,7 @@ async function writeInstalledStyles(layout: FixtureLayout): Promise<void> {
 async function writeDatabase(
   layout: FixtureLayout,
   items: readonly FixtureItem[],
-  linkedAttachmentVaultDir?: string,
+  options: BuildOptions,
 ): Promise<void> {
   await writePristineDatabase(layout.databasePath);
   using db = new DatabaseSync(layout.databasePath);
@@ -349,8 +357,13 @@ async function writeDatabase(
     seedDatabase(db, readSchemaIDs(db), {
       layout,
       items,
-      linkedAttachmentVaultDir,
+      linkedAttachmentVaultDir: options.linkedAttachmentVaultDir,
     });
+    if (options.localApi) {
+      db.prepare(
+        "replace into settings values ('localAPI', 'serverID', ?)",
+      ).run(FIXTURE_LOCAL_API_SERVER_ID);
+    }
     db.exec("commit");
   } catch (error) {
     db.exec("rollback");
@@ -842,15 +855,43 @@ function seedItemData(
 /**
  * Zotero ships its Local API off, and a build turns it on only where
  * {@link BuildOptions.localApi} asks. Paired Zotero then answers reads on its
- * HTTP port, and accepts writes once Zotero grants a Write Authorization.
- * Zotero 10 prompts for that grant at run time, so a preference opens reads
- * alone.
+ * HTTP port. A Paired Run seeds a remembered Write Authorization unless its
+ * caller asks to exercise Zotero's run-time authorization dialog.
  *
  * @see {@link https://www.zotero.org/support/dev/web_api/v3/local_api} for the
  * endpoint set and the authorization flow.
  */
 const LOCAL_API_PREF =
   'user_pref("extensions.zotero.httpServer.localAPI.enabled", true);';
+
+/** Stable identity shared by the generated Zotero database and vault grant. */
+export const FIXTURE_LOCAL_API_SERVER_ID = "zotlitserver";
+
+/** A credential for this disposable Fixture profile only. */
+export const FIXTURE_LOCAL_API_WRITE_KEY = "zotlitFixtureWriteAuthorization1";
+
+/**
+ * Seed Zotero's side of the Development Vault's remembered write grant.
+ * Paired Run setup writes the matching record through Obsidian SecretStorage.
+ */
+function writeLocalApiAuthorizations(
+  layout: FixtureLayout,
+  options: BuildOptions,
+): Promise<void> {
+  if (!options.localApi || options.grantLocalApiWrites !== true) {
+    return Promise.resolve();
+  }
+  return writeJson(join(layout.profileDir, "localAPIKeys.json"), {
+    keys: [
+      {
+        key: FIXTURE_LOCAL_API_WRITE_KEY,
+        appName: "ZotLit Fixture",
+        remember: true,
+        createdAt: `${BUILD_TIMESTAMP.replace(" ", "T")}Z`,
+      },
+    ],
+  });
+}
 
 /**
  * A Zotero profile whose prefs point at the Fixture's data directory, so one
