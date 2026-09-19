@@ -197,6 +197,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
    * render. `null` while no Landing is in flight.
    */
   #landing: MarkLandingTarget | null = null;
+  /** The frame a Landing's scroll is waiting on; `null` while none is. */
+  #landingFrame: number | null = null;
   /** The creation surfaces of this view; `null` until they can be mounted. */
   #creation: MarkCreation | null = null;
   /**
@@ -325,6 +327,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#absolutePath = absolutePath;
     // A view bound while the Zotero database is still loading — plugin startup
     // over an open PDF tab — is told `pending`, and takes its answer here.
+    this.#surfaces.defer(() => this.#cancelScroll());
     this.#surfaces.defer(
       this.#attachments.on("resolutions-changed", () =>
         this.#resolve(absolutePath),
@@ -702,9 +705,33 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (!landing) return;
     this.#landing = null;
     this.#selection?.select(landing.annotationKey, { popup: false });
-    const page =
-      this.#controller && pageViewOf(this.#controller, landing.pageIndex + 1);
-    if (page) scrollMarkIntoView(page, landing.annotationKey);
+    this.#scrollToMark(landing);
+  }
+
+  /**
+   * Brings the landed Mark on screen, a frame after the selection.
+   *
+   * Obsidian's own `#page=N` rides the same open and scrolls on its own
+   * schedule — on a reader that is already showing the file, after this. A Mark
+   * placed before that jump is scrolled off again, so the Landing takes the
+   * frame after it and has the last word, which is what makes the Annotation
+   * win over the page the link named.
+   */
+  #scrollToMark(target: MarkLandingTarget): void {
+    const win = this.#view.containerEl.win;
+    this.#cancelScroll();
+    this.#landingFrame = win.requestAnimationFrame(() => {
+      this.#landingFrame = null;
+      const controller = this.#controller;
+      const page = controller && pageViewOf(controller, target.pageIndex + 1);
+      if (page) scrollMarkIntoView(page, target.annotationKey);
+    });
+  }
+
+  #cancelScroll(): void {
+    if (this.#landingFrame === null) return;
+    this.#view.containerEl.win.cancelAnimationFrame(this.#landingFrame);
+    this.#landingFrame = null;
   }
 
   /** Reads this Attachment's Annotations and redraws every page they touch. */
