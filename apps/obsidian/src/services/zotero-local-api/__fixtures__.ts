@@ -580,8 +580,7 @@ export function staleVersion(): Response {
  * RECORDED — `412 Write token already used`, the third `412` body. A create was
  * sent twice on one `Zotero-Write-Token` against Paired Zotero 10.0 on
  * 2026-09-16: the first answered `200` and made `R25HRAM9`, the second answered
- * this. That is what makes the user's "Try again" on an Uncertain Create unable
- * to create a second Annotation.
+ * this. It distinguishes token reuse from an object-version conflict.
  *
  * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L695-L704
  */

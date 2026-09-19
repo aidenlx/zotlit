@@ -275,11 +275,15 @@ free Zotero HTTP port. Paired Zotero serves the API on that port, and ZotLit
 reads the same number back from the profile, so both sides agree and the
 shipped 23119 stays clear. The build and the ready report print the base URL.
 
-Reads need no key. A write needs a Write Authorization, which Zotero 10 prompts
-for on POST /api/local/authorize and returns as a key for the Zotero-API-Key
-header. Zotero cancels every request it reads as browser traffic, so each call
-carries Zotero-Allowed-Request and the write calls also carry
-Zotero-Server-ID.`;
+Reads need no key. By default, a Paired Run with --local-api seeds one remembered
+Write Authorization in Zotero's Fixture profile and the matching record in the
+Development Vault's Obsidian SecretStorage. ZotLit can write without a dialog.
+Pass --no-grant-local-api-writes to test the authorization flow instead. That
+form leaves Zotero without the key and invalidates the Development Vault's held
+record, so the next user-initiated authorization opens Zotero's dialog.
+
+Zotero cancels every request it reads as browser traffic, so each call carries
+Zotero-Allowed-Request and the write calls also carry Zotero-Server-ID.`;
 
 const CANCEL_TESTING_SECTION = `CANCEL TESTING
 

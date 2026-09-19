@@ -165,6 +165,8 @@ export interface CommentSheetProps {
   onSave: (comment: string) => void;
   /** Steps back one level, leaving the selection and the row standing. */
   onCancel: () => void;
+  /** The caller binds Mod+Enter through its owning native Scope. */
+  nativeSubmit?: boolean;
 }
 
 /**
@@ -176,7 +178,7 @@ export interface CommentSheetProps {
  */
 export function renderCommentSheet(
   sheet: HTMLElement,
-  { value, onSave, onCancel }: CommentSheetProps,
+  { value, onSave, onCancel, nativeSubmit = false }: CommentSheetProps,
 ): HTMLTextAreaElement {
   sheet.empty();
   sheet.addClass(themeHook.pdfCommentSheet);
@@ -199,7 +201,13 @@ export function renderCommentSheet(
       onCancel();
       return;
     }
-    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+    if (
+      nativeSubmit ||
+      event.key !== "Enter" ||
+      !(event.metaKey || event.ctrlKey)
+    ) {
+      return;
+    }
     event.preventDefault();
     onSave(editor.value);
   });

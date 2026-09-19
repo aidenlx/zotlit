@@ -1670,7 +1670,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the parent attachment file, deep-linked to this\nannotation's {@link page} (`#page=N`); `null` when the file is unresolvable.\nCall it to render — pass `alias`/`subpath` to override the display text or\nthe `#`-fragment. Computed at the app layer.",
+          "description": "Markdown link to the parent attachment file, anchored to this annotation's\n{@link page} and to the annotation itself\n(`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its\nAnnotation Mark and every other reader lands on the page; `null` when the\nfile is unresolvable. Call it to render — pass `alias`/`subpath` to\noverride the display text or the `#`-fragment. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",
@@ -3930,7 +3930,7 @@
         },
         {
           "name": "fileLink",
-          "description": "Markdown link to the parent attachment file, deep-linked to this\nannotation's {@link page} (`#page=N`); `null` when the file is unresolvable.\nCall it to render — pass `alias`/`subpath` to override the display text or\nthe `#`-fragment. Computed at the app layer.",
+          "description": "Markdown link to the parent attachment file, anchored to this annotation's\n{@link page} and to the annotation itself\n(`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its\nAnnotation Mark and every other reader lands on the page; `null` when the\nfile is unresolvable. Call it to render — pass `alias`/`subpath` to\noverride the display text or the `#`-fragment. Computed at the app layer.",
           "optional": false,
           "type": {
             "kind": "helper",

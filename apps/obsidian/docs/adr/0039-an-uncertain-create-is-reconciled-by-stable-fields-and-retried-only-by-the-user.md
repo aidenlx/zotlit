@@ -1,5 +1,9 @@
 # An Uncertain Create is reconciled by stable fields and retried only by the user, on the same write token
 
+Superseded by [ADR 0048](0048-annotation-drafts-and-pending-writes-stay-in-memory.md): pending writes stay in memory, and a failed or unconfirmed attempt prompts an ordinary refresh from Zotero. The original recovery workflow below is retained as history.
+
+Protocol correction from the 2026-09-19 source review: Zotero holds write tokens in memory and can record a token when every item in the batch failed. A used-token response alone does not confirm creation, and token reuse alone does not guarantee a single creation.
+
 A create through the Zotero Local API is a multi-object `POST` whose response carries the server-generated key; when that response is lost — a timeout, an abort, a closed reader — the Annotation may or may not exist in Zotero. ZotLit re-reads the Attachment's Annotations and matches the intended create on its stable fields: parent Attachment key, type, position rects rounded to three decimals, text, colour, and a `dateAdded` inside the window from request start to now. Exactly one match confirms the create; zero or several leave an Uncertain Create the user resolves with "Try again" or "Discard". "Try again" re-sends the original request with the original `Zotero-Write-Token`, which Zotero remembers for twelve hours and answers with a `412 Write token already used` when the first write landed, so the manual retry cannot create twice. Nothing retries on its own.
 
 ## Considered Options

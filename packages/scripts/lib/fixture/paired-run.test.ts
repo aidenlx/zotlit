@@ -215,6 +215,7 @@ describe("Paired Run", () => {
           liveUpdatePort: 51_234,
           zoteroHttpPort: 52_234,
           localApi: false,
+          grantLocalApiWrites: true,
         });
         prepared = true;
         return {
@@ -250,11 +251,14 @@ describe("Paired Run", () => {
   });
 
   it("carries the Local API opt-in into the seed and the ready report", async () => {
-    let seeded: boolean | undefined;
+    let seeded: { localApi: boolean; grantLocalApiWrites: boolean } | undefined;
     let ready: PairedRunReady | undefined;
     const ports = testPorts({
       prepareDevelopmentVault: async (options) => {
-        seeded = options.localApi;
+        seeded = {
+          localApi: options.localApi,
+          grantLocalApiWrites: options.grantLocalApiWrites,
+        };
         return {
           id: "fixture-vault-test-fixture",
           path: "/workspace/tests/fixture-vault-test-fixture",
@@ -270,11 +274,37 @@ describe("Paired Run", () => {
       ports,
     );
 
-    expect(seeded).toBe(true);
+    expect(seeded).toEqual({ localApi: true, grantLocalApiWrites: true });
     expect(ready?.localApi).toBe(true);
     // The run's own Zotero HTTP port is the one the profile carries, so Paired
     // Zotero and ZotLit read the same number.
     expect(ready?.zoteroHttpPort).toBe(52_234);
+  });
+
+  it("carries the write-grant opt-out into the seed", async () => {
+    let granted: boolean | undefined;
+    const ports = testPorts({
+      prepareDevelopmentVault: async (options) => {
+        granted = options.grantLocalApiWrites;
+        return {
+          id: "fixture-vault-test-fixture",
+          path: "/workspace/tests/fixture-vault-test-fixture",
+        };
+      },
+    });
+
+    await runPairedRun(
+      {
+        mode: "open",
+        scopeCase: "all",
+        purge: false,
+        localApi: true,
+        grantLocalApiWrites: false,
+      },
+      ports,
+    );
+
+    expect(granted).toBe(false);
   });
 
   it("gives every Paired Run two distinct ports of its own", async () => {

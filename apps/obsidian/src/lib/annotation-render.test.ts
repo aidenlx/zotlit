@@ -53,11 +53,23 @@ describe("attachmentFileLink", () => {
     ).toBe("[paper.pdf](file:///data/storage/ATCH2345/paper.pdf)");
   });
 
+  it("anchors an annotation link to its page and to the annotation itself", () => {
+    expect(
+      attachmentFileLink(
+        makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
+        ctx,
+        { page: 3, annotation: "ANNX2345" },
+      )(),
+    ).toBe(
+      "[paper.pdf](file:///data/storage/ATCH2345/paper.pdf#page=3&zt-annotation=ANNX2345)",
+    );
+  });
+
   it("overrides the display text and subpath when given", () => {
     const link = attachmentFileLink(
       makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
       ctx,
-      3,
+      { page: 3 },
     );
     // default anchors to the page
     expect(link()).toBe(

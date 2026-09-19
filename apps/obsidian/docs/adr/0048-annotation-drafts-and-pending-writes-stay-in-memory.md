@@ -1,0 +1,19 @@
+# Annotation drafts and pending writes stay in memory
+
+Zotero is the source of truth for Annotation existence and saved content. ZotLit keeps temporary display state, comment drafts, and pending requests in memory. Each Annotation has one shared comment draft, used by both the Annotation View and Mark Popup. Refresh preserves that draft, including its starting value and the user's current text. A changed remote comment requires an explicit choice before replacement; unrelated field changes can refresh normally, and a remote value already equal to the draft needs no write.
+
+Comment edits submit after a one-second typing pause, with a ten-second maximum wait measured from the first unsaved edit. Blur requests immediate submission. Ctrl/Command+Enter also requests immediate submission and keeps the editor open; register it as `Mod+Enter` through Obsidian's native `Scope` for the active editor. Escape closes the editor and requests immediate submission of its latest text. Closing the Annotation View or PDF pane also requests immediate submission; the shared repository continues saving after the pane closes. One request per Annotation runs at a time, while later typing replaces the queued value. An in-flight request or unresolved conflict can delay submission beyond the normal timing.
+
+Comment drafts live in the shared repository's memory for the current plugin session, including across view closure. Shutdown can lose text that has not been submitted, including newer text queued behind an in-flight write. On restart, annotation comments come from Zotero. This accepts the small loss window between typing and autosave and keeps draft handling simple.
+
+Pending writes live in repository memory for the current plugin session. Each edit submits through the native API once. A success updates the confirmed annotation state and refreshes the shared collection. A failed request or lost response ends that attempt and prompts a refresh from Zotero; the UI reports when saving could not be confirmed. Further changes use the ordinary editing controls. Startup reads Zotero's saved state. This keeps request handling within the active session and accepts losing local operation state at shutdown.
+
+Annotation Cards and Marks show confirmed data while an operation is pending. The active draft or requested change carries its saving state. A lost response can follow a successful write, so the subsequent read establishes the displayed Zotero state. A failed refresh keeps the last confirmed result. Save errors remain visible in the current session, and further submission follows a new editing action.
+
+Zotero owns Annotation existence and saved content. When deletion is confirmed in Zotero, remove the Annotation's card and mark, close its editor, and discard its local comment draft and queued autosave. This keeps deletion handling simple and follows Zotero's state. A failed or incomplete refresh leaves existence unconfirmed and keeps the current state.
+
+Editing release includes a concurrent-write check against the native Local API. A reproduced silent-overwrite race blocks release until the write path preserves conflicting work. The required fix belongs at the native write boundary, keeping the Companion optional.
+
+This supersedes the creation recovery workflow in [ADR 0039](0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md) and amends the reading/editing contract in [ADR 0047](0047-annotation-reading-is-continuous-and-editing-is-an-added-capability.md). Shared memory preserves draft continuity during refresh and between surfaces. Ordinary native API writes and reads provide the save path. The accepted trade-off is a simpler session-only model instead of durable requests, creation matching, or a dedicated retry workflow.
+
+Implementation and acceptance criteria are specified in [Spec #1157](https://github.com/aidenlx/zotlit/issues/1157).

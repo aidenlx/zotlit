@@ -321,13 +321,13 @@ linkHelper(alias?, subpath?)
 - `alias`: display text for the link. Omit to use the default (filename or note title).
 - `subpath`: a `#`-fragment appended to the target, e.g. `"#heading"` or `"#page=3"`.
 
-| Helper            | Available on                  | Default subpath | Returns                                                |
-| ----------------- | ----------------------------- | --------------- | ------------------------------------------------------ |
-| `zt.noteLink()`   | item context                  | none            | Markdown link to the item's literature note, or `null` |
-| `note.noteLink()` | each `zt.notes[]` entry       | none            | Link to the child note                                 |
-| `a.fileLink()`    | each `zt.attachments[]` entry | none            | Attachment file link                                   |
-| `zt.fileLink()`   | annotation context            | `#page=N`       | Attachment link deep-linked to the annotation's page   |
-| `zt.imgLink()`    | annotation context            | none            | Excerpt-image link, or `null`                          |
+| Helper            | Available on                  | Default subpath               | Returns                                                                        |
+| ----------------- | ----------------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| `zt.noteLink()`   | item context                  | none                          | Markdown link to the item's literature note, or `null`                         |
+| `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the child note                                                         |
+| `a.fileLink()`    | each `zt.attachments[]` entry | none                          | Attachment file link                                                           |
+| `zt.fileLink()`   | annotation context            | `#page=N&zt-annotation=<key>` | Attachment link anchored to the annotation's page and to the annotation itself |
+| `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, or `null`                                                  |
 
 ```eta
 <%= zt.attachments[0].fileLink() %>

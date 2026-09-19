@@ -1,14 +1,14 @@
 // Reports the Zotero schema versions of the database being read.
 import type { NodeDatabaseClient } from "@/client/node";
+import type { SQLocalDatabaseClient } from "@/client/web";
 
 import { defineQuery } from "./_shared";
 
 /**
  * Inclusive version ranges ZotLit is tested against, keyed by the
  * `version.schema` row that holds each one. This is the range of Zotero clients
- * exercised, not the range the Drizzle snapshot in `drizzle/schema.ts` models —
- * that snapshot still describes userdata 125, and no query reads a column the
- * later steps added.
+ * exercised. The typed schema exposes newer columns. Queries that use them
+ * must keep an explicit path for supported userdata 125 databases.
  *
  * - `userdata` counts Zotero's applied migration steps. Zotero 9.0.0 through
  *   9.0.6 sit at 125; Zotero 10.0.0 raises it to 129.
@@ -60,6 +60,21 @@ export function getSchemaVersions(
     inRange(userdata, SUPPORTED_SCHEMA_VERSIONS.userdata) &&
     inRange(compatibility, SUPPORTED_SCHEMA_VERSIONS.compatibility);
   return { userdata, compatibility, supported };
+}
+
+/** Whether local client revision columns added in userdata 129 are available. */
+export function hasClientRevisions(db: NodeDatabaseClient): boolean {
+  const { userdata } = getSchemaVersions(db);
+  return userdata !== null && userdata >= 129;
+}
+
+/** Async-client form of {@link hasClientRevisions}. */
+export async function hasClientRevisionsAsync(
+  db: SQLocalDatabaseClient,
+): Promise<boolean> {
+  const rows = await versionQuery.prepared(db).all();
+  const userdata = rows.find(({ schema }) => schema === "userdata")?.version;
+  return typeof userdata === "number" && userdata >= 129;
 }
 
 function inRange(

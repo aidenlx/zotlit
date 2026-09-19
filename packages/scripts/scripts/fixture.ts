@@ -64,6 +64,13 @@ const localApiOption = {
   default: false,
 } as const;
 
+const grantLocalApiWritesOption = {
+  describe:
+    "seed a remembered Local API write grant for the Development Vault; use --no-grant-local-api-writes to test authorization",
+  type: "boolean",
+  default: true,
+} as const;
+
 function pairedRunBuilder(y: Argv) {
   return y
     .positional("scope-case", {
@@ -83,7 +90,8 @@ function pairedRunBuilder(y: Argv) {
       type: "boolean",
       default: false,
     })
-    .option("local-api", localApiOption);
+    .option("local-api", localApiOption)
+    .option("grant-local-api-writes", grantLocalApiWritesOption);
 }
 
 /**
@@ -208,6 +216,7 @@ const cli = yargs(hideBin(process.argv))
           vaultCase: argv["vault-case"],
           purge: argv.purge,
           localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
         },
         pairedRunPorts,
       );
@@ -225,6 +234,7 @@ const cli = yargs(hideBin(process.argv))
           vaultCase: argv["vault-case"],
           purge: argv.purge,
           localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
         },
         pairedRunPorts,
       );
