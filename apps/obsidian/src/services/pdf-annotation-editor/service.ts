@@ -6,6 +6,8 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+
 import { registerEvent } from "@/lib/disposables";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
@@ -53,6 +55,10 @@ export interface PdfAnnotationEditorDeps {
   now?: () => Temporal.Instant;
 }
 
+export interface PdfAnnotationEditorEvents {
+  "session-added": (filePath: string) => void;
+}
+
 /**
  * Owns the one guarded adapter to Obsidian's private PDF reader seam, and a
  * binding per open PDF view: created on file open and layout change, disposed
@@ -71,6 +77,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #markGestures;
   readonly #toolColors;
   readonly #now;
+  readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
 
@@ -112,6 +119,13 @@ export class PdfAnnotationEditor extends Service<void> {
       if (binding.filePath === filePath) return binding.session;
     }
     return null;
+  }
+
+  on<K extends keyof PdfAnnotationEditorEvents>(
+    event: K,
+    cb: PdfAnnotationEditorEvents[K],
+  ): () => void {
+    return this.#emitter.on(event, cb);
   }
 
   async #load(): Promise<void> {
@@ -186,6 +200,8 @@ export class PdfAnnotationEditor extends Service<void> {
       });
       this.#bindings.set(view, binding);
       binding.load();
+      if (binding.filePath)
+        this.#emitter.emit("session-added", binding.filePath);
     }
   }
 }

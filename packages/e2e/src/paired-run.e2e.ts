@@ -25,6 +25,7 @@ import {
   ATTACHMENTS,
   getFixtureRoot,
 } from "@zotlit/scripts/fixture";
+import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
@@ -118,10 +119,120 @@ const debuggerPort = reach?.debuggerPort ?? null;
 describe.skipIf(!baseUrl)("Paired Run", () => {
   const api = baseUrl!;
   let serverID = "";
+  let authorizationFixture:
+    | { native: string | null; secret: string | null; rdp: ZoteroRdp }
+    | undefined;
 
   beforeAll(async () => {
     serverID = await readServerID(api);
+    if (!debuggerPort) return;
+    const rdp = await openZoteroRdp(debuggerPort);
+    authorizationFixture = {
+      native: await rdp.json<string | null>(
+        `(async()=>{const path=PathUtils.join(Zotero.Profile.dir,'localAPIKeys.json');return await IOUtils.exists(path)?await IOUtils.readUTF8(path):null})()`,
+      ),
+      secret: vaultId
+        ? await obJson<string | null>(
+            `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization'))`,
+          )
+        : null,
+      rdp,
+    };
   });
+
+  const prepareAuthorizationFixture = async (): Promise<void> => {
+    if (!authorizationFixture) return;
+    const { native, secret, rdp } = authorizationFixture;
+    await restorePrompt(rdp);
+    if (native === null || secret === null) {
+      await resetAuthorizations(rdp);
+      await stubPrompt(rdp, { allow: true, remember: false });
+      return;
+    }
+    const key = await grantRememberedKey(api, rdp, {
+      serverID,
+      appName: "ZotLit Fixture",
+    });
+    if (vaultId && secret !== null) {
+      await obEval(
+        vaultId,
+        `(function(){const record=JSON.parse(${JSON.stringify(secret)});record.key=${JSON.stringify(key)};app.secretStorage.setSecret('zotlit-zotero-write-authorization',JSON.stringify(record));return true;})()`,
+      );
+    }
+  };
+
+  const restoreAuthorizationFixture = async (): Promise<void> => {
+    if (!authorizationFixture) return;
+    const { native, secret, rdp } = authorizationFixture;
+    let nativeFailure: unknown;
+    try {
+      await restorePrompt(rdp);
+      const exact = await rdp.json<boolean>(`(async()=>{
+        await Zotero.Server.LocalAPI.clearAuthorizations();
+        const path=PathUtils.join(Zotero.Profile.dir,'localAPIKeys.json');
+        if (${JSON.stringify(native)} !== null) {
+          await IOUtils.writeUTF8(path,${JSON.stringify(native)});
+        }
+        const held=await IOUtils.exists(path)?await IOUtils.readUTF8(path):null;
+        return held===${JSON.stringify(native)};
+      })()`);
+      expect(exact).toBe(true);
+    } catch (error) {
+      nativeFailure = error;
+    }
+    if (vaultId) {
+      if (secret !== null) {
+        await obEval(
+          vaultId,
+          `app.secretStorage.setSecret('zotlit-zotero-write-authorization',${JSON.stringify(secret)});true`,
+        );
+      }
+      expect(
+        await obJson<boolean>(
+          `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization')===${JSON.stringify(secret)})`,
+        ),
+      ).toBe(true);
+    }
+    if (nativeFailure) throw nativeFailure;
+  };
+
+  afterAll(async () => {
+    let restoreFailure: unknown;
+    try {
+      await restoreAuthorizationFixture();
+    } catch (error) {
+      restoreFailure = error;
+    } finally {
+      authorizationFixture?.rdp[Symbol.dispose]();
+    }
+    if (!authorizationFixture) return;
+    const ports = createNodePairedRunPorts({
+      workspaceRoot: pairedWorkspaceRoot,
+      layout: reach!.layout,
+    });
+    await ports.stopLivePairedZotero();
+    let restartFailure: unknown;
+    try {
+      const restarted = await ports.openPairedZotero();
+      if (restarted.debuggerPort === undefined)
+        throw new Error("restarted Paired Zotero has no debugger port");
+      using rdp = await openZoteroRdp(restarted.debuggerPort);
+      const expected =
+        authorizationFixture.native === null
+          ? 0
+          : JSON.parse(authorizationFixture.native).keys.filter(
+              ({ remember }: { remember: boolean }) => remember,
+            ).length;
+      expect(await authorizationCount(rdp)).toBe(expected);
+    } catch (error) {
+      restartFailure = error;
+    }
+    const failures = [restoreFailure, restartFailure].filter(
+      (failure) => failure !== undefined,
+    );
+    if (failures.length > 0)
+      throw new AggregateError(failures, "authorization cleanup failed");
+  }, 120000);
 
   // ── Tier 1 ────────────────────────────────────────────────────────────────
   // The Local API alone, no dialog and no debugging port: the read contract
@@ -201,7 +312,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     });
 
     afterAll(async () => {
-      rdp[Symbol.dispose]();
+      try {
+        await prepareAuthorizationFixture();
+      } finally {
+        rdp[Symbol.dispose]();
+      }
     });
 
     it("grants a one-time key for Allow", async () => {
@@ -403,7 +518,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     });
 
     afterAll(async () => {
-      rdp[Symbol.dispose]();
+      try {
+        await prepareAuthorizationFixture();
+      } finally {
+        rdp[Symbol.dispose]();
+      }
     });
 
     it("grants a one-time key when the dialog's first button is pressed", async () => {
@@ -517,7 +636,11 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     });
 
     afterAll(async () => {
-      await cleanup?.disposeAsync();
+      try {
+        await cleanup?.disposeAsync();
+      } finally {
+        await prepareAuthorizationFixture();
+      }
     }, 120000);
 
     it("records whether a native PATCH loses a concurrent Reader comment", async () => {
@@ -638,34 +761,35 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       let readerTabID = "";
       let pdfDigestBefore = "";
       let workspaceLayout = "";
+      let cleanup: AsyncDisposableStack;
 
       beforeAll(async () => {
+        cleanup = new AsyncDisposableStack();
         rdp = await openZoteroRdp(debuggerPort!);
+        cleanup.defer(() => rdp[Symbol.dispose]());
+        await prepareAuthorizationFixture();
         workspaceLayout = await obEval(
           vaultId!,
           "JSON.stringify(app.workspace.getLayout())",
         );
+        cleanup.defer(async () => {
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(workspaceLayout)}));return true;})()`,
+          );
+        });
         // The PDF is a `vault`-rooted linked file, so it is only readable where
         // a Development Vault stands — which is exactly this block's gate.
         pdfDigestBefore = await digestAttachmentPdf();
         // A digest of nothing would make the closing assertion vacuous.
         expect(pdfDigestBefore).toHaveLength(64);
-        await resetAuthorizations(rdp);
-        // Both halves start with no authorization. Clearing only Zotero's side
-        // would leave ZotLit holding a key Zotero no longer knows: the first
-        // write then answers 401 and the gesture fails instead of asking, and
-        // the failure survives into the next run. Whether ZotLit should
-        // re-authorize on a 401 within one gesture is a separate question —
-        // aidenlx/zotlit#1139 — but the scenario must not create the state.
-        await obEval(
-          vaultId!,
-          "(async()=>{await app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization();return true;})()",
-        );
-        await stubPrompt(rdp, { allow: true, remember: true });
         // Zotero's Reader is opened on the Attachment before anything is
         // written, so "visible in the Zotero Reader" is a claim about a reader
         // that was already showing the document when the write landed.
         readerTabID = await openZoteroReader(rdp);
+        cleanup.defer(async () => {
+          await closeZoteroReader(rdp, readerTabID);
+        });
 
         await obEval(
           vaultId!,
@@ -729,45 +853,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       });
 
       afterAll(async () => {
-        // Every Annotation this block created leaves with it, through Zotero
-        // rather than through ZotLit, so cleanup does not depend on the code
-        // under test.
-        if (createdKey) {
-          await rdp.json(`(async () => {
-            const item = Zotero.Items.getByLibraryAndKey(
-              Zotero.Libraries.userLibraryID,
-              ${JSON.stringify(createdKey)},
-            );
-            if (item) await item.eraseTx();
-            return "erased";
-          })()`);
-        }
-        if (readerTabID) await closeZoteroReader(rdp, readerTabID);
-        const restored = await restorePrompt(rdp);
-        expect(restored.original).toBe(true);
-        await resetAuthorizations(rdp);
-        // Both halves end where they began. Clearing only Zotero's side would
-        // leave the developer's ZotLit holding a key Zotero has forgotten, and
-        // their next manual edit would take a 401 with no dialog — the failure
-        // this block's own setup comment describes.
-        await obEval(
-          vaultId!,
-          "(async()=>{await app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization();return true;})()",
-        ).catch(() => "");
-        if (workspaceLayout) {
-          await obEval(
-            vaultId!,
-            `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(workspaceLayout)}));return true;})()`,
-          );
-        }
-        rdp[Symbol.dispose]();
+        await cleanup.disposeAsync();
       }, 120000);
-
-      // Last in this block, so it covers every write above: ZotLit writes
-      // Annotations, never the PDF the Annotations hang from.
-      it("leaves the Attachment's PDF byte-identical", async () => {
-        expect(await digestAttachmentPdf()).toBe(pdfDigestBefore);
-      });
 
       it("creates an Annotation that reaches Zotero, the page overlay and the card", async () => {
         const created = await obJson<{ kind: string; annotationKey?: string }>(
@@ -789,6 +876,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         expect(created.kind).toBe("created");
         createdKey = created.annotationKey!;
+        cleanup.defer(async () => {
+          await rdp.json(`(async () => {
+            const item = Zotero.Items.getByLibraryAndKey(
+              Zotero.Libraries.userLibraryID,
+              ${JSON.stringify(createdKey)},
+            );
+            if (item) await item.eraseTx();
+            return "erased";
+          })()`);
+        });
 
         // Zotero is the oracle: the record is read straight off the Local API,
         // not out of ZotLit's cache.
@@ -815,7 +912,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `String(!!document.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))`,
+            `String(app.workspace.getLeavesOfType('pdf').some(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -824,7 +921,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `String(!!document.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))`,
+            `String(app.workspace.getLeavesOfType('zotero-annotation-view').some(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')))`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -871,6 +968,68 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
       }, 120000);
 
+      it("saves a comment from a pop-out card's native Scope", async () => {
+        const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)`;
+        const readerPdf = `app.workspace.getLeavesOfType('pdf').find(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))?.view.containerEl`;
+        await obEval(
+          vaultId!,
+          `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];if(!leaf)return false;leaf.view.gestures.onPinCurrentItem();app.workspace.moveLeafToPopout(leaf);return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String((()=>{const cardWin=app.workspace.getLeavesOfType('zotero-annotation-view').find(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))?.view.containerEl.win;return !!cardWin&&cardWin!==(${readerPdf})?.win;})())`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const comment=(${card})?.querySelector('.zt-annot-comment');if(!comment)return false;comment.click();return true;})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(!!(${card})?.querySelector('textarea'))`,
+            {
+              expected: "true",
+            },
+          ),
+        ).toBe(true);
+
+        const shortcutComment = "Saved by pop-out card Mod+Enter";
+        await obEval(
+          vaultId!,
+          `(function(){const editor=(${card}).querySelector('textarea');editor.value=${JSON.stringify(shortcutComment)};editor.dispatchEvent(new editor.win.Event('input',{bubbles:true}));return true;})()`,
+        );
+        const shortcut = JSON.parse(
+          await obEval(
+            vaultId!,
+            `(function(){const editor=(${card}).querySelector('textarea');const mac=editor.win.navigator.platform.startsWith('Mac');const event=new editor.win.KeyboardEvent('keydown',{key:'Enter',metaKey:mac,ctrlKey:!mac,bubbles:true,cancelable:true});editor.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented,open:editor.isConnected,owned:editor.win!==(${readerPdf}).win});})()`,
+          ),
+        ) as { prevented: boolean; open: boolean; owned: boolean };
+        expect(shortcut).toEqual({ prevented: true, open: true, owned: true });
+        expect(
+          await waitFor(
+            async () =>
+              (await readAnnotationState(api, serverID, createdKey)).comment ===
+              shortcutComment,
+          ),
+        ).toBe(true);
+        expect(
+          await obEval(
+            vaultId!,
+            `String(!!(${card})?.querySelector('textarea'))`,
+          ),
+        ).toBe("true");
+        await obEval(
+          vaultId!,
+          `(function(){const leaf=app.workspace.getLeavesOfType('zotero-annotation-view')[0];leaf.detach();app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+        );
+      }, 120000);
+
       it("carries a Zotero-side change back into Obsidian", async () => {
         // Written through Zotero's data layer over RDP rather than through a
         // click in its Reader: the Reader saves the same way, so the Freshness
@@ -890,10 +1049,62 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         expect(
           await obEvalUntil(
             vaultId!,
-            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.read(${JSON.stringify(attachment.key)});return String(document.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')?.textContent.includes(${JSON.stringify(fromZotero)}));})()`,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.read(${JSON.stringify(attachment.key)});return String(app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.textContent.includes(${JSON.stringify(fromZotero)}));})()`,
             { expected: "true" },
           ),
         ).toBe(true);
+      }, 120000);
+
+      it("refreshes external comments by focus and manual action without the Companion", async () => {
+        const liveUpdates =
+          (await obEval(
+            vaultId!,
+            "String(app.plugins.plugins.zotlit.services.settings.current['server.live-update'])",
+          )) === "true";
+        await using restoreLiveUpdates = new AsyncDisposableStack();
+        restoreLiveUpdates.defer(async () => {
+          await obEval(
+            vaultId!,
+            `app.plugins.plugins.zotlit.services.settings.update({'server.live-update':${String(liveUpdates)}});true`,
+          );
+        });
+        await obEval(
+          vaultId!,
+          "app.plugins.plugins.zotlit.services.settings.update({'server.live-update':false});true",
+        );
+
+        const saveInZotero = (comment: string) =>
+          rdp.json(`(async () => {
+            const item = Zotero.Items.getByLibraryAndKey(
+              Zotero.Libraries.userLibraryID,
+              ${JSON.stringify(createdKey)},
+            );
+            item.annotationComment = ${JSON.stringify(comment)};
+            await item.saveTx();
+            return "saved";
+          })()`);
+        const cardHas = (comment: string) =>
+          obEvalUntil(
+            vaultId!,
+            `String(app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)?.textContent.includes(${JSON.stringify(comment)}))`,
+            { expected: "true" },
+          );
+
+        const focused = "Changed while Companion disabled";
+        await saveInZotero(focused);
+        await obEval(
+          vaultId!,
+          "window.dispatchEvent(new FocusEvent('focus'));true",
+        );
+        expect(await cardHas(focused)).toBe(true);
+
+        const manual = "Changed before manual Refresh";
+        await saveInZotero(manual);
+        await obEval(
+          vaultId!,
+          "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.gestures.onRefresh();true",
+        );
+        expect(await cardHas(manual)).toBe(true);
       }, 120000);
 
       it("keeps confirmed surfaces after a committed write loses its response and reread", async () => {
@@ -993,6 +1204,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         restoreLocalApi.defer(async () => {
           await setLocalApi(rdp, true);
         });
+        const retained = await annotationColor(api, serverID, createdKey);
+        expect(retained).not.toBeNull();
+        await obEval(
+          vaultId!,
+          `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(attachmentPath)});if(!app.workspace.getLeavesOfType('pdf').length)await app.workspace.getLeaf('tab').openFile(file);app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+        );
+        expect(
+          await waitFor(async () => {
+            const visible = await visibleAnnotationColors(vaultId!, createdKey);
+            return visible.card === retained && visible.mark === retained;
+          }),
+        ).toBe(true);
 
         await setLocalApi(rdp, false);
         expect(
@@ -1009,6 +1232,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "zotero-db" },
           ),
         ).toBe(true);
+        expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
+          card: retained,
+          mark: retained,
+        });
 
         await setLocalApi(rdp, true);
         expect(
@@ -1025,6 +1252,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "zotero-local-api" },
           ),
         ).toBe(true);
+        expect(await visibleAnnotationColors(vaultId!, createdKey)).toEqual({
+          card: retained,
+          mark: retained,
+        });
       }, 120000);
 
       // Last in this block, so it covers every write above: ZotLit writes

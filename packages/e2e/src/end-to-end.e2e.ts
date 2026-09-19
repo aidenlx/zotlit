@@ -23,6 +23,8 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 import {
+  ANNOTATIONS,
+  ATTACHMENTS,
   COLLECTIONS,
   findScopeCase,
   getFixtureLayout,
@@ -72,6 +74,16 @@ const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
 const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
 const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
 const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
+const annotationAttachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
+const annotationKeys = ANNOTATIONS.filter(
+  ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
+).map(({ key }) => key);
+const annotationKeysByPage = Map.groupBy(
+  ANNOTATIONS.filter(
+    ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
+  ),
+  ({ position }) => position.pageIndex,
+);
 
 async function isObsidianReachable(): Promise<boolean> {
   const result = await runVaultScript(["status"]).catch(() => undefined);
@@ -387,6 +399,71 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     } catch (error) {
       console.warn(
         `obsidian-vault remove --purge failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }, 120000);
+
+  it("shows the same Fixture Annotations in both surfaces with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    try {
+      await obEval(
+        vaultId,
+        `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+      );
+      const expected = [...annotationKeys].sort();
+      const readAnnotations = `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.read(${JSON.stringify(annotationAttachment.key)});return JSON.stringify({source:list?.source.kind??null,keys:(list?.annotations??[]).map(({key})=>key).sort()});})()`;
+      expect(
+        await obEvalUntil(vaultId, readAnnotations, {
+          expected: JSON.stringify({ source: "zotero-db", keys: expected }),
+        }),
+      ).toBe(true);
+      expect(JSON.parse(await obEval(vaultId, readAnnotations))).toEqual({
+        source: "zotero-db",
+        keys: expected,
+      });
+      const visibleCards = `JSON.stringify((()=>{const annotationView=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view;const cards=Array.from(annotationView?.containerEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(Boolean);return [...new Set(cards)].sort();})())`;
+      const cardsReady = await obEvalUntil(vaultId, visibleCards, {
+        expected: JSON.stringify(expected),
+      });
+      if (!cardsReady) {
+        const state = await obEval(
+          vaultId,
+          `JSON.stringify((()=>{const services=app.plugins.plugins.zotlit.services;const leaves=app.workspace.getLeavesOfType('zotero-annotation-view');const active=app.workspace.getActiveFile();const full=active?app.vault.adapter.getFullPath(active.path):null;const session=active?services.pdfAnnotationEditor.sessionForPath(active.path):null;return {count:leaves.length,snapshot:leaves[0]?.view.snapshot??null,active:active?.path??null,session:session?{filePath:session.filePath,target:session.target}:null,resolution:full?services.attachmentResolver.resolve(full):null,fullPath:full,exists:full?require('fs').existsSync(full):false,profileDir:services.zoteroPref.resolvedProfileDir,dataDir:services.zoteroPref.dataDir};})())`,
+        );
+        throw new Error(`Annotation cards did not render: ${state}`);
+      }
+      expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      for (const [pageIndex, annotations] of annotationKeysByPage) {
+        const pageKeys = annotations.map(({ key }) => key).sort();
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `(function(){const pdfView=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(annotationAttachment.path)})?.view;const page=pdfView?.containerEl.querySelector('.page[data-page-number="${pageIndex + 1}"]');page?.scrollIntoView({block:'center'});const marks=Array.from(pdfView?.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(key=>${JSON.stringify(pageKeys)}.includes(key));return JSON.stringify([...new Set(marks)].sort());})()`,
+            { expected: JSON.stringify(pageKeys) },
+          ),
+        ).toBe(true);
+      }
+      expect(
+        await obEval(
+          vaultId,
+          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const text=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.textContent??'';const labels=['Zotero DB','Local API','database source'];return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(annotationAttachment.key)}),sourceLabels:labels.some(label=>text.toLowerCase().includes(label.toLowerCase()))});})()`,
+        ),
+      ).toBe(
+        JSON.stringify({
+          capability: {
+            kind: "read-only",
+            reason: "zotero-unavailable",
+          },
+          sourceLabels: false,
+        }),
+      );
+    } finally {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
       );
     }
   }, 120000);

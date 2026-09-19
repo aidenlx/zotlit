@@ -114,7 +114,7 @@ export interface AnnotViewDeps {
     "available" | "readerTarget" | "readerClosed" | "on"
   >;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
-  pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath">;
+  pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath" | "on">;
   /**
    * The one read and write path for an Attachment's Annotations, so the cards
    * and the reader overlay show one Annotation Source's records rather than
@@ -362,6 +362,17 @@ export class AnnotationView extends ItemView {
         // runs to refresh the drag-insert handle. Sync it here so it tracks
         // the note a drag would land in.
         this.#syncImportHandle();
+      }),
+    );
+
+    this.register(
+      this.#deps.pdfReaders.on("session-added", (filePath) => {
+        if (
+          this.#followMode === "active-tab" &&
+          this.#deps.app.workspace.getActiveFile()?.path === filePath
+        ) {
+          this.#reload();
+        }
       }),
     );
 

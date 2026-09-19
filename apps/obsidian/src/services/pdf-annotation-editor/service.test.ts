@@ -636,6 +636,39 @@ it("exposes each open PDF view as a Reader Session, by the file it holds", async
   expect(service.sessionForPath("attachments/other.pdf")).toBeNull();
 });
 
+it("announces a late PDF session after its resolved target is available", async () => {
+  const reader = pdfReader();
+  const view = pdfView(null, reader);
+  const { app, relayout } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT]),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+  const announced: unknown[] = [];
+  service.on("session-added", (filePath) => {
+    announced.push({
+      filePath,
+      target: service.sessionForPath(filePath)?.target,
+    });
+  });
+
+  Object.assign(view, pdfView("attachments/rougier-2014.pdf", reader));
+  relayout();
+
+  expect(announced).toEqual([
+    {
+      filePath: "attachments/rougier-2014.pdf",
+      target: { attachmentKey: "ABCD2345", itemKey: "WXYZ6789g4711" },
+    },
+  ]);
+});
+
 it("names a standalone attachment in its session, with no parent Item", async () => {
   const view = pdfView("attachments/loose.pdf");
   const { app } = workspace([{ view }]);
