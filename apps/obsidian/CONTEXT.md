@@ -289,12 +289,20 @@ An Attachment whose file is a PDF on this device, so Obsidian's PDF view can hos
 _Avoid_: Openable Attachment (the Zotero-reader sense), Readable Attachment, reader target (see Reader Session)
 
 **Attachment File Link**:
-A Markdown link whose target is an Attachment's own file on this device, written as a `file://` URI. ZotLit writes one from the `fileLink` Template Helper on an Attachment and on an Annotation (which anchors it to `#page=N`), and from Attachment Import's fallback for a blocked source; a hand-written link of the same shape is one too. Names a device-local path, so it is valid only on the device that rendered it.
+A Markdown link whose target is an Attachment's own file on this device, written as a `file://` URI. ZotLit writes one from the `fileLink` Template Helper on an Attachment and on an Annotation (which anchors it to `#page=N` and carries an Annotation Anchor), and from Attachment Import's fallback for a blocked source; a hand-written link of the same shape is one too. Names a device-local path, so it is valid only on the device that rendered it.
 _Avoid_: file link (ambiguous with a vault link), local link, attachment link (covers the Zotero deep link too)
 
 **File Link Capture**:
 Sending a clicked Attachment File Link to Obsidian's PDF view instead of the system handler, when the path resolves to an Obsidian-Openable Attachment. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off.
 _Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
+
+**Annotation Anchor**:
+The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment. Obsidian reads the rest of that fragment and ignores this key, so the `#page=N` beside it still lands on its own.
+_Avoid_: annotation id (that is Obsidian's PDF-native one), annotation param, deep link, annotation target (see Reader Session)
+
+**Mark Landing**:
+Opening or re-aiming a Reader Session so the Annotation an Annotation Anchor names is the selected Annotation Mark, scrolled into view. An Anchor the Annotation reads cannot place lands on the page alone rather than reporting a failure.
+_Avoid_: navigate, reveal (that is the Annotation View's card), jump to annotation, annotation target (see Reader Session)
 
 **Annotation Source**:
 Where the plugin's Annotation reads for an Attachment come from at one moment: the Zotero Local API while Zotero answers, otherwise the Zotero DB. One source at a time for every Attachment; the two never join. A read result carries its source.
@@ -313,7 +321,7 @@ The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, 
 _Avoid_: overlay element, highlight box, mark widget
 
 **Mark Popup**:
-The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover.
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
 **Creation Toolbar**:
