@@ -71,19 +71,17 @@ function useBody(): AnnotViewBody {
 }
 
 function useConditionLines(): string[] {
-  const annotationSource = useAnnotStore((s) => s.annotationSource);
   const attachments = useAnnotStore((s) => s.attachments);
   const followMode = useAnnotStore((s) => s.followMode);
   const zoteroReaderClosed = useAnnotStore((s) => s.zoteroReaderClosed);
   return useMemo(
     () =>
       conditionLines({
-        annotationSource,
         attachments,
         followMode,
         zoteroReaderClosed,
       }),
-    [annotationSource, attachments, followMode, zoteroReaderClosed],
+    [attachments, followMode, zoteroReaderClosed],
   );
 }
 

@@ -105,7 +105,10 @@ function affordanceIn(slot: HTMLElement): HTMLElement | null {
 
 /** The cooldown's remaining seconds, as the affordance prints them. */
 function secondsShown(slot: HTMLElement): string | null {
-  return affordanceIn(slot)?.querySelector("span")?.textContent ?? null;
+  return (
+    affordanceIn(slot)?.querySelector("[data-zt-capability-countdown]")
+      ?.textContent ?? null
+  );
 }
 
 /** The instant the affordance reads a cooldown at, and a deadline 45s past it. */
@@ -159,11 +162,8 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     expect(binding.probes).toHaveLength(PROBE_COUNT);
     expect(failedIn(binding.probes)).toEqual([]);
     expect(binding.supported).toBe(true);
-    // The rest of the Creation Toolbar arrives with creation; what stands here
-    // is the always-present Editing Capability affordance.
-    expect(affordanceIn(reader.toolbarRightEl)?.className).toContain(
-      "clickable-icon",
-    );
+    // A writable attachment shows only the normal editing tools.
+    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
     expect(reader.toolbarRightEl.childElementCount).toBe(1);
     // An attachment with no Annotations leaves the page as Obsidian built it.
     expect(reader.page.div.childElementCount).toBe(0);
@@ -787,9 +787,7 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
     await using _service = service;
     await service.ready;
     expect(annotations.capabilityFor).toHaveBeenCalledWith("ABCD2345");
-    expect(affordanceIn(reader.toolbarRightEl)?.dataset.ztCapabilityTone).toBe(
-      "ready",
-    );
+    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
 
     // A probe that changed what this Attachment may do redraws the one node.
     annotations.setCapability({
@@ -797,8 +795,9 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
       reason: "local-api-disabled",
     });
     const node = affordanceIn(reader.toolbarRightEl)!;
-    expect(node.dataset.ztCapabilityTone).toBe("warning");
-    expect(node.classList.contains("mod-warning")).toBe(true);
+    expect(node.dataset.ztCapabilityTone).toBe("action");
+    expect(node.classList.contains("mod-warning")).toBe(false);
+    expect(node.textContent).toContain("Enable editing");
     expect(node.getAttribute("aria-label")).toContain("local API");
     expect(reader.toolbarRightEl.childElementCount).toBe(1);
   }
@@ -857,7 +856,7 @@ it("hands the affordance's click and its keyboard activation to the one gesture"
   await using service = new PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
-    annotations: annotationReads(),
+    annotations: annotationReads([], { kind: "authorization-required" }),
     capabilityGestures: gestures,
     markGestures: markGestures(),
     settings: readerSettings(),

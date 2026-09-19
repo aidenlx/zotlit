@@ -47,10 +47,9 @@ export interface CapabilityAffordanceProps {
 }
 
 /**
- * Draws the affordance into the reader's right toolbar slot, building its node
- * on the first call and rewriting the contents on every call after — so a
- * caller redraws by calling again, once per capability change and once a second
- * while a cooldown counts down.
+ * Draws the enable-editing affordance into the reader's right toolbar slot,
+ * building its node on the first call and rewriting the contents on every call
+ * after. Removes it when normal editing controls are available.
  *
  * @param slot the reader's right toolbar slot.
  * @returns the node it drew, so a caller can read back what is on screen.
@@ -58,12 +57,15 @@ export interface CapabilityAffordanceProps {
 export function renderCapabilityAffordance(
   slot: HTMLElement,
   { capability, now, onActivate }: CapabilityAffordanceProps,
-): HTMLElement {
-  const { icon, tone, tooltip, spinning, countdown } =
-    editingCapabilityAffordance(capability, now);
+): HTMLElement | null {
+  const affordance = editingCapabilityAffordance(capability, now);
+  if (affordance === null) {
+    removeCapabilityAffordance(slot);
+    return null;
+  }
+  const { icon, tone, tooltip, label, spinning, countdown } = affordance;
   // The button is built with the state it is about to show, and redrawn by
-  // rebuilding its contents: `setIcon` replaces the node's children, so the
-  // countdown is appended after it rather than patched.
+  // replacing the text beside Obsidian's icon.
   const held = affordanceIn(slot);
   const node =
     held ??
@@ -84,13 +86,23 @@ export function renderCapabilityAffordance(
 
   if (held) {
     setTooltip(node, tooltip);
+    node
+      .querySelectorAll(
+        "[data-zt-capability-label], [data-zt-capability-countdown]",
+      )
+      .forEach((child) => child.remove());
     setIcon(node, icon);
   }
   if (spinning) node.querySelector("svg")?.classList.add("zt:animate-spin");
+  node.createSpan({
+    text: label,
+    attr: { "data-zt-capability-label": "" },
+  });
   if (countdown !== null) {
     node.createSpan({
       cls: "zt:text-xs zt:tabular-nums",
       text: String(countdown),
+      attr: { "data-zt-capability-countdown": "" },
     });
   }
   return node;
