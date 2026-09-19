@@ -20,7 +20,7 @@ import type {
   HoverParent,
   HoverPopover as ObsidianHoverPopover,
   IconName,
-  WorkspaceLeaf,
+  WorkspaceLeaf as ObsidianWorkspaceLeaf,
   Instruction,
   MenuPositionDef,
   Modifier,
@@ -354,12 +354,20 @@ export class TFolder extends TAbstractFile {
   }
 }
 
+/**
+ * Minimal WorkspaceLeaf shell. Only the prototype matters here: ZotLit patches
+ * `setEphemeralState` on it to read an Annotation Anchor off an open.
+ */
+export class WorkspaceLeaf {
+  setEphemeralState(_state: unknown): void {}
+}
+
 /** Minimal ItemView shell for tests of plugin-registered views. */
 export class ItemView {
   readonly contentEl: HTMLElement;
   readonly titleEl: HTMLElement;
 
-  constructor(readonly leaf: WorkspaceLeaf) {
+  constructor(readonly leaf: ObsidianWorkspaceLeaf) {
     if (typeof Reflect.get(leaf, "updateHeader") !== "function")
       leaf.updateHeader = () => {};
     const content = globalThis.document?.createElement("div");
@@ -447,7 +455,7 @@ export class TextFileView extends ItemView {
   lastSavedData: string | null = null;
   scope: Scope | null = null;
   requestSave = (): void => {};
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: ObsidianWorkspaceLeaf) {
     super(leaf);
     this.app = (leaf as unknown as { app: App }).app;
   }

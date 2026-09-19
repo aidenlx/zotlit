@@ -2,12 +2,16 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { USER_LIBRARY_ID } from "@/lib/constants";
 import type { Annotation, ResolvedAnnotationTypeName } from "@/lib/zt-annot";
+import type { AnnotationFileLinkAnchor } from "@/lib/zt-annot-anchor";
 
 import {
   annotationToTemplateData,
   withAnnotationCitation,
 } from "./zt-template-annot";
-import type { TemplateAnnotation } from "./zt-template-annot";
+import type {
+  AnnotationTemplateDataInput,
+  TemplateAnnotation,
+} from "./zt-template-annot";
 import type { TemplateAttachment } from "./zt-template-attach";
 
 function makeAnnotation(overrides?: Partial<Annotation>): Annotation {
@@ -46,7 +50,10 @@ const parentAttachment: TemplateAttachment = {
   fileLink: () => "[paper.pdf](file:///abs/paper.pdf)",
 };
 
-function makeTemplateData(overrides?: Partial<Annotation>): TemplateAnnotation {
+function makeTemplateData(
+  overrides?: Partial<Annotation>,
+  fileLink: AnnotationTemplateDataInput["fileLink"] = () => () => null,
+): TemplateAnnotation {
   return annotationToTemplateData({
     annotation: makeAnnotation(overrides),
     tags: [],
@@ -54,8 +61,20 @@ function makeTemplateData(overrides?: Partial<Annotation>): TemplateAnnotation {
     getParentItem: () => null,
     commentToMarkdown: (html) => `md(${html})`,
     annotationImageLink: () => null,
-    fileLink: () => () => null,
+    fileLink,
   });
+}
+
+/** The anchors the app-layer resolver was asked to build a link for. */
+function anchorsFor(
+  overrides?: Partial<Annotation>,
+): (AnnotationFileLinkAnchor | undefined)[] {
+  const anchors: (AnnotationFileLinkAnchor | undefined)[] = [];
+  makeTemplateData(overrides, (anchor) => {
+    anchors.push(anchor);
+    return () => null;
+  });
+  return anchors;
 }
 
 describe("annotation type", () => {
@@ -93,6 +112,39 @@ describe("indexedKey", () => {
     });
 
     expect(result.indexedKey).toBe("ANNO0001g42");
+  });
+});
+
+describe("fileLink", () => {
+  // The page is what Obsidian jumps to; the Indexed Key is what ZotLit lands a
+  // Mark on. Both ride in the one subpath the app layer builds from this.
+  it("anchors to the annotation's page and to the annotation itself", () => {
+    expect(anchorsFor()).toEqual([{ page: 42, annotation: "ANNO0001" }]);
+  });
+
+  it("names a group library's annotation by its scoped Indexed Key", () => {
+    expect(anchorsFor({ groupID: 12, indexedKey: "ANNO0001g12" })).toEqual([
+      { page: 42, annotation: "ANNO0001g12" },
+    ]);
+  });
+
+  // An EPUB or snapshot Annotation has no page, and no reader places a Mark in
+  // one, so the Anchor beside the page goes with it.
+  it("anchors nothing for a position that carries no page", () => {
+    expect(anchorsFor({ position: {} })).toEqual([undefined]);
+  });
+
+  // A profile that tuned its own link keeps it: the template's arguments reach
+  // the helper untouched, so the default anchor is a default and nothing more.
+  it("hands a template's own alias and subpath straight to the helper", () => {
+    const data = makeTemplateData(
+      undefined,
+      () => (alias, subpath) => `${alias ?? ""}|${subpath ?? ""}`,
+    );
+
+    expect(data.fileLink("Open the PDF", "#page=3")).toBe(
+      "Open the PDF|#page=3",
+    );
   });
 });
 

@@ -237,7 +237,7 @@ export function fetchAnnotationsTemplateData(
         getParentItem: () => bundle.parentItem,
         commentToMarkdown: resolvers.commentToMarkdown,
         annotationImageLink: resolvers.annotationImageLink,
-        fileLink: (page) => resolvers.fileLink(bundle.attachment, page),
+        fileLink: (anchor) => resolvers.fileLink(bundle.attachment, anchor),
       }),
     );
   }

@@ -19,6 +19,7 @@ import type {
 } from "@/lib/context/zt-template-item";
 import { defineToString } from "@/lib/to-string";
 import type { Annotation } from "@/lib/zt-annot";
+import type { AnnotationFileLinkAnchor } from "@/lib/zt-annot-anchor";
 import type { Attachment } from "@/lib/zt-attach";
 import type { TemplateCollection } from "@/lib/zt-collection";
 import type { ItemTag } from "@/lib/zt-tag";
@@ -104,13 +105,14 @@ export interface AnnotationResolvers {
   /** Resolve an attachment to its absolute on-disk path; `null` when unresolvable. */
   filePath: (attachment: Attachment) => string | null;
   /**
-   * Build an attachment's file-link helper. Pass a 1-based `page` to default the
-   * helper's subpath to `#page=N` (annotation-level links anchor to their page);
-   * the helper returns `null` when the file is unresolvable.
+   * Build an attachment's file-link helper. Pass the Annotation's page and
+   * Indexed Key to default the helper's subpath to `#page=N&zt-annotation=KEY`
+   * — the page Obsidian jumps to, and the Annotation Anchor ZotLit lands a Mark
+   * on; the helper returns `null` when the file is unresolvable.
    */
   fileLink: (
     attachment: Attachment,
-    page?: number | null,
+    anchor?: AnnotationFileLinkAnchor,
   ) => FallibleTemplateLink;
   /**
    * Build an annotation's excerpt-image link helper, or `null` when the
@@ -231,7 +233,7 @@ export function buildNoteContext(input: NoteContextInput): NoteTemplateContext {
       const data = annotationToTemplateData({
         annotation,
         tags: input.tagsByItemID.get(annotation.itemID) ?? [],
-        fileLink: (page) => input.fileLink(attachment, page),
+        fileLink: (anchor) => input.fileLink(attachment, anchor),
         annotationImageLink: input.annotationImageLink,
         commentToMarkdown: input.commentToMarkdown,
         getParentAttachment: () => tplAttachment,

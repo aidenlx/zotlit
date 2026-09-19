@@ -114,6 +114,8 @@ export class MarkSelection implements Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
   #selected: string | null = null;
+  /** Whether the standing selection declined its popup, as a Landing's does. */
+  #quiet = false;
   /** Where the click that made the selection fell, which a repeat click steps from. */
   #at: MarkSelectionPoint | null = null;
   /** The marks under that point, smallest first, which the stepper walks. */
@@ -203,9 +205,18 @@ export class MarkSelection implements Disposable {
   /**
    * Take this Annotation as the selection, from a surface outside the reader —
    * a click on its card in the Annotation View.
+   *
+   * @param options.popup whether the Mark Popup opens over the selection.
+   *   A Mark Landing passes `false`: the user followed a link to read a
+   *   passage, not for a popover over a document they have only just arrived
+   *   at. The suppression lasts until the next selection, so a page re-render
+   *   does not summon the popup the Landing declined.
    */
-  select(annotationKey: string | null): void {
-    this.#apply(annotationKey);
+  select(
+    annotationKey: string | null,
+    { popup = true }: { popup?: boolean } = {},
+  ): void {
+    this.#apply(annotationKey, null, { popup });
   }
 
   /**
@@ -220,7 +231,7 @@ export class MarkSelection implements Disposable {
       this.#apply(null);
       return;
     }
-    const anchor = this.#anchor();
+    const anchor = this.#quiet ? null : this.#anchor();
     if (!anchor) {
       this.#close();
       return;
@@ -257,7 +268,9 @@ export class MarkSelection implements Disposable {
       point: Point;
       stack: readonly string[];
     } | null = null,
+    { popup = true }: { popup?: boolean } = {},
   ): void {
+    this.#quiet = !popup && key !== null;
     this.#selected = key;
     this.#at =
       key !== null && at !== null

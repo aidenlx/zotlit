@@ -42,6 +42,14 @@ export {
   type ItemRef,
 } from "./queries/item-ref";
 export {
+  ANNOTATION_ANCHOR_KEY,
+  formatAnnotationFragment,
+  formatAnnotationSubpath,
+  parseAnnotationSubpath,
+  type AnnotationFileLinkAnchor,
+  type ParsedAnnotationSubpath,
+} from "./lib/zt-annot-anchor";
+export {
   formatIndexedKey,
   isIndexedKey,
   parseIndexedKey,

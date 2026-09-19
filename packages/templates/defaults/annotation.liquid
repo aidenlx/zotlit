@@ -1,5 +1,5 @@
 {% bq %}
-[!note] Page {{ zt.pageLabel }}
+[!note] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}
 
 {{ zt.imgLink | embed }}{{ zt.text }}
 {% if zt.comment %}

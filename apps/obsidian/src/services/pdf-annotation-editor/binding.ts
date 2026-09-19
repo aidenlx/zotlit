@@ -27,6 +27,7 @@ import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
 
+import { dropPendingAnchor, peekPendingAnchor } from "./anchor-capture";
 import {
   isEditGesture,
   removeCapabilityAffordance,
@@ -34,7 +35,13 @@ import {
 } from "./capability-affordance";
 import { MarkCreation } from "./creation";
 import type { ReaderPage } from "./creation";
-import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
+import { decideMarkLanding } from "./mark-landing";
+import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
+import {
+  groupAnnotationsByPage,
+  renderAnnotationOverlay,
+  scrollMarkIntoView,
+} from "./render";
 import type { PdfPageAnnotation } from "./render";
 import {
   loadedPageOf,
@@ -58,6 +65,15 @@ import { pdfPageSource } from "./text-structure";
 import type { ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
+
+/**
+ * The Landing misses a later answer can still turn into a Mark, so the Anchor
+ * stays on its leaf through them. Every other miss is final.
+ */
+const KEPT_MISSES = new Set<MarkLandingMiss>([
+  "attachment-pending",
+  "annotations-pending",
+]);
 
 /** How often the affordance is redrawn while Zotero's rate limit runs. */
 const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });
@@ -172,8 +188,15 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #controller: PDFViewerController | null = null;
   #marks: ReadonlyMap<number, readonly PdfPageAnnotation[]> = new Map();
   #records: readonly AnnotationRecord[] = [];
+  /** Whether a read of this Attachment's Annotations has answered yet. */
+  #read = false;
   /** The selected Annotation Mark of this view; `null` until one can be made. */
   #selection: MarkSelection | null = null;
+  /**
+   * The Mark an Annotation Anchor asked for, waiting on the page it sits on to
+   * render. `null` while no Landing is in flight.
+   */
+  #landing: MarkLandingTarget | null = null;
   /** The creation surfaces of this view; `null` until they can be mounted. */
   #creation: MarkCreation | null = null;
   /**
@@ -280,6 +303,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
     return this.#gesturing;
   }
 
+  /**
+   * Honour the Annotation Anchor waiting on this view's leaf, once the marks on
+   * screen match the last read. Safe to call for a view that has none: each
+   * Anchor is honoured once, and one that cannot be placed leaves the reader on
+   * the page Obsidian already jumped to.
+   */
+  land(): void {
+    void this.refreshed.then(() => this.#land());
+  }
+
   load(): void {
     this.#probes.record(probeFileView(this.#view));
     const filePath = openFilePathOf(this.#view);
@@ -333,7 +366,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
           }
         : null,
     );
-    if (!this.supported || this.#attachment.kind !== "resolved") return;
+    if (!this.supported || this.#attachment.kind !== "resolved") {
+      // No read runs for this view, so an Anchor waiting on its leaf is
+      // answered here rather than off a refresh that never comes.
+      this.land();
+      return;
+    }
     const { attachmentKey } = this.#attachment;
     this.#mountSelection(attachmentKey);
     this.#mountToolbar();
@@ -384,6 +422,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       // PDF.js drops every child it does not keep on a zoom, a rotation and a
       // page recycle, so each render rebuilds this page's marks from data.
       this.#paint(event.pageNumber - 1);
+      // A Landing waiting on this page has its Mark now that the page is
+      // painted, which is the catch-up Obsidian's own subpath highlight lacks.
+      if (this.#landing?.pageIndex === event.pageNumber - 1)
+        this.#applyLanding();
       // The re-render can have wiped the mark the popup hangs over, so its
       // anchor is taken from the page as it now stands.
       this.#selection?.sync();
@@ -395,6 +437,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
       return;
     }
     this.#repaint();
+    // An Anchor that arrived before the viewer did waited for this: the pages
+    // it asks about exist only once the controller stands.
+    this.land();
   }
 
   /**
@@ -595,6 +640,73 @@ export class PdfViewBinding implements Disposable, HoverParent {
     });
   }
 
+  /**
+   * Decide the Anchor this view's leaf carries, and act on it. The Annotation's
+   * own page wins over the page the link recorded, so a link written before the
+   * PDF was replaced still lands on its passage.
+   *
+   * An Anchor that cannot be honoured leaves the reader on Obsidian's own page
+   * jump, in silence: a `debug` record names the reason, and nothing is drawn
+   * or announced. A miss waiting on a source that has not answered is kept for
+   * it; every other miss is final and the Anchor goes with it.
+   */
+  #land(): void {
+    if (this.#surfaces.disposed || !this.supported) return;
+    const { leaf } = this.#view;
+    const anchor = peekPendingAnchor(leaf);
+    const controller = this.#controller;
+    // The pages a Landing asks about exist only behind the viewer child, so an
+    // Anchor that arrived first waits where it is; `#attach` asks again.
+    if (!anchor || !controller) return;
+
+    const landing = decideMarkLanding({
+      anchor,
+      attachment: this.#attachment,
+      read: this.#read,
+      records: this.#records,
+      marks: this.#marks,
+      rendered: this.#rendered,
+    });
+    if (landing.kind === "drop") return;
+    if (landing.kind === "page") {
+      logger.debug("An Annotation Anchor did not reach its Mark", {
+        path: this.filePath,
+        annotationKey: anchor.annotation,
+        reason: landing.reason,
+      });
+      if (!KEPT_MISSES.has(landing.reason)) dropPendingAnchor(leaf);
+      return;
+    }
+
+    dropPendingAnchor(leaf);
+    this.#landing = {
+      annotationKey: landing.annotationKey,
+      pageIndex: landing.pageIndex,
+    };
+    logger.debug("An Annotation Anchor reached its Mark", {
+      path: this.filePath,
+      annotationKey: landing.annotationKey,
+      page: landing.pageIndex + 1,
+      rendered: landing.kind === "select",
+    });
+    // A page PDF.js has not built yet is Obsidian's own jump to make; the
+    // render it triggers is what the waiting Landing lands on.
+    if (landing.kind === "wait")
+      controller.applySubpath(`#page=${landing.pageIndex + 1}`);
+    else this.#applyLanding();
+  }
+
+  /** Selects the Landing's Mark without a popup, and scrolls it into view. */
+  #applyLanding(): void {
+    const landing = this.#landing;
+    if (!landing) return;
+    this.#landing = null;
+    this.#selection?.select(landing.annotationKey, { popup: false });
+    const page =
+      this.#controller && pageViewOf(this.#controller, landing.pageIndex + 1);
+    if (page) scrollMarkIntoView(page, landing.annotationKey);
+  }
+
   /** Reads this Attachment's Annotations and redraws every page they touch. */
   #refresh(): void {
     if (this.#attachment.kind !== "resolved") return;
@@ -609,8 +721,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
             path: this.filePath,
             attachmentKey,
           });
+          this.#land();
           return;
         }
+        this.#read = true;
         this.#records = list.annotations;
         this.#marks = groupAnnotationsByPage(list.annotations);
         logger.debug("Annotation marks rebuilt for a PDF view", {
@@ -623,6 +737,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
         // A mark the read retired takes its selection with it; one that moved
         // takes the popup along.
         this.#selection?.sync();
+        // The Attachment's marks now stand, which is what an Anchor waiting on
+        // this view — a cold open, or a read that answered after it — needs.
+        this.#land();
       })
       .catch((error: unknown) => {
         logger.warn("Failed to read the annotations of an open PDF", {
@@ -655,6 +772,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
 
   /** Leaves the reader as Obsidian built it, whatever this binding painted. */
   #unpaint(): void {
+    this.#landing = null;
     this.#marks = new Map();
     this.#records = [];
     this.#repaint();
