@@ -154,14 +154,10 @@ export function createObsidianAttachmentReader(
       }
       // Obsidian's PDF view reads `#page=N` and the rest of its subpath
       // grammar off `eState.subpath`; an absent subpath opens at the start.
-      await app.workspace
-        .getLeaf(pane)
-        .openFile(
-          file,
-          attachment.subpath
-            ? { eState: { subpath: attachment.subpath } }
-            : undefined,
-        );
+      const leaf = app.workspace.getLeaf(pane);
+      await (attachment.subpath
+        ? leaf.openFile(file, { eState: { subpath: attachment.subpath } })
+        : leaf.openFile(file));
       onOpened?.();
     },
   };

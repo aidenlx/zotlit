@@ -157,7 +157,7 @@ describe("createObsidianAttachmentReader", () => {
 
     await reader.open(attachment, false);
 
-    expect(openFile).toHaveBeenCalledWith(file, undefined);
+    expect(openFile).toHaveBeenCalledWith(file);
   });
 
   it("lands on the page a subpath names", async () => {
