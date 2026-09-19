@@ -165,6 +165,50 @@ export interface CommentDraft {
   state: CommentDraftState;
 }
 
+type CommentWriteDecision =
+  | { kind: "drop" }
+  | { kind: "retain" }
+  | { kind: "update"; draft: CommentDraft };
+
+/** Decide what one completed comment request leaves in repository memory. */
+function commentDraftAfterWrite(
+  current: CommentDraft,
+  submittedText: string,
+  outcome: MutationState,
+): CommentWriteDecision {
+  switch (outcome.kind) {
+    case "idle":
+      return sameComment(current.text, submittedText)
+        ? { kind: "drop" }
+        : {
+            kind: "update",
+            draft: {
+              ...current,
+              baseline: submittedText,
+              state: { kind: "editing" },
+            },
+          };
+    case "conflict":
+      return {
+        kind: "update",
+        draft: {
+          ...current,
+          state: { kind: "conflict", fresh: outcome.conflict.fresh ?? "" },
+        },
+      };
+    case "failed":
+      return {
+        kind: "update",
+        draft: {
+          ...current,
+          state: { kind: "failed", failure: outcome.failure },
+        },
+      };
+    case "pending":
+      return { kind: "retain" };
+  }
+}
+
 export interface AnnotationRepositoryEvents {
   /**
    * The list this Attachment holds was superseded. A consumer re-reads and
@@ -189,6 +233,8 @@ export interface AnnotationRepositoryEvents {
   "mutation-changed": (annotationKey: string) => void;
   /** One shared comment draft moved. */
   "comment-draft-changed": (annotationKey: string) => void;
+  /** A database switch hid a draft that belongs to the previous database. */
+  "comment-draft-hidden": (annotationKey: string) => void;
   /** A complete read confirmed that an Annotation no longer exists. */
   "annotation-deleted": (annotationKey: string, attachmentKey: string) => void;
   /**
@@ -585,30 +631,12 @@ export class AnnotationRepository extends Service<void> {
     );
     const current = this.#commentDrafts.get(id);
     if (!current || current.state.kind === "conflict") return outcome;
-    if (outcome.kind === "idle") {
-      if (sameComment(current.text, submittedText)) {
-        this.#dropCommentDraft(annotationKey, submitted.serverID);
-      } else {
-        this.#commentDrafts.set(id, {
-          ...current,
-          baseline: submittedText,
-          state: { kind: "editing" },
-        });
-        this.#emitter.emit("comment-draft-changed", annotationKey);
-      }
-    } else if (outcome.kind === "conflict") {
-      const fresh = outcome.conflict.fresh ?? "";
-      this.#commentDrafts.set(id, {
-        ...current,
-        state: { kind: "conflict", fresh },
-      });
-      this.#emitter.emit("comment-draft-changed", annotationKey);
-    } else if (outcome.kind === "failed") {
-      this.#setCommentDraft(current, {
-        kind: "failed",
-        failure: outcome.failure,
-      });
-    }
+    this.#applyCommentWriteDecision({
+      annotationKey,
+      current,
+      submittedText,
+      outcome,
+    });
     return outcome;
   }
 
@@ -682,33 +710,36 @@ export class AnnotationRepository extends Service<void> {
     }
     const current = this.#commentDrafts.get(id);
     if (!current) return outcome;
-    if (outcome.kind === "idle") {
-      if (sameComment(current.text, submittedText)) {
-        this.#dropCommentDraft(annotationKey, draft.serverID);
-      } else {
-        this.#commentDrafts.set(id, {
-          ...current,
-          baseline: submittedText,
-          state: { kind: "editing" },
-        });
-        this.#emitter.emit("comment-draft-changed", annotationKey);
-      }
-    } else if (outcome.kind === "conflict") {
-      this.#commentDrafts.set(id, {
-        ...current,
-        state: {
-          kind: "conflict",
-          fresh: outcome.conflict.fresh ?? "",
-        },
-      });
-      this.#emitter.emit("comment-draft-changed", annotationKey);
-    } else if (outcome.kind === "failed") {
-      this.#setCommentDraft(current, {
-        kind: "failed",
-        failure: outcome.failure,
-      });
-    }
+    this.#applyCommentWriteDecision({
+      annotationKey,
+      current,
+      submittedText,
+      outcome,
+    });
     return outcome;
+  }
+
+  #applyCommentWriteDecision({
+    annotationKey,
+    current,
+    submittedText,
+    outcome,
+  }: {
+    annotationKey: string;
+    current: CommentDraft;
+    submittedText: string;
+    outcome: MutationState;
+  }): void {
+    const decision = commentDraftAfterWrite(current, submittedText, outcome);
+    if (decision.kind === "drop") {
+      this.#dropCommentDraft(annotationKey, current.serverID);
+    } else if (decision.kind === "update") {
+      this.#commentDrafts.set(
+        commentDraftID(current.serverID, annotationKey),
+        decision.draft,
+      );
+      this.#emitter.emit("comment-draft-changed", annotationKey);
+    }
   }
 
   /**
@@ -1436,21 +1467,21 @@ export class AnnotationRepository extends Service<void> {
 
   /** Reconcile drafts only against a complete read from their own database. */
   #reconcileCommentDrafts(
-    source: LocalApiSource,
+    serverID: string,
     attachmentKey: string,
     annotations: readonly AnnotationRecord[],
   ): void {
     const records = new Map(annotations.map((record) => [record.key, record]));
     for (const draft of this.#commentDrafts.values()) {
       if (
-        draft.serverID !== source.serverID ||
+        draft.serverID !== serverID ||
         draft.attachmentKey !== attachmentKey
       ) {
         continue;
       }
       const record = records.get(draft.annotationKey);
       if (!record) {
-        this.#dropCommentDraft(draft.annotationKey, source.serverID);
+        this.#dropCommentDraft(draft.annotationKey, serverID);
         this.#settle(draft.annotationKey, IDLE);
         this.#emitter.emit(
           "annotation-deleted",
@@ -1461,7 +1492,7 @@ export class AnnotationRepository extends Service<void> {
       }
       const fresh = record.comment ?? "";
       const save = this.#commentSaves.get(
-        commentDraftID(source.serverID, draft.annotationKey),
+        commentDraftID(serverID, draft.annotationKey),
       );
       if (draft.state.kind === "pending") {
         if (
@@ -1470,7 +1501,7 @@ export class AnnotationRepository extends Service<void> {
           sameComment(fresh, save.submittedText)
         ) {
           this.#commentDrafts.set(
-            commentDraftID(source.serverID, draft.annotationKey),
+            commentDraftID(serverID, draft.annotationKey),
             { ...draft, baseline: fresh },
           );
           this.#emitter.emit("comment-draft-changed", draft.annotationKey);
@@ -1478,20 +1509,17 @@ export class AnnotationRepository extends Service<void> {
         continue;
       }
       if (sameComment(fresh, draft.text)) {
-        this.#dropCommentDraft(draft.annotationKey, source.serverID);
+        this.#dropCommentDraft(draft.annotationKey, serverID);
         continue;
       }
       if (sameComment(fresh, draft.baseline)) continue;
       if (sameComment(draft.text, draft.baseline)) {
-        this.#commentDrafts.set(
-          commentDraftID(source.serverID, draft.annotationKey),
-          {
-            ...draft,
-            baseline: fresh,
-            text: fresh,
-            state: { kind: "editing" },
-          },
-        );
+        this.#commentDrafts.set(commentDraftID(serverID, draft.annotationKey), {
+          ...draft,
+          baseline: fresh,
+          text: fresh,
+          state: { kind: "editing" },
+        });
         this.#emitter.emit("comment-draft-changed", draft.annotationKey);
         continue;
       }
@@ -1512,16 +1540,21 @@ export class AnnotationRepository extends Service<void> {
     }
   }
 
-  /** Reconcile only the Local API result Query Core accepted for publication. */
+  /** Reconcile only a complete result Query Core accepted for publication. */
   #reconcilePublishedDrafts(
     queryKey: QueryKey,
     attachmentKey: string,
     list: AnnotationList | null,
   ): void {
-    if (list?.source.kind !== "zotero-local-api") return;
+    if (!list) return;
     const held = this.#queries.peek<AnnotationList>(queryKey);
     if (held?.status !== "fresh" || held.value !== list) return;
-    this.#reconcileCommentDrafts(list.source, attachmentKey, list.annotations);
+    const serverID =
+      list.source.kind === "zotero-local-api"
+        ? list.source.serverID
+        : list.source.database.serverID;
+    if (serverID === null) return;
+    this.#reconcileCommentDrafts(serverID, attachmentKey, list.annotations);
   }
 
   /**
@@ -1604,7 +1637,8 @@ export class AnnotationRepository extends Service<void> {
           this.#commentDraftSources.get(draft.annotationKey) === draft.serverID
         ) {
           this.#commentDraftSources.delete(draft.annotationKey);
-          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+          this.#cancelCommentSave(draft.annotationKey, draft.serverID);
+          this.#emitter.emit("comment-draft-hidden", draft.annotationKey);
         }
       }
       for (const { key } of this.#publishedLists.get(attachmentKey)

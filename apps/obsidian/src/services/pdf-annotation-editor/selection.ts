@@ -240,6 +240,13 @@ export class MarkSelection implements Disposable {
       }),
     );
     this.#surfaces.defer(
+      this.#deps.annotations.on("comment-draft-hidden", (annotationKey) => {
+        if (annotationKey !== this.#selected || !this.#commenting) return;
+        this.#closeCommentEditor();
+        this.#popup?.refresh();
+      }),
+    );
+    this.#surfaces.defer(
       this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
         if (annotationKey !== this.#selected) return;
         this.#closeCommentEditor();

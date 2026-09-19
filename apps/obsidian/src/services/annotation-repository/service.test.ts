@@ -584,6 +584,57 @@ it("names comment drafts by Zotero database as well as Annotation key", async ()
   expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("First database");
 });
 
+it("hides an old database draft and cancels its save schedule", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  let answering = true;
+  const { repository, client, dbEvents, prefEvents, requests, serverEvents } =
+    await writable(
+      stack,
+      {
+        root: () =>
+          answering ? rootOk({ "Zotero-Server-ID": serverID }) : unreachable(),
+        children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
+      },
+      { key: REMEMBERED_KEY },
+    );
+  vi.useFakeTimers();
+  try {
+    repository.editComment("PUPR5FG5", "First database");
+    await vi.advanceTimersByTimeAsync(500);
+    const hidden = new Promise<string>((resolve) => {
+      stack.defer(repository.on("comment-draft-hidden", resolve));
+    });
+
+    answering = false;
+    const lost = nextChange(repository);
+    freshnessSignal(serverEvents);
+    await lost;
+    serverID = "Zzzz11119999";
+    client.$client.exec(
+      `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
+    );
+    dbEvents.emit("changed");
+    await repository.read("RGRPDF24");
+    await expect(hidden).resolves.toBe("PUPR5FG5");
+
+    answering = true;
+    prefEvents.emit("resolved-changed");
+    await repository.probe();
+    await repository.read("RGRPDF24");
+    repository.editComment("PUPR5FG5", "Second database");
+    const sent = requests.length;
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("rejects a queued write when another Zotero database takes the same key", async () => {
   await using stack = new AsyncDisposableStack();
   let serverID = SERVER_ID;
@@ -1188,6 +1239,47 @@ it("requires a choice when Zotero changes a drafted comment", async () => {
   ).toEqual([]);
 });
 
+it("requires a choice when the verified database changes a draft after API loss", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering = true;
+  const { repository, client, dbEvents, serverEvents } = await writable(stack, {
+    root: () => (answering ? rootOk() : unreachable()),
+  });
+  repository.editComment("PUPR5FG5", "My offline draft");
+
+  answering = false;
+  const lost = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await lost;
+  client.$client.exec(`
+    update libraries set clientVersion = 38 where libraryID = 1;
+    update itemAnnotations set comment = 'Changed in Zotero' where itemID = 48;
+    update items set clientVersion = 38 where itemID = 48;
+  `);
+  dbEvents.emit("changed");
+
+  const list = await repository.read("RGRPDF24");
+
+  expect(list?.source).toMatchObject({
+    kind: "zotero-db",
+    database: { serverID: SERVER_ID },
+    libraryRevision: 38,
+  });
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    baseline: "",
+    text: "My offline draft",
+    state: { kind: "conflict", fresh: "Changed in Zotero" },
+  });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({
+    kind: "conflict",
+    conflict: {
+      write: "comment",
+      attempted: "My offline draft",
+      fresh: "Changed in Zotero",
+    },
+  });
+});
+
 it("applies the chosen draft against the fresh version and comment field only", async () => {
   await using stack = new AsyncDisposableStack();
   let records = ROUGIER_ANNOTATIONS;
@@ -1376,6 +1468,51 @@ it("discards a draft only when its own source confirms deletion", async () => {
 
   expect(await deleted).toBe("PUPR5FG5");
   expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+});
+
+it("discards a queued draft when the verified database confirms deletion after API loss", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    let answering = true;
+    const { repository, client, dbEvents, requests, serverEvents } =
+      await writable(stack, {
+        root: () => (answering ? rootOk() : unreachable()),
+      });
+    const sent = requests.length;
+    repository.editComment("PUPR5FG5", "Never recreate this annotation");
+    const deleted = new Promise<string>((resolve) => {
+      stack.defer(repository.on("annotation-deleted", resolve));
+    });
+
+    answering = false;
+    const lost = nextChange(repository);
+    freshnessSignal(serverEvents);
+    await lost;
+    client.$client.exec(`
+      update libraries set clientVersion = 38 where libraryID = 1;
+      delete from itemAnnotations where itemID = 48;
+      delete from items where itemID = 48;
+    `);
+    dbEvents.emit("changed");
+
+    const list = await repository.read("RGRPDF24");
+    await expect(deleted).resolves.toBe("PUPR5FG5");
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(list?.source).toMatchObject({
+      kind: "zotero-db",
+      database: { serverID: SERVER_ID },
+      libraryRevision: 38,
+    });
+    expect(list?.annotations.map(({ key }) => key)).not.toContain("PUPR5FG5");
+    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("keeps a draft when the replacement read fails", async () => {
