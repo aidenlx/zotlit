@@ -114,15 +114,35 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
     stroke: "#ffd400",
     "stroke-width": "3",
   });
-  // The note's folded corner is drawn over its rounded body, and takes its
-  // paper colour from the stylesheet: `var()` never substitutes in an SVG
-  // presentation attribute, so a `fill` attribute here would render black.
+  // The note draws a glyph in lucide's idiom: a filled, stroked body with its
+  // bottom-right corner cut, and that fold's crease as an unfilled stroke,
+  // both mapped onto the stored rect by the group's own transform.
   const note = markIn(page, "C94NJNYG");
   expect(note.childNodes).toHaveLength(2);
+  // The rect is 22 x 22 page units, mapped from lucide's 24-unit grid; the
+  // top carries the same float noise `round()` elsewhere in this file exists
+  // to absorb.
+  expect(note.getAttribute("transform")).toBe(
+    `translate(566.901 171.60699999999997) scale(${22 / 24} ${22 / 24})`,
+  );
+  expect(note.getAttribute("stroke")).toBe("#ffd400");
+  expect([...note.classList].toSorted()).toEqual([
+    "zt-pdf-annotation-mark",
+    "zt-pdf-annotation-note-icon",
+  ]);
+  expect([...note.firstElementChild!.classList]).toEqual([
+    "zt-pdf-annotation-note-fill",
+  ]);
+  expect(note.firstElementChild!.getAttribute("fill")).toBe("#ffd400");
+  // The fold's stroke inherits from the group, not an attribute of its own:
+  // an SVG presentation attribute never substitutes `var()`, so a `stroke`
+  // attribute set through the stylesheet's accent variable would render
+  // black in either theme.
   expect([...note.lastElementChild!.classList]).toEqual([
-    "zt-pdf-annotation-note-fold",
+    "zt-pdf-annotation-note-crease",
   ]);
   expect(note.lastElementChild!.getAttribute("fill")).toBeNull();
+  expect(note.lastElementChild!.getAttribute("stroke")).toBeNull();
   // The free text is the comment, at the size Zotero stored.
   expect(markIn(page, "HRK7BG32").textContent).toBe(
     "Making figures is hard :(",
