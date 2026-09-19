@@ -3,7 +3,6 @@ import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 
 import {
   annotationTypeToName,
-  formatIndexedKey,
   getAnnotationsByParent,
   getAttachmentByKey,
   getLibraries,
@@ -240,6 +239,10 @@ interface HeldAnnotation {
   record: AnnotationRecord;
 }
 
+type ConfirmedWrite =
+  | { kind: "record"; record: AnnotationRecord; write: "color" | "comment" }
+  | { kind: "created"; record: AnnotationRecord }
+  | { kind: "deleted"; annotationKey: string };
 /** What one create ended with. */
 export type CreateOutcome =
   /** @param annotationKey the Indexed Key Zotero generated. */
@@ -306,6 +309,22 @@ export class AnnotationRepository extends Service<void> {
   readonly #commentDraftSources = new Map<string, string>();
   /** One explicit revalidation per visible Attachment. */
   readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
+  /** Verified database identity and revision for each Attachment read. */
+  readonly #databaseSources = new Map<string, DatabaseAnnotationSource>();
+  /** Last accepted database namespace, retained while a refresh is pending. */
+  readonly #databaseServerIDs = new Map<string, string | null>();
+  /** The whole collection currently published to both surfaces. */
+  readonly #publishedLists = new Map<string, AnnotationList>();
+  readonly #publishedStatuses = new Map<
+    string,
+    Held<AnnotationList>["status"]
+  >();
+  /** Highest acknowledged API Library revision each database Library needs. */
+  readonly #acknowledgedRevisions = new Map<string, number>();
+  /** Successful API writes a later complete API list must include. */
+  readonly #confirmedWrites = new Map<string, ConfirmedWrite[]>();
+  /** Gives each database acquisition a separate query-cache generation. */
+  #databaseGeneration = 0;
   readonly #writeToken;
 
   ready: Promise<void>;
@@ -332,9 +351,32 @@ export class AnnotationRepository extends Service<void> {
    */
   async read(attachmentKey: string): Promise<AnnotationList | null> {
     const { queryKey, read } = this.#activePartition(attachmentKey);
-    const list = await this.#queries.read(queryKey, read);
-    this.#reconcilePublishedDrafts(queryKey, attachmentKey, list);
-    return list;
+    const candidate = await this.#queries.read(queryKey, read);
+    if (candidate && this.#canPublish(attachmentKey, candidate, queryKey)) {
+      if (candidate.source.kind === "zotero-db") {
+        this.#adoptDatabaseSource(attachmentKey, candidate.source);
+      } else if (
+        coversConfirmations(candidate, this.#confirmedWrites.get(attachmentKey))
+      ) {
+        this.#confirmedWrites.delete(attachmentKey);
+      }
+      this.#publishedLists.set(attachmentKey, candidate);
+      this.#publishedStatuses.set(
+        attachmentKey,
+        this.#queries.peek<AnnotationList>(queryKey)?.status ?? "fresh",
+      );
+      this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
+      return candidate;
+    }
+    const published = this.#published(attachmentKey)?.value;
+    if (
+      candidate?.source.kind === "zotero-local-api" &&
+      published?.source.kind === "zotero-local-api" &&
+      candidate.source.serverID === published.source.serverID
+    ) {
+      this.#queries.update<AnnotationList>(queryKey, () => published);
+    }
+    return published ?? null;
   }
 
   /**
@@ -351,6 +393,9 @@ export class AnnotationRepository extends Service<void> {
           attachmentKey,
           error,
         });
+        if (this.#publishedLists.has(attachmentKey)) {
+          this.#publishedStatuses.set(attachmentKey, "failed");
+        }
         return this.peek(attachmentKey)?.value ?? null;
       })
       .finally(() => {
@@ -365,13 +410,18 @@ export class AnnotationRepository extends Service<void> {
   /** Probes source availability, refreshes the active adapter, then reads it. */
   async #refresh(attachmentKey: string): Promise<AnnotationList | null> {
     await this.#localApi.probe();
-    if (this.#localApi.demandSource() === null) await this.#db.refresh();
-    const { queryKey, read } = this.#activePartition(attachmentKey);
-    this.#queries.invalidate(queryKey);
+    if (this.#compatibleApiSource(attachmentKey) === null) {
+      await this.#db.refresh();
+    }
+    const { queryKey } = this.#activePartition(attachmentKey);
     this.#emitter.emit("annotations-changed", attachmentKey);
-    const list = await this.#queries.read(queryKey, read);
-    this.#reconcilePublishedDrafts(queryKey, attachmentKey, list);
-    return list;
+    this.#queries.invalidate(queryKey);
+    const value = await this.read(attachmentKey);
+    const status = this.#queries.peek<AnnotationList>(queryKey)?.status;
+    if (value && status === "failed") {
+      this.#publishedStatuses.set(attachmentKey, status);
+    }
+    return value;
   }
 
   /**
@@ -382,8 +432,7 @@ export class AnnotationRepository extends Service<void> {
    * @returns null while no read has answered for the Attachment.
    */
   peek(attachmentKey: string): Held<AnnotationList> | null {
-    const { queryKey } = this.#activePartition(attachmentKey);
-    return this.#queries.peek<AnnotationList>(queryKey);
+    return this.#published(attachmentKey);
   }
 
   /**
@@ -585,7 +634,7 @@ export class AnnotationRepository extends Service<void> {
     if (!parsed) {
       return { kind: "failed", failure: { kind: "unknown-annotation" } };
     }
-    if (!this.#localApi.demandSource()) {
+    if (!this.#compatibleApiSource(attachmentKey)) {
       return { kind: "failed", failure: { kind: "db-source" } };
     }
     const whole = { ...draft, parentKey: parsed.key };
@@ -601,12 +650,16 @@ export class AnnotationRepository extends Service<void> {
 
     const library = libraryPath(parsed);
     const request = createRequest(library, whole, this.#writeToken());
+    const source = this.#compatibleApiSource(attachmentKey);
     const reply = await this.#localApi.authorizedSend(request.path, {
       library,
       method: request.method,
       headers: request.headers,
       body: request.body,
     });
+    if (!source || !(await this.#apiSourceStillBound(attachmentKey, source))) {
+      return { kind: "failed", failure: { kind: "server-changed" } };
+    }
     if ("failure" in reply) {
       logger.debug("Zotero did not confirm an annotation create", {
         attachmentKey,
@@ -617,7 +670,7 @@ export class AnnotationRepository extends Service<void> {
     }
 
     const created = readCreateResult(reply.value.text, {
-      parentKey: parsed.key,
+      parentKey: attachmentKey,
       type: whole.type,
     });
     if ("failure" in created) {
@@ -625,13 +678,25 @@ export class AnnotationRepository extends Service<void> {
       return { kind: "failed", failure: created.failure };
     }
 
-    const annotationKey = formatIndexedKey(created.value, parsed.groupID);
+    const annotationKey = created.value.key;
+    this.#rememberAcknowledgedRevision(attachmentKey, reply.value.headers);
+    const { queryKey } = this.#activePartition(attachmentKey);
+    const record = fromLocalApi(created.value);
+    this.#queries.update<AnnotationList>(queryKey, (list) => ({
+      ...list,
+      annotations: [...list.annotations, record],
+    }));
+    this.#publishQuery(attachmentKey, queryKey);
+    await this.#refreshConfirmed(attachmentKey, {
+      kind: "created",
+      record,
+    });
     logger.debug("Zotero created an annotation", {
       attachmentKey,
       annotationKey,
       type: whole.type,
     });
-    await this.refresh(attachmentKey);
+    this.#emitter.emit("annotations-changed", attachmentKey);
     return { kind: "created", annotationKey };
   }
 
@@ -749,11 +814,14 @@ export class AnnotationRepository extends Service<void> {
    * @param attachmentKey the Attachment, or null for the session itself.
    */
   #capability(attachmentKey: string | null): EditingCapability {
-    const capability = editingCapabilityOf(
-      this.#localApi.state,
-      this.#localApi.writeStateFor(attachmentKey),
-      this.#now,
-    );
+    const capability =
+      this.#localApi.demandSource() && !this.#compatibleApiSource(attachmentKey)
+        ? ({ kind: "read-only", reason: "server-changed" } as const)
+        : editingCapabilityOf(
+            this.#localApi.state,
+            this.#localApi.writeStateFor(attachmentKey),
+            this.#now,
+          );
     const described = describeCapability(capability);
     if (this.#lastCapability.get(attachmentKey) === described) {
       logger.trace("Editing capability read", { attachmentKey, capability });
@@ -803,7 +871,7 @@ export class AnnotationRepository extends Service<void> {
         failure: { kind: "unknown-annotation" },
       });
     }
-    if (!this.#localApi.demandSource()) {
+    if (!this.#compatibleApiSource(held.attachmentKey)) {
       return this.#settle(annotationKey, {
         kind: "failed",
         failure: { kind: "db-source" },
@@ -832,12 +900,28 @@ export class AnnotationRepository extends Service<void> {
       key: parsed.key,
       version,
     });
+    const source = this.#compatibleApiSource(held.attachmentKey);
     const reply = await this.#localApi.authorizedSend(path, {
       library,
       method,
       headers,
       body,
     });
+    if (
+      !source ||
+      !(await this.#apiSourceStillBound(held.attachmentKey, source))
+    ) {
+      if (
+        this.#databaseSources.get(held.attachmentKey)?.database.serverID !==
+        source?.serverID
+      ) {
+        return { kind: "failed", failure: { kind: "server-changed" } };
+      }
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "server-changed" },
+      });
+    }
     if ("failure" in reply) {
       logger.debug("Zotero refused a write", {
         annotationKey,
@@ -858,8 +942,28 @@ export class AnnotationRepository extends Service<void> {
     }
 
     logger.debug("Zotero took a write", { annotationKey, method });
-    await this.refresh(held.attachmentKey);
-    await this.#applyWrite(held, annotationKey, command.settle ?? "re-read");
+    this.#rememberAcknowledgedRevision(held.attachmentKey, reply.value.headers);
+    const applied = await this.#applyWrite(held, annotationKey, {
+      write: command.write,
+      settle: command.settle ?? "re-read",
+    });
+    if ("failure" in applied) {
+      await this.refresh(held.attachmentKey);
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: applied.failure,
+      });
+    }
+    if (command.settle === "drop") this.#dropCommentDraft(annotationKey);
+    this.#publishQuery(held.attachmentKey, held.queryKey);
+    if (applied.value.kind === "deleted") {
+      this.#reconcilePublishedDrafts(
+        held.queryKey,
+        held.attachmentKey,
+        this.#publishedLists.get(held.attachmentKey) ?? null,
+      );
+    }
+    await this.#refreshConfirmed(held.attachmentKey, applied.value);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
   }
@@ -946,8 +1050,8 @@ export class AnnotationRepository extends Service<void> {
   async #applyWrite(
     held: HeldAnnotation,
     annotationKey: string,
-    settle: "re-read" | "drop",
-  ): Promise<void> {
+    { write, settle }: { write: ConflictedWrite; settle: "re-read" | "drop" },
+  ): Promise<{ value: ConfirmedWrite } | { failure: LocalApiFailure }> {
     const { queryKey, attachmentKey } = held;
     if (settle === "drop") {
       this.#queries.update<AnnotationList>(queryKey, (list) => ({
@@ -956,7 +1060,7 @@ export class AnnotationRepository extends Service<void> {
           (record) => record.key !== annotationKey,
         ),
       }));
-      return;
+      return { value: { kind: "deleted", annotationKey } };
     }
     const fresh = await this.#localApi.readAnnotation(
       annotationKey,
@@ -968,7 +1072,7 @@ export class AnnotationRepository extends Service<void> {
         failure: fresh.failure,
       });
       this.#queries.invalidate(queryKey);
-      return;
+      return fresh;
     }
     const record = fromLocalApi(fresh.value);
     this.#queries.update<AnnotationList>(queryKey, (list) => ({
@@ -977,6 +1081,39 @@ export class AnnotationRepository extends Service<void> {
         stale.key === annotationKey ? record : stale,
       ),
     }));
+    return {
+      value: {
+        kind: "record",
+        record,
+        write: write === "comment" ? "comment" : "color",
+      },
+    };
+  }
+
+  /** Retain one successful API confirmation before a later refresh can fail. */
+  #publishQuery(attachmentKey: string, queryKey: QueryKey): void {
+    const confirmed = this.#queries.peek<AnnotationList>(queryKey)?.value;
+    if (!confirmed || !this.#canPublish(attachmentKey, confirmed, queryKey)) {
+      return;
+    }
+    this.#publishedLists.set(attachmentKey, confirmed);
+    this.#publishedStatuses.set(attachmentKey, "fresh");
+  }
+
+  /** Revalidate the collection without replacing a newer write confirmation. */
+  async #refreshConfirmed(
+    attachmentKey: string,
+    confirmation: ConfirmedWrite,
+  ): Promise<void> {
+    const held = this.#confirmedWrites.get(attachmentKey) ?? [];
+    this.#confirmedWrites.set(attachmentKey, [
+      ...held.filter(
+        (existing) =>
+          confirmationKey(existing) !== confirmationKey(confirmation),
+      ),
+      confirmation,
+    ]);
+    await this.refresh(attachmentKey);
   }
 
   /**
@@ -992,11 +1129,19 @@ export class AnnotationRepository extends Service<void> {
       : [ANNOTATIONS, ZOTERO_DB];
     for (const queryKey of this.#queries.keysUnder(prefix)) {
       const list = this.#queries.peek<AnnotationList>(queryKey)?.value;
+      const attachmentKey = queryKey.at(-1);
+      if (
+        !list ||
+        typeof attachmentKey !== "string" ||
+        !this.#canPublish(attachmentKey, list, queryKey)
+      ) {
+        continue;
+      }
       const record = list?.annotations.find(
         (annotation) => annotation.key === annotationKey,
       );
       if (record) {
-        return { queryKey, attachmentKey: record.parentKey, record };
+        return { queryKey, attachmentKey, record };
       }
     }
     return null;
@@ -1149,7 +1294,7 @@ export class AnnotationRepository extends Service<void> {
    * into the list in flight.
    */
   #activePartition(attachmentKey: string): AnnotationPartition {
-    const source = this.#localApi.demandSource();
+    const source = this.#compatibleApiSource(attachmentKey);
     if (source) {
       return {
         queryKey: [
@@ -1163,7 +1308,12 @@ export class AnnotationRepository extends Service<void> {
       };
     }
     return {
-      queryKey: [ANNOTATIONS, ZOTERO_DB, attachmentKey],
+      queryKey: [
+        ANNOTATIONS,
+        ZOTERO_DB,
+        this.#databaseGeneration,
+        attachmentKey,
+      ],
       read: () => this.#readFromDatabase(attachmentKey),
     };
   }
@@ -1192,6 +1342,46 @@ export class AnnotationRepository extends Service<void> {
       annotations: annotations.length,
     });
     return { source, annotations };
+  }
+
+  #adoptDatabaseSource(
+    attachmentKey: string,
+    source: DatabaseAnnotationSource,
+  ): void {
+    const previous = this.#databaseSources.get(attachmentKey);
+    const previousServerID = this.#databaseServerIDs.get(attachmentKey);
+    this.#databaseSources.set(attachmentKey, source);
+    this.#databaseServerIDs.set(attachmentKey, source.database.serverID);
+    if (
+      previousServerID !== undefined &&
+      previousServerID !== source.database.serverID
+    ) {
+      for (const draft of this.#commentDrafts.values()) {
+        if (
+          draft.attachmentKey === attachmentKey &&
+          draft.serverID !== source.database.serverID &&
+          this.#commentDraftSources.get(draft.annotationKey) === draft.serverID
+        ) {
+          this.#commentDraftSources.delete(draft.annotationKey);
+          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+        }
+      }
+      for (const { key } of this.#publishedLists.get(attachmentKey)
+        ?.annotations ?? []) {
+        if (this.#mutations.delete(key)) {
+          this.#emitter.emit("mutation-changed", key);
+        }
+      }
+      this.#confirmedWrites.delete(attachmentKey);
+    }
+    if (!databaseSourcesEqual(previous, source)) {
+      queueMicrotask(() => {
+        this.#emitter.emit("capability-changed");
+        if (this.#compatibleApiSource(attachmentKey)) {
+          this.#emitter.emit("annotations-changed", attachmentKey);
+        }
+      });
+    }
   }
 
   /**
@@ -1232,6 +1422,8 @@ export class AnnotationRepository extends Service<void> {
    * partition goes rather than the rows a comparison would call changed.
    */
   #dropDatabasePartition(): void {
+    this.#databaseGeneration += 1;
+    this.#databaseSources.clear();
     const prefix = [ANNOTATIONS, ZOTERO_DB];
     const held = this.#attachmentsHeld(prefix);
     this.#queries.invalidate(prefix);
@@ -1242,6 +1434,115 @@ export class AnnotationRepository extends Service<void> {
       this.#emitter.emit("annotations-changed", attachmentKey);
     }
   }
+
+  #published(attachmentKey: string): Held<AnnotationList> | null {
+    const value = this.#publishedLists.get(attachmentKey);
+    return value
+      ? {
+          value,
+          status: this.#publishedStatuses.get(attachmentKey) ?? "fresh",
+          settled: Promise.resolve(value),
+        }
+      : null;
+  }
+
+  #compatibleApiSource(attachmentKey: string | null): LocalApiSource | null {
+    const api = this.#localApi.demandSource();
+    if (!api) return null;
+    const sources =
+      attachmentKey === null
+        ? this.#databaseSources.values()
+        : [this.#databaseSources.get(attachmentKey)].values();
+    for (const source of sources) {
+      if (source?.database.serverID === api.serverID) return api;
+    }
+    return null;
+  }
+
+  #sameApiSource(attachmentKey: string, expected: LocalApiSource): boolean {
+    return (
+      this.#compatibleApiSource(attachmentKey)?.serverID === expected.serverID
+    );
+  }
+
+  async #apiSourceStillBound(
+    attachmentKey: string,
+    expected: LocalApiSource,
+  ): Promise<boolean> {
+    if (this.#sameApiSource(attachmentKey, expected)) return true;
+    if (this.#localApi.demandSource()?.serverID !== expected.serverID) {
+      return false;
+    }
+    const generation = this.#databaseGeneration;
+    const { source } = await this.#readFromDatabase(attachmentKey);
+    const verified =
+      generation === this.#databaseGeneration &&
+      source.kind === "zotero-db" &&
+      source.database.serverID === expected.serverID &&
+      this.#localApi.demandSource()?.serverID === expected.serverID;
+    if (verified) this.#adoptDatabaseSource(attachmentKey, source);
+    return verified;
+  }
+
+  #canPublish(
+    attachmentKey: string,
+    candidate: AnnotationList,
+    queryKey?: QueryKey,
+  ): boolean {
+    if (candidate.source.kind === "zotero-local-api") {
+      return (
+        this.#sameApiSource(attachmentKey, candidate.source) &&
+        coversConfirmations(candidate, this.#confirmedWrites.get(attachmentKey))
+      );
+    }
+    const { source } = candidate;
+    if (
+      queryKey?.[1] === ZOTERO_DB &&
+      queryKey[2] !== this.#databaseGeneration
+    ) {
+      return false;
+    }
+    const floor = this.#acknowledgedRevisions.get(databaseLibraryKey(source));
+    return (
+      floor === undefined ||
+      (source.libraryRevision !== null && source.libraryRevision >= floor)
+    );
+  }
+
+  #rememberAcknowledgedRevision(attachmentKey: string, headers: Headers): void {
+    const source = this.#databaseSources.get(attachmentKey);
+    const header = headers.get("last-modified-version");
+    if (!source) return;
+    const key = databaseLibraryKey(source);
+    const value = Number(header);
+    if (
+      header === null ||
+      header === "" ||
+      !Number.isSafeInteger(value) ||
+      value < 0 ||
+      String(value) !== header
+    ) {
+      this.#acknowledgedRevisions.set(key, Number.POSITIVE_INFINITY);
+      return;
+    }
+    const held = this.#acknowledgedRevisions.get(key) ?? -1;
+    if (value > held) this.#acknowledgedRevisions.set(key, value);
+  }
+}
+
+function databaseLibraryKey(source: DatabaseAnnotationSource): string {
+  return `${source.database.serverID ?? "uninitialized"}:${source.libraryID}`;
+}
+
+function databaseSourcesEqual(
+  a: DatabaseAnnotationSource | undefined,
+  b: DatabaseAnnotationSource,
+): boolean {
+  return (
+    a?.database.serverID === b.database.serverID &&
+    a?.libraryID === b.libraryID &&
+    a?.libraryRevision === b.libraryRevision
+  );
 }
 
 function commentDraftID(serverID: string, annotationKey: string): string {
@@ -1250,6 +1551,47 @@ function commentDraftID(serverID: string, annotationKey: string): string {
 
 function sameComment(a: string | null, b: string | null): boolean {
   return (a ?? "") === (b ?? "");
+}
+
+function coversConfirmation(
+  list: AnnotationList | undefined,
+  confirmation: ConfirmedWrite | undefined,
+): boolean {
+  if (!confirmation) return true;
+  if (!list || list.source.kind !== "zotero-local-api") return false;
+  if (confirmation.kind === "deleted") {
+    return !list.annotations.some(
+      ({ key }) => key === confirmation.annotationKey,
+    );
+  }
+  const candidate = list.annotations.find(
+    ({ key }) => key === confirmation.record.key,
+  );
+  if (!candidate || candidate.version === null) return false;
+  if (candidate.version > (confirmation.record.version ?? -1)) return true;
+  if (candidate.version !== confirmation.record.version) return false;
+  if (confirmation.kind === "created") return true;
+  return (
+    freshValueOf(candidate, confirmation.write) ===
+    freshValueOf(confirmation.record, confirmation.write)
+  );
+}
+
+function coversConfirmations(
+  list: AnnotationList | undefined,
+  confirmations: readonly ConfirmedWrite[] | undefined,
+): boolean {
+  return (
+    confirmations?.every((confirmation) =>
+      coversConfirmation(list, confirmation),
+    ) ?? true
+  );
+}
+
+function confirmationKey(confirmation: ConfirmedWrite): string {
+  return confirmation.kind === "deleted"
+    ? confirmation.annotationKey
+    : confirmation.record.key;
 }
 
 /** What Zotero holds now for the field one refused write asked to change. */
