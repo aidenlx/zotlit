@@ -125,6 +125,13 @@ export class PdfAnnotationEditor extends Service<void> {
         workspace.on("layout-change", () => this.#reconcileViews()),
       ),
     );
+    stack.use(
+      registerEvent(
+        workspace.on("active-leaf-change", (leaf) => {
+          if (leaf) this.#bindings.get(leaf.view as PDFFileView)?.activate();
+        }),
+      ),
+    );
     // A view already open takes its Anchor here: the patch fires on every open,
     // and a cold one has no binding yet — that one lands off its first read.
     stack.use(

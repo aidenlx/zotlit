@@ -286,6 +286,7 @@ export function annotationReads(
   let current = capability;
   return {
     read: vi.fn(() => Promise.resolve(list)),
+    refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
     mutationFor: vi.fn((): MutationState => IDLE),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),

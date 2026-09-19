@@ -12,7 +12,10 @@ import type {
 import { PdfTextStructure } from "@zotlit/pdf-structure";
 
 import { EXTERNAL_FILE_PREFIX } from "@/lib/constants";
-import { registerDomEvent } from "@/lib/disposables";
+import {
+  registerDomEvent,
+  registerMigratingWindowEvent,
+} from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
@@ -93,6 +96,7 @@ export type AnnotationReads = Pick<
   | "patchColor"
   | "probe"
   | "read"
+  | "refresh"
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */
@@ -305,6 +309,13 @@ export class PdfViewBinding implements Disposable, HoverParent {
     return this.#gesturing;
   }
 
+  /** Revalidates this PDF surface when Obsidian activates its leaf. */
+  activate(): void {
+    if (this.#attachment.kind === "resolved") {
+      void this.#annotations.refresh(this.#attachment.attachmentKey);
+    }
+  }
+
   /**
    * Honour the Annotation Anchor waiting on this view's leaf, once the marks on
    * screen match the last read. Safe to call for a view that has none: each
@@ -381,6 +392,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#surfaces.defer(
       this.#annotations.on("annotations-changed", (changedKey) => {
         if (changedKey === attachmentKey) this.#refresh();
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(this.#view.containerEl, "focusin", () => {
+        void this.#annotations.refresh(attachmentKey);
+      }),
+    );
+    this.#surfaces.use(
+      registerMigratingWindowEvent(this.#view.containerEl, "focus", () => {
+        void this.#annotations.refresh(attachmentKey);
       }),
     );
     this.#surfaces.defer(() => this.#unpaint());

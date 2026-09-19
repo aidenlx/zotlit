@@ -176,7 +176,7 @@ export interface AnnotationRepositoryEvents {
 }
 
 export interface AnnotationRepositoryDeps {
-  db: Pick<DatabaseService, "acquireRead" | "on">;
+  db: Pick<DatabaseService, "acquireRead" | "on" | "refresh">;
   queryClient: Pick<
     QueryClientService,
     "invalidate" | "keysUnder" | "peek" | "read" | "update"
@@ -328,6 +328,8 @@ export class AnnotationRepository extends Service<void> {
    * arrived stays, and is what aidenlx/zotlit#1151 reconciles.
    */
   readonly #creates = new Map<string, PendingCreate>();
+  /** One explicit revalidation per visible Attachment. */
+  readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
   readonly #writeToken;
 
   ready: Promise<void>;
@@ -354,6 +356,41 @@ export class AnnotationRepository extends Service<void> {
    */
   async read(attachmentKey: string): Promise<AnnotationList | null> {
     const { queryKey, read } = this.#activePartition(attachmentKey);
+    return await this.#queries.read(queryKey, read);
+  }
+
+  /**
+   * Revalidates one Attachment through its active source. Concurrent surfaces
+   * join the same operation, while the Held Read keeps their published list.
+   */
+  refresh(attachmentKey: string): Promise<AnnotationList | null> {
+    const running = this.#refreshes.get(attachmentKey);
+    if (running) return running;
+
+    const refreshing = this.#refresh(attachmentKey)
+      .catch((error: unknown) => {
+        logger.warn("Failed to refresh an Attachment's annotations", {
+          attachmentKey,
+          error,
+        });
+        return this.peek(attachmentKey)?.value ?? null;
+      })
+      .finally(() => {
+        if (this.#refreshes.get(attachmentKey) === refreshing) {
+          this.#refreshes.delete(attachmentKey);
+        }
+      });
+    this.#refreshes.set(attachmentKey, refreshing);
+    return refreshing;
+  }
+
+  /** Probes source availability, refreshes the active adapter, then reads it. */
+  async #refresh(attachmentKey: string): Promise<AnnotationList | null> {
+    await this.#localApi.probe();
+    if (this.#localApi.demandSource() === null) await this.#db.refresh();
+    const { queryKey, read } = this.#activePartition(attachmentKey);
+    this.#queries.invalidate(queryKey);
+    this.#emitter.emit("annotations-changed", attachmentKey);
     return await this.#queries.read(queryKey, read);
   }
 
@@ -572,7 +609,7 @@ export class AnnotationRepository extends Service<void> {
       annotationKey,
       type: draft.type,
     });
-    return this.#createLanded(writeToken, pending, annotationKey);
+    return await this.#createLanded(writeToken, pending, annotationKey);
   }
 
   /**
@@ -605,7 +642,7 @@ export class AnnotationRepository extends Service<void> {
 
     const match = await this.#matchCreate(pending);
     if (match?.kind === "confirmed") {
-      return this.#createLanded(writeToken, pending, match.annotationKey);
+      return await this.#createLanded(writeToken, pending, match.annotationKey);
     }
     // A write token Zotero has already spent says the Annotation exists even
     // where the match cannot name it, so the list is dropped either way and
@@ -645,13 +682,13 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /** One create that is known to have landed: the entry goes and the list drops. */
-  #createLanded(
+  async #createLanded(
     writeToken: string,
     pending: PendingCreate,
     annotationKey: string,
-  ): CreateOutcome {
+  ): Promise<CreateOutcome> {
     this.#creates.delete(writeToken);
-    this.#dropAttachment(pending.attachmentKey);
+    await this.refresh(pending.attachmentKey);
     if (pending.uncertain) this.#emitter.emit("uncertain-creates-changed");
     return { kind: "created", annotationKey };
   }
@@ -924,6 +961,7 @@ export class AnnotationRepository extends Service<void> {
     }
 
     logger.debug("Zotero took a write", { annotationKey, method });
+    await this.refresh(held.attachmentKey);
     await this.#applyWrite(held, annotationKey, command.settle ?? "re-read");
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);

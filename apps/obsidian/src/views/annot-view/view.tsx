@@ -26,6 +26,7 @@ import {
 import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { registerMigratingWindowEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -107,7 +108,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  */
 export interface AnnotViewDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client" | "on" | "ready" | "refresh">;
+  db: Pick<DatabaseService, "state" | "client" | "on" | "ready">;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
@@ -131,6 +132,7 @@ export interface AnnotViewDeps {
     | "patchColor"
     | "patchComment"
     | "read"
+    | "refresh"
     | "retryCreate"
     | "retryWrite"
     | "uncertainCreatesFor"
@@ -282,7 +284,11 @@ export class AnnotationView extends ItemView {
         this.#store.setState({
           selectedTags: toggledTags(this.#store.getState().selectedTags, tag),
         }),
-      refresh: () => this.#deps.db.refresh(),
+      refresh: async () => {
+        const attachmentKey = this.#store.getState().selectedAttachmentKey;
+        if (attachmentKey === null) return;
+        await this.#deps.annotations.refresh(attachmentKey);
+      },
       noteFeature: this.#deps.noteFeature,
       onSetFollowMode: (mode) => this.#setFollowMode(mode),
       onPinCurrentItem: () => this.#pinCurrentItem(),
@@ -341,6 +347,9 @@ export class AnnotationView extends ItemView {
 
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
+        if (this.#deps.app.workspace.activeLeaf === this.leaf) {
+          this.#refreshAnnotations();
+        }
         if (this.#followMode === "active-tab") {
           this.#reload();
           return;
@@ -351,6 +360,13 @@ export class AnnotationView extends ItemView {
         this.#syncImportHandle();
       }),
     );
+
+    const windowFocus = registerMigratingWindowEvent(
+      this.containerEl,
+      "focus",
+      () => this.#refreshAnnotations(),
+    );
+    this.register(() => windowFocus[Symbol.dispose]());
 
     this.registerEvent(
       this.#deps.app.metadataCache.on("changed", (file) => {
@@ -754,12 +770,6 @@ export class AnnotationView extends ItemView {
   ): void {
     const read = ++this.#reads;
     const memoryKey = this.#memoryKey;
-    this.#store.setState({
-      annotations: null,
-      annotationSource: null,
-      // The editor belongs to a card that is about to be replaced.
-      editingCommentKey: null,
-    });
     this.#reading = this.#deps.annotations
       .read(attachmentKey)
       .then((list) => {
@@ -789,6 +799,14 @@ export class AnnotationView extends ItemView {
         });
         this.#store.setState({ annotations: [] });
       });
+  }
+
+  /** Revalidates the collection the view currently presents. */
+  #refreshAnnotations(): void {
+    const attachmentKey = this.#store.getState().selectedAttachmentKey;
+    if (attachmentKey !== null) {
+      void this.#deps.annotations.refresh(attachmentKey);
+    }
   }
 
   /**

@@ -177,6 +177,43 @@ it("serves one database read to every surface that asks for one attachment at on
   expect(repository.peek("RGRPDF24")?.value).toBe(overlay);
 });
 
+it("shares one refresh and publishes the canonical held result", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, acquireRead } = await setup(stack);
+  const first = await repository.read("RGRPDF24");
+  const gate = Promise.withResolvers<void>();
+  const readSnapshot = acquireRead.getMockImplementation()!;
+  acquireRead.mockImplementationOnce(async () => {
+    await gate.promise;
+    return await readSnapshot();
+  });
+
+  const overlay = repository.refresh("RGRPDF24");
+  const view = repository.refresh("RGRPDF24");
+
+  expect(overlay).toBe(view);
+  expect(repository.peek("RGRPDF24")?.value).toBe(first);
+  gate.resolve();
+
+  const refreshed = await overlay;
+  expect(acquireRead).toHaveBeenCalledTimes(2);
+  expect(refreshed).toBe(first);
+  expect(repository.peek("RGRPDF24")?.value).toBe(first);
+});
+
+it("keeps the published collection when a refresh fails", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, acquireRead } = await setup(stack);
+  const first = await repository.read("RGRPDF24");
+  acquireRead.mockRejectedValueOnce(new Error("snapshot unavailable"));
+
+  expect(await repository.refresh("RGRPDF24")).toBe(first);
+  expect(repository.peek("RGRPDF24")).toMatchObject({
+    value: first,
+    status: "failed",
+  });
+});
+
 it("drops the whole Zotero database partition on a refresh and names every attachment it held", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, client, dbEvents } = await setup(stack);
@@ -538,6 +575,8 @@ it("re-reads the annotation after the 204, and writes again off that version", a
       .map(({ method, url }) => [method, url.pathname]),
   ).toEqual([
     ["PATCH", "/api/users/0/items/PUPR5FG5"],
+    ["GET", "/api/"],
+    ["GET", "/api/users/0/items/RGRPDF24/children"],
     ["GET", "/api/users/0/items/PUPR5FG5"],
   ]);
   expect(list?.annotations.find(({ key }) => key === "PUPR5FG5")).toMatchObject(
@@ -822,6 +861,8 @@ it("opens Zotero's dialog for a card gesture, then goes on — colour, comment, 
         "GET /api/",
         "POST /api/local/authorize",
         `${verb === "delete" ? "DELETE" : "PATCH"} /api/users/0/items/PUPR5FG5`,
+        "GET /api/",
+        "GET /api/users/0/items/RGRPDF24/children",
         ...(verb === "delete" ? [] : ["GET /api/users/0/items/PUPR5FG5"]),
       ],
     ]);
@@ -969,7 +1010,11 @@ it("sends the create alone and drops the Attachment's list", async () => {
 
   expect(
     requests.slice(sent).map(({ method, url }) => `${method} ${url.pathname}`),
-  ).toEqual(["POST /api/users/0/items"]);
+  ).toEqual([
+    "POST /api/users/0/items",
+    "GET /api/",
+    "GET /api/users/0/items/RGRPDF24/children",
+  ]);
   const list = await repository.read("RGRPDF24");
   expect(list?.annotations.map(({ key }) => key)).toContain("MADE2345");
 });
@@ -1323,6 +1368,8 @@ it("opens Zotero's dialog when the gesture needs one, then goes on", async () =>
     "GET /api/",
     "POST /api/local/authorize",
     "POST /api/users/0/items",
+    "GET /api/",
+    "GET /api/users/0/items/RGRPDF24/children",
   ]);
   expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
 });
@@ -1440,6 +1487,7 @@ async function setup(
   );
   const db = {
     acquireRead,
+    refresh: vi.fn(() => Promise.resolve()),
     on: <K extends keyof DatabaseEvents>(event: K, cb: DatabaseEvents[K]) =>
       dbEvents.on(event, cb),
   };

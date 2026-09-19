@@ -66,14 +66,16 @@ function pdfView(path: string | null, reader = pdfReader()) {
 
 function workspace(views: { view: unknown }[]) {
   const offref = vi.fn();
-  const handlers: (() => void)[] = [];
+  const handlers = new Map<string, ((leaf?: { view: unknown }) => void)[]>();
   const app = {
     vault: { adapter: new FileSystemAdapter() },
     workspace: {
       getLeavesOfType: () => views,
       onLayoutReady: (callback: () => void) => callback(),
-      on: (_name: string, callback: () => void) => {
-        handlers.push(callback);
+      on: (name: string, callback: (leaf?: { view: unknown }) => void) => {
+        const eventHandlers = handlers.get(name) ?? [];
+        eventHandlers.push(callback);
+        handlers.set(name, eventHandlers);
         return { e: { offref } };
       },
     },
@@ -84,7 +86,14 @@ function workspace(views: { view: unknown }[]) {
     offref,
     /** Replays what Obsidian's `file-open` and `layout-change` events drive. */
     relayout: () => {
-      for (const handler of handlers) handler();
+      for (const name of ["file-open", "layout-change"]) {
+        for (const handler of handlers.get(name) ?? []) handler();
+      }
+    },
+    activate: (view: unknown) => {
+      for (const handler of handlers.get("active-leaf-change") ?? []) {
+        handler({ view });
+      }
     },
   };
 }
@@ -166,7 +175,26 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     "pagerendered",
     expect.any(Function),
   );
-  expect(offref).toHaveBeenCalledTimes(2);
+  expect(offref).toHaveBeenCalledTimes(3);
+});
+
+it("refreshes the repository when an open PDF leaf becomes active", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf");
+  const annotations = annotationReads();
+  const harness = workspace([{ view }]);
+  await using service = new PdfAnnotationEditor({
+    app: harness.app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+
+  harness.activate(view);
+
+  expect(annotations.refresh).toHaveBeenCalledExactlyOnceWith("ABCD2345");
 });
 
 it("paints the attachment's annotations over every page it renders", async () => {
