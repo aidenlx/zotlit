@@ -37,8 +37,21 @@ export const themeHook = {
   pdfAnnotationMark: "zt-pdf-annotation-mark",
   /** The filled rectangle of a highlight Annotation Mark, which blends with the page. */
   pdfAnnotationHighlight: "zt-pdf-annotation-highlight",
-  /** The folded corner of a note Annotation Mark, which takes the page's own colour. */
-  pdfAnnotationNoteFold: "zt-pdf-annotation-note-fold",
+  /**
+   * The `<g>` a note Annotation Mark draws its glyph into, stroked in the
+   * Annotation's own colour. Its `stroke-width` sets
+   * both {@link themeHook.pdfAnnotationNoteFill} and
+   * {@link themeHook.pdfAnnotationNoteCrease} through inheritance.
+   */
+  pdfAnnotationNoteIcon: "zt-pdf-annotation-note-icon",
+  /** The glyph's body path, filled at low alpha in the Annotation's own colour. */
+  pdfAnnotationNoteFill: "zt-pdf-annotation-note-fill",
+  /**
+   * The two segments that crease the glyph's folded bottom-right corner,
+   * stroked in the group's own colour and width. It is a pair of open lines
+   * rather than a closed shape, so `stroke` paints it and `fill` does not.
+   */
+  pdfAnnotationNoteCrease: "zt-pdf-annotation-note-crease",
   /**
    * The always-present Editing Capability affordance in the PDF reader's own
    * toolbar. `data-zt-capability-tone` names the state it is showing —

@@ -49,10 +49,19 @@
   width: fit-content;
 }
 
-/* The note's folded corner shows the paper through the sticky note. */
-:where(.zt-pdf-annotation-note-fold) {
-  fill: var(--background-primary);
-  opacity: 0.55;
+/*
+ * The note glyph's stroke weight, set on the group so both the body and the
+ * crease inherit it — `non-scaling-stroke` is set in render.ts, so this width
+ * stays a true hairline at every zoom step.
+ */
+:where(.zt-pdf-annotation-note-icon) {
+  stroke-width: 1.4px;
+}
+
+/* The glyph's body reads as a tinted fill under its own stroke, rather than
+   a solid coloured blob. */
+:where(.zt-pdf-annotation-note-fill) {
+  fill-opacity: 0.22;
 }
 
 /*

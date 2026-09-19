@@ -294,7 +294,24 @@ function renderUnderline(
   return element;
 }
 
-/** Zotero's sticky note: a rounded body with the corner folded back. */
+/**
+ * A note glyph in lucide's idiom, over Obsidian's own icon set: the body path
+ * stroked and lightly filled in the Annotation's own colour, its bottom-right
+ * corner cut on the diagonal, and that fold's crease traced as a second,
+ * unfilled stroke.
+ *
+ * Both paths are authored on lucide's 24-unit grid, with its round joins and
+ * caps, and mapped onto the stored rect the way the rounded rect this
+ * replaces already was: a translate to the rect's own origin, then a scale to
+ * its own width and
+ * height. `vector-effect="non-scaling-stroke"` on each keeps the stroke a
+ * true hairline width at every zoom step, since the overlay's `viewBox` maps
+ * page units onto the browser's own page box with `preserveAspectRatio="none"`.
+ *
+ * @see https://lucide.dev/icons/sticky-note — the icon whose idiom this
+ *   follows. The fold is cut at the bottom right, so the glyph reads as a
+ *   note peeling off the page rather than as a document.
+ */
 function renderNote(
   page: OverlayPage,
   annotation: AnnotationRecord,
@@ -304,23 +321,35 @@ function renderNote(
   const width = right - left;
   const height = bottom - top;
   const group = page.document.createElementNS(SVG_NS, "g");
-  const body = page.document.createElementNS(SVG_NS, "rect");
-  body.setAttribute("x", String(left));
-  body.setAttribute("y", String(top));
-  body.setAttribute("width", String(width));
-  body.setAttribute("height", String(height));
-  body.setAttribute("rx", String(Math.min(width, height) / 8));
-  body.setAttribute("fill", colorOf(annotation));
-  const fold = page.document.createElementNS(SVG_NS, "path");
-  fold.setAttribute(
-    "d",
-    `M ${right - width / 3} ${top} L ${right} ${top + height / 3} L ${right} ${top} Z`,
+  group.setAttribute(
+    "transform",
+    `translate(${left} ${top}) scale(${width / 24} ${height / 24})`,
   );
-  // The fold takes its paper colour from the stylesheet: an SVG presentation
-  // attribute is not a CSS declaration, so `var()` never substitutes there and
-  // the value would fall back to a black fill in either theme.
-  fold.classList.add(themeHook.pdfAnnotationNoteFold);
-  group.append(body, fold);
+  group.setAttribute("fill", "none");
+  group.setAttribute("stroke", colorOf(annotation));
+  group.setAttribute("stroke-linecap", "round");
+  group.setAttribute("stroke-linejoin", "round");
+  group.classList.add(themeHook.pdfAnnotationNoteIcon);
+
+  const body = page.document.createElementNS(SVG_NS, "path");
+  body.setAttribute(
+    "d",
+    "M 6 3.5 H 18 A 2.5 2.5 0 0 1 20.5 6 V 13.5 L 13.5 20.5 H 6 A 2.5 2.5 0 0 1 3.5 18 V 6 A 2.5 2.5 0 0 1 6 3.5 Z",
+  );
+  body.setAttribute("fill", colorOf(annotation));
+  body.setAttribute("vector-effect", "non-scaling-stroke");
+  // The fill's alpha comes from the stylesheet, so a theme can tune how
+  // strongly the icon reads against the page underneath it.
+  body.classList.add(themeHook.pdfAnnotationNoteFill);
+
+  // Two open segments, so the corner reads as a crease under the stroke the
+  // group carries. A closed shape here would need a fill of its own.
+  const crease = page.document.createElementNS(SVG_NS, "path");
+  crease.setAttribute("d", "M 13.5 13.5 H 20.5 M 13.5 13.5 V 20.5");
+  crease.setAttribute("vector-effect", "non-scaling-stroke");
+  crease.classList.add(themeHook.pdfAnnotationNoteCrease);
+
+  group.append(body, crease);
   return group;
 }
 

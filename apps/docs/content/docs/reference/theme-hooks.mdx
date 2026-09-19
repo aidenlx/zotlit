@@ -111,21 +111,23 @@ body {
 
 Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and offers its own toolbar and popups for creating and editing them. ZotLit draws every one of these surfaces itself, on Obsidian's own toolbar and popover primitives.
 
-| Class                         | Marks                                                                                                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zt-pdf-annotation-overlay`   | The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page.                                                                         |
-| `zt-pdf-annotation-mark`      | One Annotation Mark inside that overlay.                                                                                                           |
-| `zt-pdf-annotation-highlight` | The filled rectangle of a highlight Annotation Mark.                                                                                               |
-| `zt-pdf-annotation-note-fold` | The folded corner of a note Annotation Mark.                                                                                                       |
-| `zt-pdf-capability`           | The always-present Editing Capability affordance in the reader's own toolbar.                                                                      |
-| `zt-pdf-creation-toolbar`     | The Creation Toolbar in the reader's own right toolbar slot, which also holds the Editing Capability affordance.                                   |
-| `zt-pdf-tool`                 | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
-| `zt-pdf-mark-popup`           | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
-| `zt-pdf-comment-sheet`        | The comment sheet the Mark Popup opens under its create-mode row.                                                                                  |
+| Class                           | Marks                                                                                                                                              |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zt-pdf-annotation-overlay`     | The SVG ZotLit draws Zotero's Annotations into, one per rendered PDF page.                                                                         |
+| `zt-pdf-annotation-mark`        | One Annotation Mark inside that overlay.                                                                                                           |
+| `zt-pdf-annotation-highlight`   | The filled rectangle of a highlight Annotation Mark.                                                                                               |
+| `zt-pdf-annotation-note-icon`   | The group a note Annotation Mark draws its icon into.                                                                                              |
+| `zt-pdf-annotation-note-fill`   | The body of a note Annotation Mark's icon.                                                                                                         |
+| `zt-pdf-annotation-note-crease` | The two segments creasing the folded bottom-right corner of a note Annotation Mark's icon. Stroked, with no fill of its own.                       |
+| `zt-pdf-capability`             | The always-present Editing Capability affordance in the reader's own toolbar.                                                                      |
+| `zt-pdf-creation-toolbar`       | The Creation Toolbar in the reader's own right toolbar slot, which also holds the Editing Capability affordance.                                   |
+| `zt-pdf-tool`                   | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
+| `zt-pdf-mark-popup`             | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
+| `zt-pdf-comment-sheet`          | The comment sheet the Mark Popup opens under its create-mode row.                                                                                  |
 
 ### Annotation Marks [#pdf-annotation-marks]
 
-ZotLit rebuilds `zt-pdf-annotation-overlay` for every page PDF.js renders, and draws one `zt-pdf-annotation-mark` per Annotation on that page: a filled rectangle for a highlight (`zt-pdf-annotation-highlight`), a line for an underline, a rounded note body with a folded corner (`zt-pdf-annotation-note-fold`), a stroked rectangle for an image region, a path for an ink stroke, and a text run for a free-text Annotation. The overlay takes no pointer input, so native text selection, PDF links, and the reader's toolbar keep working underneath it.
+ZotLit rebuilds `zt-pdf-annotation-overlay` for every page PDF.js renders, and draws one `zt-pdf-annotation-mark` per Annotation on that page: a filled rectangle for a highlight (`zt-pdf-annotation-highlight`), a line for an underline, a note glyph in lucide's idiom for a note (`zt-pdf-annotation-note-icon`, holding `zt-pdf-annotation-note-fill` and `zt-pdf-annotation-note-crease`), a stroked rectangle for an image region, a path for an ink stroke, and a text run for a free-text Annotation. The overlay takes no pointer input, so native text selection, PDF links, and the reader's toolbar keep working underneath it.
 
 Each mark carries `data-zotero-annotation-type` (one of `highlight`, `underline`, `note`, `image`, `ink`, or `text`) and `data-zotero-annotation-key`, the Annotation's Zotero key. The mark a Mark Popup is acting on also carries Obsidian's own `is-selected`.
 
@@ -153,7 +155,7 @@ A control that cannot write right now keeps its seat, disabled, with the reason 
 
 ### Default appearance [#pdf-defaults]
 
-A highlight mark blends with the page: 40% opacity with `multiply` blending in light themes, 30% opacity with `plus-lighter` blending in dark themes. A note's folded corner takes `--background-primary` at 55% opacity, so the paper shows through. A selected mark keeps its own color and gains a drop-shadow ring in `--text-accent`.
+A highlight mark blends with the page: 40% opacity with `multiply` blending in light themes, 30% opacity with `plus-lighter` blending in dark themes. A note's icon strokes in the Annotation's own color at a 1.4px hairline, with its body filled at 22% of that same color. A selected mark keeps its own color and gains a drop-shadow ring in `--text-accent`.
 
 The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The Editing Capability affordance is a bare `clickable-icon`; ZotLit adds Obsidian's own `mod-warning` class when its tone is `warning`, and leaves color otherwise to Obsidian and the theme.
 
