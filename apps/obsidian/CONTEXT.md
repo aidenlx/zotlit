@@ -269,11 +269,11 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 ### Annotation view
 
 **Annotation Card** _(Obsidian)_:
-One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips, all sourced from the Zotero DB at display time. A deliberately dense surface: prose inside it renders compact.
+One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips. A deliberately dense surface: prose inside it renders compact.
 _Avoid_: annotation item, annotation row
 
 **Excerpt Block**:
-The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note; the Excerpt Block always reflects the DB.
+The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note.
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
 **Excerpt Image**:
@@ -305,11 +305,11 @@ Opening or re-aiming a Reader Session so the Annotation an Annotation Anchor nam
 _Avoid_: navigate, reveal (that is the Annotation View's card), jump to annotation, annotation target (see Reader Session)
 
 **Annotation Source**:
-Where the plugin's Annotation reads for an Attachment come from at one moment: the Zotero Local API while Zotero answers, otherwise the Zotero DB. One source at a time for every Attachment; the two never join. A read result carries its source.
+The origin of one complete set of an Attachment's Annotation data: the Zotero database or the Zotero Local API. Both describe the same annotation collection.
 _Avoid_: fallback (that is the switch, not the source), primary/secondary source, merged source
 
 **Editing Capability**:
-What writes are possible for an Attachment's Annotations at one moment, and, when none are, the one reason: writable, authorization required, authorizing, cooldown, or read-only with its cause (Zotero unavailable, local API disabled, incompatible Zotero, invalid response, server changed, library read-only, probing). One value per Attachment; every editing control in the reader and the Annotation View follows it.
+Whether edits to an Attachment's Annotations can be committed to Zotero at present, including any authorization required. It is separate from whether the Annotations can be read.
 _Avoid_: degraded state (names the feeling, not the reason), fallback state, write mode, read-only mode (one of its values, not the whole)
 
 **Follow Mode**:
@@ -329,11 +329,15 @@ The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight 
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
 **Uncertain Create**:
-An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero. Resolved by re-reading and matching stable fields, or by the user; never retried on its own.
+An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero.
 _Avoid_: pending create (a pending write has an outcome coming), orphaned write, lost write
 
+**Annotation Draft**:
+The shared unsaved comment for one Annotation, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
+_Avoid_: pending write (the draft has not been submitted), cached comment
+
 **Write Conflict**:
-A write the Zotero Local API refused because the Annotation changed in Zotero since ZotLit last read it, on the same Zotero Server ID. ZotLit re-reads, shows the fresh Annotation beside the user's input, and lets the user apply again or discard; a fresh value equal to the intended one is no conflict.
+A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
 **Sort Index**:
@@ -620,7 +624,7 @@ Zotero's own loopback HTTP API, which Zotero serves from its `httpServer.port` w
 _Avoid_: local API (ambiguous with the plugin's Local Server), Zotero server, Zotero HTTP server, connector API
 
 **Capability Probe**:
-One unkeyed request to the Zotero Local API root that tells ZotLit whether Zotero answers, whether its local API preference is on, and which Zotero Server ID it is. Its result selects the Annotation Source; a fresh probe is the only way out of a "Zotero unavailable" or "local API disabled" reading.
+A check of the Zotero Local API's availability and Zotero Server ID. It describes the connection available for live reads and edits.
 _Avoid_: ping, health check, handshake, api.ready (the Better BibTeX probe used by Pandoc export)
 
 **Write Authorization**:
