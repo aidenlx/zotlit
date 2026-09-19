@@ -86,6 +86,7 @@ const ROUGIER_ANNOTATION_KEYS = [
   "HRK7BG32",
   "K3JRFLFQ",
   "PUPR5FG5",
+  "Q8ZR4TDH",
   "C94NJNYG",
   "FDRFQ7C2",
 ] as const;
@@ -791,6 +792,13 @@ describe("the generated Zotero database", () => {
         pageLabel: "1",
       },
       {
+        key: "Q8ZR4TDH",
+        type: 1,
+        text: "There are so many different ways to represent the same data: scatter plots, linear plots, bar plots, and pie charts, to name just a few.",
+        comment: null,
+        pageLabel: "1",
+      },
+      {
         key: "C94NJNYG",
         type: 2,
         text: null,
@@ -816,6 +824,7 @@ describe("the generated Zotero database", () => {
       HRK7BG32: ["figure"],
       K3JRFLFQ: ["methodology", "visualization"],
       PUPR5FG5: ["visualization"],
+      Q8ZR4TDH: [],
       C94NJNYG: ["methodology"],
       FDRFQ7C2: ["figure"],
     });
@@ -837,6 +846,7 @@ describe("the generated Zotero database", () => {
       HRK7BG32: "text",
       K3JRFLFQ: "rects",
       PUPR5FG5: "rects",
+      Q8ZR4TDH: "rects",
       C94NJNYG: "rects",
       FDRFQ7C2: "rects",
     });
