@@ -10,6 +10,8 @@ import type {
 import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
+import { freeTextLayout } from "./free-text-layout";
+import type { PagePoint, PageRect, Turn } from "./free-text-layout";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -210,8 +212,8 @@ export function pageUnitSize(page: OverlayPageView): {
  * glow on every one of them or a box round their bounds.
  *
  * A highlight's outline follows its own text lines, from the same rects the
- * hit test measures; an ink stroke carries no rects, so its own path is
- * painted underneath it, wider, as a casing that hugs the squiggle.
+ * hit test measures; an ink stroke carries no rects, so its outline is traced
+ * from a chain of boxes sampled along the stroke and hugs the squiggle.
  * `vector-effect="non-scaling-stroke"` keeps the ring a true hairline at
  * every zoom step, since the overlay's `viewBox` maps page units onto the
  * browser's own page box with `preserveAspectRatio="none"`.
@@ -222,14 +224,24 @@ function renderSelectionOutline(
 ): SVGPathElement | undefined {
   if (isInk(placement)) return renderInkCasing(page, placement.position);
 
-  const d = unionOutlinePath(
-    hitRectsOf(page, placement),
-    SELECTION_OUTLINE_PADDING,
-  );
+  // A free-text ring is the stored rectangle under its own turn, so the ring
+  // and the run stay together on a turned page; every other mark rings the
+  // rects the hit test already measures.
+  const { position } = placement;
+  const ring =
+    position.kind === "pdf-text" ? layoutOf(page, position).ring : undefined;
+
+  const d = ring
+    ? unionOutlinePath([ring.rect], 0)
+    : unionOutlinePath(hitRectsOf(page, placement), SELECTION_OUTLINE_PADDING);
   if (d.length === 0) return undefined;
 
   const element = page.document.createElementNS(SVG_NS, "path");
   element.setAttribute("d", d);
+  const turn = ring && transformOf(ring.turns);
+  if (turn !== undefined && turn !== "") {
+    element.setAttribute("transform", turn);
+  }
   element.setAttribute("fill", "none");
   element.setAttribute("stroke-linejoin", "round");
   element.setAttribute("vector-effect", "non-scaling-stroke");
@@ -289,6 +301,15 @@ function pagePoints(page: OverlayPage, path: readonly number[]): PagePoint[] {
   return points;
 }
 
+/** The free-text geometry, bound to this page's own PDF-point mapping. */
+function layoutOf(page: OverlayPage, position: PdfTextPosition) {
+  return freeTextLayout(
+    (x, y) => page.viewport.convertToViewportPoint(x, y),
+    position,
+    SELECTION_OUTLINE_PADDING,
+  );
+}
+
 function hitRectsOf(
   page: OverlayPage,
   { position, rects }: PdfPageAnnotation,
@@ -300,9 +321,7 @@ function hitRectsOf(
     case "pdf-ink":
       return inkBounds(page, position);
     case "pdf-text":
-      return position.rects[0]
-        ? [pdfRectToPage(page.viewport, position.rects[0])]
-        : [];
+      return position.rects[0] ? [layoutOf(page, position).hit] : [];
     default:
       return [];
   }
@@ -503,23 +522,23 @@ function renderText(
   position: PdfTextPosition,
 ): SVGTextElement {
   const element = page.document.createElementNS(SVG_NS, "text");
-  const [left, top, right, bottom] = pdfRectToPage(
-    page.viewport,
-    position.rects[0]!,
-  );
-  element.setAttribute("x", String(left));
-  element.setAttribute("y", String(top + position.fontSize));
+  const { baseline, turns } = layoutOf(page, position);
+  element.setAttribute("x", String(baseline[0]));
+  element.setAttribute("y", String(baseline[1]));
   element.setAttribute("fill", colorOf(annotation));
   element.setAttribute("font-size", String(position.fontSize));
-  const rotation = page.viewport.rotation - position.rotation;
-  if (rotation !== 0) {
-    element.setAttribute(
-      "transform",
-      `rotate(${rotation} ${(left + right) / 2} ${(top + bottom) / 2})`,
-    );
-  }
+  const turn = transformOf(turns);
+  if (turn !== undefined) element.setAttribute("transform", turn);
   element.textContent = annotation.comment ?? annotation.text ?? "";
   return element;
+}
+
+/** A turn list as SVG writes it, applied from the last one to the first. */
+function transformOf(turns: readonly Turn[]): string | undefined {
+  if (turns.length === 0) return undefined;
+  return turns
+    .map(({ angle, pivot: [x, y] }) => `rotate(${angle} ${x} ${y})`)
+    .join(" ");
 }
 
 function createRect(
@@ -539,11 +558,7 @@ function colorOf(annotation: AnnotationRecord): string {
   return annotation.color ?? "currentColor";
 }
 
-/** A point in one page's own units, `[x, y]`. */
-type PagePoint = readonly [number, number];
-
-/** A box in one page's own units, `[left, top, right, bottom]`. */
-export type PageRect = readonly [number, number, number, number];
+export type { PageRect } from "./free-text-layout";
 
 /** The page reduced to what a mark is drawn from: page units and a document. */
 interface OverlayPage {
