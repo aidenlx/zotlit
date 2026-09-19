@@ -58,6 +58,7 @@ const ROUGIER = {
   kind: "resolved",
   attachmentKey: "RGRPDF24",
   itemKey: "RUGIER24",
+  openable: true,
 };
 
 it("resolves every link mode the Fixture carries, inside the vault and outside it", async () => {
@@ -77,13 +78,39 @@ it("resolves every link mode the Fixture carries, inside the vault and outside i
   ];
 
   expect(paths.map((path) => resolver.resolve(path))).toEqual([
-    { kind: "resolved", attachmentKey: "PDFSTR22", itemKey: "SAKIMA22" },
-    { kind: "resolved", attachmentKey: "HTMLSNAP", itemKey: "SAKIMA22" },
-    { kind: "resolved", attachmentKey: "PDFLINKD", itemKey: "SAKIMA22" },
+    {
+      kind: "resolved",
+      attachmentKey: "PDFSTR22",
+      itemKey: "SAKIMA22",
+      openable: true,
+    },
+    // A web snapshot resolves, but Obsidian's PDF view cannot host it.
+    {
+      kind: "resolved",
+      attachmentKey: "HTMLSNAP",
+      itemKey: "SAKIMA22",
+      openable: false,
+    },
+    {
+      kind: "resolved",
+      attachmentKey: "PDFLINKD",
+      itemKey: "SAKIMA22",
+      openable: true,
+    },
     ROUGIER,
-    { kind: "resolved", attachmentKey: "IANPDF25", itemKey: "IANNP5A2" },
+    {
+      kind: "resolved",
+      attachmentKey: "IANPDF25",
+      itemKey: "IANNP5A2",
+      openable: true,
+    },
     // A standalone attachment names itself and no Item (Ruling 14).
-    { kind: "resolved", attachmentKey: "LSEPDF22", itemKey: null },
+    {
+      kind: "resolved",
+      attachmentKey: "LSEPDF22",
+      itemKey: null,
+      openable: true,
+    },
     { kind: "unresolved" },
     { kind: "unresolved" },
   ]);
@@ -168,6 +195,7 @@ it("prefers the personal library, then the lowest item ID, when several attachme
       kind: "resolved",
       attachmentKey: "RGREARL8",
       itemKey: "RUGIERE8",
+      openable: true,
     },
   );
 });
@@ -212,6 +240,7 @@ it("reports each file several attachments name, with the one it kept and the one
     kind: "resolved",
     attachmentKey: "RGREARL8",
     itemKey: "RUGIERE8",
+    openable: true,
   });
 });
 
@@ -293,6 +322,7 @@ it("rebuilds on the next lookup after the database changed", async () => {
     kind: "resolved",
     attachmentKey: "IANPDF25",
     itemKey: "IANNP5A2",
+    openable: true,
   });
 });
 
@@ -310,6 +340,7 @@ it("rebuilds on the next lookup after the resolved Zotero paths changed", async 
     kind: "resolved",
     attachmentKey: "PDFSTR22",
     itemKey: "SAKIMA22",
+    openable: true,
   });
 });
 

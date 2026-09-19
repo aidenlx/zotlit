@@ -27,6 +27,7 @@ const RESOLVED = {
   kind: "resolved",
   attachmentKey: "ABCD2345",
   itemKey: "WXYZ6789g4711",
+  openable: true,
 } as const satisfies AttachmentResolution;
 
 /** Two of the Fixture's own Annotations on `rougier-2014.pdf`, page one. */
@@ -617,6 +618,7 @@ it("names a standalone attachment in its session, with no parent Item", async ()
       kind: "resolved",
       attachmentKey: "LSTAND23",
       itemKey: null,
+      openable: true,
     }),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),

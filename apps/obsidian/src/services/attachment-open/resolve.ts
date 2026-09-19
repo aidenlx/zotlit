@@ -20,12 +20,23 @@ export interface ObsidianOpenableAttachment {
   openPath: string;
   /** The real path on disk, for the existence check. */
   absolutePath: string;
+  /**
+   * Where inside the document to land, as Obsidian's own subpath — `#page=7`
+   * and the rest of the grammar its PDF view reads off `eState.subpath`.
+   * Absent opens the document at its start.
+   */
+  subpath?: string;
 }
 
 /** Case-insensitive fallback for a `linked_file` row Zotero leaves with no `contentType`. */
 const PDF_EXTENSION_RE = /\.pdf$/i;
 
-function isPdfAttachment(
+/**
+ * Whether Obsidian's PDF view can host this Attachment — the rule that
+ * separates an Obsidian-Openable Attachment from a Zotero-Openable one. Also
+ * read by the Attachment path index, so one file gets one verdict.
+ */
+export function isPdfAttachment(
   contentType: string | null,
   absolutePath: string,
 ): boolean {
@@ -35,7 +46,7 @@ function isPdfAttachment(
 }
 
 /** Last segment of an absolute path, cut at either separator — a group library synced from another platform can carry that platform's flavor. */
-function filename(path: string): string {
+export function filename(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;
 }
 

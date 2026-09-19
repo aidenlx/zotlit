@@ -1,4 +1,5 @@
 import { getLanguage, Plugin, requestUrl } from "obsidian";
+import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
@@ -15,7 +16,11 @@ import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
-import { addAttachmentOpenActions } from "./services/attachment-open/actions";
+import {
+  addAttachmentOpenActions,
+  createPdfReader,
+} from "./services/attachment-open/actions";
+import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { registerAttachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { registerCitationsCli } from "./services/citation-index/cli/register";
@@ -302,6 +307,20 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
       settings: services.settings,
     });
+    void stack.use(
+      registerFileLinkCapture({
+        // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
+        vaultBasePath: (
+          this.app.vault.adapter as FileSystemAdapter
+        ).getBasePath(),
+        attachments: services.attachmentResolver,
+        settings: services.settings,
+        reader: createPdfReader({
+          app: this.app,
+          settings: services.settings,
+        }),
+      }),
+    );
     const updateAll = () =>
       runBatchUpdateAll({
         createProfile: services.createProfile,

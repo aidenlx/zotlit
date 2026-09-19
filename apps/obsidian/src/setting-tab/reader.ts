@@ -15,5 +15,11 @@ export function readerPageItems(): SettingDefinitionItem<SettingsKey>[] {
       desc: m.settings_reader_focus_annot_view_desc(),
       control: { type: "toggle", key: "reader.focus-annot-view" },
     },
+    {
+      id: "settings_reader_open_file_links",
+      name: m.settings_reader_open_file_links_name(),
+      desc: m.settings_reader_open_file_links_desc(),
+      control: { type: "toggle", key: "reader.open-file-links" },
+    },
   ];
 }

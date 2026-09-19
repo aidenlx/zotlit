@@ -157,7 +157,30 @@ describe("createObsidianAttachmentReader", () => {
 
     await reader.open(attachment, false);
 
-    expect(openFile).toHaveBeenCalledWith(file);
+    expect(openFile).toHaveBeenCalledWith(file, undefined);
+  });
+
+  it("lands on the page a subpath names", async () => {
+    const absolutePath = join(dir, "Doe 2024.pdf");
+    await writeFile(absolutePath, "");
+    const file = new TFile();
+    const { app, openFile } = fakeApp(() => file);
+    const reader = createObsidianAttachmentReader(app);
+
+    await reader.open(
+      {
+        indexedKey: "ATCH2345",
+        label: "Doe 2024.pdf",
+        openPath: "papers/Doe 2024.pdf",
+        absolutePath,
+        subpath: "#page=7",
+      },
+      false,
+    );
+
+    expect(openFile).toHaveBeenCalledWith(file, {
+      eState: { subpath: "#page=7" },
+    });
   });
 
   it("does not open when Obsidian resolves no file for the open path — the missing-file signal, whether the path never existed or Zotero moved it away since the read", async () => {
