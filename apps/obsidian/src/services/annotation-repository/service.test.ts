@@ -374,6 +374,10 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
     "Visible while offline",
   );
+  repository.editComment("PUPR5FG5", "Still typing offline");
+  expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+    "Still typing offline",
+  );
 });
 
 it("holds an acknowledged colour across API loss until the database revision covers it", async () => {
@@ -578,6 +582,37 @@ it("names comment drafts by Zotero database as well as Annotation key", async ()
   await repository.probe();
   await repository.read("RGRPDF24");
   expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("First database");
+});
+
+it("rejects a queued write when another Zotero database takes the same key", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  const first = Promise.withResolvers<Response>();
+  const { repository, prefEvents, requests } = await writable(stack, {
+    root: () => rootOk({ "Zotero-Server-ID": serverID }),
+    children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
+    write: () => first.promise,
+  });
+  const sent = requests.length;
+
+  const running = repository.patchColor("PUPR5FG5", "#ff6666");
+  const queued = repository.patchComment("PUPR5FG5", "wrong database");
+  serverID = "Zzzz11119999";
+  prefEvents.emit("resolved-changed");
+  await repository.probe();
+  first.resolve(writeAccepted());
+
+  await expect(running).resolves.toEqual({
+    kind: "failed",
+    failure: { kind: "server-changed" },
+  });
+  await expect(queued).resolves.toEqual({
+    kind: "failed",
+    failure: { kind: "server-changed" },
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(1);
 });
 
 it("refreshes an uninitialized database identity before enabling its API", async () => {
@@ -861,6 +896,235 @@ it("patches a comment with the precondition and nothing else", async () => {
   });
 });
 
+it("autosaves after one idle second and caps a continuous editing burst", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    let saved = "";
+    let version = 20;
+    const { repository, requests } = await writable(stack, {
+      write: (request) => {
+        saved = String(JSON.parse(request.body ?? "{}").annotationComment);
+        version += 1;
+        return writeAccepted();
+      },
+      item: () =>
+        annotationItem(afterWrite("PUPR5FG5", { comment: saved, version })),
+    });
+    const sent = requests.length;
+
+    repository.editComment("PUPR5FG5", "idle");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(1);
+
+    repository.editComment("PUPR5FG5", "burst 0");
+    for (let step = 1; step <= 11; step += 1) {
+      await vi.advanceTimersByTimeAsync(900);
+      repository.editComment("PUPR5FG5", `burst ${step}`);
+    }
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(
+      requests
+        .slice(sent)
+        .filter(({ method }) => method === "PATCH")
+        .map(({ body }) => JSON.parse(body ?? "{}").annotationComment),
+    ).toEqual(["idle", "burst 11"]);
+
+    repository.editComment("PUPR5FG5", "next burst");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(
+      requests
+        .slice(sent)
+        .filter(({ method }) => method === "PATCH")
+        .map(({ body }) => JSON.parse(body ?? "{}").annotationComment),
+    ).toEqual(["idle", "burst 11", "next burst"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("serializes writes and saves only the latest input after a slow response", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    let answerFirst!: (response: Response) => void;
+    const first = new Promise<Response>((resolve) => {
+      answerFirst = resolve;
+    });
+    const submitted: string[] = [];
+    let writes = 0;
+    let version = 20;
+    const { repository } = await writable(stack, {
+      write: (request) => {
+        submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
+        return writes++ === 0 ? first : writeAccepted();
+      },
+      item: () => {
+        version += 1;
+        return annotationItem(
+          afterWrite("PUPR5FG5", {
+            comment: submitted.at(-1),
+            version,
+          }),
+        );
+      },
+    });
+
+    repository.editComment("PUPR5FG5", "first");
+    await vi.advanceTimersByTimeAsync(1_000);
+    repository.editComment("PUPR5FG5", "second");
+    repository.editComment("PUPR5FG5", "latest");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(submitted).toEqual(["first"]);
+
+    answerFirst(writeAccepted());
+    await vi.waitFor(() => expect(submitted).toEqual(["first", "latest"]));
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("queues a return to the old baseline while a newer value is saving", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const first = Promise.withResolvers<Response>();
+    const submitted: string[] = [];
+    let writes = 0;
+    let version = 20;
+    const { repository } = await writable(stack, {
+      write: (request) => {
+        submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
+        return writes++ === 0 ? first.promise : writeAccepted();
+      },
+      item: () =>
+        annotationItem(
+          afterWrite("PUPR5FG5", {
+            comment: submitted.at(-1),
+            version: version++,
+          }),
+        ),
+    });
+
+    repository.editComment("PUPR5FG5", "temporary");
+    await vi.advanceTimersByTimeAsync(1_000);
+    repository.editComment("PUPR5FG5", "");
+    first.resolve(writeAccepted());
+
+    await vi.waitFor(() => expect(submitted).toEqual(["temporary", ""]));
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a failed autosave for explicit editing without replaying it", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const { repository, requests } = await writable(stack, {
+      write: () => unreachable(),
+    });
+    const sent = requests.length;
+
+    repository.editComment("PUPR5FG5", "keep me");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")?.state.kind).toBe("failed"),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(1);
+    expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe("keep me");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not open authorization from a background save", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const { repository, requests } = await writable(
+      stack,
+      { authorize: () => authorized({ remember: false }) },
+      { key: undefined },
+    );
+    const sent = requests.length;
+
+    repository.editComment("PUPR5FG5", "wait for a gesture");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")?.state).toEqual({
+        kind: "failed",
+        failure: { kind: "unauthorized" },
+      }),
+    );
+
+    expect(requests.slice(sent)).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("cancels a scheduled comment when deletion is confirmed", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const { repository, requests } = await writable(stack);
+    const sent = requests.length;
+    repository.editComment("PUPR5FG5", "never submit");
+
+    await repository.deleteAnnotation("PUPR5FG5");
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(
+      requests
+        .slice(sent)
+        .filter(({ method }) => method === "PATCH" || method === "DELETE"),
+    ).toMatchObject([{ method: "DELETE" }]);
+    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("discards scheduled session work when the repository unloads", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const { repository, requests } = await writable(stack);
+    const sent = requests.length;
+    repository.editComment("PUPR5FG5", "session only");
+
+    await repository[Symbol.asyncDispose]();
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toEqual([]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("shares one comment draft and preserves it across unrelated refresh changes", async () => {
   await using stack = new AsyncDisposableStack();
   let records = ROUGIER_ANNOTATIONS;
@@ -952,6 +1216,49 @@ it("applies the chosen draft against the fresh version and comment field only", 
     annotationComment: "My latest draft",
   });
   expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+});
+
+it("keeps newer typing when a reviewed comment retry succeeds", async () => {
+  await using stack = new AsyncDisposableStack();
+  let records = ROUGIER_ANNOTATIONS;
+  const accepted = Promise.withResolvers<Response>();
+  const { repository, requests } = await writable(stack, {
+    children: () => annotationPage(records),
+    write: () => accepted.promise,
+    item: () =>
+      annotationItem(
+        afterWrite("PUPR5FG5", { comment: "reviewed draft", version: 21 }),
+      ),
+  });
+  repository.editComment("PUPR5FG5", "reviewed draft");
+  records = records.map((record) =>
+    record.key === "PUPR5FG5"
+      ? { ...record, comment: "Zotero draft", version: 20 }
+      : record,
+  );
+  await repository.refresh("RGRPDF24");
+
+  const sent = requests.length;
+  const retrying = repository.retryCommentDraft("PUPR5FG5");
+  const duplicate = repository.submitComment("PUPR5FG5");
+  expect(duplicate).toBe(retrying);
+  repository.editComment("PUPR5FG5", "typed during retry");
+  accepted.resolve(writeAccepted());
+  await retrying;
+
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    baseline: "reviewed draft",
+    text: "typed during retry",
+    state: { kind: "pending" },
+  });
+  await repository.submitComment("PUPR5FG5");
+  const writes = requests
+    .slice(sent)
+    .filter(({ method }) => method === "PATCH");
+  expect(writes).toHaveLength(2);
+  expect(JSON.parse(writes.at(-1)!.body ?? "")).toMatchObject({
+    annotationComment: "typed during retry",
+  });
 });
 
 it("requires another choice when the cached comment moved after review", async () => {
@@ -1616,6 +1923,70 @@ it("retains a confirmed deletion when the API is lost during refresh", async () 
   expect(repository.peek("RGRPDF24")?.value.source.kind).toBe(
     "zotero-local-api",
   );
+});
+
+it("runs a color and delete on one Annotation one at a time", async () => {
+  await using stack = new AsyncDisposableStack();
+  const colorAnswer = Promise.withResolvers<Response>();
+  const deleteAnswer = Promise.withResolvers<Response>();
+  let writes = 0;
+  const { repository, requests } = await writable(stack, {
+    write: () => (writes++ === 0 ? colorAnswer.promise : deleteAnswer.promise),
+    item: () =>
+      annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666", version: 20 })),
+  });
+  const sent = requests.length;
+
+  const color = repository.patchColor("PUPR5FG5", "#ff6666");
+  const deletion = repository.deleteAnnotation("PUPR5FG5");
+  await vi.waitFor(() =>
+    expect(
+      requests
+        .slice(sent)
+        .filter(({ method }) => method === "PATCH" || method === "DELETE"),
+    ).toMatchObject([{ method: "PATCH" }]),
+  );
+
+  colorAnswer.resolve(writeAccepted());
+  await vi.waitFor(() =>
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "DELETE"),
+    ).toHaveLength(1),
+  );
+  deleteAnswer.resolve(writeAccepted());
+
+  await expect(color).resolves.toEqual({ kind: "idle" });
+  await expect(deletion).resolves.toEqual({ kind: "idle" });
+});
+
+it("does not start a queued command after repository unload", async () => {
+  await using stack = new AsyncDisposableStack();
+  const first = Promise.withResolvers<Response>();
+  const { repository, requests } = await writable(stack, {
+    write: () => first.promise,
+    item: () =>
+      annotationItem(afterWrite("PUPR5FG5", { color: "#ff6666", version: 20 })),
+  });
+  const sent = requests.length;
+
+  const color = repository.patchColor("PUPR5FG5", "#ff6666");
+  const queued = repository.patchComment("PUPR5FG5", "do not send");
+  await vi.waitFor(() =>
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(1),
+  );
+  await repository[Symbol.asyncDispose]();
+  first.resolve(writeAccepted());
+
+  await color;
+  await expect(queued).resolves.toEqual({
+    kind: "failed",
+    failure: { kind: "unknown-outcome" },
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(1);
 });
 
 it("accepts a write completion after the same database refreshes", async () => {

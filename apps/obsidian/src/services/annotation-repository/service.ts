@@ -78,6 +78,9 @@ const ZOTERO_DB = "zotero-db";
  */
 const ZOTERO_LOCAL_API = "zotero-local-api";
 
+const COMMENT_IDLE_SAVE_MS = 1_000;
+const COMMENT_BURST_SAVE_MS = 10_000;
+
 /**
  * Where a whole record set came from. The source is atomic per Attachment: a
  * list is wholly one source's, and the two sets never join.
@@ -243,6 +246,14 @@ type ConfirmedWrite =
   | { kind: "record"; record: AnnotationRecord; write: "color" | "comment" }
   | { kind: "created"; record: AnnotationRecord }
   | { kind: "deleted"; annotationKey: string };
+
+interface CommentSave {
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  burstTimer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<MutationState> | null;
+  submittedText: string | null;
+  queued: boolean;
+}
 /** What one create ended with. */
 export type CreateOutcome =
   /** @param annotationKey the Indexed Key Zotero generated. */
@@ -307,6 +318,9 @@ export class AnnotationRepository extends Service<void> {
   readonly #mutations = new Map<string, MutationState>();
   readonly #commentDrafts = new Map<string, CommentDraft>();
   readonly #commentDraftSources = new Map<string, string>();
+  readonly #commentSaves = new Map<string, CommentSave>();
+  readonly #commands = new Map<string, Promise<MutationState>>();
+  #commandGeneration = 0;
   /** One explicit revalidation per visible Attachment. */
   readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
   /** Verified database identity and revision for each Attachment read. */
@@ -487,61 +501,110 @@ export class AnnotationRepository extends Service<void> {
   /** Start or update one shared comment draft. */
   editComment(annotationKey: string, text?: string): CommentDraft | null {
     const source = this.#localApi.demandSource();
-    const held = this.#holding(annotationKey);
-    if (!source || !held) return null;
-    const id = commentDraftID(source.serverID, annotationKey);
-    const standing = this.#commentDrafts.get(id);
-    const baseline = held.record.comment ?? "";
-    const draft =
-      standing?.serverID === source.serverID
-        ? {
-            ...standing,
-            ...(text !== undefined && { text }),
-            ...(text !== undefined &&
-              standing.state.kind === "failed" && {
-                state: { kind: "editing" } as const,
-              }),
-          }
-        : {
-            annotationKey,
-            attachmentKey: held.attachmentKey,
-            serverID: source.serverID,
-            baseline,
-            text: text ?? baseline,
-            state: { kind: "editing" } as const,
-          };
+    const serverID =
+      source?.serverID ?? this.#commentDraftSources.get(annotationKey);
+    const id = serverID ? commentDraftID(serverID, annotationKey) : null;
+    const standing = id ? this.#commentDrafts.get(id) : undefined;
+    const held = standing ? null : this.#holding(annotationKey);
+    if (!id || (!standing && (!source || !held))) return null;
+    const baseline = standing?.baseline ?? held!.record.comment ?? "";
+    const draft = standing
+      ? {
+          ...standing,
+          ...(text !== undefined && { text }),
+          ...(text !== undefined &&
+            standing.state.kind === "failed" && {
+              state: { kind: "editing" } as const,
+            }),
+        }
+      : {
+          annotationKey,
+          attachmentKey: held!.attachmentKey,
+          serverID: source!.serverID,
+          baseline,
+          text: text ?? baseline,
+          state: { kind: "editing" } as const,
+        };
     this.#commentDrafts.set(id, draft);
-    this.#commentDraftSources.set(annotationKey, source.serverID);
+    this.#commentDraftSources.set(annotationKey, draft.serverID);
     this.#emitter.emit("comment-draft-changed", annotationKey);
+    if (text !== undefined && draft.state.kind !== "conflict") {
+      this.#scheduleCommentSave(draft);
+    }
     return draft;
   }
 
   /** Submit the current shared draft once. */
-  async submitComment(annotationKey: string): Promise<MutationState> {
+  submitComment(annotationKey: string): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
-    if (!draft) return IDLE;
-    if (draft.state.kind === "pending" || draft.state.kind === "conflict") {
-      return this.mutationFor(annotationKey);
+    if (!draft) return Promise.resolve(IDLE);
+    const id = commentDraftID(draft.serverID, annotationKey);
+    const save = this.#commentSave(id);
+    this.#clearCommentTimers(save);
+    if (draft.state.kind === "conflict") {
+      return Promise.resolve(this.mutationFor(annotationKey));
+    }
+    if (save.inFlight) {
+      save.queued = draft.text !== save.submittedText;
+      return save.inFlight;
     }
     if (sameComment(draft.text, draft.baseline)) {
       this.#dropCommentDraft(annotationKey);
-      return IDLE;
+      return Promise.resolve(IDLE);
     }
+    const submittedText = draft.text;
     this.#setCommentDraft(draft, { kind: "pending" });
-    const outcome = await this.patchComment(annotationKey, draft.text);
-    const reconciled = this.commentDraftFor(annotationKey);
-    if (!reconciled || reconciled.state.kind === "conflict") return outcome;
+    save.submittedText = submittedText;
+    save.queued = false;
+    const operation = this.#submitComment(annotationKey, draft, submittedText);
+    save.inFlight = operation;
+    void operation.then((outcome) => {
+      save.inFlight = null;
+      save.submittedText = null;
+      if (
+        outcome.kind === "idle" &&
+        save.queued &&
+        this.#commentDrafts.has(id)
+      ) {
+        void this.submitComment(annotationKey);
+      }
+    });
+    return operation;
+  }
+
+  async #submitComment(
+    annotationKey: string,
+    submitted: CommentDraft,
+    submittedText: string,
+  ): Promise<MutationState> {
+    const id = commentDraftID(submitted.serverID, annotationKey);
+    const outcome = await this.#patchComment(
+      annotationKey,
+      submittedText,
+      false,
+    );
+    const current = this.#commentDrafts.get(id);
+    if (!current || current.state.kind === "conflict") return outcome;
     if (outcome.kind === "idle") {
-      this.#dropCommentDraft(annotationKey);
+      if (sameComment(current.text, submittedText)) {
+        this.#dropCommentDraft(annotationKey, submitted.serverID);
+      } else {
+        this.#commentDrafts.set(id, {
+          ...current,
+          baseline: submittedText,
+          state: { kind: "editing" },
+        });
+        this.#emitter.emit("comment-draft-changed", annotationKey);
+      }
     } else if (outcome.kind === "conflict") {
       const fresh = outcome.conflict.fresh ?? "";
-      this.#commentDrafts.set(commentDraftID(draft.serverID, annotationKey), {
-        ...draft,
+      this.#commentDrafts.set(id, {
+        ...current,
         state: { kind: "conflict", fresh },
       });
       this.#emitter.emit("comment-draft-changed", annotationKey);
     } else if (outcome.kind === "failed") {
-      this.#setCommentDraft(draft, {
+      this.#setCommentDraft(current, {
         kind: "failed",
         failure: outcome.failure,
       });
@@ -562,9 +625,35 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /** Apply the shared draft again against the reviewed fresh record. */
-  async retryCommentDraft(annotationKey: string): Promise<MutationState> {
+  retryCommentDraft(annotationKey: string): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
-    if (!draft) return IDLE;
+    if (!draft) return Promise.resolve(IDLE);
+    const id = commentDraftID(draft.serverID, annotationKey);
+    const save = this.#commentSave(id);
+    this.#clearCommentTimers(save);
+    if (save.inFlight) return save.inFlight;
+    save.submittedText = draft.text;
+    save.queued = false;
+    const operation = this.#retryCommentDraft(annotationKey, draft);
+    save.inFlight = operation;
+    void operation.then((outcome) => {
+      save.inFlight = null;
+      save.submittedText = null;
+      if (
+        outcome.kind === "idle" &&
+        save.queued &&
+        this.#commentDrafts.has(id)
+      ) {
+        void this.submitComment(annotationKey);
+      }
+    });
+    return operation;
+  }
+
+  async #retryCommentDraft(
+    annotationKey: string,
+    draft: CommentDraft,
+  ): Promise<MutationState> {
     const held = this.#holding(annotationKey);
     const reviewed =
       draft.state.kind === "conflict" ? draft.state.fresh : draft.baseline;
@@ -581,18 +670,32 @@ export class AnnotationRepository extends Service<void> {
       }
       return outcome;
     }
+    const submittedText = draft.text;
+    const id = commentDraftID(draft.serverID, annotationKey);
     this.#setCommentDraft(draft, { kind: "pending" });
-    let outcome = await this.patchComment(annotationKey, draft.text);
+    let outcome = await this.patchComment(annotationKey, submittedText);
     if (
       outcome.kind === "conflict" &&
       sameComment(outcome.conflict.fresh, reviewed)
     ) {
-      outcome = await this.patchComment(annotationKey, draft.text);
+      outcome = await this.patchComment(annotationKey, submittedText);
     }
-    if (outcome.kind === "idle") this.#dropCommentDraft(annotationKey);
-    else if (outcome.kind === "conflict") {
-      this.#commentDrafts.set(commentDraftID(draft.serverID, annotationKey), {
-        ...draft,
+    const current = this.#commentDrafts.get(id);
+    if (!current) return outcome;
+    if (outcome.kind === "idle") {
+      if (sameComment(current.text, submittedText)) {
+        this.#dropCommentDraft(annotationKey, draft.serverID);
+      } else {
+        this.#commentDrafts.set(id, {
+          ...current,
+          baseline: submittedText,
+          state: { kind: "editing" },
+        });
+        this.#emitter.emit("comment-draft-changed", annotationKey);
+      }
+    } else if (outcome.kind === "conflict") {
+      this.#commentDrafts.set(id, {
+        ...current,
         state: {
           kind: "conflict",
           fresh: outcome.conflict.fresh ?? "",
@@ -600,7 +703,7 @@ export class AnnotationRepository extends Service<void> {
       });
       this.#emitter.emit("comment-draft-changed", annotationKey);
     } else if (outcome.kind === "failed") {
-      this.#setCommentDraft(draft, {
+      this.#setCommentDraft(current, {
         kind: "failed",
         failure: outcome.failure,
       });
@@ -727,10 +830,19 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     comment: string,
   ): Promise<MutationState> {
+    return await this.#patchComment(annotationKey, comment, true);
+  }
+
+  async #patchComment(
+    annotationKey: string,
+    comment: string,
+    authorize: boolean,
+  ): Promise<MutationState> {
     return await this.#command(annotationKey, {
       write: "comment",
       attempted: comment,
       request: (target) => commentPatch(target, comment),
+      authorize,
     });
   }
 
@@ -742,6 +854,7 @@ export class AnnotationRepository extends Service<void> {
    * @param annotationKey the Annotation's Indexed Key.
    */
   async deleteAnnotation(annotationKey: string): Promise<MutationState> {
+    this.#cancelCommentSave(annotationKey);
     return await this.#command(annotationKey, {
       write: "delete",
       attempted: null,
@@ -802,6 +915,10 @@ export class AnnotationRepository extends Service<void> {
         this.#emitter.emit("capability-changed");
       }),
     );
+    stack.defer(() => this.#cancelAllCommentSaves());
+    stack.defer(() => {
+      this.#commandGeneration += 1;
+    });
     this.commit(stack.move());
   }
 
@@ -861,8 +978,46 @@ export class AnnotationRepository extends Service<void> {
       attempted: string | null;
       request: (target: WriteTarget) => WriteRequest;
       settle?: "re-read" | "drop";
+      authorize?: boolean;
     },
   ): Promise<MutationState> {
+    const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
+    const generation = this.#commandGeneration;
+    const previous = this.#commands.get(annotationKey);
+    const queued = { expectedServerID, generation, ...command };
+    const operation = previous
+      ? previous.then(() => this.#runCommand(annotationKey, queued))
+      : this.#runCommand(annotationKey, queued);
+    this.#commands.set(annotationKey, operation);
+    void operation.finally(() => {
+      if (this.#commands.get(annotationKey) === operation) {
+        this.#commands.delete(annotationKey);
+      }
+    });
+    return await operation;
+  }
+
+  async #runCommand(
+    annotationKey: string,
+    command: {
+      expectedServerID: string | null;
+      generation: number;
+      write: ConflictedWrite;
+      attempted: string | null;
+      request: (target: WriteTarget) => WriteRequest;
+      settle?: "re-read" | "drop";
+      authorize?: boolean;
+    },
+  ): Promise<MutationState> {
+    if (command.generation !== this.#commandGeneration) {
+      return { kind: "failed", failure: { kind: "unknown-outcome" } };
+    }
+    if (
+      (this.#localApi.demandSource()?.serverID ?? null) !==
+      command.expectedServerID
+    ) {
+      return { kind: "failed", failure: { kind: "server-changed" } };
+    }
     const held = this.#holding(annotationKey);
     const parsed = parseIndexedKey(annotationKey);
     if (!held || !parsed) {
@@ -886,7 +1041,10 @@ export class AnnotationRepository extends Service<void> {
     }
 
     this.#settle(annotationKey, { kind: "pending" });
-    const blocked = await this.#authorizeGesture(held.attachmentKey);
+    const blocked =
+      command.authorize === false
+        ? this.#backgroundWriteBlocked(held.attachmentKey)
+        : await this.#authorizeGesture(held.attachmentKey);
     if (blocked) {
       return this.#settle(annotationKey, {
         kind: "failed",
@@ -966,6 +1124,12 @@ export class AnnotationRepository extends Service<void> {
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {
+    return this.#capability(attachmentKey).kind === "authorization-required"
+      ? { kind: "unauthorized" }
+      : null;
   }
 
   /**
@@ -1207,7 +1371,67 @@ export class AnnotationRepository extends Service<void> {
     if (this.#commentDraftSources.get(annotationKey) === activeServerID) {
       this.#commentDraftSources.delete(annotationKey);
     }
+    this.#cancelCommentSave(annotationKey, activeServerID);
     this.#emitter.emit("comment-draft-changed", annotationKey);
+  }
+
+  #commentSave(id: string): CommentSave {
+    const standing = this.#commentSaves.get(id);
+    if (standing) return standing;
+    const save: CommentSave = {
+      idleTimer: null,
+      burstTimer: null,
+      inFlight: null,
+      submittedText: null,
+      queued: false,
+    };
+    this.#commentSaves.set(id, save);
+    return save;
+  }
+
+  #scheduleCommentSave(draft: CommentDraft): void {
+    const id = commentDraftID(draft.serverID, draft.annotationKey);
+    const save = this.#commentSave(id);
+    if (save.inFlight) {
+      save.queued = draft.text !== save.submittedText;
+      return;
+    }
+    if (sameComment(draft.text, draft.baseline)) return;
+    if (save.idleTimer !== null) clearTimeout(save.idleTimer);
+    save.idleTimer = setTimeout(() => {
+      save.idleTimer = null;
+      void this.submitComment(draft.annotationKey);
+    }, COMMENT_IDLE_SAVE_MS);
+    save.burstTimer ??= setTimeout(() => {
+      save.burstTimer = null;
+      void this.submitComment(draft.annotationKey);
+    }, COMMENT_BURST_SAVE_MS);
+  }
+
+  #clearCommentTimers(save: CommentSave): void {
+    if (save.idleTimer !== null) clearTimeout(save.idleTimer);
+    if (save.burstTimer !== null) clearTimeout(save.burstTimer);
+    save.idleTimer = null;
+    save.burstTimer = null;
+  }
+
+  #cancelCommentSave(annotationKey: string, serverID?: string): void {
+    const activeServerID =
+      serverID ?? this.#commentDraftSources.get(annotationKey);
+    if (!activeServerID) return;
+    const id = commentDraftID(activeServerID, annotationKey);
+    const save = this.#commentSaves.get(id);
+    if (!save) return;
+    this.#clearCommentTimers(save);
+    save.queued = false;
+    if (!save.inFlight) this.#commentSaves.delete(id);
+  }
+
+  #cancelAllCommentSaves(): void {
+    for (const save of this.#commentSaves.values()) {
+      this.#clearCommentTimers(save);
+      save.queued = false;
+    }
   }
 
   /** Reconcile drafts only against a complete read from their own database. */
@@ -1236,6 +1460,23 @@ export class AnnotationRepository extends Service<void> {
         continue;
       }
       const fresh = record.comment ?? "";
+      const save = this.#commentSaves.get(
+        commentDraftID(source.serverID, draft.annotationKey),
+      );
+      if (draft.state.kind === "pending") {
+        if (
+          save &&
+          save.submittedText !== null &&
+          sameComment(fresh, save.submittedText)
+        ) {
+          this.#commentDrafts.set(
+            commentDraftID(source.serverID, draft.annotationKey),
+            { ...draft, baseline: fresh },
+          );
+          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+        }
+        continue;
+      }
       if (sameComment(fresh, draft.text)) {
         this.#dropCommentDraft(draft.annotationKey, source.serverID);
         continue;

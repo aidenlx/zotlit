@@ -429,7 +429,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
         () => el.value,
       );
     },
-    [actions, annot.key],
+    [actions],
   );
 
   useLayoutEffect(() => {
@@ -455,12 +455,8 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
+      if (text !== stored) actions.onSaveComment(annot, text);
       setEditing(null);
-      return;
-    }
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      save();
     }
   };
 

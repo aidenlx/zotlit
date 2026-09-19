@@ -8,10 +8,11 @@
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
-import type { HoverParent } from "obsidian";
+import type { HoverParent, Scope } from "obsidian";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
+import { bindEditorSubmitScope } from "@/lib/editor-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
@@ -84,6 +85,8 @@ export interface MarkGestures {
 export interface MarkSelectionDeps {
   /** The PDF view's container: where the gestures are heard, and what scrolls. */
   containerEl: HTMLElement;
+  /** The PDF view's native key scope, active only while this editor is focused. */
+  scope: Scope;
   /**
    * The popup's hover parent. It is the binding rather than the PDF view, so
    * Obsidian's Page Preview on that view keeps its own `hoverPopover`.
@@ -134,6 +137,7 @@ export class MarkSelection implements Disposable {
   #popup: MarkPopup | null = null;
   #commenting = false;
   #commentEditor: HTMLTextAreaElement | null = null;
+  #commentEditorLife: DisposableStack | null = null;
   #pressedAt: Point | null = null;
 
   constructor(deps: MarkSelectionDeps) {
@@ -218,13 +222,13 @@ export class MarkSelection implements Disposable {
       this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
         if (annotationKey !== this.#selected) return;
         const draft = this.#deps.annotations.commentDraftFor(annotationKey);
-        if (!draft || draft.state.kind === "conflict") {
+        if (draft?.state.kind === "conflict") {
           if (!this.#commenting) return;
-          this.#commenting = false;
-          this.#commentEditor = null;
+          this.#closeCommentEditor();
           this.#popup?.refresh();
           return;
         }
+        if (!draft) return;
         if (!this.#commentEditor) return;
         if (this.#commentEditor.value === draft.text) return;
         const { selectionStart, selectionEnd } = this.#commentEditor;
@@ -237,21 +241,9 @@ export class MarkSelection implements Disposable {
     );
     this.#surfaces.defer(
       this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
-        if (annotationKey === this.#selected) this.#apply(null);
-      }),
-    );
-    this.#surfaces.defer(
-      this.#deps.annotations.on("annotations-changed", (attachmentKey) => {
-        if (
-          attachmentKey === this.#deps.attachmentKey &&
-          this.#commenting &&
-          this.#selected !== null &&
-          !this.#deps.annotations.commentDraftFor(this.#selected)
-        ) {
-          this.#commenting = false;
-          this.#commentEditor = null;
-          this.#popup?.refresh();
-        }
+        if (annotationKey !== this.#selected) return;
+        this.#closeCommentEditor();
+        this.#apply(null);
       }),
     );
     this.#surfaces.defer(() => this.#close());
@@ -307,10 +299,20 @@ export class MarkSelection implements Disposable {
   }
 
   [Symbol.dispose](): void {
+    const annotation = this.#record();
+    if (annotation && this.#commentEditor) {
+      this.#submitCommentEditor(annotation);
+    }
+    this.#closeCommentEditor();
     this.#surfaces.dispose();
   }
 
   #close(): void {
+    const annotation = this.#record();
+    if (annotation && this.#commentEditor) {
+      this.#submitCommentEditor(annotation);
+    }
+    this.#closeCommentEditor();
     const popup = this.#popup;
     this.#popup = null;
     popup?.hide();
@@ -326,8 +328,11 @@ export class MarkSelection implements Disposable {
     { popup = true }: { popup?: boolean } = {},
   ): void {
     if (key !== this.#selected) {
-      this.#commenting = false;
-      this.#commentEditor = null;
+      const annotation = this.#record();
+      if (annotation && this.#commentEditor) {
+        this.#submitCommentEditor(annotation);
+      }
+      this.#closeCommentEditor();
     }
     this.#quiet = !popup && key !== null;
     this.#selected = key;
@@ -485,11 +490,13 @@ export class MarkSelection implements Disposable {
       this.#deps.annotations.commentDraftFor(annotation.key) ??
       this.#deps.annotations.editComment(annotation.key);
     if (!draft) {
-      this.#commenting = false;
-      this.#commentEditor = null;
+      this.#closeCommentEditor();
       this.#renderRow(content);
       return;
     }
+    this.#commentEditorLife?.[Symbol.dispose]();
+    const life = new DisposableStack();
+    this.#commentEditorLife = life;
     content.empty();
     const column = content.createDiv({
       cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
@@ -499,22 +506,46 @@ export class MarkSelection implements Disposable {
       onSave: (comment) => {
         this.#deps.annotations.editComment(annotation.key, comment);
         this.#write(this.#deps.annotations.submitComment(annotation.key));
-        this.#commenting = false;
-        this.#commentEditor = null;
-        this.#popup?.refresh();
       },
       onCancel: () => {
-        this.#commenting = false;
-        this.#commentEditor = null;
+        this.#submitCommentEditor(annotation);
+        this.#closeCommentEditor();
         this.#popup?.refresh();
       },
+      nativeSubmit: true,
     });
     editor.addEventListener("input", () => {
       this.#deps.annotations.editComment(annotation.key, editor.value);
     });
     this.#commentEditor = editor;
+    life.use(
+      bindEditorSubmitScope(editor, this.#deps.scope, () =>
+        this.#submitCommentEditor(annotation),
+      ),
+    );
+    life.use(
+      registerDomEvent(editor, "blur", () => {
+        this.#submitCommentEditor(annotation);
+        this.#closeCommentEditor();
+        this.#popup?.refresh();
+      }),
+    );
     editor.focus();
     editor.setSelectionRange(editor.value.length, editor.value.length);
+  }
+
+  #submitCommentEditor(annotation: AnnotationRecord): void {
+    const editor = this.#commentEditor;
+    if (!editor) return;
+    this.#deps.annotations.editComment(annotation.key, editor.value);
+    this.#write(this.#deps.annotations.submitComment(annotation.key));
+  }
+
+  #closeCommentEditor(): void {
+    this.#commentEditorLife?.[Symbol.dispose]();
+    this.#commentEditorLife = null;
+    this.#commenting = false;
+    this.#commentEditor = null;
   }
 
   #renderCommentConflict(

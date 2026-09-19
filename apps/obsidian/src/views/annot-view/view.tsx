@@ -1,4 +1,4 @@
-import { ItemView } from "obsidian";
+import { ItemView, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
   App,
@@ -152,6 +152,7 @@ export interface AnnotViewDeps {
 }
 
 export class AnnotationView extends ItemView {
+  override scope: Scope;
   readonly #store = createAnnotStore();
   readonly #deps: AnnotViewDeps;
   #root: Root | null = null;
@@ -189,6 +190,7 @@ export class AnnotationView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, deps: AnnotViewDeps) {
     super(leaf);
+    this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root");
     this.#deps = deps;
   }
@@ -273,6 +275,7 @@ export class AnnotationView extends ItemView {
 
     this.#actions = createAnnotActions({
       app: this.#deps.app,
+      scope: this.scope,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
       annotations: this.#deps.annotations,
       deleteControl: (annot) => this.#cardControls(annot).delete,
@@ -451,6 +454,10 @@ export class AnnotationView extends ItemView {
   }
 
   protected override async onClose(): Promise<void> {
+    const editingCommentKey = this.#store.getState().editingCommentKey;
+    if (editingCommentKey) {
+      void this.#deps.annotations.submitComment(editingCommentKey);
+    }
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#leafSession?.();

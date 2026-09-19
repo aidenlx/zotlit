@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { Menu } from "@mock/obsidian";
+import { Menu, Scope as MockScope } from "@mock/obsidian";
+import type { Scope } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -131,6 +132,7 @@ function setup(
   let held = records;
   const selection = new MarkSelection({
     containerEl,
+    scope: new MockScope() as unknown as Scope,
     parent,
     attachmentKey: "ABCD2345",
     marks: () => groupAnnotationsByPage(held),

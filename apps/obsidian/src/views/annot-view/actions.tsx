@@ -1,5 +1,5 @@
 import { Menu, Platform } from "obsidian";
-import type { App } from "obsidian";
+import type { App, Scope } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
@@ -8,6 +8,7 @@ import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
+import { bindEditorSubmitScope } from "@/lib/editor-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
@@ -64,6 +65,11 @@ export interface AnnotActions {
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
   onSaveComment(annot: AnnotationRecord, comment: string): void;
+  bindCommentEditor(
+    editor: HTMLTextAreaElement,
+    annot: AnnotationRecord,
+    comment: () => string,
+  ): Disposable;
   onOpenComment(annot: AnnotationRecord): void;
   onEditComment(annot: AnnotationRecord, comment: string): void;
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
@@ -83,6 +89,7 @@ export interface AnnotActions {
 
 export interface AnnotActionDeps {
   app: App;
+  scope: Scope;
   getDataDir: () => string;
   /**
    * The one write path for an Annotation. Commands take Indexed Keys: the
@@ -190,6 +197,14 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editComment(annot.key, comment);
     report(deps.annotations.submitComment(annot.key));
   };
+  const bindCommentEditor: AnnotActions["bindCommentEditor"] = (
+    editor,
+    annot,
+    comment,
+  ) =>
+    bindEditorSubmitScope(editor, deps.scope, () => {
+      onSaveComment(annot, comment());
+    });
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
@@ -379,6 +394,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     getImgSrc,
     onSetColor,
     onSaveComment,
+    bindCommentEditor,
     onOpenComment,
     onEditComment,
     onDeleteAnnotation,
@@ -452,6 +468,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onSelectAnnotation: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
+  bindCommentEditor: () => ({ [Symbol.dispose]: () => {} }),
   onOpenComment: () => {},
   onEditComment: () => {},
   onDeleteAnnotation: () => {},

@@ -644,6 +644,13 @@ export class Scope {
     this.handlers.push(handler);
     return handler;
   }
+
+  unregister(handler: unknown): void {
+    const index = this.handlers.indexOf(
+      handler as (typeof this.handlers)[number],
+    );
+    if (index !== -1) this.handlers.splice(index, 1);
+  }
 }
 
 export abstract class FuzzySuggestModal<T> {

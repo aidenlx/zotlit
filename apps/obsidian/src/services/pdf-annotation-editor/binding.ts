@@ -575,6 +575,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#creation = creation;
     const selection = new MarkSelection({
       containerEl: this.#view.containerEl,
+      scope: this.#view.scope!,
       parent: this,
       attachmentKey,
       marks: () => this.#visibleMarks(),
