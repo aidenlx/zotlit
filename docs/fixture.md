@@ -65,6 +65,12 @@ pnpm --filter @zotlit/obsidian dev:vault
 
 This command builds the development plugin, creates or synchronizes the vault, and starts the watch build. An ordinary worktree uses `tests/fixture-vault-<worktree-folder-name>`. A Codex worktree under `.codex/worktrees/<id>/<repo>` uses `tests/fixture-vault-<repo>-<id>`. These names keep Development Vaults distinct across worktrees.
 
+Name that vault in each `obsidian` command. A command without a `vault=` option reaches the window that answers first, so a machine with more than one open vault can answer from another worktree's Development Vault or from the repository's own. A probe that reports code you already replaced is the usual symptom, and `restart` or `plugin:reload` then acts on that other vault:
+
+```sh
+obsidian eval vault=fixture-vault-<worktree-folder-name> code='app.vault.adapter.basePath'
+```
+
 The open and sync operations rebuild the Fixture Vault before they copy it. A normal sync keeps files that exist only in the Development Vault. Use a purge sync to restore the complete generated seed:
 
 ```sh
