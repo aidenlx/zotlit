@@ -19,13 +19,15 @@
 }
 
 /*
- * The selected mark keeps its own colour and gains a ring in the accent colour,
- * so a stack of overlapping marks says which one the popup is acting on. The
- * ring is a CSS filter rather than a stroke, because a stroke is what an
- * underline and an ink path are already drawn with.
+ * The selected mark keeps its own colour; a separate outline, traced round
+ * the merged silhouette of its own rects, says which one the popup is
+ * acting on. `non-scaling-stroke` is set in render.ts, so this width stays a
+ * true hairline at every zoom step rather than fattening or thinning with
+ * the overlay's `viewBox` scale.
  */
-:where(.zt-pdf-annotation-mark.is-selected) {
-  filter: drop-shadow(0 0 2px var(--text-accent));
+:where(.zt-pdf-annotation-selection-outline) {
+  stroke: var(--text-accent);
+  stroke-width: 1px;
 }
 
 /* Zotero's highlight reads as ink on paper in either theme. */

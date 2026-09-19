@@ -38,6 +38,12 @@ export const themeHook = {
   /** The filled rectangle of a highlight Annotation Mark, which blends with the page. */
   pdfAnnotationHighlight: "zt-pdf-annotation-highlight",
   /**
+   * The ring traced round a selected Annotation Mark's own merged
+   * silhouette, in the accent colour — one hairline hugging the run's
+   * actual staircase shape, never a glow on every one of its rects.
+   */
+  pdfAnnotationSelectionOutline: "zt-pdf-annotation-selection-outline",
+  /**
    * The `<g>` a note Annotation Mark draws its glyph into, stroked in the
    * Annotation's own colour. Its `stroke-width` sets
    * both {@link themeHook.pdfAnnotationNoteFill} and
