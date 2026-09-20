@@ -1,0 +1,2895 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZotLit annotation view — redesign variants</title>
+
+    <!--
+      PROTOTYPE — throwaway. Not production code.
+
+      QUESTION
+        What should ZotLit's Zotero annotation view look like for a researcher who does not
+        think in "capabilities", "local API" or "attachments"? Today the pane's real news —
+        "Zotero is not running, you are reading a saved copy" — lives in a hover tooltip that
+        covers the whole pane, while the visible copy states the wrong cause ("Open a
+        literature note…"). Above the list sit up to seven rows of chrome.
+
+      DECIDED BEFORE BUILDING (user, 2026-09-20)
+        · Scope: the whole view — chrome, states, filter bar and cards.
+        · When Zotero is closed, the PANE'S OWN BODY carries the message. Never a tooltip.
+        · Optimise for the ~340px right dock first, then show it expand.
+
+      DESIGN PLAN
+        Treatment: utilitarian. This is plugin chrome inside somebody else's app. Boldness is
+        spent in exactly one place — the annotation's own highlight colour, which is the
+        researcher's encoding and the only saturated thing that earns its place.
+
+        Colour (neutrals biased cool, toward Obsidian's own greys at hue ~240, so they read
+        as chosen rather than inherited mid-grey):
+          --ground  #fbfbfd  pane surface        --ink     #1f2024  primary text
+          --raised  #f2f2f6  recessed chrome     --muted   #6a6b76  chrome labels, secondary
+          --line    #dfdfe6  structure only      --accent  #6c5ce0  interactive, selection
+          --notice  #a8641c  semantic amber for "reading only" — NOT the accent
+        Zotero's highlight palette rides as data, never as theme.
+
+        Type: Inter for every piece of chrome, sentence case (WORKBENCH-DESIGN). Source Serif 4
+        for the excerpt alone — the excerpt is a quotation lifted out of a paper, so it wears
+        the paper's face, not the app's. In the real port this maps to Obsidian's --font-text.
+        That one substitution gives each card hierarchy with no size jump and stops the
+        excerpt and the researcher's own comment reading as one voice at one size.
+        Scale: 11px tracked micro-label · 12px chrome · 13px comment/UI body · 14px/1.5 serif
+        excerpt (today's excerpt is 12px `leading-tight` under a 3-line clamp).
+
+        Layout concept: a 340px pane that is ONE SCROLL of annotations with at most one row of
+        chrome above it. Item, attachment, follow mode and filters fold into that row, into the
+        scroll as sticky context, or into a sheet. Every variant must answer the Zotero-closed
+        state inside the pane body.
+
+      WHAT IS SHARED, AND WHAT IS NOT
+        Shared: the mock store, the annotation data, and `ObsidianFrame` — the HOST window
+        (workspace background, leaf, tab header, pane width box). Everything inside
+        `.view-content` belongs to the variant. There is deliberately no shared pane layout,
+        no shared toolbar and no shared card.
+    -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Source+Serif+4:opsz,wght@8..60,400..600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-app: var(--app);
+        --color-ground: var(--ground);
+        --color-raised: var(--raised);
+        --color-sunken: var(--sunken);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-faint: var(--faint);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-accent-soft: var(--accent-soft);
+        --color-notice: var(--notice);
+        --color-notice-soft: var(--notice-soft);
+        --font-ui: var(--font-ui);
+        --font-quote: var(--font-quote);
+      }
+    </style>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --app: #e4e4ea;
+        --ground: #fbfbfd;
+        --raised: #f2f2f6;
+        --sunken: #ebebf1;
+        --ink: #1f2024;
+        --muted: #6a6b76;
+        --faint: #9a9ba6;
+        --line: #dfdfe6;
+        --accent: #6c5ce0;
+        --accent-soft: #ebe8fb;
+        --notice: #a8641c;
+        --notice-soft: #fbf2e4;
+        --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-quote: "Source Serif 4", ui-serif, Georgia, serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --app: #101115;
+          --ground: #17181c;
+          --raised: #1e1f25;
+          --sunken: #232430;
+          --ink: #e2e2e7;
+          --muted: #9596a2;
+          --faint: #6e6f7c;
+          --line: #2c2d35;
+          --accent: #8a7af0;
+          --accent-soft: #232238;
+          --notice: #d99a4e;
+          --notice-soft: #2a2317;
+        }
+      }
+      :root[data-theme="dark"] {
+        --app: #101115;
+        --ground: #17181c;
+        --raised: #1e1f25;
+        --sunken: #232430;
+        --ink: #e2e2e7;
+        --muted: #9596a2;
+        --faint: #6e6f7c;
+        --line: #2c2d35;
+        --accent: #8a7af0;
+        --accent-soft: #232238;
+        --notice: #d99a4e;
+        --notice-soft: #2a2317;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      ::selection {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useRef,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import * as Lucide from "lucide-react";
+
+      // --- Kit ---
+      /**
+       * Any lucide icon by name, with a fallback so a missing export can never blank the
+       * page: <Ic name="Search" size={14} />. Stroke 1.75 matches 400-weight UI text;
+       * pass strokeWidth={2} beside semibold.
+       */
+      function Ic({ name, size = 16, strokeWidth = 1.75, className, ...rest }) {
+        const C = Lucide[name] ?? Lucide.Circle;
+        return (
+          <C
+            size={size}
+            strokeWidth={strokeWidth}
+            className={className}
+            {...rest}
+          />
+        );
+      }
+
+      const cx = (...a) => a.filter(Boolean).join(" ");
+
+      /** Zotero's own highlight palette. Data, not theme — never recoloured by the scheme. */
+      const ZC = {
+        yellow: "#ffd400",
+        red: "#ff6666",
+        green: "#5fb236",
+        blue: "#2ea8e5",
+        purple: "#a28ae5",
+        magenta: "#e56eee",
+        orange: "#f19837",
+        gray: "#aaaaaa",
+      };
+      const COLOR_NAME = {
+        [ZC.yellow]: "Yellow",
+        [ZC.red]: "Red",
+        [ZC.green]: "Green",
+        [ZC.blue]: "Blue",
+        [ZC.purple]: "Purple",
+        [ZC.magenta]: "Magenta",
+        [ZC.orange]: "Orange",
+        [ZC.gray]: "Gray",
+      };
+      // --- Kit END ---
+
+      // --- Data ---
+      const ITEM = {
+        title: "Using thematic analysis in psychology",
+        creators: "Braun & Clarke",
+        year: "2006",
+        attachment:
+          "Braun and Clarke - 2006 - Using thematic analysis in psychology.pdf",
+        attachments: [
+          {
+            key: "a1",
+            name: "Braun and Clarke - 2006 - Using thematic analysis in psychology.pdf",
+            count: 11,
+          },
+          { key: "a2", name: "Supplementary checklist.pdf", count: 2 },
+        ],
+      };
+
+      const FIGURE =
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="132" viewBox="0 0 420 132">
+             <rect width="420" height="132" fill="#ffffff"/>
+             <g fill="none" stroke="#3a3a3a" stroke-width="1.1">
+               ${[0, 1, 2, 3, 4, 5]
+                 .map(
+                   (i) =>
+                     `<rect x="${10 + i * 68}" y="26" width="58" height="42" rx="3"/>`,
+                 )
+                 .join("")}
+               ${[0, 1, 2, 3, 4].map((i) => `<path d="M${68 + i * 68} 47 h10"/>`).join("")}
+             </g>
+             <g font-family="Georgia,serif" font-size="8.5" fill="#3a3a3a" text-anchor="middle">
+               ${[
+                 "Familiarise",
+                 "Initial codes",
+                 "Search themes",
+                 "Review themes",
+                 "Define and name",
+                 "Report",
+               ]
+                 .map((t, i) => `<text x="${39 + i * 68}" y="50">${t}</text>`)
+                 .join("")}
+               <text x="210" y="98" font-size="9.5" font-style="italic">Figure 1. The six phases of thematic analysis</text>
+             </g>
+           </svg>`,
+        );
+
+      /**
+       * Real content, not lorem: eleven annotations off one methods paper, deliberately
+       * uneven — long and short excerpts, some with comments, some without tags, one area
+       * capture, one comment-only note. The uneven cases are the ones a layout fails on.
+       */
+      const ANNOTS = [
+        {
+          key: "n1",
+          page: "78",
+          color: ZC.yellow,
+          type: "highlight",
+          text: "Thematic analysis should be considered a method in its own right.",
+          comment:
+            "Use this to justify TA in the methods chapter — it is the cleanest sentence for it.",
+          tags: ["methods", "framing"],
+        },
+        {
+          key: "n2",
+          page: "79",
+          color: ZC.blue,
+          type: "highlight",
+          text: "A poorly demarcated, rarely acknowledged, yet widely used qualitative analytic method.",
+          comment: null,
+          tags: ["framing"],
+        },
+        {
+          key: "n3",
+          page: "82",
+          color: ZC.green,
+          type: "highlight",
+          text: "The keyword is flexibility: thematic analysis is not wedded to any pre-existing theoretical framework, and so it can be used within different ones.",
+          comment:
+            "Contrast with IPA, which carries its own epistemology whether you want it or not.",
+          tags: ["methods", "comparison"],
+        },
+        {
+          key: "n4",
+          page: "83",
+          color: ZC.purple,
+          type: "image",
+          img: FIGURE,
+          text: null,
+          comment: "Reproduce in the appendix.",
+          tags: ["figures"],
+        },
+        {
+          key: "n5",
+          page: "86",
+          color: ZC.yellow,
+          type: "highlight",
+          text: "Familiarising yourself with your data means repeated reading, and reading in an active way.",
+          comment: null,
+          tags: ["phases"],
+        },
+        {
+          key: "n6",
+          page: "87",
+          color: ZC.red,
+          type: "highlight",
+          text: "There is no hard-and-fast answer to the question of what proportion of your data set needs to display evidence of the theme.",
+          comment:
+            "This is the bit reviewers always push on. I need a defensible line before submission.",
+          tags: ["phases", "weakness"],
+        },
+        {
+          key: "n7",
+          page: "89",
+          color: ZC.purple,
+          type: "highlight",
+          text: "A theme captures something important about the data in relation to the research question.",
+          comment: null,
+          tags: ["phases", "definition"],
+        },
+        {
+          key: "n8",
+          page: "91",
+          color: ZC.orange,
+          type: "underline",
+          text: "Coding will depend on whether the themes are more data-driven or theory-driven.",
+          comment: null,
+          tags: ["phases"],
+        },
+        {
+          key: "n9",
+          page: "93",
+          color: ZC.gray,
+          type: "highlight",
+          text: "Researchers cannot free themselves of their theoretical commitments.",
+          comment: null,
+          tags: [],
+        },
+        {
+          key: "n10",
+          page: "96",
+          color: ZC.magenta,
+          type: "highlight",
+          text: "Write-up is not simply the final stage; analysis and writing are interwoven throughout.",
+          comment:
+            "Start the results section now rather than after coding finishes.",
+          tags: ["writing"],
+        },
+        {
+          key: "n11",
+          page: "101",
+          color: ZC.yellow,
+          type: "note",
+          text: null,
+          comment:
+            "Check whether the 15-point checklist in Table 1 is reproduced anywhere I can cite directly.",
+          tags: ["todo"],
+        },
+      ];
+
+      const ALL_COLORS = [...new Set(ANNOTS.map((a) => a.color))];
+      const ALL_TAGS = [...new Set(ANNOTS.flatMap((a) => a.tags))].sort();
+      // --- Data END ---
+
+      // --- Store ---
+      /**
+       * One module-level store, provider-free, read through `useProto()`. Flipping variants
+       * keeps the scenario, so the same state is compared across three shapes. Scenario
+       * presets live in the switcher bar, never in a variant.
+       *
+       *   reading       Zotero open, editing authorised, eleven annotations
+       *   zotero-closed Zotero not running: the list still reads from the saved copy,
+       *                 editing is unavailable. THE PANE BODY MUST SAY SO.
+       *   no-item       Zotero not running AND nothing resolved — the reported screenshot
+       *   saving        one card mid-write to Zotero
+       *   no-match      filters applied that nothing satisfies
+       */
+      let state = {
+        scenario: "reading",
+        width: 340,
+        selectedKey: null,
+        editingKey: null,
+        query: "",
+        colors: [],
+        tags: [],
+        expanded: false,
+        sheet: null, // null | "filter" | "tags" | "item"
+      };
+      const listeners = new Set();
+      const emit = () => listeners.forEach((l) => l());
+      const subscribe = (l) => (listeners.add(l), () => listeners.delete(l));
+      const getState = () => state;
+      function set(patch) {
+        state = {
+          ...state,
+          ...(typeof patch === "function" ? patch(state) : patch),
+        };
+        emit();
+      }
+
+      function useProto() {
+        const s = useSyncExternalStore(subscribe, getState);
+        return {
+          ...s,
+          set,
+          toggleColor: (c) =>
+            set((p) => ({
+              colors: p.colors.includes(c)
+                ? p.colors.filter((x) => x !== c)
+                : [...p.colors, c],
+            })),
+          toggleTag: (t) =>
+            set((p) => ({
+              tags: p.tags.includes(t)
+                ? p.tags.filter((x) => x !== t)
+                : [...p.tags, t],
+            })),
+          clearFilters: () => set({ colors: [], tags: [], query: "" }),
+          select: (k) =>
+            set((p) => ({ selectedKey: p.selectedKey === k ? null : k })),
+        };
+      }
+
+      /** True while Zotero will accept a write. Everything editable hangs off this. */
+      const canEdit = (s) =>
+        s.scenario === "reading" || s.scenario === "saving";
+      /** True while the pane has an item and a list to show at all. */
+      const hasItem = (s) => s.scenario !== "no-item";
+
+      /**
+       * The one condition the pane must state in its own body, or null.
+       * `body` is what a researcher reads; `action` is the single verb that ends it.
+       */
+      function condition(s) {
+        if (s.scenario === "zotero-closed" || s.scenario === "no-item") {
+          return {
+            tone: "notice",
+            title: "Zotero isn’t open",
+            body: hasItem(s)
+              ? "You’re reading a saved copy of your annotations. Open Zotero to change colours, comments or tags."
+              : "Open Zotero, then open a paper in it — or open a literature note here — to see your annotations.",
+            action: "Open Zotero",
+          };
+        }
+        return null;
+      }
+
+      const filterActive = (s) =>
+        s.colors.length > 0 || s.tags.length > 0 || s.query.trim() !== "";
+
+      function visibleAnnots(s) {
+        if (!hasItem(s)) return [];
+        if (s.scenario === "no-match") return [];
+        const q = s.query.trim().toLowerCase();
+        return ANNOTS.filter(
+          (a) =>
+            (s.colors.length === 0 || s.colors.includes(a.color)) &&
+            (s.tags.length === 0 || a.tags.some((t) => s.tags.includes(t))) &&
+            (q === "" ||
+              `${a.text ?? ""} ${a.comment ?? ""} ${a.tags.join(" ")}`
+                .toLowerCase()
+                .includes(q)),
+        );
+      }
+      // --- Store END ---
+
+      // --- Frame ---
+      /**
+       * The HOST, not the design. Draws the Obsidian workspace behind a docked leaf, the tab
+       * header, and the width box the pane lives in. Everything a variant designs goes in
+       * `children`, which is the `.view-content` box: full height, own scrolling, `@container`
+       * so the variant's own container queries work at the chosen width.
+       */
+      function ObsidianFrame({ children }) {
+        const { width } = useProto();
+        return (
+          <div className="bg-app font-ui text-ink flex min-h-full items-start justify-center px-6 pt-8 pb-28">
+            <div
+              className="bg-ground border-line flex flex-col overflow-hidden rounded-lg border shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_-8px_rgba(0,0,0,0.18)]"
+              style={{
+                width,
+                height: 660,
+                transition: "width 200ms cubic-bezier(0.2,0,0,1)",
+              }}
+            >
+              <div className="border-line text-muted flex h-9 shrink-0 items-center gap-1.5 border-b px-2.5 text-[12px]">
+                <Ic name="Highlighter" size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  Zotero annotations
+                </span>
+                <Ic
+                  name="MoreVertical"
+                  size={14}
+                  className="shrink-0 opacity-70"
+                />
+              </div>
+              <div className="@container min-h-0 flex-1 overflow-hidden">
+                {children}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // --- Frame END ---
+
+      // --- App ---
+      // --- Variant A ---
+      // --- Variant A — "Page-grouped scroll, no boxes" -------------------------------------------
+      // The pane is the surface. No annotation is wrapped in a container: no border, no fill, no
+      // rounded rect. Typography and space hold an annotation together; 16px of space separates it
+      // from its neighbour. Document order is the spine — annotations group under a sticky page
+      // eyebrow, so the researcher always knows where in the paper they are, and there is never a
+      // second column at any width.
+
+      const A_SAVING_KEY = "n6";
+
+      const A_VERBS = [
+        { id: "color", icon: "Palette", label: "Change colour" },
+        { id: "comment", icon: "MessageSquare", label: "Write a comment" },
+        { id: "more", icon: "MoreHorizontal", label: "More actions" },
+      ];
+
+      const A_FOLLOW = [
+        { id: "note", label: "The note you’re editing" },
+        { id: "reader", label: "The paper open in Zotero" },
+        { id: "pin", label: "This paper, kept in place" },
+      ];
+
+      /** Keeps document order: consecutive annotations on one page become one group. */
+      function A_groupByPage(list) {
+        const out = [];
+        for (const a of list) {
+          const last = out[out.length - 1];
+          if (last && last.page === a.page) last.items.push(a);
+          else out.push({ page: a.page, items: [a] });
+        }
+        return out;
+      }
+
+      const A_ring =
+        "focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none";
+
+      function AIconButton({
+        name,
+        label,
+        onClick,
+        active,
+        disabled,
+        size = 15,
+      }) {
+        return (
+          <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+            aria-pressed={active === undefined ? undefined : active}
+            className={cx(
+              "grid size-7 shrink-0 place-items-center rounded",
+              "transition-[background-color,color,opacity] duration-150",
+              A_ring,
+              disabled
+                ? "text-faint cursor-not-allowed"
+                : active
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-raised hover:text-ink active:scale-[0.96]",
+            )}
+          >
+            <Ic name={name} size={size} />
+          </button>
+        );
+      }
+
+      /** The one control row: [this paper][filter][search][overflow]. 32px, then the scroll. */
+      function AControlRow() {
+        const s = useProto();
+        const [searching, setSearching] = useState(false);
+        const [menu, setMenu] = useState(false);
+        const searchOpen = searching || s.query !== "";
+        const editable = canEdit(s);
+
+        return (
+          <div className="border-line bg-ground relative z-40 flex h-8 shrink-0 items-center gap-0.5 border-b px-1.5">
+            {searchOpen ? (
+              <>
+                <Ic
+                  name="Search"
+                  size={14}
+                  className="text-muted ms-1 shrink-0"
+                />
+                <input
+                  autoFocus
+                  value={s.query}
+                  onChange={(e) => s.set({ query: e.target.value })}
+                  placeholder="Search these annotations"
+                  className={cx(
+                    "text-ink placeholder:text-faint h-7 min-w-0 flex-1 bg-transparent px-1.5 text-[12px]",
+                    "focus:outline-none",
+                  )}
+                />
+                <AIconButton
+                  name="X"
+                  label="Close search"
+                  onClick={() => {
+                    s.set({ query: "" });
+                    setSearching(false);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => s.set({ sheet: "item" })}
+                  className={cx(
+                    "text-ink flex h-7 min-w-0 flex-1 items-center gap-1 rounded ps-1.5 pe-1 text-[12px]",
+                    "transition-colors duration-150 hover:bg-raised",
+                    A_ring,
+                  )}
+                >
+                  <span className="truncate font-medium">
+                    {ITEM.creators} {ITEM.year}
+                  </span>
+                  <Ic
+                    name="ChevronDown"
+                    size={13}
+                    className="text-muted shrink-0"
+                  />
+                </button>
+                <AIconButton
+                  name="ListFilter"
+                  label="Filter annotations"
+                  active={filterActive(s) || s.sheet === "filter"}
+                  onClick={() =>
+                    s.set({ sheet: s.sheet === "filter" ? null : "filter" })
+                  }
+                />
+                <AIconButton
+                  name="Search"
+                  label="Search annotations"
+                  onClick={() => setSearching(true)}
+                />
+                <div className="relative">
+                  <AIconButton
+                    name="MoreHorizontal"
+                    label="More options"
+                    active={menu}
+                    onClick={() => setMenu((m) => !m)}
+                  />
+                  {menu && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close menu"
+                        onClick={() => setMenu(false)}
+                        className="fixed inset-0 z-40 cursor-default"
+                      />
+                      <div className="bg-ground border-line absolute end-0 top-8 z-50 w-56 rounded-md border py-1 shadow-[0_8px_24px_-10px_rgba(0,0,0,0.35)]">
+                        <AMenuItem
+                          icon={
+                            s.expanded ? "ChevronsDownUp" : "ChevronsUpDown"
+                          }
+                          label={
+                            s.expanded
+                              ? "Shorten long excerpts"
+                              : "Show excerpts in full"
+                          }
+                          onClick={() => {
+                            s.set({ expanded: !s.expanded });
+                            setMenu(false);
+                          }}
+                        />
+                        <AMenuItem
+                          icon="Copy"
+                          label="Copy every annotation"
+                          onClick={() => setMenu(false)}
+                        />
+                        <AMenuItem
+                          icon="RefreshCw"
+                          label="Check your Zotero library again"
+                          disabled={!editable}
+                          onClick={() => setMenu(false)}
+                        />
+                        <AMenuItem
+                          icon="ExternalLink"
+                          label="Open this paper in Zotero"
+                          onClick={() => setMenu(false)}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      }
+
+      function AMenuItem({ icon, label, onClick, disabled }) {
+        return (
+          <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            className={cx(
+              "flex w-full items-center gap-2 px-2.5 py-1.5 text-start text-[12px]",
+              "transition-colors duration-150",
+              A_ring,
+              disabled
+                ? "text-faint cursor-not-allowed"
+                : "text-ink hover:bg-raised",
+            )}
+          >
+            <Ic
+              name={icon}
+              size={14}
+              className={disabled ? "text-faint" : "text-muted"}
+            />
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+          </button>
+        );
+      }
+
+      /** The condition, stated in the pane's own body — never a tooltip. */
+      function ABand({ cond }) {
+        const s = useProto();
+        return (
+          <div className="bg-notice-soft border-notice shrink-0 border-s-2 py-2 pe-3 ps-3">
+            <p className="text-ink text-[13px] font-semibold text-balance">
+              {cond.title}
+            </p>
+            <p className="text-muted mt-0.5 text-[13px] leading-relaxed [text-wrap:pretty]">
+              {cond.body}
+            </p>
+            <button
+              type="button"
+              onClick={() => s.set({ scenario: "reading" })}
+              className={cx(
+                "text-notice border-notice/40 mt-2 inline-flex h-6 items-center gap-1 rounded border px-2 text-[12px] font-medium",
+                "transition-colors duration-150 hover:bg-notice/10 active:scale-[0.96]",
+                A_ring,
+              )}
+            >
+              <Ic name="ExternalLink" size={12} strokeWidth={2} />
+              {cond.action}
+            </button>
+          </div>
+        );
+      }
+
+      /** Removable chips — only present while a filter is on. No counts, no "+7". */
+      function AChips() {
+        const s = useProto();
+        const chip = (key, label, dot, onRemove, aria) => (
+          <button
+            key={key}
+            type="button"
+            onClick={onRemove}
+            aria-label={aria}
+            style={dot ? { "--c": dot } : undefined}
+            className={cx(
+              "border-line text-ink flex h-6 max-w-full items-center gap-1.5 rounded-full border ps-2 pe-1.5 text-[12px]",
+              "transition-colors duration-150 hover:bg-raised",
+              A_ring,
+            )}
+          >
+            {dot && (
+              <span className="size-2.5 shrink-0 rounded-full bg-[var(--c)]" />
+            )}
+            <span className="truncate">{label}</span>
+            <Ic
+              name="X"
+              size={11}
+              strokeWidth={2}
+              className="text-muted shrink-0"
+            />
+          </button>
+        );
+
+        return (
+          <div className="bg-ground relative z-30 flex shrink-0 flex-wrap items-center gap-1.5 px-3 pt-2 pb-1">
+            {s.colors.map((c) =>
+              chip(
+                c,
+                COLOR_NAME[c],
+                c,
+                () => s.toggleColor(c),
+                `Remove the ${COLOR_NAME[c]} filter`,
+              ),
+            )}
+            {s.tags.map((t) =>
+              chip(t, t, null, () => s.toggleTag(t), `Remove the ${t} filter`),
+            )}
+            {s.query.trim() !== "" &&
+              chip(
+                "q",
+                `“${s.query.trim()}”`,
+                null,
+                () => s.set({ query: "" }),
+                "Remove the search",
+              )}
+            <button
+              type="button"
+              onClick={s.clearFilters}
+              className={cx(
+                "text-muted hover:text-ink ms-auto h-6 rounded px-1.5 text-[12px] transition-colors duration-150",
+                A_ring,
+              )}
+            >
+              Clear all
+            </button>
+          </div>
+        );
+      }
+
+      /** Filtering is a sheet over the list, not a permanent bar. */
+      function ASheet() {
+        const s = useProto();
+        const open = s.sheet === "filter" || s.sheet === "item";
+        const [shown, setShown] = useState("filter");
+        useEffect(() => {
+          if (s.sheet) setShown(s.sheet);
+        }, [s.sheet]);
+
+        return (
+          <>
+            <button
+              type="button"
+              aria-label="Close"
+              tabIndex={open ? 0 : -1}
+              onClick={() => s.set({ sheet: null })}
+              className={cx(
+                "bg-app/40 absolute inset-0 z-40 cursor-default transition-opacity duration-150",
+                open ? "opacity-100" : "pointer-events-none opacity-0",
+              )}
+            />
+            <div
+              aria-hidden={!open}
+              className={cx(
+                "bg-ground border-line absolute inset-x-0 top-0 z-50 max-h-full overflow-y-auto border-b",
+                "shadow-[0_10px_28px_-14px_rgba(0,0,0,0.45)] transition-transform duration-150 ease-out",
+                open
+                  ? "translate-y-0"
+                  : "pointer-events-none -translate-y-full",
+              )}
+            >
+              {shown === "item" ? <AItemSheet /> : <AFilterSheet />}
+            </div>
+          </>
+        );
+      }
+
+      function ALabel({ children, className }) {
+        return (
+          <p
+            className={cx(
+              "text-muted text-[11px] tracking-[0.04em]",
+              className,
+            )}
+          >
+            {children}
+          </p>
+        );
+      }
+
+      function AFilterSheet() {
+        const s = useProto();
+        return (
+          <div className="px-3 pt-3 pb-3.5">
+            <ALabel>Colours</ALabel>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ALL_COLORS.map((c) => {
+                const on = s.colors.includes(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => s.toggleColor(c)}
+                    aria-pressed={on}
+                    style={{ "--c": c }}
+                    className={cx(
+                      "flex h-7 items-center gap-1.5 rounded-full border ps-1.5 pe-2.5 text-[12px]",
+                      "transition-colors duration-150",
+                      A_ring,
+                      on
+                        ? "border-accent bg-accent-soft text-ink"
+                        : "border-line text-muted hover:bg-raised",
+                    )}
+                  >
+                    <span className="size-3.5 shrink-0 rounded-full bg-[var(--c)]" />
+                    {COLOR_NAME[c]}
+                  </button>
+                );
+              })}
+            </div>
+
+            <ALabel className="mt-5">Tags</ALabel>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ALL_TAGS.map((t) => {
+                const on = s.tags.includes(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => s.toggleTag(t)}
+                    aria-pressed={on}
+                    className={cx(
+                      "h-7 rounded-full border px-2.5 text-[12px] transition-colors duration-150",
+                      A_ring,
+                      on
+                        ? "border-accent bg-accent-soft text-ink"
+                        : "border-line text-muted hover:bg-raised",
+                    )}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={s.clearFilters}
+                disabled={!filterActive(s)}
+                className={cx(
+                  "h-7 rounded px-2 text-[12px] transition-colors duration-150",
+                  A_ring,
+                  filterActive(s)
+                    ? "text-muted hover:text-ink hover:bg-raised"
+                    : "text-faint cursor-not-allowed",
+                )}
+              >
+                Clear all
+              </button>
+              <button
+                type="button"
+                onClick={() => s.set({ sheet: null })}
+                className={cx(
+                  "bg-accent h-7 rounded px-3 text-[12px] font-medium text-white transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.96]",
+                  A_ring,
+                )}
+              >
+                Show results
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      /** The one control that folds together follow mode, the item label and the file picker. */
+      function AItemSheet() {
+        const s = useProto();
+        return (
+          <div className="px-3 pt-3 pb-3.5">
+            <ALabel>You’re reading</ALabel>
+            <p className="text-ink mt-1.5 text-[13px] leading-relaxed [text-wrap:pretty]">
+              {ITEM.title}
+            </p>
+            <p className="text-muted mt-0.5 text-[12px]">
+              {ITEM.creators}, {ITEM.year}
+            </p>
+
+            <ALabel className="mt-5">File</ALabel>
+            <div className="mt-1.5 flex flex-col">
+              {ITEM.attachments.map((f, i) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  aria-pressed={i === 0}
+                  onClick={() => s.set({ sheet: null })}
+                  className={cx(
+                    "flex items-start gap-2 rounded px-1.5 py-1.5 text-start transition-colors duration-150 hover:bg-raised",
+                    A_ring,
+                  )}
+                >
+                  <Ic
+                    name={i === 0 ? "Check" : "FileText"}
+                    size={14}
+                    className={cx(
+                      "mt-[2px] shrink-0",
+                      i === 0 ? "text-accent" : "text-faint",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="text-ink block text-[12px] leading-relaxed">
+                      {f.name}
+                    </span>
+                    <span className="text-muted block text-[11px] tracking-[0.04em] tabular-nums">
+                      {f.count} annotations
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <ALabel className="mt-5">This pane follows</ALabel>
+            <div className="mt-1.5 flex flex-col">
+              {A_FOLLOW.map((f, i) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={i === 0}
+                  onClick={() => s.set({ sheet: null })}
+                  className={cx(
+                    "flex items-center gap-2 rounded px-1.5 py-1.5 text-start text-[12px] transition-colors duration-150 hover:bg-raised",
+                    A_ring,
+                    i === 0 ? "text-ink" : "text-muted",
+                  )}
+                >
+                  <Ic
+                    name={i === 0 ? "Check" : "Circle"}
+                    size={14}
+                    className={cx(
+                      "shrink-0",
+                      i === 0 ? "text-accent" : "text-faint",
+                    )}
+                  />
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      function AVerbs({ annot, selected, saving, editable }) {
+        const hasComment = Boolean(annot.comment);
+        if (saving)
+          return (
+            <div className="bg-ground text-muted pointer-events-none absolute -top-2 end-0 z-20 flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px] tracking-[0.04em] shadow-[0_1px_4px_rgba(0,0,0,0.12)]">
+              <Ic name="Loader2" size={12} className="animate-spin" />
+              Saving
+            </div>
+          );
+
+        return (
+          <div
+            className={cx(
+              "bg-ground pointer-events-auto absolute -top-2.5 end-0 z-20 flex items-center gap-0.5 rounded p-0.5",
+              "shadow-[0_1px_4px_rgba(0,0,0,0.12)] transition-opacity duration-150",
+              selected
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            )}
+          >
+            {A_VERBS.map((v) => (
+              <AIconButton
+                key={v.id}
+                name={
+                  v.id === "comment" && hasComment
+                    ? "MessageSquareText"
+                    : v.icon
+                }
+                size={14}
+                label={
+                  v.id === "comment" && hasComment
+                    ? "Edit your comment"
+                    : v.label
+                }
+                disabled={!editable}
+                onClick={() => {}}
+              />
+            ))}
+          </div>
+        );
+      }
+
+      function AAnnot({ annot: a }) {
+        const s = useProto();
+        const selected = s.selectedKey === a.key;
+        const saving = s.scenario === "saving" && a.key === A_SAVING_KEY;
+        const editable = canEdit(s);
+        const pad = a.type === "note" ? "ps-[22px]" : "ps-3";
+
+        return (
+          <div className="group relative" style={{ "--c": a.color }}>
+            <button
+              type="button"
+              aria-pressed={selected}
+              aria-label={`Annotation on page ${a.page}`}
+              onClick={() => s.select(a.key)}
+              className={cx(
+                "absolute -inset-x-2 -inset-y-1.5 z-0 cursor-default rounded",
+                A_ring,
+              )}
+            />
+            {selected && (
+              <span
+                aria-hidden
+                className="bg-accent absolute inset-y-0 w-[2px] rounded-full"
+                style={{ insetInlineStart: -16 }}
+              />
+            )}
+
+            <div className="pointer-events-none relative z-10">
+              {a.type === "note" ? (
+                <p className="text-ink flex gap-2 text-[14px] leading-relaxed [text-wrap:pretty]">
+                  <Ic
+                    name="StickyNote"
+                    size={14}
+                    className="mt-[4px] shrink-0"
+                    style={{ color: a.color }}
+                  />
+                  <span>{a.comment}</span>
+                </p>
+              ) : a.type === "image" ? (
+                <figure
+                  className="m-0 border-s-2 ps-3"
+                  style={{ borderColor: a.color }}
+                >
+                  <img
+                    src={a.img}
+                    alt={`Area captured from page ${a.page}`}
+                    className="block w-full"
+                    style={{
+                      outline:
+                        "1px solid color-mix(in oklab, var(--ink) 12%, transparent)",
+                      outlineOffset: "-1px",
+                    }}
+                  />
+                </figure>
+              ) : (
+                <blockquote className="m-0 border-s-2 border-[var(--c)] ps-3">
+                  <p
+                    className={cx(
+                      "text-ink font-quote m-0 text-[14px] leading-[1.5] [text-wrap:pretty]",
+                      !s.expanded && "line-clamp-4",
+                    )}
+                  >
+                    {a.text}
+                  </p>
+                </blockquote>
+              )}
+
+              {a.comment && a.type !== "note" && (
+                <p
+                  className={cx(
+                    "text-ink mt-1.5 text-[13px] leading-relaxed [text-wrap:pretty]",
+                    pad,
+                  )}
+                >
+                  {a.comment}
+                </p>
+              )}
+
+              {a.tags.length > 0 && (
+                <div
+                  className={cx(
+                    "pointer-events-auto mt-1.5 flex flex-wrap gap-1",
+                    pad,
+                  )}
+                >
+                  {a.tags.map((t) => {
+                    const on = s.tags.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          s.toggleTag(t);
+                        }}
+                        className={cx(
+                          "flex h-6 items-center rounded-sm px-1.5 text-[11px] tracking-[0.04em]",
+                          "transition-colors duration-150",
+                          A_ring,
+                          on
+                            ? "bg-accent-soft text-accent"
+                            : "bg-raised text-muted hover:text-ink",
+                        )}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <AVerbs
+              annot={a}
+              selected={selected}
+              saving={saving}
+              editable={editable}
+            />
+          </div>
+        );
+      }
+
+      /** Document order is the spine: a sticky page eyebrow, in flow narrow, in a gutter wide. */
+      function APageGroup({ group }) {
+        return (
+          <section className="@lg:grid @lg:grid-cols-[4.5rem_minmax(0,1fr)] @lg:gap-x-5 @3xl:grid-cols-[6rem_minmax(0,1fr)] @3xl:gap-x-8 px-4 @lg:px-6 @3xl:px-10">
+            <div className="bg-ground sticky top-0 z-20 flex items-center gap-2 py-1.5 @lg:justify-end @lg:self-start @lg:py-0 @lg:pt-[4px]">
+              <span className="text-muted text-[11px] tracking-[0.04em] tabular-nums whitespace-nowrap">
+                Page {group.page}
+              </span>
+              <span aria-hidden className="bg-line h-px flex-1 @lg:hidden" />
+            </div>
+            <div className="flex flex-col gap-4 pt-0.5 pb-7 @lg:max-w-[68ch]">
+              {group.items.map((a) => (
+                <AAnnot key={a.key} annot={a} />
+              ))}
+            </div>
+          </section>
+        );
+      }
+
+      function ANoMatch() {
+        const s = useProto();
+        return (
+          <div className="px-4 pt-6 @lg:px-6 @3xl:px-10">
+            <div className="max-w-[46ch]">
+              <p className="text-ink text-[15px] font-semibold text-balance">
+                Nothing here matches those filters
+              </p>
+              <p className="text-muted mt-1.5 text-[13px] leading-relaxed [text-wrap:pretty]">
+                This paper has annotations, but none of them satisfy every
+                filter you have on. Remove one of the chips above, or clear them
+                all.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  s.clearFilters();
+                  s.set({ scenario: "reading" });
+                }}
+                className={cx(
+                  "bg-accent mt-3 inline-flex h-7 items-center rounded px-3 text-[12px] font-medium text-white",
+                  "transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.96]",
+                  A_ring,
+                )}
+              >
+                Clear all filters
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      /** The whole body is the condition — in the pane's flow at the top, never centred. */
+      function ANoItem({ cond }) {
+        const s = useProto();
+        return (
+          <div className="px-4 pt-6 @lg:px-6 @3xl:px-10">
+            <div className="max-w-[46ch]">
+              <Ic name="Unplug" size={18} className="text-notice" />
+              <p className="text-ink mt-2.5 text-[15px] font-semibold text-balance">
+                {cond.title}
+              </p>
+              <p className="text-muted mt-1.5 text-[13px] leading-relaxed [text-wrap:pretty]">
+                {cond.body}
+              </p>
+              <button
+                type="button"
+                onClick={() => s.set({ scenario: "reading" })}
+                className={cx(
+                  "bg-accent mt-3.5 inline-flex h-7 items-center gap-1.5 rounded px-3 text-[12px] font-medium text-white",
+                  "transition-[opacity,transform] duration-150 hover:opacity-90 active:scale-[0.96]",
+                  A_ring,
+                )}
+              >
+                <Ic name="ExternalLink" size={12} strokeWidth={2} />
+                {cond.action}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function VariantA() {
+        const s = useProto();
+        const cond = condition(s);
+        const list = visibleAnnots(s);
+        const groups = A_groupByPage(list);
+
+        return (
+          <ObsidianFrame>
+            <div className="bg-ground text-ink font-ui flex h-full flex-col">
+              {hasItem(s) ? (
+                <>
+                  <AControlRow />
+                  {cond && <ABand cond={cond} />}
+                  {filterActive(s) && <AChips />}
+                  {/* overflow-hidden clips the closed sheet, which parks at -100% */}
+                  <div className="relative min-h-0 flex-1 overflow-hidden">
+                    <div className="h-full overflow-y-auto overscroll-contain">
+                      {list.length === 0 ? (
+                        <ANoMatch />
+                      ) : (
+                        <div className="pt-1 pb-10">
+                          {groups.map((g) => (
+                            <APageGroup key={g.page} group={g} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <ASheet />
+                  </div>
+                </>
+              ) : (
+                <ANoItem cond={cond} />
+              )}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant A END ---
+
+      // --- Variant B ---
+      // --- Variant B ---
+      /**
+       * VARIANT B — "The pane has a masthead, and controls that use words."
+       *
+       * Thesis: commit to structure instead of dissolving it. One composed masthead block at the
+       * top (title / creators-year / attachment / condition), one row of word-labelled controls
+       * underneath, and a list of honest raised cards. The annotation's colour and its location
+       * are fused into a single leading mark — the page chip — so colour stops being a 3px stripe
+       * nobody decodes.
+       */
+
+      const B_FOCUS =
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0";
+
+      const B_VERBS = [
+        { id: "colour", icon: "Palette", label: "Change colour" },
+        { id: "comment", icon: "MessageSquarePlus", label: "Write a comment" },
+        { id: "more", icon: "MoreHorizontal", label: "More actions" },
+      ];
+
+      const B_SAVING_KEY = "n6";
+
+      /** "Yellow, green" — the control's own label carries the filter state. */
+      function B_listLabel(values, fallback, name) {
+        if (values.length === 0) return fallback;
+        const first = name(values[0]);
+        if (values.length === 1) return first;
+        if (values.length === 2)
+          return `${first}, ${name(values[1]).toLowerCase()}`;
+        return `${first} +${values.length - 1}`;
+      }
+
+      /** A sentence fragment naming what is currently filtering the list. */
+      function B_filterPhrase(s) {
+        const parts = [];
+        if (s.colors.length)
+          parts.push(
+            s.colors.map((c) => COLOR_NAME[c].toLowerCase()).join(" or "),
+          );
+        if (s.tags.length) parts.push(s.tags.map((t) => `#${t}`).join(" or "));
+        if (s.query.trim()) parts.push(`“${s.query.trim()}”`);
+        if (parts.length === 0) return "the filters you have on";
+        if (parts.length === 1) return parts[0];
+        return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+      }
+
+      /** The mark that fuses colour with type: a dot for a highlight, a bar for an underline. */
+      function BColorMark({ type }) {
+        if (type === "underline")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-[3px] w-[9px] shrink-0 rounded-[1px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        if (type === "image")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        return (
+          <span
+            aria-hidden="true"
+            className="block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: "var(--c)" }}
+          />
+        );
+      }
+
+      /** Colour + location as one mark. Opens the page in Zotero. */
+      function BPageChip({ annot, live }) {
+        return (
+          <button
+            type="button"
+            disabled={!live}
+            title={
+              live ? `Open page ${annot.page} in Zotero` : "Zotero isn’t open"
+            }
+            className={cx(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-[4px] ps-1.5 pe-2 text-[12px] font-medium tabular-nums",
+              "text-ink transition-[box-shadow] duration-150",
+              live && "hover:shadow-[0_0_0_1px_var(--c)] cursor-pointer",
+              B_FOCUS,
+            )}
+            style={{
+              background: "color-mix(in srgb, var(--c) 22%, transparent)",
+            }}
+          >
+            <BColorMark type={annot.type} />
+            <span>p.&nbsp;{annot.page}</span>
+          </button>
+        );
+      }
+
+      function BVerb({ icon, label, on, active, disabled }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            disabled={disabled}
+            aria-label={label}
+            aria-pressed={active ? true : undefined}
+            title={disabled ? "Open Zotero to edit your annotations" : label}
+            className={cx(
+              "grid h-6 w-6 place-items-center rounded-[4px] transition-[opacity,background-color,color] duration-150",
+              disabled
+                ? "text-faint cursor-not-allowed opacity-45"
+                : active
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-sunken hover:text-ink",
+              B_FOCUS,
+            )}
+          >
+            <Ic name={icon} size={14} />
+          </button>
+        );
+      }
+
+      function BTagChip({ tag, on, active }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            className={cx(
+              "h-6 rounded-[4px] px-1.5 text-[11px] tracking-[0.04em] transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-sunken text-muted hover:text-ink",
+              B_FOCUS,
+            )}
+          >
+            #{tag}
+          </button>
+        );
+      }
+
+      function BCommentEditor({ annot }) {
+        const { set } = useProto();
+        const [draft, setDraft] = React.useState(annot.comment ?? "");
+        return (
+          <div className="bg-ground rounded-[4px] p-1.5">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              className={cx(
+                "text-ink w-full resize-none bg-transparent text-[13px] leading-relaxed",
+                "placeholder:text-faint",
+                B_FOCUS,
+              )}
+              placeholder="Write a comment on this highlight"
+            />
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "text-muted hover:text-ink h-6 rounded-[4px] px-2 text-[12px] transition-[color] duration-150",
+                  B_FOCUS,
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "bg-accent text-ground h-6 rounded-[4px] px-2 text-[12px] font-medium",
+                  B_FOCUS,
+                )}
+              >
+                Save comment
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function BSwatchRow({ annot }) {
+        const { set } = useProto();
+        return (
+          <div className="bg-ground flex flex-wrap items-center gap-1 rounded-[4px] p-1.5">
+            <span className="text-muted me-1 text-[11px] tracking-[0.04em]">
+              Colour
+            </span>
+            {ALL_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ sheet: null })}
+                aria-label={COLOR_NAME[c]}
+                aria-pressed={c === annot.color}
+                title={COLOR_NAME[c]}
+                className={cx(
+                  "h-5 w-5 rounded-[4px] transition-[box-shadow] duration-150",
+                  c === annot.color
+                    ? "shadow-[0_0_0_2px_var(--accent)]"
+                    : "hover:shadow-[0_0_0_1px_var(--line)]",
+                  B_FOCUS,
+                )}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        );
+      }
+
+      function BCard({ annot }) {
+        const s = useProto();
+        const { select, set, toggleTag } = s;
+        const live = canEdit(s);
+        const selected = s.selectedKey === annot.key;
+        const editing = s.editingKey === annot.key;
+        const swatches = s.sheet === `colour:${annot.key}`;
+        const saving = s.scenario === "saving" && annot.key === B_SAVING_KEY;
+        const isNote = annot.type === "note";
+
+        return (
+          <article
+            aria-busy={saving || undefined}
+            className={cx(
+              "group bg-raised rounded-[6px] p-[10px] transition-[background-color,box-shadow] duration-150",
+              selected &&
+                "bg-accent-soft shadow-[inset_0_0_0_1px_var(--accent)]",
+            )}
+            style={{ "--c": annot.color }}
+          >
+            <div className="flex items-center gap-2">
+              <BPageChip annot={annot} live={live} />
+              {isNote && (
+                <span className="text-muted text-[11px] tracking-[0.04em]">
+                  Note to self
+                </span>
+              )}
+              <span className="min-w-0 flex-1" />
+              {saving ? (
+                <span
+                  className="text-muted flex items-center gap-1.5 text-[12px]"
+                  aria-live="polite"
+                >
+                  <Ic name="Loader2" size={13} className="animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                <div
+                  className={cx(
+                    "flex items-center gap-0.5 transition-[opacity] duration-150",
+                    live &&
+                      !selected &&
+                      "opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
+                  )}
+                >
+                  {!live && (
+                    <Ic name="Lock" size={12} className="text-faint me-0.5" />
+                  )}
+                  {B_VERBS.map((v) => (
+                    <BVerb
+                      key={v.id}
+                      icon={v.icon}
+                      label={
+                        v.id === "comment" && annot.comment
+                          ? "Edit your comment"
+                          : v.label
+                      }
+                      disabled={!live}
+                      active={
+                        (v.id === "colour" && swatches) ||
+                        (v.id === "comment" && editing)
+                      }
+                      on={() => {
+                        if (v.id === "colour")
+                          set({
+                            sheet: swatches ? null : `colour:${annot.key}`,
+                          });
+                        else if (v.id === "comment")
+                          set({ editingKey: editing ? null : annot.key });
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {swatches && (
+              <div className="mt-2">
+                <BSwatchRow annot={annot} />
+              </div>
+            )}
+
+            {annot.type === "image" && (
+              <img
+                src={annot.img}
+                alt={`Figure captured from page ${annot.page}`}
+                className="mt-2 block w-full rounded-[4px]"
+                style={{
+                  outline:
+                    "1px solid color-mix(in srgb, var(--ink) 14%, transparent)",
+                  outlineOffset: "-1px",
+                }}
+              />
+            )}
+
+            {annot.text && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", B_FOCUS)}
+              >
+                <p
+                  className={cx(
+                    "font-quote text-ink text-[14px] leading-[1.5]",
+                    !s.expanded && "line-clamp-3",
+                  )}
+                >
+                  {annot.text}
+                </p>
+              </button>
+            )}
+
+            {isNote && !editing && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", B_FOCUS)}
+              >
+                <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                  {annot.comment}
+                </p>
+              </button>
+            )}
+
+            {editing ? (
+              <div className="mt-2">
+                <BCommentEditor annot={annot} />
+              </div>
+            ) : (
+              !isNote &&
+              annot.comment && (
+                <div className="border-line mt-2 border-s-2 ps-2.5">
+                  <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                    {annot.comment}
+                  </p>
+                </div>
+              )
+            )}
+
+            {annot.tags.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {annot.tags.map((t) => (
+                  <BTagChip
+                    key={t}
+                    tag={t}
+                    active={s.tags.includes(t)}
+                    on={() => toggleTag(t)}
+                  />
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      }
+
+      function BCondition() {
+        const s = useProto();
+        const c = condition(s);
+        if (!c) return null;
+        return (
+          <div className="bg-notice-soft border-notice mt-2.5 rounded-[6px] border-s-2 p-2.5">
+            <div className="flex items-center gap-1.5">
+              <Ic
+                name="PlugZap"
+                size={14}
+                strokeWidth={2}
+                className="text-notice shrink-0"
+              />
+              <h3 className="text-ink text-[13px] font-semibold text-balance">
+                {c.title}
+              </h3>
+            </div>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              {c.body}
+            </p>
+            <button
+              type="button"
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                B_FOCUS,
+              )}
+            >
+              <Ic name="ExternalLink" size={13} strokeWidth={2} />
+              {c.action}
+            </button>
+          </div>
+        );
+      }
+
+      function BPanel({ children, align = "auto" }) {
+        const { set } = useProto();
+        return (
+          <>
+            <button
+              type="button"
+              aria-label="Close this menu"
+              onClick={() => set({ sheet: null })}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+            <div
+              className={cx(
+                "bg-ground border-line absolute top-full z-30 mt-1 w-[230px] rounded-[8px] border p-1",
+                align === "auto"
+                  ? "start-0 @min-[860px]:start-auto @min-[860px]:end-0"
+                  : "start-0",
+                "shadow-[0_2px_4px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.3)]",
+              )}
+            >
+              {children}
+            </div>
+          </>
+        );
+      }
+
+      function BControl({ icon, label, active, on, chevron = true }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            className={cx(
+              "flex h-7 max-w-[160px] items-center gap-1.5 rounded-[6px] px-2 text-[12px]",
+              "transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-raised text-ink hover:bg-sunken",
+              B_FOCUS,
+            )}
+          >
+            {icon && <Ic name={icon} size={13} className="shrink-0" />}
+            <span className="min-w-0 truncate">{label}</span>
+            {chevron && (
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            )}
+          </button>
+        );
+      }
+
+      function BControls() {
+        const s = useProto();
+        const { set, toggleColor, toggleTag, clearFilters } = s;
+        const open =
+          typeof s.sheet === "string" && !s.sheet.startsWith("colour:")
+            ? s.sheet
+            : null;
+        const toggle = (name) => set({ sheet: open === name ? null : name });
+
+        return (
+          <div className="relative flex flex-wrap items-center gap-1.5">
+            <BControl
+              icon="Palette"
+              label={B_listLabel(s.colors, "Colour", (c) => COLOR_NAME[c])}
+              active={open === "filter" || s.colors.length > 0}
+              on={() => toggle("filter")}
+            />
+            <BControl
+              icon="Tags"
+              label={B_listLabel(
+                s.tags,
+                "Tags",
+                (t) => t.charAt(0).toUpperCase() + t.slice(1),
+              )}
+              active={open === "tags" || s.tags.length > 0}
+              on={() => toggle("tags")}
+            />
+            <BControl
+              icon="Search"
+              label={s.query.trim() ? `“${s.query.trim()}”` : "Search"}
+              active={open === "search" || s.query.trim() !== ""}
+              chevron={false}
+              on={() => toggle("search")}
+            />
+            {filterActive(s) && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearFilters();
+                  set({ sheet: null });
+                }}
+                className={cx(
+                  "text-accent ms-auto h-7 rounded-[6px] px-1.5 text-[12px] hover:underline",
+                  B_FOCUS,
+                )}
+              >
+                Show all
+              </button>
+            )}
+
+            {open === "filter" && (
+              <BPanel>
+                {ALL_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleColor(c)}
+                    aria-pressed={s.colors.includes(c)}
+                    className={cx(
+                      "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                      "transition-[background-color] duration-150 hover:bg-raised",
+                      B_FOCUS,
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ background: c }}
+                    />
+                    <span className="text-ink flex-1 text-start">
+                      {COLOR_NAME[c]}
+                    </span>
+                    {s.colors.includes(c) && (
+                      <Ic name="Check" size={13} className="text-accent" />
+                    )}
+                  </button>
+                ))}
+              </BPanel>
+            )}
+
+            {open === "tags" && (
+              <BPanel>
+                <div className="max-h-[220px] overflow-y-auto">
+                  {ALL_TAGS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTag(t)}
+                      aria-pressed={s.tags.includes(t)}
+                      className={cx(
+                        "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                        "transition-[background-color] duration-150 hover:bg-raised",
+                        B_FOCUS,
+                      )}
+                    >
+                      <span className="text-ink flex-1 text-start">#{t}</span>
+                      <span className="text-faint tabular-nums">
+                        {ANNOTS.filter((a) => a.tags.includes(t)).length}
+                      </span>
+                      {s.tags.includes(t) && (
+                        <Ic name="Check" size={13} className="text-accent" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </BPanel>
+            )}
+
+            {open === "search" && (
+              <BPanel>
+                <div className="bg-raised flex h-8 items-center gap-1.5 rounded-[5px] px-2">
+                  <Ic name="Search" size={13} className="text-muted shrink-0" />
+                  <input
+                    autoFocus
+                    value={s.query}
+                    onChange={(e) => set({ query: e.target.value })}
+                    placeholder="Search your annotations"
+                    className={cx(
+                      "text-ink placeholder:text-faint min-w-0 flex-1 bg-transparent text-[13px] outline-none",
+                    )}
+                  />
+                  {s.query !== "" && (
+                    <button
+                      type="button"
+                      aria-label="Clear the search"
+                      onClick={() => set({ query: "" })}
+                      className={cx(
+                        "text-muted hover:text-ink grid h-6 w-6 place-items-center rounded-[4px]",
+                        B_FOCUS,
+                      )}
+                    >
+                      <Ic name="X" size={13} />
+                    </button>
+                  )}
+                </div>
+              </BPanel>
+            )}
+          </div>
+        );
+      }
+
+      function BAttachmentPicker() {
+        const s = useProto();
+        const { set } = s;
+        if (ITEM.attachments.length < 2) return null;
+        const currentKey = s.attKey ?? ITEM.attachments[0].key;
+        const current =
+          ITEM.attachments.find((a) => a.key === currentKey) ??
+          ITEM.attachments[0];
+        const open = s.sheet === "item";
+        return (
+          <div className="relative mt-1.5">
+            <button
+              type="button"
+              onClick={() => set({ sheet: open ? null : "item" })}
+              aria-pressed={open}
+              className={cx(
+                "text-muted hover:text-ink hover:bg-raised flex h-6 max-w-full items-center gap-1.5 rounded-[5px] ps-1 pe-1.5 text-[12px]",
+                "transition-[background-color,color] duration-150",
+                open && "bg-raised text-ink",
+                B_FOCUS,
+              )}
+            >
+              <Ic name="Paperclip" size={12} className="shrink-0" />
+              <span className="min-w-0 truncate">{current.name}</span>
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            </button>
+            {open && (
+              <BPanel align="start">
+                <p className="text-muted px-1.5 pt-1 pb-1.5 text-[11px] tracking-[0.04em]">
+                  Read annotations from
+                </p>
+                {ITEM.attachments.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    onClick={() => set({ attKey: a.key, sheet: null })}
+                    aria-pressed={a.key === current.key}
+                    className={cx(
+                      "hover:bg-raised flex w-full items-start gap-2 rounded-[5px] p-1.5 text-start",
+                      "transition-[background-color] duration-150",
+                      B_FOCUS,
+                    )}
+                  >
+                    <Ic
+                      name={a.key === current.key ? "Check" : "FileText"}
+                      size={13}
+                      className={cx(
+                        "mt-0.5 shrink-0",
+                        a.key === current.key ? "text-accent" : "text-faint",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-ink block text-[12px] leading-snug text-pretty">
+                        {a.name}
+                      </span>
+                      <span className="text-faint mt-0.5 block text-[11px] tabular-nums">
+                        {a.count} annotations
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </BPanel>
+            )}
+          </div>
+        );
+      }
+
+      function BMasthead() {
+        const s = useProto();
+        const present = hasItem(s);
+        return (
+          <header className="bg-ground relative z-10 shrink-0 px-3 pt-3 pb-2.5">
+            {present ? (
+              <div className="flex flex-col gap-2.5 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-between @min-[860px]:gap-6">
+                <div className="min-w-0 @min-[860px]:max-w-[520px]">
+                  <h2 className="text-ink line-clamp-2 text-[13px] leading-snug font-semibold text-pretty">
+                    {ITEM.title}
+                  </h2>
+                  <p className="text-muted mt-0.5 text-[12px]">
+                    {ITEM.creators} ·{" "}
+                    <span className="tabular-nums">{ITEM.year}</span>
+                  </p>
+                  <BAttachmentPicker />
+                </div>
+                <div className="@min-[860px]:shrink-0">
+                  <BControls />
+                </div>
+              </div>
+            ) : null}
+            <BCondition />
+          </header>
+        );
+      }
+
+      function BEmptyMatch() {
+        const s = useProto();
+        const { clearFilters } = s;
+        return (
+          <div className="bg-raised rounded-[6px] p-3">
+            <h3 className="text-ink text-[13px] font-semibold text-balance">
+              Nothing matches that
+            </h3>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              No annotation on this paper matches {B_filterPhrase(s)}. Show all{" "}
+              {ANNOTS.length} again, or narrow it differently.
+            </p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                B_FOCUS,
+              )}
+            >
+              <Ic name="ListRestart" size={13} strokeWidth={2} />
+              Show all annotations
+            </button>
+          </div>
+        );
+      }
+
+      function BList() {
+        const s = useProto();
+        const list = visibleAnnots(s);
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1 pb-6">
+            {list.length === 0 ? (
+              <BEmptyMatch />
+            ) : (
+              <div className="grid grid-cols-1 content-start items-start gap-2 @min-[500px]:grid-cols-2 @min-[860px]:grid-cols-3">
+                {list.map((a) => (
+                  <BCard key={a.key} annot={a} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function VariantB() {
+        const s = useProto();
+        return (
+          <ObsidianFrame>
+            <div className="font-ui text-ink flex h-full min-h-0 flex-col">
+              <BMasthead />
+              {hasItem(s) && <BList />}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant B END ---
+      // --- Variant B END ---
+
+      // --- Variant C ---
+      // --- Variant C ---
+      /**
+       * VARIANT C — "Marginalia": a reading column, not a list of records.
+       *
+       * Thesis: an annotation pane is the researcher's own marginalia. Printed out it would be
+       * one typeset column in document order with page numbers in the margin — so that is what
+       * it is here. No cards, no list rows, no permanent filter bar. Location and colour live in
+       * a leading gutter; the excerpt and the comment are the two voices of a document; search
+       * and filter are an overlay that closes and leaves the reading alone; conditions are front
+       * matter, set in the same voice as the column.
+       */
+
+      const C_SAVING_KEY = "n3";
+
+      /**
+       * The shared FIGURE data-URI carries a bare "&" (from the "Define & name" label), which makes
+       * the SVG unparseable and renders as a broken image. Repaired here at display time only — the
+       * data itself is left exactly as written.
+       */
+      const C_FIG_SRC = (src) =>
+        src.replace(/%26(?!amp;|#|lt;|gt;|quot;|apos;)/g, "%26amp;");
+
+      const C_TYPE_NAME = {
+        highlight: "Highlight",
+        underline: "Underline",
+        image: "Figure",
+        note: "Note",
+      };
+
+      /** The measure + gutter wrapper every line of the document shares, so the gutter edge runs
+       *  unbroken down the whole scroll and the column centres once the pane is wide. */
+      function CMeasure({ children, className }) {
+        return (
+          <div
+            className={cx(
+              "mx-auto w-full max-w-[68ch] px-3 @[480px]:px-6",
+              className,
+            )}
+          >
+            {children}
+          </div>
+        );
+      }
+
+      function CRow({ gutter, children, className }) {
+        return (
+          <div
+            className={cx(
+              "grid grid-cols-[34px_minmax(0,1fr)] gap-x-2 @[480px]:grid-cols-[64px_minmax(0,1fr)] @[480px]:gap-x-4",
+              className,
+            )}
+          >
+            <div className="pt-[2px]">{gutter}</div>
+            <div className="min-w-0">{children}</div>
+          </div>
+        );
+      }
+
+      /** Page number, colour dot, and — once there is room — the annotation's type. */
+      function CGutter({ annot, saving }) {
+        return (
+          <div
+            className="flex flex-col items-start gap-1.5"
+            style={{ "--c": annot.color }}
+          >
+            <span className="text-muted text-[11px] leading-[1.3] tabular-nums">
+              {annot.page}
+            </span>
+            {saving ? (
+              <Ic
+                name="Loader2"
+                size={9}
+                className="text-muted mt-[1px] animate-spin"
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                className="mt-[1px] block size-[6px] rounded-full bg-[var(--c)]"
+              />
+            )}
+            <span className="sr-only">
+              {COLOR_NAME[annot.color]} {C_TYPE_NAME[annot.type].toLowerCase()}{" "}
+              on page {annot.page}
+            </span>
+            <span className="text-faint hidden text-[11px] leading-[1.3] tracking-[0.04em] uppercase @[480px]:block">
+              {C_TYPE_NAME[annot.type]}
+            </span>
+          </div>
+        );
+      }
+
+      /** A text-and-icon verb. Editing verbs go unavailable, visibly, the moment Zotero closes. */
+      function CVerb({ icon, label, disabled, hint }) {
+        return (
+          <button
+            type="button"
+            disabled={disabled}
+            title={disabled ? hint : undefined}
+            className={cx(
+              "focus-visible:ring-accent inline-flex min-h-[24px] items-center gap-1.5 rounded-[3px] px-1.5 py-1 text-[12px] transition-[color,background-color] duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              disabled
+                ? "text-faint cursor-not-allowed line-through decoration-1 decoration-current"
+                : "text-muted hover:text-ink hover:bg-raised active:scale-[0.96]",
+            )}
+          >
+            <Ic name={icon} size={13} />
+            {label}
+          </button>
+        );
+      }
+
+      /** One entry of the marginalia: gutter, quotation, the researcher's answer, its tags. */
+      function CEntry({ annot }) {
+        const s = useProto();
+        const selected = s.selectedKey === annot.key;
+        const saving = s.scenario === "saving" && annot.key === C_SAVING_KEY;
+        const editable = canEdit(s);
+        const hint = "Open Zotero to change this.";
+
+        return (
+          <article
+            className={cx(
+              "transition-[background-color] duration-150",
+              selected ? "bg-sunken" : "hover:bg-raised",
+            )}
+          >
+            <CMeasure>
+              <button
+                type="button"
+                onClick={() => s.select(annot.key)}
+                aria-pressed={selected}
+                className="focus-visible:ring-accent block w-full py-2.5 text-start focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <CRow gutter={<CGutter annot={annot} saving={saving} />}>
+                  {annot.type === "image" ? (
+                    <img
+                      src={C_FIG_SRC(annot.img)}
+                      alt={`Figure captured from page ${annot.page}`}
+                      className="border-line/70 block w-full rounded-[2px] border"
+                    />
+                  ) : annot.text ? (
+                    <p
+                      className={cx(
+                        "border-line text-ink font-quote border-s ps-3 text-[14px] leading-[1.5]",
+                        !s.expanded && "line-clamp-3",
+                      )}
+                    >
+                      {annot.text}
+                    </p>
+                  ) : null}
+
+                  {annot.comment && (
+                    <p
+                      className={cx(
+                        "text-ink font-ui text-[13px] leading-[1.55] [text-wrap:pretty]",
+                        annot.type === "note" ? "" : "mt-2 ps-3",
+                      )}
+                    >
+                      {annot.comment}
+                    </p>
+                  )}
+
+                  {(annot.tags.length > 0 || saving) && (
+                    <p
+                      className={cx(
+                        "text-muted mt-1.5 text-[11px] leading-[1.45]",
+                        annot.type === "note" ? "" : "ps-3",
+                      )}
+                    >
+                      {annot.tags.map((t) => (
+                        <span key={t} className="me-2 whitespace-nowrap">
+                          <span className="text-faint">#</span>
+                          {t}
+                        </span>
+                      ))}
+                      {saving && (
+                        <span className="text-notice">Saving to Zotero…</span>
+                      )}
+                    </p>
+                  )}
+                </CRow>
+              </button>
+
+              {selected && (
+                <CRow gutter={null} className="pb-3">
+                  <div className="-ms-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                    <CVerb icon="Copy" label="Copy" />
+                    <CVerb
+                      icon="MessageSquare"
+                      label="Edit comment"
+                      disabled={!editable}
+                      hint={hint}
+                    />
+                    <CVerb
+                      icon="Palette"
+                      label="Change colour"
+                      disabled={!editable}
+                      hint={hint}
+                    />
+                    <CVerb icon="ExternalLink" label="Show in Zotero" />
+                  </div>
+                  {!editable && (
+                    <p className="text-muted mt-1 ps-1.5 text-[11px] leading-[1.45]">
+                      Editing is unavailable while Zotero is closed.
+                    </p>
+                  )}
+                </CRow>
+              )}
+            </CMeasure>
+          </article>
+        );
+      }
+
+      /** An inline text button — the only button shape this variant allows inside the column. */
+      function CInlineAction({ children, onClick }) {
+        return (
+          <button
+            type="button"
+            onClick={onClick}
+            className="text-accent focus-visible:ring-accent decoration-accent/40 min-h-[24px] rounded-[3px] underline decoration-1 underline-offset-[3px] transition-[color] duration-150 hover:decoration-current focus-visible:ring-2 focus-visible:outline-none"
+          >
+            {children}
+          </button>
+        );
+      }
+
+      /** The Zotero-closed condition, told as front matter rather than dropped on as an alert. */
+      function CCondition({ cond, bare }) {
+        return (
+          <CMeasure className={cx(bare ? "pt-10" : "pt-5 pb-5")}>
+            <div
+              className="border-line"
+              style={{
+                borderBottomWidth: bare ? 0 : 1,
+                paddingBottom: bare ? 0 : 20,
+              }}
+            >
+              <p className="text-ink font-quote text-[14px] leading-[1.6] [text-wrap:pretty]">
+                <span className="text-notice font-semibold">
+                  {cond.title}.{" "}
+                </span>
+                {cond.body}
+              </p>
+              <p className="mt-3 font-ui text-[13px]">
+                <CInlineAction>{cond.action}</CInlineAction>
+              </p>
+            </div>
+          </CMeasure>
+        );
+      }
+
+      /** The filter, said out loud — the only description this variant gives of its own state. */
+      function C_FILTER_PHRASE(s) {
+        const bits = [];
+        if (s.colors.length > 0)
+          bits.push(
+            s.colors.map((c) => COLOR_NAME[c].toLowerCase()).join(" and ") +
+              " only",
+          );
+        if (s.tags.length > 0)
+          bits.push("tagged " + s.tags.map((t) => "#" + t).join(" or "));
+        if (s.query.trim() !== "")
+          bits.push("containing “" + s.query.trim() + "”");
+        return bits.join(", ");
+      }
+
+      /** Front matter for an active filter: one sentence, set in the column's own face. */
+      function CFilterSentence() {
+        const s = useProto();
+        const shown = visibleAnnots(s).length;
+        const phrase = C_FILTER_PHRASE(s);
+        const showAll = () =>
+          set({
+            colors: [],
+            tags: [],
+            query: "",
+            scenario: s.scenario === "no-match" ? "reading" : s.scenario,
+          });
+
+        return (
+          <CMeasure className="pt-4 pb-4">
+            <p className="text-muted font-quote border-line border-b pb-4 text-[13px] leading-[1.6] [text-wrap:pretty]">
+              Showing <span className="text-ink tabular-nums">{shown}</span> of{" "}
+              <span className="tabular-nums">{ANNOTS.length}</span> annotations
+              {phrase ? ", " + phrase : ""}.{" "}
+              <span className="font-ui text-[12px]">
+                <CInlineAction onClick={showAll}>Show all</CInlineAction>
+              </span>
+            </p>
+          </CMeasure>
+        );
+      }
+
+      /** Nothing satisfies the filter: same voice, names the filter, offers the way out. */
+      function CNoMatch() {
+        const s = useProto();
+        const phrase = C_FILTER_PHRASE(s);
+        const showAll = () =>
+          set({ colors: [], tags: [], query: "", scenario: "reading" });
+        return (
+          <CMeasure className="pt-8">
+            <p className="text-ink font-quote text-[14px] leading-[1.6] [text-wrap:pretty]">
+              Nothing you have marked on this paper is left by the filter you
+              have on
+              {phrase ? ": " + phrase : ""}. Widen it, or read everything again.
+            </p>
+            <p className="mt-3 font-ui text-[13px]">
+              <CInlineAction onClick={showAll}>
+                Show all annotations
+              </CInlineAction>
+            </p>
+          </CMeasure>
+        );
+      }
+
+      function CSwatch({ color }) {
+        const s = useProto();
+        const on = s.colors.includes(color);
+        return (
+          <button
+            type="button"
+            onClick={() => s.toggleColor(color)}
+            aria-pressed={on}
+            title={COLOR_NAME[color]}
+            style={{ "--c": color }}
+            className={cx(
+              "focus-visible:ring-accent grid size-6 place-items-center rounded-full transition-[box-shadow,background-color] duration-150 focus-visible:ring-2 focus-visible:outline-none",
+              on ? "bg-sunken ring-accent ring-2" : "hover:bg-raised",
+            )}
+          >
+            <span className="block size-[11px] rounded-full bg-[var(--c)]" />
+            <span className="sr-only">{COLOR_NAME[color]}</span>
+          </button>
+        );
+      }
+
+      /** Search and filter take the pane over temporarily, then give it back. */
+      function CFinder() {
+        const s = useProto();
+        const ref = useRef(null);
+        useEffect(() => {
+          ref.current?.focus();
+        }, []);
+        const close = () => set({ sheet: null });
+
+        return (
+          <div
+            className="bg-ground absolute inset-0 z-20 flex flex-col"
+            role="dialog"
+            aria-label="Search and filter your annotations"
+            onKeyDown={(e) => e.key === "Escape" && close()}
+          >
+            <div className="flex h-[30px] shrink-0 items-center gap-2 px-3 @[480px]:px-6">
+              <span className="text-muted flex-1 text-[12px]">
+                Search and filter
+              </span>
+              <button
+                type="button"
+                onClick={close}
+                className="text-muted hover:text-ink hover:bg-raised focus-visible:ring-accent grid size-6 place-items-center rounded-[3px] transition-[color,background-color] duration-150 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                <Ic name="X" size={14} />
+                <span className="sr-only">Close search and filter</span>
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 @[480px]:px-6">
+              <div className="mx-auto w-full max-w-[68ch]">
+                <label className="border-line focus-within:border-accent flex items-center gap-2 border-b py-2 transition-[border-color] duration-150">
+                  <Ic name="Search" size={14} className="text-faint shrink-0" />
+                  <input
+                    ref={ref}
+                    value={s.query}
+                    onChange={(e) => set({ query: e.target.value })}
+                    placeholder="Search your annotations"
+                    className="text-ink placeholder:text-faint w-full bg-transparent text-[13px] outline-none"
+                  />
+                  {s.query && (
+                    <button
+                      type="button"
+                      onClick={() => set({ query: "" })}
+                      className="text-faint hover:text-ink focus-visible:ring-accent grid size-6 place-items-center rounded-[3px] focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                      <Ic name="X" size={13} />
+                      <span className="sr-only">Clear the search</span>
+                    </button>
+                  )}
+                </label>
+
+                <p className="text-faint mt-6 text-[11px] tracking-[0.04em] uppercase">
+                  Colour
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {ALL_COLORS.map((c) => (
+                    <CSwatch key={c} color={c} />
+                  ))}
+                </div>
+
+                <p className="text-faint mt-6 text-[11px] tracking-[0.04em] uppercase">
+                  Tag
+                </p>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {ALL_TAGS.map((t) => {
+                    const on = s.tags.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => s.toggleTag(t)}
+                        aria-pressed={on}
+                        className={cx(
+                          "focus-visible:ring-accent min-h-[24px] rounded-[3px] px-1 text-[13px] transition-[color] duration-150 focus-visible:ring-2 focus-visible:outline-none",
+                          on
+                            ? "text-accent underline decoration-1 underline-offset-[3px]"
+                            : "text-muted hover:text-ink",
+                        )}
+                      >
+                        <span className="text-faint">#</span>
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-faint mt-6 text-[11px] tracking-[0.04em] uppercase">
+                  Reading from
+                </p>
+                <div className="mt-2 flex flex-col items-start gap-1">
+                  {ITEM.attachments.map((at, i) => (
+                    <button
+                      key={at.key}
+                      type="button"
+                      aria-pressed={i === 0}
+                      className={cx(
+                        "focus-visible:ring-accent min-h-[24px] rounded-[3px] px-1 text-start text-[13px] leading-[1.5] focus-visible:ring-2 focus-visible:outline-none",
+                        i === 0 ? "text-ink" : "text-muted hover:text-ink",
+                      )}
+                    >
+                      {at.name}{" "}
+                      <span className="text-faint tabular-nums">
+                        · {at.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <p className="mt-8 font-ui text-[13px]">
+                  <CInlineAction
+                    onClick={() => {
+                      set({
+                        colors: [],
+                        tags: [],
+                        query: "",
+                        scenario:
+                          s.scenario === "no-match" ? "reading" : s.scenario,
+                      });
+                    }}
+                  >
+                    Clear every filter
+                  </CInlineAction>
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      /** The whole of the chrome: one 30px line, mostly not there. */
+      function CChromeLine() {
+        const s = useProto();
+        const pinned = filterActive(s) || s.scenario === "no-match";
+        const verb =
+          "text-muted hover:text-ink hover:bg-raised focus-visible:ring-accent grid size-6 place-items-center rounded-[3px] transition-[opacity,color,background-color] duration-150 focus-visible:ring-2 focus-visible:outline-none focus-visible:opacity-100";
+
+        return (
+          <div className="flex h-[30px] shrink-0 items-center gap-1 px-3 @[480px]:px-6">
+            {hasItem(s) && (
+              <span
+                className="text-muted min-w-0 flex-1 truncate text-[12px]"
+                title={ITEM.title}
+              >
+                <span className="@[480px]:hidden">
+                  {ITEM.creators} {ITEM.year}
+                </span>
+                <span className="hidden @[480px]:inline">
+                  {ITEM.title} · {ITEM.creators} {ITEM.year}
+                </span>
+              </span>
+            )}
+
+            {hasItem(s) && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => set({ sheet: "filter" })}
+                  className={cx(
+                    verb,
+                    "opacity-0 group-hover/pane:opacity-100 group-focus-within/pane:opacity-100",
+                  )}
+                >
+                  <Ic name="Search" size={14} />
+                  <span className="sr-only">Search your annotations</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set({ sheet: "filter" })}
+                  aria-pressed={pinned}
+                  className={cx(
+                    verb,
+                    pinned
+                      ? "text-accent opacity-100"
+                      : "opacity-0 group-hover/pane:opacity-100 group-focus-within/pane:opacity-100",
+                  )}
+                >
+                  <Ic name="SlidersHorizontal" size={14} />
+                  <span className="sr-only">Filter your annotations</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set({ expanded: !s.expanded })}
+                  aria-pressed={s.expanded}
+                  className={cx(
+                    verb,
+                    "opacity-0 group-hover/pane:opacity-100 group-focus-within/pane:opacity-100",
+                  )}
+                >
+                  <Ic name="MoreHorizontal" size={14} />
+                  <span className="sr-only">More</span>
+                </button>
+              </>
+            )}
+          </div>
+        );
+      }
+
+      function VariantC() {
+        const s = useProto();
+        const cond = condition(s);
+        const list = visibleAnnots(s);
+        const noMatch = s.scenario === "no-match";
+
+        // A filter the researcher can actually see and undo, so "no matches" names something real.
+        useEffect(() => {
+          if (s.scenario === "no-match" && !filterActive(getState())) {
+            set({ colors: [ZC.red], tags: ["writing"] });
+          }
+        }, [s.scenario]);
+
+        return (
+          <ObsidianFrame>
+            <div className="group/pane bg-ground relative flex h-full flex-col">
+              <CChromeLine />
+
+              <div className="min-h-0 flex-1 overflow-y-auto pb-10">
+                {cond && <CCondition cond={cond} bare={!hasItem(s)} />}
+
+                {hasItem(s) && (
+                  <>
+                    {filterActive(s) && !noMatch && <CFilterSentence />}
+                    {noMatch ? (
+                      <CNoMatch />
+                    ) : (
+                      <div className="flex flex-col gap-5 pt-4">
+                        {list.map((a) => (
+                          <CEntry key={a.key} annot={a} />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {s.sheet && <CFinder />}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant C END ---
+      // --- Variant C END ---
+
+      // --- Switcher ---
+      const VARIANTS = [
+        {
+          key: "A",
+          name: "Page-grouped scroll, no boxes",
+          component: VariantA,
+        },
+        { key: "B", name: "Masthead and named controls", component: VariantB },
+        { key: "C", name: "Marginalia reading column", component: VariantC },
+      ];
+
+      const SCENARIOS = [
+        ["reading", "Reading"],
+        ["zotero-closed", "Zotero closed"],
+        ["no-item", "No item"],
+        ["saving", "Saving"],
+        ["no-match", "No matches"],
+      ];
+      const WIDTHS = [340, 520, 900];
+
+      const barBtn = (on) => ({
+        background: on ? "#f8fafc" : "transparent",
+        color: on ? "#0f172a" : "#cbd5e1",
+        border: "1px solid " + (on ? "#f8fafc" : "#475569"),
+        borderRadius: 999,
+        padding: "2px 9px",
+        font: "inherit",
+        fontSize: 11,
+        lineHeight: "16px",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      });
+
+      function SwitchBar({ idx, setIdx }) {
+        const s = useProto();
+        const [theme, setTheme] = useState(
+          () => document.documentElement.getAttribute("data-theme") ?? "light",
+        );
+        useEffect(() => {
+          document.documentElement.setAttribute("data-theme", theme);
+        }, [theme]);
+        const V = VARIANTS[idx];
+        const move = (d) =>
+          setIdx((i) => (i + d + VARIANTS.length) % VARIANTS.length);
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "#1e293b",
+              color: "#f8fafc",
+              borderRadius: 14,
+              padding: "9px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontSize: 12,
+              zIndex: 9999,
+              boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+              maxWidth: "94vw",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+              }}
+            >
+              <button
+                onClick={() => move(-1)}
+                style={{ ...barBtn(false), border: "none", fontSize: 15 }}
+              >
+                ←
+              </button>
+              <span
+                style={{ fontWeight: 600, minWidth: 210, textAlign: "center" }}
+              >
+                {V.key} — {V.name}
+              </span>
+              <button
+                onClick={() => move(1)}
+                style={{ ...barBtn(false), border: "none", fontSize: 15 }}
+              >
+                →
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                State
+              </span>
+              {SCENARIOS.map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() =>
+                    set(
+                      key === "no-match"
+                        ? {
+                            scenario: key,
+                            colors: [ZC.red],
+                            tags: ["writing"],
+                            query: "",
+                          }
+                        : { scenario: key, colors: [], tags: [], query: "" },
+                    )
+                  }
+                  style={barBtn(s.scenario === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                Width
+              </span>
+              {WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => set({ width: w })}
+                  style={barBtn(s.width === w)}
+                >
+                  {w}px
+                </button>
+              ))}
+              <span style={{ width: 10 }} />
+              <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                style={barBtn(false)}
+              >
+                {theme === "dark" ? "Dark" : "Light"}
+              </button>
+              <button
+                onClick={() => set({ expanded: !s.expanded })}
+                style={barBtn(s.expanded)}
+              >
+                Expand previews
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [idx, setIdx] = useState(() => {
+          const h = location.hash.slice(1);
+          const i = VARIANTS.findIndex((v) => v.key === h);
+          return i >= 0 ? i : 0;
+        });
+
+        useEffect(() => {
+          location.hash = VARIANTS[idx].key;
+          const onHash = () => {
+            const i = VARIANTS.findIndex(
+              (v) => v.key === location.hash.slice(1),
+            );
+            if (i >= 0) setIdx(i);
+          };
+          window.addEventListener("hashchange", onHash);
+          const onKey = (e) => {
+            if (
+              ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
+              e.target.isContentEditable
+            )
+              return;
+            if (e.key === "ArrowLeft")
+              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
+            if (e.key === "ArrowRight")
+              setIdx((i) => (i + 1) % VARIANTS.length);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => {
+            window.removeEventListener("hashchange", onHash);
+            window.removeEventListener("keydown", onKey);
+          };
+        }, [idx]);
+
+        const V = VARIANTS[idx];
+        return (
+          <>
+            <V.component />
+            <SwitchBar idx={idx} setIdx={setIdx} />
+          </>
+        );
+      }
+      // --- Switcher END ---
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>

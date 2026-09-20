@@ -1,0 +1,3538 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZotLit annotation view — redesign variants</title>
+
+    <!--
+      PROTOTYPE — throwaway. Not production code.
+
+      QUESTION
+        What should ZotLit's Zotero annotation view look like for a researcher who does not
+        think in "capabilities", "local API" or "attachments"? Today the pane's real news —
+        "Zotero is not running, you are reading a saved copy" — lives in a hover tooltip that
+        covers the whole pane, while the visible copy states the wrong cause ("Open a
+        literature note…"). Above the list sit up to seven rows of chrome.
+
+      ROUND 1 VERDICT (user, 2026-09-20)
+        WINNER: B — "the pane has a masthead, and controls that use words". Kept: the masthead
+        block, the word-labelled controls, and the card whose page chip fuses location with the
+        highlight colour. A (no card boxes, sticky page eyebrows) and C (marginalia reading
+        column) are archived at round1/gallery-round1.html.
+
+        Two changes the user asked for on top of B:
+        1. The colour filter shows the selected COLOUR DOTS, not a text label ("Yellow, green").
+        2. "no strong hint for need edit, should not interrupt readonly view with a callout,
+           need alternative ux" — the amber notice block that pushed the list down is out.
+
+        The reframe that follows from (2), and that round 2 tests: when Zotero is closed,
+        READING IS THE NORMAL MODE, not a degraded one. So read-only is not a fault, and the
+        semantic amber is wrong along with the callout. Round 2 states the condition in neutral
+        chrome and asks where it belongs — in the byline, at the blocked verb, or in a pane
+        footer. `no-item` is unaffected: with nothing to read there is no reading to interrupt,
+        so the pane body still speaks in full.
+
+      DECIDED BEFORE BUILDING (user, 2026-09-20)
+        · Scope: the whole view — chrome, states, filter bar and cards.
+        · When Zotero is closed, the PANE'S OWN BODY carries the message. Never a tooltip.
+        · Optimise for the ~340px right dock first, then show it expand.
+
+      DESIGN PLAN
+        Treatment: utilitarian. This is plugin chrome inside somebody else's app. Boldness is
+        spent in exactly one place — the annotation's own highlight colour, which is the
+        researcher's encoding and the only saturated thing that earns its place.
+
+        Colour (neutrals biased cool, toward Obsidian's own greys at hue ~240, so they read
+        as chosen rather than inherited mid-grey):
+          --ground  #fbfbfd  pane surface        --ink     #1f2024  primary text
+          --raised  #f2f2f6  recessed chrome     --muted   #6a6b76  chrome labels, secondary
+          --line    #dfdfe6  structure only      --accent  #6c5ce0  interactive, selection
+          --notice  #a8641c  semantic amber for "reading only" — NOT the accent
+        Zotero's highlight palette rides as data, never as theme.
+
+        Type: Inter for every piece of chrome, sentence case (WORKBENCH-DESIGN). Source Serif 4
+        for the excerpt alone — the excerpt is a quotation lifted out of a paper, so it wears
+        the paper's face, not the app's. In the real port this maps to Obsidian's --font-text.
+        That one substitution gives each card hierarchy with no size jump and stops the
+        excerpt and the researcher's own comment reading as one voice at one size.
+        Scale: 11px tracked micro-label · 12px chrome · 13px comment/UI body · 14px/1.5 serif
+        excerpt (today's excerpt is 12px `leading-tight` under a 3-line clamp).
+
+        Layout concept: a 340px pane that is ONE SCROLL of annotations with at most one row of
+        chrome above it. Item, attachment, follow mode and filters fold into that row, into the
+        scroll as sticky context, or into a sheet. Every variant must answer the Zotero-closed
+        state inside the pane body.
+
+      WHAT IS SHARED, AND WHAT IS NOT
+        Shared: the mock store, the annotation data, and `ObsidianFrame` — the HOST window
+        (workspace background, leaf, tab header, pane width box). Everything inside
+        `.view-content` belongs to the variant. There is deliberately no shared pane layout,
+        no shared toolbar and no shared card.
+    -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Source+Serif+4:opsz,wght@8..60,400..600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-app: var(--app);
+        --color-ground: var(--ground);
+        --color-raised: var(--raised);
+        --color-sunken: var(--sunken);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-faint: var(--faint);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-accent-soft: var(--accent-soft);
+        --color-notice: var(--notice);
+        --color-notice-soft: var(--notice-soft);
+        --font-ui: var(--font-ui);
+        --font-quote: var(--font-quote);
+      }
+    </style>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --app: #e4e4ea;
+        --ground: #fbfbfd;
+        --raised: #f2f2f6;
+        --sunken: #ebebf1;
+        --ink: #1f2024;
+        --muted: #6a6b76;
+        --faint: #9a9ba6;
+        --line: #dfdfe6;
+        --accent: #6c5ce0;
+        --accent-soft: #ebe8fb;
+        --notice: #a8641c;
+        --notice-soft: #fbf2e4;
+        --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-quote: "Source Serif 4", ui-serif, Georgia, serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --app: #101115;
+          --ground: #17181c;
+          --raised: #1e1f25;
+          --sunken: #232430;
+          --ink: #e2e2e7;
+          --muted: #9596a2;
+          --faint: #6e6f7c;
+          --line: #2c2d35;
+          --accent: #8a7af0;
+          --accent-soft: #232238;
+          --notice: #d99a4e;
+          --notice-soft: #2a2317;
+        }
+      }
+      :root[data-theme="dark"] {
+        --app: #101115;
+        --ground: #17181c;
+        --raised: #1e1f25;
+        --sunken: #232430;
+        --ink: #e2e2e7;
+        --muted: #9596a2;
+        --faint: #6e6f7c;
+        --line: #2c2d35;
+        --accent: #8a7af0;
+        --accent-soft: #232238;
+        --notice: #d99a4e;
+        --notice-soft: #2a2317;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      ::selection {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useRef,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import * as Lucide from "lucide-react";
+
+      // --- Kit ---
+      /**
+       * Any lucide icon by name, with a fallback so a missing export can never blank the
+       * page: <Ic name="Search" size={14} />. Stroke 1.75 matches 400-weight UI text;
+       * pass strokeWidth={2} beside semibold.
+       */
+      function Ic({ name, size = 16, strokeWidth = 1.75, className, ...rest }) {
+        const C = Lucide[name] ?? Lucide.Circle;
+        return (
+          <C
+            size={size}
+            strokeWidth={strokeWidth}
+            className={className}
+            {...rest}
+          />
+        );
+      }
+
+      const cx = (...a) => a.filter(Boolean).join(" ");
+
+      /** Zotero's own highlight palette. Data, not theme — never recoloured by the scheme. */
+      const ZC = {
+        yellow: "#ffd400",
+        red: "#ff6666",
+        green: "#5fb236",
+        blue: "#2ea8e5",
+        purple: "#a28ae5",
+        magenta: "#e56eee",
+        orange: "#f19837",
+        gray: "#aaaaaa",
+      };
+      const COLOR_NAME = {
+        [ZC.yellow]: "Yellow",
+        [ZC.red]: "Red",
+        [ZC.green]: "Green",
+        [ZC.blue]: "Blue",
+        [ZC.purple]: "Purple",
+        [ZC.magenta]: "Magenta",
+        [ZC.orange]: "Orange",
+        [ZC.gray]: "Gray",
+      };
+      // --- Kit END ---
+
+      // --- Data ---
+      const ITEM = {
+        title: "Using thematic analysis in psychology",
+        creators: "Braun & Clarke",
+        year: "2006",
+        attachment:
+          "Braun and Clarke - 2006 - Using thematic analysis in psychology.pdf",
+        attachments: [
+          {
+            key: "a1",
+            name: "Braun and Clarke - 2006 - Using thematic analysis in psychology.pdf",
+            count: 11,
+          },
+          { key: "a2", name: "Supplementary checklist.pdf", count: 2 },
+        ],
+      };
+
+      const FIGURE =
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="132" viewBox="0 0 420 132">
+             <rect width="420" height="132" fill="#ffffff"/>
+             <g fill="none" stroke="#3a3a3a" stroke-width="1.1">
+               ${[0, 1, 2, 3, 4, 5]
+                 .map(
+                   (i) =>
+                     `<rect x="${10 + i * 68}" y="26" width="58" height="42" rx="3"/>`,
+                 )
+                 .join("")}
+               ${[0, 1, 2, 3, 4].map((i) => `<path d="M${68 + i * 68} 47 h10"/>`).join("")}
+             </g>
+             <g font-family="Georgia,serif" font-size="8.5" fill="#3a3a3a" text-anchor="middle">
+               ${[
+                 "Familiarise",
+                 "Initial codes",
+                 "Search themes",
+                 "Review themes",
+                 "Define and name",
+                 "Report",
+               ]
+                 .map((t, i) => `<text x="${39 + i * 68}" y="50">${t}</text>`)
+                 .join("")}
+               <text x="210" y="98" font-size="9.5" font-style="italic">Figure 1. The six phases of thematic analysis</text>
+             </g>
+           </svg>`,
+        );
+
+      /**
+       * Real content, not lorem: eleven annotations off one methods paper, deliberately
+       * uneven — long and short excerpts, some with comments, some without tags, one area
+       * capture, one comment-only note. The uneven cases are the ones a layout fails on.
+       */
+      const ANNOTS = [
+        {
+          key: "n1",
+          page: "78",
+          color: ZC.yellow,
+          type: "highlight",
+          text: "Thematic analysis should be considered a method in its own right.",
+          comment:
+            "Use this to justify TA in the methods chapter — it is the cleanest sentence for it.",
+          tags: ["methods", "framing"],
+        },
+        {
+          key: "n2",
+          page: "79",
+          color: ZC.blue,
+          type: "highlight",
+          text: "A poorly demarcated, rarely acknowledged, yet widely used qualitative analytic method.",
+          comment: null,
+          tags: ["framing"],
+        },
+        {
+          key: "n3",
+          page: "82",
+          color: ZC.green,
+          type: "highlight",
+          text: "The keyword is flexibility: thematic analysis is not wedded to any pre-existing theoretical framework, and so it can be used within different ones.",
+          comment:
+            "Contrast with IPA, which carries its own epistemology whether you want it or not.",
+          tags: ["methods", "comparison"],
+        },
+        {
+          key: "n4",
+          page: "83",
+          color: ZC.purple,
+          type: "image",
+          img: FIGURE,
+          text: null,
+          comment: "Reproduce in the appendix.",
+          tags: ["figures"],
+        },
+        {
+          key: "n5",
+          page: "86",
+          color: ZC.yellow,
+          type: "highlight",
+          text: "Familiarising yourself with your data means repeated reading, and reading in an active way.",
+          comment: null,
+          tags: ["phases"],
+        },
+        {
+          key: "n6",
+          page: "87",
+          color: ZC.red,
+          type: "highlight",
+          text: "There is no hard-and-fast answer to the question of what proportion of your data set needs to display evidence of the theme.",
+          comment:
+            "This is the bit reviewers always push on. I need a defensible line before submission.",
+          tags: ["phases", "weakness"],
+        },
+        {
+          key: "n7",
+          page: "89",
+          color: ZC.purple,
+          type: "highlight",
+          text: "A theme captures something important about the data in relation to the research question.",
+          comment: null,
+          tags: ["phases", "definition"],
+        },
+        {
+          key: "n8",
+          page: "91",
+          color: ZC.orange,
+          type: "underline",
+          text: "Coding will depend on whether the themes are more data-driven or theory-driven.",
+          comment: null,
+          tags: ["phases"],
+        },
+        {
+          key: "n9",
+          page: "93",
+          color: ZC.gray,
+          type: "highlight",
+          text: "Researchers cannot free themselves of their theoretical commitments.",
+          comment: null,
+          tags: [],
+        },
+        {
+          key: "n10",
+          page: "96",
+          color: ZC.magenta,
+          type: "highlight",
+          text: "Write-up is not simply the final stage; analysis and writing are interwoven throughout.",
+          comment:
+            "Start the results section now rather than after coding finishes.",
+          tags: ["writing"],
+        },
+        {
+          key: "n11",
+          page: "101",
+          color: ZC.yellow,
+          type: "note",
+          text: null,
+          comment:
+            "Check whether the 15-point checklist in Table 1 is reproduced anywhere I can cite directly.",
+          tags: ["todo"],
+        },
+      ];
+
+      const ALL_COLORS = [...new Set(ANNOTS.map((a) => a.color))];
+      const ALL_TAGS = [...new Set(ANNOTS.flatMap((a) => a.tags))].sort();
+      // --- Data END ---
+
+      // --- Store ---
+      /**
+       * One module-level store, provider-free, read through `useProto()`. Flipping variants
+       * keeps the scenario, so the same state is compared across three shapes. Scenario
+       * presets live in the switcher bar, never in a variant.
+       *
+       * ROUND 3 CORRECTION. Round 2 fused two independent facts and the empty state blamed
+       * the wrong one. They are separate:
+       *   · IS ZOTERO RUNNING — decides whether a WRITE can happen. ZotLit reads the saved
+       *     copy either way, so this never explains an empty pane.
+       *   · IS A PAPER RESOLVED — decides whether there is anything to SHOW. What resolves a
+       *     paper is the Follow Mode, so an empty pane is explained by the mode, not by Zotero.
+       *
+       *   reading       Zotero open, paper resolved, editing authorised
+       *   zotero-closed Zotero not running; the list still reads from the saved copy and
+       *                 editing is unavailable. Reading is the NORMAL mode here, not a fault.
+       *   saving        one write in flight
+       *   no-match      filters applied that nothing satisfies — about the filter, nothing else
+       *   no-item       no paper resolved. Zotero's state is irrelevant and must not be named;
+       *                 the message says what THIS MODE is waiting for.
+       */
+      let state = {
+        scenario: "reading",
+        /** What resolves the paper on screen. The one control round 2 never covered. */
+        mode: "active-tab", // active-tab | zotero-reader | pinned
+        width: 340,
+        selectedKey: null,
+        editingKey: null,
+        query: "",
+        colors: [],
+        tags: [],
+        expanded: false,
+        sheet: null,
+      };
+      const listeners = new Set();
+      const emit = () => listeners.forEach((l) => l());
+      const subscribe = (l) => (listeners.add(l), () => listeners.delete(l));
+      const getState = () => state;
+      function set(patch) {
+        state = {
+          ...state,
+          ...(typeof patch === "function" ? patch(state) : patch),
+        };
+        emit();
+      }
+
+      function useProto() {
+        const s = useSyncExternalStore(subscribe, getState);
+        return {
+          ...s,
+          set,
+          toggleColor: (c) =>
+            set((p) => ({
+              colors: p.colors.includes(c)
+                ? p.colors.filter((x) => x !== c)
+                : [...p.colors, c],
+            })),
+          toggleTag: (t) =>
+            set((p) => ({
+              tags: p.tags.includes(t)
+                ? p.tags.filter((x) => x !== t)
+                : [...p.tags, t],
+            })),
+          clearFilters: () => set({ colors: [], tags: [], query: "" }),
+          select: (k) =>
+            set((p) => ({ selectedKey: p.selectedKey === k ? null : k })),
+          setMode: (m) => set({ mode: m }),
+        };
+      }
+
+      /** The Follow Modes, as the masthead, the menu and the empty state all name them. */
+      const MODES = {
+        "active-tab": {
+          icon: "AppWindow",
+          label: "Active tab",
+          /** How the byline names the source of what is on screen. */
+          source: "Following the active tab",
+          /** What this mode is waiting for when nothing is resolved. Never mentions Zotero's state. */
+          empty:
+            "Open a literature note, or a Zotero PDF, to see its annotations.",
+          emptyAction: null,
+        },
+        "zotero-reader": {
+          icon: "BookOpen",
+          label: "Zotero reader",
+          source: "Following the Zotero reader",
+          empty: "Open a paper in the Zotero reader to see its annotations.",
+          emptyAction: null,
+        },
+        pinned: {
+          icon: "Pin",
+          label: "Pinned",
+          source: "Pinned",
+          empty: "Pin a paper to keep its annotations here while you write.",
+          emptyAction: "Choose a paper…",
+        },
+      };
+      const MODE_KEYS = ["active-tab", "zotero-reader", "pinned"];
+
+      /** True while Zotero will accept a write. Everything editable hangs off this. */
+      const canEdit = (s) => s.scenario !== "zotero-closed";
+      /** True while a paper is resolved and there is a list to show. */
+      const hasItem = (s) => s.scenario !== "no-item";
+
+      /**
+       * The read-only condition, or null. It is ONLY about writing — it is never the reason a
+       * pane is empty, and it is never shown when there is nothing on screen to edit.
+       */
+      function condition(s) {
+        if (s.scenario !== "zotero-closed") return null;
+        return {
+          hint: "Reading only",
+          title: "Zotero isn’t open",
+          body: "Open Zotero to change colours, comments or tags.",
+          action: "Open Zotero",
+        };
+      }
+
+      /** What an unresolved pane says: what THIS MODE is waiting for, and nothing else. */
+      function emptyState(s) {
+        const mode = MODES[s.mode];
+        return { message: mode.empty, action: mode.emptyAction };
+      }
+
+      const filterActive = (s) =>
+        s.colors.length > 0 || s.tags.length > 0 || s.query.trim() !== "";
+
+      function visibleAnnots(s) {
+        if (!hasItem(s)) return [];
+        if (s.scenario === "no-match") return [];
+        const q = s.query.trim().toLowerCase();
+        return ANNOTS.filter(
+          (a) =>
+            (s.colors.length === 0 || s.colors.includes(a.color)) &&
+            (s.tags.length === 0 || a.tags.some((t) => s.tags.includes(t))) &&
+            (q === "" ||
+              `${a.text ?? ""} ${a.comment ?? ""} ${a.tags.join(" ")}`
+                .toLowerCase()
+                .includes(q)),
+        );
+      }
+      // --- Store END ---
+
+      // --- Frame ---
+      /**
+       * The HOST, not the design. Draws the Obsidian workspace behind a docked leaf, the tab
+       * header, and the width box the pane lives in. Everything a variant designs goes in
+       * `children`, which is the `.view-content` box: full height, own scrolling, `@container`
+       * so the variant's own container queries work at the chosen width.
+       */
+      function ObsidianFrame({ children }) {
+        const { width } = useProto();
+        return (
+          <div className="bg-app font-ui text-ink flex min-h-full items-start justify-center px-6 pt-8 pb-28">
+            <div
+              className="bg-ground border-line flex flex-col overflow-hidden rounded-lg border shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_-8px_rgba(0,0,0,0.18)]"
+              style={{
+                width,
+                height: 440,
+                transition: "width 200ms cubic-bezier(0.2,0,0,1)",
+              }}
+            >
+              <div className="border-line text-muted flex h-9 shrink-0 items-center gap-1.5 border-b px-2.5 text-[12px]">
+                <Ic name="Highlighter" size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  Zotero annotations
+                </span>
+                <Ic
+                  name="MoreVertical"
+                  size={14}
+                  className="shrink-0 opacity-70"
+                />
+              </div>
+              <div className="@container min-h-0 flex-1 overflow-hidden">
+                {children}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // --- Frame END ---
+
+      // --- App ---
+      // --- Variant A ---
+      // --- Variant A ---
+      /**
+       * VARIANT A (round 2) — "One word in the byline."
+       *
+       * Starts from round 1's winning B: a masthead the pane speaks from, controls labelled in
+       * words, and cards whose page chip fuses page number with highlight colour.
+       *
+       * Round 2 changes:
+       *  1. The colour filter carries its state as the colours themselves — dots in document
+       *     order, no text, no count. The accessible name still says it in words.
+       *  2. Read-only is a MODE, not a fault. The amber notice block is gone. When Zotero is
+       *     closed the condition costs one word on the masthead's metadata line — "· Reading
+       *     only", same 12px, same muted grey as the authors and the year, because it is one
+       *     more fact about what is on screen. The word is a disclosure button: it opens one
+       *     line of explanation directly beneath the byline and closes again. At rest the
+       *     masthead is exactly the height it is when Zotero is open, so nothing pushes the
+       *     list unless the researcher asks for it.
+       *
+       *     In the list, the colour and comment verbs are simply ABSENT while Zotero is closed —
+       *     not dimmed, not padlocked. A researcher scrolling their highlights sees a clean,
+       *     normal list, because reading is the normal mode. The overflow verb stays: copying
+       *     and revealing still work.
+       */
+
+      const A_FOCUS =
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0";
+
+      const A_VERBS = [
+        { id: "colour", icon: "Palette", label: "Change colour" },
+        { id: "comment", icon: "MessageSquarePlus", label: "Write a comment" },
+        { id: "more", icon: "MoreHorizontal", label: "More actions" },
+      ];
+
+      const A_SAVING_KEY = "n6";
+
+      /** The id the byline's disclosure button points at, so the word owns the line it opens. */
+      const A_WHY_ID = "a-reading-only-why";
+
+      /** "Tags" → "Methods, framing" — the tag control still carries its state as words. */
+      function A_listLabel(values, fallback, name) {
+        if (values.length === 0) return fallback;
+        const first = name(values[0]);
+        if (values.length === 1) return first;
+        if (values.length === 2)
+          return `${first}, ${name(values[1]).toLowerCase()}`;
+        return `${first} +${values.length - 1}`;
+      }
+
+      /** "yellow and green" — the words behind the colour dots, for the accessible name. */
+      function A_colorPhrase(colors) {
+        const names = colors.map((c) => COLOR_NAME[c].toLowerCase());
+        if (names.length <= 1) return names.join("");
+        return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+      }
+
+      /** A sentence fragment naming what is currently filtering the list. */
+      function A_filterPhrase(s) {
+        const parts = [];
+        if (s.colors.length)
+          parts.push(
+            s.colors.map((c) => COLOR_NAME[c].toLowerCase()).join(" or "),
+          );
+        if (s.tags.length) parts.push(s.tags.map((t) => `#${t}`).join(" or "));
+        if (s.query.trim()) parts.push(`“${s.query.trim()}”`);
+        if (parts.length === 0) return "the filters you have on";
+        if (parts.length === 1) return parts[0];
+        return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+      }
+
+      /** The mark that fuses colour with type: a dot for a highlight, a bar for an underline. */
+      function AColorMark({ type }) {
+        if (type === "underline")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-[3px] w-[9px] shrink-0 rounded-[1px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        if (type === "image")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        return (
+          <span
+            aria-hidden="true"
+            className="block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: "var(--c)" }}
+          />
+        );
+      }
+
+      /** Colour + location as one mark. Opens the page in Zotero. */
+      function APageChip({ annot, live }) {
+        return (
+          <button
+            type="button"
+            disabled={!live}
+            title={live ? `Open page ${annot.page} in Zotero` : undefined}
+            className={cx(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-[4px] ps-1.5 pe-2 text-[12px] font-medium tabular-nums",
+              "text-ink transition-[box-shadow] duration-150",
+              live && "hover:shadow-[0_0_0_1px_var(--c)] cursor-pointer",
+              A_FOCUS,
+            )}
+            style={{
+              background: "color-mix(in srgb, var(--c) 22%, transparent)",
+            }}
+          >
+            <AColorMark type={annot.type} />
+            <span>p.&nbsp;{annot.page}</span>
+          </button>
+        );
+      }
+
+      function AVerb({ icon, label, on, active }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-label={label}
+            aria-pressed={active ? true : undefined}
+            title={label}
+            className={cx(
+              "grid h-6 w-6 place-items-center rounded-[4px] transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "text-muted hover:bg-sunken hover:text-ink",
+              A_FOCUS,
+            )}
+          >
+            <Ic name={icon} size={14} />
+          </button>
+        );
+      }
+
+      function ATagChip({ tag, on, active }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            className={cx(
+              "h-6 rounded-[4px] px-1.5 text-[11px] tracking-[0.04em] transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-sunken text-muted hover:text-ink",
+              A_FOCUS,
+            )}
+          >
+            #{tag}
+          </button>
+        );
+      }
+
+      function ACommentEditor({ annot }) {
+        const { set } = useProto();
+        const [draft, setDraft] = React.useState(annot.comment ?? "");
+        return (
+          <div className="bg-ground rounded-[4px] p-1.5">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              className={cx(
+                "text-ink w-full resize-none bg-transparent text-[13px] leading-relaxed",
+                "placeholder:text-faint",
+                A_FOCUS,
+              )}
+              placeholder="Write a comment on this highlight"
+            />
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "text-muted hover:text-ink h-6 rounded-[4px] px-2 text-[12px] transition-[color] duration-150",
+                  A_FOCUS,
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "bg-accent text-ground h-6 rounded-[4px] px-2 text-[12px] font-medium",
+                  A_FOCUS,
+                )}
+              >
+                Save comment
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function ASwatchRow({ annot }) {
+        const { set } = useProto();
+        return (
+          <div className="bg-ground flex flex-wrap items-center gap-1 rounded-[4px] p-1.5">
+            <span className="text-muted me-1 text-[11px] tracking-[0.04em]">
+              Colour
+            </span>
+            {ALL_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ sheet: null })}
+                aria-label={COLOR_NAME[c]}
+                aria-pressed={c === annot.color}
+                title={COLOR_NAME[c]}
+                className={cx(
+                  "h-5 w-5 rounded-[4px] transition-[box-shadow] duration-150",
+                  c === annot.color
+                    ? "shadow-[0_0_0_2px_var(--accent)]"
+                    : "hover:shadow-[0_0_0_1px_var(--line)]",
+                  A_FOCUS,
+                )}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        );
+      }
+
+      function ACard({ annot }) {
+        const s = useProto();
+        const { select, set, toggleTag } = s;
+        const live = canEdit(s);
+        const selected = s.selectedKey === annot.key;
+        const editing = s.editingKey === annot.key;
+        const swatches = s.sheet === `colour:${annot.key}`;
+        const saving = s.scenario === "saving" && annot.key === A_SAVING_KEY;
+        const isNote = annot.type === "note";
+        // Read-only drops the editing verbs outright. No dimming, no padlock — the list a
+        // researcher scrolls looks like a normal list, because reading is the normal mode.
+        const verbs = live ? A_VERBS : A_VERBS.filter((v) => v.id === "more");
+
+        return (
+          <article
+            aria-busy={saving || undefined}
+            className={cx(
+              "group bg-raised rounded-[6px] p-[10px] transition-[background-color,box-shadow] duration-150",
+              selected &&
+                "bg-accent-soft shadow-[inset_0_0_0_1px_var(--accent)]",
+            )}
+            style={{ "--c": annot.color }}
+          >
+            {/* h-6 on both the chip and the verbs: the row keeps its height when verbs go. */}
+            <div className="flex h-6 items-center gap-2">
+              <APageChip annot={annot} live={live} />
+              {isNote && (
+                <span className="text-muted text-[11px] tracking-[0.04em]">
+                  Note to self
+                </span>
+              )}
+              <span className="min-w-0 flex-1" />
+              {saving ? (
+                <span
+                  className="text-muted flex items-center gap-1.5 text-[12px]"
+                  aria-live="polite"
+                >
+                  <Ic name="Loader2" size={13} className="animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                <div
+                  className={cx(
+                    "flex items-center gap-0.5 transition-[opacity] duration-150",
+                    !selected &&
+                      "opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
+                  )}
+                >
+                  {verbs.map((v) => (
+                    <AVerb
+                      key={v.id}
+                      icon={v.icon}
+                      label={
+                        v.id === "comment" && annot.comment
+                          ? "Edit your comment"
+                          : v.label
+                      }
+                      active={
+                        (v.id === "colour" && swatches) ||
+                        (v.id === "comment" && editing)
+                      }
+                      on={() => {
+                        if (v.id === "colour")
+                          set({
+                            sheet: swatches ? null : `colour:${annot.key}`,
+                          });
+                        else if (v.id === "comment")
+                          set({ editingKey: editing ? null : annot.key });
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {swatches && (
+              <div className="mt-2">
+                <ASwatchRow annot={annot} />
+              </div>
+            )}
+
+            {annot.type === "image" && (
+              <img
+                src={annot.img}
+                alt={`Figure captured from page ${annot.page}`}
+                className="mt-2 block w-full rounded-[4px]"
+                style={{
+                  outline:
+                    "1px solid color-mix(in srgb, var(--ink) 14%, transparent)",
+                  outlineOffset: "-1px",
+                }}
+              />
+            )}
+
+            {annot.text && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", A_FOCUS)}
+              >
+                <p
+                  className={cx(
+                    "font-quote text-ink text-[14px] leading-[1.5]",
+                    !s.expanded && "line-clamp-3",
+                  )}
+                >
+                  {annot.text}
+                </p>
+              </button>
+            )}
+
+            {isNote && !editing && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", A_FOCUS)}
+              >
+                <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                  {annot.comment}
+                </p>
+              </button>
+            )}
+
+            {editing ? (
+              <div className="mt-2">
+                <ACommentEditor annot={annot} />
+              </div>
+            ) : (
+              !isNote &&
+              annot.comment && (
+                <div className="border-line mt-2 border-s-2 ps-2.5">
+                  <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                    {annot.comment}
+                  </p>
+                </div>
+              )
+            )}
+
+            {annot.tags.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {annot.tags.map((t) => (
+                  <ATagChip
+                    key={t}
+                    tag={t}
+                    active={s.tags.includes(t)}
+                    on={() => toggleTag(t)}
+                  />
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      }
+
+      /**
+       * `no-item` only. With nothing to read there is no reading to interrupt, so the pane body
+       * still states the real cause in full with its one action — restyled neutral: this is a
+       * mode, not a fault.
+       */
+      function ACondition() {
+        const s = useProto();
+        const c = condition(s);
+        if (!c || hasItem(s)) return null;
+        return (
+          <div className="bg-raised mt-2.5 rounded-[6px] p-3">
+            <div className="flex items-center gap-1.5">
+              <Ic
+                name="Unplug"
+                size={14}
+                strokeWidth={2}
+                className="text-muted shrink-0"
+              />
+              <h3 className="text-ink text-[13px] font-semibold text-balance">
+                {c.title}
+              </h3>
+            </div>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              {c.body}
+            </p>
+            <button
+              type="button"
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                A_FOCUS,
+              )}
+            >
+              <Ic name="ExternalLink" size={13} strokeWidth={2} />
+              {c.action}
+            </button>
+          </div>
+        );
+      }
+
+      function APanel({ children, align = "auto" }) {
+        const { set } = useProto();
+        return (
+          <>
+            <button
+              type="button"
+              aria-label="Close this menu"
+              onClick={() => set({ sheet: null })}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+            <div
+              className={cx(
+                "bg-ground border-line absolute top-full z-30 mt-1 w-[230px] rounded-[8px] border p-1",
+                align === "auto"
+                  ? "start-0 @min-[860px]:start-auto @min-[860px]:end-0"
+                  : "start-0",
+                "shadow-[0_2px_4px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.3)]",
+              )}
+            >
+              {children}
+            </div>
+          </>
+        );
+      }
+
+      /**
+       * The selected colours, in the order they appear in the document. The hairline ring keeps
+       * yellow off a light control and grey off a dark one.
+       */
+      function AColorDots({ colors }) {
+        return (
+          <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
+            {colors.map((c) => (
+              <span
+                key={c}
+                className="block h-2 w-2 shrink-0 rounded-full"
+                style={{
+                  background: c,
+                  boxShadow:
+                    "0 0 0 1px color-mix(in oklab, var(--ink) 15%, transparent)",
+                }}
+              />
+            ))}
+          </span>
+        );
+      }
+
+      function AControl({
+        icon,
+        label,
+        ariaLabel,
+        active,
+        on,
+        chevron = true,
+      }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            aria-label={ariaLabel}
+            className={cx(
+              "flex h-7 max-w-[180px] items-center gap-1.5 rounded-[6px] px-2 text-[12px]",
+              "transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-raised text-ink hover:bg-sunken",
+              A_FOCUS,
+            )}
+          >
+            {icon && <Ic name={icon} size={13} className="shrink-0" />}
+            {typeof label === "string" ? (
+              <span className="min-w-0 truncate">{label}</span>
+            ) : (
+              label
+            )}
+            {chevron && (
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            )}
+          </button>
+        );
+      }
+
+      function AControls() {
+        const s = useProto();
+        const { set, toggleColor, toggleTag, clearFilters } = s;
+        const open =
+          typeof s.sheet === "string" && !s.sheet.startsWith("colour:")
+            ? s.sheet
+            : null;
+        const toggle = (name) => set({ sheet: open === name ? null : name });
+        // Document order, not click order: the dots read like the list reads.
+        const picked = ALL_COLORS.filter((c) => s.colors.includes(c));
+
+        return (
+          <div className="relative flex flex-wrap items-center gap-1.5">
+            <AControl
+              icon="Palette"
+              label={
+                picked.length > 0 ? <AColorDots colors={picked} /> : "Colour"
+              }
+              ariaLabel={
+                picked.length > 0
+                  ? `Filtered to ${A_colorPhrase(picked)}`
+                  : undefined
+              }
+              active={open === "filter" || s.colors.length > 0}
+              on={() => toggle("filter")}
+            />
+            <AControl
+              icon="Tags"
+              label={A_listLabel(
+                s.tags,
+                "Tags",
+                (t) => t.charAt(0).toUpperCase() + t.slice(1),
+              )}
+              active={open === "tags" || s.tags.length > 0}
+              on={() => toggle("tags")}
+            />
+            <AControl
+              icon="Search"
+              label={s.query.trim() ? `“${s.query.trim()}”` : "Search"}
+              active={open === "search" || s.query.trim() !== ""}
+              chevron={false}
+              on={() => toggle("search")}
+            />
+            {filterActive(s) && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearFilters();
+                  set({ sheet: null });
+                }}
+                className={cx(
+                  "text-accent ms-auto h-7 rounded-[6px] px-1.5 text-[12px] hover:underline",
+                  A_FOCUS,
+                )}
+              >
+                Show all
+              </button>
+            )}
+
+            {open === "filter" && (
+              <APanel>
+                {ALL_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleColor(c)}
+                    aria-pressed={s.colors.includes(c)}
+                    className={cx(
+                      "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                      "transition-[background-color] duration-150 hover:bg-raised",
+                      A_FOCUS,
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{
+                        background: c,
+                        boxShadow:
+                          "0 0 0 1px color-mix(in oklab, var(--ink) 15%, transparent)",
+                      }}
+                    />
+                    <span className="text-ink flex-1 text-start">
+                      {COLOR_NAME[c]}
+                    </span>
+                    {s.colors.includes(c) && (
+                      <Ic name="Check" size={13} className="text-accent" />
+                    )}
+                  </button>
+                ))}
+              </APanel>
+            )}
+
+            {open === "tags" && (
+              <APanel>
+                <div className="max-h-[220px] overflow-y-auto">
+                  {ALL_TAGS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTag(t)}
+                      aria-pressed={s.tags.includes(t)}
+                      className={cx(
+                        "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                        "transition-[background-color] duration-150 hover:bg-raised",
+                        A_FOCUS,
+                      )}
+                    >
+                      <span className="text-ink flex-1 text-start">#{t}</span>
+                      <span className="text-faint tabular-nums">
+                        {ANNOTS.filter((a) => a.tags.includes(t)).length}
+                      </span>
+                      {s.tags.includes(t) && (
+                        <Ic name="Check" size={13} className="text-accent" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </APanel>
+            )}
+
+            {open === "search" && (
+              <APanel>
+                <div className="bg-raised flex h-8 items-center gap-1.5 rounded-[5px] px-2">
+                  <Ic name="Search" size={13} className="text-muted shrink-0" />
+                  <input
+                    autoFocus
+                    value={s.query}
+                    onChange={(e) => set({ query: e.target.value })}
+                    placeholder="Search your annotations"
+                    className={cx(
+                      "text-ink placeholder:text-faint min-w-0 flex-1 bg-transparent text-[13px] outline-none",
+                    )}
+                  />
+                  {s.query !== "" && (
+                    <button
+                      type="button"
+                      aria-label="Clear the search"
+                      onClick={() => set({ query: "" })}
+                      className={cx(
+                        "text-muted hover:text-ink grid h-6 w-6 place-items-center rounded-[4px]",
+                        A_FOCUS,
+                      )}
+                    >
+                      <Ic name="X" size={13} />
+                    </button>
+                  )}
+                </div>
+              </APanel>
+            )}
+          </div>
+        );
+      }
+
+      function AAttachmentPicker() {
+        const s = useProto();
+        const { set } = s;
+        if (ITEM.attachments.length < 2) return null;
+        const currentKey = s.attKey ?? ITEM.attachments[0].key;
+        const current =
+          ITEM.attachments.find((a) => a.key === currentKey) ??
+          ITEM.attachments[0];
+        const open = s.sheet === "item";
+        return (
+          <div className="relative mt-1.5">
+            <button
+              type="button"
+              onClick={() => set({ sheet: open ? null : "item" })}
+              aria-pressed={open}
+              className={cx(
+                "text-muted hover:text-ink hover:bg-raised flex h-6 max-w-full items-center gap-1.5 rounded-[5px] ps-1 pe-1.5 text-[12px]",
+                "transition-[background-color,color] duration-150",
+                open && "bg-raised text-ink",
+                A_FOCUS,
+              )}
+            >
+              <Ic name="Paperclip" size={12} className="shrink-0" />
+              <span className="min-w-0 truncate">{current.name}</span>
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            </button>
+            {open && (
+              <APanel align="start">
+                <p className="text-muted px-1.5 pt-1 pb-1.5 text-[11px] tracking-[0.04em]">
+                  Read annotations from
+                </p>
+                {ITEM.attachments.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    onClick={() => set({ attKey: a.key, sheet: null })}
+                    aria-pressed={a.key === current.key}
+                    className={cx(
+                      "hover:bg-raised flex w-full items-start gap-2 rounded-[5px] p-1.5 text-start",
+                      "transition-[background-color] duration-150",
+                      A_FOCUS,
+                    )}
+                  >
+                    <Ic
+                      name={a.key === current.key ? "Check" : "FileText"}
+                      size={13}
+                      className={cx(
+                        "mt-0.5 shrink-0",
+                        a.key === current.key ? "text-accent" : "text-faint",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-ink block text-[12px] leading-snug text-pretty">
+                        {a.name}
+                      </span>
+                      <span className="text-faint mt-0.5 block text-[11px] tabular-nums">
+                        {a.count} annotations
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </APanel>
+            )}
+          </div>
+        );
+      }
+
+      function AMasthead() {
+        const s = useProto();
+        const present = hasItem(s);
+        // The word states the one condition the pane has to state, and only that one.
+        const readOnly = present && condition(s) !== null;
+        const [why, setWhy] = React.useState(false);
+        const wordRef = React.useRef(null);
+
+        // The disclosure belongs to this condition, so it never outlives it.
+        React.useEffect(() => {
+          if (!readOnly) setWhy(false);
+        }, [readOnly]);
+
+        return (
+          <header className="bg-ground relative z-10 shrink-0 px-3 pt-3 pb-2.5">
+            {present ? (
+              <div className="flex flex-col gap-2.5 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-between @min-[860px]:gap-6">
+                <div
+                  className="min-w-0 @min-[860px]:max-w-[520px]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && why) {
+                      e.stopPropagation();
+                      setWhy(false);
+                      wordRef.current?.focus();
+                    }
+                  }}
+                >
+                  <h2 className="text-ink line-clamp-2 text-[13px] leading-snug font-semibold text-pretty">
+                    {ITEM.title}
+                  </h2>
+                  {/* One more fact about what is on screen, sitting beside the authors and the
+                      year. The button's padding box is 24px tall for the finger; its margin box
+                      is shorter than the line, so the byline keeps the height it has when
+                      Zotero is open. */}
+                  <p className="text-muted mt-0.5 text-[12px]">
+                    {ITEM.creators} ·{" "}
+                    <span className="tabular-nums">{ITEM.year}</span>
+                    {readOnly && (
+                      <>
+                        {" · "}
+                        <button
+                          ref={wordRef}
+                          type="button"
+                          onClick={() => setWhy((v) => !v)}
+                          aria-expanded={why}
+                          aria-controls={A_WHY_ID}
+                          className={cx(
+                            "text-muted hover:text-ink -my-1.5 -mx-0.5 inline-flex items-center gap-1 rounded-[3px] px-0.5 py-1.5 align-[-1px] leading-none",
+                            "transition-[color] duration-150",
+                            A_FOCUS,
+                          )}
+                        >
+                          <Ic name="Unplug" size={12} className="shrink-0" />
+                          Reading only
+                          <Ic
+                            name={why ? "ChevronUp" : "ChevronDown"}
+                            size={11}
+                            className="shrink-0 opacity-70"
+                          />
+                        </button>
+                      </>
+                    )}
+                  </p>
+                  {readOnly && why && (
+                    <p
+                      id={A_WHY_ID}
+                      className="text-muted mt-1 text-[13px] leading-relaxed text-pretty"
+                    >
+                      Zotero isn’t open.{" "}
+                      <button
+                        type="button"
+                        className={cx(
+                          "text-accent hover:text-ink -my-1.5 -mx-0.5 rounded-[3px] px-0.5 py-1.5 underline decoration-1 underline-offset-2",
+                          "transition-[color] duration-150",
+                          A_FOCUS,
+                        )}
+                      >
+                        Open Zotero
+                      </button>{" "}
+                      to change colours, comments or tags.
+                    </p>
+                  )}
+                  <AAttachmentPicker />
+                </div>
+                <div className="@min-[860px]:shrink-0">
+                  <AControls />
+                </div>
+              </div>
+            ) : null}
+            <ACondition />
+          </header>
+        );
+      }
+
+      function AEmptyMatch() {
+        const s = useProto();
+        const { clearFilters } = s;
+        return (
+          <div className="bg-raised rounded-[6px] p-3">
+            <h3 className="text-ink text-[13px] font-semibold text-balance">
+              Nothing matches that
+            </h3>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              No annotation on this paper matches {A_filterPhrase(s)}. Show all{" "}
+              {ANNOTS.length} again, or narrow it differently.
+            </p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                A_FOCUS,
+              )}
+            >
+              <Ic name="ListRestart" size={13} strokeWidth={2} />
+              Show all annotations
+            </button>
+          </div>
+        );
+      }
+
+      function AList() {
+        const s = useProto();
+        const list = visibleAnnots(s);
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1 pb-6">
+            {list.length === 0 ? (
+              <AEmptyMatch />
+            ) : (
+              <div className="grid grid-cols-1 content-start items-start gap-2 @min-[500px]:grid-cols-2 @min-[860px]:grid-cols-3">
+                {list.map((a) => (
+                  <ACard key={a.key} annot={a} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function VariantA() {
+        const s = useProto();
+        return (
+          <ObsidianFrame>
+            <div className="font-ui text-ink flex h-full min-h-0 flex-col">
+              <AMasthead />
+              {hasItem(s) && <AList />}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant A END ---
+      // --- Variant A END ---
+
+      // --- Variant B ---
+      // --- Variant B ---
+      /**
+       * VARIANT B (round 2) — "Nothing on screen until you reach for it."
+       *
+       * Kept from round 1: the composed masthead, the word-labelled control row, and the raised
+       * card whose page chip fuses the annotation's location with its highlight colour.
+       *
+       * Round 2 changes:
+       *   1. The colour filter carries its state as the selected colour dots, not as text.
+       *   2. Read-only is a mode, not a fault. At rest the pane says nothing at all: in
+       *      `zotero-closed` the masthead, the control row and the list are byte-for-byte what
+       *      they are in `reading`. The explanation lives at the blocked verb — activating the
+       *      colour or comment verb opens a neutral inline row inside that card, under its
+       *      header, and that row is the whole of the news. `no-item` is the one place the pane
+       *      speaks unprompted, because there is nothing there to interrupt.
+       */
+
+      const B_FOCUS =
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0";
+
+      const B_VERBS = [
+        { id: "colour", icon: "Palette", label: "Change colour" },
+        { id: "comment", icon: "MessageSquarePlus", label: "Write a comment" },
+        { id: "more", icon: "MoreHorizontal", label: "More actions" },
+      ];
+
+      /** The two verbs that are writes, and so the two that explain themselves when Zotero is shut. */
+      const B_WRITE_VERBS = ["colour", "comment"];
+
+      const B_SAVING_KEY = "n6";
+
+      /** The sheet values the control row owns; anything else (a card's own sheet) is not its business. */
+      const B_CONTROL_SHEETS = ["filter", "tags", "search"];
+
+      /** "Tags", "Methods", "Methods, framing", "Methods +2" — the control's label carries its state. */
+      function B_listLabel(values, fallback, name) {
+        if (values.length === 0) return fallback;
+        const first = name(values[0]);
+        if (values.length === 1) return first;
+        if (values.length === 2)
+          return `${first}, ${name(values[1]).toLowerCase()}`;
+        return `${first} +${values.length - 1}`;
+      }
+
+      /** The colour filter said in words, for the accessible name: "Filtered to yellow and green". */
+      function B_colorPhrase(colors) {
+        const names = colors.map((c) => COLOR_NAME[c].toLowerCase());
+        if (names.length === 1) return `Filtered to ${names[0]}`;
+        return `Filtered to ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+      }
+
+      /** A sentence fragment naming what is currently filtering the list. */
+      function B_filterPhrase(s) {
+        const parts = [];
+        if (s.colors.length)
+          parts.push(
+            s.colors.map((c) => COLOR_NAME[c].toLowerCase()).join(" or "),
+          );
+        if (s.tags.length) parts.push(s.tags.map((t) => `#${t}`).join(" or "));
+        if (s.query.trim()) parts.push(`“${s.query.trim()}”`);
+        if (parts.length === 0) return "the filters you have on";
+        if (parts.length === 1) return parts[0];
+        return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+      }
+
+      /** The mark that fuses colour with type: a dot for a highlight, a bar for an underline. */
+      function BColorMark({ type }) {
+        if (type === "underline")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-[3px] w-[9px] shrink-0 rounded-[1px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        if (type === "image")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        return (
+          <span
+            aria-hidden="true"
+            className="block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: "var(--c)" }}
+          />
+        );
+      }
+
+      /** Colour + location as one mark. Opens the page in Zotero. */
+      function BPageChip({ annot, live }) {
+        return (
+          <button
+            type="button"
+            disabled={!live}
+            title={live ? `Open page ${annot.page} in Zotero` : undefined}
+            className={cx(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-[4px] ps-1.5 pe-2 text-[12px] font-medium tabular-nums",
+              "text-ink transition-[box-shadow] duration-150",
+              live && "hover:shadow-[0_0_0_1px_var(--c)] cursor-pointer",
+              B_FOCUS,
+            )}
+            style={{
+              background: "color-mix(in srgb, var(--c) 22%, transparent)",
+            }}
+          >
+            <BColorMark type={annot.type} />
+            <span>p.&nbsp;{annot.page}</span>
+          </button>
+        );
+      }
+
+      /**
+       * `quiet` is the static resting cue that this verb is not currently a write: a lower rest
+       * opacity, and none of the hover brightening a live verb has. No padlock, no strike, no
+       * colour change — someone who never reaches for it never has to notice.
+       */
+      function BVerb({
+        icon,
+        label,
+        on,
+        active,
+        quiet,
+        expanded,
+        controls,
+        buttonRef,
+      }) {
+        return (
+          <button
+            ref={buttonRef}
+            type="button"
+            onClick={on}
+            aria-label={label}
+            aria-pressed={expanded === undefined && active ? true : undefined}
+            aria-expanded={expanded}
+            aria-controls={expanded === undefined ? undefined : controls}
+            title={label}
+            className={cx(
+              "grid h-6 w-6 place-items-center rounded-[4px] transition-[opacity,background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : quiet
+                  ? "text-muted opacity-60"
+                  : "text-muted hover:bg-sunken hover:text-ink",
+              B_FOCUS,
+            )}
+          >
+            <Ic name={icon} size={14} />
+          </button>
+        );
+      }
+
+      /**
+       * The explanation, attached to the action it explains. Neutral chrome, no alert glyph, no
+       * amber. It is a click and a keypress away, not a hover, and it stays until dismissed.
+       * The card grows downward from its header; `transition-[grid-template-rows]` is what moves.
+       */
+      function BBlockedRow({ id, open }) {
+        return (
+          <div
+            className="grid transition-[grid-template-rows] duration-150"
+            style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+          >
+            <div className="overflow-hidden" inert={open ? undefined : true}>
+              <div
+                id={id}
+                className="bg-sunken mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[4px] ps-2 pe-1.5 py-1.5"
+              >
+                <p className="text-muted min-w-0 flex-1 text-[13px] leading-relaxed text-pretty">
+                  Zotero isn’t open — open it to edit this annotation.
+                </p>
+                <button
+                  type="button"
+                  className={cx(
+                    "text-accent h-6 shrink-0 rounded-[4px] px-1.5 text-[12px] font-medium hover:underline",
+                    B_FOCUS,
+                  )}
+                >
+                  Open Zotero
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function BTagChip({ tag, on, active }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            className={cx(
+              "h-6 rounded-[4px] px-1.5 text-[11px] tracking-[0.04em] transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-sunken text-muted hover:text-ink",
+              B_FOCUS,
+            )}
+          >
+            #{tag}
+          </button>
+        );
+      }
+
+      function BCommentEditor({ annot }) {
+        const { set } = useProto();
+        const [draft, setDraft] = React.useState(annot.comment ?? "");
+        return (
+          <div className="bg-ground rounded-[4px] p-1.5">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              className={cx(
+                "text-ink w-full resize-none bg-transparent text-[13px] leading-relaxed",
+                "placeholder:text-faint",
+                B_FOCUS,
+              )}
+              placeholder="Write a comment on this highlight"
+            />
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "text-muted hover:text-ink h-6 rounded-[4px] px-2 text-[12px] transition-[color] duration-150",
+                  B_FOCUS,
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "bg-accent text-ground h-6 rounded-[4px] px-2 text-[12px] font-medium",
+                  B_FOCUS,
+                )}
+              >
+                Save comment
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function BSwatchRow({ annot }) {
+        const { set } = useProto();
+        return (
+          <div className="bg-ground flex flex-wrap items-center gap-1 rounded-[4px] p-1.5">
+            <span className="text-muted me-1 text-[11px] tracking-[0.04em]">
+              Colour
+            </span>
+            {ALL_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ sheet: null })}
+                aria-label={COLOR_NAME[c]}
+                aria-pressed={c === annot.color}
+                title={COLOR_NAME[c]}
+                className={cx(
+                  "h-5 w-5 rounded-[4px] transition-[box-shadow] duration-150",
+                  c === annot.color
+                    ? "shadow-[0_0_0_2px_var(--accent)]"
+                    : "hover:shadow-[0_0_0_1px_var(--line)]",
+                  B_FOCUS,
+                )}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        );
+      }
+
+      function BCard({ annot }) {
+        const s = useProto();
+        const { select, set, toggleTag } = s;
+        const live = canEdit(s);
+        const selected = s.selectedKey === annot.key;
+        const editing = s.editingKey === annot.key;
+        const swatches = s.sheet === `colour:${annot.key}`;
+        const blocked = s.sheet === `blocked:${annot.key}`;
+        const saving = s.scenario === "saving" && annot.key === B_SAVING_KEY;
+        const isNote = annot.type === "note";
+        const blockedId = `b-blocked-${annot.key}`;
+        const verbRefs = React.useRef({});
+        /** Which verb opened the row, so Escape can hand focus back to it. */
+        const openerRef = React.useRef(null);
+
+        /** One card at a time: `sheet` holds a single value, so opening here closes anywhere else. */
+        const closeBlocked = (focusId) => {
+          set({ sheet: null });
+          if (focusId) verbRefs.current[focusId]?.focus();
+        };
+
+        return (
+          <article
+            aria-busy={saving || undefined}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && blocked) {
+                e.stopPropagation();
+                closeBlocked(openerRef.current);
+              }
+            }}
+            className={cx(
+              "group bg-raised rounded-[6px] p-[10px] transition-[background-color,box-shadow] duration-150",
+              selected &&
+                "bg-accent-soft shadow-[inset_0_0_0_1px_var(--accent)]",
+            )}
+            style={{ "--c": annot.color }}
+          >
+            <div className="flex items-center gap-2">
+              <BPageChip annot={annot} live={live} />
+              {isNote && (
+                <span className="text-muted text-[11px] tracking-[0.04em]">
+                  Note to self
+                </span>
+              )}
+              <span className="min-w-0 flex-1" />
+              {saving ? (
+                <span
+                  className="text-muted flex items-center gap-1.5 text-[12px]"
+                  aria-live="polite"
+                >
+                  <Ic name="Loader2" size={13} className="animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                <div
+                  className={cx(
+                    "flex items-center gap-0.5 transition-[opacity] duration-150",
+                    !selected &&
+                      "opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
+                  )}
+                >
+                  {B_VERBS.map((v) => {
+                    const isWrite = B_WRITE_VERBS.includes(v.id);
+                    const explains = !live && isWrite;
+                    return (
+                      <BVerb
+                        key={v.id}
+                        icon={v.icon}
+                        buttonRef={(el) => {
+                          verbRefs.current[v.id] = el;
+                        }}
+                        label={
+                          v.id === "comment" && annot.comment
+                            ? "Edit your comment"
+                            : v.label
+                        }
+                        quiet={explains}
+                        expanded={explains ? blocked : undefined}
+                        controls={blockedId}
+                        active={
+                          explains
+                            ? blocked
+                            : (v.id === "colour" && swatches) ||
+                              (v.id === "comment" && editing)
+                        }
+                        on={() => {
+                          if (explains) {
+                            if (blocked) closeBlocked(v.id);
+                            else {
+                              openerRef.current = v.id;
+                              set({ sheet: `blocked:${annot.key}` });
+                            }
+                          } else if (v.id === "colour") {
+                            set({
+                              sheet: swatches ? null : `colour:${annot.key}`,
+                            });
+                          } else if (v.id === "comment") {
+                            set({ editingKey: editing ? null : annot.key });
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {!live && <BBlockedRow id={blockedId} open={blocked} />}
+
+            {swatches && (
+              <div className="mt-2">
+                <BSwatchRow annot={annot} />
+              </div>
+            )}
+
+            {annot.type === "image" && (
+              <img
+                src={annot.img}
+                alt={`Figure captured from page ${annot.page}`}
+                className="mt-2 block w-full rounded-[4px]"
+                style={{
+                  outline:
+                    "1px solid color-mix(in srgb, var(--ink) 14%, transparent)",
+                  outlineOffset: "-1px",
+                }}
+              />
+            )}
+
+            {annot.text && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", B_FOCUS)}
+              >
+                <p
+                  className={cx(
+                    "font-quote text-ink text-[14px] leading-[1.5]",
+                    !s.expanded && "line-clamp-3",
+                  )}
+                >
+                  {annot.text}
+                </p>
+              </button>
+            )}
+
+            {isNote && !editing && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", B_FOCUS)}
+              >
+                <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                  {annot.comment}
+                </p>
+              </button>
+            )}
+
+            {editing ? (
+              <div className="mt-2">
+                <BCommentEditor annot={annot} />
+              </div>
+            ) : (
+              !isNote &&
+              annot.comment && (
+                <div className="border-line mt-2 border-s-2 ps-2.5">
+                  <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                    {annot.comment}
+                  </p>
+                </div>
+              )
+            )}
+
+            {annot.tags.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {annot.tags.map((t) => (
+                  <BTagChip
+                    key={t}
+                    tag={t}
+                    active={s.tags.includes(t)}
+                    on={() => toggleTag(t)}
+                  />
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      }
+
+      /**
+       * The one place the pane speaks unprompted: nothing resolved, so there is no reading to
+       * interrupt. Neutral chrome — the amber is gone with the notice it belonged to.
+       */
+      function BNoItem() {
+        const s = useProto();
+        const c = condition(s);
+        if (!c) return null;
+        return (
+          <div className="bg-raised rounded-[6px] p-3">
+            <div className="flex items-center gap-1.5">
+              <Ic
+                name="PlugZap"
+                size={14}
+                strokeWidth={2}
+                className="text-muted shrink-0"
+              />
+              <h3 className="text-ink text-[13px] font-semibold text-balance">
+                {c.title}
+              </h3>
+            </div>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              {c.body}
+            </p>
+            <button
+              type="button"
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                B_FOCUS,
+              )}
+            >
+              <Ic name="ExternalLink" size={13} strokeWidth={2} />
+              {c.action}
+            </button>
+          </div>
+        );
+      }
+
+      function BPanel({ children, align = "auto" }) {
+        const { set } = useProto();
+        return (
+          <>
+            <button
+              type="button"
+              aria-label="Close this menu"
+              onClick={() => set({ sheet: null })}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+            <div
+              className={cx(
+                "bg-ground border-line absolute top-full z-30 mt-1 w-[230px] rounded-[8px] border p-1",
+                align === "auto"
+                  ? "start-0 @min-[860px]:start-auto @min-[860px]:end-0"
+                  : "start-0",
+                "shadow-[0_2px_4px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.3)]",
+              )}
+            >
+              {children}
+            </div>
+          </>
+        );
+      }
+
+      /** The selected colours themselves, in the order they appear in the document. */
+      function BFilterDots({ colors }) {
+        return (
+          <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
+            {colors.map((c) => (
+              <span
+                key={c}
+                className="block h-2 w-2 rounded-full"
+                style={{
+                  background: c,
+                  boxShadow:
+                    "0 0 0 1px color-mix(in oklab, var(--ink) 15%, transparent)",
+                }}
+              />
+            ))}
+          </span>
+        );
+      }
+
+      function BControl({
+        icon,
+        label,
+        dots,
+        ariaLabel,
+        active,
+        on,
+        chevron = true,
+      }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            aria-label={ariaLabel}
+            className={cx(
+              "flex h-7 max-w-[160px] items-center gap-1.5 rounded-[6px] px-2 text-[12px]",
+              "transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-raised text-ink hover:bg-sunken",
+              B_FOCUS,
+            )}
+          >
+            {dots ? (
+              <BFilterDots colors={dots} />
+            ) : (
+              <>
+                {icon && <Ic name={icon} size={13} className="shrink-0" />}
+                <span className="min-w-0 truncate">{label}</span>
+              </>
+            )}
+            {chevron && (
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            )}
+          </button>
+        );
+      }
+
+      function BControls() {
+        const s = useProto();
+        const { set, toggleColor, toggleTag, clearFilters } = s;
+        const open = B_CONTROL_SHEETS.includes(s.sheet) ? s.sheet : null;
+        const toggle = (name) => set({ sheet: open === name ? null : name });
+        const picked = ALL_COLORS.filter((c) => s.colors.includes(c));
+
+        return (
+          <div className="relative flex flex-wrap items-center gap-1.5">
+            <BControl
+              icon="Palette"
+              label="Colour"
+              dots={picked.length > 0 ? picked : undefined}
+              ariaLabel={picked.length > 0 ? B_colorPhrase(picked) : undefined}
+              active={open === "filter" || s.colors.length > 0}
+              on={() => toggle("filter")}
+            />
+            <BControl
+              icon="Tags"
+              label={B_listLabel(
+                s.tags,
+                "Tags",
+                (t) => t.charAt(0).toUpperCase() + t.slice(1),
+              )}
+              active={open === "tags" || s.tags.length > 0}
+              on={() => toggle("tags")}
+            />
+            <BControl
+              icon="Search"
+              label={s.query.trim() ? `“${s.query.trim()}”` : "Search"}
+              active={open === "search" || s.query.trim() !== ""}
+              chevron={false}
+              on={() => toggle("search")}
+            />
+            {filterActive(s) && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearFilters();
+                  set({ sheet: null });
+                }}
+                className={cx(
+                  "text-accent ms-auto h-7 rounded-[6px] px-1.5 text-[12px] hover:underline",
+                  B_FOCUS,
+                )}
+              >
+                Show all
+              </button>
+            )}
+
+            {open === "filter" && (
+              <BPanel>
+                {ALL_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleColor(c)}
+                    aria-pressed={s.colors.includes(c)}
+                    className={cx(
+                      "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                      "transition-[background-color] duration-150 hover:bg-raised",
+                      B_FOCUS,
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ background: c }}
+                    />
+                    <span className="text-ink flex-1 text-start">
+                      {COLOR_NAME[c]}
+                    </span>
+                    {s.colors.includes(c) && (
+                      <Ic name="Check" size={13} className="text-accent" />
+                    )}
+                  </button>
+                ))}
+              </BPanel>
+            )}
+
+            {open === "tags" && (
+              <BPanel>
+                <div className="max-h-[220px] overflow-y-auto">
+                  {ALL_TAGS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTag(t)}
+                      aria-pressed={s.tags.includes(t)}
+                      className={cx(
+                        "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                        "transition-[background-color] duration-150 hover:bg-raised",
+                        B_FOCUS,
+                      )}
+                    >
+                      <span className="text-ink flex-1 text-start">#{t}</span>
+                      <span className="text-faint tabular-nums">
+                        {ANNOTS.filter((a) => a.tags.includes(t)).length}
+                      </span>
+                      {s.tags.includes(t) && (
+                        <Ic name="Check" size={13} className="text-accent" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </BPanel>
+            )}
+
+            {open === "search" && (
+              <BPanel>
+                <div className="bg-raised flex h-8 items-center gap-1.5 rounded-[5px] px-2">
+                  <Ic name="Search" size={13} className="text-muted shrink-0" />
+                  <input
+                    autoFocus
+                    value={s.query}
+                    onChange={(e) => set({ query: e.target.value })}
+                    placeholder="Search your annotations"
+                    className={cx(
+                      "text-ink placeholder:text-faint min-w-0 flex-1 bg-transparent text-[13px] outline-none",
+                    )}
+                  />
+                  {s.query !== "" && (
+                    <button
+                      type="button"
+                      aria-label="Clear the search"
+                      onClick={() => set({ query: "" })}
+                      className={cx(
+                        "text-muted hover:text-ink grid h-6 w-6 place-items-center rounded-[4px]",
+                        B_FOCUS,
+                      )}
+                    >
+                      <Ic name="X" size={13} />
+                    </button>
+                  )}
+                </div>
+              </BPanel>
+            )}
+          </div>
+        );
+      }
+
+      function BAttachmentPicker() {
+        const s = useProto();
+        const { set } = s;
+        if (ITEM.attachments.length < 2) return null;
+        const currentKey = s.attKey ?? ITEM.attachments[0].key;
+        const current =
+          ITEM.attachments.find((a) => a.key === currentKey) ??
+          ITEM.attachments[0];
+        const open = s.sheet === "item";
+        return (
+          <div className="relative mt-1.5">
+            <button
+              type="button"
+              onClick={() => set({ sheet: open ? null : "item" })}
+              aria-pressed={open}
+              className={cx(
+                "text-muted hover:text-ink hover:bg-raised flex h-6 max-w-full items-center gap-1.5 rounded-[5px] ps-1 pe-1.5 text-[12px]",
+                "transition-[background-color,color] duration-150",
+                open && "bg-raised text-ink",
+                B_FOCUS,
+              )}
+            >
+              <Ic name="Paperclip" size={12} className="shrink-0" />
+              <span className="min-w-0 truncate">{current.name}</span>
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            </button>
+            {open && (
+              <BPanel align="start">
+                <p className="text-muted px-1.5 pt-1 pb-1.5 text-[11px] tracking-[0.04em]">
+                  Read annotations from
+                </p>
+                {ITEM.attachments.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    onClick={() => set({ attKey: a.key, sheet: null })}
+                    aria-pressed={a.key === current.key}
+                    className={cx(
+                      "hover:bg-raised flex w-full items-start gap-2 rounded-[5px] p-1.5 text-start",
+                      "transition-[background-color] duration-150",
+                      B_FOCUS,
+                    )}
+                  >
+                    <Ic
+                      name={a.key === current.key ? "Check" : "FileText"}
+                      size={13}
+                      className={cx(
+                        "mt-0.5 shrink-0",
+                        a.key === current.key ? "text-accent" : "text-faint",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-ink block text-[12px] leading-snug text-pretty">
+                        {a.name}
+                      </span>
+                      <span className="text-faint mt-0.5 block text-[11px] tabular-nums">
+                        {a.count} annotations
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </BPanel>
+            )}
+          </div>
+        );
+      }
+
+      /**
+       * Identical whether Zotero is open or shut: title, creators · year, attachment picker, and
+       * the control row. Nothing about the condition is allowed in here.
+       */
+      function BMasthead() {
+        const s = useProto();
+        const present = hasItem(s);
+        return (
+          <header className="bg-ground relative z-10 shrink-0 px-3 pt-3 pb-2.5">
+            {present ? (
+              <div className="flex flex-col gap-2.5 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-between @min-[860px]:gap-6">
+                <div className="min-w-0 @min-[860px]:max-w-[520px]">
+                  <h2 className="text-ink line-clamp-2 text-[13px] leading-snug font-semibold text-pretty">
+                    {ITEM.title}
+                  </h2>
+                  <p className="text-muted mt-0.5 text-[12px]">
+                    {ITEM.creators} ·{" "}
+                    <span className="tabular-nums">{ITEM.year}</span>
+                  </p>
+                  <BAttachmentPicker />
+                </div>
+                <div className="@min-[860px]:shrink-0">
+                  <BControls />
+                </div>
+              </div>
+            ) : (
+              <BNoItem />
+            )}
+          </header>
+        );
+      }
+
+      function BEmptyMatch() {
+        const s = useProto();
+        const { clearFilters } = s;
+        return (
+          <div className="bg-raised rounded-[6px] p-3">
+            <h3 className="text-ink text-[13px] font-semibold text-balance">
+              Nothing matches that
+            </h3>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              No annotation on this paper matches {B_filterPhrase(s)}. Show all{" "}
+              {ANNOTS.length} again, or narrow it differently.
+            </p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                B_FOCUS,
+              )}
+            >
+              <Ic name="ListRestart" size={13} strokeWidth={2} />
+              Show all annotations
+            </button>
+          </div>
+        );
+      }
+
+      function BList() {
+        const s = useProto();
+        const list = visibleAnnots(s);
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1 pb-6">
+            {list.length === 0 ? (
+              <BEmptyMatch />
+            ) : (
+              <div className="grid grid-cols-1 content-start items-start gap-2 @min-[500px]:grid-cols-2 @min-[860px]:grid-cols-3">
+                {list.map((a) => (
+                  <BCard key={a.key} annot={a} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function VariantB() {
+        const s = useProto();
+        return (
+          <ObsidianFrame>
+            <div className="font-ui text-ink flex h-full min-h-0 flex-col">
+              <BMasthead />
+              {hasItem(s) && <BList />}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant B END ---
+      // --- Variant B END ---
+      // --- Variant B END ---
+
+      // --- Variant C ---
+      // --- Variant C ---
+      /**
+       * VARIANT C — "A status line along the pane's bottom edge."
+       *
+       * Round 2 refinement of the winning B. Keeps B's masthead, its word-labelled controls and
+       * its page-chip card. Two changes:
+       *
+       *   1. The colour control carries its state as the colours themselves — the selected dots in
+       *      document order — instead of the words "Yellow, green".
+       *   2. B's amber notice block is gone. Read-only is a mode, not a fault, so the condition
+       *      moves to a 24px status line pinned along the pane's BOTTOM edge, outside the scroll
+       *      and below it in the flex column. It never pushes the list; the scroll region simply
+       *      gets that much shorter, so the researcher keeps their place. This is what
+       *      WORKBENCH-DESIGN already prescribes: connection state lives below the panes.
+       *      The full explanation is one press away — never a hover — expanding upward OVER the
+       *      list's bottom edge rather than reflowing it.
+       */
+
+      const C_FOCUS =
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0";
+
+      const C_VERBS = [
+        { id: "colour", icon: "Palette", label: "Change colour" },
+        { id: "comment", icon: "MessageSquarePlus", label: "Write a comment" },
+        { id: "more", icon: "MoreHorizontal", label: "More actions" },
+      ];
+
+      const C_SAVING_KEY = "n6";
+
+      /** The hairline that keeps a yellow dot off a light control and a grey dot off a dark one. */
+      const C_DOT_RING =
+        "0 0 0 1px color-mix(in oklab, var(--ink) 15%, transparent)";
+
+      /** "Yellow, green" — a control's own label carries its filter state. Tags and search only. */
+      function C_listLabel(values, fallback, name) {
+        if (values.length === 0) return fallback;
+        const first = name(values[0]);
+        if (values.length === 1) return first;
+        if (values.length === 2)
+          return `${first}, ${name(values[1]).toLowerCase()}`;
+        return `${first} +${values.length - 1}`;
+      }
+
+      /** The selected colours, in the order they appear in the document. */
+      function C_selectedColors(s) {
+        return ALL_COLORS.filter((c) => s.colors.includes(c));
+      }
+
+      /** The dots said in words, for the accessible name: "Filtered to yellow and green". */
+      function C_colorSentence(colors) {
+        const names = colors.map((c) => COLOR_NAME[c].toLowerCase());
+        if (names.length === 0) return "Filter by colour";
+        if (names.length === 1) return `Filtered to ${names[0]}`;
+        return `Filtered to ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+      }
+
+      /** A sentence fragment naming what is currently filtering the list. */
+      function C_filterPhrase(s) {
+        const parts = [];
+        if (s.colors.length)
+          parts.push(
+            s.colors.map((c) => COLOR_NAME[c].toLowerCase()).join(" or "),
+          );
+        if (s.tags.length) parts.push(s.tags.map((t) => `#${t}`).join(" or "));
+        if (s.query.trim()) parts.push(`“${s.query.trim()}”`);
+        if (parts.length === 0) return "the filters you have on";
+        if (parts.length === 1) return parts[0];
+        return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+      }
+
+      /** The mark that fuses colour with type: a dot for a highlight, a bar for an underline. */
+      function CColorMark({ type }) {
+        if (type === "underline")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-[3px] w-[9px] shrink-0 rounded-[1px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        if (type === "image")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        return (
+          <span
+            aria-hidden="true"
+            className="block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: "var(--c)" }}
+          />
+        );
+      }
+
+      /** Colour + location as one mark. Opens the page in Zotero. */
+      function CPageChip({ annot, live }) {
+        return (
+          <button
+            type="button"
+            disabled={!live}
+            title={live ? `Open page ${annot.page} in Zotero` : undefined}
+            className={cx(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-[4px] ps-1.5 pe-2 text-[12px] font-medium tabular-nums",
+              "text-ink transition-[box-shadow] duration-150",
+              live
+                ? "hover:shadow-[0_0_0_1px_var(--c)] cursor-pointer"
+                : "cursor-default opacity-70",
+              C_FOCUS,
+            )}
+            style={{
+              background: "color-mix(in srgb, var(--c) 22%, transparent)",
+            }}
+          >
+            <CColorMark type={annot.type} />
+            <span>p.&nbsp;{annot.page}</span>
+          </button>
+        );
+      }
+
+      /**
+       * A card verb. When Zotero is closed it stays exactly where it is, at a lower rest opacity,
+       * and stops answering hover — quietly unavailable. No padlock, no alert glyph, no tooltip:
+       * the status line along the bottom edge is on screen the whole time and explains it once.
+       */
+      function CVerb({ icon, label, on, active, disabled }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            disabled={disabled}
+            aria-label={label}
+            aria-pressed={active ? true : undefined}
+            title={disabled ? undefined : label}
+            className={cx(
+              "grid h-6 w-6 place-items-center rounded-[4px] transition-[opacity,background-color,color] duration-150",
+              disabled
+                ? "text-faint cursor-default"
+                : active
+                  ? "bg-accent-soft text-accent"
+                  : "text-muted hover:bg-sunken hover:text-ink",
+              C_FOCUS,
+            )}
+          >
+            <Ic name={icon} size={14} />
+          </button>
+        );
+      }
+
+      function CTagChip({ tag, on, active }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            className={cx(
+              "h-6 rounded-[4px] px-1.5 text-[11px] tracking-[0.04em] transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-sunken text-muted hover:text-ink",
+              C_FOCUS,
+            )}
+          >
+            #{tag}
+          </button>
+        );
+      }
+
+      function CCommentEditor({ annot }) {
+        const { set } = useProto();
+        const [draft, setDraft] = React.useState(annot.comment ?? "");
+        return (
+          <div className="bg-ground rounded-[4px] p-1.5">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              className={cx(
+                "text-ink w-full resize-none bg-transparent text-[13px] leading-relaxed",
+                "placeholder:text-faint",
+                C_FOCUS,
+              )}
+              placeholder="Write a comment on this highlight"
+            />
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "text-muted hover:text-ink h-6 rounded-[4px] px-2 text-[12px] transition-[color] duration-150",
+                  C_FOCUS,
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "bg-accent text-ground h-6 rounded-[4px] px-2 text-[12px] font-medium",
+                  C_FOCUS,
+                )}
+              >
+                Save comment
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function CSwatchRow({ annot }) {
+        const { set } = useProto();
+        return (
+          <div className="bg-ground flex flex-wrap items-center gap-1 rounded-[4px] p-1.5">
+            <span className="text-muted me-1 text-[11px] tracking-[0.04em]">
+              Colour
+            </span>
+            {ALL_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ sheet: null })}
+                aria-label={COLOR_NAME[c]}
+                aria-pressed={c === annot.color}
+                title={COLOR_NAME[c]}
+                className={cx(
+                  "h-5 w-5 rounded-[4px] transition-[box-shadow] duration-150",
+                  c === annot.color
+                    ? "shadow-[0_0_0_2px_var(--accent)]"
+                    : "hover:shadow-[0_0_0_1px_var(--line)]",
+                  C_FOCUS,
+                )}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        );
+      }
+
+      function CCard({ annot }) {
+        const s = useProto();
+        const { select, set, toggleTag } = s;
+        const live = canEdit(s);
+        const selected = s.selectedKey === annot.key;
+        const editing = s.editingKey === annot.key;
+        const swatches = s.sheet === `colour:${annot.key}`;
+        const saving = s.scenario === "saving" && annot.key === C_SAVING_KEY;
+        const isNote = annot.type === "note";
+
+        return (
+          <article
+            aria-busy={saving || undefined}
+            className={cx(
+              "group bg-raised rounded-[6px] p-[10px] transition-[background-color,box-shadow] duration-150",
+              selected &&
+                "bg-accent-soft shadow-[inset_0_0_0_1px_var(--accent)]",
+            )}
+            style={{ "--c": annot.color }}
+          >
+            <div className="flex items-center gap-2">
+              <CPageChip annot={annot} live={live} />
+              {isNote && (
+                <span className="text-muted text-[11px] tracking-[0.04em]">
+                  Note to self
+                </span>
+              )}
+              <span className="min-w-0 flex-1" />
+              {saving ? (
+                <span
+                  className="text-muted flex items-center gap-1.5 text-[12px]"
+                  aria-live="polite"
+                >
+                  <Ic name="Loader2" size={13} className="animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                <div
+                  className={cx(
+                    "flex items-center gap-0.5 transition-[opacity] duration-150",
+                    live
+                      ? !selected &&
+                          "opacity-60 group-hover:opacity-100 group-focus-within:opacity-100"
+                      : "opacity-40",
+                  )}
+                >
+                  {C_VERBS.map((v) => (
+                    <CVerb
+                      key={v.id}
+                      icon={v.icon}
+                      label={
+                        v.id === "comment" && annot.comment
+                          ? "Edit your comment"
+                          : v.label
+                      }
+                      disabled={!live}
+                      active={
+                        (v.id === "colour" && swatches) ||
+                        (v.id === "comment" && editing)
+                      }
+                      on={() => {
+                        if (v.id === "colour")
+                          set({
+                            sheet: swatches ? null : `colour:${annot.key}`,
+                          });
+                        else if (v.id === "comment")
+                          set({ editingKey: editing ? null : annot.key });
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {swatches && (
+              <div className="mt-2">
+                <CSwatchRow annot={annot} />
+              </div>
+            )}
+
+            {annot.type === "image" && (
+              <img
+                src={annot.img}
+                alt={`Figure captured from page ${annot.page}`}
+                className="mt-2 block w-full rounded-[4px]"
+                style={{
+                  outline:
+                    "1px solid color-mix(in srgb, var(--ink) 14%, transparent)",
+                  outlineOffset: "-1px",
+                }}
+              />
+            )}
+
+            {annot.text && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", C_FOCUS)}
+              >
+                <p
+                  className={cx(
+                    "font-quote text-ink text-[14px] leading-[1.5]",
+                    !s.expanded && "line-clamp-3",
+                  )}
+                >
+                  {annot.text}
+                </p>
+              </button>
+            )}
+
+            {isNote && !editing && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", C_FOCUS)}
+              >
+                <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                  {annot.comment}
+                </p>
+              </button>
+            )}
+
+            {editing ? (
+              <div className="mt-2">
+                <CCommentEditor annot={annot} />
+              </div>
+            ) : (
+              !isNote &&
+              annot.comment && (
+                <div className="border-line mt-2 border-s-2 ps-2.5">
+                  <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                    {annot.comment}
+                  </p>
+                </div>
+              )
+            )}
+
+            {annot.tags.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {annot.tags.map((t) => (
+                  <CTagChip
+                    key={t}
+                    tag={t}
+                    active={s.tags.includes(t)}
+                    on={() => toggleTag(t)}
+                  />
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      }
+
+      /**
+       * The status line. Pinned along the pane's bottom edge, below the scroll in the flex column
+       * — never absolutely positioned over it, so no pane height and no zoom level can clip it.
+       * Present only while Zotero is closed and there is a list to read.
+       *
+       * At 340px the sentence and the action do not both fit on one line, so the row wraps to two:
+       * it carries no fixed height and the text carries no fixed width, and nothing truncates.
+       *
+       * Pressing the glyph or the sentence expands the line upward into a two-line block. The
+       * expansion is absolutely positioned above the row, so it covers the list's last few pixels
+       * instead of reflowing it. Press again, or Escape, to collapse.
+       */
+      function CStatusLine() {
+        const s = useProto();
+        const c = condition(s);
+        const shown = Boolean(c) && hasItem(s);
+        const [open, setOpen] = React.useState(false);
+
+        React.useEffect(() => {
+          if (!shown) setOpen(false);
+        }, [shown]);
+
+        React.useEffect(() => {
+          if (!open) return;
+          const onKey = (e) => {
+            if (e.key === "Escape") setOpen(false);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [open]);
+
+        if (!shown) return null;
+
+        return (
+          <div className="border-line bg-raised relative z-20 shrink-0 border-t">
+            {open && (
+              <div
+                id="c-status-detail"
+                className={cx(
+                  "border-line bg-raised absolute inset-x-0 bottom-full border-t px-3 py-1.5",
+                  "shadow-[0_-8px_20px_-14px_rgba(0,0,0,0.5)]",
+                )}
+              >
+                <p className="text-muted text-[12px] leading-relaxed text-pretty">
+                  Open Zotero to change colours, comments or tags.
+                </p>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-0.5">
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                aria-controls={open ? "c-status-detail" : undefined}
+                className={cx(
+                  "text-muted hover:text-ink flex min-h-6 min-w-0 items-center gap-1.5 rounded-[4px] text-start",
+                  "transition-[color] duration-150",
+                  C_FOCUS,
+                )}
+              >
+                <Ic name="Unplug" size={13} className="shrink-0" />
+                <span className="min-w-0 text-[12px] leading-[1.45]">
+                  Reading only · Zotero isn’t open
+                </span>
+                <Ic
+                  name={open ? "ChevronDown" : "ChevronUp"}
+                  size={12}
+                  className="shrink-0 opacity-70"
+                />
+              </button>
+
+              <button
+                type="button"
+                className={cx(
+                  "text-accent ms-auto flex h-6 shrink-0 items-center rounded-[4px] px-1 text-[12px] hover:underline",
+                  C_FOCUS,
+                )}
+              >
+                {c.action}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      /**
+       * `no-item`: nothing to read, so nothing to interrupt. The pane body states the real cause
+       * in full with its one action — B's treatment, restyled neutral. The bottom status line
+       * stands down here: it would say a quieter version of the sentence already on screen.
+       */
+      function CNoItem() {
+        const s = useProto();
+        const c = condition(s);
+        if (!c) return null;
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-6">
+            <div className="bg-raised rounded-[6px] p-3">
+              <div className="flex items-center gap-1.5">
+                <Ic
+                  name="Unplug"
+                  size={14}
+                  strokeWidth={2}
+                  className="text-muted shrink-0"
+                />
+                <h3 className="text-ink text-[13px] font-semibold text-balance">
+                  {c.title}
+                </h3>
+              </div>
+              <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+                {c.body}
+              </p>
+              <button
+                type="button"
+                className={cx(
+                  "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 text-[12px] font-medium",
+                  "transition-[transform] duration-150 active:scale-[0.96]",
+                  C_FOCUS,
+                )}
+              >
+                <Ic name="ExternalLink" size={13} strokeWidth={2} />
+                {c.action}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function CPanel({ children, align = "auto" }) {
+        const { set } = useProto();
+        return (
+          <>
+            <button
+              type="button"
+              aria-label="Close this menu"
+              onClick={() => set({ sheet: null })}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+            <div
+              className={cx(
+                "bg-ground border-line absolute top-full z-30 mt-1 w-[230px] rounded-[8px] border p-1",
+                align === "auto"
+                  ? "start-0 @min-[860px]:start-auto @min-[860px]:end-0"
+                  : "start-0",
+                "shadow-[0_2px_4px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.3)]",
+              )}
+            >
+              {children}
+            </div>
+          </>
+        );
+      }
+
+      function CControl({
+        icon,
+        label,
+        active,
+        on,
+        chevron = true,
+        ariaLabel,
+        children,
+      }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            aria-label={ariaLabel}
+            className={cx(
+              "flex h-7 max-w-[160px] items-center gap-1.5 rounded-[6px] px-2 text-[12px]",
+              "transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-raised text-ink hover:bg-sunken",
+              C_FOCUS,
+            )}
+          >
+            {icon && <Ic name={icon} size={13} className="shrink-0" />}
+            {children ?? <span className="min-w-0 truncate">{label}</span>}
+            {chevron && (
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            )}
+          </button>
+        );
+      }
+
+      /** The selected colours themselves, on the control's own surface. Dots, not words. */
+      function CColorDots({ colors }) {
+        return (
+          <span aria-hidden="true" className="flex min-w-0 items-center gap-1">
+            {colors.map((c) => (
+              <span
+                key={c}
+                className="block h-2 w-2 shrink-0 rounded-full"
+                style={{ background: c, boxShadow: C_DOT_RING }}
+              />
+            ))}
+          </span>
+        );
+      }
+
+      function CControls() {
+        const s = useProto();
+        const { set, toggleColor, toggleTag, clearFilters } = s;
+        const open =
+          typeof s.sheet === "string" && !s.sheet.startsWith("colour:")
+            ? s.sheet
+            : null;
+        const toggle = (name) => set({ sheet: open === name ? null : name });
+        const picked = C_selectedColors(s);
+
+        return (
+          <div className="relative flex flex-wrap items-center gap-1.5">
+            <CControl
+              icon="Palette"
+              label="Colour"
+              ariaLabel={C_colorSentence(picked)}
+              active={open === "filter" || picked.length > 0}
+              on={() => toggle("filter")}
+            >
+              {picked.length > 0 ? <CColorDots colors={picked} /> : undefined}
+            </CControl>
+            <CControl
+              icon="Tags"
+              label={C_listLabel(
+                s.tags,
+                "Tags",
+                (t) => t.charAt(0).toUpperCase() + t.slice(1),
+              )}
+              active={open === "tags" || s.tags.length > 0}
+              on={() => toggle("tags")}
+            />
+            <CControl
+              icon="Search"
+              label={s.query.trim() ? `“${s.query.trim()}”` : "Search"}
+              active={open === "search" || s.query.trim() !== ""}
+              chevron={false}
+              on={() => toggle("search")}
+            />
+            {filterActive(s) && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearFilters();
+                  set({ sheet: null });
+                }}
+                className={cx(
+                  "text-accent ms-auto h-7 rounded-[6px] px-1.5 text-[12px] hover:underline",
+                  C_FOCUS,
+                )}
+              >
+                Show all
+              </button>
+            )}
+
+            {open === "filter" && (
+              <CPanel>
+                {ALL_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleColor(c)}
+                    aria-pressed={s.colors.includes(c)}
+                    className={cx(
+                      "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                      "transition-[background-color] duration-150 hover:bg-raised",
+                      C_FOCUS,
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ background: c, boxShadow: C_DOT_RING }}
+                    />
+                    <span className="text-ink flex-1 text-start">
+                      {COLOR_NAME[c]}
+                    </span>
+                    {s.colors.includes(c) && (
+                      <Ic name="Check" size={13} className="text-accent" />
+                    )}
+                  </button>
+                ))}
+              </CPanel>
+            )}
+
+            {open === "tags" && (
+              <CPanel>
+                <div className="max-h-[220px] overflow-y-auto">
+                  {ALL_TAGS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTag(t)}
+                      aria-pressed={s.tags.includes(t)}
+                      className={cx(
+                        "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                        "transition-[background-color] duration-150 hover:bg-raised",
+                        C_FOCUS,
+                      )}
+                    >
+                      <span className="text-ink flex-1 text-start">#{t}</span>
+                      <span className="text-faint tabular-nums">
+                        {ANNOTS.filter((a) => a.tags.includes(t)).length}
+                      </span>
+                      {s.tags.includes(t) && (
+                        <Ic name="Check" size={13} className="text-accent" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </CPanel>
+            )}
+
+            {open === "search" && (
+              <CPanel>
+                <div className="bg-raised flex h-8 items-center gap-1.5 rounded-[5px] px-2">
+                  <Ic name="Search" size={13} className="text-muted shrink-0" />
+                  <input
+                    autoFocus
+                    value={s.query}
+                    onChange={(e) => set({ query: e.target.value })}
+                    placeholder="Search your annotations"
+                    className={cx(
+                      "text-ink placeholder:text-faint min-w-0 flex-1 bg-transparent text-[13px] outline-none",
+                    )}
+                  />
+                  {s.query !== "" && (
+                    <button
+                      type="button"
+                      aria-label="Clear the search"
+                      onClick={() => set({ query: "" })}
+                      className={cx(
+                        "text-muted hover:text-ink grid h-6 w-6 place-items-center rounded-[4px]",
+                        C_FOCUS,
+                      )}
+                    >
+                      <Ic name="X" size={13} />
+                    </button>
+                  )}
+                </div>
+              </CPanel>
+            )}
+          </div>
+        );
+      }
+
+      function CAttachmentPicker() {
+        const s = useProto();
+        const { set } = s;
+        if (ITEM.attachments.length < 2) return null;
+        const currentKey = s.attKey ?? ITEM.attachments[0].key;
+        const current =
+          ITEM.attachments.find((a) => a.key === currentKey) ??
+          ITEM.attachments[0];
+        const open = s.sheet === "item";
+        return (
+          <div className="relative mt-1.5">
+            <button
+              type="button"
+              onClick={() => set({ sheet: open ? null : "item" })}
+              aria-pressed={open}
+              className={cx(
+                "text-muted hover:text-ink hover:bg-raised flex h-6 max-w-full items-center gap-1.5 rounded-[5px] ps-1 pe-1.5 text-[12px]",
+                "transition-[background-color,color] duration-150",
+                open && "bg-raised text-ink",
+                C_FOCUS,
+              )}
+            >
+              <Ic name="Paperclip" size={12} className="shrink-0" />
+              <span className="min-w-0 truncate">{current.name}</span>
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            </button>
+            {open && (
+              <CPanel align="start">
+                <p className="text-muted px-1.5 pt-1 pb-1.5 text-[11px] tracking-[0.04em]">
+                  Read annotations from
+                </p>
+                {ITEM.attachments.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    onClick={() => set({ attKey: a.key, sheet: null })}
+                    aria-pressed={a.key === current.key}
+                    className={cx(
+                      "hover:bg-raised flex w-full items-start gap-2 rounded-[5px] p-1.5 text-start",
+                      "transition-[background-color] duration-150",
+                      C_FOCUS,
+                    )}
+                  >
+                    <Ic
+                      name={a.key === current.key ? "Check" : "FileText"}
+                      size={13}
+                      className={cx(
+                        "mt-0.5 shrink-0",
+                        a.key === current.key ? "text-accent" : "text-faint",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-ink block text-[12px] leading-snug text-pretty">
+                        {a.name}
+                      </span>
+                      <span className="text-faint mt-0.5 block text-[11px] tabular-nums">
+                        {a.count} annotations
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </CPanel>
+            )}
+          </div>
+        );
+      }
+
+      function CMasthead() {
+        return (
+          <header className="bg-ground relative z-10 min-h-0 overflow-hidden px-3 pt-3 pb-2.5">
+            <div className="flex flex-col gap-2.5 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-between @min-[860px]:gap-6">
+              <div className="min-w-0 @min-[860px]:max-w-[520px]">
+                <h2 className="text-ink line-clamp-2 text-[13px] leading-snug font-semibold text-pretty">
+                  {ITEM.title}
+                </h2>
+                <p className="text-muted mt-0.5 text-[12px]">
+                  {ITEM.creators} ·{" "}
+                  <span className="tabular-nums">{ITEM.year}</span>
+                </p>
+                <CAttachmentPicker />
+              </div>
+              <div className="@min-[860px]:shrink-0">
+                <CControls />
+              </div>
+            </div>
+          </header>
+        );
+      }
+
+      function CEmptyMatch() {
+        const s = useProto();
+        const { clearFilters } = s;
+        return (
+          <div className="bg-raised rounded-[6px] p-3">
+            <h3 className="text-ink text-[13px] font-semibold text-balance">
+              Nothing matches that
+            </h3>
+            <p className="text-muted mt-1 text-[13px] leading-relaxed text-pretty">
+              No annotation on this paper matches {C_filterPhrase(s)}. Show all{" "}
+              {ANNOTS.length} again, or narrow it differently.
+            </p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={cx(
+                "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2.5 text-[12px] font-medium",
+                "transition-[transform] duration-150 active:scale-[0.96]",
+                C_FOCUS,
+              )}
+            >
+              <Ic name="ListRestart" size={13} strokeWidth={2} />
+              Show all annotations
+            </button>
+          </div>
+        );
+      }
+
+      function CList() {
+        const s = useProto();
+        const list = visibleAnnots(s);
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1">
+            {list.length === 0 ? (
+              <CEmptyMatch />
+            ) : (
+              <div className="grid grid-cols-1 pb-6 content-start items-start gap-2 @min-[500px]:grid-cols-2 @min-[860px]:grid-cols-3">
+                {list.map((a) => (
+                  <CCard key={a.key} annot={a} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function VariantC() {
+        const s = useProto();
+        const present = hasItem(s);
+        return (
+          <ObsidianFrame>
+            <div className="font-ui text-ink flex h-full min-h-0 flex-col">
+              {present ? (
+                <>
+                  <CMasthead />
+                  <CList />
+                  <CStatusLine />
+                </>
+              ) : (
+                <CNoItem />
+              )}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant C END ---
+      // --- Variant C END ---
+      // --- Variant C END ---
+
+      // --- Switcher ---
+      const VARIANTS = [
+        { key: "A", name: "Reading only, in the byline", component: VariantA },
+        {
+          key: "B",
+          name: "Nothing until you reach for it",
+          component: VariantB,
+        },
+        { key: "C", name: "Status line on the pane edge", component: VariantC },
+      ];
+
+      const SCENARIOS = [
+        ["reading", "Reading"],
+        ["zotero-closed", "Zotero closed"],
+        ["no-item", "No item"],
+        ["saving", "Saving"],
+        ["no-match", "No matches"],
+      ];
+      const WIDTHS = [340, 520, 900];
+
+      const barBtn = (on) => ({
+        background: on ? "#f8fafc" : "transparent",
+        color: on ? "#0f172a" : "#cbd5e1",
+        border: "1px solid " + (on ? "#f8fafc" : "#475569"),
+        borderRadius: 999,
+        padding: "2px 9px",
+        font: "inherit",
+        fontSize: 11,
+        lineHeight: "16px",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      });
+
+      function SwitchBar({ idx, setIdx }) {
+        const s = useProto();
+        const [theme, setTheme] = useState(
+          () => document.documentElement.getAttribute("data-theme") ?? "light",
+        );
+        useEffect(() => {
+          document.documentElement.setAttribute("data-theme", theme);
+        }, [theme]);
+        const V = VARIANTS[idx];
+        const move = (d) =>
+          setIdx((i) => (i + d + VARIANTS.length) % VARIANTS.length);
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "#1e293b",
+              color: "#f8fafc",
+              borderRadius: 14,
+              padding: "9px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontSize: 12,
+              zIndex: 9999,
+              boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+              maxWidth: "94vw",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+              }}
+            >
+              <button
+                onClick={() => move(-1)}
+                style={{ ...barBtn(false), border: "none", fontSize: 15 }}
+              >
+                ←
+              </button>
+              <span
+                style={{ fontWeight: 600, minWidth: 210, textAlign: "center" }}
+              >
+                {V.key} — {V.name}
+              </span>
+              <button
+                onClick={() => move(1)}
+                style={{ ...barBtn(false), border: "none", fontSize: 15 }}
+              >
+                →
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                State
+              </span>
+              {SCENARIOS.map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() =>
+                    set(
+                      key === "no-match"
+                        ? {
+                            scenario: key,
+                            colors: [ZC.red],
+                            tags: ["writing"],
+                            query: "",
+                          }
+                        : { scenario: key, colors: [], tags: [], query: "" },
+                    )
+                  }
+                  style={barBtn(s.scenario === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                Mode
+              </span>
+              {MODE_KEYS.map((k) => (
+                <button
+                  key={k}
+                  onClick={() => set({ mode: k })}
+                  style={barBtn(s.mode === k)}
+                >
+                  {MODES[k].label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                Width
+              </span>
+              {WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => set({ width: w })}
+                  style={barBtn(s.width === w)}
+                >
+                  {w}px
+                </button>
+              ))}
+              <span style={{ width: 10 }} />
+              <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                style={barBtn(false)}
+              >
+                {theme === "dark" ? "Dark" : "Light"}
+              </button>
+              <button
+                onClick={() => set({ expanded: !s.expanded })}
+                style={barBtn(s.expanded)}
+              >
+                Expand previews
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [idx, setIdx] = useState(() => {
+          const h = location.hash.slice(1);
+          const i = VARIANTS.findIndex((v) => v.key === h);
+          return i >= 0 ? i : 0;
+        });
+
+        useEffect(() => {
+          location.hash = VARIANTS[idx].key;
+          const onHash = () => {
+            const i = VARIANTS.findIndex(
+              (v) => v.key === location.hash.slice(1),
+            );
+            if (i >= 0) setIdx(i);
+          };
+          window.addEventListener("hashchange", onHash);
+          const onKey = (e) => {
+            if (
+              ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
+              e.target.isContentEditable
+            )
+              return;
+            if (e.key === "ArrowLeft")
+              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
+            if (e.key === "ArrowRight")
+              setIdx((i) => (i + 1) % VARIANTS.length);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => {
+            window.removeEventListener("hashchange", onHash);
+            window.removeEventListener("keydown", onKey);
+          };
+        }, [idx]);
+
+        const V = VARIANTS[idx];
+        return (
+          <>
+            <V.component />
+            <SwitchBar idx={idx} setIdx={setIdx} />
+          </>
+        );
+      }
+      // --- Switcher END ---
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>

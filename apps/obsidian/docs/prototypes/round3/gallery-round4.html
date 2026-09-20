@@ -1,0 +1,2500 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZotLit annotation view — redesign variants</title>
+
+    <!--
+      PROTOTYPE — throwaway. Not production code.
+
+      QUESTION
+        What should ZotLit's Zotero annotation view look like for a researcher who does not
+        think in "capabilities", "local API" or "attachments"? Today the pane's real news —
+        "Zotero is not running, you are reading a saved copy" — lives in a hover tooltip that
+        covers the whole pane, while the visible copy states the wrong cause ("Open a
+        literature note…"). Above the list sit up to seven rows of chrome.
+
+      ROUND 1 VERDICT (user, 2026-09-20)
+        WINNER: B — "the pane has a masthead, and controls that use words". Kept: the masthead
+        block, the word-labelled controls, and the card whose page chip fuses location with the
+        highlight colour. A (no card boxes, sticky page eyebrows) and C (marginalia reading
+        column) are archived at round1/gallery-round1.html.
+
+        Two changes the user asked for on top of B:
+        1. The colour filter shows the selected COLOUR DOTS, not a text label ("Yellow, green").
+        2. "no strong hint for need edit, should not interrupt readonly view with a callout,
+           need alternative ux" — the amber notice block that pushed the list down is out.
+
+        The reframe that follows from (2), and that round 2 tests: when Zotero is closed,
+        READING IS THE NORMAL MODE, not a degraded one. So read-only is not a fault, and the
+        semantic amber is wrong along with the callout. Round 2 states the condition in neutral
+        chrome and asks where it belongs — in the byline, at the blocked verb, or in a pane
+        footer. `no-item` is unaffected: with nothing to read there is no reading to interrupt,
+        so the pane body still speaks in full.
+
+      ROUND 2 VERDICT AND ROUND 3 SCOPE (user, 2026-09-20)
+        Round 2 offered three homes for the read-only condition. The user merged them:
+        "B with A small readonly hint, but show a global drawer at bottom instead of per card
+        callout. also, zotero not opened is not a reason for empty / no match, similify that.
+        also, your design didn't cover mode switch."
+
+        Settled, and identical in all three round-3 variants:
+        · Round 2's B is the base — the pane is element-for-element the writable pane at rest.
+        · A's quiet byline hint returns: "· [Unplug] Reading only".
+        · ONE drawer at the pane's bottom edge replaces round 2's per-card callout. The byline
+          hint and a blocked card verb open the same drawer. Two ways in, one surface out.
+        · The store was WRONG, not just its copy: round 2 fused "is Zotero running" with "is a
+          paper resolved", so an empty pane blamed a connection for a selection problem. They
+          are now independent, and the empty state names what the FOLLOW MODE is waiting for.
+          "Zotero isn't open" cannot appear in `no-item`. `no-match` is about the filter alone.
+
+        Still open, and the only thing round 3's three variants disagree about: where the
+        Follow Mode switch lives. No round-2 variant offered one at all.
+          A  the paper's title is the control; the byline names the mode
+          B  a source control first in the control row, ahead of the filters it outranks
+          C  a pane menu, with the outcome carried in the masthead (what WORKBENCH-DESIGN says)
+
+      FINAL VERDICT — ROUND 3 (user, 2026-09-20)
+        WINNER: A — "the paper's title is the control". The masthead's title block opens the
+        Follow Mode menu, and the byline names the mode in force, so the switch costs no chrome
+        of its own. B (a source control first in the control row) and C (a pane menu with the
+        outcome in the masthead) are archived at round3/gallery-round3.html.
+
+        The user gave the pick without a rationale, so none is invented here. What the pick
+        accepts along with it: the byline carries the mode phrase and, when Zotero is shut, the
+        read-only hint too, so at 340px it wraps to two lines in the longest mode. Known
+        blemish, unfixed: each byline segment carries its own LEADING separator so a wrap never
+        orphans one — which means a mid-sentence "·" can land at the start of line two. A
+        trailing-separator scheme would fix it.
+
+        Follow-up in the same message: "the attachment selector will be shown in certain cases,
+        not always shown." The four cases are now modelled in `attachmentSlot()` above, after
+        `attachmentLine()` in apps/obsidian/src/views/annot-view/presentation.ts — hidden for
+        one file and for an open Obsidian PDF, the name alone when the Zotero reader holds the
+        choice, a picker only when the choice is really the researcher's.
+
+        The switcher survives in this file although only one variant remains: its scenario,
+        mode, file and width presets are how the design is reviewed, not a gallery of options.
+
+      ROUND 4 — the top of the pane (user, 2026-09-20)
+        Three follow-ups, all landing on the masthead:
+
+        1. "when in title & author hidden case, top bar would act as status bar"
+           `identityShown()` above mirrors `identityLabel()`: the title and creators appear only
+           where nothing else on screen names the paper, so never while following the active
+           tab. In THIS design the title is also the Follow Mode control, so losing it changes
+           the pane's shape rather than just dropping a line — the top becomes a 28px status bar
+           whose mode phrase is the menu trigger. Measured at 340px: 28.0px flat, against 39.4px
+           for the shortest masthead and 61.9px when the byline wraps to two lines.
+
+        2. "for attachment selector: simplify, include in one of option in menu, menu item
+            trigger suggester for attachment selection instead of inline select"
+           The inline picker is gone from the masthead entirely. `attachmentSlot()` still decides
+           everything; its answer is now rendered in the mode menu — `Choose a file…` opening an
+           Obsidian-shaped suggester, a disabled entry carrying the reason when the Zotero reader
+           holds the choice, and no entry at all when there is no choice to make.
+
+        3. "status shown that alternative attachment available"
+           Moving the picker into a menu would have left the pane silent about which file it
+           reads — the "silent menu state" failure. A quiet `3 files` status on the byline or
+           status bar answers it, and pressing it opens the suggester directly. It appears ONLY
+           for the picker case: not for one file, and deliberately not when the reader holds the
+           choice, where no alternative is actually available.
+
+        Accepted from the builder: the locked reason lives as visible text in the menu and no
+        longer has drawer content, since a second route to the same sentence is the redundancy
+        this redesign keeps cutting. The drawer's dispatch machinery stays, holding one content.
+
+      DECIDED BEFORE BUILDING (user, 2026-09-20)
+        · Scope: the whole view — chrome, states, filter bar and cards.
+        · When Zotero is closed, the PANE'S OWN BODY carries the message. Never a tooltip.
+        · Optimise for the ~340px right dock first, then show it expand.
+
+      DESIGN PLAN
+        Treatment: utilitarian. This is plugin chrome inside somebody else's app. Boldness is
+        spent in exactly one place — the annotation's own highlight colour, which is the
+        researcher's encoding and the only saturated thing that earns its place.
+
+        Colour (neutrals biased cool, toward Obsidian's own greys at hue ~240, so they read
+        as chosen rather than inherited mid-grey):
+          --ground  #fbfbfd  pane surface        --ink     #1f2024  primary text
+          --raised  #f2f2f6  recessed chrome     --muted   #6a6b76  chrome labels, secondary
+          --line    #dfdfe6  structure only      --accent  #6c5ce0  interactive, selection
+          --notice  #a8641c  semantic amber for "reading only" — NOT the accent
+        Zotero's highlight palette rides as data, never as theme.
+
+        Type: Inter for every piece of chrome, sentence case (WORKBENCH-DESIGN). Source Serif 4
+        for the excerpt alone — the excerpt is a quotation lifted out of a paper, so it wears
+        the paper's face, not the app's. In the real port this maps to Obsidian's --font-text.
+        That one substitution gives each card hierarchy with no size jump and stops the
+        excerpt and the researcher's own comment reading as one voice at one size.
+        Scale: 11px tracked micro-label · 12px chrome · 13px comment/UI body · 14px/1.5 serif
+        excerpt (today's excerpt is 12px `leading-tight` under a 3-line clamp).
+
+        Layout concept: a 340px pane that is ONE SCROLL of annotations with at most one row of
+        chrome above it. Item, attachment, follow mode and filters fold into that row, into the
+        scroll as sticky context, or into a sheet. Every variant must answer the Zotero-closed
+        state inside the pane body.
+
+      WHAT IS SHARED, AND WHAT IS NOT
+        Shared: the mock store, the annotation data, and `ObsidianFrame` — the HOST window
+        (workspace background, leaf, tab header, pane width box). Everything inside
+        `.view-content` belongs to the variant. There is deliberately no shared pane layout,
+        no shared toolbar and no shared card.
+    -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=Source+Serif+4:opsz,wght@8..60,400..600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      @theme inline {
+        --color-app: var(--app);
+        --color-ground: var(--ground);
+        --color-raised: var(--raised);
+        --color-sunken: var(--sunken);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-faint: var(--faint);
+        --color-line: var(--line);
+        --color-accent: var(--accent);
+        --color-accent-soft: var(--accent-soft);
+        --color-notice: var(--notice);
+        --color-notice-soft: var(--notice-soft);
+        --font-ui: var(--font-ui);
+        --font-quote: var(--font-quote);
+      }
+    </style>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --app: #e4e4ea;
+        --ground: #fbfbfd;
+        --raised: #f2f2f6;
+        --sunken: #ebebf1;
+        --ink: #1f2024;
+        --muted: #6a6b76;
+        --faint: #9a9ba6;
+        --line: #dfdfe6;
+        --accent: #6c5ce0;
+        --accent-soft: #ebe8fb;
+        --notice: #a8641c;
+        --notice-soft: #fbf2e4;
+        --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-quote: "Source Serif 4", ui-serif, Georgia, serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --app: #101115;
+          --ground: #17181c;
+          --raised: #1e1f25;
+          --sunken: #232430;
+          --ink: #e2e2e7;
+          --muted: #9596a2;
+          --faint: #6e6f7c;
+          --line: #2c2d35;
+          --accent: #8a7af0;
+          --accent-soft: #232238;
+          --notice: #d99a4e;
+          --notice-soft: #2a2317;
+        }
+      }
+      :root[data-theme="dark"] {
+        --app: #101115;
+        --ground: #17181c;
+        --raised: #1e1f25;
+        --sunken: #232430;
+        --ink: #e2e2e7;
+        --muted: #9596a2;
+        --faint: #6e6f7c;
+        --line: #2c2d35;
+        --accent: #8a7af0;
+        --accent-soft: #232238;
+        --notice: #d99a4e;
+        --notice-soft: #2a2317;
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      ::selection {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useRef,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import * as Lucide from "lucide-react";
+
+      // --- Kit ---
+      /**
+       * Any lucide icon by name, with a fallback so a missing export can never blank the
+       * page: <Ic name="Search" size={14} />. Stroke 1.75 matches 400-weight UI text;
+       * pass strokeWidth={2} beside semibold.
+       */
+      function Ic({ name, size = 16, strokeWidth = 1.75, className, ...rest }) {
+        const C = Lucide[name] ?? Lucide.Circle;
+        return (
+          <C
+            size={size}
+            strokeWidth={strokeWidth}
+            className={className}
+            {...rest}
+          />
+        );
+      }
+
+      const cx = (...a) => a.filter(Boolean).join(" ");
+
+      /** Zotero's own highlight palette. Data, not theme — never recoloured by the scheme. */
+      const ZC = {
+        yellow: "#ffd400",
+        red: "#ff6666",
+        green: "#5fb236",
+        blue: "#2ea8e5",
+        purple: "#a28ae5",
+        magenta: "#e56eee",
+        orange: "#f19837",
+        gray: "#aaaaaa",
+      };
+      const COLOR_NAME = {
+        [ZC.yellow]: "Yellow",
+        [ZC.red]: "Red",
+        [ZC.green]: "Green",
+        [ZC.blue]: "Blue",
+        [ZC.purple]: "Purple",
+        [ZC.magenta]: "Magenta",
+        [ZC.orange]: "Orange",
+        [ZC.gray]: "Gray",
+      };
+      // --- Kit END ---
+
+      // --- Data ---
+      const ITEM = {
+        title: "Using thematic analysis in psychology",
+        creators: "Braun & Clarke",
+        year: "2006",
+        attachment:
+          "Braun and Clarke - 2006 - Using thematic analysis in psychology.pdf",
+        attachments: [
+          {
+            key: "a1",
+            name: "Braun and Clarke - 2006 - Using thematic analysis in psychology.pdf",
+            count: 11,
+          },
+          { key: "a2", name: "Supplementary checklist.pdf", count: 2 },
+          {
+            key: "a3",
+            name: "Author manuscript (accepted version).pdf",
+            count: 4,
+          },
+        ],
+      };
+
+      const FIGURE =
+        "data:image/svg+xml;utf8," +
+        encodeURIComponent(
+          `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="132" viewBox="0 0 420 132">
+             <rect width="420" height="132" fill="#ffffff"/>
+             <g fill="none" stroke="#3a3a3a" stroke-width="1.1">
+               ${[0, 1, 2, 3, 4, 5]
+                 .map(
+                   (i) =>
+                     `<rect x="${10 + i * 68}" y="26" width="58" height="42" rx="3"/>`,
+                 )
+                 .join("")}
+               ${[0, 1, 2, 3, 4].map((i) => `<path d="M${68 + i * 68} 47 h10"/>`).join("")}
+             </g>
+             <g font-family="Georgia,serif" font-size="8.5" fill="#3a3a3a" text-anchor="middle">
+               ${[
+                 "Familiarise",
+                 "Initial codes",
+                 "Search themes",
+                 "Review themes",
+                 "Define and name",
+                 "Report",
+               ]
+                 .map((t, i) => `<text x="${39 + i * 68}" y="50">${t}</text>`)
+                 .join("")}
+               <text x="210" y="98" font-size="9.5" font-style="italic">Figure 1. The six phases of thematic analysis</text>
+             </g>
+           </svg>`,
+        );
+
+      /**
+       * Real content, not lorem: eleven annotations off one methods paper, deliberately
+       * uneven — long and short excerpts, some with comments, some without tags, one area
+       * capture, one comment-only note. The uneven cases are the ones a layout fails on.
+       */
+      const ANNOTS = [
+        {
+          key: "n1",
+          page: "78",
+          color: ZC.yellow,
+          type: "highlight",
+          text: "Thematic analysis should be considered a method in its own right.",
+          comment:
+            "Use this to justify TA in the methods chapter — it is the cleanest sentence for it.",
+          tags: ["methods", "framing"],
+        },
+        {
+          key: "n2",
+          page: "79",
+          color: ZC.blue,
+          type: "highlight",
+          text: "A poorly demarcated, rarely acknowledged, yet widely used qualitative analytic method.",
+          comment: null,
+          tags: ["framing"],
+        },
+        {
+          key: "n3",
+          page: "82",
+          color: ZC.green,
+          type: "highlight",
+          text: "The keyword is flexibility: thematic analysis is not wedded to any pre-existing theoretical framework, and so it can be used within different ones.",
+          comment:
+            "Contrast with IPA, which carries its own epistemology whether you want it or not.",
+          tags: ["methods", "comparison"],
+        },
+        {
+          key: "n4",
+          page: "83",
+          color: ZC.purple,
+          type: "image",
+          img: FIGURE,
+          text: null,
+          comment: "Reproduce in the appendix.",
+          tags: ["figures"],
+        },
+        {
+          key: "n5",
+          page: "86",
+          color: ZC.yellow,
+          type: "highlight",
+          text: "Familiarising yourself with your data means repeated reading, and reading in an active way.",
+          comment: null,
+          tags: ["phases"],
+        },
+        {
+          key: "n6",
+          page: "87",
+          color: ZC.red,
+          type: "highlight",
+          text: "There is no hard-and-fast answer to the question of what proportion of your data set needs to display evidence of the theme.",
+          comment:
+            "This is the bit reviewers always push on. I need a defensible line before submission.",
+          tags: ["phases", "weakness"],
+        },
+        {
+          key: "n7",
+          page: "89",
+          color: ZC.purple,
+          type: "highlight",
+          text: "A theme captures something important about the data in relation to the research question.",
+          comment: null,
+          tags: ["phases", "definition"],
+        },
+        {
+          key: "n8",
+          page: "91",
+          color: ZC.orange,
+          type: "underline",
+          text: "Coding will depend on whether the themes are more data-driven or theory-driven.",
+          comment: null,
+          tags: ["phases"],
+        },
+        {
+          key: "n9",
+          page: "93",
+          color: ZC.gray,
+          type: "highlight",
+          text: "Researchers cannot free themselves of their theoretical commitments.",
+          comment: null,
+          tags: [],
+        },
+        {
+          key: "n10",
+          page: "96",
+          color: ZC.magenta,
+          type: "highlight",
+          text: "Write-up is not simply the final stage; analysis and writing are interwoven throughout.",
+          comment:
+            "Start the results section now rather than after coding finishes.",
+          tags: ["writing"],
+        },
+        {
+          key: "n11",
+          page: "101",
+          color: ZC.yellow,
+          type: "note",
+          text: null,
+          comment:
+            "Check whether the 15-point checklist in Table 1 is reproduced anywhere I can cite directly.",
+          tags: ["todo"],
+        },
+      ];
+
+      const ALL_COLORS = [...new Set(ANNOTS.map((a) => a.color))];
+      const ALL_TAGS = [...new Set(ANNOTS.flatMap((a) => a.tags))].sort();
+      // --- Data END ---
+
+      // --- Store ---
+      /**
+       * One module-level store, provider-free, read through `useProto()`. Flipping variants
+       * keeps the scenario, so the same state is compared across three shapes. Scenario
+       * presets live in the switcher bar, never in a variant.
+       *
+       * ROUND 3 CORRECTION. Round 2 fused two independent facts and the empty state blamed
+       * the wrong one. They are separate:
+       *   · IS ZOTERO RUNNING — decides whether a WRITE can happen. ZotLit reads the saved
+       *     copy either way, so this never explains an empty pane.
+       *   · IS A PAPER RESOLVED — decides whether there is anything to SHOW. What resolves a
+       *     paper is the Follow Mode, so an empty pane is explained by the mode, not by Zotero.
+       *
+       *   reading       Zotero open, paper resolved, editing authorised
+       *   zotero-closed Zotero not running; the list still reads from the saved copy and
+       *                 editing is unavailable. Reading is the NORMAL mode here, not a fault.
+       *   saving        one write in flight
+       *   no-match      filters applied that nothing satisfies — about the filter, nothing else
+       *   no-item       no paper resolved. Zotero's state is irrelevant and must not be named;
+       *                 the message says what THIS MODE is waiting for.
+       */
+      let state = {
+        scenario: "reading",
+        /** What resolves the paper on screen. The one control round 2 never covered. */
+        mode: "active-tab", // active-tab | zotero-reader | pinned
+        /**
+         * Which of the four attachment situations holds. The picker is NOT always on screen —
+         * see `attachmentSlot`.
+         */
+        attachment: "several", // single | several | reader-locked | obsidian-pdf
+        attachmentKey: "a1",
+        width: 340,
+        selectedKey: null,
+        editingKey: null,
+        query: "",
+        colors: [],
+        tags: [],
+        expanded: false,
+        sheet: null,
+      };
+      const listeners = new Set();
+      const emit = () => listeners.forEach((l) => l());
+      const subscribe = (l) => (listeners.add(l), () => listeners.delete(l));
+      const getState = () => state;
+      function set(patch) {
+        state = {
+          ...state,
+          ...(typeof patch === "function" ? patch(state) : patch),
+        };
+        emit();
+      }
+
+      function useProto() {
+        const s = useSyncExternalStore(subscribe, getState);
+        return {
+          ...s,
+          set,
+          toggleColor: (c) =>
+            set((p) => ({
+              colors: p.colors.includes(c)
+                ? p.colors.filter((x) => x !== c)
+                : [...p.colors, c],
+            })),
+          toggleTag: (t) =>
+            set((p) => ({
+              tags: p.tags.includes(t)
+                ? p.tags.filter((x) => x !== t)
+                : [...p.tags, t],
+            })),
+          clearFilters: () => set({ colors: [], tags: [], query: "" }),
+          select: (k) =>
+            set((p) => ({ selectedKey: p.selectedKey === k ? null : k })),
+          setMode: (m) => set({ mode: m }),
+        };
+      }
+
+      /** The Follow Modes, as the masthead, the menu and the empty state all name them. */
+      const MODES = {
+        "active-tab": {
+          icon: "AppWindow",
+          label: "Active tab",
+          /** How the byline names the source of what is on screen. */
+          source: "Following the active tab",
+          /** What this mode is waiting for when nothing is resolved. Never mentions Zotero's state. */
+          empty:
+            "Open a literature note, or a Zotero PDF, to see its annotations.",
+          emptyAction: null,
+        },
+        "zotero-reader": {
+          icon: "BookOpen",
+          label: "Zotero reader",
+          source: "Following the Zotero reader",
+          empty: "Open a paper in the Zotero reader to see its annotations.",
+          emptyAction: null,
+        },
+        pinned: {
+          icon: "Pin",
+          label: "Pinned",
+          source: "Pinned",
+          empty: "Pin a paper to keep its annotations here while you write.",
+          emptyAction: "Choose a paper…",
+        },
+      };
+      const MODE_KEYS = ["active-tab", "zotero-reader", "pinned"];
+
+      /** True while Zotero will accept a write. Everything editable hangs off this. */
+      const canEdit = (s) => s.scenario !== "zotero-closed";
+      /** True while a paper is resolved and there is a list to show. */
+      const hasItem = (s) => s.scenario !== "no-item";
+
+      /**
+       * The read-only condition, or null. It is ONLY about writing — it is never the reason a
+       * pane is empty, and it is never shown when there is nothing on screen to edit.
+       */
+      function condition(s) {
+        if (s.scenario !== "zotero-closed") return null;
+        return {
+          hint: "Reading only",
+          title: "Zotero isn’t open",
+          body: "Open Zotero to change colours, comments or tags.",
+          action: "Open Zotero",
+        };
+      }
+
+      /**
+       * Whether the pane names the paper itself.
+       *
+       * Mirrors `identityLabel()` in apps/obsidian/src/views/annot-view/presentation.ts: the
+       * title and creators are shown ONLY where nothing else on screen names the paper — so
+       * never while following the active tab, because the note or PDF in front of the reader
+       * already says which paper it is. Repeating it there is a heading echo.
+       *
+       * The consequence in this design: when the title is hidden it takes the Follow Mode
+       * control with it, since the title IS that control. The top of the pane then collapses
+       * from a masthead into a single status bar that carries the mode instead.
+       */
+      const identityShown = (s) => s.mode !== "active-tab";
+
+      /**
+       * What the attachment slot shows — and it is usually nothing. Mirrors `attachmentLine()`
+       * in apps/obsidian/src/views/annot-view/presentation.ts:
+       *
+       *   single         one attachment is no choice                      → hidden
+       *   obsidian-pdf   the open PDF view already names the file         → hidden
+       *   reader-locked  the Zotero reader holds the choice               → the name, and why
+       *   several        the choice is the researcher's                   → a picker
+       *
+       * A control that offers no choice is chrome the pane cannot afford, so the default state
+       * of this slot is absent.
+       */
+      function attachmentSlot(s) {
+        if (!hasItem(s)) return { kind: "hidden" };
+        if (s.attachment === "single" || s.attachment === "obsidian-pdf")
+          return { kind: "hidden" };
+        const options = ITEM.attachments.map((a) => ({
+          key: a.key,
+          label: `${a.name} (${a.count})`,
+          name: a.name,
+          count: a.count,
+        }));
+        const selected =
+          options.find((o) => o.key === s.attachmentKey) ?? options[0];
+        if (s.attachment === "reader-locked") {
+          return {
+            kind: "locked",
+            label: selected.label,
+            reason: "The Zotero reader chooses this file",
+          };
+        }
+        return { kind: "picker", options, selected };
+      }
+
+      /** What an unresolved pane says: what THIS MODE is waiting for, and nothing else. */
+      function emptyState(s) {
+        const mode = MODES[s.mode];
+        return { message: mode.empty, action: mode.emptyAction };
+      }
+
+      const filterActive = (s) =>
+        s.colors.length > 0 || s.tags.length > 0 || s.query.trim() !== "";
+
+      function visibleAnnots(s) {
+        if (!hasItem(s)) return [];
+        if (s.scenario === "no-match") return [];
+        const q = s.query.trim().toLowerCase();
+        return ANNOTS.filter(
+          (a) =>
+            (s.colors.length === 0 || s.colors.includes(a.color)) &&
+            (s.tags.length === 0 || a.tags.some((t) => s.tags.includes(t))) &&
+            (q === "" ||
+              `${a.text ?? ""} ${a.comment ?? ""} ${a.tags.join(" ")}`
+                .toLowerCase()
+                .includes(q)),
+        );
+      }
+      // --- Store END ---
+
+      // --- Frame ---
+      /**
+       * The HOST, not the design. Draws the Obsidian workspace behind a docked leaf, the tab
+       * header, and the width box the pane lives in. Everything a variant designs goes in
+       * `children`, which is the `.view-content` box: full height, own scrolling, `@container`
+       * so the variant's own container queries work at the chosen width.
+       */
+      function ObsidianFrame({ children }) {
+        const { width } = useProto();
+        return (
+          <div className="bg-app font-ui text-ink flex min-h-full items-start justify-center px-6 pt-8 pb-28">
+            <div
+              className="bg-ground border-line flex flex-col overflow-hidden rounded-lg border shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_24px_-8px_rgba(0,0,0,0.18)]"
+              style={{
+                width,
+                height: 440,
+                transition: "width 200ms cubic-bezier(0.2,0,0,1)",
+              }}
+            >
+              <div className="border-line text-muted flex h-9 shrink-0 items-center gap-1.5 border-b px-2.5 text-[12px]">
+                <Ic name="Highlighter" size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  Zotero annotations
+                </span>
+                <Ic
+                  name="MoreVertical"
+                  size={14}
+                  className="shrink-0 opacity-70"
+                />
+              </div>
+              <div className="@container min-h-0 flex-1 overflow-hidden">
+                {children}
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // --- Frame END ---
+
+      // --- App ---
+      // --- Variant A ---
+      /**
+       * VARIANT A (round 3) — "The title is the control."
+       *
+       * Inherited from round 2's B: the composed masthead, the word-labelled control row with the
+       * colour dots, and the raised card whose page chip fuses location with highlight colour.
+       *
+       * Round 3 changes:
+       *   1. Read-only is one quiet word in the byline plus ONE drawer at the pane's bottom edge.
+       *      The per-card callout is gone; the byline hint and a blocked card verb open the same
+       *      surface, which slides over the list and never reflows it.
+       *   2. `no-item` renders `emptyState(s)` — a sentence about what THIS MODE is waiting for,
+       *      and where the mode has one, a single action. Zotero's state is never named there.
+       *      `no-match` is about the filter and nothing else.
+       *   3. The Follow Mode switch costs no chrome: the paper's name IS the control. Pressing the
+       *      title block opens the mode menu, and the mode in force is a permanent phrase in the
+       *      byline, so the setting always has a visible outcome. With no paper there is no title
+       *      to sit on, so the mode becomes one quiet line above the empty sentence.
+       *
+       * Round 4 changes, both of them at the top of the pane:
+       *   4. The pane names the paper only where nothing else does. While following the active tab the
+       *      note in front of the reader already says which paper it is, so `identityShown(s)` is
+       *      false and the masthead collapses into a single status bar — and because the title IS the
+       *      mode control, the mode phrase becomes the control in its place.
+       *   5. There is no inline attachment control any more. `attachmentSlot(s)` still decides
+       *      everything; its answer now shows up in the mode menu — `Choose a file…` opening a
+       *      suggester, or a disabled entry carrying the reader's reason as visible text — and, when
+       *      there is really a choice to make, as one quiet `3 files` status on the pane's top line
+       *      that opens the same suggester in one press.
+       */
+
+      const A_FOCUS =
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-0";
+
+      const A_VERBS = [
+        { id: "colour", icon: "Palette", label: "Change colour" },
+        { id: "comment", icon: "MessageSquarePlus", label: "Write a comment" },
+        { id: "more", icon: "MoreHorizontal", label: "More actions" },
+      ];
+
+      /** The two verbs that are writes, and so the two that open the drawer when Zotero is shut. */
+      const A_WRITE_VERBS = ["colour", "comment"];
+
+      const A_SAVING_KEY = "n6";
+
+      /** The sheet values the control row owns; a card's sheet or the drawer is not its business. */
+      const A_CONTROL_SHEETS = ["filter", "tags", "search"];
+
+      const A_DRAWER_ID = "a-pane-drawer";
+      const A_MENU_ID = "a-mode-menu";
+
+      /**
+       * ONE drawer for the whole pane. `sheet` carries the kind of explanation and the trigger that
+       * asked for it (`readonly:byline`, `readonly:n6:colour`), so every trigger shows its own
+       * `aria-expanded`, and pressing one while another's content is up swaps the content in place
+       * instead of stacking a second surface. The element to hand focus back to is not render state,
+       * so it rides here.
+       *
+       * Round 4 leaves one kind standing: the Zotero reader's hold on the file is now visible text in
+       * the mode menu, so it needs no surface of its own. The dispatch stays open to a second kind.
+       */
+      const A_DRAWER = { opener: null };
+      const A_DRAWER_CONTENT = { readonly: (s) => A_readonlyDrawer(s) };
+      const A_DRAWER_KINDS = Object.keys(A_DRAWER_CONTENT);
+      const A_isDrawer = (sheet) =>
+        typeof sheet === "string" &&
+        A_DRAWER_KINDS.some((k) => sheet.startsWith(`${k}:`));
+
+      function A_openDrawer(sheet, el) {
+        A_DRAWER.opener = el ?? null;
+        set({ sheet });
+      }
+      function A_closeDrawer() {
+        set({ sheet: null });
+        const el = A_DRAWER.opener;
+        A_DRAWER.opener = null;
+        el?.focus();
+      }
+
+      /** The drawer's read-only contents: the Zotero-closed condition, with its one action. */
+      function A_readonlyDrawer(s) {
+        const c = condition(s);
+        if (!c) return null;
+        return {
+          label: c.hint,
+          title: c.title,
+          body: c.body,
+          action: c.action,
+          icon: "ExternalLink",
+        };
+      }
+
+      /** What the drawer is showing: whatever kind the open trigger asked for. */
+      function A_drawerContent(s) {
+        if (!A_isDrawer(s.sheet)) return null;
+        const kind = s.sheet.slice(0, s.sheet.indexOf(":"));
+        return (A_DRAWER_CONTENT[kind] ?? A_readonlyDrawer)(s);
+      }
+
+      /**
+       * The suggester's own focus hand-back, kept out of render state for the same reason the
+       * drawer's is: the element to return to is whatever the researcher pressed, and that may be a
+       * menu row that has since closed, so the fallback is the control that opened the menu.
+       */
+      const A_SUGGEST = { opener: null, fallback: null };
+
+      function A_openSuggester(opener, fallback) {
+        A_SUGGEST.opener = opener ?? null;
+        A_SUGGEST.fallback = fallback ?? null;
+        set({ sheet: "files" });
+      }
+      function A_closeSuggester() {
+        set({ sheet: null });
+        const el = A_SUGGEST.opener;
+        const back = A_SUGGEST.fallback;
+        A_SUGGEST.opener = null;
+        A_SUGGEST.fallback = null;
+        (el?.isConnected ? el : back)?.focus();
+      }
+
+      /** The menu rows, in reading order: the three modes, a hairline, then the two gestures. */
+      const A_GESTURES = [
+        { id: "pin", icon: "Pin", label: "Pin this paper" },
+        { id: "choose", icon: "LibraryBig", label: "Choose a paper…" },
+      ];
+
+      /** "Tags", "Methods", "Methods, framing", "Methods +2" — the control's label carries its state. */
+      function A_listLabel(values, fallback, name) {
+        if (values.length === 0) return fallback;
+        const first = name(values[0]);
+        if (values.length === 1) return first;
+        if (values.length === 2)
+          return `${first}, ${name(values[1]).toLowerCase()}`;
+        return `${first} +${values.length - 1}`;
+      }
+
+      /** The colour filter said in words, for the accessible name: "Filtered to yellow and green". */
+      function A_colorPhrase(colors) {
+        const names = colors.map((c) => COLOR_NAME[c].toLowerCase());
+        if (names.length === 1) return `Filtered to ${names[0]}`;
+        return `Filtered to ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+      }
+
+      /** A sentence fragment naming what is currently filtering the list. */
+      function A_filterPhrase(s) {
+        const parts = [];
+        if (s.colors.length)
+          parts.push(
+            s.colors.map((c) => COLOR_NAME[c].toLowerCase()).join(" or "),
+          );
+        if (s.tags.length) parts.push(s.tags.map((t) => `#${t}`).join(" or "));
+        if (s.query.trim()) parts.push(`“${s.query.trim()}”`);
+        if (parts.length === 0) return "the filters you have on";
+        if (parts.length === 1) return parts[0];
+        return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+      }
+
+      /** The mark that fuses colour with type: a dot for a highlight, a bar for an underline. */
+      function AColorMark({ type }) {
+        if (type === "underline")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-[3px] w-[9px] shrink-0 rounded-[1px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        if (type === "image")
+          return (
+            <span
+              aria-hidden="true"
+              className="block h-2 w-2 shrink-0 rounded-[2px]"
+              style={{ background: "var(--c)" }}
+            />
+          );
+        return (
+          <span
+            aria-hidden="true"
+            className="block h-2 w-2 shrink-0 rounded-full"
+            style={{ background: "var(--c)" }}
+          />
+        );
+      }
+
+      /** Colour + location as one mark. Opens the page in Zotero. */
+      function APageChip({ annot, live }) {
+        return (
+          <button
+            type="button"
+            disabled={!live}
+            title={live ? `Open page ${annot.page} in Zotero` : undefined}
+            className={cx(
+              "flex h-6 shrink-0 items-center gap-1.5 rounded-[4px] ps-1.5 pe-2 text-[12px] font-medium tabular-nums",
+              "text-ink transition-[box-shadow] duration-150",
+              live && "hover:shadow-[0_0_0_1px_var(--c)] cursor-pointer",
+              A_FOCUS,
+            )}
+            style={{
+              background: "color-mix(in srgb, var(--c) 22%, transparent)",
+            }}
+          >
+            <AColorMark type={annot.type} />
+            <span>p.&nbsp;{annot.page}</span>
+          </button>
+        );
+      }
+
+      /**
+       * `quiet` is the static resting cue that this verb is not currently a write: a lower rest
+       * opacity, and none of the hover brightening a live verb has. No padlock, no strike, no
+       * colour change — nothing in the list explains itself.
+       */
+      function AVerb({
+        icon,
+        label,
+        on,
+        active,
+        quiet,
+        expanded,
+        controls,
+        buttonRef,
+      }) {
+        return (
+          <button
+            ref={buttonRef}
+            type="button"
+            onClick={on}
+            aria-label={label}
+            aria-pressed={expanded === undefined && active ? true : undefined}
+            aria-expanded={expanded}
+            aria-controls={expanded === undefined ? undefined : controls}
+            title={label}
+            className={cx(
+              "grid h-6 w-6 place-items-center rounded-[4px] transition-[opacity,background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : quiet
+                  ? "text-muted opacity-60"
+                  : "text-muted hover:bg-sunken hover:text-ink",
+              A_FOCUS,
+            )}
+          >
+            <Ic name={icon} size={14} />
+          </button>
+        );
+      }
+
+      function ATagChip({ tag, on, active }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            className={cx(
+              "h-6 rounded-[4px] px-1.5 text-[11px] tracking-[0.04em] transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-sunken text-muted hover:text-ink",
+              A_FOCUS,
+            )}
+          >
+            #{tag}
+          </button>
+        );
+      }
+
+      function ACommentEditor({ annot }) {
+        const { set } = useProto();
+        const [draft, setDraft] = React.useState(annot.comment ?? "");
+        return (
+          <div className="bg-ground rounded-[4px] p-1.5">
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              className={cx(
+                "text-ink w-full resize-none bg-transparent text-[13px] leading-relaxed",
+                "placeholder:text-faint",
+                A_FOCUS,
+              )}
+              placeholder="Write a comment on this highlight"
+            />
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "text-muted hover:text-ink h-6 rounded-[4px] px-2 text-[12px] transition-[color] duration-150",
+                  A_FOCUS,
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => set({ editingKey: null })}
+                className={cx(
+                  "bg-accent text-ground h-6 rounded-[4px] px-2 text-[12px] font-medium",
+                  A_FOCUS,
+                )}
+              >
+                Save comment
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function ASwatchRow({ annot }) {
+        const { set } = useProto();
+        return (
+          <div className="bg-ground flex flex-wrap items-center gap-1 rounded-[4px] p-1.5">
+            <span className="text-muted me-1 text-[11px] tracking-[0.04em]">
+              Colour
+            </span>
+            {ALL_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => set({ sheet: null })}
+                aria-label={COLOR_NAME[c]}
+                aria-pressed={c === annot.color}
+                title={COLOR_NAME[c]}
+                className={cx(
+                  "h-5 w-5 rounded-[4px] transition-[box-shadow] duration-150",
+                  c === annot.color
+                    ? "shadow-[0_0_0_2px_var(--accent)]"
+                    : "hover:shadow-[0_0_0_1px_var(--line)]",
+                  A_FOCUS,
+                )}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+        );
+      }
+
+      function ACard({ annot }) {
+        const s = useProto();
+        const { select, set, toggleTag } = s;
+        const live = canEdit(s);
+        const selected = s.selectedKey === annot.key;
+        const editing = s.editingKey === annot.key;
+        const swatches = s.sheet === `colour:${annot.key}`;
+        const saving = s.scenario === "saving" && annot.key === A_SAVING_KEY;
+        const isNote = annot.type === "note";
+        const verbRefs = React.useRef({});
+
+        return (
+          <article
+            aria-busy={saving || undefined}
+            className={cx(
+              "group bg-raised rounded-[6px] p-[10px] transition-[background-color,box-shadow] duration-150",
+              selected &&
+                "bg-accent-soft shadow-[inset_0_0_0_1px_var(--accent)]",
+            )}
+            style={{ "--c": annot.color }}
+          >
+            <div className="flex items-center gap-2">
+              <APageChip annot={annot} live={live} />
+              {isNote && (
+                <span className="text-muted text-[11px] tracking-[0.04em]">
+                  Note to self
+                </span>
+              )}
+              <span className="min-w-0 flex-1" />
+              {saving ? (
+                <span
+                  className="text-muted flex items-center gap-1.5 text-[12px]"
+                  aria-live="polite"
+                >
+                  <Ic name="Loader2" size={13} className="animate-spin" />
+                  Saving…
+                </span>
+              ) : (
+                <div
+                  className={cx(
+                    "flex items-center gap-0.5 transition-[opacity] duration-150",
+                    !selected &&
+                      "opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
+                  )}
+                >
+                  {A_VERBS.map((v) => {
+                    const isWrite = A_WRITE_VERBS.includes(v.id);
+                    const explains = !live && isWrite;
+                    const mine = `readonly:${annot.key}:${v.id}`;
+                    const openHere = s.sheet === mine;
+                    return (
+                      <AVerb
+                        key={v.id}
+                        icon={v.icon}
+                        buttonRef={(el) => {
+                          verbRefs.current[v.id] = el;
+                        }}
+                        label={
+                          v.id === "comment" && annot.comment
+                            ? "Edit your comment"
+                            : v.label
+                        }
+                        quiet={explains}
+                        expanded={explains ? openHere : undefined}
+                        controls={A_DRAWER_ID}
+                        active={
+                          explains
+                            ? openHere
+                            : (v.id === "colour" && swatches) ||
+                              (v.id === "comment" && editing)
+                        }
+                        on={() => {
+                          if (explains) {
+                            if (openHere) A_closeDrawer();
+                            else A_openDrawer(mine, verbRefs.current[v.id]);
+                          } else if (v.id === "colour") {
+                            set({
+                              sheet: swatches ? null : `colour:${annot.key}`,
+                            });
+                          } else if (v.id === "comment") {
+                            set({ editingKey: editing ? null : annot.key });
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {swatches && (
+              <div className="mt-2">
+                <ASwatchRow annot={annot} />
+              </div>
+            )}
+
+            {annot.type === "image" && (
+              <img
+                src={annot.img}
+                alt={`Figure captured from page ${annot.page}`}
+                className="mt-2 block w-full rounded-[4px]"
+                style={{
+                  outline:
+                    "1px solid color-mix(in srgb, var(--ink) 14%, transparent)",
+                  outlineOffset: "-1px",
+                }}
+              />
+            )}
+
+            {annot.text && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", A_FOCUS)}
+              >
+                <p
+                  className={cx(
+                    "font-quote text-ink text-[14px] leading-[1.5]",
+                    !s.expanded && "line-clamp-3",
+                  )}
+                >
+                  {annot.text}
+                </p>
+              </button>
+            )}
+
+            {isNote && !editing && (
+              <button
+                type="button"
+                onClick={() => select(annot.key)}
+                aria-pressed={selected}
+                className={cx("mt-2 block w-full text-start", A_FOCUS)}
+              >
+                <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                  {annot.comment}
+                </p>
+              </button>
+            )}
+
+            {editing ? (
+              <div className="mt-2">
+                <ACommentEditor annot={annot} />
+              </div>
+            ) : (
+              !isNote &&
+              annot.comment && (
+                <div className="border-line mt-2 border-s-2 ps-2.5">
+                  <p className="text-ink text-[13px] leading-relaxed text-pretty">
+                    {annot.comment}
+                  </p>
+                </div>
+              )
+            )}
+
+            {annot.tags.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {annot.tags.map((t) => (
+                  <ATagChip
+                    key={t}
+                    tag={t}
+                    active={s.tags.includes(t)}
+                    on={() => toggleTag(t)}
+                  />
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      }
+
+      /**
+       * The pane's one explanation surface. It slides up from the pane's bottom edge over the
+       * list, which stays readable and scrollable behind it. Neutral chrome, never amber: reading
+       * is a mode, not a fault. Opened by the byline hint, by a blocked card verb, or by the locked
+       * attachment line; closed by the close control, by Escape, or by pressing whichever trigger
+       * opened it again.
+       *
+       * ONE component, told what to show. The content that is sliding back out has to survive the
+       * 150ms it takes to leave, so the last thing shown is held and the resting content is whatever
+       * this pane could explain if asked.
+       */
+      function ADrawer() {
+        const s = useProto();
+        const live = A_drawerContent(s);
+        const last = React.useRef(null);
+        if (live) last.current = live;
+        const c = live ?? last.current ?? A_readonlyDrawer(s);
+        if (!c) return null;
+        const open = A_isDrawer(s.sheet);
+        return (
+          <div
+            id={A_DRAWER_ID}
+            role="group"
+            aria-label={c.label}
+            inert={open ? undefined : true}
+            className={cx(
+              "bg-raised border-line absolute inset-x-0 bottom-0 z-40 border-t px-3 pt-2.5 pb-3",
+              "shadow-[0_-1px_2px_rgba(0,0,0,0.05),0_-16px_32px_-18px_rgba(0,0,0,0.4)]",
+              "transition-[translate] duration-150 motion-reduce:transition-none",
+              open ? "translate-y-0" : "translate-y-full",
+            )}
+          >
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-ink text-[13px] font-semibold text-balance">
+                  {c.title}
+                </h3>
+                <p className="text-muted mt-0.5 text-[13px] leading-relaxed text-pretty">
+                  {c.body}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close this message"
+                onClick={A_closeDrawer}
+                className={cx(
+                  "text-muted hover:text-ink hover:bg-sunken grid h-6 w-6 shrink-0 place-items-center rounded-[4px]",
+                  "transition-[background-color,color] duration-150",
+                  A_FOCUS,
+                )}
+              >
+                <Ic name="X" size={14} />
+              </button>
+            </div>
+            {c.action && (
+              <button
+                type="button"
+                className={cx(
+                  "bg-accent text-ground mt-2.5 inline-flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] font-medium",
+                  "transition-[transform] duration-150 active:scale-[0.96] motion-reduce:transition-none",
+                  A_FOCUS,
+                )}
+              >
+                {c.icon && <Ic name={c.icon} size={13} strokeWidth={2} />}
+                {c.action}
+              </button>
+            )}
+          </div>
+        );
+      }
+
+      /**
+       * The trailing element in `zotero-closed`. A word, a glyph, and a 24px hit box. `inline` is the
+       * byline shape, where it sits inside a paragraph the mode control is lying behind; without it
+       * the element is a plain flex child of the status bar.
+       */
+      function AReadOnlyHint({ inline = false }) {
+        const s = useProto();
+        const c = condition(s);
+        const ref = React.useRef(null);
+        if (!c) return null;
+        const mine = s.sheet === "readonly:byline";
+        return (
+          <button
+            ref={ref}
+            type="button"
+            onClick={() =>
+              mine
+                ? A_closeDrawer()
+                : A_openDrawer("readonly:byline", ref.current)
+            }
+            aria-expanded={mine}
+            aria-controls={A_DRAWER_ID}
+            className={cx(
+              "text-muted hover:text-ink inline-flex h-6 shrink-0 items-center gap-1 rounded-[4px] px-1",
+              "transition-[background-color,color] duration-150",
+              inline
+                ? "pointer-events-auto relative z-20 -mx-1 -my-[3px] align-[2px] leading-none"
+                : "-me-1",
+              mine && "bg-sunken text-ink",
+              A_FOCUS,
+            )}
+          >
+            <Ic name="Unplug" size={12} className="shrink-0" />
+            {c.hint}
+          </button>
+        );
+      }
+
+      /**
+       * "3 files" — the status that keeps the choice present in the pane now that the picker has
+       * moved into the menu. It says there is more than one file to be looking at, in the plainest
+       * words a researcher who has never thought about attachments would use; pressing it opens the
+       * suggester straight away, because a status that names a choice should be able to make it.
+       *
+       * Only for `picker`. With one file there is no choice, and while the Zotero reader holds the
+       * choice there is no alternative to offer — saying "3 files" there would be a lie.
+       */
+      function AFilesStatus({ inline = false }) {
+        const s = useProto();
+        const slot = attachmentSlot(s);
+        const ref = React.useRef(null);
+        if (slot.kind !== "picker") return null;
+        const open = s.sheet === "files";
+        return (
+          <button
+            ref={ref}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label={`Reading ${slot.selected.name}. Choose another of this paper's ${slot.options.length} files.`}
+            onClick={() =>
+              open
+                ? A_closeSuggester()
+                : A_openSuggester(ref.current, ref.current)
+            }
+            className={cx(
+              "text-muted hover:text-ink inline-flex h-6 shrink-0 items-center gap-1 rounded-[4px] px-1",
+              "transition-[background-color,color] duration-150",
+              inline
+                ? "pointer-events-auto relative z-20 -mx-1 -my-[3px] align-[2px] leading-none"
+                : "",
+              open && "bg-sunken text-ink",
+              A_FOCUS,
+            )}
+          >
+            <Ic name="Paperclip" size={12} className="shrink-0" />
+            <span className="tabular-nums">{slot.options.length} files</span>
+          </button>
+        );
+      }
+
+      /**
+       * The mode menu. A panel in the pane, not a native menu: the modes with their glyphs and a
+       * check on the one in force, a hairline, the two paper gestures, and — round 4 — the file.
+       * Arrows move, Enter selects, Escape closes and hands focus back to whatever opened it.
+       *
+       * The file row is `attachmentSlot(s)` rendered as a menu entry instead of as a control in the
+       * masthead. "Choose a paper…" and "Choose a file…" are deliberately parallel: which paper, then
+       * which file of it, both opening a suggester. Where the Zotero reader holds the choice the row
+       * is there but disabled, and it says so in words on the row — never in a tooltip.
+       */
+      function AModeMenu({ onClose, onChooseFile }) {
+        const s = useProto();
+        const { setMode } = s;
+        const slot = attachmentSlot(s);
+        const rows = [
+          ...MODE_KEYS.map((k) => ({ kind: "mode", key: k, ...MODES[k] })),
+          ...A_GESTURES.map((g) => ({
+            kind: "gesture",
+            key: g.id,
+            icon: g.icon,
+            label: g.label,
+          })),
+          ...(slot.kind === "picker"
+            ? [
+                {
+                  kind: "file",
+                  key: "choose-file",
+                  icon: "Paperclip",
+                  label: "Choose a file…",
+                  note: slot.selected.name,
+                },
+              ]
+            : []),
+        ];
+        const refs = React.useRef([]);
+        const [cursor, setCursor] = React.useState(() =>
+          Math.max(0, MODE_KEYS.indexOf(s.mode)),
+        );
+
+        React.useEffect(() => {
+          refs.current[cursor]?.focus();
+        }, [cursor]);
+
+        const move = (d) =>
+          setCursor((i) => (i + d + rows.length) % rows.length);
+
+        return (
+          <>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Close this menu"
+              onClick={() => onClose()}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+            <div
+              id={A_MENU_ID}
+              role="menu"
+              aria-label="Choose what this pane shows"
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  move(1);
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  move(-1);
+                } else if (e.key === "Home") {
+                  e.preventDefault();
+                  setCursor(0);
+                } else if (e.key === "End") {
+                  e.preventDefault();
+                  setCursor(rows.length - 1);
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  onClose();
+                }
+              }}
+              className={cx(
+                "bg-ground border-line absolute start-0 top-full z-30 mt-1 w-[232px] rounded-[8px] border p-1",
+                "shadow-[0_2px_4px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.3)]",
+              )}
+            >
+              <p className="text-muted px-1.5 pt-1 pb-1.5 text-[11px] tracking-[0.04em]">
+                Show annotations from
+              </p>
+              {rows.map((r, i) => (
+                <React.Fragment key={r.key}>
+                  {i > 0 && rows[i - 1].kind !== r.kind && (
+                    <div role="separator" className="bg-line my-1 h-px" />
+                  )}
+                  <button
+                    ref={(el) => {
+                      refs.current[i] = el;
+                    }}
+                    type="button"
+                    role={r.kind === "mode" ? "menuitemradio" : "menuitem"}
+                    aria-checked={
+                      r.kind === "mode" ? s.mode === r.key : undefined
+                    }
+                    tabIndex={cursor === i ? 0 : -1}
+                    onFocus={() => setCursor(i)}
+                    onClick={() => {
+                      if (r.kind === "mode") setMode(r.key);
+                      if (r.kind === "file") onChooseFile?.();
+                      else onClose();
+                    }}
+                    className={cx(
+                      "flex w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                      r.kind === "file" ? "min-h-7 py-1" : "h-7",
+                      "hover:bg-raised transition-[background-color] duration-150",
+                      A_FOCUS,
+                    )}
+                  >
+                    <Ic
+                      name={r.icon}
+                      size={13}
+                      className={cx(
+                        "shrink-0",
+                        r.note && "mt-0.5 self-start",
+                        r.kind === "mode" && s.mode === r.key
+                          ? "text-accent"
+                          : "text-muted",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 text-start">
+                      <span className="text-ink block truncate">{r.label}</span>
+                      {r.note && (
+                        <span className="text-faint mt-0.5 block truncate text-[11px]">
+                          {r.note}
+                        </span>
+                      )}
+                    </span>
+                    {r.kind === "mode" && s.mode === r.key && (
+                      <Ic
+                        name="Check"
+                        size={13}
+                        className="text-accent shrink-0"
+                      />
+                    )}
+                  </button>
+                </React.Fragment>
+              ))}
+              {slot.kind === "locked" && (
+                <>
+                  <div role="separator" className="bg-line my-1 h-px" />
+                  <div
+                    role="menuitem"
+                    aria-disabled="true"
+                    className="flex items-start gap-2 px-1.5 py-1 text-[12px]"
+                  >
+                    <Ic
+                      name="Lock"
+                      size={13}
+                      className="text-faint mt-0.5 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-muted block truncate">
+                        {slot.label}
+                      </span>
+                      <span className="text-faint mt-0.5 block text-[11px] leading-relaxed text-pretty">
+                        {slot.reason}
+                      </span>
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        );
+      }
+
+      /**
+       * The title block IS the mode control. The button is an overlay sitting behind the title and
+       * the byline, so the read-only hint inside the byline stays its own real button — at rest
+       * there is no box at all, and the hover and focus shape covers the whole block.
+       */
+      function ATitleControl() {
+        const s = useProto();
+        const { set } = s;
+        const open = s.sheet === "mode";
+        const triggerRef = React.useRef(null);
+        const close = () => {
+          set({ sheet: null });
+          triggerRef.current?.focus();
+        };
+        const chooseFile = () => {
+          set({ sheet: null });
+          A_openSuggester(null, triggerRef.current);
+        };
+        return (
+          <div className="relative">
+            <div className="relative -mx-1.5 -my-1 px-1.5 py-1">
+              <button
+                ref={triggerRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-controls={open ? A_MENU_ID : undefined}
+                aria-label={`Choose what this pane follows. ${MODES[s.mode].source}.`}
+                onClick={() => set({ sheet: open ? null : "mode" })}
+                className={cx(
+                  "absolute inset-0 z-0 cursor-pointer rounded-[6px] transition-[background-color] duration-150",
+                  "hover:bg-raised focus-visible:bg-raised",
+                  open && "bg-raised",
+                  A_FOCUS,
+                )}
+              />
+              <h2 className="text-ink pointer-events-none relative z-10 line-clamp-2 text-[13px] leading-snug font-semibold text-pretty">
+                {ITEM.title}
+                <Ic
+                  name="ChevronDown"
+                  size={13}
+                  strokeWidth={2.25}
+                  className="ms-1 inline-block align-[-2px] opacity-70"
+                />
+              </h2>
+              {/* Three or four facts at 12px: who wrote it, when, what this pane is following, and
+                  — only while Zotero is shut — that you are reading. Nothing truncates; it wraps. */}
+              <p className="text-muted pointer-events-none relative z-10 mt-0.5 text-[12px] leading-relaxed">
+                <span>{ITEM.creators}</span>{" "}
+                <span className="whitespace-nowrap">
+                  · <span className="tabular-nums">{ITEM.year}</span>
+                </span>{" "}
+                <span className="whitespace-nowrap">
+                  ·{" "}
+                  <Ic
+                    name={MODES[s.mode].icon}
+                    size={12}
+                    className="me-1 inline-block shrink-0 align-[-2px]"
+                  />
+                  {MODES[s.mode].source}
+                </span>
+                {attachmentSlot(s).kind === "picker" && (
+                  <>
+                    {" "}
+                    <span className="whitespace-nowrap">
+                      · <AFilesStatus inline />
+                    </span>
+                  </>
+                )}
+                {condition(s) && (
+                  <>
+                    {" "}
+                    <span className="whitespace-nowrap">
+                      · <AReadOnlyHint inline />
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+            {open && <AModeMenu onClose={close} onChooseFile={chooseFile} />}
+          </div>
+        );
+      }
+
+      /**
+       * The pane's top when the paper is already named elsewhere: one line of 12px chrome instead of
+       * a masthead. The mode phrase carries the glyph and the chevron and IS the menu trigger — the
+       * title's job, inherited whole the moment the title goes. It is the only thing here allowed to
+       * truncate, and it never wraps; the files status and the read-only hint keep their words and
+       * their own 24px targets.
+       */
+      function AStatusBar() {
+        const s = useProto();
+        const { set } = s;
+        const open = s.sheet === "mode";
+        const triggerRef = React.useRef(null);
+        const close = () => {
+          set({ sheet: null });
+          triggerRef.current?.focus();
+        };
+        const chooseFile = () => {
+          set({ sheet: null });
+          A_openSuggester(null, triggerRef.current);
+        };
+        const files = attachmentSlot(s).kind === "picker";
+        return (
+          <div className="relative">
+            <div className="text-muted flex h-7 items-center gap-1 text-[12px]">
+              <button
+                ref={triggerRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-controls={open ? A_MENU_ID : undefined}
+                aria-label={`Choose what this pane follows. ${MODES[s.mode].source}.`}
+                onClick={() => set({ sheet: open ? null : "mode" })}
+                className={cx(
+                  "text-muted hover:text-ink hover:bg-raised -ms-1 flex h-6 min-w-0 items-center gap-1.5 rounded-[5px] ps-1 pe-1.5",
+                  "transition-[background-color,color] duration-150",
+                  open && "bg-raised text-ink",
+                  A_FOCUS,
+                )}
+              >
+                <Ic name={MODES[s.mode].icon} size={12} className="shrink-0" />
+                <span className="min-w-0 truncate">{MODES[s.mode].source}</span>
+                <Ic
+                  name="ChevronDown"
+                  size={12}
+                  className="shrink-0 opacity-70"
+                />
+              </button>
+              {files && (
+                <>
+                  <span aria-hidden="true" className="text-faint shrink-0">
+                    ·
+                  </span>
+                  <AFilesStatus />
+                </>
+              )}
+              {condition(s) && (
+                <>
+                  <span aria-hidden="true" className="text-faint shrink-0">
+                    ·
+                  </span>
+                  <AReadOnlyHint />
+                </>
+              )}
+            </div>
+            {open && <AModeMenu onClose={close} onChooseFile={chooseFile} />}
+          </div>
+        );
+      }
+
+      /**
+       * Obsidian's own way of choosing from a list, mocked: a prompt over the pane with the input at
+       * the top, the matches beneath it, one highlighted row. Long file names WRAP rather than
+       * truncate — this is the one surface whose whole job is telling two similar names apart, so it
+       * spends the height. Arrows move, Enter picks, Escape closes and hands focus back.
+       */
+      function ASuggester() {
+        const s = useProto();
+        const slot = attachmentSlot(s);
+        const options = slot.kind === "picker" ? slot.options : [];
+        const [query, setQuery] = React.useState("");
+        const [cursor, setCursor] = React.useState(() =>
+          Math.max(
+            0,
+            options.findIndex((o) => o.key === slot.selected?.key),
+          ),
+        );
+        const q = query.trim().toLowerCase();
+        const matches = options.filter((o) => o.name.toLowerCase().includes(q));
+        const at = Math.min(cursor, Math.max(0, matches.length - 1));
+        const rowRefs = React.useRef([]);
+
+        React.useEffect(() => {
+          rowRefs.current[at]?.scrollIntoView({ block: "nearest" });
+        }, [at]);
+
+        if (options.length === 0) return null;
+
+        const pick = (key) => {
+          set({ attachmentKey: key });
+          A_closeSuggester();
+        };
+
+        return (
+          <div
+            className="absolute inset-0 z-50 flex items-start justify-center px-3 pt-6"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                A_closeSuggester();
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setCursor(
+                  (i) =>
+                    (Math.min(i, matches.length - 1) + 1) %
+                    Math.max(1, matches.length),
+                );
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setCursor(
+                  (i) =>
+                    (Math.min(i, matches.length - 1) -
+                      1 +
+                      Math.max(1, matches.length)) %
+                    Math.max(1, matches.length),
+                );
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (matches[at]) pick(matches[at].key);
+              }
+            }}
+          >
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Close this list"
+              onClick={A_closeSuggester}
+              className="absolute inset-0 cursor-default"
+              style={{
+                background: "color-mix(in srgb, var(--ink) 16%, transparent)",
+              }}
+            />
+            <div
+              role="dialog"
+              aria-label="Choose a file"
+              className={cx(
+                "bg-ground border-line relative w-full max-w-[420px] overflow-hidden rounded-[8px] border",
+                "shadow-[0_3px_6px_rgba(0,0,0,0.08),0_18px_40px_-12px_rgba(0,0,0,0.42)]",
+              )}
+            >
+              <div className="border-line flex h-9 items-center gap-1.5 border-b px-2.5">
+                <Ic name="Search" size={13} className="text-muted shrink-0" />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setCursor(0);
+                  }}
+                  placeholder="Search this paper's files"
+                  aria-label="Search this paper's files"
+                  className="text-ink placeholder:text-faint min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+                />
+              </div>
+              <div className="max-h-[210px] overflow-y-auto p-1">
+                {matches.length === 0 ? (
+                  <p className="text-muted px-1.5 py-2 text-[12px] leading-relaxed text-pretty">
+                    No file of this paper matches “{query.trim()}”.
+                  </p>
+                ) : (
+                  matches.map((o, i) => (
+                    <button
+                      key={o.key}
+                      ref={(el) => {
+                        rowRefs.current[i] = el;
+                      }}
+                      type="button"
+                      aria-pressed={o.key === slot.selected.key}
+                      onMouseEnter={() => setCursor(i)}
+                      onClick={() => pick(o.key)}
+                      className={cx(
+                        "flex w-full items-start gap-2 rounded-[5px] p-1.5 text-start",
+                        "transition-[background-color] duration-150",
+                        i === at && "bg-raised",
+                        A_FOCUS,
+                      )}
+                    >
+                      <Ic
+                        name={
+                          o.key === slot.selected.key ? "Check" : "FileText"
+                        }
+                        size={13}
+                        className={cx(
+                          "mt-0.5 shrink-0",
+                          o.key === slot.selected.key
+                            ? "text-accent"
+                            : "text-faint",
+                        )}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="text-ink block text-[12px] leading-snug text-pretty">
+                          {o.name}
+                        </span>
+                        <span className="text-faint mt-0.5 block text-[11px] tabular-nums">
+                          {o.count} annotations
+                        </span>
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function APanel({ children, align = "auto" }) {
+        const { set } = useProto();
+        return (
+          <>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Close this menu"
+              onClick={() => set({ sheet: null })}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+            <div
+              className={cx(
+                "bg-ground border-line absolute top-full z-30 mt-1 w-[230px] rounded-[8px] border p-1",
+                align === "auto"
+                  ? "start-0 @min-[860px]:start-auto @min-[860px]:end-0"
+                  : "start-0",
+                "shadow-[0_2px_4px_rgba(0,0,0,0.06),0_12px_28px_-10px_rgba(0,0,0,0.3)]",
+              )}
+            >
+              {children}
+            </div>
+          </>
+        );
+      }
+
+      /** The selected colours themselves, in the order they appear in the document. */
+      function AFilterDots({ colors }) {
+        return (
+          <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
+            {colors.map((c) => (
+              <span
+                key={c}
+                className="block h-2 w-2 rounded-full"
+                style={{
+                  background: c,
+                  boxShadow:
+                    "0 0 0 1px color-mix(in oklab, var(--ink) 15%, transparent)",
+                }}
+              />
+            ))}
+          </span>
+        );
+      }
+
+      function AControl({
+        icon,
+        label,
+        dots,
+        ariaLabel,
+        active,
+        on,
+        chevron = true,
+      }) {
+        return (
+          <button
+            type="button"
+            onClick={on}
+            aria-pressed={active}
+            aria-label={ariaLabel}
+            className={cx(
+              "flex h-7 max-w-[160px] items-center gap-1.5 rounded-[6px] px-2 text-[12px]",
+              "transition-[background-color,color] duration-150",
+              active
+                ? "bg-accent-soft text-accent"
+                : "bg-raised text-ink hover:bg-sunken",
+              A_FOCUS,
+            )}
+          >
+            {dots ? (
+              <AFilterDots colors={dots} />
+            ) : (
+              <>
+                {icon && <Ic name={icon} size={13} className="shrink-0" />}
+                <span className="min-w-0 truncate">{label}</span>
+              </>
+            )}
+            {chevron && (
+              <Ic
+                name="ChevronDown"
+                size={12}
+                className="shrink-0 opacity-70"
+              />
+            )}
+          </button>
+        );
+      }
+
+      function AControls() {
+        const s = useProto();
+        const { set, toggleColor, toggleTag, clearFilters } = s;
+        const open = A_CONTROL_SHEETS.includes(s.sheet) ? s.sheet : null;
+        const toggle = (name) => set({ sheet: open === name ? null : name });
+        const picked = ALL_COLORS.filter((c) => s.colors.includes(c));
+
+        return (
+          <div className="relative flex flex-wrap items-center gap-1.5">
+            <AControl
+              icon="Palette"
+              label="Colour"
+              dots={picked.length > 0 ? picked : undefined}
+              ariaLabel={picked.length > 0 ? A_colorPhrase(picked) : undefined}
+              active={open === "filter" || s.colors.length > 0}
+              on={() => toggle("filter")}
+            />
+            <AControl
+              icon="Tags"
+              label={A_listLabel(
+                s.tags,
+                "Tags",
+                (t) => t.charAt(0).toUpperCase() + t.slice(1),
+              )}
+              active={open === "tags" || s.tags.length > 0}
+              on={() => toggle("tags")}
+            />
+            <AControl
+              icon="Search"
+              label={s.query.trim() ? `“${s.query.trim()}”` : "Search"}
+              active={open === "search" || s.query.trim() !== ""}
+              chevron={false}
+              on={() => toggle("search")}
+            />
+            {filterActive(s) && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearFilters();
+                  set({ sheet: null });
+                }}
+                className={cx(
+                  "text-accent ms-auto h-7 rounded-[6px] px-1.5 text-[12px] hover:underline",
+                  A_FOCUS,
+                )}
+              >
+                Show all
+              </button>
+            )}
+
+            {open === "filter" && (
+              <APanel>
+                {ALL_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleColor(c)}
+                    aria-pressed={s.colors.includes(c)}
+                    className={cx(
+                      "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                      "hover:bg-raised transition-[background-color] duration-150",
+                      A_FOCUS,
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ background: c }}
+                    />
+                    <span className="text-ink flex-1 text-start">
+                      {COLOR_NAME[c]}
+                    </span>
+                    {s.colors.includes(c) && (
+                      <Ic name="Check" size={13} className="text-accent" />
+                    )}
+                  </button>
+                ))}
+              </APanel>
+            )}
+
+            {open === "tags" && (
+              <APanel>
+                <div className="max-h-[220px] overflow-y-auto">
+                  {ALL_TAGS.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTag(t)}
+                      aria-pressed={s.tags.includes(t)}
+                      className={cx(
+                        "flex h-7 w-full items-center gap-2 rounded-[5px] px-1.5 text-[12px]",
+                        "hover:bg-raised transition-[background-color] duration-150",
+                        A_FOCUS,
+                      )}
+                    >
+                      <span className="text-ink flex-1 text-start">#{t}</span>
+                      <span className="text-faint tabular-nums">
+                        {ANNOTS.filter((a) => a.tags.includes(t)).length}
+                      </span>
+                      {s.tags.includes(t) && (
+                        <Ic name="Check" size={13} className="text-accent" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </APanel>
+            )}
+
+            {open === "search" && (
+              <APanel>
+                <div className="bg-raised flex h-8 items-center gap-1.5 rounded-[5px] px-2">
+                  <Ic name="Search" size={13} className="text-muted shrink-0" />
+                  <input
+                    autoFocus
+                    value={s.query}
+                    onChange={(e) => set({ query: e.target.value })}
+                    placeholder="Search your annotations"
+                    className="text-ink placeholder:text-faint min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+                  />
+                  {s.query !== "" && (
+                    <button
+                      type="button"
+                      aria-label="Clear the search"
+                      onClick={() => set({ query: "" })}
+                      className={cx(
+                        "text-muted hover:text-ink grid h-6 w-6 place-items-center rounded-[4px]",
+                        A_FOCUS,
+                      )}
+                    >
+                      <Ic name="X" size={13} />
+                    </button>
+                  )}
+                </div>
+              </APanel>
+            )}
+          </div>
+        );
+      }
+
+      /**
+       * With no paper resolved there is no title for the control to sit on, so the mode gets one
+       * quiet line of its own above the sentence. A researcher reading "Open a paper in the Zotero
+       * reader…" can change their mind about which mode they are in without leaving the pane.
+       * Zotero's running state is not this state's business and is never named here.
+       */
+      function ANoItem() {
+        const s = useProto();
+        const { set } = s;
+        const e = emptyState(s);
+        const open = s.sheet === "mode";
+        const triggerRef = React.useRef(null);
+        const close = () => {
+          set({ sheet: null });
+          triggerRef.current?.focus();
+        };
+        return (
+          <div>
+            <div className="relative w-fit">
+              <button
+                ref={triggerRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={open}
+                aria-controls={open ? A_MENU_ID : undefined}
+                aria-label={`Choose what this pane follows. ${MODES[s.mode].label}.`}
+                onClick={() => set({ sheet: open ? null : "mode" })}
+                className={cx(
+                  "text-muted hover:text-ink hover:bg-raised -ms-1 flex h-6 items-center gap-1.5 rounded-[5px] ps-1 pe-1.5 text-[12px]",
+                  "transition-[background-color,color] duration-150",
+                  open && "bg-raised text-ink",
+                  A_FOCUS,
+                )}
+              >
+                <Ic name={MODES[s.mode].icon} size={12} className="shrink-0" />
+                <span className="whitespace-nowrap">{MODES[s.mode].label}</span>
+                <Ic
+                  name="ChevronDown"
+                  size={12}
+                  className="shrink-0 opacity-70"
+                />
+              </button>
+              {open && <AModeMenu onClose={close} />}
+            </div>
+            <p className="text-ink mt-1.5 max-w-[46ch] text-[13px] leading-relaxed text-pretty">
+              {e.message}
+            </p>
+            {e.action && (
+              <button
+                type="button"
+                className={cx(
+                  "text-accent -ms-1 mt-1 inline-flex h-6 items-center gap-1.5 rounded-[4px] px-1 text-[12px] font-medium hover:underline",
+                  A_FOCUS,
+                )}
+              >
+                <Ic name="LibraryBig" size={13} strokeWidth={2} />
+                {e.action}
+              </button>
+            )}
+          </div>
+        );
+      }
+
+      /**
+       * The pane's top, in two shapes. Where nothing else on screen names the paper it is the
+       * masthead — the title as the mode control, the byline under it. Where something already does,
+       * `identityShown(s)` is false and the whole block becomes one status bar carrying the mode, the
+       * files status and the read-only hint, two lines shorter. Either way the control row follows,
+       * and both are the same whether Zotero is open or shut apart from that one trailing word.
+       */
+      function AMasthead() {
+        const s = useProto();
+        const present = hasItem(s);
+        return (
+          <header className="bg-ground relative z-10 shrink-0 px-3 pt-3 pb-2.5">
+            {present ? (
+              <div className="flex flex-col gap-2.5 @min-[860px]:flex-row @min-[860px]:items-start @min-[860px]:justify-between @min-[860px]:gap-6">
+                <div className="min-w-0 @min-[860px]:max-w-[520px]">
+                  {identityShown(s) ? <ATitleControl /> : <AStatusBar />}
+                </div>
+                <div className="@min-[860px]:shrink-0">
+                  <AControls />
+                </div>
+              </div>
+            ) : (
+              <ANoItem />
+            )}
+          </header>
+        );
+      }
+
+      /** About the filter and nothing else: what missed, and the one way back. */
+      function AEmptyMatch() {
+        const s = useProto();
+        const { clearFilters } = s;
+        return (
+          <div>
+            <p className="text-ink max-w-[46ch] text-[13px] leading-relaxed text-pretty">
+              No annotation matches {A_filterPhrase(s)}.
+            </p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className={cx(
+                "text-accent -ms-1 mt-1 inline-flex h-6 items-center gap-1.5 rounded-[4px] px-1 text-[12px] font-medium hover:underline",
+                A_FOCUS,
+              )}
+            >
+              <Ic name="ListRestart" size={13} strokeWidth={2} />
+              Clear the filters
+            </button>
+          </div>
+        );
+      }
+
+      function AList() {
+        const s = useProto();
+        const list = visibleAnnots(s);
+        return (
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1 pb-6">
+            {list.length === 0 ? (
+              <AEmptyMatch />
+            ) : (
+              <div className="grid grid-cols-1 content-start items-start gap-2 @min-[500px]:grid-cols-2 @min-[860px]:grid-cols-3">
+                {list.map((a) => (
+                  <ACard key={a.key} annot={a} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      function VariantA() {
+        const s = useProto();
+        return (
+          <ObsidianFrame>
+            <div
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && A_isDrawer(s.sheet)) {
+                  e.stopPropagation();
+                  A_closeDrawer();
+                }
+              }}
+              className="font-ui text-ink relative flex h-full min-h-0 flex-col"
+            >
+              <AMasthead />
+              {hasItem(s) && <AList />}
+              <ADrawer />
+              {s.sheet === "files" && <ASuggester />}
+            </div>
+          </ObsidianFrame>
+        );
+      }
+      // --- Variant A END ---
+
+      // --- Switcher ---
+      const VARIANTS = [
+        { key: "A", name: "Title is the control", component: VariantA },
+      ];
+
+      const SCENARIOS = [
+        ["reading", "Reading"],
+        ["zotero-closed", "Zotero closed"],
+        ["no-item", "No item"],
+        ["saving", "Saving"],
+        ["no-match", "No matches"],
+      ];
+      const WIDTHS = [340, 520, 900];
+      const ATTACHMENTS = [
+        ["single", "One file"],
+        ["several", "Several"],
+        ["reader-locked", "Reader holds it"],
+        ["obsidian-pdf", "PDF open here"],
+      ];
+
+      const barBtn = (on) => ({
+        background: on ? "#f8fafc" : "transparent",
+        color: on ? "#0f172a" : "#cbd5e1",
+        border: "1px solid " + (on ? "#f8fafc" : "#475569"),
+        borderRadius: 999,
+        padding: "2px 9px",
+        font: "inherit",
+        fontSize: 11,
+        lineHeight: "16px",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      });
+
+      function SwitchBar({ idx, setIdx }) {
+        const s = useProto();
+        const [theme, setTheme] = useState(
+          () => document.documentElement.getAttribute("data-theme") ?? "light",
+        );
+        useEffect(() => {
+          document.documentElement.setAttribute("data-theme", theme);
+        }, [theme]);
+        const V = VARIANTS[idx];
+        const move = (d) =>
+          setIdx((i) => (i + d + VARIANTS.length) % VARIANTS.length);
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 14,
+              left: "50%",
+              transform: "translateX(-50%)",
+              background: "#1e293b",
+              color: "#f8fafc",
+              borderRadius: 14,
+              padding: "9px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 7,
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontSize: 12,
+              zIndex: 9999,
+              boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+              maxWidth: "94vw",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 12,
+              }}
+            >
+              <button
+                onClick={() => move(-1)}
+                style={{ ...barBtn(false), border: "none", fontSize: 15 }}
+              >
+                ←
+              </button>
+              <span
+                style={{ fontWeight: 600, minWidth: 210, textAlign: "center" }}
+              >
+                {V.key} — {V.name}
+              </span>
+              <button
+                onClick={() => move(1)}
+                style={{ ...barBtn(false), border: "none", fontSize: 15 }}
+              >
+                →
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                State
+              </span>
+              {SCENARIOS.map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() =>
+                    set(
+                      key === "no-match"
+                        ? {
+                            scenario: key,
+                            colors: [ZC.red],
+                            tags: ["writing"],
+                            query: "",
+                          }
+                        : { scenario: key, colors: [], tags: [], query: "" },
+                    )
+                  }
+                  style={barBtn(s.scenario === key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                Mode
+              </span>
+              {MODE_KEYS.map((k) => (
+                <button
+                  key={k}
+                  onClick={() => set({ mode: k })}
+                  style={barBtn(s.mode === k)}
+                >
+                  {MODES[k].label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                Files
+              </span>
+              {ATTACHMENTS.map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => set({ attachment: k })}
+                  style={barBtn(s.attachment === k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <span style={{ color: "#94a3b8", fontSize: 11, width: 52 }}>
+                Width
+              </span>
+              {WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => set({ width: w })}
+                  style={barBtn(s.width === w)}
+                >
+                  {w}px
+                </button>
+              ))}
+              <span style={{ width: 10 }} />
+              <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                style={barBtn(false)}
+              >
+                {theme === "dark" ? "Dark" : "Light"}
+              </button>
+              <button
+                onClick={() => set({ expanded: !s.expanded })}
+                style={barBtn(s.expanded)}
+              >
+                Expand previews
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function App() {
+        const [idx, setIdx] = useState(() => {
+          const h = location.hash.slice(1);
+          const i = VARIANTS.findIndex((v) => v.key === h);
+          return i >= 0 ? i : 0;
+        });
+
+        useEffect(() => {
+          location.hash = VARIANTS[idx].key;
+          const onHash = () => {
+            const i = VARIANTS.findIndex(
+              (v) => v.key === location.hash.slice(1),
+            );
+            if (i >= 0) setIdx(i);
+          };
+          window.addEventListener("hashchange", onHash);
+          const onKey = (e) => {
+            if (
+              ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
+              e.target.isContentEditable
+            )
+              return;
+            if (e.key === "ArrowLeft")
+              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
+            if (e.key === "ArrowRight")
+              setIdx((i) => (i + 1) % VARIANTS.length);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => {
+            window.removeEventListener("hashchange", onHash);
+            window.removeEventListener("keydown", onKey);
+          };
+        }, [idx]);
+
+        const V = VARIANTS[idx];
+        return (
+          <>
+            <V.component />
+            <SwitchBar idx={idx} setIdx={setIdx} />
+          </>
+        );
+      }
+      // --- Switcher END ---
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
