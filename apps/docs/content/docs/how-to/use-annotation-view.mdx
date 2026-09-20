@@ -73,7 +73,15 @@ A Zotero PDF tab and the Zotero reader each choose the attachment themselves, so
 
 ## Pull annotations into a note
 
-Drag an annotation row from the sidebar and drop it into the editor. ZotLit renders the annotation through the [profile](/docs/concepts/profiles) that governs the literature note of the annotation's item, or through the Default profile when that item has no note yet, and inserts the result at the drop position. Image excerpts are saved to the vault automatically.
+1. Open the note where you want to insert the annotation.
+2. Drag an annotation row from the sidebar to the required editor position.
+3. Wait for the insertion to complete. Image and ink excerpts are prepared before their links are inserted.
+
+ZotLit uses the [profile](/docs/concepts/profiles) of the annotation item's literature note, or the Default profile when that item has no note. Edits made while you wait move the insertion position with the text. Press Escape to cancel a pending insertion. After insertion, one Undo removes the inserted content.
+
+With <UiLabel name={m.settings_attachment_import_name()} /> enabled, inserted excerpts are saved as image files in the vault. With it disabled, new excerpts use an unavailable-image explanation and source link. Viewing cards or selecting a target note creates no saved image files.
+
+You can view and insert [excerpt images](/docs/concepts/excerpt-images) with both PDF readers closed. A failed image request produces fallback text or a preserved image, and the operation reports uncertain or unavailable results in one summary.
 
 ### Context menu actions
 

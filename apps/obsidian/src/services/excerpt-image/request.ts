@@ -13,7 +13,7 @@ import type {
   AnnotationSource,
 } from "@/services/annotation-repository/service";
 
-import type { ExcerptRequest } from "./service";
+import type { ExcerptRequest } from "./contract";
 
 /** Resolves file inputs only when the selected source identifies this database. */
 export function excerptRequest(options: {

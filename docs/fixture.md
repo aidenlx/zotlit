@@ -46,6 +46,40 @@ pnpm fixture paths
 
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
 
+### Excerpt-rendering acceptance inputs
+
+Each build copies three generated inputs to
+`attachments/excerpt-acceptance/` in the Fixture Vault:
+
+| File | Required outcome |
+| --- | --- |
+| `excerpt-rendering.pdf` | Render image and ink excerpts from the display intent. Its six pages cover rotations 0, 90, 180, and 270; a nonzero CropBox; UserUnit 2; small-point and large multi-path ink geometry; embedded Type3 CJK glyphs; explicit native Text and AcroForm Widget appearance streams; optional content; the maximum pixel budget; and the maximum dimension. |
+| `corrupt.pdf` | Return the explicit unavailable outcome. |
+| `encrypted.pdf` | Request a password in a PDF reader and return the explicit unavailable excerpt outcome. |
+
+The PDFs contain generated shapes only. Their source, declared SHA-256 values,
+and independent excerpt geometry are in
+`packages/scripts/lib/fixture/assets/excerpt-rendering/` and
+`packages/scripts/lib/fixture/spec.ts`. Regenerate the committed bytes with:
+
+```sh
+node packages/scripts/lib/fixture/assets/excerpt-rendering/generate.ts
+```
+
+The End-to-end Run and Paired Run use these files directly. The acceptance
+helper clears the derived excerpt cache, records cold rendering time, reads the
+same cases from the warm cache, clears the cache again, and proves that a new
+render succeeds. It also checks the corrupt and encrypted outcomes. The files
+stay outside the Zotero database, so they do not change Item, Attachment, or
+Annotation count assertions.
+
+Use a disposable Fixture for manual host checks. Keep every PDF reader closed,
+run `pnpm e2e`, then repeat with a PDF reader open. On each supported host,
+record the Obsidian version, Zotero version, PDF.js version, foreground or
+minimized state, cold and warm times, and the final test result. A completed
+check has explicit test output. A missing host or application version is an
+unrun baseline, not a pass.
+
 `mark-landing-test.md` is generated rather than committed, because it holds real `file://` links and the Fixture learns its own absolute paths only at build time. It walks Mark Landing: an Attachment File Link carrying an Annotation Anchor, the wikilink spelling of the same Anchor, the degradation cases, and the Zotero deep link ZotLit leaves to Zotero.
 
 The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:

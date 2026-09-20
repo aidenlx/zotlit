@@ -17,6 +17,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -47,6 +48,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
 import { verifyAnnotationInsert } from "./annotation-insert.ts";
+import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import {
   cli,
   cliCommand,
@@ -487,6 +489,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     }
   }, 120000);
 
+  it("renders the deterministic PDF matrix and reuses its cache", async () => {
+    await verifyExcerptRendering(vaultId);
+  }, 120000);
+
   it.each(["main", "popout"] as const)(
     "inserts a captured annotation safely in a %s editor",
     async (host) => {
@@ -552,13 +558,119 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(targets).toEqual(
       new Set(files.map((file) => file.split("/").at(-1)!)),
     );
+    const initialImages = new Map<string, Buffer>();
     for (const file of files) {
       const bytes = await readFile(join(path, file));
+      initialImages.set(file, bytes);
       expect([...bytes.subarray(0, 8)]).toEqual([
         137, 80, 78, 71, 13, 10, 26, 10,
       ]);
       expect(bytes.length).toBeGreaterThan(1000);
     }
+    expect(
+      JSON.parse(
+        await obEval(
+          id,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(result.path)});if(!file)throw new Error('Created note missing');const updated=await services.noteFeature.overwriteNote(file,${JSON.stringify(result.indexedKey)});return JSON.stringify({diagnostic:updated.diagnostic??null});})()`,
+        ),
+      ),
+    ).toEqual({ diagnostic: null });
+    const overwritten = await readFile(join(path, result.path), "utf8");
+    expect(overwritten).toContain("zotlit-excerpt-");
+    for (const [file, initial] of initialImages)
+      expect(await readFile(join(path, file))).toEqual(initial);
+
+    const frozenImport = JSON.parse(
+      await obEval(
+        id,
+        `(async()=>{const result=await app.plugins.plugins.zotlit.services.batchImport.runBatchImport('note',[13]);return JSON.stringify(result);})()`,
+      ),
+    ) as { outcome: string; write?: string };
+    expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
+    expect(
+      await obEvalUntil(
+        id,
+        "String(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA').length)",
+        { expected: "1" },
+      ),
+    ).toBe(true);
+    const importedPath = await obEval(
+      id,
+      "app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0].path",
+    );
+    const frozenMarkdown = await readFile(join(path, importedPath), "utf8");
+    expect(frozenMarkdown).toContain("Saved snapshot");
+    expect(frozenMarkdown).not.toContain("zotlit-excerpt-");
+    const frozenTargets = frozenMarkdown
+      .split("![[")
+      .slice(1)
+      .map((part) => part.split("]]", 1)[0]!);
+    expect(frozenTargets).toHaveLength(3);
+    const frozenBytes = await Promise.all(
+      frozenTargets.map((target) => readFile(join(path, target))),
+    );
+
+    const liveImport = JSON.parse(
+      await obEval(
+        id,
+        `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+      ),
+    ) as { outcome: string };
+    expect(liveImport).toEqual({ outcome: "overwritten" });
+    const liveMarkdown = await readFile(join(path, importedPath), "utf8");
+    expect(liveMarkdown).toContain("Saved snapshot");
+    expect(liveMarkdown.match(/zotlit-excerpt-/g)).toHaveLength(2);
+    const liveTargets = liveMarkdown
+      .split("![[")
+      .slice(1)
+      .map((part) => part.split("]]", 1)[0]!);
+    expect(liveTargets).toHaveLength(3);
+    const liveBytes = await Promise.all(
+      liveTargets.map((target) => readFile(join(path, target))),
+    );
+    expect(
+      liveBytes.some((bytes) =>
+        frozenBytes.every((frozen) => !bytes.equals(frozen)),
+      ),
+    ).toBe(true);
+
+    await obEval(
+      id,
+      `(()=>{const feature=app.plugins.plugins.zotlit.services.noteFeature;window.__zotlitExcerptReports=[];window.__zotlitExcerptReportOff=feature.on('excerpt-images-reported',summary=>window.__zotlitExcerptReports.push(summary));return true;})()`,
+    );
+    const sourcePdf = join(path, "attachments/rougier-2014.pdf");
+    const unavailablePdf = `${sourcePdf}.unavailable`;
+    await rename(sourcePdf, unavailablePdf);
+    try {
+      expect(
+        JSON.parse(
+          await obEval(
+            id,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+          ),
+        ),
+      ).toEqual({ outcome: "overwritten" });
+    } finally {
+      await rename(unavailablePdf, sourcePdf);
+    }
+    const pooledReports = JSON.parse(
+      await obEval(
+        id,
+        `JSON.stringify((()=>{window.__zotlitExcerptReportOff();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
+      ),
+    ) as { zotero: number; unchecked: number; unavailable: number }[];
+    expect(pooledReports).toEqual([
+      { zotero: 0, unchecked: 2, unavailable: 0 },
+    ]);
+    expect(
+      JSON.parse(
+        await obEval(
+          id,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+        ),
+      ),
+    ).toEqual({ outcome: "overwritten" });
+
     expect(
       await obEval(id, "String(app.workspace.getLeavesOfType('pdf').length)"),
     ).toBe("0");

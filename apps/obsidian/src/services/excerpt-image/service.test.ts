@@ -74,6 +74,151 @@ function fixture() {
 }
 
 describe("Excerpt Image resolution", () => {
+  it("admits 128 distinct requests and rejects the 129th without starting it", async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({ render });
+    const pending = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `ANNOT${index}` },
+      }),
+    );
+    try {
+      await started.promise;
+      expect(
+        await service.resolve({
+          ...request,
+          annotation: { ...request.annotation, key: "OVERFLOW" },
+        }),
+      ).toEqual({ kind: "unavailable" });
+      expect(render).toHaveBeenCalledTimes(1);
+    } finally {
+      gate.resolve(generated);
+    }
+    expect(
+      (await Promise.all(pending)).every(
+        (result) => result.kind === "available",
+      ),
+    ).toBe(true);
+    expect(render).toHaveBeenCalledTimes(128);
+  });
+
+  it("bounds cancelled same-key jobs that replace the dedup entry", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const render = vi.fn(async (_request, signal: AbortSignal) => {
+      started.resolve();
+      await release.promise;
+      signal.throwIfAborted();
+      return generated;
+    });
+    await using service = new ExcerptImageService({ render });
+
+    for (let index = 0; index < 128; index++) {
+      const controller = new AbortController();
+      const listening = Promise.withResolvers<void>();
+      const addEventListener = controller.signal.addEventListener.bind(
+        controller.signal,
+      );
+      vi.spyOn(controller.signal, "addEventListener").mockImplementation(
+        (...args) => {
+          addEventListener(...args);
+          if (args[0] === "abort") listening.resolve();
+        },
+      );
+      const pending = service.resolve(request, controller.signal);
+      const rejection = expect(pending).rejects.toMatchObject({
+        name: "AbortError",
+      });
+      await listening.promise;
+      if (index === 0) await started.promise;
+      controller.abort();
+      await rejection;
+    }
+
+    expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
+    expect(render).toHaveBeenCalledTimes(1);
+    release.resolve();
+  });
+
+  it("waits for actual teardown before advancing a cancelled request's queue slot", async () => {
+    const started = Promise.withResolvers<void>();
+    const cleanupStarted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const render = vi.fn(
+      async (_request: ExcerptRequest, signal: AbortSignal) => {
+        if (render.mock.calls.length > 1) return generated;
+        started.resolve();
+        await new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+        cleanupStarted.resolve();
+        await release.promise;
+        throw signal.reason;
+      },
+    );
+    await using service = new ExcerptImageService({ render });
+    const controller = new AbortController();
+    const first = service.resolve(request, controller.signal);
+    const rejected = expect(first).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await started.promise;
+    controller.abort();
+    await rejected;
+    const second = service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: "SECOND" },
+    });
+    try {
+      await cleanupStarted.promise;
+      expect(render).toHaveBeenCalledTimes(1);
+    } finally {
+      release.resolve();
+    }
+    expect(await second).toMatchObject({ provenance: "rendered" });
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops new work when the 35-second job and 5-second teardown deadlines expire", async () => {
+    const limits = new Map<number, AbortController>();
+    const grace = Promise.withResolvers<void>();
+    using _deadlines = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((milliseconds) => {
+        const controller = new AbortController();
+        limits.set(milliseconds, controller);
+        if (milliseconds === 5_000) grace.resolve();
+        return controller.signal;
+      });
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return new Promise<Uint8Array>(() => {});
+    });
+    await using service = new ExcerptImageService({ render });
+    const pending = service.resolve(request);
+    const rejected = expect(pending).rejects.toThrow("job deadline");
+    await started.promise;
+    limits.get(35_000)!.abort(new Error("job deadline"));
+    await grace.promise;
+    limits.get(5_000)!.abort(new Error("cleanup deadline"));
+    await rejected;
+    expect(
+      await service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: "SECOND" },
+      }),
+    ).toEqual({ kind: "unavailable" });
+    expect(render).toHaveBeenCalledTimes(1);
+    await service[Symbol.asyncDispose]();
+  });
+
   it("owns the published snapshot even when the caller edits it before startup settles", async () => {
     const input = structuredClone(inkRequest);
     let savedColor: string | null = null;
@@ -615,7 +760,9 @@ describe("Excerpt Image resolution", () => {
       name: "AbortError",
     });
     await started.promise;
-    await service[Symbol.asyncDispose]();
+    const disposal = service[Symbol.asyncDispose]();
+    expect(service[Symbol.asyncDispose]()).toBe(disposal);
+    await disposal;
     await rejection;
     expect(released).toBe(true);
     await expect(service.resolve(request)).rejects.toMatchObject({

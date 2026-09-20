@@ -1,0 +1,42 @@
+---
+title: "Excerpt images"
+description: "How ZotLit generates image and ink excerpts, checks cached images, and preserves the images saved in your notes."
+---
+
+An excerpt image shows a selected PDF region or ink strokes over the PDF content.
+
+ZotLit generates these images when you view or import annotations. Both PDF readers can stay closed, and generation continues while Obsidian is minimized. Zotero can also stay closed when its saved annotation data and PDF are available locally.
+
+## Images in the annotation view
+
+ZotLit first looks for a matching image in its own cache. If there is none, it generates the excerpt from the PDF. If generation fails, it tries Zotero's cached PNG.
+
+The annotation view displays any available image without a cache-source label. Viewing a card creates no saved image file in your vault. If every source fails, the card shows that the image is unavailable.
+
+## Saved note snapshots [#saved-snapshots]
+
+An image saved in a note is a snapshot. Each new image version has a distinct filename. Updating one note can select a new version while other notes keep their existing images.
+
+ZotLit prepares these files during note creation, update, overwrite, re-import, or annotation insertion. It keeps old image files and legacy links until you change the notes that use them. It does not delete unused image versions automatically.
+
+Ordinary images embedded in Zotero Child Notes remain stored snapshots. Only eligible Annotation Paragraphs in annotation-template mode use live excerpts. Re-importing such a paragraph can change its image; other embedded images keep the bytes stored with the Child Note.
+
+## Cache and freshness [#freshness]
+
+The excerpt cache belongs to one vault on one device and survives an Obsidian restart. Its size limit is 256 MiB. ZotLit removes the least recently used entries when it needs space. Clearing or removing cache entries leaves saved note images unchanged.
+
+ZotLit checks the annotation's rendering inputs and the PDF's file size and modification time before it reuses a cached image. Changes to crop geometry or ink color require a new match. Replacing a PDF while keeping both its size and modification time can reuse the old image.
+
+When the PDF is unavailable, a cached image can still be used if its annotation inputs match. ZotLit reports that the PDF's freshness was not checked. It checks again on the next relevant view or import operation when the PDF becomes available.
+
+## Import outcomes [#import-outcomes]
+
+A note operation prepares images before it runs the final template. Each template executes once. The operation counts only image helpers that the template requests.
+
+If a refresh fails, ZotLit keeps a verified image already referenced by that note and reports it as not refreshed. Otherwise, it writes an unavailable-image explanation and a source link. Other annotations and notes can still finish.
+
+One summary per operation or batch counts images taken from Zotero with uncertain freshness, images with unchecked PDF freshness, unavailable images, and images kept without refresh. Successful generation and valid cache reuse need no summary.
+
+With attachment import disabled, ZotLit creates no generated image files for notes. A verified existing image can remain; otherwise the note receives an unavailable-image explanation and source link. Images in the annotation view and the device cache remain available.
+
+See [Use the annotation view](/docs/how-to/use-annotation-view), [Keep notes up to date](/docs/how-to/keep-notes-updated), and [Import Zotero notes](/docs/how-to/import-zotero-notes) for note operations. The [cache setting](/docs/reference/settings#excerpt-image-cache) describes manual clearing.

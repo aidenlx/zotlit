@@ -23,9 +23,10 @@ import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import type { Settings } from "@/services/settings/schema";
 
+import { excerptKey, excerptSourceIdentity } from "./contract";
+import type { ExcerptRequest } from "./contract";
 import { usableExcerptPng } from "./png";
-import { excerptKey, excerptSourceIdentity } from "./service";
-import type { ExcerptOutcome, ExcerptRequest } from "./service";
+import type { ExcerptOutcome } from "./service";
 
 const logger = getLogger("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;

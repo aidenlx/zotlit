@@ -1,29 +1,23 @@
-import { createHash } from "node:crypto";
 import { open, stat } from "node:fs/promises";
 
 import { getLogger } from "@/lib/log";
-import type {
-  AnnotationRecord,
-  AnnotationSource,
-} from "@/services/annotation-repository/service";
 import { Service } from "@/services/service-base";
 
-import { abortable, renderExcerpt } from "./renderer";
+import { excerptKey } from "./contract";
+import type { ExcerptRequest } from "./contract";
+import { abortable, ExcerptRenderer } from "./renderer";
+import type { ExcerptRendererDiagnostics } from "./renderer";
 import type { ExcerptStore } from "./store";
+export {
+  EXCERPT_RENDERER_VERSION,
+  excerptFingerprint,
+  excerptKey,
+  excerptSourceIdentity,
+} from "./contract";
+export type { ExcerptRequest } from "./contract";
 export { excerptRequest } from "./request";
 
 const logger = getLogger("excerpt-image");
-
-/** A complete consumer snapshot; paths and identity belong to the same source. */
-export interface ExcerptRequest {
-  annotation: AnnotationRecord;
-  source: AnnotationSource;
-  sourceScope: string;
-  attachmentKey: string;
-  libraryID: number;
-  pdfPath: string | null;
-  zoteroPngPath: string | null;
-}
 
 /** Size/mtime validation intentionally cannot detect a replacement with identical metadata. */
 export interface PdfStamp {
@@ -59,7 +53,6 @@ export interface ExcerptDeps {
   ) => Promise<Uint8Array>;
 }
 
-export const EXCERPT_RENDERER_VERSION = 2;
 export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
 
 /** Check the open file before allocating; one extra byte detects later growth. */
@@ -89,52 +82,6 @@ async function readFallback(
   return bytes.subarray(0, offset);
 }
 
-/** Canonical pixel inputs exclude revision, text, labels, comments, and tags. */
-export function excerptFingerprint(annotation: AnnotationRecord): string {
-  const p = annotation.position;
-  if (annotation.type === "ink" && p.kind === "pdf-ink")
-    return JSON.stringify([
-      "ink",
-      p.pageIndex,
-      p.width,
-      p.paths,
-      annotation.color?.toLowerCase() ?? null,
-    ]);
-  if (annotation.type === "image" && p.kind === "pdf-rects")
-    return JSON.stringify(["image", p.pageIndex, p.rects[0]]);
-  return JSON.stringify([annotation.type, p.kind]);
-}
-
-export function excerptSourceIdentity(source: AnnotationSource): unknown[] {
-  return source.kind === "zotero-db"
-    ? [
-        source.kind,
-        source.database.userID,
-        source.database.localUserKey,
-        source.database.serverID,
-        source.libraryID,
-      ]
-    : [source.kind, source.serverID];
-}
-
-/** Excludes source revision and record versions, which cannot change the pixels. */
-export function excerptKey(request: ExcerptRequest): string {
-  const { annotation: a, source } = request;
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        EXCERPT_RENDERER_VERSION,
-        request.sourceScope,
-        excerptSourceIdentity(source),
-        request.libraryID,
-        request.attachmentKey,
-        a.key,
-        excerptFingerprint(a),
-      ]),
-    )
-    .digest("hex");
-}
-
 interface Pending {
   controller: AbortController;
   promise: Promise<ExcerptOutcome>;
@@ -150,6 +97,14 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   #tail: Promise<unknown> = Promise.resolve();
   #generation = 0;
   #clearing: Promise<void> = Promise.resolve();
+  #renderer?: ExcerptRenderer;
+  #stalled = false;
+  #jobs = 0;
+
+  /** Internal lifecycle diagnostics used by the real-app acceptance suite. */
+  get rendererDiagnostics(): ExcerptRendererDiagnostics | undefined {
+    return this.#renderer?.diagnostics;
+  }
 
   constructor(deps: ExcerptDeps = {}) {
     super();
@@ -159,6 +114,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
 
   async #load(): Promise<ExcerptCache | undefined> {
     await using stack = new AsyncDisposableStack();
+    if (!this.#deps.render) this.#renderer = stack.use(new ExcerptRenderer());
     let cache = this.#deps.cache;
     if (this.#deps.openStore) {
       try {
@@ -173,6 +129,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       await Promise.allSettled(
         [...this.#pending.values()].map((p) => p.promise),
       );
+      await this.#tail;
     });
     this.commit(stack.move());
     return cache;
@@ -212,24 +169,44 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     ]);
     let pending = this.#pending.get(pendingKey);
     if (!pending || pending.controller.signal.aborted) {
-      if (this.#pending.size >= 128) {
+      if (this.#jobs >= 128) {
         logger.debug("Excerpt unavailable: queue full", {
           key,
-          queued: this.#pending.size,
+          queued: this.#jobs,
         });
         return { kind: "unavailable" };
       }
       const controller = new AbortController();
-      const promise = this.#tail.then(() => {
+      this.#jobs++;
+      const promise = this.#tail.then(async () => {
+        if (this.#stalled) return { kind: "unavailable" } as const;
         const bounded = AbortSignal.any([
           controller.signal,
+          this.#shutdown.signal,
           AbortSignal.timeout(35_000),
         ]);
         bounded.throwIfAborted();
-        return abortable(
-          this.#resolve(snapshot, { key, cache, generation }, bounded),
+        const job = this.#resolve(
+          snapshot,
+          { key, cache, generation },
           bounded,
         );
+        try {
+          return await abortable(job, bounded);
+        } finally {
+          // Caller cancellation is immediate; the queue still owns teardown.
+          // A host that cannot settle must not accumulate more active jobs.
+          await abortable(
+            job.then(
+              () => undefined,
+              () => undefined,
+            ),
+            AbortSignal.timeout(5_000),
+          ).catch(() => {
+            this.#stalled = true;
+            logger.debug("Excerpt queue stopped after unsettled teardown");
+          });
+        }
       });
       pending = { controller, promise, users: 0 };
       this.#pending.set(pendingKey, pending);
@@ -237,6 +214,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       const held = pending;
       void promise
         .finally(() => {
+          this.#jobs--;
           if (this.#pending.get(pendingKey) === held)
             this.#pending.delete(pendingKey);
         })
@@ -299,7 +277,9 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       freshnessChecked: !!pdf,
     });
     try {
-      const bytes = await (this.#deps.render ?? renderExcerpt)(request, signal);
+      const bytes = await (this.#deps.render
+        ? this.#deps.render(request, signal)
+        : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
       if (pdf && generation === this.#generation)
         await persistent?.put(key, { bytes, pdf }).catch((error) => {
