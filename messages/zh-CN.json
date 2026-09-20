@@ -1,4 +1,10 @@
 {
+  "settings_excerpt_cache_clear_name": "清除摘录图片缓存",
+  "settings_excerpt_cache_clear_desc": "删除当前设备上此仓库的摘录图片缓存。",
+  "settings_excerpt_cache_clear_confirm_body": "缓存的摘录图片将在需要时重新生成。已保存到仓库的图片将保持不变。",
+  "settings_excerpt_cache_clear_action": "清除缓存",
+  "notice_excerpt_cache_cleared": "摘录图片缓存已清除。",
+  "notice_excerpt_cache_clear_failed": "无法清除摘录图片缓存。",
   "template_workbench_shared_template": "共享模板：{name}。其他笔记也可使用。",
   "template_workbench_auto_save_scope": "编辑会自动保存并刷新预览。",
   "template_workbench_update_this_note": "更新此笔记",

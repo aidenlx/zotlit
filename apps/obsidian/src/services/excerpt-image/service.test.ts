@@ -27,12 +27,12 @@ const request: ExcerptRequest = {
     libraryRevision: 1,
   },
   sourceScope: "/zotero",
-  attachmentKey: "ATTACH01",
   libraryID: 1,
+  attachmentKey: "ATTACH01",
   pdfPath: "/paper.pdf",
   zoteroPngPath: "/fallback.png",
 };
-const generated = new Uint8Array([1, 2, 3]);
+const generated: Uint8Array = new Uint8Array([1, 2, 3]);
 const fallback = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 9]);
 const inkRequest: ExcerptRequest = {
   ...request,
@@ -205,6 +205,104 @@ describe("Excerpt Image resolution", () => {
     ).toEqual({ kind: "unavailable" });
     expect(render).toHaveBeenCalledTimes(3);
   });
+
+  it("keeps pre-clear work out of storage and starts a new generation for later callers", async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    const started = Promise.withResolvers<void>();
+    const entries = new Map<string, ExcerptEntry>();
+    const put = vi.fn(async (key: string, entry: ExcerptEntry) => {
+      entries.set(key, entry);
+    });
+    const render = vi
+      .fn(async () => generated)
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return gate.promise;
+      });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render,
+      cache: {
+        get: async (key) => entries.get(key),
+        put,
+        clear: async () => {
+          entries.clear();
+        },
+      },
+    });
+    const old = service.resolve(request);
+    await started.promise;
+    await service.clear();
+    const current = service.resolve(request);
+    gate.resolve(generated);
+    expect(await old).toMatchObject({ provenance: "rendered" });
+    expect(await current).toMatchObject({ provenance: "rendered" });
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(entries.size).toBe(1);
+  });
+
+  it("revalidates an unchecked entry when the PDF returns", async () => {
+    const stamp = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue({ size: 101, mtimeMs: 11 });
+    const render = vi.fn(async () => generated);
+    await using service = new ExcerptImageService({
+      stamp,
+      render,
+      cache: {
+        get: async () => ({
+          bytes: generated,
+          pdf: { size: 100, mtimeMs: 10 },
+        }),
+        put: async () => {},
+      },
+    });
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      freshness: "unchecked",
+    });
+    expect(render).not.toHaveBeenCalled();
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+      freshness: "checked",
+    });
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("degrades after open and read failures and refuses persistence without a source scope", async () => {
+    const render = vi.fn(async () => generated);
+    await using failedOpen = new ExcerptImageService({
+      render,
+      openStore: async () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(await failedOpen.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    await expect(failedOpen.clear()).rejects.toThrow("could not be opened");
+    const get = vi.fn(async (): Promise<ExcerptEntry | undefined> => {
+      throw new Error("read failed");
+    });
+    const put = vi.fn(async () => {});
+    await using service = new ExcerptImageService({
+      render,
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      cache: { get, put },
+    });
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    get.mockClear();
+    put.mockClear();
+    expect(
+      await service.resolve({ ...request, sourceScope: "" }),
+    ).toMatchObject({ provenance: "rendered" });
+    expect(get).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
   it("observes an existing rejection even when cancellation already happened", async () => {
     const signal = AbortSignal.abort(new Error("cancelled"));
     await expect(
@@ -323,6 +421,33 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("isolates geometry, renderer input, Library, and source identities", () => {
+    const api = {
+      ...request,
+      source: { kind: "zotero-local-api" as const, serverID: "SAME" },
+    };
+    expect(excerptKey({ ...api, libraryID: 2 })).not.toBe(excerptKey(api));
+    if (request.source.kind !== "zotero-db")
+      throw new Error("Expected database fixture");
+    for (const serverID of [null, "SAME"]) {
+      const first = {
+        ...request,
+        source: {
+          ...request.source,
+          database: { userID: 1, localUserKey: "LOCAL-A", serverID },
+        },
+      };
+      const second = {
+        ...first,
+        source: {
+          ...first.source,
+          database: { userID: 2, localUserKey: "LOCAL-B", serverID },
+        },
+      };
+      expect(excerptKey(first)).not.toBe(excerptKey(second));
+      expect(
+        excerptKey({ ...first, sourceScope: "/copied-database" }),
+      ).not.toBe(excerptKey(first));
+    }
     const changed = structuredClone(request);
     changed.annotation.position = {
       kind: "pdf-rects",

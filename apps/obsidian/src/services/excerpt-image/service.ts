@@ -9,6 +9,7 @@ import type {
 import { Service } from "@/services/service-base";
 
 import { abortable, renderExcerpt } from "./renderer";
+import type { ExcerptStore } from "./store";
 export { excerptRequest } from "./request";
 
 const logger = getLogger("excerpt-image");
@@ -19,11 +20,12 @@ export interface ExcerptRequest {
   source: AnnotationSource;
   sourceScope: string;
   attachmentKey: string;
-  libraryID?: number;
+  libraryID: number;
   pdfPath: string | null;
   zoteroPngPath: string | null;
 }
 
+/** Size/mtime validation intentionally cannot detect a replacement with identical metadata. */
 export interface PdfStamp {
   size: number;
   mtimeMs: number;
@@ -33,8 +35,9 @@ export interface ExcerptEntry {
   pdf: PdfStamp;
 }
 export interface ExcerptCache {
-  get(key: string): Promise<ExcerptEntry | undefined>;
+  get(key: string, pdf?: PdfStamp): Promise<ExcerptEntry | undefined>;
   put(key: string, entry: ExcerptEntry): Promise<void>;
+  clear?(): Promise<void>;
 }
 export type ExcerptOutcome =
   | {
@@ -47,6 +50,7 @@ export type ExcerptOutcome =
 
 export interface ExcerptDeps {
   cache?: ExcerptCache;
+  openStore?: () => Promise<ExcerptStore>;
   stamp?: (path: string) => Promise<PdfStamp>;
   read?: (path: string, signal: AbortSignal) => Promise<Uint8Array>;
   render?: (
@@ -122,8 +126,7 @@ export function excerptKey(request: ExcerptRequest): string {
         EXCERPT_RENDERER_VERSION,
         request.sourceScope,
         excerptSourceIdentity(source),
-        request.libraryID ??
-          (source.kind === "zotero-db" ? source.libraryID : null),
+        request.libraryID,
         request.attachmentKey,
         a.key,
         excerptFingerprint(a),
@@ -139,12 +142,14 @@ interface Pending {
 }
 
 /** Owns resolution, shared requests, and the bounded rendering queue. */
-export class ExcerptImageService extends Service {
-  ready: Promise<void>;
+export class ExcerptImageService extends Service<ExcerptCache | undefined> {
+  ready: Promise<ExcerptCache | undefined>;
   readonly #deps;
   readonly #pending = new Map<string, Pending>();
   readonly #shutdown = new AbortController();
   #tail: Promise<unknown> = Promise.resolve();
+  #generation = 0;
+  #clearing: Promise<void> = Promise.resolve();
 
   constructor(deps: ExcerptDeps = {}) {
     super();
@@ -152,8 +157,16 @@ export class ExcerptImageService extends Service {
     this.ready = this.#load();
   }
 
-  async #load(): Promise<void> {
+  async #load(): Promise<ExcerptCache | undefined> {
     await using stack = new AsyncDisposableStack();
+    let cache = this.#deps.cache;
+    if (this.#deps.openStore) {
+      try {
+        cache = stack.use(await this.#deps.openStore());
+      } catch (error) {
+        logger.debug("Excerpt cache open failed", { error });
+      }
+    }
     stack.defer(async () => {
       this.#shutdown.abort();
       for (const pending of this.#pending.values()) pending.controller.abort();
@@ -162,6 +175,21 @@ export class ExcerptImageService extends Service {
       );
     });
     this.commit(stack.move());
+    return cache;
+  }
+
+  /** Clear only derived entries; old requests can finish but cannot refill them. */
+  clear(): Promise<void> {
+    this.#generation++;
+    const operation = this.#clearing.then(async () => {
+      const cache = await this.ready;
+      this.#shutdown.signal.throwIfAborted();
+      if (this.#deps.openStore && !cache)
+        throw new Error("Excerpt cache could not be opened");
+      await cache?.clear?.();
+    });
+    this.#clearing = operation.catch(() => undefined);
+    return operation;
   }
 
   async resolve(
@@ -170,11 +198,14 @@ export class ExcerptImageService extends Service {
   ): Promise<ExcerptOutcome> {
     // Capture the published input before startup or queued work can yield.
     const snapshot = structuredClone(request);
-    await this.ready;
+    const generation = this.#generation;
+    const cache = await this.ready;
+    await this.#clearing;
     signal?.throwIfAborted();
     this.#shutdown.signal.throwIfAborted();
     const key = excerptKey(snapshot);
     const pendingKey = JSON.stringify([
+      generation,
       key,
       snapshot.pdfPath,
       snapshot.zoteroPngPath,
@@ -195,7 +226,10 @@ export class ExcerptImageService extends Service {
           AbortSignal.timeout(35_000),
         ]);
         bounded.throwIfAborted();
-        return abortable(this.#resolve(snapshot, key, bounded), bounded);
+        return abortable(
+          this.#resolve(snapshot, { key, cache, generation }, bounded),
+          bounded,
+        );
       });
       pending = { controller, promise, users: 0 };
       this.#pending.set(pendingKey, pending);
@@ -219,9 +253,15 @@ export class ExcerptImageService extends Service {
 
   async #resolve(
     request: ExcerptRequest,
-    key: string,
+    context: {
+      key: string;
+      cache: ExcerptCache | undefined;
+      generation: number;
+    },
     signal: AbortSignal,
   ): Promise<ExcerptOutcome> {
+    const { key, cache, generation } = context;
+    const persistent = request.sourceScope ? cache : undefined;
     signal.throwIfAborted();
     const stamp =
       this.#deps.stamp ??
@@ -235,7 +275,7 @@ export class ExcerptImageService extends Service {
           return undefined;
         })
       : undefined;
-    const cached = await this.#deps.cache?.get(key).catch((error) => {
+    const cached = await persistent?.get(key, pdf).catch((error) => {
       logger.debug("Excerpt cache read failed", { key, error });
       return undefined;
     });
@@ -261,8 +301,8 @@ export class ExcerptImageService extends Service {
     try {
       const bytes = await (this.#deps.render ?? renderExcerpt)(request, signal);
       signal.throwIfAborted();
-      if (pdf)
-        await this.#deps.cache?.put(key, { bytes, pdf }).catch((error) => {
+      if (pdf && generation === this.#generation)
+        await persistent?.put(key, { bytes, pdf }).catch((error) => {
           logger.debug("Excerpt cache write failed", { key, error });
         });
       logger.debug("Excerpt rendered", {

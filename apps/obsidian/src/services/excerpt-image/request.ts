@@ -43,6 +43,7 @@ export function excerptRequest(options: {
     source,
     sourceScope: paths.dataDir,
     attachmentKey: annotation.parentKey,
+    libraryID: library.libraryID,
     pdfPath: attachmentAbsPath(attachment, paths),
     zoteroPngPath: resolveAnnotCachePath(
       { key: key.key, type: annotation.type },

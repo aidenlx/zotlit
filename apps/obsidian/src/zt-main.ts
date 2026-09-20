@@ -270,6 +270,7 @@ export default class ZotLitPlugin extends Plugin {
         customize,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
+        excerptImage: services.excerptImage,
         annotations: services.annotationRepository,
         writeAuthorization: services.zoteroLocalApi,
         template: services.template,

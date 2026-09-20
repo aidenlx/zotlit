@@ -5,6 +5,7 @@ import type { AnnotationRepository } from "@/services/annotation-repository/serv
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
+import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
@@ -107,6 +108,7 @@ export interface SettingTabContext {
   attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */
   citationIndex: CitationIndexActions;
+  excerptImage: Pick<ExcerptImageService, "clear">;
   /** The session's Editing Capability, read by the "Zotero editing" row. */
   annotations: AnnotationCapabilityActions;
   /** The Write Authorization that row grants and forgets. */

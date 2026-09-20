@@ -155,6 +155,12 @@ export function advancedPageItems(
       heading: m.settings_advanced_recovery_heading(),
       items: [
         {
+          id: "settings_excerpt_cache_clear",
+          name: m.settings_excerpt_cache_clear_name(),
+          desc: m.settings_excerpt_cache_clear_desc(),
+          action: () => showExcerptCacheClear(ctx),
+        },
+        {
           id: "settings_citation_index_reset",
           name: m.settings_citation_index_reset_name(),
           desc: m.settings_citation_index_reset_desc(),
@@ -192,6 +198,40 @@ async function resetCitationIndex(ctx: SettingTabContext): Promise<void> {
   } catch (error) {
     logger.error("Failed to reset the citation index", { error });
     new BaseNotice(m.notice_citation_index_reset_failed());
+  }
+}
+
+async function showExcerptCacheClear(ctx: SettingTabContext): Promise<void> {
+  const outcome = await clearExcerptCache({
+    confirm: () =>
+      confirm(
+        {
+          title: m.settings_excerpt_cache_clear_name(),
+          content: m.settings_excerpt_cache_clear_confirm_body(),
+          action: m.settings_excerpt_cache_clear_action(),
+          destructive: true,
+        },
+        ctx.app,
+      ),
+    clear: () => ctx.excerptImage.clear(),
+  });
+  if (outcome === "cleared") new BaseNotice(m.notice_excerpt_cache_cleared());
+  else if (outcome === "failed")
+    new BaseNotice(m.notice_excerpt_cache_clear_failed());
+}
+
+/** The confirmation decision gates storage; the settings seam renders its outcome. */
+export async function clearExcerptCache(actions: {
+  confirm: () => Promise<boolean>;
+  clear: () => Promise<void>;
+}): Promise<"cancelled" | "cleared" | "failed"> {
+  if (!(await actions.confirm())) return "cancelled";
+  try {
+    await actions.clear();
+    return "cleared";
+  } catch (error) {
+    logger.error("Failed to clear excerpt image cache", { error });
+    return "failed";
   }
 }
 

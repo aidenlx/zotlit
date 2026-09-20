@@ -1,4 +1,10 @@
 {
+  "settings_excerpt_cache_clear_name": "Clear excerpt image cache",
+  "settings_excerpt_cache_clear_desc": "Remove cached excerpt images on this device for this vault.",
+  "settings_excerpt_cache_clear_confirm_body": "Cached excerpt images will be generated again when needed. Images saved in your vault will remain unchanged.",
+  "settings_excerpt_cache_clear_action": "Clear cache",
+  "notice_excerpt_cache_cleared": "Excerpt image cache cleared.",
+  "notice_excerpt_cache_clear_failed": "Could not clear the excerpt image cache.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "profile_match_unmatched": "No profile matched.",
   "batch_profile_recovery_help": "The selected profile is unavailable. Choose a profile to create these notes.",

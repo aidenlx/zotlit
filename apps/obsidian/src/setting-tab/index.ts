@@ -63,6 +63,7 @@ export interface ZotLitSettingTabOptions {
   customize: CustomizeAction;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
+  excerptImage: SettingTabContext["excerptImage"];
   annotations: AnnotationCapabilityActions;
   writeAuthorization: WriteAuthorizationActions;
   template: TemplateService;
@@ -84,6 +85,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #customize: CustomizeAction;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
+  readonly #excerptImage: SettingTabContext["excerptImage"];
   readonly #annotations: AnnotationCapabilityActions;
   readonly #writeAuthorization: WriteAuthorizationActions;
   readonly #profile: ProfileService;
@@ -105,6 +107,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     customize,
     attachmentImport,
     citationIndex,
+    excerptImage,
     annotations,
     writeAuthorization,
     template,
@@ -132,6 +135,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#customize = customize;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
+    this.#excerptImage = excerptImage;
     this.#annotations = annotations;
     this.#writeAuthorization = writeAuthorization;
     this.#template = template;
@@ -241,6 +245,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       customize: this.#customize,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
+      excerptImage: this.#excerptImage,
       annotations: this.#annotations,
       writeAuthorization: this.#writeAuthorization,
       template: this.#template,
