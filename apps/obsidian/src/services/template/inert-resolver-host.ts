@@ -68,8 +68,8 @@ export function buildObsidianInertNoteResolvers(
     notImportedReason: m.template_data_explorer_not_imported,
     attachmentAbsPath: (attachment) =>
       attachmentAbsPath(attachment, { dataDir, baseAttachmentPath }),
-    attachmentFileLink: (attachment, page) =>
-      attachmentFileLink(attachment, { dataDir, baseAttachmentPath }, page),
+    attachmentFileLink: (attachment, anchor) =>
+      attachmentFileLink(attachment, { dataDir, baseAttachmentPath }, anchor),
     annotationCachePath: (annotation) =>
       resolveAnnotCachePath(annotation, {
         dataDir,

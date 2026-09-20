@@ -4,11 +4,13 @@ import { basename } from "node:path";
 
 import {
   fetchAnnotationsTemplateData,
+  formatAnnotationSubpath,
   narrowBaseDataToCiteItemData,
   withAnnotationCitation,
 } from "@zotlit/db";
 import type {
   Annotation,
+  AnnotationFileLinkAnchor,
   AnnotationResolvers,
   AnnotationTemplateContext,
   Attachment,
@@ -33,21 +35,25 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 /**
  * Build the {@link FallibleTemplateLink} for an attachment's on-disk file
- * (`[name](file://…)`). Rendered with no override it shows the filename and, for
- * annotation-level links, anchors to `#page=N` when `page` is a number; pass
- * `alias` / `subpath` to override either. The helper returns `null` when the
- * path cannot be resolved. This direct source link never queues Attachment
- * Import.
+ * (`[name](file://…)`). Rendered with no override it shows the filename and,
+ * for annotation-level links, anchors to the Annotation's page and to the
+ * Annotation itself (`#page=N&zt-annotation=KEY`); pass `alias` / `subpath` to
+ * override either. The helper returns `null` when the path cannot be resolved.
+ * This direct source link never queues Attachment Import.
  */
 export function attachmentFileLink(
   attachment: Attachment,
   ctx: AttachmentPathContext,
-  page?: number | null,
+  anchor?: AnnotationFileLinkAnchor,
 ): FallibleTemplateLink {
   const abs = attachmentAbsPath(attachment, ctx);
   if (!abs) return () => null;
   const filename = basename(abs) || "attachment";
-  return fileUrlLink(abs, filename, page != null ? `#page=${page}` : "");
+  return fileUrlLink(
+    abs,
+    filename,
+    anchor ? formatAnnotationSubpath(anchor) : "",
+  );
 }
 
 /**
@@ -67,8 +73,8 @@ export function buildAnnotationResolvers(options: {
 
   return {
     filePath: (a) => attachmentAbsPath(a, { dataDir, baseAttachmentPath }),
-    fileLink: (a, page) =>
-      attachmentFileLink(a, { dataDir, baseAttachmentPath }, page),
+    fileLink: (a, anchor) =>
+      attachmentFileLink(a, { dataDir, baseAttachmentPath }, anchor),
     commentToMarkdown: (html) => {
       commentTurndown ??= createCommentTurndown(TurndownService);
       return commentToMarkdown(commentTurndown, html);

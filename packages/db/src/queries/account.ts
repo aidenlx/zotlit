@@ -27,6 +27,13 @@ export interface ZoteroUserIdentity {
   username: string | null;
 }
 
+export interface ZoteroDatabaseIdentity {
+  userID: number | null;
+  localUserKey: string | null;
+  /** Exact Local API database id, or `null` before Zotero initializes it. */
+  serverID: string | null;
+}
+
 const identityQuery = defineQuery<void>()((db) =>
   db.query.settings.findMany({
     columns: { key: true, value: true },
@@ -34,6 +41,14 @@ const identityQuery = defineQuery<void>()((db) =>
       setting: "account",
       key: { in: ["userID", "localUserKey", "username"] },
     },
+  }),
+);
+
+const localApiIdentityQuery = defineQuery<void>()((db) =>
+  db.query.settings.findMany({
+    columns: { value: true },
+    where: { setting: "localAPI", key: "serverID" },
+    limit: 1,
   }),
 );
 
@@ -62,5 +77,18 @@ export function getZoteroIdentity(db: NodeDatabaseClient): ZoteroUserIdentity {
     userID: resolvedUserID,
     localUserKey,
     username: text("username"),
+  };
+}
+
+/** Identity needed to bind a verified database snapshot to a Local API session. */
+export function getZoteroDatabaseIdentity(
+  db: NodeDatabaseClient,
+): ZoteroDatabaseIdentity {
+  const { userID, localUserKey } = getZoteroIdentity(db);
+  const value = localApiIdentityQuery.prepared(db).all()[0]?.value;
+  return {
+    userID,
+    localUserKey,
+    serverID: typeof value === "string" && value !== "" ? value : null,
   };
 }

@@ -462,6 +462,8 @@ export class ZoteroLocalApiClient extends Service<void> {
     const library = libraryPath(parsed);
 
     const annotations: LocalApiAnnotation[] = [];
+    const keys = new Set<string>();
+    let expectedTotal: number | null | undefined;
     for (;;) {
       const query = new URLSearchParams({
         itemType: "annotation",
@@ -480,14 +482,37 @@ export class ZoteroLocalApiClient extends Service<void> {
 
       const page = readAnnotationPage(reply.value.text, attachmentKey);
       if ("failure" in page) return this.#report(page);
+      const total = totalResults(reply.value.headers);
+      if (total === null) {
+        return this.#report({
+          failure: invalid("annotation page named no valid total"),
+        });
+      }
+      if (expectedTotal === undefined) expectedTotal = total;
+      if (expectedTotal !== total) {
+        return this.#report({
+          failure: invalid("annotation total changed during pagination"),
+        });
+      }
+      for (const { key } of page.value) {
+        if (keys.has(key)) {
+          return this.#report({
+            failure: invalid("annotation page repeated an annotation"),
+          });
+        }
+        keys.add(key);
+      }
       annotations.push(...page.value);
 
-      const total = totalResults(reply.value.headers);
       if (
         page.value.length < PAGE_SIZE ||
-        total === null ||
-        annotations.length >= total
+        annotations.length >= expectedTotal
       ) {
+        if (annotations.length !== expectedTotal) {
+          return this.#report({
+            failure: invalid("annotation pages did not match their total"),
+          });
+        }
         logger.debug("Annotations read from the Zotero Local API", {
           attachmentKey,
           annotations: annotations.length,

@@ -890,6 +890,8 @@ describe("citation resolution", () => {
     // group 9, which lives in libraryID 7.
     vi.mocked(getLibraryByGroupID).mockReturnValue({
       libraryID: 7,
+      version: 0,
+      clientVersion: null,
       type: "group",
       groupID: 9,
       name: "Team Group",

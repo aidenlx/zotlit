@@ -5,10 +5,15 @@ import type { SQLocalDatabaseClient } from "@/client/web";
 
 import { defineQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
+import { hasClientRevisions, hasClientRevisionsAsync } from "./schema-version";
 
 export interface Library {
   libraryID: number;
   type: LibraryType;
+  /** Last committed Zotero server revision recorded for this Library. */
+  version: number;
+  /** Last committed local client revision recorded for this Library. */
+  clientVersion: number | null;
   /** `groups.groupID` when {@link type} is `"group"`, `null` for the user library. */
   groupID: number | null;
   /** `groups.name` when {@link type} is `"group"`, `null` for the user library. */
@@ -16,7 +21,7 @@ export interface Library {
 }
 
 const libraryColumns = {
-  columns: { libraryID: true, type: true },
+  columns: { libraryID: true, type: true, version: true, clientVersion: true },
   with: {
     groups: {
       columns: { groupID: true, name: true },
@@ -31,6 +36,14 @@ const librariesQuery = defineQuery<void>()((db) =>
   }),
 );
 
+const legacyLibrariesQuery = defineQuery<void>()((db) =>
+  db.query.libraries.findMany({
+    columns: { libraryID: true, type: true, version: true },
+    with: libraryColumns.with,
+    orderBy: { libraryID: "asc" },
+  }),
+);
+
 const libraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
   (db, { placeholder }) =>
     db.query.libraries.findMany({
@@ -40,12 +53,26 @@ const libraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
     }),
 );
 
-type LibraryRow = QueryRow<typeof librariesQuery>;
+const legacyLibraryByGroupIDQuery = defineQuery<{ groupID: number }>()(
+  (db, { placeholder }) =>
+    db.query.libraries.findMany({
+      columns: { libraryID: true, type: true, version: true },
+      with: libraryColumns.with,
+      where: { groups: { groupID: placeholder("groupID") } },
+      limit: 1,
+    }),
+);
+
+type LibraryRow =
+  | QueryRow<typeof librariesQuery>
+  | QueryRow<typeof legacyLibrariesQuery>;
 
 function toLibrary(row: LibraryRow): Library {
   return {
     libraryID: row.libraryID,
     type: row.type,
+    version: row.version,
+    clientVersion: "clientVersion" in row ? row.clientVersion : null,
     groupID: row.groups?.groupID ?? null,
     name: row.groups?.name ?? null,
   };
@@ -57,7 +84,10 @@ function toLibrary(row: LibraryRow): Library {
  * can localize labels itself.
  */
 export function getLibraries(db: NodeDatabaseClient): Library[] {
-  return librariesQuery.prepared(db).all().map(toLibrary);
+  const rows = hasClientRevisions(db)
+    ? librariesQuery.prepared(db).all()
+    : legacyLibrariesQuery.prepared(db).all();
+  return rows.map(toLibrary);
 }
 
 /**
@@ -68,13 +98,17 @@ export function getLibraryByGroupID(
   db: NodeDatabaseClient,
   groupID: number,
 ): Library | null {
-  const row = libraryByGroupIDQuery.prepared(db).all({ groupID })[0];
+  const row = hasClientRevisions(db)
+    ? libraryByGroupIDQuery.prepared(db).all({ groupID })[0]
+    : legacyLibraryByGroupIDQuery.prepared(db).all({ groupID })[0];
   return row ? toLibrary(row) : null;
 }
 
 export async function getLibrariesAsync(
   db: SQLocalDatabaseClient,
 ): Promise<Library[]> {
-  const rows = await librariesQuery.prepared(db).all();
+  const rows = (await hasClientRevisionsAsync(db))
+    ? await librariesQuery.prepared(db).all()
+    : await legacyLibrariesQuery.prepared(db).all();
   return rows.map(toLibrary);
 }

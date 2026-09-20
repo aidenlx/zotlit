@@ -247,17 +247,10 @@ function emptyState(state: AnnotViewBodyState): AnnotViewBody {
 /** What the condition lines read. */
 export type ConditionLineState = Pick<
   AnnotState,
-  "annotationSource" | "attachments" | "followMode" | "zoteroReaderClosed"
+  "attachments" | "followMode" | "zoteroReaderClosed"
 >;
 
-/**
- * What the list on screen cannot say for itself, in the order it is read: why
- * the reader is silent, then which source answered.
- *
- * The Zotero Local API source says nothing here — the source region's tooltip
- * carries "From Zotero" — and the Zotero DB line carries no age, because the
- * DB read path has no capture timestamp to show yet.
- */
+/** What the list on screen cannot say for itself: why the reader is silent. */
 export function conditionLines(state: ConditionLineState): string[] {
   const lines: string[] = [];
   if (
@@ -266,9 +259,6 @@ export function conditionLines(state: ConditionLineState): string[] {
     state.attachments !== null
   ) {
     lines.push(m.annot_view_reader_closed());
-  }
-  if (state.annotationSource?.kind === "zotero-db") {
-    lines.push(m.annot_view_source_database());
   }
   return lines;
 }

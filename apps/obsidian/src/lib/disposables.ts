@@ -58,6 +58,26 @@ export function registerDomEvent(
   return disposable(() => el.removeEventListener(type, callback, options));
 }
 
+/**
+ * Register a window event for the window that owns `el`, and follow `el` when
+ * Obsidian moves its view into or out of a pop-out window.
+ */
+export function registerMigratingWindowEvent<K extends keyof WindowEventMap>(
+  el: HTMLElement,
+  type: K,
+  callback: (this: HTMLElement, ev: WindowEventMap[K]) => any,
+): Disposable {
+  let event = registerDomEvent(el.win, type, callback);
+  const stopMigration = el.onWindowMigrated((win) => {
+    event[Symbol.dispose]();
+    event = registerDomEvent(win, type, callback);
+  });
+  return disposable(() => {
+    stopMigration();
+    event[Symbol.dispose]();
+  });
+}
+
 export class DisposableAbortController
   extends AbortController
   implements Disposable

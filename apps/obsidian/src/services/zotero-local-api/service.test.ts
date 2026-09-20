@@ -109,6 +109,45 @@ it("reads every Annotation of one Attachment in Zotero's reading order", async (
   });
 });
 
+it.each([null, "", " ", "two"])(
+  "rejects an empty page whose total header is %j",
+  async (total) => {
+    await using stack = new AsyncDisposableStack();
+    const { client } = await setup(stack, {
+      children: () => {
+        const response = annotationPage([]);
+        if (total === null) response.headers.delete("Total-Results");
+        else response.headers.set("Total-Results", total);
+        return response;
+      },
+    });
+    await client.probe();
+
+    expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+      failure: {
+        kind: "invalid-response",
+        issue: "annotation page named no valid total",
+      },
+    });
+  },
+);
+
+it("rejects a duplicate Annotation within one page", async () => {
+  await using stack = new AsyncDisposableStack();
+  const annotation = ROUGIER_ANNOTATIONS[0]!;
+  const { client } = await setup(stack, {
+    children: () => annotationPage([annotation, annotation]),
+  });
+  await client.probe();
+
+  expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+    failure: {
+      kind: "invalid-response",
+      issue: "annotation page repeated an annotation",
+    },
+  });
+});
+
 it("carries a page label and tags, in the order Zotero answered them", async () => {
   await using stack = new AsyncDisposableStack();
   const { client } = await setup(stack, {
@@ -198,6 +237,25 @@ it("follows the list route to its end, so an Attachment past one page is whole",
     expect(url.searchParams.get("sort")).toBe("dateAdded");
     expect(url.searchParams.get("direction")).toBe("asc");
   }
+});
+
+it("rejects a collection whose total changes between pages", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: ({ start }: ChildrenRequest) =>
+      annotationPage(manyAnnotations(start, start === 0 ? 100 : 30), {
+        total: start === 0 ? 130 : 131,
+        start,
+      }),
+  });
+  await client.probe();
+
+  expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+    failure: {
+      kind: "invalid-response",
+      issue: "annotation total changed during pagination",
+    },
+  });
 });
 
 it("answers an empty list for a key Zotero does not hold", async () => {

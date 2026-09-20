@@ -64,6 +64,8 @@ export interface Annotation {
   libraryID: number;
   dateAdded: Temporal.Instant;
   dateModified: Temporal.Instant;
+  /** Committed Zotero object revision stored with this Annotation. */
+  version: number;
   /** Raw `itemAnnotations.type` int; resolve names via {@link annotationTypeToName}. */
   type: AnnotationType;
   /**

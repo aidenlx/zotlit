@@ -15,6 +15,8 @@ export interface PairedRunOptions {
    * @default false
    */
   localApi?: boolean;
+  /** Seed the Development Vault's remembered Local API write grant. */
+  grantLocalApiWrites?: boolean;
 }
 
 export interface DevelopmentVault {
@@ -57,6 +59,7 @@ export interface PairedRunPorts {
     liveUpdatePort: number;
     zoteroHttpPort: number;
     localApi: boolean;
+    grantLocalApiWrites: boolean;
   }): Promise<DevelopmentVault>;
   openPairedZotero(): Promise<PairedZotero>;
   startDevelopmentSession(options: {
@@ -70,6 +73,7 @@ export async function runPairedRun(
   ports: PairedRunPorts,
 ): Promise<void> {
   const localApi = options.localApi ?? false;
+  const grantLocalApiWrites = options.grantLocalApiWrites ?? true;
   if (options.mode === "open") {
     await ports.stopLivePairedZotero();
     const liveUpdatePort = await ports.allocateLiveUpdatePort();
@@ -82,6 +86,7 @@ export async function runPairedRun(
       liveUpdatePort,
       zoteroHttpPort,
       localApi,
+      grantLocalApiWrites,
     });
     // Zotero reads `httpServer.port` during startup, after the generated
     // profile has been written above.
@@ -110,6 +115,7 @@ export async function runPairedRun(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   });
 
   const session = await ports.startDevelopmentSession({

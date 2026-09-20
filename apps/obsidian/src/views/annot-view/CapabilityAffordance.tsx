@@ -26,10 +26,9 @@ export interface CapabilityAffordanceProps {
 }
 
 /**
- * Always present, whatever the state: a plain icon while editing is on, the
- * same icon with what to do about it while authorization is needed, a spinner
- * while Zotero is being asked, a clock counting the rate limit down, and a
- * warning with the reason while editing is off.
+ * Present while editing is unavailable: one labeled action with the setup or
+ * authorization step in its tooltip. Normal editing controls stand alone once
+ * editing is available.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1147
  */
@@ -41,8 +40,9 @@ export function CapabilityAffordance({
   const attachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
   const capability = useEditingCapability(capabilities, attachmentKey);
   const now = useCountdown(capability.kind === "cooldown", ref);
-  const { icon, tone, tooltip, spinning, countdown } =
-    editingCapabilityAffordance(capability, now);
+  const affordance = editingCapabilityAffordance(capability, now);
+  if (affordance === null) return null;
+  const { icon, tone, tooltip, label, spinning, countdown } = affordance;
 
   return (
     <div
@@ -58,6 +58,7 @@ export function CapabilityAffordance({
       {...tooltipAttrs(tooltip)}
     >
       <Icon name={icon} className={spinning ? "zt:animate-spin" : undefined} />
+      <span>{label}</span>
       {countdown !== null && (
         <span className="zt:text-xs zt:tabular-nums">{countdown}</span>
       )}

@@ -458,6 +458,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     this.#inFlight = true;
     this.#popup?.refresh();
+    let created = false;
     try {
       const position = {
         pageIndex: captured.pageIndex,
@@ -493,11 +494,16 @@ export class MarkCreation implements CreationGestures, Disposable {
         );
         return;
       }
-      if (outcome.kind === "created") this.#deps.reveal(outcome.annotationKey);
+      created = true;
+      this.#deps.reveal(outcome.annotationKey);
     } finally {
       this.#inFlight = false;
-      this.#clear();
-      this.#collapse();
+      if (created) {
+        this.#clear();
+        this.#collapse();
+      } else {
+        this.#popup?.refresh();
+      }
     }
   }
 

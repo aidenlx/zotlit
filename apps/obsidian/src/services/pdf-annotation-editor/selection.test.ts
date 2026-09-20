@@ -1,9 +1,13 @@
 // @vitest-environment happy-dom
-import { Menu } from "@mock/obsidian";
+import { Menu, Scope as MockScope } from "@mock/obsidian";
+import type { Scope } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  AnnotationRepositoryEvents,
+} from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
@@ -58,12 +62,56 @@ function rect({
 
 /** The repository, reduced to what the selection reads and writes through. */
 function annotationEdits(capability: EditingCapability = { kind: "writable" }) {
+  let commentDraft: {
+    annotationKey: string;
+    attachmentKey: string;
+    serverID: string;
+    baseline: string;
+    text: string;
+    state: { kind: "editing" };
+  } | null = null;
+  const listeners = new Map<string, Set<(...args: never[]) => void>>();
+  function on<K extends keyof AnnotationRepositoryEvents>(
+    event: K,
+    listener: AnnotationRepositoryEvents[K],
+  ): () => void {
+    const registered = listeners.get(event) ?? new Set();
+    const callback = listener as (...args: never[]) => void;
+    registered.add(callback);
+    listeners.set(event, registered);
+    return () => {
+      registered.delete(callback);
+    };
+  }
   return {
     capabilityFor: vi.fn(() => capability),
     mutationFor: vi.fn((): MutationState => IDLE),
     patchColor: vi.fn(async () => IDLE),
     deleteAnnotation: vi.fn(async () => IDLE),
-    on: vi.fn(() => () => undefined),
+    commentDraftFor: vi.fn(() => commentDraft),
+    editComment: vi.fn((annotationKey: string, text = "") => {
+      commentDraft = {
+        annotationKey,
+        attachmentKey: "ABCD2345",
+        serverID: "test",
+        baseline: "",
+        text,
+        state: { kind: "editing" },
+      };
+      return commentDraft;
+    }),
+    submitComment: vi.fn(async () => IDLE),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(async () => IDLE),
+    on: vi.fn(on),
+    hideCommentDraft() {
+      commentDraft = null;
+    },
+    emit(event: string, annotationKey: string) {
+      for (const listener of listeners.get(event) ?? []) {
+        listener(annotationKey as never);
+      }
+    },
   };
 }
 
@@ -108,6 +156,7 @@ function setup(
   let held = records;
   const selection = new MarkSelection({
     containerEl,
+    scope: new MockScope() as unknown as Scope,
     parent,
     attachmentKey: "ABCD2345",
     marks: () => groupAnnotationsByPage(held),
@@ -476,18 +525,16 @@ it("leaves every key to a text field it was typed into", () => {
   expect(h.annotations.patchColor).not.toHaveBeenCalled();
 });
 
-it("hands the comment and reveal verbs to the Annotation Card", () => {
+it("hands the reveal verb to the Annotation Card", () => {
   using h = setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='reveal']")!.click();
 
-  expect(h.gestures.revealAnnotation.mock.calls).toEqual([
-    ["WORD2222", { comment: true }],
-    ["WORD2222", { comment: false }],
-  ]);
+  expect(h.gestures.revealAnnotation).toHaveBeenCalledWith("WORD2222", {
+    comment: false,
+  });
 });
 
 it("deletes from the popup's own verb", () => {
@@ -498,6 +545,33 @@ it("deletes from the popup's own verb", () => {
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='delete']")!.click();
 
   expect(h.annotations.deleteAnnotation).toHaveBeenCalledWith("WORD2222");
+});
+
+it("closes a comment editor when a database switch hides its draft", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  const editor = popup.hoverEl.querySelector("textarea");
+  expect(editor).not.toBeNull();
+
+  h.annotations.hideCommentDraft();
+  h.annotations.emit("comment-draft-hidden", "WORD2222");
+
+  expect(popup.hoverEl.querySelector("textarea")).toBeNull();
+  expect(h.annotations.submitComment).not.toHaveBeenCalled();
+});
+
+it("keeps a comment editor open when an ordinary draft settles", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+
+  h.annotations.hideCommentDraft();
+  h.annotations.emit("comment-draft-changed", "WORD2222");
+
+  expect(popup.hoverEl.querySelector("textarea")).not.toBeNull();
 });
 
 it("says why an edit key cannot run, rather than writing under a block", () => {

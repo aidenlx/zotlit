@@ -1,5 +1,7 @@
 # The surfaces inside the PDF reader are vanilla DOM on Obsidian's popover
 
+The capability indicator described below is amended by [ADR 0047](0047-annotation-reading-is-continuous-and-editing-is-an-added-capability.md): a labeled enable-editing action guides setup, and ordinary read-only use carries no permission warning.
+
 Every other ZotLit surface is a Preact root. The three surfaces ZotLit puts inside Obsidian's native PDF reader are not: the Annotation Marks on each page, the Creation Toolbar in the reader's own toolbar slot, and the Mark Popup are vanilla DOM, and the Mark Popup is Obsidian's `HoverPopover` on the plugin's popout-aware base. No Preact root lives in the reader.
 
 ## Considered Options

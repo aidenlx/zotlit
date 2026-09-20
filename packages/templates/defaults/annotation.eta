@@ -1,5 +1,5 @@
 <% bq(() => { %>
-[!note] Page <%= zt.pageLabel %>
+[!note] Page <%= zt.pageLabel ? (zt.fileLink?.(zt.pageLabel) ?? zt.pageLabel) : "" %>
 
 <%= embed(zt.imgLink) %><%= zt.text %>
 <% if (zt.comment) { %>

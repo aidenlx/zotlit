@@ -196,6 +196,17 @@ File Link Capture ([ADR 0045](../apps/obsidian/docs/adr/0045-file-link-capture-p
 
 A change to the first two costs Capture its clicks; the link then opens in the system app, which is what happened before the feature existed. A change to the third or fourth is already covered by the reader seam's own failure mode: a notice, not a wrong file.
 
+## Two undocumented behaviours Mark Landing stands on
+
+Mark Landing ([ADR 0046](../apps/obsidian/docs/adr/0046-landing-on-a-mark-is-an-ephemeral-state-contract-read-at-the-leaf.md)) reads two more. Both were read out of the same 1.14.2 bundle, neither is live-measured yet, and both are re-verified whenever `minAppVersion` moves.
+
+| Behaviour | Where it is read | Why Mark Landing needs it |
+| --- | --- | --- |
+| `WorkspaceLeaf.setEphemeralState` is the only path the ephemeral state takes to a view | `setViewState`, which calls it unconditionally whenever an ephemeral state is given and compares nothing; the deferred view, which stores the whole object and replays it verbatim through `setViewState` on rerender; `History.updateState`, which restores through the same call | It is the one documented symbol every delivery path crosses, and the PDF view keeps nothing once the call returns |
+| An unknown key in a PDF fragment is inert | `applySubpath`, which parses the fragment with `URLSearchParams` and reads `page`, `offset`, `annotation`, `selection`, and `height` by name, looping over nothing | An Annotation Anchor rides beside `#page=N` without disturbing it, so a reader that is not listening still lands on the page |
+
+A change to the first costs a Landing its Anchor; the link then opens on its page, which is what ADR 0045 alone already did. A change to the second would have Obsidian claim `zt-annotation` for itself, which renaming the key answers.
+
 ## See also
 
 - [The Fixture](fixture.md), for the Paired Run and the Zotero Local API trial.
