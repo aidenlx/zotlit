@@ -28,6 +28,7 @@ import {
 import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
 import {
   authorizationCount,
@@ -1051,6 +1052,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           ),
         ).toBe(true);
+      }, 120000);
+
+      it("recovers an unchanged unavailable ink card through the actual Refresh gesture", async () => {
+        await verifyExcerptRefresh(vaultId!);
       }, 120000);
 
       it("refreshes external comments by focus and manual action without the Companion", async () => {

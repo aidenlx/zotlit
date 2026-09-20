@@ -47,6 +47,9 @@ export interface AnnotState {
   annotations: readonly AnnotationRecord[] | null;
   /** Which Annotation Source answered for {@link annotations}. */
   annotationSource: AnnotationSource | null;
+  annotationSourceScope: string | null;
+  /** Explicit Refresh retries excerpts even when the saved pixel inputs match. */
+  excerptRefresh: number;
   /** What the cards may do to the Attachment on screen. */
   capability: EditingCapability;
   /**
@@ -122,6 +125,8 @@ export function createAnnotStore() {
         attachmentLock: null,
         annotations: null,
         annotationSource: null,
+        annotationSourceScope: null,
+        excerptRefresh: 0,
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),

@@ -1,3 +1,37 @@
+import type {
+  AnnotationRecord,
+  AnnotationSource,
+} from "@/services/annotation-repository/service";
+import {
+  excerptFingerprint,
+  excerptSourceIdentity,
+} from "@/services/excerpt-image/service";
+
+export interface ExcerptImageTarget {
+  key: string;
+  annotation: AnnotationRecord;
+  source: AnnotationSource | null;
+  sourceScope: string | null;
+  refresh: number;
+}
+
+/** Retain the owned result when a published list changes only non-pixel input. */
+export function excerptImageTarget(
+  previous: ExcerptImageTarget | null,
+  input: Omit<ExcerptImageTarget, "key">,
+): ExcerptImageTarget {
+  const { annotation, source } = input;
+  const key = JSON.stringify([
+    annotation.key,
+    annotation.parentKey,
+    input.sourceScope,
+    input.refresh,
+    source && excerptSourceIdentity(source),
+    excerptFingerprint(annotation),
+  ]);
+  return previous?.key === key ? previous : { key, ...input };
+}
+
 /** Pure card lifecycle. URL ownership transfers only to the current target. */
 export type ExcerptImageState =
   | { kind: "disposed" }

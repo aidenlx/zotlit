@@ -26,6 +26,7 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import type { CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
+import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildAttachmentMenu, buildFollowModeMenu } from "./menus";
 import { attachmentLine } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
@@ -82,7 +83,7 @@ export interface AnnotActions {
   /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
   onDiscardConflict(annot: AnnotationRecord): void;
   resolveImage(
-    annot: AnnotationRecord,
+    target: ExcerptImageTarget,
     signal: AbortSignal,
   ): Promise<ExcerptOutcome>;
   getBacklink(annot: AnnotationRecord): string | undefined;

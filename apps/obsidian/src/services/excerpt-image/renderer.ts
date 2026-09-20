@@ -1,6 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 
+import {
+  clipExcerptBounds,
+  excerptBounds,
+  paintInk,
+  viewportBounds,
+} from "./geometry";
 import type { ExcerptRequest } from "./service";
 
 interface Viewport {
@@ -91,8 +97,10 @@ export async function renderExcerpt(
   const position = request.annotation.position;
   if (
     !request.pdfPath ||
-    request.annotation.type !== "image" ||
-    position.kind !== "pdf-rects"
+    !(
+      (request.annotation.type === "image" && position.kind === "pdf-rects") ||
+      (request.annotation.type === "ink" && position.kind === "pdf-ink")
+    )
   )
     throw new Error("Unsupported excerpt");
   const signal = AbortSignal.any([cancellation, AbortSignal.timeout(30_000)]);
@@ -126,32 +134,11 @@ export async function renderExcerpt(
   stack.defer(() => signal.removeEventListener("abort", cancelLoad));
   const pdf = await abortable(loading.promise, signal);
   const page = await abortable(pdf.getPage(position.pageIndex + 1), signal);
-  const rect = position.rects[0];
-  if (
-    !rect ||
-    !rect.every(Number.isFinite) ||
-    rect[2] <= rect[0] ||
-    rect[3] <= rect[1]
-  )
-    throw new Error("Invalid excerpt bounds");
-  const crop = [
-    Math.max(rect[0], page.view[0]!),
-    Math.max(rect[1], page.view[1]!),
-    Math.min(rect[2], page.view[2]!),
-    Math.min(rect[3], page.view[3]!),
-  ];
-  if (crop[2]! <= crop[0]! || crop[3]! <= crop[1]!)
-    throw new Error("Excerpt outside PDF page");
+  const rect = excerptBounds(request.annotation);
+  const crop = clipExcerptBounds(rect, page.view);
   const bounds = (scale: number) => {
     const viewport = page.getViewport({ scale });
-    const a = viewport.convertToViewportPoint(crop[0]!, crop[1]!);
-    const b = viewport.convertToViewportPoint(crop[2]!, crop[3]!);
-    return [
-      Math.min(a[0], b[0]),
-      Math.min(a[1], b[1]),
-      Math.abs(b[0] - a[0]),
-      Math.abs(b[1] - a[1]),
-    ];
+    return viewportBounds(crop, viewport);
   };
   let scale = 4;
   let box = bounds(scale);
@@ -185,6 +172,7 @@ export async function renderExcerpt(
   signal.addEventListener("abort", cancelRender, { once: true });
   stack.defer(() => signal.removeEventListener("abort", cancelRender));
   await abortable(task.promise, signal);
+  paintInk({ annotation: request.annotation, viewport, context });
   const blob = await abortable(
     new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(

@@ -19,6 +19,7 @@ export interface ExcerptRequest {
   source: AnnotationSource;
   sourceScope: string;
   attachmentKey: string;
+  libraryID?: number;
   pdfPath: string | null;
   zoteroPngPath: string | null;
 }
@@ -54,7 +55,7 @@ export interface ExcerptDeps {
   ) => Promise<Uint8Array>;
 }
 
-export const EXCERPT_RENDERER_VERSION = 1;
+export const EXCERPT_RENDERER_VERSION = 2;
 export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
 
 /** Check the open file before allocating; one extra byte detects later growth. */
@@ -84,24 +85,48 @@ async function readFallback(
   return bytes.subarray(0, offset);
 }
 
-/** Excludes comments and tags, which cannot change the pixels. */
+/** Canonical pixel inputs exclude revision, text, labels, comments, and tags. */
+export function excerptFingerprint(annotation: AnnotationRecord): string {
+  const p = annotation.position;
+  if (annotation.type === "ink" && p.kind === "pdf-ink")
+    return JSON.stringify([
+      "ink",
+      p.pageIndex,
+      p.width,
+      p.paths,
+      annotation.color?.toLowerCase() ?? null,
+    ]);
+  if (annotation.type === "image" && p.kind === "pdf-rects")
+    return JSON.stringify(["image", p.pageIndex, p.rects[0]]);
+  return JSON.stringify([annotation.type, p.kind]);
+}
+
+export function excerptSourceIdentity(source: AnnotationSource): unknown[] {
+  return source.kind === "zotero-db"
+    ? [
+        source.kind,
+        source.database.userID,
+        source.database.localUserKey,
+        source.database.serverID,
+        source.libraryID,
+      ]
+    : [source.kind, source.serverID];
+}
+
+/** Excludes source revision and record versions, which cannot change the pixels. */
 export function excerptKey(request: ExcerptRequest): string {
   const { annotation: a, source } = request;
-  const identity =
-    source.kind === "zotero-db"
-      ? [source.kind, source.database, source.libraryID]
-      : [source.kind, source.serverID];
   return createHash("sha256")
     .update(
       JSON.stringify([
         EXCERPT_RENDERER_VERSION,
         request.sourceScope,
-        identity,
+        excerptSourceIdentity(source),
+        request.libraryID ??
+          (source.kind === "zotero-db" ? source.libraryID : null),
         request.attachmentKey,
         a.key,
-        a.type,
-        a.position,
-        a.type === "ink" ? a.color : null,
+        excerptFingerprint(a),
       ]),
     )
     .digest("hex");
@@ -143,11 +168,11 @@ export class ExcerptImageService extends Service {
     request: ExcerptRequest,
     signal?: AbortSignal,
   ): Promise<ExcerptOutcome> {
+    // Capture the published input before startup or queued work can yield.
+    const snapshot = structuredClone(request);
     await this.ready;
     signal?.throwIfAborted();
     this.#shutdown.signal.throwIfAborted();
-    // Clone before yielding: a caller's later edits cannot change this request.
-    const snapshot = structuredClone(request);
     const key = excerptKey(snapshot);
     const pendingKey = JSON.stringify([
       key,

@@ -31,11 +31,13 @@ import { cardControls, commentIcon } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 import {
   excerptImageForTarget,
+  excerptImageTarget,
   transitionExcerptImage,
 } from "./excerpt-image-state";
 import type {
   ExcerptImageEvent,
   ExcerptImageState,
+  ExcerptImageTarget,
 } from "./excerpt-image-state";
 import {
   useAnnotStore,
@@ -537,7 +539,16 @@ function ExcerptBlock({
 function ExcerptImage({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
   const source = useAnnotStore((s) => s.annotationSource);
-  const target = useMemo(() => ({ annot, source }), [annot, source]);
+  const sourceScope = useAnnotStore((s) => s.annotationSourceScope);
+  const refresh = useAnnotStore((s) => s.excerptRefresh);
+  const heldTarget = useRef<ExcerptImageTarget | null>(null);
+  const target = excerptImageTarget(heldTarget.current, {
+    annotation: annot,
+    source,
+    sourceScope,
+    refresh,
+  });
+  heldTarget.current = target;
   const state = useRef<ExcerptImageState>({ kind: "disposed" });
   const [image, setImage] = useState(state.current);
   const transition = useCallback((event: ExcerptImageEvent) => {
@@ -551,7 +562,7 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
     const controller = new AbortController();
     transition({ kind: "start", target });
     void actions
-      .resolveImage(annot, controller.signal)
+      .resolveImage(target, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         const url =
@@ -569,7 +580,7 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
       controller.abort();
       transition({ kind: "dispose" });
     };
-  }, [actions, annot, target, transition]);
+  }, [actions, target, transition]);
   const current = excerptImageForTarget(image, target);
   if (current.kind === "loading" || current.kind === "disposed")
     return <span aria-busy="true">{m.annot_view_image_loading()}</span>;

@@ -279,9 +279,12 @@ export class AnnotationView extends ItemView {
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       scope: this.scope,
-      resolveImage: async (annotation, signal) => {
-        const source = this.#store.getState().annotationSource;
-        if (!source || this.#deps.db.state !== "ready")
+      resolveImage: async ({ annotation, source, sourceScope }, signal) => {
+        if (
+          !source ||
+          sourceScope !== this.#deps.zoteroPref.dataDir ||
+          this.#deps.db.state !== "ready"
+        )
           return { kind: "unavailable" };
         const request = excerptRequest({
           annotation,
@@ -308,6 +311,11 @@ export class AnnotationView extends ItemView {
         const attachmentKey = this.#store.getState().selectedAttachmentKey;
         if (attachmentKey === null) return;
         await this.#deps.annotations.refresh(attachmentKey);
+        await this.#reading;
+        if (this.#store.getState().selectedAttachmentKey === attachmentKey)
+          this.#store.setState((state) => ({
+            excerptRefresh: state.excerptRefresh + 1,
+          }));
       },
       noteFeature: this.#deps.noteFeature,
       onSetFollowMode: (mode) => this.#setFollowMode(mode),
@@ -747,6 +755,7 @@ export class AnnotationView extends ItemView {
           selectedAttachmentKey: null,
           annotations: null,
           annotationSource: null,
+          annotationSourceScope: null,
         });
         return;
       }
@@ -815,6 +824,7 @@ export class AnnotationView extends ItemView {
   ): void {
     const read = ++this.#reads;
     const memoryKey = this.#memoryKey;
+    const sourceScope = this.#deps.zoteroPref.dataDir;
     this.#reading = this.#deps.annotations
       .read(attachmentKey)
       .then((list) => {
@@ -822,7 +832,12 @@ export class AnnotationView extends ItemView {
         // moved on leaves this answer where it fell. A null answer is a read
         // an invalidation cancelled; the same invalidation announces the
         // change this view re-reads on, so the list is not left waiting.
-        if (read !== this.#reads || list === null) return;
+        if (
+          read !== this.#reads ||
+          list === null ||
+          sourceScope !== this.#deps.zoteroPref.dataDir
+        )
+          return;
         const commentDrafts = new Map(
           list.annotations.flatMap((annotation) => {
             const draft = this.#deps.annotations.commentDraftFor(
@@ -834,6 +849,7 @@ export class AnnotationView extends ItemView {
         this.#store.setState({
           annotations: list.annotations,
           annotationSource: list.source,
+          annotationSourceScope: sourceScope,
           commentDrafts,
         });
         if (!restoreFilter || memoryKey === null) return;
@@ -1055,6 +1071,7 @@ export class AnnotationView extends ItemView {
       pinnable: null,
       annotations: null,
       annotationSource: null,
+      annotationSourceScope: null,
       commentDrafts: new Map(),
       editingCommentKey: null,
       selectedAnnotationKeys: [],

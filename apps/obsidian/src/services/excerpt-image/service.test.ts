@@ -28,11 +28,25 @@ const request: ExcerptRequest = {
   },
   sourceScope: "/zotero",
   attachmentKey: "ATTACH01",
+  libraryID: 1,
   pdfPath: "/paper.pdf",
   zoteroPngPath: "/fallback.png",
 };
 const generated = new Uint8Array([1, 2, 3]);
 const fallback = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 9]);
+const inkRequest: ExcerptRequest = {
+  ...request,
+  annotation: {
+    ...request.annotation,
+    type: "ink",
+    position: {
+      kind: "pdf-ink",
+      pageIndex: 0,
+      width: 2,
+      paths: [[10, 20, 30, 40]],
+    },
+  },
+};
 
 function fixture() {
   const entries = new Map<string, ExcerptEntry>();
@@ -60,6 +74,137 @@ function fixture() {
 }
 
 describe("Excerpt Image resolution", () => {
+  it("owns the published snapshot even when the caller edits it before startup settles", async () => {
+    const input = structuredClone(inkRequest);
+    let savedColor: string | null = null;
+    await using service = new ExcerptImageService({
+      render: async (snapshot) => {
+        savedColor = snapshot.annotation.color;
+        return generated;
+      },
+    });
+    const result = service.resolve(input);
+    input.annotation.color = "#0000ff";
+    await result;
+    expect(savedColor).toBe("#ff0000");
+  });
+  it("reuses canonical pixel inputs across non-rendering edits and source revisions", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(inkRequest);
+    const edited: ExcerptRequest = {
+      ...inkRequest,
+      annotation: {
+        ...inkRequest.annotation,
+        color: "#FF0000",
+        comment: "saved comment",
+        text: "text",
+        pageLabel: "iv",
+        tags: ["tag"],
+        version: 5,
+        position: {
+          paths: [[10, 20, 30, 40]],
+          width: 2,
+          pageIndex: 0,
+          kind: "pdf-ink",
+        },
+      },
+      source: {
+        ...request.source,
+        libraryRevision: 8,
+      } as ExcerptRequest["source"],
+    };
+    expect(excerptKey(edited)).toBe(excerptKey(inkRequest));
+    expect(await service.resolve(edited)).toMatchObject({
+      provenance: "cache",
+    });
+    expect(f.render).toHaveBeenCalledTimes(1);
+    for (const annotation of [
+      { ...edited.annotation, color: "#00ff00" },
+      {
+        ...edited.annotation,
+        position: {
+          kind: "pdf-ink" as const,
+          pageIndex: 1,
+          width: 2,
+          paths: [[10, 20, 30, 40]],
+        },
+      },
+      {
+        ...edited.annotation,
+        position: {
+          kind: "pdf-ink" as const,
+          pageIndex: 0,
+          width: 4,
+          paths: [[10, 20, 30, 40]],
+        },
+      },
+      {
+        ...edited.annotation,
+        position: {
+          kind: "pdf-ink" as const,
+          pageIndex: 0,
+          width: 2,
+          paths: [[10, 20, 30, 41]],
+        },
+      },
+    ])
+      expect(await service.resolve({ ...edited, annotation })).toMatchObject({
+        provenance: "rendered",
+      });
+    expect(f.render).toHaveBeenCalledTimes(5);
+  });
+
+  it("captures each rapid saved edit before waiting for an older render", async () => {
+    const started = Promise.withResolvers<void>();
+    const old = Promise.withResolvers<Uint8Array>();
+    const colors: (string | null)[] = [];
+    await using service = new ExcerptImageService({
+      render: async (snapshot) => {
+        colors.push(snapshot.annotation.color);
+        if (colors.length === 1) {
+          started.resolve();
+          return old.promise;
+        }
+        return generated;
+      },
+    });
+    const first = service.resolve(inkRequest);
+    await started.promise;
+    const second = service.resolve({
+      ...inkRequest,
+      annotation: { ...inkRequest.annotation, color: "#00ff00" },
+    });
+    const third = service.resolve({
+      ...inkRequest,
+      annotation: { ...inkRequest.annotation, color: "#0000ff" },
+    });
+    old.resolve(generated);
+    await Promise.all([first, second, third]);
+    expect(colors).toEqual(["#ff0000", "#00ff00", "#0000ff"]);
+  });
+
+  it("retries uncertain ink fallback and makes failed ink explicit", async () => {
+    const render = vi.fn(async () => {
+      throw new Error("broken PDF");
+    });
+    await using service = new ExcerptImageService({
+      render,
+      read: async () => fallback,
+    });
+    expect(await service.resolve(inkRequest)).toMatchObject({
+      provenance: "zotero",
+      freshness: "uncertain",
+    });
+    expect(await service.resolve(inkRequest)).toMatchObject({
+      provenance: "zotero",
+      freshness: "uncertain",
+    });
+    expect(
+      await service.resolve({ ...inkRequest, zoteroPngPath: null }),
+    ).toEqual({ kind: "unavailable" });
+    expect(render).toHaveBeenCalledTimes(3);
+  });
   it("observes an existing rejection even when cancellation already happened", async () => {
     const signal = AbortSignal.abort(new Error("cancelled"));
     await expect(
