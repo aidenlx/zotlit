@@ -68,6 +68,12 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import {
+  redPng,
+  bluePng,
+  corruptPng,
+} from "@/services/excerpt-image/__fixtures__/png";
+import { materializeExcerpt } from "@/services/excerpt-image/materialize";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
@@ -652,9 +658,25 @@ describe("createNote", () => {
     "disabled",
     "unused",
     "collected",
+    "refresh",
+    "overwrite",
+    "retain",
+    "retain-disabled",
+    "retain-throw",
+    "retain-write",
+    "retain-link",
+    "retain-stale",
+    "retain-replaced",
+    "reject-truncated",
+    "reject-idat",
   ] as const)(
     "prepares image and ink before one Eta execution (%s)",
     async (mode) => {
+      const refreshOperation =
+        mode.startsWith("retain") ||
+        mode.startsWith("reject") ||
+        mode === "refresh" ||
+        mode === "overwrite";
       const parent = join(
         await getWorkspaceRoot(import.meta.dirname),
         "tmp/excerpt-note-tests",
@@ -727,7 +749,7 @@ describe("createNote", () => {
               return { kind: "unavailable" };
             return {
               kind: "available",
-              bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 42]),
+              bytes: redPng,
               provenance: mode === "fallback" ? "zotero" : "rendered",
               freshness:
                 mode === "fallback"
@@ -751,7 +773,7 @@ describe("createNote", () => {
         "note",
         mode === "unused"
           ? "<% zt.countRender() %>Text only"
-          : "<% zt.countRender() %><% for (const a of zt.annotations) { %><%= embed(a.imgLink) %>\n<% } %>End of note",
+          : `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>End of note`,
       );
       let runs = 0;
       deps.template = {
@@ -797,14 +819,25 @@ describe("createNote", () => {
         expect(markdown.split("![[Images/zotlit-excerpt-")).toHaveLength(2);
         expect(markdown).toContain(m.excerpt_image_unavailable());
         expect(await readdir(`${root}/Images`)).toHaveLength(1);
-      } else if (["valid", "fallback", "unchecked"].includes(mode)) {
-        expect(markdown.split("![[Images/zotlit-excerpt-")).toHaveLength(3);
+      } else if (
+        refreshOperation ||
+        [
+          "valid",
+          "fallback",
+          "unchecked",
+          "refresh",
+          "overwrite",
+          "retain",
+          "retain-disabled",
+          "retain-throw",
+          "retain-write",
+        ].includes(mode)
+      ) {
+        expect(markdown.split("[[Images/zotlit-excerpt-")).toHaveLength(3);
         const files = await readdir(`${root}/Images`);
         expect(files).toHaveLength(2);
         for (const filename of files)
-          expect(await readFile(`${root}/Images/${filename}`)).toEqual(
-            Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 42]),
-          );
+          expect(await readFile(`${root}/Images/${filename}`)).toEqual(redPng);
       } else {
         expect(markdown).not.toContain("![[");
         expect(markdown).not.toContain("![");
@@ -819,7 +852,20 @@ describe("createNote", () => {
           );
         }
       }
-      if (mode === "valid" || mode === "unused") expect(notices).toEqual([]);
+      if (
+        refreshOperation ||
+        [
+          "valid",
+          "unused",
+          "refresh",
+          "overwrite",
+          "retain",
+          "retain-disabled",
+          "retain-throw",
+          "retain-write",
+        ].includes(mode)
+      )
+        expect(notices).toEqual([]);
       else
         expect(notices).toEqual([
           {
@@ -868,6 +914,172 @@ describe("createNote", () => {
         ]);
       if (mode === "disabled")
         expect(await readdir(root)).toEqual(["Literature"]);
+      if (
+        refreshOperation ||
+        [
+          "refresh",
+          "overwrite",
+          "retain",
+          "retain-disabled",
+          "retain-throw",
+          "retain-write",
+        ].includes(mode)
+      ) {
+        const file = makeFile("Literature/Paper.md");
+        const priorAssets = await readdir(`${root}/Images`);
+        const original = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
+        let current =
+          mode === "retain-stale"
+            ? `New user paragraph before the cached offsets\n${original}`
+            : original;
+        const otherNote = `${root}/Literature/Other.md`;
+        await writeFile(otherNote, original);
+        const retainedAssets: string[] = [];
+        if (mode === "retain-replaced") {
+          for (const [request] of resolver.resolve.mock.calls) {
+            const save = (bytes: Uint8Array) =>
+              materializeExcerpt({
+                app: app as unknown as App,
+                notePath: file.path,
+                settings: deps.settings.current!,
+                request,
+                outcome: {
+                  kind: "available",
+                  bytes,
+                  provenance: "rendered",
+                  freshness: "checked",
+                },
+              });
+            const oldAsset = await save(redPng),
+              newAsset = await save(bluePng);
+            if (oldAsset.kind !== "saved" || newAsset.kind !== "saved")
+              throw new Error("Fixture asset creation failed");
+            current = current.replace(oldAsset.path, newAsset.path);
+            retainedAssets.push(newAsset.path.slice("Images/".length));
+          }
+        } else retainedAssets.push(...priorAssets);
+        Object.assign(app.vault, {
+          read: async () => current,
+          process: async (
+            _file: TFile,
+            transform: (content: string) => string,
+          ) => {
+            current = transform(current);
+            await writeFile(`${root}/${file.path}`, current);
+            return current;
+          },
+        });
+        Object.assign(app.metadataCache, {
+          getFileCache: () => ({
+            [mode === "retain-link" ? "links" : "embeds"]: priorAssets.map(
+              (name) => {
+                const link = `Images/${name}`;
+                const syntax = `${mode === "retain-link" ? "" : "!"}[[${link}]]`;
+                const offset = original.indexOf(syntax);
+                return {
+                  link,
+                  original: syntax,
+                  position: {
+                    start: { offset },
+                    end: { offset: offset + syntax.length },
+                  },
+                };
+              },
+            ),
+          }),
+          getFirstLinkpathDest: (path: string) => makeFile(path),
+        });
+        vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+          key: "ROOT1234",
+          libraryID: 1,
+        });
+        vi.mocked(getItemsByKey).mockReturnValue([
+          makeItem({
+            key: "ROOT1234",
+            indexedKey: "ROOT1234",
+            title: "Paper",
+            citationKey: "paper2026",
+          }),
+        ]);
+        engine.define(
+          "content",
+          `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>`,
+        );
+        resolver.resolve.mockImplementation(async () =>
+          mode.startsWith("retain") || mode.startsWith("reject")
+            ? { kind: "unavailable" }
+            : {
+                kind: "available",
+                bytes: bluePng,
+                provenance: "rendered",
+                freshness: "checked",
+              },
+        );
+        if (mode === "retain-disabled")
+          deps.settings.update({ "attachment.import": false });
+        if (mode === "retain-throw")
+          resolver.resolve.mockRejectedValue(new Error("Resolver failed"));
+        if (mode === "retain-write")
+          resolver.resolve.mockResolvedValue({
+            kind: "available",
+            bytes: bluePng,
+            provenance: "rendered",
+            freshness: "checked",
+          });
+        if (mode.startsWith("reject"))
+          for (const name of priorAssets)
+            await writeFile(
+              `${root}/Images/${name}`,
+              corruptPng(mode === "reject-idat" ? "idat" : "truncated"),
+            );
+        if (mode === "retain-write")
+          Object.assign((app as unknown as App).vault.adapter, {
+            getFullPath: (path: string) => {
+              if (
+                path.endsWith(".png") &&
+                !priorAssets.some((name) => path.endsWith(name))
+              )
+                throw new Error("Destination write failed");
+              return `${root}/${path}`;
+            },
+          });
+        leaseReleased = false;
+        if (mode === "overwrite") await feature.overwriteNote(file, "ROOT1234");
+        else await feature.updateNote(file, { indexedKey: "ROOT1234" });
+        expect(runs).toBe(2);
+        expect(await readFile(otherNote, "utf8")).toBe(original);
+        for (const name of priorAssets)
+          expect(await readFile(`${root}/Images/${name}`)).toEqual(
+            mode.startsWith("reject")
+              ? corruptPng(mode === "reject-idat" ? "idat" : "truncated")
+              : redPng,
+          );
+        if (mode !== "overwrite") {
+          expect(current).toContain("User introduction");
+          expect(current).toContain("User conclusion");
+        }
+        if (mode.startsWith("retain")) {
+          for (const name of retainedAssets) expect(current).toContain(name);
+          if (mode === "retain-replaced")
+            for (const name of priorAssets) expect(current).not.toContain(name);
+          expect(notices).toEqual([
+            { zotero: 0, unchecked: 0, unavailable: 0, notRefreshed: 2 },
+          ]);
+        } else if (mode.startsWith("reject")) {
+          expect(current).toContain(m.excerpt_image_unavailable());
+          expect(current).toContain(
+            "file:///zotero/storage/RGRPDF24/paper.pdf",
+          );
+          expect(current).not.toContain("zotlit-excerpt-");
+          expect(notices).toEqual([
+            { zotero: 0, unchecked: 0, unavailable: 2 },
+          ]);
+        } else {
+          for (const name of priorAssets) expect(current).not.toContain(name);
+          expect(await readdir(`${root}/Images`)).toHaveLength(4);
+          expect(notices).toEqual([]);
+        }
+      }
     },
   );
 
@@ -1119,6 +1331,7 @@ describe("createNote", () => {
           getRoot: () => root,
           createFolder: vi.fn(),
           create,
+          read: async () => "",
           process: vi.fn(async () => ""),
         },
         fileManager: {
@@ -2204,6 +2417,7 @@ describe("overwriteNote", () => {
             processedContent = cb(originalContent);
             return processedContent;
           }),
+          read: async () => originalContent,
         },
         fileManager: {
           generateMarkdownLink: () => "",
@@ -2322,6 +2536,7 @@ function makeUpdateHarness(options: {
         createFolder: vi.fn(),
         create: vi.fn(),
         process: processMock,
+        read: async () => content,
       },
       fileManager: {
         generateMarkdownLink: () => "",
@@ -4766,6 +4981,7 @@ interface MockNoteApp {
     createFolder(path: string): Promise<TFolder>;
     create: Mock<(path: string, content: string) => Promise<TFile>>;
     process(): Promise<string>;
+    read(file: TFile): Promise<string>;
   };
   fileManager: {
     links: { path: string; sourcePath: string; alias: string | undefined }[];
@@ -4794,6 +5010,7 @@ function makeApp(): MockNoteApp {
     },
     vault: {
       contentByPath,
+      read: async (file: TFile) => contentByPath.get(file.path) ?? "",
       getAbstractFileByPath: (path: string) =>
         path === "Literature" ? literature : (filesByPath.get(path) ?? null),
       getRoot: () => root,

@@ -7,7 +7,7 @@
   "notice_excerpt_cache_clear_failed": "Could not clear the excerpt image cache.",
   "excerpt_image_unavailable": "Excerpt image unavailable.",
   "excerpt_image_import_disabled": "Excerpt image unavailable because attachment import is disabled.",
-  "excerpt_image_summary": "Excerpt images: {zotero} from Zotero with uncertain freshness, {unchecked} with unchecked PDF freshness, {unavailable} unavailable.",
+  "excerpt_image_summary": "Excerpt images: {zotero} from Zotero with uncertain freshness, {unchecked} with unchecked PDF freshness, {unavailable} unavailable, {notRefreshed} kept from the note and not refreshed.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "profile_match_unmatched": "No profile matched.",
   "batch_profile_recovery_help": "The selected profile is unavailable. Choose a profile to create these notes.",

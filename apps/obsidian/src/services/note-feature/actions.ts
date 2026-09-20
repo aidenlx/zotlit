@@ -62,7 +62,12 @@ export function addNoteFeatureActions(
 ): void {
   plugin.register(
     deps.noteFeature.on("excerpt-images-reported", (summary) => {
-      new BaseNotice(m.excerpt_image_summary(summary));
+      new BaseNotice(
+        m.excerpt_image_summary({
+          ...summary,
+          notRefreshed: summary.notRefreshed ?? 0,
+        }),
+      );
     }),
   );
   plugin.register(

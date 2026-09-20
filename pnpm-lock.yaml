@@ -131,6 +131,9 @@ catalogs:
     '@lezer/lr':
       specifier: 1.4.10
       version: 1.4.10
+    '@lezer/markdown':
+      specifier: 1.7.2
+      version: 1.7.2
     '@logtape/logtape':
       specifier: ^2.0.7
       version: 2.1.0
@@ -536,6 +539,9 @@ importers:
       '@hono/valibot-validator':
         specifier: ^0.6.1
         version: 0.6.1(hono@4.13.0)(valibot@1.4.2(typescript@7.0.2))
+      '@lezer/markdown':
+        specifier: 'catalog:'
+        version: 1.7.2
       '@std/async':
         specifier: 'catalog:'
         version: '@jsr/std__async@1.4.0'
@@ -1267,7 +1273,7 @@ importers:
         specifier: 'catalog:'
         version: 1.4.10
       '@lezer/markdown':
-        specifier: 1.7.2
+        specifier: 'catalog:'
         version: 1.7.2
       '@zotlit/db':
         specifier: workspace:*

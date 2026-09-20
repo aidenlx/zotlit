@@ -5,6 +5,7 @@ import {
   readdir,
   rm,
   writeFile,
+  truncate,
 } from "node:fs/promises";
 import { join } from "node:path";
 import { FileSystemAdapter, TFolder } from "obsidian";
@@ -15,7 +16,8 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { defaults } from "@/services/settings/schema";
 
-import { materializeExcerpt } from "./materialize";
+import { redPng as png, corruptPng } from "./__fixtures__/png";
+import { materializeExcerpt, retainExcerpt } from "./materialize";
 import type { ExcerptRequest } from "./service";
 
 const request: ExcerptRequest = {
@@ -160,3 +162,87 @@ it("returns a destination failure before any embed can be emitted", async () => 
   expect(await f.save()).toEqual({ kind: "unavailable", reason: "write" });
   expect(await readFile(`${f.root}/Images`, "utf8")).toBe("occupied");
 });
+
+it("retains only a referenced version owned by the same source, Library, Attachment and Annotation", async () => {
+  await using f = await fixture();
+  const saved = await f.save(request, png);
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+  const changed = {
+    ...request,
+    annotation: { ...request.annotation, color: "#ff0000", version: 2 },
+  };
+  expect(
+    await retainExcerpt({ app: f.app, request: changed, paths: [saved.path] }),
+  ).toEqual({ kind: "retained", path: saved.path });
+  for (const input of [
+    { ...request, sourceScope: "/another-zotero" },
+    { ...request, libraryID: 2 },
+    { ...request, attachmentKey: "OTHERATT" },
+    { ...request, annotation: { ...request.annotation, key: "OTHERANN" } },
+  ])
+    expect(
+      await retainExcerpt({ app: f.app, request: input, paths: [saved.path] }),
+    ).toBeUndefined();
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [] }),
+  ).toBeUndefined();
+  expect(await readFile(`${f.root}/${saved.path}`)).toEqual(png);
+  await writeFile(`${f.root}/${saved.path}`, "corrupt");
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [saved.path] }),
+  ).toBeUndefined();
+});
+
+it("requires the current source bytes to prove ownership of a referenced legacy image", async () => {
+  const legacyRequest = {
+    ...request,
+    annotation: { ...request.annotation, key: "ANNT2345" },
+  };
+  await using f = await fixture();
+  await mkdir(`${f.root}/Images`);
+  const path = "Images/ANNT2345.png";
+  await writeFile(`${f.root}/${path}`, png);
+  const source = `${f.root}/source.png`;
+  await writeFile(source, png);
+  expect(
+    await retainExcerpt({ app: f.app, request: legacyRequest, paths: [path] }),
+  ).toBeUndefined();
+  expect(
+    await retainExcerpt({
+      app: f.app,
+      request: { ...legacyRequest, zoteroPngPath: source },
+      paths: [path],
+    }),
+  ).toEqual({ kind: "retained", path });
+  await writeFile(source, "different-library");
+  expect(
+    await retainExcerpt({
+      app: f.app,
+      request: { ...legacyRequest, zoteroPngPath: source },
+      paths: [path],
+    }),
+  ).toBeUndefined();
+  expect(await readFile(`${f.root}/${path}`)).toEqual(png);
+});
+
+it("rejects an oversized referenced image before reading its contents", async () => {
+  await using f = await fixture();
+  const saved = await f.save(request, png);
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+  await truncate(`${f.root}/${saved.path}`, 32 * 1024 * 1024 + 1);
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [saved.path] }),
+  ).toBeUndefined();
+});
+
+it.each(["truncated", "idat", "scanline"] as const)(
+  "rejects an unusable PNG (%s)",
+  async (kind) => {
+    await using f = await fixture();
+    const saved = await f.save(request, corruptPng(kind));
+    if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+    expect(
+      await retainExcerpt({ app: f.app, request, paths: [saved.path] }),
+    ).toBeUndefined();
+  },
+);

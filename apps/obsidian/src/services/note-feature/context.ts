@@ -45,7 +45,12 @@ const logger = getLogger("note-feature");
 interface NoteVaultApp {
   vault: Pick<
     Vault,
-    "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
+    | "getAbstractFileByPath"
+    | "getRoot"
+    | "createFolder"
+    | "create"
+    | "process"
+    | "read"
   >;
   fileManager: Pick<
     FileManager,

@@ -51,7 +51,10 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
-import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
+import type {
+  ExcerptSummary,
+  PreparedExcerpts,
+} from "@/services/excerpt-image/prepare";
 import type { NoteImport } from "@/services/note-import/service";
 import {
   itemKeyFromFrontmatter,
@@ -289,6 +292,7 @@ interface CreateNoteInternalOptions extends CreateNoteOptions {
  * `client` plus the run's shared memos, so no per-item lease re-acquisition.
  */
 export interface WriteNoteUpdateOptions {
+  reportExcerpts?: (summary: ExcerptSummary) => void;
   client: NodeDatabaseClient;
   item: Item;
   tagMemo: TagMemo;
@@ -1038,12 +1042,17 @@ async function updateNote(
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
-  const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
-    client: lease.client,
-    attachmentImport,
-    sourcePath: file.path,
-    settings: profile.settings,
-  });
+  const { context, noteImport, excerptImages } = await contextForIndexedKey(
+    ctx,
+    indexedKey,
+    {
+      client: lease.client,
+      attachmentImport,
+      sourcePath: file.path,
+      settings: profile.settings,
+      previousNote: scope === "full" ? file : undefined,
+    },
+  );
   return applyManagedUpdate(ctx, file, {
     context,
     attachmentImport,
@@ -1053,6 +1062,7 @@ async function updateNote(
     profile,
     document,
     beforeWrite: options.beforeWrite,
+    excerptImages,
   });
 }
 
@@ -1336,11 +1346,21 @@ async function writeNoteUpdate(
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
   });
+  const excerptImages =
+    options.scope !== "metadata"
+      ? ctx.excerptImages?.({
+          client: options.client,
+          notePath: file.path,
+          settings: profile.settings,
+          previousNote: file,
+        })
+      : undefined;
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport,
     noteImport,
     settings: profile.settings,
     sourcePath: file.path,
+    excerptImages,
   });
   const context = fetchNoteContext(options.client, options.item, {
     resolvers,
@@ -1354,9 +1374,11 @@ async function writeNoteUpdate(
     attachmentImport,
     noteImport,
     itemKey: options.item.indexedKey,
+    reportExcerpts: options.reportExcerpts,
     scope: options.scope ?? "full",
     profile,
     document,
+    excerptImages,
   });
 }
 
@@ -1380,6 +1402,8 @@ async function applyManagedUpdate(
     profile: ResolvedProfile;
     document: ResolvedLiteratureNoteTemplate | undefined;
     beforeWrite?: () => void;
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
   },
 ): Promise<UpdateResult> {
   const {
@@ -1400,6 +1424,7 @@ async function applyManagedUpdate(
   });
   if ("diagnostic" in prepared)
     return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  await input.excerptImages?.prepare();
   const result =
     scope === "full"
       ? document
@@ -1420,6 +1445,16 @@ async function applyManagedUpdate(
   });
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  const summary = input.excerptImages?.summary();
+  if (
+    summary &&
+    (summary.zotero ||
+      summary.unchecked ||
+      summary.unavailable ||
+      summary.notRefreshed)
+  )
+    if (input.reportExcerpts) input.reportExcerpts(summary);
+    else ctx.events.emit("excerpt-images-reported", summary);
 
   logger.debug("Updated literature note", {
     path: file.path,
@@ -1466,16 +1501,16 @@ async function replaceManagedBody(
   },
 ): Promise<UpdateResult> {
   const { context, itemKey, renderRegion } = input;
+  const original = await ctx.app.vault.read(file);
+  if (!replaceManagedRegion(original, () => "").replaced) return NO_BODY_UPDATE;
+  const region = renderRegion
+    ? renderRegion()
+    : ctx.template.render("content", context);
   let replaced = false;
   let duplicateCount = 0;
   await ctx.app.vault.process(file, (content) => {
     input.beforeWrite?.();
-    // replaceManagedRegion only invokes the provider when a region exists,
-    // so rendering `content` — and the attachment imports its lazy imgLink
-    // closures queue as a side effect — is skipped when there is no region.
-    const result = replaceManagedRegion(content, () =>
-      renderRegion ? renderRegion() : ctx.template.render("content", context),
-    );
+    const result = replaceManagedRegion(content, () => region);
     replaced = result.replaced;
     duplicateCount = result.duplicateCount;
     return result.content;
@@ -1517,12 +1552,17 @@ async function overwriteNote(
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
-  const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
-    client: lease.client,
-    attachmentImport,
-    sourcePath: file.path,
-    settings: profile.settings,
-  });
+  const { context, noteImport, excerptImages } = await contextForIndexedKey(
+    ctx,
+    indexedKey,
+    {
+      client: lease.client,
+      attachmentImport,
+      sourcePath: file.path,
+      settings: profile.settings,
+      previousNote: file,
+    },
+  );
   const prepared = prepareFrontmatter({
     context,
     itemKey: indexedKey,
@@ -1531,6 +1571,7 @@ async function overwriteNote(
   });
   if ("diagnostic" in prepared)
     return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  await excerptImages?.prepare();
   // The body renders before either write, so a render that raises — a call to
   // a Shared Partial the vault holds no document for — leaves the note whole.
   const body = document
@@ -1548,6 +1589,15 @@ async function overwriteNote(
   });
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  const summary = excerptImages?.summary();
+  if (
+    summary &&
+    (summary.zotero ||
+      summary.unchecked ||
+      summary.unavailable ||
+      summary.notRefreshed)
+  )
+    ctx.events.emit("excerpt-images-reported", summary);
   logger.info("Overwrote literature note", {
     path: file.path,
     itemKey: indexedKey,
@@ -1683,8 +1733,13 @@ async function contextForIndexedKey(
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     sourcePath: string;
     settings: Readonly<Settings>;
+    previousNote?: TFile;
   },
-): Promise<{ context: NoteTemplateContext; noteImport: NoteImport }> {
+): Promise<{
+  context: NoteTemplateContext;
+  noteImport: NoteImport;
+  excerptImages?: PreparedExcerpts;
+}> {
   const { client, sourcePath, settings } = options;
   const parsed = resolveIndexedKeyLibrary(client, indexedKey);
   if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
@@ -1696,11 +1751,20 @@ async function contextForIndexedKey(
     sourcePath,
     settings,
   });
+  const excerptImages = options.previousNote
+    ? ctx.excerptImages?.({
+        client,
+        notePath: sourcePath,
+        settings,
+        previousNote: options.previousNote,
+      })
+    : undefined;
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport: options.attachmentImport,
     noteImport,
     settings,
     sourcePath,
+    excerptImages,
   });
   const context = fetchNoteContext(client, item, {
     resolvers,
@@ -1708,7 +1772,7 @@ async function contextForIndexedKey(
     collectionCache: new CollectionCache(),
     username: getZoteroIdentity(client).username,
   });
-  return { context, noteImport };
+  return { context, noteImport, excerptImages };
 }
 
 /** Write one already-prepared Managed Frontmatter patch into the note's

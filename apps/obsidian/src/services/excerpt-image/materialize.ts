@@ -1,9 +1,18 @@
 // Writes immutable excerpt assets and verifies their bytes before exposing a link.
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, unlink } from "node:fs/promises";
-import { dirname } from "node:path";
+import {
+  link,
+  mkdir,
+  open,
+  readFile,
+  realpath,
+  unlink,
+} from "node:fs/promises";
+import { basename, dirname, relative, isAbsolute, sep } from "node:path";
 import { FileSystemAdapter } from "obsidian";
 import type { App } from "obsidian";
+
+import { parseIndexedKey } from "@zotlit/db";
 
 import {
   joinFolderPath,
@@ -13,20 +22,97 @@ import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import type { Settings } from "@/services/settings/schema";
 
+import { usableExcerptPng } from "./png";
 import { excerptKey, excerptSourceIdentity } from "./service";
 import type { ExcerptOutcome, ExcerptRequest } from "./service";
 
 const logger = getLogger("excerpt-materialize");
+const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
+
+async function readPreviousImage(path: string): Promise<Buffer> {
+  await using file = await open(path, "r");
+  const { size } = await file.stat();
+  if (size > MAX_PREVIOUS_BYTES)
+    throw new Error("Previous excerpt exceeds byte limit");
+  const buffer = Buffer.alloc(size + 1);
+  let offset = 0;
+  while (offset < buffer.length) {
+    const { bytesRead } = await file.read(
+      buffer,
+      offset,
+      buffer.length - offset,
+      offset,
+    );
+    if (bytesRead === 0) break;
+    offset += bytesRead;
+  }
+  if (offset > size)
+    throw new Error("Previous excerpt grew during verification");
+  return buffer.subarray(0, offset);
+}
 export type MaterializedExcerpt =
   | {
       kind: "saved";
       path: string;
       outcome: Extract<ExcerptOutcome, { kind: "available" }>;
     }
+  | { kind: "retained"; path: string }
   | { kind: "unavailable"; reason: "disabled" | "source" | "write" };
 
+/** Only referenced, vault-contained images with proven ownership can survive a failed refresh. */
+export async function retainExcerpt(options: {
+  app: App;
+  request: ExcerptRequest;
+  paths: readonly string[];
+}): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
+  const adapter = options.app.vault.adapter;
+  if (!(adapter instanceof FileSystemAdapter)) return;
+  const prefix = `zotlit-excerpt-${excerptAssetIdentity(options.request)}-`;
+  for (const path of options.paths) {
+    const local = relative(adapter.getFullPath(""), adapter.getFullPath(path));
+    if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
+      continue;
+    const name = basename(path);
+    const owned =
+      name.startsWith(prefix) &&
+      name.endsWith(".png") &&
+      name.length === prefix.length + 68;
+    const legacy =
+      name === `${parseIndexedKey(options.request.annotation.key)?.key}.png`;
+    if (!owned && !legacy) continue;
+    try {
+      const actualPath = await realpath(adapter.getFullPath(path));
+      const actualRoot = await realpath(adapter.getFullPath(""));
+      const actualRelative = relative(actualRoot, actualPath);
+      if (
+        isAbsolute(actualRelative) ||
+        actualRelative === ".." ||
+        actualRelative.startsWith(`..${sep}`)
+      )
+        continue;
+      const bytes = await readPreviousImage(actualPath);
+      if (!usableExcerptPng(bytes)) continue;
+      // Legacy names carry no source identity. The current source's bytes must prove ownership.
+      if (
+        !owned &&
+        (!options.request.zoteroPngPath ||
+          !bytes.equals(await readPreviousImage(options.request.zoteroPngPath)))
+      )
+        continue;
+      return { kind: "retained", path };
+    } catch (error) {
+      logger.debug("Previous excerpt could not be verified", { path, error });
+    }
+  }
+}
+
 /** Stable ownership remains readable from a target when the annotation's pixels change. */
-export function excerptAssetIdentity(request: ExcerptRequest): string {
+export function excerptAssetIdentity(
+  request: Pick<
+    ExcerptRequest,
+    "sourceScope" | "source" | "libraryID" | "attachmentKey"
+  > & { annotation: { key: string } },
+): string {
   return createHash("sha256")
     .update(
       JSON.stringify([

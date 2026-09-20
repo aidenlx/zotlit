@@ -706,6 +706,7 @@ async function runAction(
 
   if (action.kind === "update") {
     const result = await deps.noteFeature.writeNoteUpdate(action.file, {
+      reportExcerpts: run.reportExcerpts,
       client: run.client,
       item,
       tagMemo: run.tagMemo,

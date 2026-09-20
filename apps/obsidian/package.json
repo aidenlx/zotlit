@@ -26,6 +26,7 @@
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
+    "@lezer/markdown": "catalog:",
     "@std/async": "catalog:",
     "@std/collections": "catalog:",
     "@std/ini": "jsr:0.225.2",
