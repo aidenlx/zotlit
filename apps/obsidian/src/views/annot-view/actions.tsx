@@ -1,5 +1,5 @@
 import { Menu, Platform } from "obsidian";
-import type { App } from "obsidian";
+import type { App, Scope } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
@@ -8,6 +8,7 @@ import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
+import { bindEditorSubmitScope } from "@/lib/editor-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
@@ -18,10 +19,7 @@ import type {
   AnnotationRepository,
   MutationState,
 } from "@/services/annotation-repository/service";
-import {
-  writeFailureMessage,
-  writeFailureReason,
-} from "@/services/annotation-repository/write";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
@@ -67,6 +65,13 @@ export interface AnnotActions {
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
   onSaveComment(annot: AnnotationRecord, comment: string): void;
+  bindCommentEditor(
+    editor: HTMLTextAreaElement,
+    annot: AnnotationRecord,
+    comment: () => string,
+  ): Disposable;
+  onOpenComment(annot: AnnotationRecord): void;
+  onEditComment(annot: AnnotationRecord, comment: string): void;
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
   /**
@@ -76,15 +81,6 @@ export interface AnnotActions {
   onApplyAgain(annot: AnnotationRecord): void;
   /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
   onDiscardConflict(annot: AnnotationRecord): void;
-  /**
-   * Send one Uncertain Create again on its original write token, from the
-   * badged card's "Try again".
-   *
-   * @param writeToken the token the Uncertain Create carries.
-   */
-  onRetryCreate(writeToken: string): void;
-  /** Drop one Uncertain Create, from the badged card's "Discard". */
-  onDiscardCreate(writeToken: string): void;
   getImgSrc(annot: AnnotationRecord): string;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
@@ -93,6 +89,7 @@ export interface AnnotActions {
 
 export interface AnnotActionDeps {
   app: App;
+  scope: Scope;
   getDataDir: () => string;
   /**
    * The one write path for an Annotation. Commands take Indexed Keys: the
@@ -101,12 +98,14 @@ export interface AnnotActionDeps {
   annotations: Pick<
     AnnotationRepository,
     | "deleteAnnotation"
+    | "discardCommentDraft"
     | "discardConflict"
-    | "discardCreate"
     | "patchColor"
-    | "patchComment"
-    | "retryCreate"
+    | "editComment"
+    | "commentDraftFor"
+    | "retryCommentDraft"
     | "retryWrite"
+    | "submitComment"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
@@ -188,8 +187,24 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   const onSetColor = (annot: AnnotationRecord, color: string): void =>
     report(deps.annotations.patchColor(annot.key, color));
-  const onSaveComment = (annot: AnnotationRecord, comment: string): void =>
-    report(deps.annotations.patchComment(annot.key, comment));
+  const onEditComment = (annot: AnnotationRecord, comment: string): void => {
+    deps.annotations.editComment(annot.key, comment);
+  };
+  const onOpenComment = (annot: AnnotationRecord): void => {
+    deps.annotations.editComment(annot.key);
+  };
+  const onSaveComment = (annot: AnnotationRecord, comment: string): void => {
+    deps.annotations.editComment(annot.key, comment);
+    report(deps.annotations.submitComment(annot.key));
+  };
+  const bindCommentEditor: AnnotActions["bindCommentEditor"] = (
+    editor,
+    annot,
+    comment,
+  ) =>
+    bindEditorSubmitScope(editor, deps.scope, () => {
+      onSaveComment(annot, comment());
+    });
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
@@ -212,27 +227,28 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     );
     if (confirmed) onDeleteAnnotation(annot);
   };
-  const onApplyAgain = (annot: AnnotationRecord): void =>
-    report(deps.annotations.retryWrite(annot.key));
-  const onDiscardConflict = (annot: AnnotationRecord): void =>
-    deps.annotations.discardConflict(annot.key);
-  /**
-   * A retry that stays uncertain has already said so on its own badged card,
-   * and one that landed needs no notice: only a refusal is news.
-   */
-  const onRetryCreate = (writeToken: string): void => {
-    void deps.annotations.retryCreate(writeToken).then((outcome) => {
-      if (outcome.kind !== "failed") return;
-      new BaseNotice(
-        m.pdf_create_failed({
-          reason: writeFailureReason(outcome.failure, now()),
-        }),
-      );
-    });
+  const commentConflict = (annotationKey: string): boolean => {
+    const mutation = deps.getState().mutations.get(annotationKey);
+    return (
+      mutation?.kind === "conflict" && mutation.conflict.write === "comment"
+    );
   };
-  const onDiscardCreate = (writeToken: string): void =>
-    deps.annotations.discardCreate(writeToken);
-
+  const onApplyAgain = (annot: AnnotationRecord): void =>
+    report(
+      commentConflict(annot.key) && deps.annotations.commentDraftFor(annot.key)
+        ? deps.annotations.retryCommentDraft(annot.key)
+        : deps.annotations.retryWrite(annot.key),
+    );
+  const onDiscardConflict = (annot: AnnotationRecord): void => {
+    if (
+      commentConflict(annot.key) &&
+      deps.annotations.commentDraftFor(annot.key)
+    ) {
+      deps.annotations.discardCommentDraft(annot.key);
+    } else {
+      deps.annotations.discardConflict(annot.key);
+    }
+  };
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -378,11 +394,12 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     getImgSrc,
     onSetColor,
     onSaveComment,
+    bindCommentEditor,
+    onOpenComment,
+    onEditComment,
     onDeleteAnnotation,
     onApplyAgain,
     onDiscardConflict,
-    onRetryCreate,
-    onDiscardCreate,
     onMoreOptions(evt, annot) {
       showMenu(evt, (menu) => fillCardMenu(menu, annot), "end");
     },
@@ -451,11 +468,12 @@ const NOOP_ACTIONS: AnnotActions = {
   onSelectAnnotation: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
+  bindCommentEditor: () => ({ [Symbol.dispose]: () => {} }),
+  onOpenComment: () => {},
+  onEditComment: () => {},
   onDeleteAnnotation: () => {},
   onApplyAgain: () => {},
   onDiscardConflict: () => {},
-  onRetryCreate: () => {},
-  onDiscardCreate: () => {},
   onRefresh: () => {},
   getImgSrc: () => IMG_PLACEHOLDER,
   getBacklink: () => undefined,

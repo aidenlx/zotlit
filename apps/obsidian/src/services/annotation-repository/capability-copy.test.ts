@@ -3,7 +3,11 @@ import { expect, it } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { EditingCapability } from "./capability";
-import { editingCapabilityCopy, secondsUntil } from "./capability-copy";
+import {
+  editingCapabilityAffordance,
+  editingCapabilityCopy,
+  secondsUntil,
+} from "./capability-copy";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -154,4 +158,78 @@ it("counts a cooldown down in whole seconds, and never past zero", () => {
   // the wait is over.
   expect(secondsUntil(NOW.add({ milliseconds: 1200 }), NOW)).toBe(2);
   expect(secondsUntil(NOW.subtract({ seconds: 10 }), NOW)).toBe(0);
+});
+
+it("offers one enable-editing action for every unavailable capability", () => {
+  const states: EditingCapability[] = [
+    { kind: "authorization-required" },
+    { kind: "authorizing" },
+    { kind: "cooldown", retryAfter: NOW.add({ seconds: 42 }) },
+    ...READ_ONLY_REASONS.map(
+      (reason) => ({ kind: "read-only", reason }) as const,
+    ),
+  ];
+
+  expect(editingCapabilityAffordance({ kind: "writable" }, NOW)).toBeNull();
+  expect(
+    states.map((state) => editingCapabilityAffordance(state, NOW)?.label),
+  ).toEqual(states.map(() => m.capability_enable_editing()));
+});
+
+it("maps unavailable states to the enable-editing action presentation", () => {
+  const affordance = (capability: EditingCapability) =>
+    editingCapabilityAffordance(capability, NOW);
+
+  expect(affordance({ kind: "authorization-required" })).toEqual({
+    icon: "pencil",
+    tone: "action",
+    label: m.capability_enable_editing(),
+    tooltip: m.capability_affordance_tooltip({
+      label: m.capability_authorization_required(),
+      detail: m.capability_authorization_required_detail(),
+    }),
+    spinning: false,
+    countdown: null,
+  });
+  expect(affordance({ kind: "authorizing" })).toMatchObject({
+    icon: "loader",
+    tone: "busy",
+    spinning: true,
+    countdown: null,
+  });
+  expect(affordance({ kind: "read-only", reason: "probing" })).toMatchObject({
+    icon: "loader",
+    tone: "busy",
+    spinning: true,
+    countdown: null,
+  });
+  expect(
+    READ_ONLY_REASONS.filter((reason) => reason !== "probing").map((reason) =>
+      affordance({ kind: "read-only", reason }),
+    ),
+  ).toEqual(
+    READ_ONLY_REASONS.filter((reason) => reason !== "probing").map(() =>
+      expect.objectContaining({
+        icon: "pencil",
+        tone: "action",
+        label: m.capability_enable_editing(),
+        spinning: false,
+        countdown: null,
+      }),
+    ),
+  );
+});
+
+it("counts down the enable-editing action until the capability changes", () => {
+  const retryAfter = NOW.add({ seconds: 3 });
+  expect(
+    [0, 1, 2, 3].map(
+      (elapsed) =>
+        editingCapabilityAffordance(
+          { kind: "cooldown", retryAfter },
+          NOW.add({ seconds: elapsed }),
+        )?.countdown,
+    ),
+  ).toEqual([3, 2, 1, 0]);
+  expect(editingCapabilityAffordance({ kind: "writable" }, NOW)).toBeNull();
 });

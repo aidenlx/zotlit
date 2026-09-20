@@ -90,7 +90,6 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
       kind: "conflict",
       conflict: { write: "color", attempted: "#ff6666", fresh: "#5fb236" },
     },
-    { kind: "uncertain" },
   ];
 
   for (const mutation of unsettled) {

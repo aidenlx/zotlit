@@ -155,6 +155,13 @@ export interface FixtureItem {
    * stamp. An absent value seeds the note under the default Profile, unstamped.
    */
   literatureNoteProfile?: string;
+  /**
+   * Seed this Item's Literature Note with a managed region holding the
+   * per-Annotation output ZotLit wrote before Mark Landing (#1156): a plain
+   * page label, with no link and no Annotation Anchor. Update Note rewrites
+   * that region, so the note stands for work a reader has already done.
+   */
+  literatureNoteStaleAnnotations?: boolean;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -514,6 +521,7 @@ export const ITEMS: readonly FixtureItem[] = [
     ],
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
+    literatureNoteStaleAnnotations: true,
   },
   {
     itemID: 57,

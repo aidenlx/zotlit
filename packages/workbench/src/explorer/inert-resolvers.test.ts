@@ -95,6 +95,7 @@ function makeAnnotation(overrides: Partial<Annotation>): Annotation {
     parentItemID: 10,
     parentKey: "ATCH2345",
     ...overrides,
+    version: overrides.version ?? 0,
   };
 }
 
@@ -155,11 +156,11 @@ function makeResolverDeps(
     notImportedReason: () => "Not imported",
     attachmentAbsPath: (attachment) =>
       attachmentAbsPath(attachment, pathContext),
-    attachmentFileLink: (attachment, page) => {
+    attachmentFileLink: (attachment, anchor) => {
       const absPath = attachmentAbsPath(attachment, pathContext);
       if (!absPath) return () => null;
       const defaultAlias = basename(absPath) || "attachment";
-      const defaultSubpath = page == null ? "" : `#page=${page}`;
+      const defaultSubpath = anchor?.page == null ? "" : `#page=${anchor.page}`;
       const href = pathToFileURL(absPath).href;
       return (alias = defaultAlias, subpath = defaultSubpath) =>
         `[${alias}](${href}${subpath})`;
@@ -193,7 +194,7 @@ describe("buildInertNoteResolvers", () => {
   it("renders a real file:// markdown link anchored to the annotation page", () => {
     const resolvers = buildResolvers();
     const attachment = makeAttachment({ path: "storage:paper.pdf" });
-    const link = resolvers.annotation.fileLink(attachment, 5)();
+    const link = resolvers.annotation.fileLink(attachment, { page: 5 })();
     expect(link).toContain("#page=5");
     expect(link).toContain("paper.pdf");
     expect(link).toBe(
@@ -462,7 +463,7 @@ describe("buildInertNoteResolvers — full browse queues no vault write (ADR 000
     };
 
     resolvers.annotation.filePath(attachment);
-    resolvers.annotation.fileLink(attachment, 1)();
+    resolvers.annotation.fileLink(attachment, { page: 1 })();
     const imageLink = resolvers.annotation.annotationImageLink(imageAnnotation);
     imageLink?.();
     resolvers.item.notePath({

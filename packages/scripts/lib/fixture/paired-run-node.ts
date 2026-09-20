@@ -136,6 +136,7 @@ export function createNodePairedRunPorts({
       liveUpdatePort,
       zoteroHttpPort,
       localApi,
+      grantLocalApiWrites,
     }) {
       const result = await runCaptured(
         process.execPath,
@@ -147,6 +148,7 @@ export function createNodePairedRunPorts({
           `--live-update-port=${liveUpdatePort}`,
           `--zotero-http-port=${zoteroHttpPort}`,
           ...(localApi ? ["--local-api"] : []),
+          ...(grantLocalApiWrites ? [] : ["--no-grant-local-api-writes"]),
           ...(purge ? ["--purge"] : []),
         ],
         { cwd: workspaceRoot, forwardStderr: true },

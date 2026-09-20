@@ -217,8 +217,11 @@ describe("QueryClientService", () => {
     });
 
     queries.invalidate(KEY);
-    await queries.ask(KEY, () => Promise.resolve({ text: "same" }));
+    const refreshed = await queries.ask(KEY, () =>
+      Promise.resolve({ text: "same" }),
+    );
 
+    expect(refreshed).toBe(first);
     expect(queries.peek(KEY)?.value).toBe(first);
     expect(events).toEqual(["settled"]);
   });

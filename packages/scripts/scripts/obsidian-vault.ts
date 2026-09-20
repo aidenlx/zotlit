@@ -38,6 +38,8 @@ import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
+  FIXTURE_LOCAL_API_SERVER_ID,
+  FIXTURE_LOCAL_API_WRITE_KEY,
   getFixtureLayout,
   getFixtureRoot,
   SCOPE_CASES,
@@ -245,6 +247,8 @@ interface SeedOptions {
   zoteroHttpPort?: number;
   /** Open Zotero's Local API in the generated profile. */
   localApi?: boolean;
+  /** Seed the matching remembered write grant in Zotero and Obsidian. */
+  grantLocalApiWrites?: boolean;
 }
 
 async function create(
@@ -256,6 +260,7 @@ async function create(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -283,6 +288,7 @@ async function create(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   });
   if (purge) {
     const exists = await access(abs).then(
@@ -370,6 +376,9 @@ async function create(
     );
   }
   await linkFixture(id);
+  if (localApi) {
+    await setFixtureWriteAuthorization(id, grantLocalApiWrites ?? true);
+  }
 }
 
 /**
@@ -435,6 +444,7 @@ async function sync(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -455,6 +465,7 @@ async function sync(
       liveUpdatePort,
       zoteroHttpPort,
       localApi,
+      grantLocalApiWrites,
     });
 
     // `--purge` deletes the folder first, so renamed or removed Fixture files
@@ -487,6 +498,7 @@ async function rebuildFixtureVault(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   }: SeedOptions = {},
 ): Promise<void> {
   if (resolve(target) === resolve(fixtureVault)) return;
@@ -520,6 +532,7 @@ async function rebuildFixtureVault(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
     linkedAttachmentVaultDir: resolve(target),
     pluginBundleDir: hasDistDev
       ? distDev
@@ -539,6 +552,7 @@ async function open(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   }: SeedOptions = {},
 ): Promise<void> {
   const abs = resolve(vaultPath);
@@ -552,6 +566,7 @@ async function open(
     liveUpdatePort,
     zoteroHttpPort,
     localApi,
+    grantLocalApiWrites,
   };
   if (!registered) {
     await create(abs, seed);
@@ -606,6 +621,9 @@ async function open(
     throw new Error(`ZotLit did not load in ${registered}`);
   }
   await linkFixture(registered);
+  if (localApi) {
+    await setFixtureWriteAuthorization(registered, grantLocalApiWrites ?? true);
+  }
 
   console.log(registered);
   console.error(`opened vault ${registered} at ${abs}`);
@@ -659,6 +677,25 @@ async function linkFixture(vaultId: string): Promise<void> {
   });
   if (!refreshed) {
     throw new Error(`ZotLit in ${vaultId} did not open the Fixture database`);
+  }
+}
+
+/** Write or invalidate the Development Vault's half of the Fixture grant. */
+async function setFixtureWriteAuthorization(
+  vaultId: string,
+  grant: boolean,
+): Promise<void> {
+  const stored = JSON.stringify({
+    version: 1,
+    serverID: FIXTURE_LOCAL_API_SERVER_ID,
+    ...(grant ? { key: FIXTURE_LOCAL_API_WRITE_KEY } : {}),
+  });
+  const answer = await obEval(
+    `{app.secretStorage.setSecret("zotlit-zotero-write-authorization",${JSON.stringify(stored)});"configured"}`,
+    vaultId,
+  ).catch(rethrowUnreachable);
+  if (answer !== "configured") {
+    throw new Error(`could not configure Zotero write access in ${vaultId}`);
   }
 }
 
@@ -754,7 +791,14 @@ async function removeOnline(abs: string): Promise<string | undefined> {
     // `vault-remove` refuses while the vault window is open. Close it only when
     // it is open, because targeting a closed vault would re-open it.
     if ((await vaultList(host))[id]?.open) {
-      await obEval("window.close()", id).catch(() => undefined);
+      await obEval(
+        `(async function(){await app.plugins.disablePlugin(${JSON.stringify(pluginId)});await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve)})});return 'ready'})()`,
+        id,
+      ).catch(() => undefined);
+      await obEval(
+        "app.workspace.rootSplit.containerEl.ownerDocument.defaultView.close()",
+        id,
+      ).catch(() => undefined);
       await waitFor(async () => !(await vaultList(host))[id]?.open);
     }
 
@@ -873,6 +917,13 @@ const localApiOption = {
   default: false,
 } as const;
 
+const grantLocalApiWritesOption = {
+  describe:
+    "seed a remembered Local API write grant; use --no-grant-local-api-writes to test authorization",
+  type: "boolean",
+  default: true,
+} as const;
+
 const scopeCaseOption = {
   describe: "Scope Case to build",
   type: "string",
@@ -935,7 +986,8 @@ const vaultCli = yargs(hideBin(process.argv))
         .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption)
-        .option("local-api", localApiOption),
+        .option("local-api", localApiOption)
+        .option("grant-local-api-writes", grantLocalApiWritesOption),
     async (argv) => {
       await open(
         argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
@@ -946,6 +998,7 @@ const vaultCli = yargs(hideBin(process.argv))
           liveUpdatePort: argv["live-update-port"],
           zoteroHttpPort: argv["zotero-http-port"],
           localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
         },
       );
     },
@@ -968,7 +1021,8 @@ const vaultCli = yargs(hideBin(process.argv))
         .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption)
-        .option("local-api", localApiOption),
+        .option("local-api", localApiOption)
+        .option("grant-local-api-writes", grantLocalApiWritesOption),
     async (argv) => {
       await sync(
         argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
@@ -978,6 +1032,7 @@ const vaultCli = yargs(hideBin(process.argv))
           liveUpdatePort: argv["live-update-port"],
           zoteroHttpPort: argv["zotero-http-port"],
           localApi: argv["local-api"],
+          grantLocalApiWrites: argv["grant-local-api-writes"],
         },
       );
     },

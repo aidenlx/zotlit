@@ -41,7 +41,12 @@ function state(overrides: Partial<AnnotState> = {}): AnnotState {
     attachments: ATTACHMENTS,
     selectedAttachmentKey: "ATCH0001",
     annotations: [],
-    annotationSource: { kind: "zotero-db" },
+    annotationSource: {
+      kind: "zotero-db",
+      database: { userID: null, localUserKey: null, serverID: null },
+      libraryID: 1,
+      libraryRevision: null,
+    },
     liveUpdatesOn: true,
     ...overrides,
   });
@@ -268,34 +273,16 @@ describe("what stands where the card list would", () => {
 });
 
 describe("the condition lines", () => {
-  it("says the list came from the Zotero database", () => {
-    expect(conditionLines(state())).toStrictEqual([
-      m.annot_view_source_database(),
-    ]);
+  it("keeps an ordinary database-backed list free of source captions", () => {
+    expect(conditionLines(state())).toStrictEqual([]);
   });
 
-  it("says nothing about the source while the Zotero Local API answered", () => {
-    expect(
-      conditionLines(
-        state({
-          annotationSource: {
-            kind: "zotero-local-api",
-            serverID: "abcdef012345",
-          },
-        }),
-      ),
-    ).toStrictEqual([]);
-  });
-
-  it("says the Zotero reader closed, above the source it read from", () => {
+  it("says the Zotero reader closed", () => {
     expect(
       conditionLines(
         state({ followMode: "zotero-reader", zoteroReaderClosed: true }),
       ),
-    ).toStrictEqual([
-      m.annot_view_reader_closed(),
-      m.annot_view_source_database(),
-    ]);
+    ).toStrictEqual([m.annot_view_reader_closed()]);
   });
 
   it("says nothing about a closed reader in the other modes", () => {

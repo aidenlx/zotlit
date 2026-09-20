@@ -46,6 +46,8 @@ pnpm fixture paths
 
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
 
+`mark-landing-test.md` is generated rather than committed, because it holds real `file://` links and the Fixture learns its own absolute paths only at build time. It walks Mark Landing: an Attachment File Link carrying an Annotation Anchor, the wikilink spelling of the same Anchor, the degradation cases, and the Zotero deep link ZotLit leaves to Zotero.
+
 The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:
 
 | File | Purpose |
@@ -173,7 +175,15 @@ pnpm fixture open --local-api
 
 That build sets `extensions.zotero.httpServer.localAPI.enabled` to `true` and gives the Fixture profile a free Zotero HTTP port. Paired Zotero serves the API on that port, and ZotLit reads the same number back from the profile through its Device Override, so both applications name one port and the shipped `23119` stays free for the machine's own Zotero. The build and the ready report print the base URL.
 
-Reads need no key. Writes need a Write Authorization, which Zotero 10 grants through its own dialog.
+Reads need no key. By default, a Paired Run with `--local-api` seeds one remembered Write Authorization in Zotero's Fixture profile and the matching record in the Development Vault's Obsidian SecretStorage. ZotLit can write without an authorization dialog.
+
+Use the opt-out when the dialog is part of the test:
+
+```sh
+pnpm fixture open --local-api --no-grant-local-api-writes
+```
+
+This form leaves Zotero without the Fixture key and invalidates the Development Vault's held record. The next user-initiated authorization opens Zotero's dialog.
 
 Zotero refuses each request that it reads as browser traffic. A request is browser traffic when its `User-Agent` starts with `Mozilla/`, or when it carries an `Origin` header. Zotero closes the connection, so the caller sees a network failure and no status code. The `Zotero-Allowed-Request` header lifts this refusal. Zotero sends `Access-Control-Allow-Origin` for the bookmarklet origin only, so a renderer `fetch()` from Obsidian's `app://obsidian.md` origin fails the browser's CORS check even when the request reaches the endpoint. Obsidian's `requestUrl()` runs out of the renderer, so the CORS check does not apply to it. ZotLit sends `Zotero-Allowed-Request: 1` on each call, in `apps/obsidian/src/services/pandoc/bibliography.ts`. In production ZotLit calls the Zotero Local API over the Node HTTP transport in `apps/obsidian/src/lib/node-fetch.ts`, which sends no `Origin` and no user agent and reads no proxy variable, so `requestUrl()` appears in step 4 below as a console-level trial only.
 
@@ -182,7 +192,7 @@ Use this trial to measure both effects on one Fixture:
 1. Start a Paired Run with the API open, and record the Zotero HTTP port from the ready report:
 
    ```sh
-   pnpm fixture open --local-api
+   pnpm fixture open --local-api --no-grant-local-api-writes
    ```
 
 2. Read from a terminal. Replace `<port>` with the reported port:
@@ -240,7 +250,7 @@ Use this trial to measure both effects on one Fixture:
 
    A successful write answers `204 No Content` with `Last-Modified-Version`, and Zotero shows the new title immediately. A write without a key answers `401`, and a write without `Zotero-Server-ID` answers `428`.
 
-Zotero keeps remembered keys in `zotero-profile/localAPIKeys.json`. Clear them from **Settings → Advanced → Clear Write Authorizations**, or close Paired Zotero and run `pnpm fixture` to return the complete Fixture, keys included, to the Fixture Spec.
+Zotero keeps remembered keys in `zotero-profile/localAPIKeys.json`. Clear them from **Settings → Advanced → Clear Write Authorizations**, or restart the Paired Run with `--no-grant-local-api-writes` to prepare the authorization test state again.
 
 ## Scope Cases
 

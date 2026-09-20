@@ -1,4 +1,4 @@
-import { ItemView } from "obsidian";
+import { ItemView, Scope } from "obsidian";
 import type {
   Menu as ObsidianMenu,
   App,
@@ -26,6 +26,7 @@ import {
 import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { registerMigratingWindowEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -107,13 +108,13 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
  */
 export interface AnnotViewDeps {
   app: App;
-  db: Pick<DatabaseService, "state" | "client" | "on" | "ready" | "refresh">;
+  db: Pick<DatabaseService, "state" | "client" | "on" | "ready">;
   liveUpdate: Pick<
     LocalServerService,
     "available" | "readerTarget" | "readerClosed" | "on"
   >;
   /** Every open Obsidian PDF view, as the Reader Session it exposes. */
-  pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath">;
+  pdfReaders: Pick<PdfAnnotationEditor, "sessionForPath" | "on">;
   /**
    * The one read and write path for an Attachment's Annotations, so the cards
    * and the reader overlay show one Annotation Source's records rather than
@@ -123,17 +124,19 @@ export interface AnnotViewDeps {
     AnnotationRepository,
     | "capability"
     | "capabilityFor"
+    | "commentDraftFor"
     | "deleteAnnotation"
+    | "discardCommentDraft"
     | "discardConflict"
-    | "discardCreate"
     | "mutationFor"
     | "on"
     | "patchColor"
-    | "patchComment"
+    | "editComment"
     | "read"
-    | "retryCreate"
+    | "refresh"
     | "retryWrite"
-    | "uncertainCreatesFor"
+    | "retryCommentDraft"
+    | "submitComment"
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
@@ -149,6 +152,7 @@ export interface AnnotViewDeps {
 }
 
 export class AnnotationView extends ItemView {
+  override scope: Scope;
   readonly #store = createAnnotStore();
   readonly #deps: AnnotViewDeps;
   #root: Root | null = null;
@@ -186,6 +190,7 @@ export class AnnotationView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, deps: AnnotViewDeps) {
     super(leaf);
+    this.scope = new Scope(deps.app.scope);
     this.contentEl.addClass("zt-root");
     this.#deps = deps;
   }
@@ -270,6 +275,7 @@ export class AnnotationView extends ItemView {
 
     this.#actions = createAnnotActions({
       app: this.#deps.app,
+      scope: this.scope,
       getDataDir: () => this.#deps.zoteroPref.dataDir,
       annotations: this.#deps.annotations,
       deleteControl: (annot) => this.#cardControls(annot).delete,
@@ -282,7 +288,11 @@ export class AnnotationView extends ItemView {
         this.#store.setState({
           selectedTags: toggledTags(this.#store.getState().selectedTags, tag),
         }),
-      refresh: () => this.#deps.db.refresh(),
+      refresh: async () => {
+        const attachmentKey = this.#store.getState().selectedAttachmentKey;
+        if (attachmentKey === null) return;
+        await this.#deps.annotations.refresh(attachmentKey);
+      },
       noteFeature: this.#deps.noteFeature,
       onSetFollowMode: (mode) => this.#setFollowMode(mode),
       onPinCurrentItem: () => this.#pinCurrentItem(),
@@ -341,6 +351,9 @@ export class AnnotationView extends ItemView {
 
     this.registerEvent(
       this.#deps.app.workspace.on("active-leaf-change", () => {
+        if (this.#deps.app.workspace.activeLeaf === this.leaf) {
+          this.#refreshAnnotations();
+        }
         if (this.#followMode === "active-tab") {
           this.#reload();
           return;
@@ -351,6 +364,24 @@ export class AnnotationView extends ItemView {
         this.#syncImportHandle();
       }),
     );
+
+    this.register(
+      this.#deps.pdfReaders.on("session-added", (filePath) => {
+        if (
+          this.#followMode === "active-tab" &&
+          this.#deps.app.workspace.getActiveFile()?.path === filePath
+        ) {
+          this.#reload();
+        }
+      }),
+    );
+
+    const windowFocus = registerMigratingWindowEvent(
+      this.containerEl,
+      "focus",
+      () => this.#refreshAnnotations(),
+    );
+    this.register(() => windowFocus[Symbol.dispose]());
 
     this.registerEvent(
       this.#deps.app.metadataCache.on("changed", (file) => {
@@ -399,13 +430,7 @@ export class AnnotationView extends ItemView {
         (s) => s.selectedAttachmentKey,
         () => {
           this.#syncCapability();
-          this.#syncUncertainCreates();
         },
-      ),
-    );
-    this.register(
-      this.#deps.annotations.on("uncertain-creates-changed", () =>
-        this.#syncUncertainCreates(),
       ),
     );
     this.register(
@@ -418,12 +443,32 @@ export class AnnotationView extends ItemView {
         this.#store.setState({ mutations });
       }),
     );
+    this.register(
+      this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
+        const commentDrafts = new Map(this.#store.getState().commentDrafts);
+        const draft = this.#deps.annotations.commentDraftFor(annotationKey);
+        if (draft) commentDrafts.set(annotationKey, draft);
+        else commentDrafts.delete(annotationKey);
+        this.#store.setState({ commentDrafts });
+      }),
+    );
+    this.register(
+      this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
+        if (this.#store.getState().editingCommentKey === annotationKey) {
+          this.#store.setState({ editingCommentKey: null });
+        }
+      }),
+    );
 
     await this.#deps.db.ready;
     this.#reload();
   }
 
   protected override async onClose(): Promise<void> {
+    const editingCommentKey = this.#store.getState().editingCommentKey;
+    if (editingCommentKey) {
+      void this.#deps.annotations.submitComment(editingCommentKey);
+    }
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;
     this.#leafSession?.();
@@ -754,12 +799,6 @@ export class AnnotationView extends ItemView {
   ): void {
     const read = ++this.#reads;
     const memoryKey = this.#memoryKey;
-    this.#store.setState({
-      annotations: null,
-      annotationSource: null,
-      // The editor belongs to a card that is about to be replaced.
-      editingCommentKey: null,
-    });
     this.#reading = this.#deps.annotations
       .read(attachmentKey)
       .then((list) => {
@@ -768,9 +807,18 @@ export class AnnotationView extends ItemView {
         // an invalidation cancelled; the same invalidation announces the
         // change this view re-reads on, so the list is not left waiting.
         if (read !== this.#reads || list === null) return;
+        const commentDrafts = new Map(
+          list.annotations.flatMap((annotation) => {
+            const draft = this.#deps.annotations.commentDraftFor(
+              annotation.key,
+            );
+            return draft ? [[annotation.key, draft] as const] : [];
+          }),
+        );
         this.#store.setState({
           annotations: list.annotations,
           annotationSource: list.source,
+          commentDrafts,
         });
         if (!restoreFilter || memoryKey === null) return;
         const saved = this.#loadFilterSelection(memoryKey, list.annotations);
@@ -791,18 +839,12 @@ export class AnnotationView extends ItemView {
       });
   }
 
-  /**
-   * The Uncertain Creates the Attachment on screen carries, as its badged
-   * cards. They belong to the Attachment, so they leave the view with it.
-   */
-  #syncUncertainCreates(): void {
-    const { selectedAttachmentKey } = this.#store.getState();
-    this.#store.setState({
-      uncertainCreates:
-        selectedAttachmentKey === null
-          ? []
-          : this.#deps.annotations.uncertainCreatesFor(selectedAttachmentKey),
-    });
+  /** Revalidates the collection the view currently presents. */
+  #refreshAnnotations(): void {
+    const attachmentKey = this.#store.getState().selectedAttachmentKey;
+    if (attachmentKey !== null) {
+      void this.#deps.annotations.refresh(attachmentKey);
+    }
   }
 
   /**
@@ -997,7 +1039,7 @@ export class AnnotationView extends ItemView {
       pinnable: null,
       annotations: null,
       annotationSource: null,
-      uncertainCreates: [],
+      commentDrafts: new Map(),
       editingCommentKey: null,
       selectedAnnotationKeys: [],
     });

@@ -156,6 +156,8 @@ function makeFile(path: string): TFile {
 
 const PERSONAL_LIBRARY: Library = {
   libraryID: USER_LIBRARY_ID,
+  version: 0,
+  clientVersion: null,
   type: "user",
   groupID: null,
   name: null,
@@ -164,6 +166,8 @@ const PERSONAL_LIBRARY: Library = {
 /** A group whose local id sorts after the personal library's own row order. */
 const GROUP_LIBRARY: Library = {
   libraryID: 12,
+  version: 0,
+  clientVersion: null,
   type: "group",
   groupID: 7,
   name: "Reading group",

@@ -24,6 +24,7 @@ const FIXTURE_DDL = `
     editable integer not null default 1,
     filesEditable integer not null default 1,
     version integer not null default 0,
+    clientVersion integer not null default 0,
     storageVersion integer not null default 0,
     lastSync integer not null default 0,
     archived integer not null default 0,
@@ -51,6 +52,7 @@ const FIXTURE_DDL = `
     libraryID integer not null,
     key text not null,
     version integer not null default 0,
+    clientVersion integer not null default 0,
     synced integer not null default 0
   );
   create table deletedItems (

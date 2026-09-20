@@ -1,16 +1,12 @@
-// What a card shows when Zotero's copy moved under a write, and what a create
-// whose answer was lost shows in its place — decided as data rather than in a
+// What a card shows when Zotero's copy moved under a write, decided as data
+// rather than in a
 // component, so a test reads the verbs instead of clicking them.
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1151
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
-import type {
-  MutationState,
-  WriteConflict,
-} from "@/services/annotation-repository/service";
-import { writeFailureReason } from "@/services/annotation-repository/write";
+import type { WriteConflict } from "@/services/annotation-repository/service";
 
 /** One value of a Write Conflict, under the label that says whose it is. */
 export interface ConflictValue {
@@ -55,7 +51,10 @@ export interface ConflictPanel {
 export function conflictPanel(conflict: WriteConflict): ConflictPanel {
   const discard: ConflictAction = {
     kind: "discard",
-    label: m.annot_view_conflict_discard(),
+    label:
+      conflict.write === "comment"
+        ? m.annot_view_conflict_keep_zotero_comment()
+        : m.annot_view_conflict_discard(),
   };
   if (conflict.write === "delete") {
     return {
@@ -88,61 +87,14 @@ export function conflictPanel(conflict: WriteConflict): ConflictPanel {
     ],
     prompt: null,
     actions: [
-      { kind: "apply-again", label: m.annot_view_conflict_apply_again() },
+      {
+        kind: "apply-again",
+        label:
+          conflict.write === "comment"
+            ? m.annot_view_conflict_use_comment()
+            : m.annot_view_conflict_apply_again(),
+      },
       discard,
-    ],
-  };
-}
-
-/** What one badged card offers to resolve an Uncertain Create with. */
-export interface UncertainAction {
-  kind: "retry" | "discard";
-  label: string;
-  /** True while the retry is in flight: pending shows as disabled verbs. */
-  disabled: boolean;
-}
-
-/** The badged card one Uncertain Create stands as. */
-export interface UncertainCard {
-  title: string;
-  /** Why the card is badged, or what the last retry answered. */
-  detail: string;
-  actions: readonly UncertainAction[];
-}
-
-/**
- * One Uncertain Create as its badged card puts it. Nothing retries on its own,
- * so both verbs are the user's: "Try again" re-sends the original request on
- * its original write token, and "Discard" drops the card.
- *
- * @param state what the create's last request left.
- * @param now the instant a cooldown's remaining seconds are measured from.
- * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
- */
-export function uncertainCard(
-  state: MutationState,
-  now: Temporal.Instant,
-): UncertainCard {
-  const sending = state.kind === "pending";
-  return {
-    title: m.annot_view_uncertain_title(),
-    detail:
-      state.kind === "failed"
-        ? writeFailureReason(state.failure, now)
-        : sending
-          ? m.annot_view_uncertain_sending()
-          : m.annot_view_uncertain_detail(),
-    actions: [
-      {
-        kind: "retry",
-        label: m.annot_view_uncertain_retry(),
-        disabled: sending,
-      },
-      {
-        kind: "discard",
-        label: m.annot_view_uncertain_discard(),
-        disabled: sending,
-      },
     ],
   };
 }

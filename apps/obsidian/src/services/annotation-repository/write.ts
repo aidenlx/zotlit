@@ -59,23 +59,13 @@ export interface WriteConflict {
  * draws a value for, and what it draws is disabled verbs: no provisional
  * value is ever shown.
  *
- * `conflict` and `uncertain` are the write path's two unsettled outcomes —
- * Zotero's copy moved under the write, and a create whose answer never
- * arrived. A conflict stands on one Annotation and carries both values the
- * card offers; `uncertain` stands on a create, which has no Annotation yet and
- * so is held by write token rather than by key.
- *
- * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
+ * A conflict stands on one Annotation and carries both values the card offers.
  */
 export type MutationState =
   | { kind: "idle" }
   | { kind: "pending" }
   | { kind: "conflict"; conflict: WriteConflict }
-  | { kind: "uncertain" }
   | { kind: "failed"; failure: WriteFailure };
-
-/** The state a create whose answer never arrived stands in. */
-export const UNCERTAIN: MutationState = { kind: "uncertain" };
 
 /** The state an Annotation no write is standing on is in. */
 export const IDLE: MutationState = { kind: "idle" };
@@ -175,9 +165,9 @@ export interface AnnotationDraft {
   position: CreatePosition;
 }
 
-/** One create, as the caller must be able to repeat it (aidenlx/zotlit#1151). */
+/** One create request with Zotero's write token as a transport detail. */
 export interface CreateRequest extends WriteRequest {
-  /** Zotero remembers this for twelve hours, so a retry cannot create twice. */
+  /** Zotero uses this token to identify the request. */
   writeToken: string;
 }
 

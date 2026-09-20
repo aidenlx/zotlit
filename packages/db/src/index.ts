@@ -28,7 +28,12 @@ export {
   type CslItemData,
   type CslName,
 } from "./lib/zt-csl-item";
-export { getZoteroIdentity, type ZoteroUserIdentity } from "./queries/account";
+export {
+  getZoteroDatabaseIdentity,
+  getZoteroIdentity,
+  type ZoteroDatabaseIdentity,
+  type ZoteroUserIdentity,
+} from "./queries/account";
 export {
   getSchemaVersions,
   SUPPORTED_SCHEMA_VERSIONS,
@@ -41,6 +46,14 @@ export {
   type ItemDisplayInfo,
   type ItemRef,
 } from "./queries/item-ref";
+export {
+  ANNOTATION_ANCHOR_KEY,
+  formatAnnotationFragment,
+  formatAnnotationSubpath,
+  parseAnnotationSubpath,
+  type AnnotationFileLinkAnchor,
+  type ParsedAnnotationSubpath,
+} from "./lib/zt-annot-anchor";
 export {
   formatIndexedKey,
   isIndexedKey,

@@ -70,7 +70,7 @@ In a Profile document: the Annotation Section, the final section after the stand
 
 ```liquid
 {% bq %}
-[!note] Page {{ zt.pageLabel }}
+[!note] Page {% if zt.pageLabel %}{{ zt | file_link: zt.pageLabel | default: zt.pageLabel }}{% endif %}
 
 {{ zt.imgLink | embed }}{{ zt.text }}
 {% if zt.comment %}
@@ -83,20 +83,20 @@ In a Profile document: the Annotation Section, the final section after the stand
 Rendered output for an annotation on page 42 with an image excerpt, highlighted text, and a comment:
 
 ```markdown
-> [!note] Page 42
+> [!note] Page [42](file:///Users/me/Zotero/storage/ABCD2345/paper.pdf#page=42&zt-annotation=ANNX2345)
 >
 > ![[excerpt.png]]The highlighted passage
 >
 > My thoughts on this
 ```
 
-| Element      | Source                                                                                                                                                                                   |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                      |
-| Page label   | `{{ zt.pageLabel }}` in the callout title.                                                                                                                                               |
-| Image        | `{{ zt.imgLink \| embed }}`: imports an approved annotation image and embeds its vault link. A blocked image keeps a direct `file://` link. Collapses to `""` for non-image annotations. |
-| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                |
-| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                |
+| Element      | Source                                                                                                                                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Callout type | `[!note]`: an Obsidian callout. Change `note` to `quote`, `info`, or any supported type to restyle.                                                                                                                                 |
+| Page label   | `{{ zt \| file_link: zt.pageLabel }}` in the callout title: the page label, linked to the attachment file. Click it and the PDF opens on that page with this annotation selected. A label with no resolvable file stays plain text. |
+| Image        | `{{ zt.imgLink \| embed }}`: imports an approved annotation image and embeds its vault link. A blocked image keeps a direct `file://` link. Collapses to `""` for non-image annotations.                                            |
+| Text         | `{{ zt.text }}`: the highlighted passage.                                                                                                                                                                                           |
+| Comment      | `{{ zt.comment }}`: the user's marginal note, rendered only when present.                                                                                                                                                           |
 
 The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line and collapses consecutive blank lines into a single bare `>`.
 

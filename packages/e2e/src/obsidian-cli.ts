@@ -1,6 +1,5 @@
 // Minimal Obsidian CLI client for the e2e suite. Mirrors the `=> `-prefixed
-// output convention and the "no timeout — bounded polling is the caller's
-// job" caveat documented for `obEval` in
+// output convention and bounded polling documented for `obEval` in
 // packages/scripts/scripts/obsidian-vault.ts, whose own header carries the
 // routing and transport background. Not importing that script directly: it has
 // no public exports, it's a script, not a library.
@@ -10,10 +9,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const CLI_TIMEOUT_MS = 15_000;
 
 /** The Obsidian CLI always exits 0 — failures come back only as output text. */
 export async function cli(args: string[]): Promise<string> {
-  const result = await execFileAsync("obsidian", args, { windowsHide: true });
+  const result = await execFileAsync("obsidian", args, {
+    timeout: CLI_TIMEOUT_MS,
+    windowsHide: true,
+  });
   return `${result.stdout}${result.stderr}`.trim();
 }
 
@@ -33,8 +36,8 @@ function parseReply(text: string): string {
 
 /**
  * Run JavaScript in `vaultId`'s window. `vault=<id>` must be the first argv
- * token. No timeout on the reply, so every caller bounds its own wait with
- * {@link waitFor}.
+ * token. The process timeout bounds a missing reply; callers use
+ * {@link waitFor} when they need to poll application state.
  */
 export async function obEval(vaultId: string, code: string): Promise<string> {
   const text = await cli([`vault=${vaultId}`, "eval", `code=${code}`]);

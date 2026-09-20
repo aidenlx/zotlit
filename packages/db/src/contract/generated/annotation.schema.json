@@ -81,7 +81,7 @@
               "additionalProperties": false
             }
           ],
-          "description": "Markdown link to the parent attachment file, deep-linked to this annotation's `page` (`#page=N`); `null` when the file is unresolvable. Call it to render — pass `alias`/`subpath` to override the display text or the `#`-fragment. Computed at the app layer."
+          "description": "Markdown link to the parent attachment file, anchored to this annotation's `page` and to the annotation itself (`#page=N&zt-annotation=<indexedKey>`), so ZotLit's reader lands on its Annotation Mark and every other reader lands on the page; `null` when the file is unresolvable. Call it to render — pass `alias`/`subpath` to override the display text or the `#`-fragment. Computed at the app layer."
         },
         "backlink": {
           "type": "string",

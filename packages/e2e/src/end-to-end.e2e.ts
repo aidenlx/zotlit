@@ -23,6 +23,8 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 import {
+  ANNOTATIONS,
+  ATTACHMENTS,
   COLLECTIONS,
   findScopeCase,
   getFixtureLayout,
@@ -72,6 +74,16 @@ const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
 const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
 const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
 const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
+const annotationAttachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
+const annotationKeys = ANNOTATIONS.filter(
+  ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
+).map(({ key }) => key);
+const annotationKeysByPage = Map.groupBy(
+  ANNOTATIONS.filter(
+    ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
+  ),
+  ({ position }) => position.pageIndex,
+);
 
 async function isObsidianReachable(): Promise<boolean> {
   const result = await runVaultScript(["status"]).catch(() => undefined);
@@ -102,8 +114,12 @@ if (reachable && pairedZotero) {
   );
 }
 const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
+const settingsContent = "app.setting.containerEl";
 
-async function openProfilesSettings(vaultId: string, pageName: string) {
+async function openProfilesSettings(
+  vaultId: string,
+  pageId: "settings_page_profiles" | "settings_page_advanced",
+) {
   await obEval(
     vaultId,
     "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true",
@@ -111,7 +127,7 @@ async function openProfilesSettings(vaultId: string, pageName: string) {
   await obEval(vaultId, "app.setting.openTabById('zotlit');true");
   await obEval(
     vaultId,
-    `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:[${JSON.stringify(pageName)}]});true`,
+    `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:[${JSON.stringify(pageId)}]});true`,
   );
 }
 
@@ -169,6 +185,8 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     document: "zotlit-profile.articles.md",
   };
   const bookMatch = { and: ['itemType == "book"', 'library == "personal"'] };
+  const activeWorkbenchContent =
+    "app.workspace.activeLeaf?.view?.getViewType()==='zotlit-template-workbench'?app.workspace.activeLeaf.view.contentEl:null";
 
   function conditionReady({
     row = 0,
@@ -189,7 +207,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const valueProperty = kind === "library" ? "textContent" : "value";
     return obEvalUntil(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-template-workbench');var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
+      `(function(){var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
@@ -197,7 +215,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   async function addLibraryCondition(selector: string): Promise<void> {
     await obEval(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-template-workbench');Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
     expect(
       await conditionReady({
@@ -209,7 +227,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var row=Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -221,33 +239,33 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
+      `(function(){var row=Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
     );
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};var row=Array.from(editor.querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new editor.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
     );
   }
 
   async function openMatchEditor(): Promise<void> {
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openProfilesSettings(vaultId, "settings_page_profiles");
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_action())});if(!button||button.disabled)return false;button.click();return true;})()`,
+        `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;button.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var editor=document.querySelector('.zt-template-workbench');return String(!!editor?.querySelector('[data-part=fieldset]')&&!document.querySelector('.modal.mod-settings'));})()`,
+        `(function(){var editor=${activeWorkbenchContent};var tab=Array.from(editor?.querySelectorAll('[role=tab]')??[]).find(tab=>tab.textContent.trim()===${JSON.stringify(m.workbench_tab_match())});tab?.click();return String(!!editor?.querySelector('[data-part=fieldset]')&&!editor?.ownerDocument.querySelector('.modal.mod-settings'));})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-template-workbench');if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
   }
 
@@ -261,7 +279,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   function clickTemplateCustomize() {
     return obEvalUntil(
       vaultId,
-      `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_template_customize())});if(!button||button.disabled)return false;button.click();return true;})()`,
+      `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;button.click();return true;})()`,
       { expected: "true" },
     );
   }
@@ -274,7 +292,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openProfilesSettings(vaultId, "settings_page_profiles");
   }
 
   /** Hand-written Match trees exercise the same document boundary as external editors. */
@@ -307,28 +325,32 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     item: { title: string },
     targetVaultId = vaultId,
   ) {
+    await obEval(
+      targetVaultId,
+      "app.workspace.detachLeavesOfType('zotlit-template-workbench');true",
+    );
     expect(
       await obEvalUntil(
         targetVaultId,
-        "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+        "(function(){var command=app.commands.commands['zotlit:note-quick-switcher'];if(!command)return false;command.callback();return true;})()",
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         targetVaultId,
-        "String(!!document.querySelector('.prompt input'))",
+        "String(!!activeDocument.querySelector('.prompt input'))",
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       targetVaultId,
-      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(targetVaultId, item.title);
     await obEval(
       targetVaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
   }
 
@@ -391,6 +413,71 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     }
   }, 120000);
 
+  it("shows the same Fixture Annotations in both surfaces with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    try {
+      await obEval(
+        vaultId,
+        `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+      );
+      const expected = [...annotationKeys].sort();
+      const readAnnotations = `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.read(${JSON.stringify(annotationAttachment.key)});return JSON.stringify({source:list?.source.kind??null,keys:(list?.annotations??[]).map(({key})=>key).sort()});})()`;
+      expect(
+        await obEvalUntil(vaultId, readAnnotations, {
+          expected: JSON.stringify({ source: "zotero-db", keys: expected }),
+        }),
+      ).toBe(true);
+      expect(JSON.parse(await obEval(vaultId, readAnnotations))).toEqual({
+        source: "zotero-db",
+        keys: expected,
+      });
+      const visibleCards = `JSON.stringify((()=>{const annotationView=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view;const cards=Array.from(annotationView?.containerEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(Boolean);return [...new Set(cards)].sort();})())`;
+      const cardsReady = await obEvalUntil(vaultId, visibleCards, {
+        expected: JSON.stringify(expected),
+      });
+      if (!cardsReady) {
+        const state = await obEval(
+          vaultId,
+          `JSON.stringify((()=>{const services=app.plugins.plugins.zotlit.services;const leaves=app.workspace.getLeavesOfType('zotero-annotation-view');const active=app.workspace.getActiveFile();const full=active?app.vault.adapter.getFullPath(active.path):null;const session=active?services.pdfAnnotationEditor.sessionForPath(active.path):null;return {count:leaves.length,snapshot:leaves[0]?.view.snapshot??null,active:active?.path??null,session:session?{filePath:session.filePath,target:session.target}:null,resolution:full?services.attachmentResolver.resolve(full):null,fullPath:full,exists:full?require('fs').existsSync(full):false,profileDir:services.zoteroPref.resolvedProfileDir,dataDir:services.zoteroPref.dataDir};})())`,
+        );
+        throw new Error(`Annotation cards did not render: ${state}`);
+      }
+      expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      for (const [pageIndex, annotations] of annotationKeysByPage) {
+        const pageKeys = annotations.map(({ key }) => key).sort();
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `(function(){const pdfView=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(annotationAttachment.path)})?.view;const page=pdfView?.containerEl.querySelector('.page[data-page-number="${pageIndex + 1}"]');page?.scrollIntoView({block:'center'});const marks=Array.from(pdfView?.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(key=>${JSON.stringify(pageKeys)}.includes(key));return JSON.stringify([...new Set(marks)].sort());})()`,
+            { expected: JSON.stringify(pageKeys) },
+          ),
+        ).toBe(true);
+      }
+      expect(
+        await obEval(
+          vaultId,
+          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const text=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.textContent??'';const labels=['Zotero DB','Local API','database source'];return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(annotationAttachment.key)}),sourceLabels:labels.some(label=>text.toLowerCase().includes(label.toLowerCase()))});})()`,
+        ),
+      ).toBe(
+        JSON.stringify({
+          capability: {
+            kind: "read-only",
+            reason: "zotero-unavailable",
+          },
+          sourceLabels: false,
+        }),
+      );
+    } finally {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    }
+  }, 120000);
+
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
     const freshPath = join(workspaceRoot, "tmp", "e2e-first-note-vault");
@@ -405,6 +492,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       "fresh",
     ]);
     const freshId = created.stdout.trim().split("\n")[0]!.trim();
+    await obEval(
+      freshId,
+      "app.saveLocalStorage('zotlit-profile-customization','native');true",
+    );
     expect(
       await obEval(
         freshId,
@@ -428,17 +519,18 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
     expect(before).toContain("[!note]");
-    expect(before.split("[!note]").length - 1).toBe(7);
+    expect(before.split("[!note]").length - 1).toBe(annotationKeys.length);
     expect(
       await obEval(
         freshId,
         "app.commands.executeCommandById('zotlit:customize-note-template')",
       ),
     ).toBe("true");
-    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})?.view`;
+    const editor = `(function(){var leaves=app.workspace.getLeavesOfType('zotlit-template-workbench');return (leaves.find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})??leaves[0])?.view;})()`;
     expect(
       await obEvalUntil(freshId, `String(!!(${editor})?.file)`, {
         expected: "true",
+        tries: 80,
       }),
     ).toBe(true);
     expect(
@@ -535,7 +627,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
             "[!quote]",
           ).length -
             1 ===
-          7,
+          annotationKeys.length,
       ),
     ).toBe(true);
     const after = await readFile(join(freshPath, note.path!), "utf-8");
@@ -626,7 +718,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(preselected).not.toContain(booksProfile.label);
     await obEval(
       vaultId,
-      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     const selected = await selectSuggestion(vaultId, booksNotePath);
     expect(selected).toContain(booksProfile.label);
@@ -634,7 +726,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(selected).toContain(booksNotePath);
     await obEval(
       vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
     expect(
       await waitFor(async () =>
@@ -720,20 +812,20 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
+        `String(Array.from(activeDocument.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
-    // remaining group items (8, 9, 10) are created under Default, the batch's
+    // remaining group items (8, 9, 10, 79) are created under Default, the batch's
     // fallback: the Books choice made in the citekey picker stayed with that
     // operation.
     const defaultCount =
       ITEMS.filter(({ libraryID }) => libraryID === 1).length + 1;
     const summary = await obEval(
       vaultId,
-      "document.querySelector('.modal').textContent",
+      "activeDocument.querySelector('.modal').textContent",
     );
     for (const [label, count] of [
       [m.settings_profile_default_name(), defaultCount],
@@ -744,7 +836,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       expect((await notices.read()).join("\n")).toContain(updated);
     }
     const created = m.batch_profile_created({
-      count: 3,
+      count: 4,
       label: m.settings_profile_default_name(),
     });
     expect(summary).toContain(created);
@@ -822,11 +914,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await addLibraryCondition("personal");
     await saveMatch(bookMatch);
-    const description = `${booksProfile.document}${m.settings_profile_match_status({ state: "evaluable" })}`;
+    const description = m.settings_profile_match_status({ state: "evaluable" });
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent===${JSON.stringify(description)}))`,
+        `String(Array.from((${settingsContent}).querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(description)})))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -841,7 +933,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
+      await obEval(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt'))",
+      ),
     ).toBe("false");
     expect(await notices.read()).toContain(
       m.notice_created_note_from_match({
@@ -875,7 +970,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
+      await obEval(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt'))",
+      ),
     ).toBe("false");
     expect(await notices.read()).toContain(
       m.notice_created_note_from_match({
@@ -900,7 +998,9 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       ({ libraryID }) => libraryID === labItem.libraryID,
     )!;
     const creating = [bookItem, sharedItem, preprintItem, labItem];
-    for (const item of [sharedItem, preprintItem, labItem]) {
+    const booksProfileTargetExists =
+      (await indexedNote(vaultId, booksProfileTargetItem.itemID)).path !== null;
+    for (const item of creating) {
       const note = await indexedNote(vaultId, item.itemID);
       if (note.path)
         await cli([`vault=${vaultId}`, "delete", `path=${note.path}`]);
@@ -959,7 +1059,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
+        `String(Array.from(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -969,7 +1069,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const labPath = `books/books-${labItem.citationKey}.md`;
     const confirmation = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       bookPath,
@@ -986,13 +1086,13 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       expect(
         await obEval(
           vaultId,
-          `String(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-profile-choice-scope=${scope}]').length)`,
+          `String(Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-profile-choice-scope=${scope}]').length)`,
         ),
       ).toBe("1");
     expect(confirmation).not.toContain(m.batch_profile_recovery_help());
     await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]').click();true",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]').click();true",
     );
     const candidate = await selectSuggestion(
       vaultId,
@@ -1003,23 +1103,23 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(candidate).toContain(articlesProfile.label);
     await obEval(
       vaultId,
-      `(function(){var input=Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(vaultId, preprintPath);
     await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]')?.getAttribute('aria-label')===${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))})`,
+        `String(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]')?.getAttribute('aria-label')===${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))})`,
         { expected: "true" },
       ),
     ).toBe(true);
     const chosen = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       bookPath,
@@ -1038,18 +1138,23 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
+        `String(Array.from(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
     const summary = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       m.batch_profile_created({ count: 3, label: booksProfile.label }),
-      m.batch_profile_created({ count: 1, label: articlesProfile.label }),
-      m.batch_profile_updated({ count: 1, label: booksProfile.label }),
+      m.batch_profile_created({
+        count: booksProfileTargetExists ? 1 : 2,
+        label: articlesProfile.label,
+      }),
+      ...(booksProfileTargetExists
+        ? [m.batch_profile_updated({ count: 1, label: booksProfile.label })]
+        : []),
       m.batch_profile_updated({
         count: 1,
         label: m.settings_profile_default_name(),
@@ -1125,7 +1230,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var operator=document.querySelector('.zt-template-workbench [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};var operator=editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -1147,12 +1252,16 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(fallback).toContain(`literatures/${childItem.citationKey}.md`);
     await obEval(
       vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
     );
     expect(
-      await obEvalUntil(vaultId, "String(!document.querySelector('.prompt'))", {
-        expected: "true",
-      }),
+      await obEvalUntil(
+        vaultId,
+        "String(!activeDocument.querySelector('.prompt'))",
+        {
+          expected: "true",
+        },
+      ),
     ).toBe(true);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
     await writeMatch(booksProfile, bookMatch);
@@ -1167,32 +1276,45 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const exterior = "My discussion stays outside the managed region.";
     await obEval(
       vaultId,
-      `(async function(){app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
+      `(async function(){app.workspace.detachLeavesOfType('zotlit-template-workbench');app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
     );
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openProfilesSettings(vaultId, "settings_page_profiles");
+    const profileNoteCount = Number(
+      await obEval(
+        vaultId,
+        `String(app.vault.getMarkdownFiles().filter(file=>String(app.metadataCache.getFileCache(file)?.frontmatter?.['zotlit-profile']??'').startsWith(${JSON.stringify(`${booksProfile.label} (`)})).length)`,
+      ),
+    );
+    expect(profileNoteCount).toBeGreaterThan(0);
     const beforeMove = await readFile(
       join(e2eVaultPath, booksNotePath),
       "utf-8",
     );
-    // The list's own delete icon is the last control on the row, after the
-    // row's edit, duplicate, and share icons; Obsidian labels it itself.
+    // Profile management lives in the row's More actions menu.
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&row.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('.clickable-icon')).at(-1);if(!button)return false;button.click();return true;})()`,
+        `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&(Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.workbench_more_actions())})??row.querySelector('.extra-setting-button'));if(!button)return false;button.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
-        "String(!!document.querySelector('input[name=\"zotlit-delete-profile-target\"]:checked'))",
+        `(function(){var doc=(${settingsContent}).ownerDocument;var title=Array.from(doc.querySelectorAll('.menu-item-title')).find(title=>title.textContent.trim()===${JSON.stringify(m.settings_profile_delete())});var item=title?.closest('.menu-item');if(!item)return false;item.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!(${settingsContent}).ownerDocument.querySelector('input[name="zotlit-delete-profile-target"]:checked'))`,
         { expected: "true" },
       ),
     ).toBe(true);
     const target = await obEval(
       vaultId,
-      "document.querySelector('input[name=\"zotlit-delete-profile-target\"]:checked').closest('label').textContent",
+      `(${settingsContent}).ownerDocument.querySelector('input[name="zotlit-delete-profile-target"]:checked').closest('label').textContent`,
     );
     const movedPath = `literatures/${booksNotePath.slice(booksNotePath.lastIndexOf("/") + 1)}`;
     expect(target).toContain(m.settings_profile_default_name());
@@ -1200,26 +1322,27 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEval(
         vaultId,
-        `(function(){var label=Array.from(document.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;checkbox.click();return checkbox.checked;})()`,
+        `(function(){var doc=(${settingsContent}).ownerDocument;var label=Array.from(doc.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;checkbox.click();return checkbox.checked;})()`,
       ),
     ).toBe("true");
     const deletionDialog = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      `Array.from((${settingsContent}).ownerDocument.querySelectorAll('.modal')).at(-1).textContent`,
     );
     expect(deletionDialog).toContain(
-      m.settings_profile_delete_literature_count({ count: 1 }),
+      m.settings_profile_delete_literature_count({ count: profileNoteCount }),
     );
     expect(deletionDialog).toContain(
       m.settings_profile_delete_imported_count({ count: 0 }),
     );
     expect(deletionDialog).toContain(
-      m.settings_profile_delete_move_confirm({ count: 1 }),
+      m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
     );
     expect(
       await clickModalButton(
         vaultId,
-        m.settings_profile_delete_move_confirm({ count: 1 }),
+        m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
+        `(${settingsContent}).ownerDocument`,
       ),
       deletionDialog,
     ).toBe(true);
@@ -1335,11 +1458,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       });
       expect(liveUpdate.status).toBe(200);
 
-      await openProfilesSettings(vaultId, m.settings_page_advanced());
+      await openProfilesSettings(vaultId, "settings_page_advanced");
       expect(
         await obEval(
           vaultId,
-          `(function(){var names=Array.from(document.querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
         ),
       ).toBe("true");
 
@@ -1577,7 +1700,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     });
 
     it("disconnects from the settings row and refuses the next request with 401", async () => {
-      await openProfilesSettings(vaultId, m.settings_page_advanced());
+      await openProfilesSettings(vaultId, "settings_page_advanced");
       expect(
         await obEvalUntil(
           vaultId,
@@ -1696,7 +1819,6 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       m.annot_view_mode_active_tab(),
       m.annot_view_mode_zotero_reader(),
     ]);
-    expect(report.labels).toContain(m.annot_view_mode_pin_current_item());
     expect(report.labels).toContain(m.annot_view_pin_choose_item());
     // The assertion this test exists for: every entry the menu holds sits
     // inside the box the menu draws, so none is clipped out of sight.
@@ -1876,11 +1998,11 @@ describe.skipIf(!reachable || pairedZotero !== null)(
           vaultId,
           `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
         );
-        await openProfilesSettings(vaultId, m.settings_page_profiles());
+        await openProfilesSettings(vaultId, "settings_page_profiles");
         expect(
           await obEvalUntil(
             vaultId,
-            `(function(){var button=Array.from(document.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
+            `(function(){var settings=${settingsContent};var button=Array.from(settings.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -1973,25 +2095,25 @@ describe.skipIf(!reachable || pairedZotero !== null)(
       expect(
         await obEvalUntil(
           vaultId,
-          "String(!!document.querySelector('.prompt input'))",
+          "String(!!activeDocument.querySelector('.prompt input'))",
           { expected: "true" },
         ),
       ).toBe(true);
       await obEval(
         vaultId,
-        "(function(){var input=document.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
+        "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
       );
       await selectSuggestion(vaultId, "Thinking, fast and slow");
       await obEval(
         vaultId,
-        "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+        "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
       );
       const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
       expect(choice).toContain("Books");
       expect(choice).toContain("books/Kahneman2011.md");
       await obEval(
         vaultId,
-        "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+        "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
       );
       expect(
         await waitFor(async () =>
@@ -2132,20 +2254,24 @@ async function selectSuggestion(
   expect(
     await obEvalUntil(
       vaultId,
-      `(function(){var prompt=Array.from(document.querySelectorAll('.prompt')).at(-1);var row=Array.from(prompt?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
+      `(function(){var prompt=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1);var row=Array.from(prompt?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
       { expected: "true" },
     ),
   ).toBe(true);
   return obEval(
     vaultId,
-    "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
+    "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
   );
 }
 
-function clickModalButton(vaultId: string, label: string): Promise<boolean> {
+function clickModalButton(
+  vaultId: string,
+  label: string,
+  documentExpression = "activeDocument",
+): Promise<boolean> {
   return obEvalUntil(
     vaultId,
-    `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
+    `(function(){var doc=${documentExpression};var modal=Array.from(doc.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
     { expected: "true" },
   );
 }
@@ -2154,7 +2280,7 @@ function clickModalButton(vaultId: string, label: string): Promise<boolean> {
 async function observeNotices(vaultId: string) {
   await obEval(
     vaultId,
-    "(function(){var previous=new Set(document.querySelectorAll('.notice'));var values=new Map();var observer=new MutationObserver(()=>{for(var element of document.querySelectorAll('.notice'))if(!previous.has(element))values.set(element,element.textContent);});observer.observe(document.body,{childList:true,subtree:true});window.zotlitE2ENotices={observer,values};return true;})()",
+    "(function(){var doc=activeDocument;var previous=new Set(doc.querySelectorAll('.notice'));var values=new Map();var observer=new MutationObserver(()=>{for(var element of doc.querySelectorAll('.notice'))if(!previous.has(element))values.set(element,element.textContent);});observer.observe(doc.body,{childList:true,subtree:true});window.zotlitE2ENotices={observer,values};return true;})()",
   );
   return {
     async read(): Promise<string[]> {

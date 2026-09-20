@@ -6,6 +6,7 @@ import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
 import { defineQuery } from "./_shared";
 import type { FindManyOptions, QueryRow } from "./_shared";
+import { hasClientRevisions } from "./schema-version";
 
 const annotationFindOptions = {
   with: {
@@ -15,6 +16,7 @@ const annotationFindOptions = {
         libraryID: true,
         dateAdded: true,
         dateModified: true,
+        clientVersion: true,
       },
       with: {
         itemTags: {
@@ -31,6 +33,22 @@ const annotationFindOptions = {
   orderBy: { sortIndex: "asc" },
 } satisfies FindManyOptions<"itemAnnotations">;
 
+const legacyAnnotationFindOptions = {
+  ...annotationFindOptions,
+  with: {
+    ...annotationFindOptions.with,
+    item: {
+      ...annotationFindOptions.with.item,
+      columns: {
+        key: true,
+        libraryID: true,
+        dateAdded: true,
+        dateModified: true,
+      },
+    },
+  },
+} satisfies FindManyOptions<"itemAnnotations">;
+
 const annotationsByParentQuery = defineQuery<{ parentItemID: number }>()(
   (db, { placeholder }) =>
     db.query.itemAnnotations.findMany({
@@ -39,6 +57,17 @@ const annotationsByParentQuery = defineQuery<{ parentItemID: number }>()(
         item: { deletedItem: false },
       },
       ...annotationFindOptions,
+    }),
+);
+
+const legacyAnnotationsByParentQuery = defineQuery<{ parentItemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAnnotations.findMany({
+      where: {
+        parentItemID: placeholder("parentItemID"),
+        item: { deletedItem: false },
+      },
+      ...legacyAnnotationFindOptions,
     }),
 );
 
@@ -58,11 +87,35 @@ const annotationsByKeyQuery = defineQuery<{
   }),
 );
 
+const legacyAnnotationsByKeyQuery = defineQuery<{
+  libraryID: number;
+  key: string;
+}>()((db, { placeholder }) =>
+  db.query.itemAnnotations.findMany({
+    where: {
+      item: {
+        key: placeholder("key"),
+        libraryID: placeholder("libraryID"),
+        deletedItem: false,
+      },
+    },
+    ...legacyAnnotationFindOptions,
+  }),
+);
+
 const annotationByItemIdQuery = defineQuery<{ itemID: number }>()(
   (db, { placeholder }) =>
     db.query.itemAnnotations.findMany({
       where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
       ...annotationFindOptions,
+    }),
+);
+
+const legacyAnnotationByItemIdQuery = defineQuery<{ itemID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemAnnotations.findMany({
+      where: { itemID: placeholder("itemID"), item: { deletedItem: false } },
+      ...legacyAnnotationFindOptions,
     }),
 );
 
@@ -74,10 +127,12 @@ export function getAnnotationsByParent(
   opts?: { memo?: GroupIDMemo },
 ): Annotation[] {
   const memo = opts?.memo ?? new Map();
-  return annotationsByParentQuery
-    .prepared(db)
-    .all({ parentItemID })
-    .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo)));
+  const rows = hasClientRevisions(db)
+    ? annotationsByParentQuery.prepared(db).all({ parentItemID })
+    : legacyAnnotationsByParentQuery.prepared(db).all({ parentItemID });
+  return rows.map((r) =>
+    toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo)),
+  );
 }
 
 export function getAnnotationsByKey(
@@ -88,8 +143,11 @@ export function getAnnotationsByKey(
   if (keys.length === 0) return [];
 
   const groupId = groupIDForLibrary(db, libraryID);
+  const query = hasClientRevisions(db)
+    ? annotationsByKeyQuery
+    : legacyAnnotationsByKeyQuery;
   return keys.flatMap((key) =>
-    annotationsByKeyQuery
+    query
       .prepared(db)
       .all({ libraryID, key })
       .flatMap((row) =>
@@ -104,15 +162,21 @@ export function getAnnotationsByItemId(
   opts?: { memo?: GroupIDMemo },
 ): Annotation[] {
   const memo = opts?.memo ?? new Map();
+  const query = hasClientRevisions(db)
+    ? annotationByItemIdQuery
+    : legacyAnnotationByItemIdQuery;
   return itemIDs.flatMap((itemID) =>
-    annotationByItemIdQuery
+    query
       .prepared(db)
       .all({ itemID })
       .map((r) => toAnnotation(r, resolveGroupID(db, r.item.libraryID, memo))),
   );
 }
 
-function toAnnotation(row: AnnotationRow, groupID: number | null): Annotation {
+function toAnnotation(
+  row: AnnotationRow | QueryRow<typeof legacyAnnotationsByParentQuery>,
+  groupID: number | null,
+): Annotation {
   return {
     itemID: row.itemID,
     key: row.item.key,
@@ -121,6 +185,7 @@ function toAnnotation(row: AnnotationRow, groupID: number | null): Annotation {
     groupID,
     dateAdded: row.item.dateAdded,
     dateModified: row.item.dateModified,
+    version: "clientVersion" in row.item ? row.item.clientVersion : 0,
     type: row.type,
     text: row.text,
     comment: row.comment,

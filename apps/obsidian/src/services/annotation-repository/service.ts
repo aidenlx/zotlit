@@ -3,9 +3,10 @@ import type { QueryFunction, QueryKey } from "@tanstack/query-core";
 
 import {
   annotationTypeToName,
-  formatIndexedKey,
   getAnnotationsByParent,
   getAttachmentByKey,
+  getLibraries,
+  getZoteroDatabaseIdentity,
   parseAnnotationPosition,
   parseIndexedKey,
   resolveIndexedKeyLibrary,
@@ -35,8 +36,7 @@ import {
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
-import { matchCreatedAnnotation, resolvesSilently } from "./reconcile";
-import type { CreateMatch } from "./reconcile";
+import { resolvesSilently } from "./reconcile";
 import {
   colorPatch,
   commentPatch,
@@ -45,13 +45,11 @@ import {
   IDLE,
   MAX_POSITION_LENGTH,
   newWriteToken,
-  UNCERTAIN,
   writePosition,
 } from "./write";
 import type {
   AnnotationDraft,
   ConflictedWrite,
-  CreateRequest,
   MutationState,
   WriteFailure,
   WriteRequest,
@@ -80,13 +78,29 @@ const ZOTERO_DB = "zotero-db";
  */
 const ZOTERO_LOCAL_API = "zotero-local-api";
 
+const COMMENT_IDLE_SAVE_MS = 1_000;
+const COMMENT_BURST_SAVE_MS = 10_000;
+
 /**
  * Where a whole record set came from. The source is atomic per Attachment: a
  * list is wholly one source's, and the two sets never join.
  *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  */
-export type AnnotationSource = { kind: "zotero-db" } | LocalApiSource;
+export interface DatabaseAnnotationSource {
+  kind: "zotero-db";
+  /** Standalone database identity, available before a Local API Server ID. */
+  database: {
+    userID: number | null;
+    localUserKey: string | null;
+    serverID: string | null;
+  };
+  libraryID: number;
+  /** Committed Zotero Library revision held by this database snapshot. */
+  libraryRevision: number | null;
+}
+
+export type AnnotationSource = DatabaseAnnotationSource | LocalApiSource;
 
 /**
  * One Annotation as both sources describe it: Indexed Keys, a type name, and a
@@ -132,6 +146,69 @@ export interface AnnotationList {
   annotations: readonly AnnotationRecord[];
 }
 
+export type CommentDraftState =
+  | { kind: "editing" }
+  | { kind: "pending" }
+  | { kind: "conflict"; fresh: string }
+  | { kind: "failed"; failure: WriteFailure };
+
+/** One Annotation comment being edited in this plugin session. */
+export interface CommentDraft {
+  annotationKey: string;
+  attachmentKey: string;
+  /** Zotero database that supplied the record when editing began. */
+  serverID: string;
+  /** Confirmed comment editing began from. */
+  baseline: string;
+  /** Current shared input. */
+  text: string;
+  state: CommentDraftState;
+}
+
+type CommentWriteDecision =
+  | { kind: "drop" }
+  | { kind: "retain" }
+  | { kind: "update"; draft: CommentDraft };
+
+/** Decide what one completed comment request leaves in repository memory. */
+function commentDraftAfterWrite(
+  current: CommentDraft,
+  submittedText: string,
+  outcome: MutationState,
+): CommentWriteDecision {
+  switch (outcome.kind) {
+    case "idle":
+      return sameComment(current.text, submittedText)
+        ? { kind: "drop" }
+        : {
+            kind: "update",
+            draft: {
+              ...current,
+              baseline: submittedText,
+              state: { kind: "editing" },
+            },
+          };
+    case "conflict":
+      return {
+        kind: "update",
+        draft: {
+          ...current,
+          state: { kind: "conflict", fresh: outcome.conflict.fresh ?? "" },
+        },
+      };
+    case "failed":
+      return {
+        kind: "update",
+        draft: {
+          ...current,
+          state: { kind: "failed", failure: outcome.failure },
+        },
+      };
+    case "pending":
+      return { kind: "retain" };
+  }
+}
+
 export interface AnnotationRepositoryEvents {
   /**
    * The list this Attachment holds was superseded. A consumer re-reads and
@@ -154,6 +231,12 @@ export interface AnnotationRepositoryEvents {
    * @param annotationKey the Annotation's Indexed Key.
    */
   "mutation-changed": (annotationKey: string) => void;
+  /** One shared comment draft moved. */
+  "comment-draft-changed": (annotationKey: string) => void;
+  /** A database switch hid a draft that belongs to the previous database. */
+  "comment-draft-hidden": (annotationKey: string) => void;
+  /** A complete read confirmed that an Annotation no longer exists. */
+  "annotation-deleted": (annotationKey: string, attachmentKey: string) => void;
   /**
    * Zotero's copy of this Annotation moved under a write, and the card now
    * carries both values with the verbs that resolve them. Raised only for a
@@ -167,16 +250,10 @@ export interface AnnotationRepositoryEvents {
    * @param attachmentKey the Attachment it hangs from.
    */
   "write-conflict": (annotationKey: string, attachmentKey: string) => void;
-  /**
-   * The Uncertain Creates standing on some Attachment moved: one appeared, was
-   * confirmed, was retried, or was discarded. A consumer re-reads
-   * {@link AnnotationRepository.uncertainCreatesFor}.
-   */
-  "uncertain-creates-changed": () => void;
 }
 
 export interface AnnotationRepositoryDeps {
-  db: Pick<DatabaseService, "acquireRead" | "on">;
+  db: Pick<DatabaseService, "acquireRead" | "on" | "refresh">;
   queryClient: Pick<
     QueryClientService,
     "invalidate" | "keysUnder" | "peek" | "read" | "update"
@@ -211,59 +288,22 @@ interface HeldAnnotation {
   record: AnnotationRecord;
 }
 
-/**
- * One create whose outcome is not yet known, kept with the write token that
- * made it and the instant it left. An answer that never arrives leaves this
- * entry standing, which is what an Uncertain Create is reconciled from: the
- * `dateAdded` window starts at {@link PendingCreate.startedAt}, and "Try again"
- * re-sends {@link PendingCreate.request} on the same token.
- *
- * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
- * @see https://github.com/aidenlx/zotlit/issues/1151
- */
-export interface PendingCreate {
-  /** The Attachment's Indexed Key. */
-  attachmentKey: string;
-  /** What the create asked Zotero for, as the stable fields to match on. */
-  draft: AnnotationDraft;
-  /** The request as sent, so a retry is the same request on the same token. */
-  request: CreateRequest;
-  startedAt: Temporal.Instant;
-  /**
-   * Whether an answer has already been lost. Only then is there a card: a
-   * create still waiting for its first answer shows as disabled verbs on the
-   * surface that started it, and nothing is drawn ahead of Zotero.
-   */
-  uncertain: boolean;
-  /**
-   * What this create leaves on its badged card: `uncertain` while it stands,
-   * `pending` while the user's retry is in flight, `failed` where that retry
-   * was refused.
-   */
-  state: MutationState;
-}
+type ConfirmedWrite =
+  | { kind: "record"; record: AnnotationRecord; write: "color" | "comment" }
+  | { kind: "created"; record: AnnotationRecord }
+  | { kind: "deleted"; annotationKey: string };
 
-/** One Uncertain Create as a surface reads it, beside the token that names it. */
-export interface UncertainCreate {
-  /** Zotero remembers this for twelve hours, so a retry cannot create twice. */
-  writeToken: string;
-  /** The Attachment's Indexed Key. */
-  attachmentKey: string;
-  /** What the create asked Zotero for, which is what the badged card shows. */
-  draft: AnnotationDraft;
-  state: MutationState;
+interface CommentSave {
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  burstTimer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<MutationState> | null;
+  submittedText: string | null;
+  queued: boolean;
 }
-
 /** What one create ended with. */
 export type CreateOutcome =
   /** @param annotationKey the Indexed Key Zotero generated. */
   | { kind: "created"; annotationKey: string }
-  /**
-   * The answer never arrived, so the Annotation may or may not exist. The
-   * create stays in {@link AnnotationRepository.pendingCreates} until a
-   * reconciliation settles it.
-   */
-  | { kind: "uncertain" }
   | { kind: "failed"; failure: WriteFailure };
 
 /** One partition's key and the read that fills it. */
@@ -322,12 +362,29 @@ export class AnnotationRepository extends Service<void> {
    * few a session has edited.
    */
   readonly #mutations = new Map<string, MutationState>();
-  /**
-   * Every create whose outcome is not yet known, by write token. An entry
-   * leaves as soon as Zotero says what happened; one whose answer never
-   * arrived stays, and is what aidenlx/zotlit#1151 reconciles.
-   */
-  readonly #creates = new Map<string, PendingCreate>();
+  readonly #commentDrafts = new Map<string, CommentDraft>();
+  readonly #commentDraftSources = new Map<string, string>();
+  readonly #commentSaves = new Map<string, CommentSave>();
+  readonly #commands = new Map<string, Promise<MutationState>>();
+  #commandGeneration = 0;
+  /** One explicit revalidation per visible Attachment. */
+  readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
+  /** Verified database identity and revision for each Attachment read. */
+  readonly #databaseSources = new Map<string, DatabaseAnnotationSource>();
+  /** Last accepted database namespace, retained while a refresh is pending. */
+  readonly #databaseServerIDs = new Map<string, string | null>();
+  /** The whole collection currently published to both surfaces. */
+  readonly #publishedLists = new Map<string, AnnotationList>();
+  readonly #publishedStatuses = new Map<
+    string,
+    Held<AnnotationList>["status"]
+  >();
+  /** Highest acknowledged API Library revision each database Library needs. */
+  readonly #acknowledgedRevisions = new Map<string, number>();
+  /** Successful API writes a later complete API list must include. */
+  readonly #confirmedWrites = new Map<string, ConfirmedWrite[]>();
+  /** Gives each database acquisition a separate query-cache generation. */
+  #databaseGeneration = 0;
   readonly #writeToken;
 
   ready: Promise<void>;
@@ -354,7 +411,77 @@ export class AnnotationRepository extends Service<void> {
    */
   async read(attachmentKey: string): Promise<AnnotationList | null> {
     const { queryKey, read } = this.#activePartition(attachmentKey);
-    return await this.#queries.read(queryKey, read);
+    const candidate = await this.#queries.read(queryKey, read);
+    if (candidate && this.#canPublish(attachmentKey, candidate, queryKey)) {
+      if (candidate.source.kind === "zotero-db") {
+        this.#adoptDatabaseSource(attachmentKey, candidate.source);
+      } else if (
+        coversConfirmations(candidate, this.#confirmedWrites.get(attachmentKey))
+      ) {
+        this.#confirmedWrites.delete(attachmentKey);
+      }
+      this.#publishedLists.set(attachmentKey, candidate);
+      this.#publishedStatuses.set(
+        attachmentKey,
+        this.#queries.peek<AnnotationList>(queryKey)?.status ?? "fresh",
+      );
+      this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
+      return candidate;
+    }
+    const published = this.#published(attachmentKey)?.value;
+    if (
+      candidate?.source.kind === "zotero-local-api" &&
+      published?.source.kind === "zotero-local-api" &&
+      candidate.source.serverID === published.source.serverID
+    ) {
+      this.#queries.update<AnnotationList>(queryKey, () => published);
+    }
+    return published ?? null;
+  }
+
+  /**
+   * Revalidates one Attachment through its active source. Concurrent surfaces
+   * join the same operation, while the Held Read keeps their published list.
+   */
+  refresh(attachmentKey: string): Promise<AnnotationList | null> {
+    const running = this.#refreshes.get(attachmentKey);
+    if (running) return running;
+
+    const refreshing = this.#refresh(attachmentKey)
+      .catch((error: unknown) => {
+        logger.warn("Failed to refresh an Attachment's annotations", {
+          attachmentKey,
+          error,
+        });
+        if (this.#publishedLists.has(attachmentKey)) {
+          this.#publishedStatuses.set(attachmentKey, "failed");
+        }
+        return this.peek(attachmentKey)?.value ?? null;
+      })
+      .finally(() => {
+        if (this.#refreshes.get(attachmentKey) === refreshing) {
+          this.#refreshes.delete(attachmentKey);
+        }
+      });
+    this.#refreshes.set(attachmentKey, refreshing);
+    return refreshing;
+  }
+
+  /** Probes source availability, refreshes the active adapter, then reads it. */
+  async #refresh(attachmentKey: string): Promise<AnnotationList | null> {
+    await this.#localApi.probe();
+    if (this.#compatibleApiSource(attachmentKey) === null) {
+      await this.#db.refresh();
+    }
+    const { queryKey } = this.#activePartition(attachmentKey);
+    this.#emitter.emit("annotations-changed", attachmentKey);
+    this.#queries.invalidate(queryKey);
+    const value = await this.read(attachmentKey);
+    const status = this.#queries.peek<AnnotationList>(queryKey)?.status;
+    if (value && status === "failed") {
+      this.#publishedStatuses.set(attachmentKey, status);
+    }
+    return value;
   }
 
   /**
@@ -365,8 +492,7 @@ export class AnnotationRepository extends Service<void> {
    * @returns null while no read has answered for the Attachment.
    */
   peek(attachmentKey: string): Held<AnnotationList> | null {
-    const { queryKey } = this.#activePartition(attachmentKey);
-    return this.#queries.peek<AnnotationList>(queryKey);
+    return this.#published(attachmentKey);
   }
 
   /**
@@ -407,41 +533,213 @@ export class AnnotationRepository extends Service<void> {
     return this.#mutations.get(annotationKey) ?? IDLE;
   }
 
-  /**
-   * Every create whose outcome is still unknown, by write token. Empty in a
-   * session where every create was answered.
-   */
-  get pendingCreates(): ReadonlyMap<string, PendingCreate> {
-    return this.#creates;
+  /** The active Zotero database's shared draft for one Annotation. */
+  commentDraftFor(annotationKey: string): CommentDraft | null {
+    const source = this.#localApi.demandSource();
+    const serverID =
+      source?.serverID ?? this.#commentDraftSources.get(annotationKey);
+    return serverID
+      ? (this.#commentDrafts.get(commentDraftID(serverID, annotationKey)) ??
+          null)
+      : null;
   }
 
-  /**
-   * The Uncertain Creates one Attachment carries, in the order they were made
-   * — the badged cards the Annotation View shows under its list. A create
-   * still waiting for its first answer is not one of them: nothing is drawn
-   * ahead of Zotero.
-   *
-   * They live in memory alone, so they are gone after a reload; a switch to
-   * the Zotero DB source and a Zotero database change drop them too, because
-   * neither can answer for the create that made them.
-   *
-   * @param attachmentKey the Attachment's Indexed Key.
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
-  uncertainCreatesFor(attachmentKey: string): readonly UncertainCreate[] {
-    const standing: UncertainCreate[] = [];
-    for (const [writeToken, pending] of this.#creates) {
-      if (!pending.uncertain || pending.attachmentKey !== attachmentKey) {
-        continue;
-      }
-      standing.push({
-        writeToken,
-        attachmentKey: pending.attachmentKey,
-        draft: pending.draft,
-        state: pending.state,
-      });
+  /** Start or update one shared comment draft. */
+  editComment(annotationKey: string, text?: string): CommentDraft | null {
+    const source = this.#localApi.demandSource();
+    const serverID =
+      source?.serverID ?? this.#commentDraftSources.get(annotationKey);
+    const id = serverID ? commentDraftID(serverID, annotationKey) : null;
+    const standing = id ? this.#commentDrafts.get(id) : undefined;
+    const held = standing ? null : this.#holding(annotationKey);
+    if (!id || (!standing && (!source || !held))) return null;
+    const baseline = standing?.baseline ?? held!.record.comment ?? "";
+    const draft = standing
+      ? {
+          ...standing,
+          ...(text !== undefined && { text }),
+          ...(text !== undefined &&
+            standing.state.kind === "failed" && {
+              state: { kind: "editing" } as const,
+            }),
+        }
+      : {
+          annotationKey,
+          attachmentKey: held!.attachmentKey,
+          serverID: source!.serverID,
+          baseline,
+          text: text ?? baseline,
+          state: { kind: "editing" } as const,
+        };
+    this.#commentDrafts.set(id, draft);
+    this.#commentDraftSources.set(annotationKey, draft.serverID);
+    this.#emitter.emit("comment-draft-changed", annotationKey);
+    if (text !== undefined && draft.state.kind !== "conflict") {
+      this.#scheduleCommentSave(draft);
     }
-    return standing;
+    return draft;
+  }
+
+  /** Submit the current shared draft once. */
+  submitComment(annotationKey: string): Promise<MutationState> {
+    const draft = this.commentDraftFor(annotationKey);
+    if (!draft) return Promise.resolve(IDLE);
+    const id = commentDraftID(draft.serverID, annotationKey);
+    const save = this.#commentSave(id);
+    this.#clearCommentTimers(save);
+    if (draft.state.kind === "conflict") {
+      return Promise.resolve(this.mutationFor(annotationKey));
+    }
+    if (save.inFlight) {
+      save.queued = draft.text !== save.submittedText;
+      return save.inFlight;
+    }
+    if (sameComment(draft.text, draft.baseline)) {
+      this.#dropCommentDraft(annotationKey);
+      return Promise.resolve(IDLE);
+    }
+    const submittedText = draft.text;
+    this.#setCommentDraft(draft, { kind: "pending" });
+    save.submittedText = submittedText;
+    save.queued = false;
+    const operation = this.#submitComment(annotationKey, draft, submittedText);
+    save.inFlight = operation;
+    void operation.then((outcome) => {
+      save.inFlight = null;
+      save.submittedText = null;
+      if (
+        outcome.kind === "idle" &&
+        save.queued &&
+        this.#commentDrafts.has(id)
+      ) {
+        void this.submitComment(annotationKey);
+      }
+    });
+    return operation;
+  }
+
+  async #submitComment(
+    annotationKey: string,
+    submitted: CommentDraft,
+    submittedText: string,
+  ): Promise<MutationState> {
+    const id = commentDraftID(submitted.serverID, annotationKey);
+    const outcome = await this.#patchComment(
+      annotationKey,
+      submittedText,
+      false,
+    );
+    const current = this.#commentDrafts.get(id);
+    if (!current || current.state.kind === "conflict") return outcome;
+    this.#applyCommentWriteDecision({
+      annotationKey,
+      current,
+      submittedText,
+      outcome,
+    });
+    return outcome;
+  }
+
+  /** Keep Zotero's reviewed comment and discard the local draft. */
+  discardCommentDraft(annotationKey: string): void {
+    this.#dropCommentDraft(annotationKey);
+    const mutation = this.#mutations.get(annotationKey);
+    if (
+      mutation?.kind === "conflict" &&
+      mutation.conflict.write === "comment"
+    ) {
+      this.#settle(annotationKey, IDLE);
+    }
+  }
+
+  /** Apply the shared draft again against the reviewed fresh record. */
+  retryCommentDraft(annotationKey: string): Promise<MutationState> {
+    const draft = this.commentDraftFor(annotationKey);
+    if (!draft) return Promise.resolve(IDLE);
+    const id = commentDraftID(draft.serverID, annotationKey);
+    const save = this.#commentSave(id);
+    this.#clearCommentTimers(save);
+    if (save.inFlight) return save.inFlight;
+    save.submittedText = draft.text;
+    save.queued = false;
+    const operation = this.#retryCommentDraft(annotationKey, draft);
+    save.inFlight = operation;
+    void operation.then((outcome) => {
+      save.inFlight = null;
+      save.submittedText = null;
+      if (
+        outcome.kind === "idle" &&
+        save.queued &&
+        this.#commentDrafts.has(id)
+      ) {
+        void this.submitComment(annotationKey);
+      }
+    });
+    return operation;
+  }
+
+  async #retryCommentDraft(
+    annotationKey: string,
+    draft: CommentDraft,
+  ): Promise<MutationState> {
+    const held = this.#holding(annotationKey);
+    const reviewed =
+      draft.state.kind === "conflict" ? draft.state.fresh : draft.baseline;
+    const fresh = held?.record.comment ?? "";
+    if (!held || !sameComment(fresh, reviewed)) {
+      const outcome: MutationState = {
+        kind: "conflict",
+        conflict: { write: "comment", attempted: draft.text, fresh },
+      };
+      this.#settle(annotationKey, outcome);
+      this.#setCommentDraft(draft, { kind: "conflict", fresh });
+      if (held) {
+        this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
+      }
+      return outcome;
+    }
+    const submittedText = draft.text;
+    const id = commentDraftID(draft.serverID, annotationKey);
+    this.#setCommentDraft(draft, { kind: "pending" });
+    let outcome = await this.patchComment(annotationKey, submittedText);
+    if (
+      outcome.kind === "conflict" &&
+      sameComment(outcome.conflict.fresh, reviewed)
+    ) {
+      outcome = await this.patchComment(annotationKey, submittedText);
+    }
+    const current = this.#commentDrafts.get(id);
+    if (!current) return outcome;
+    this.#applyCommentWriteDecision({
+      annotationKey,
+      current,
+      submittedText,
+      outcome,
+    });
+    return outcome;
+  }
+
+  #applyCommentWriteDecision({
+    annotationKey,
+    current,
+    submittedText,
+    outcome,
+  }: {
+    annotationKey: string;
+    current: CommentDraft;
+    submittedText: string;
+    outcome: MutationState;
+  }): void {
+    const decision = commentDraftAfterWrite(current, submittedText, outcome);
+    if (decision.kind === "drop") {
+      this.#dropCommentDraft(annotationKey, current.serverID);
+    } else if (decision.kind === "update") {
+      this.#commentDrafts.set(
+        commentDraftID(current.serverID, annotationKey),
+        decision.draft,
+      );
+      this.#emitter.emit("comment-draft-changed", annotationKey);
+    }
   }
 
   /**
@@ -470,7 +768,7 @@ export class AnnotationRepository extends Service<void> {
     if (!parsed) {
       return { kind: "failed", failure: { kind: "unknown-annotation" } };
     }
-    if (!this.#localApi.demandSource()) {
+    if (!this.#compatibleApiSource(attachmentKey)) {
       return { kind: "failed", failure: { kind: "db-source" } };
     }
     const whole = { ...draft, parentKey: parsed.key };
@@ -486,202 +784,54 @@ export class AnnotationRepository extends Service<void> {
 
     const library = libraryPath(parsed);
     const request = createRequest(library, whole, this.#writeToken());
-    const pending: PendingCreate = {
-      attachmentKey,
-      draft: whole,
-      request,
-      startedAt: this.#now(),
-      uncertain: false,
-      state: { kind: "pending" },
-    };
-    this.#creates.set(request.writeToken, pending);
-    return await this.#sendCreate(request.writeToken, pending);
-  }
-
-  /**
-   * Send one Uncertain Create again, from the user's "Try again" and from
-   * nothing else. The request and its `Zotero-Write-Token` are the original
-   * ones, so a first write that did land answers `412 Write token already
-   * used` rather than creating a second Annotation.
-   *
-   * A One-time Authorization is spent by the request that lost its answer, so
-   * this asks Zotero's dialog again where the session no longer holds a key —
-   * the retry is a user gesture like the create was.
-   *
-   * @param writeToken the token {@link AnnotationRepository.uncertainCreatesFor} named.
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
-  async retryCreate(writeToken: string): Promise<CreateOutcome> {
-    const pending = this.#creates.get(writeToken);
-    if (!pending) {
-      return { kind: "failed", failure: { kind: "unknown-annotation" } };
-    }
-    this.#createSettled(writeToken, pending, { kind: "pending" });
-    return await this.#sendCreate(writeToken, pending);
-  }
-
-  /**
-   * Drop one Uncertain Create, from the user's "Discard". Zotero is not asked
-   * anything: the Annotation either landed, and the next read shows it, or it
-   * never did.
-   *
-   * @param writeToken the token {@link AnnotationRepository.uncertainCreatesFor} named.
-   */
-  discardCreate(writeToken: string): void {
-    if (!this.#creates.delete(writeToken)) return;
-    logger.debug("An uncertain create was discarded", { writeToken });
-    this.#emitter.emit("uncertain-creates-changed");
-  }
-
-  /**
-   * One create request, and everything its answer settles — shared by the
-   * first send and by the user's retry, because the two differ only in what
-   * came before them.
-   */
-  async #sendCreate(
-    writeToken: string,
-    pending: PendingCreate,
-  ): Promise<CreateOutcome> {
-    const { attachmentKey, draft, request } = pending;
-    const parsed = parseIndexedKey(attachmentKey);
-    if (!parsed) {
-      return { kind: "failed", failure: { kind: "unknown-annotation" } };
-    }
-    const library = libraryPath(parsed);
+    const source = this.#compatibleApiSource(attachmentKey);
     const reply = await this.#localApi.authorizedSend(request.path, {
       library,
       method: request.method,
       headers: request.headers,
       body: request.body,
     });
+    if (!source || !(await this.#apiSourceStillBound(attachmentKey, source))) {
+      return { kind: "failed", failure: { kind: "server-changed" } };
+    }
     if ("failure" in reply) {
-      return await this.#createRefused(writeToken, pending, reply.failure);
+      logger.debug("Zotero did not confirm an annotation create", {
+        attachmentKey,
+        failure: reply.failure,
+      });
+      await this.refresh(attachmentKey);
+      return { kind: "failed", failure: reply.failure };
     }
 
     const created = readCreateResult(reply.value.text, {
-      parentKey: parsed.key,
-      type: draft.type,
+      parentKey: attachmentKey,
+      type: whole.type,
     });
     if ("failure" in created) {
-      return this.#createFailed(writeToken, pending, created.failure);
+      await this.refresh(attachmentKey);
+      return { kind: "failed", failure: created.failure };
     }
 
-    const annotationKey = formatIndexedKey(created.value, parsed.groupID);
+    const annotationKey = created.value.key;
+    this.#rememberAcknowledgedRevision(attachmentKey, reply.value.headers);
+    const { queryKey } = this.#activePartition(attachmentKey);
+    const record = fromLocalApi(created.value);
+    this.#queries.update<AnnotationList>(queryKey, (list) => ({
+      ...list,
+      annotations: [...list.annotations, record],
+    }));
+    this.#publishQuery(attachmentKey, queryKey);
+    await this.#refreshConfirmed(attachmentKey, {
+      kind: "created",
+      record,
+    });
     logger.debug("Zotero created an annotation", {
       attachmentKey,
       annotationKey,
-      type: draft.type,
+      type: whole.type,
     });
-    return this.#createLanded(writeToken, pending, annotationKey);
-  }
-
-  /**
-   * What a refused create leaves behind.
-   *
-   * A lost answer is the one refusal that leaves the create standing: the
-   * Annotation may exist, so ZotLit re-reads the Attachment and matches the
-   * intended create on its stable fields. A `412 Write token already used`
-   * says the first write did land, so the same match names what it created.
-   * Every other refusal is an answer: the create did not land.
-   */
-  async #createRefused(
-    writeToken: string,
-    pending: PendingCreate,
-    failure: WriteFailure,
-  ): Promise<CreateOutcome> {
-    const { attachmentKey } = pending;
-    if (
-      failure.kind !== "unknown-outcome" &&
-      failure.kind !== "write-token-used"
-    ) {
-      return this.#createFailed(writeToken, pending, failure);
-    }
-    logger.debug(
-      failure.kind === "unknown-outcome"
-        ? "A create lost its answer"
-        : "A retried create met its own write token",
-      { attachmentKey },
-    );
-
-    const match = await this.#matchCreate(pending);
-    if (match?.kind === "confirmed") {
-      return this.#createLanded(writeToken, pending, match.annotationKey);
-    }
-    // A write token Zotero has already spent says the Annotation exists even
-    // where the match cannot name it, so the list is dropped either way and
-    // the next read shows whatever Zotero holds.
-    if (failure.kind === "write-token-used")
-      this.#dropAttachment(attachmentKey);
-    this.#createSettled(writeToken, { ...pending, uncertain: true }, UNCERTAIN);
-    return { kind: "uncertain" };
-  }
-
-  /**
-   * The Annotation one create asked for, if exactly one of the Attachment's
-   * Annotations carries every stable field and was added while the request ran.
-   *
-   * @returns the match, or `null` where Zotero could not be re-read at all —
-   *   which says nothing about the create and so leaves it uncertain.
-   */
-  async #matchCreate(pending: PendingCreate): Promise<CreateMatch | null> {
-    const { attachmentKey, draft, startedAt } = pending;
-    const listed = await this.#localApi.listAnnotations(attachmentKey);
-    if ("failure" in listed) {
-      logger.debug("An uncertain create could not be reconciled", {
-        attachmentKey,
-        failure: listed.failure,
-      });
-      return null;
-    }
-    const match = matchCreatedAnnotation(draft, attachmentKey, {
-      candidates: listed.value,
-      window: { from: startedAt, to: this.#now() },
-    });
-    logger.debug("An uncertain create was matched against Zotero", {
-      attachmentKey,
-      match,
-    });
-    return match;
-  }
-
-  /** One create that is known to have landed: the entry goes and the list drops. */
-  #createLanded(
-    writeToken: string,
-    pending: PendingCreate,
-    annotationKey: string,
-  ): CreateOutcome {
-    this.#creates.delete(writeToken);
-    this.#dropAttachment(pending.attachmentKey);
-    if (pending.uncertain) this.#emitter.emit("uncertain-creates-changed");
+    this.#emitter.emit("annotations-changed", attachmentKey);
     return { kind: "created", annotationKey };
-  }
-
-  /**
-   * One create Zotero refused outright. A first send that is refused never
-   * landed, so its entry goes; a retry that is refused says nothing about the
-   * original create, so the badged card stands and carries the refusal.
-   */
-  #createFailed(
-    writeToken: string,
-    pending: PendingCreate,
-    failure: WriteFailure,
-  ): CreateOutcome {
-    if (pending.uncertain) {
-      this.#createSettled(writeToken, pending, { kind: "failed", failure });
-    } else {
-      this.#creates.delete(writeToken);
-    }
-    return { kind: "failed", failure };
-  }
-
-  /** Records what one create left on its badged card and announces it. */
-  #createSettled(
-    writeToken: string,
-    pending: PendingCreate,
-    state: MutationState,
-  ): void {
-    this.#creates.set(writeToken, { ...pending, state });
-    this.#emitter.emit("uncertain-creates-changed");
   }
 
   /**
@@ -711,10 +861,19 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     comment: string,
   ): Promise<MutationState> {
+    return await this.#patchComment(annotationKey, comment, true);
+  }
+
+  async #patchComment(
+    annotationKey: string,
+    comment: string,
+    authorize: boolean,
+  ): Promise<MutationState> {
     return await this.#command(annotationKey, {
       write: "comment",
       attempted: comment,
       request: (target) => commentPatch(target, comment),
+      authorize,
     });
   }
 
@@ -726,6 +885,7 @@ export class AnnotationRepository extends Service<void> {
    * @param annotationKey the Annotation's Indexed Key.
    */
   async deleteAnnotation(annotationKey: string): Promise<MutationState> {
+    this.#cancelCommentSave(annotationKey);
     return await this.#command(annotationKey, {
       write: "delete",
       attempted: null,
@@ -786,29 +946,11 @@ export class AnnotationRepository extends Service<void> {
         this.#emitter.emit("capability-changed");
       }),
     );
-    // A create belongs to the database that was asked to make it, so another
-    // one answering the port takes every Uncertain Create with it.
-    stack.defer(
-      this.#localApi.on("server-changed", () => {
-        this.#dropUncertainCreates("the Zotero database changed");
-      }),
-    );
-    this.commit(stack.move());
-  }
-
-  /**
-   * Every Uncertain Create goes: the source that could reconcile them is no
-   * longer the one that was asked to make them, and a retry against another
-   * database or against the Zotero DB source means nothing.
-   */
-  #dropUncertainCreates(reason: string): void {
-    if (this.#creates.size === 0) return;
-    logger.debug("Uncertain creates dropped", {
-      reason,
-      creates: this.#creates.size,
+    stack.defer(() => this.#cancelAllCommentSaves());
+    stack.defer(() => {
+      this.#commandGeneration += 1;
     });
-    this.#creates.clear();
-    this.#emitter.emit("uncertain-creates-changed");
+    this.commit(stack.move());
   }
 
   /**
@@ -820,11 +962,14 @@ export class AnnotationRepository extends Service<void> {
    * @param attachmentKey the Attachment, or null for the session itself.
    */
   #capability(attachmentKey: string | null): EditingCapability {
-    const capability = editingCapabilityOf(
-      this.#localApi.state,
-      this.#localApi.writeStateFor(attachmentKey),
-      this.#now,
-    );
+    const capability =
+      this.#localApi.demandSource() && !this.#compatibleApiSource(attachmentKey)
+        ? ({ kind: "read-only", reason: "server-changed" } as const)
+        : editingCapabilityOf(
+            this.#localApi.state,
+            this.#localApi.writeStateFor(attachmentKey),
+            this.#now,
+          );
     const described = describeCapability(capability);
     if (this.#lastCapability.get(attachmentKey) === described) {
       logger.trace("Editing capability read", { attachmentKey, capability });
@@ -840,11 +985,9 @@ export class AnnotationRepository extends Service<void> {
    * leaves on the card.
    *
    * Everything a write needs comes from the list the active source already
-   * answered, which is what makes a command take keys alone. A record with no
-   * version came from the Zotero DB partition, which keeps none, so the write
-   * is refused there and then — before any request, because there is no
-   * precondition to send and an unconditional write would overwrite whatever
-   * Zotero holds.
+   * answered, which is what makes a command take keys alone. The database
+   * partition supplies committed versions for source handoff, but writes wait
+   * for an active Local API source and its authorization state.
    *
    * The gesture behind the command is what may open Zotero's dialog, exactly as
    * it is for a create: under `authorization-required` the write waits on the
@@ -866,14 +1009,58 @@ export class AnnotationRepository extends Service<void> {
       attempted: string | null;
       request: (target: WriteTarget) => WriteRequest;
       settle?: "re-read" | "drop";
+      authorize?: boolean;
     },
   ): Promise<MutationState> {
+    const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
+    const generation = this.#commandGeneration;
+    const previous = this.#commands.get(annotationKey);
+    const queued = { expectedServerID, generation, ...command };
+    const operation = previous
+      ? previous.then(() => this.#runCommand(annotationKey, queued))
+      : this.#runCommand(annotationKey, queued);
+    this.#commands.set(annotationKey, operation);
+    void operation.finally(() => {
+      if (this.#commands.get(annotationKey) === operation) {
+        this.#commands.delete(annotationKey);
+      }
+    });
+    return await operation;
+  }
+
+  async #runCommand(
+    annotationKey: string,
+    command: {
+      expectedServerID: string | null;
+      generation: number;
+      write: ConflictedWrite;
+      attempted: string | null;
+      request: (target: WriteTarget) => WriteRequest;
+      settle?: "re-read" | "drop";
+      authorize?: boolean;
+    },
+  ): Promise<MutationState> {
+    if (command.generation !== this.#commandGeneration) {
+      return { kind: "failed", failure: { kind: "unknown-outcome" } };
+    }
+    if (
+      (this.#localApi.demandSource()?.serverID ?? null) !==
+      command.expectedServerID
+    ) {
+      return { kind: "failed", failure: { kind: "server-changed" } };
+    }
     const held = this.#holding(annotationKey);
     const parsed = parseIndexedKey(annotationKey);
     if (!held || !parsed) {
       return this.#settle(annotationKey, {
         kind: "failed",
         failure: { kind: "unknown-annotation" },
+      });
+    }
+    if (!this.#compatibleApiSource(held.attachmentKey)) {
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "db-source" },
       });
     }
     const { version } = held.record;
@@ -885,7 +1072,10 @@ export class AnnotationRepository extends Service<void> {
     }
 
     this.#settle(annotationKey, { kind: "pending" });
-    const blocked = await this.#authorizeGesture(held.attachmentKey);
+    const blocked =
+      command.authorize === false
+        ? this.#backgroundWriteBlocked(held.attachmentKey)
+        : await this.#authorizeGesture(held.attachmentKey);
     if (blocked) {
       return this.#settle(annotationKey, {
         kind: "failed",
@@ -899,12 +1089,28 @@ export class AnnotationRepository extends Service<void> {
       key: parsed.key,
       version,
     });
+    const source = this.#compatibleApiSource(held.attachmentKey);
     const reply = await this.#localApi.authorizedSend(path, {
       library,
       method,
       headers,
       body,
     });
+    if (
+      !source ||
+      !(await this.#apiSourceStillBound(held.attachmentKey, source))
+    ) {
+      if (
+        this.#databaseSources.get(held.attachmentKey)?.database.serverID !==
+        source?.serverID
+      ) {
+        return { kind: "failed", failure: { kind: "server-changed" } };
+      }
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "server-changed" },
+      });
+    }
     if ("failure" in reply) {
       logger.debug("Zotero refused a write", {
         annotationKey,
@@ -916,6 +1122,7 @@ export class AnnotationRepository extends Service<void> {
         attempted: command.attempted,
         failure: reply.failure,
       });
+      if (state.kind === "failed") await this.refresh(held.attachmentKey);
       this.#settle(annotationKey, state);
       if (state.kind === "conflict") {
         this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
@@ -924,9 +1131,36 @@ export class AnnotationRepository extends Service<void> {
     }
 
     logger.debug("Zotero took a write", { annotationKey, method });
-    await this.#applyWrite(held, annotationKey, command.settle ?? "re-read");
+    this.#rememberAcknowledgedRevision(held.attachmentKey, reply.value.headers);
+    const applied = await this.#applyWrite(held, annotationKey, {
+      write: command.write,
+      settle: command.settle ?? "re-read",
+    });
+    if ("failure" in applied) {
+      await this.refresh(held.attachmentKey);
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: applied.failure,
+      });
+    }
+    if (command.settle === "drop") this.#dropCommentDraft(annotationKey);
+    this.#publishQuery(held.attachmentKey, held.queryKey);
+    if (applied.value.kind === "deleted") {
+      this.#reconcilePublishedDrafts(
+        held.queryKey,
+        held.attachmentKey,
+        this.#publishedLists.get(held.attachmentKey) ?? null,
+      );
+    }
+    await this.#refreshConfirmed(held.attachmentKey, applied.value);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {
+    return this.#capability(attachmentKey).kind === "authorization-required"
+      ? { kind: "unauthorized" }
+      : null;
   }
 
   /**
@@ -1011,8 +1245,8 @@ export class AnnotationRepository extends Service<void> {
   async #applyWrite(
     held: HeldAnnotation,
     annotationKey: string,
-    settle: "re-read" | "drop",
-  ): Promise<void> {
+    { write, settle }: { write: ConflictedWrite; settle: "re-read" | "drop" },
+  ): Promise<{ value: ConfirmedWrite } | { failure: LocalApiFailure }> {
     const { queryKey, attachmentKey } = held;
     if (settle === "drop") {
       this.#queries.update<AnnotationList>(queryKey, (list) => ({
@@ -1021,7 +1255,7 @@ export class AnnotationRepository extends Service<void> {
           (record) => record.key !== annotationKey,
         ),
       }));
-      return;
+      return { value: { kind: "deleted", annotationKey } };
     }
     const fresh = await this.#localApi.readAnnotation(
       annotationKey,
@@ -1033,7 +1267,7 @@ export class AnnotationRepository extends Service<void> {
         failure: fresh.failure,
       });
       this.#queries.invalidate(queryKey);
-      return;
+      return fresh;
     }
     const record = fromLocalApi(fresh.value);
     this.#queries.update<AnnotationList>(queryKey, (list) => ({
@@ -1042,6 +1276,39 @@ export class AnnotationRepository extends Service<void> {
         stale.key === annotationKey ? record : stale,
       ),
     }));
+    return {
+      value: {
+        kind: "record",
+        record,
+        write: write === "comment" ? "comment" : "color",
+      },
+    };
+  }
+
+  /** Retain one successful API confirmation before a later refresh can fail. */
+  #publishQuery(attachmentKey: string, queryKey: QueryKey): void {
+    const confirmed = this.#queries.peek<AnnotationList>(queryKey)?.value;
+    if (!confirmed || !this.#canPublish(attachmentKey, confirmed, queryKey)) {
+      return;
+    }
+    this.#publishedLists.set(attachmentKey, confirmed);
+    this.#publishedStatuses.set(attachmentKey, "fresh");
+  }
+
+  /** Revalidate the collection without replacing a newer write confirmation. */
+  async #refreshConfirmed(
+    attachmentKey: string,
+    confirmation: ConfirmedWrite,
+  ): Promise<void> {
+    const held = this.#confirmedWrites.get(attachmentKey) ?? [];
+    this.#confirmedWrites.set(attachmentKey, [
+      ...held.filter(
+        (existing) =>
+          confirmationKey(existing) !== confirmationKey(confirmation),
+      ),
+      confirmation,
+    ]);
+    await this.refresh(attachmentKey);
   }
 
   /**
@@ -1057,11 +1324,19 @@ export class AnnotationRepository extends Service<void> {
       : [ANNOTATIONS, ZOTERO_DB];
     for (const queryKey of this.#queries.keysUnder(prefix)) {
       const list = this.#queries.peek<AnnotationList>(queryKey)?.value;
+      const attachmentKey = queryKey.at(-1);
+      if (
+        !list ||
+        typeof attachmentKey !== "string" ||
+        !this.#canPublish(attachmentKey, list, queryKey)
+      ) {
+        continue;
+      }
       const record = list?.annotations.find(
         (annotation) => annotation.key === annotationKey,
       );
       if (record) {
-        return { queryKey, attachmentKey: record.parentKey, record };
+        return { queryKey, attachmentKey, record };
       }
     }
     return null;
@@ -1104,6 +1379,184 @@ export class AnnotationRepository extends Service<void> {
     return state;
   }
 
+  #setCommentDraft(draft: CommentDraft, state: CommentDraftState): void {
+    this.#commentDrafts.set(
+      commentDraftID(draft.serverID, draft.annotationKey),
+      {
+        ...draft,
+        state,
+      },
+    );
+    this.#commentDraftSources.set(draft.annotationKey, draft.serverID);
+    this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+  }
+
+  #dropCommentDraft(annotationKey: string, serverID?: string): void {
+    const activeServerID = serverID ?? this.#localApi.demandSource()?.serverID;
+    if (
+      !activeServerID ||
+      !this.#commentDrafts.delete(commentDraftID(activeServerID, annotationKey))
+    ) {
+      return;
+    }
+    if (this.#commentDraftSources.get(annotationKey) === activeServerID) {
+      this.#commentDraftSources.delete(annotationKey);
+    }
+    this.#cancelCommentSave(annotationKey, activeServerID);
+    this.#emitter.emit("comment-draft-changed", annotationKey);
+  }
+
+  #commentSave(id: string): CommentSave {
+    const standing = this.#commentSaves.get(id);
+    if (standing) return standing;
+    const save: CommentSave = {
+      idleTimer: null,
+      burstTimer: null,
+      inFlight: null,
+      submittedText: null,
+      queued: false,
+    };
+    this.#commentSaves.set(id, save);
+    return save;
+  }
+
+  #scheduleCommentSave(draft: CommentDraft): void {
+    const id = commentDraftID(draft.serverID, draft.annotationKey);
+    const save = this.#commentSave(id);
+    if (save.inFlight) {
+      save.queued = draft.text !== save.submittedText;
+      return;
+    }
+    if (sameComment(draft.text, draft.baseline)) return;
+    if (save.idleTimer !== null) clearTimeout(save.idleTimer);
+    save.idleTimer = setTimeout(() => {
+      save.idleTimer = null;
+      void this.submitComment(draft.annotationKey);
+    }, COMMENT_IDLE_SAVE_MS);
+    save.burstTimer ??= setTimeout(() => {
+      save.burstTimer = null;
+      void this.submitComment(draft.annotationKey);
+    }, COMMENT_BURST_SAVE_MS);
+  }
+
+  #clearCommentTimers(save: CommentSave): void {
+    if (save.idleTimer !== null) clearTimeout(save.idleTimer);
+    if (save.burstTimer !== null) clearTimeout(save.burstTimer);
+    save.idleTimer = null;
+    save.burstTimer = null;
+  }
+
+  #cancelCommentSave(annotationKey: string, serverID?: string): void {
+    const activeServerID =
+      serverID ?? this.#commentDraftSources.get(annotationKey);
+    if (!activeServerID) return;
+    const id = commentDraftID(activeServerID, annotationKey);
+    const save = this.#commentSaves.get(id);
+    if (!save) return;
+    this.#clearCommentTimers(save);
+    save.queued = false;
+    if (!save.inFlight) this.#commentSaves.delete(id);
+  }
+
+  #cancelAllCommentSaves(): void {
+    for (const save of this.#commentSaves.values()) {
+      this.#clearCommentTimers(save);
+      save.queued = false;
+    }
+  }
+
+  /** Reconcile drafts only against a complete read from their own database. */
+  #reconcileCommentDrafts(
+    serverID: string,
+    attachmentKey: string,
+    annotations: readonly AnnotationRecord[],
+  ): void {
+    const records = new Map(annotations.map((record) => [record.key, record]));
+    for (const draft of this.#commentDrafts.values()) {
+      if (
+        draft.serverID !== serverID ||
+        draft.attachmentKey !== attachmentKey
+      ) {
+        continue;
+      }
+      const record = records.get(draft.annotationKey);
+      if (!record) {
+        this.#dropCommentDraft(draft.annotationKey, serverID);
+        this.#settle(draft.annotationKey, IDLE);
+        this.#emitter.emit(
+          "annotation-deleted",
+          draft.annotationKey,
+          attachmentKey,
+        );
+        continue;
+      }
+      const fresh = record.comment ?? "";
+      const save = this.#commentSaves.get(
+        commentDraftID(serverID, draft.annotationKey),
+      );
+      if (draft.state.kind === "pending") {
+        if (
+          save &&
+          save.submittedText !== null &&
+          sameComment(fresh, save.submittedText)
+        ) {
+          this.#commentDrafts.set(
+            commentDraftID(serverID, draft.annotationKey),
+            { ...draft, baseline: fresh },
+          );
+          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+        }
+        continue;
+      }
+      if (sameComment(fresh, draft.text)) {
+        this.#dropCommentDraft(draft.annotationKey, serverID);
+        continue;
+      }
+      if (sameComment(fresh, draft.baseline)) continue;
+      if (sameComment(draft.text, draft.baseline)) {
+        this.#commentDrafts.set(commentDraftID(serverID, draft.annotationKey), {
+          ...draft,
+          baseline: fresh,
+          text: fresh,
+          state: { kind: "editing" },
+        });
+        this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+        continue;
+      }
+      const conflict: MutationState = {
+        kind: "conflict",
+        conflict: { write: "comment", attempted: draft.text, fresh },
+      };
+      this.#settle(draft.annotationKey, conflict);
+      this.#commentDrafts.set(
+        commentDraftID(draft.serverID, draft.annotationKey),
+        {
+          ...draft,
+          state: { kind: "conflict", fresh },
+        },
+      );
+      this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+      this.#emitter.emit("write-conflict", draft.annotationKey, attachmentKey);
+    }
+  }
+
+  /** Reconcile only a complete result Query Core accepted for publication. */
+  #reconcilePublishedDrafts(
+    queryKey: QueryKey,
+    attachmentKey: string,
+    list: AnnotationList | null,
+  ): void {
+    if (!list) return;
+    const held = this.#queries.peek<AnnotationList>(queryKey);
+    if (held?.status !== "fresh" || held.value !== list) return;
+    const serverID =
+      list.source.kind === "zotero-local-api"
+        ? list.source.serverID
+        : list.source.database.serverID;
+    if (serverID === null) return;
+    this.#reconcileCommentDrafts(serverID, attachmentKey, list.annotations);
+  }
+
   /**
    * The partition the active Annotation Source answers from — the one place a
    * source is chosen. {@link read} and {@link peek} never name one, and a
@@ -1115,7 +1568,7 @@ export class AnnotationRepository extends Service<void> {
    * into the list in flight.
    */
   #activePartition(attachmentKey: string): AnnotationPartition {
-    const source = this.#localApi.demandSource();
+    const source = this.#compatibleApiSource(attachmentKey);
     if (source) {
       return {
         queryKey: [
@@ -1129,7 +1582,12 @@ export class AnnotationRepository extends Service<void> {
       };
     }
     return {
-      queryKey: [ANNOTATIONS, ZOTERO_DB, attachmentKey],
+      queryKey: [
+        ANNOTATIONS,
+        ZOTERO_DB,
+        this.#databaseGeneration,
+        attachmentKey,
+      ],
       read: () => this.#readFromDatabase(attachmentKey),
     };
   }
@@ -1152,11 +1610,53 @@ export class AnnotationRepository extends Service<void> {
   async #readFromDatabase(attachmentKey: string): Promise<AnnotationList> {
     using lease = await this.#db.acquireRead();
     const annotations = readAttachmentAnnotations(lease.client, attachmentKey);
+    const source = databaseAnnotationSource(lease.client, attachmentKey);
     logger.debug("Annotations read from the Zotero database", {
       attachmentKey,
       annotations: annotations.length,
     });
-    return { source: { kind: "zotero-db" }, annotations };
+    return { source, annotations };
+  }
+
+  #adoptDatabaseSource(
+    attachmentKey: string,
+    source: DatabaseAnnotationSource,
+  ): void {
+    const previous = this.#databaseSources.get(attachmentKey);
+    const previousServerID = this.#databaseServerIDs.get(attachmentKey);
+    this.#databaseSources.set(attachmentKey, source);
+    this.#databaseServerIDs.set(attachmentKey, source.database.serverID);
+    if (
+      previousServerID !== undefined &&
+      previousServerID !== source.database.serverID
+    ) {
+      for (const draft of this.#commentDrafts.values()) {
+        if (
+          draft.attachmentKey === attachmentKey &&
+          draft.serverID !== source.database.serverID &&
+          this.#commentDraftSources.get(draft.annotationKey) === draft.serverID
+        ) {
+          this.#commentDraftSources.delete(draft.annotationKey);
+          this.#cancelCommentSave(draft.annotationKey, draft.serverID);
+          this.#emitter.emit("comment-draft-hidden", draft.annotationKey);
+        }
+      }
+      for (const { key } of this.#publishedLists.get(attachmentKey)
+        ?.annotations ?? []) {
+        if (this.#mutations.delete(key)) {
+          this.#emitter.emit("mutation-changed", key);
+        }
+      }
+      this.#confirmedWrites.delete(attachmentKey);
+    }
+    if (!databaseSourcesEqual(previous, source)) {
+      queueMicrotask(() => {
+        this.#emitter.emit("capability-changed");
+        if (this.#compatibleApiSource(attachmentKey)) {
+          this.#emitter.emit("annotations-changed", attachmentKey);
+        }
+      });
+    }
   }
 
   /**
@@ -1170,9 +1670,6 @@ export class AnnotationRepository extends Service<void> {
     this.#queries.invalidate([ANNOTATIONS, ZOTERO_LOCAL_API]);
     const held = this.#attachmentsHeld([ANNOTATIONS]);
     const source = this.#localApi.demandSource();
-    if (source === null) {
-      this.#dropUncertainCreates("the Zotero DB source answers now");
-    }
     logger.debug("The Zotero Local API source moved", {
       attachments: held.length,
       source,
@@ -1200,6 +1697,8 @@ export class AnnotationRepository extends Service<void> {
    * partition goes rather than the rows a comparison would call changed.
    */
   #dropDatabasePartition(): void {
+    this.#databaseGeneration += 1;
+    this.#databaseSources.clear();
     const prefix = [ANNOTATIONS, ZOTERO_DB];
     const held = this.#attachmentsHeld(prefix);
     this.#queries.invalidate(prefix);
@@ -1210,6 +1709,164 @@ export class AnnotationRepository extends Service<void> {
       this.#emitter.emit("annotations-changed", attachmentKey);
     }
   }
+
+  #published(attachmentKey: string): Held<AnnotationList> | null {
+    const value = this.#publishedLists.get(attachmentKey);
+    return value
+      ? {
+          value,
+          status: this.#publishedStatuses.get(attachmentKey) ?? "fresh",
+          settled: Promise.resolve(value),
+        }
+      : null;
+  }
+
+  #compatibleApiSource(attachmentKey: string | null): LocalApiSource | null {
+    const api = this.#localApi.demandSource();
+    if (!api) return null;
+    const sources =
+      attachmentKey === null
+        ? this.#databaseSources.values()
+        : [this.#databaseSources.get(attachmentKey)].values();
+    for (const source of sources) {
+      if (source?.database.serverID === api.serverID) return api;
+    }
+    return null;
+  }
+
+  #sameApiSource(attachmentKey: string, expected: LocalApiSource): boolean {
+    return (
+      this.#compatibleApiSource(attachmentKey)?.serverID === expected.serverID
+    );
+  }
+
+  async #apiSourceStillBound(
+    attachmentKey: string,
+    expected: LocalApiSource,
+  ): Promise<boolean> {
+    if (this.#sameApiSource(attachmentKey, expected)) return true;
+    if (this.#localApi.demandSource()?.serverID !== expected.serverID) {
+      return false;
+    }
+    const generation = this.#databaseGeneration;
+    const { source } = await this.#readFromDatabase(attachmentKey);
+    const verified =
+      generation === this.#databaseGeneration &&
+      source.kind === "zotero-db" &&
+      source.database.serverID === expected.serverID &&
+      this.#localApi.demandSource()?.serverID === expected.serverID;
+    if (verified) this.#adoptDatabaseSource(attachmentKey, source);
+    return verified;
+  }
+
+  #canPublish(
+    attachmentKey: string,
+    candidate: AnnotationList,
+    queryKey?: QueryKey,
+  ): boolean {
+    if (candidate.source.kind === "zotero-local-api") {
+      return (
+        this.#sameApiSource(attachmentKey, candidate.source) &&
+        coversConfirmations(candidate, this.#confirmedWrites.get(attachmentKey))
+      );
+    }
+    const { source } = candidate;
+    if (
+      queryKey?.[1] === ZOTERO_DB &&
+      queryKey[2] !== this.#databaseGeneration
+    ) {
+      return false;
+    }
+    const floor = this.#acknowledgedRevisions.get(databaseLibraryKey(source));
+    return (
+      floor === undefined ||
+      (source.libraryRevision !== null && source.libraryRevision >= floor)
+    );
+  }
+
+  #rememberAcknowledgedRevision(attachmentKey: string, headers: Headers): void {
+    const source = this.#databaseSources.get(attachmentKey);
+    const header = headers.get("last-modified-version");
+    if (!source) return;
+    const key = databaseLibraryKey(source);
+    const value = Number(header);
+    if (
+      header === null ||
+      header === "" ||
+      !Number.isSafeInteger(value) ||
+      value < 0 ||
+      String(value) !== header
+    ) {
+      this.#acknowledgedRevisions.set(key, Number.POSITIVE_INFINITY);
+      return;
+    }
+    const held = this.#acknowledgedRevisions.get(key) ?? -1;
+    if (value > held) this.#acknowledgedRevisions.set(key, value);
+  }
+}
+
+function databaseLibraryKey(source: DatabaseAnnotationSource): string {
+  return `${source.database.serverID ?? "uninitialized"}:${source.libraryID}`;
+}
+
+function databaseSourcesEqual(
+  a: DatabaseAnnotationSource | undefined,
+  b: DatabaseAnnotationSource,
+): boolean {
+  return (
+    a?.database.serverID === b.database.serverID &&
+    a?.libraryID === b.libraryID &&
+    a?.libraryRevision === b.libraryRevision
+  );
+}
+
+function commentDraftID(serverID: string, annotationKey: string): string {
+  return `${serverID}\0${annotationKey}`;
+}
+
+function sameComment(a: string | null, b: string | null): boolean {
+  return (a ?? "") === (b ?? "");
+}
+
+function coversConfirmation(
+  list: AnnotationList | undefined,
+  confirmation: ConfirmedWrite | undefined,
+): boolean {
+  if (!confirmation) return true;
+  if (!list || list.source.kind !== "zotero-local-api") return false;
+  if (confirmation.kind === "deleted") {
+    return !list.annotations.some(
+      ({ key }) => key === confirmation.annotationKey,
+    );
+  }
+  const candidate = list.annotations.find(
+    ({ key }) => key === confirmation.record.key,
+  );
+  if (!candidate || candidate.version === null) return false;
+  if (candidate.version > (confirmation.record.version ?? -1)) return true;
+  if (candidate.version !== confirmation.record.version) return false;
+  if (confirmation.kind === "created") return true;
+  return (
+    freshValueOf(candidate, confirmation.write) ===
+    freshValueOf(confirmation.record, confirmation.write)
+  );
+}
+
+function coversConfirmations(
+  list: AnnotationList | undefined,
+  confirmations: readonly ConfirmedWrite[] | undefined,
+): boolean {
+  return (
+    confirmations?.every((confirmation) =>
+      coversConfirmation(list, confirmation),
+    ) ?? true
+  );
+}
+
+function confirmationKey(confirmation: ConfirmedWrite): string {
+  return confirmation.kind === "deleted"
+    ? confirmation.annotationKey
+    : confirmation.record.key;
 }
 
 /** What Zotero holds now for the field one refused write asked to change. */
@@ -1267,6 +1924,27 @@ function readAttachmentAnnotations(
   );
 }
 
+function databaseAnnotationSource(
+  client: NodeDatabaseClient,
+  attachmentKey: string,
+): DatabaseAnnotationSource {
+  const target = resolveIndexedKeyLibrary(client, attachmentKey);
+  if (!target)
+    throw new Error(
+      `Cannot resolve the Annotation Library for ${attachmentKey}`,
+    );
+  const library = getLibraries(client).find(
+    ({ libraryID }) => libraryID === target.libraryID,
+  );
+  const database = getZoteroDatabaseIdentity(client);
+  return {
+    kind: "zotero-db",
+    database,
+    libraryID: target.libraryID,
+    libraryRevision: library?.clientVersion ?? null,
+  };
+}
+
 function toRecord(
   annotation: Annotation,
   {
@@ -1284,9 +1962,7 @@ function toRecord(
     pageLabel: annotation.pageLabel,
     tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
-    // The Zotero DB keeps no object version, which is why the Zotero DB source
-    // refuses a write rather than sending a precondition it cannot supply.
-    version: null,
+    version: annotation.version,
   };
 }
 

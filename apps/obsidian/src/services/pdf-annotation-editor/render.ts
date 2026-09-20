@@ -167,6 +167,27 @@ export function renderAnnotationOverlay(
   if (overlay.childElementCount > 0) page.div.append(overlay);
 }
 
+/**
+ * Bring one Annotation's Mark on this page into the reader's scroller, which is
+ * what turns a page jump into a landing on the passage itself. Reads the marks
+ * this overlay drew rather than the geometry again, so a Mark that spilled over
+ * a page break scrolls to whichever half this page holds. A page drawing no
+ * Mark for that Indexed Key scrolls nowhere.
+ */
+export function scrollMarkIntoView(
+  page: OverlayPageView,
+  annotationKey: string,
+): void {
+  const marks = page.div.querySelectorAll<SVGElement>(
+    `.${themeHook.pdfAnnotationMark}`,
+  );
+  for (const mark of marks) {
+    if (mark.dataset.zoteroAnnotationKey !== annotationKey) continue;
+    mark.scrollIntoView({ block: "center", inline: "nearest" });
+    return;
+  }
+}
+
 /** One Annotation's hit area on one page, as the hit test measures it. */
 export interface MarkTarget {
   /** The Annotation's Indexed Key. */

@@ -93,9 +93,10 @@ export function editingCapabilityCopy(
 }
 
 /**
- * The always-present affordance, as both of its renderers draw it: the reader's
+ * The enable-editing affordance, as both of its renderers draw it: the reader's
  * vanilla render function and the Annotation View's Preact component read this
- * one answer, so the two surfaces cannot drift apart.
+ * one answer, so the two surfaces cannot drift apart. A writable capability
+ * returns `null`, because the ordinary editing controls take its place.
  *
  * @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
  */
@@ -105,6 +106,8 @@ export interface CapabilityAffordance {
   tone: CapabilityTone;
   /** The accessible name, which Obsidian also renders as the hover tooltip. */
   tooltip: string;
+  /** The action label shown beside the icon. */
+  label: string;
   /** Whether the icon turns, because ZotLit or Zotero is working. */
   spinning: boolean;
   /** Whole seconds left of a cooldown, or null while nothing counts down. */
@@ -112,7 +115,7 @@ export interface CapabilityAffordance {
 }
 
 /**
- * What the affordance shows for one Editing Capability.
+ * What the affordance shows while one Editing Capability is unavailable.
  *
  * The tooltip carries the whole of the copy table's answer, because the
  * affordance is one icon with nowhere else to put the detail; a surface that
@@ -125,14 +128,16 @@ export interface CapabilityAffordance {
 export function editingCapabilityAffordance(
   capability: EditingCapability,
   now: Temporal.Instant,
-): CapabilityAffordance {
+): CapabilityAffordance | null {
+  if (capability.kind === "writable") return null;
   const { icon, tone, label, detail, spinning } = editingCapabilityCopy(
     capability,
     now,
   );
   return {
-    icon,
-    tone,
+    icon: tone === "warning" ? "pencil" : icon,
+    tone: tone === "warning" ? "action" : tone,
+    label: m.capability_enable_editing(),
     tooltip:
       detail === null
         ? label

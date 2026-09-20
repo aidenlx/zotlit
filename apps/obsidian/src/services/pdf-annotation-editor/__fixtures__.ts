@@ -279,15 +279,27 @@ export function annotationReads(
   capability: EditingCapability = { kind: "writable" },
 ) {
   const emitter = createNanoEvents<AnnotationRepositoryEvents>();
+  const databaseSource = {
+    kind: "zotero-db" as const,
+    database: { userID: null, localUserKey: null, serverID: null },
+    libraryID: 1,
+    libraryRevision: 0,
+  };
   let list: AnnotationList = {
-    source: { kind: "zotero-db" },
+    source: databaseSource,
     annotations: records,
   };
   let current = capability;
   return {
     read: vi.fn(() => Promise.resolve(list)),
+    refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
     mutationFor: vi.fn((): MutationState => IDLE),
+    commentDraftFor: vi.fn(() => null),
+    editComment: vi.fn(() => null),
+    submitComment: vi.fn(() => Promise.resolve(IDLE)),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
     createAnnotation: vi.fn(() =>
@@ -308,7 +320,7 @@ export function annotationReads(
     },
     /** What a dropped Zotero DB partition does: a whole new list, announced. */
     replace(attachmentKey: string, next: readonly AnnotationRecord[]): void {
-      list = { source: { kind: "zotero-db" }, annotations: next };
+      list = { source: databaseSource, annotations: next };
       emitter.emit("annotations-changed", attachmentKey);
     },
   };

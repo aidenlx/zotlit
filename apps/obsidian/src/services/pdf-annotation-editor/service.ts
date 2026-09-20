@@ -1,18 +1,26 @@
 // Keeps one guarded binding per open Obsidian PDF view.
-import type { App, FileSystemAdapter, PDFFileView } from "obsidian";
+import type {
+  App,
+  FileSystemAdapter,
+  PDFFileView,
+  WorkspaceLeaf,
+} from "obsidian";
+
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
+import { registerAnnotationAnchorCapture } from "./anchor-capture";
 import { PdfViewBinding } from "./binding";
 import type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
 } from "./binding";
-import { openFilePathOf } from "./seam";
+import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import { resolveToolColors, TOOL_COLORS_SETTING } from "./tools";
 import type { AnnotationTool, ToolColorStore } from "./tools";
@@ -33,9 +41,6 @@ export type {
 export type { MarkGestures } from "./selection";
 export type { PdfSeamProbeId, PdfSeamProbeResult } from "./seam";
 
-/** Obsidian's own view type for a PDF, in the vault and outside it alike. */
-const PDF_VIEW_TYPE = "pdf";
-
 export interface PdfAnnotationEditorDeps {
   app: App;
   attachments: AttachmentReads;
@@ -48,6 +53,10 @@ export interface PdfAnnotationEditorDeps {
   settings: Pick<SettingsService, "current" | "update">;
   /** The clock each binding's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
+}
+
+export interface PdfAnnotationEditorEvents {
+  "session-added": (filePath: string) => void;
 }
 
 /**
@@ -68,6 +77,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #markGestures;
   readonly #toolColors;
   readonly #now;
+  readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
   #retired = false;
 
@@ -111,6 +121,13 @@ export class PdfAnnotationEditor extends Service<void> {
     return null;
   }
 
+  on<K extends keyof PdfAnnotationEditorEvents>(
+    event: K,
+    cb: PdfAnnotationEditorEvents[K],
+  ): () => void {
+    return this.#emitter.on(event, cb);
+  }
+
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
@@ -122,6 +139,20 @@ export class PdfAnnotationEditor extends Service<void> {
         workspace.on("layout-change", () => this.#reconcileViews()),
       ),
     );
+    stack.use(
+      registerEvent(
+        workspace.on("active-leaf-change", (leaf) => {
+          if (leaf) this.#bindings.get(leaf.view as PDFFileView)?.activate();
+        }),
+      ),
+    );
+    // A view already open takes its Anchor here: the patch fires on every open,
+    // and a cold one has no binding yet — that one lands off its first read.
+    stack.use(
+      registerAnnotationAnchorCapture({
+        onAnchor: (leaf) => this.#landAnchor(leaf),
+      }),
+    );
     stack.defer(() => {
       this.#retired = true;
       for (const binding of this.#bindings.values()) binding[Symbol.dispose]();
@@ -130,6 +161,12 @@ export class PdfAnnotationEditor extends Service<void> {
 
     workspace.onLayoutReady(() => this.#reconcileViews());
     this.commit(stack.move());
+  }
+
+  /** Re-aims a PDF view that is already open at the Annotation an Anchor named. */
+  #landAnchor(leaf: WorkspaceLeaf): void {
+    if (this.#retired) return;
+    this.#bindings.get(leaf.view as PDFFileView)?.land();
   }
 
   #reconcileViews(): void {
@@ -163,6 +200,8 @@ export class PdfAnnotationEditor extends Service<void> {
       });
       this.#bindings.set(view, binding);
       binding.load();
+      if (binding.filePath)
+        this.#emitter.emit("session-added", binding.filePath);
     }
   }
 }

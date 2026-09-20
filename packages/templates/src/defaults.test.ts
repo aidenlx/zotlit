@@ -41,6 +41,41 @@ describe("Liquid default templates via the facade", () => {
     expect(rendered).toContain("Highlighted text");
   });
 
+  // The page label is the only clickable thing the default profile renders per
+  // Annotation, and the Anchor is what makes the click land on its own Mark.
+  it("links the page label to the annotation when the attachment resolves", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", annotationLiquid, "liquid");
+
+    expect(
+      facade.render("annotation", {
+        pageLabel: "4",
+        fileLink: (alias?: string) =>
+          `[${alias ?? "paper.pdf"}](file:///abs/paper.pdf#page=4&zt-annotation=ANNX2345)`,
+        imgLink: null,
+        text: "Highlighted text",
+        comment: null,
+      }),
+    ).toContain(
+      "Page [4](file:///abs/paper.pdf#page=4&zt-annotation=ANNX2345)",
+    );
+  });
+
+  it("keeps the plain page label when the attachment file is unresolvable", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", annotationLiquid, "liquid");
+
+    expect(
+      facade.render("annotation", {
+        pageLabel: "4",
+        fileLink: () => null,
+        imgLink: null,
+        text: "Highlighted text",
+        comment: null,
+      }),
+    ).toContain("Page 4");
+  });
+
   it("renders a tight notes list under a heading", () => {
     const facade = new TemplateFacade();
     facade.define("annotation", annotationLiquid, "liquid");
@@ -233,6 +268,27 @@ describe("Liquid defaults match Eta defaults byte-for-byte", () => {
         imgLink: null,
         text: "text",
         comment: "single comment",
+      },
+    ],
+    [
+      "page label carrying an annotation-anchored file link",
+      {
+        pageLabel: "5",
+        fileLink: (alias?: string) =>
+          `[${alias ?? "paper.pdf"}](file:///abs/paper.pdf#page=5&zt-annotation=ANNX2345)`,
+        imgLink: null,
+        text: "linked",
+        comment: null,
+      },
+    ],
+    [
+      "page label whose attachment file is unresolvable",
+      {
+        pageLabel: "5",
+        fileLink: () => null,
+        imgLink: null,
+        text: "plain",
+        comment: null,
       },
     ],
   ] as const;
