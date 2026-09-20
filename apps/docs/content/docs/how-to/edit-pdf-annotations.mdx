@@ -1,0 +1,82 @@
+---
+title: "How to edit PDF annotations in Obsidian"
+description: "Create, change, and delete Zotero PDF annotations while reading the PDF in Obsidian."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Create highlights and underlines, change annotation colors and comments, or delete annotations from Obsidian.
+
+## Before you edit
+
+Keep Zotero running while you edit. ZotLit sends each change to Zotero and cannot edit annotations while Zotero is closed.
+
+Open the item's PDF in Obsidian. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian) for the available entry points.
+
+Before the first edit, select <UiLabel name={m.capability_enable_editing()} /> in the PDF reader toolbar or the annotation view. ZotLit opens <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />. On the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />, then answer the permission dialog in Zotero.
+
+<Callout type="warn" title="Edit one annotation in one application at a time">
+  Zotero has a [known defect](https://github.com/aidenlx/zotlit/issues/1165) when edits to the same annotation overlap in Zotero and Obsidian. One comment can silently overwrite the other even when both applications report a successful save. A deletion in Obsidian can also remove an annotation that Zotero just updated.
+
+You can keep both applications open. Make changes in one application at a time, wait for each change to save, then switch. This reduces the risk but does not guarantee that overlapping edits cannot occur.
+
+</Callout>
+
+## Create a highlight or underline
+
+1. Select text in the PDF.
+2. In the popup, select <UiLabel name={m.pdf_toolbar_highlight()} /> or <UiLabel name={m.pdf_toolbar_underline()} />.
+3. Wait for the new mark to appear before you continue editing it or switch to Zotero.
+
+The toolbar at the right of the PDF reader provides the same two tools. Select a tool to keep it active, then select text to create marks without using the popup each time. Use the arrow beside a tool to select its color.
+
+To create one highlight in another color, select the text and select a color from the popup. When neither tool is active, a color creates a highlight.
+
+## Add or edit a comment
+
+1. Select the annotation mark in the PDF.
+2. In the popup, select <UiLabel name={m.pdf_mark_popup_add_comment()} /> or <UiLabel name={m.pdf_mark_popup_edit_comment()} />. The comment editor opens in the popup.
+3. Enter the comment.
+4. Wait for the comment to save before you edit the annotation in Zotero.
+
+Comments request an automatic save after one second without typing. During continuous typing, ZotLit requests a save after ten seconds from the first unsaved change. Press `Ctrl+Enter` (Windows) or `Command+Enter` (macOS) to request a save and keep the editor open. Press `Escape` or move focus out of the editor to request a save and close it.
+
+You can also select <UiLabel name={m.annot_view_card_add_comment()} /> or <UiLabel name={m.annot_view_card_edit_comment()} /> on an annotation card. The popup and card editors share one draft, so text entered in either editor appears in the other.
+
+If ZotLit detects that the comment changed in Zotero, it shows <UiLabel name={m.annot_view_conflict_title()} /> with both versions. Select <UiLabel name={m.annot_view_conflict_use_comment()} /> to save your draft over the Zotero comment, or <UiLabel name={m.annot_view_conflict_keep_zotero_comment()} /> to discard your draft.
+
+## Change a color
+
+1. Select the annotation mark in the PDF.
+2. Select <UiLabel name={m.annot_view_card_color()} /> in the popup.
+3. Select one of Zotero's annotation colors.
+
+The palette button on an annotation card provides the same colors.
+
+## Delete an annotation
+
+1. Reveal the annotation in the annotation view.
+2. Open its <UiLabel name={m.annot_view_more_tooltip()} /> menu.
+3. Select <UiLabel name={m.annot_view_menu_delete()} />.
+4. In the confirmation dialog, select <UiLabel name={m.annot_view_delete_confirm_action()} />.
+
+The annotation is deleted from Zotero. ZotLit cannot undo this action.
+
+## See also
+
+<Cards>
+  <Card
+    title="Open an item's PDF in Obsidian"
+    description="Open a Zotero PDF attachment in Obsidian's PDF reader."
+    href="/docs/how-to/open-pdf-in-obsidian"
+  />
+  <Card
+    title="Use the annotation view"
+    description="Browse an item's annotations and pull them into your notes."
+    href="/docs/how-to/use-annotation-view"
+  />
+</Cards>

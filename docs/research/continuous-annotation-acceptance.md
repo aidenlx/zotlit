@@ -34,8 +34,16 @@ unrelated note workflows.
 
 Zotero 10.0 still accepts a stale native PATCH and DELETE after a concurrent
 Reader change. The paired evidence records the PATCH overwriting the Reader
-comment and DELETE returning 204 before the item reads as 404. This upstream
-native concurrency race remains the release blocker.
+comment and DELETE returning 204 before the item reads as 404. On 2026-09-20,
+the maintainer accepted these known Zotero defects as release risks in
+[#1157](https://github.com/aidenlx/zotlit/issues/1157). This supersedes the
+earlier native concurrency release gate; the defects remain unresolved and
+their natural occurrence rate is unmeasured. The
+[PDF editing guide](../../apps/docs/content/docs/how-to/edit-pdf-annotations.mdx)
+explains the risk and recommends editing in one application at a time, with
+changes saved before switching. Upstream repair remains separate follow-up
+work. Other acceptance requirements, including the unclassified standalone
+failures above, remain open.
 
 The final repository test run passed all 28 tasks, including 4,474 Obsidian
 tests. Test TypeScript, repository lint, and repository format checks passed.

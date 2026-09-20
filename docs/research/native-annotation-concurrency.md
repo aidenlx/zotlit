@@ -78,9 +78,17 @@ preserve a Reader save that is already in flight on the same cached item. This
 run does not establish that putting only the API version check and save in one
 transaction is sufficient, because the Reader fields were pending before the
 API request began. DELETE separately needs one atomic version-check-and-erase
-boundary. Issue #1166 must remain incomplete until both defects are fixed and
-these scenarios pass with a visible conflict response or another result that
-preserves the competing Reader value.
+boundary. A future fix must make these scenarios produce a visible conflict
+response or another result that preserves the competing Reader value.
+
+On 2026-09-20, the maintainer accepted both defects as known release risks in
+[#1157](https://github.com/aidenlx/zotlit/issues/1157), superseding the earlier
+release gate. The [PDF editing guide](../../apps/docs/content/docs/how-to/edit-pdf-annotations.mdx)
+warns about comment loss and deletion of a recently updated Annotation. It
+recommends editing in one application at a time and letting changes save before
+switching. This reduces overlap without guaranteeing conflict protection.
+The reproductions remain evidence of unresolved defects; upstream repair is
+separate follow-up work. Other #1166 acceptance criteria still apply.
 
 The test controls one in-process item instance and the actual Reader callback.
 It proves these exact Zotero 10.0 interleavings. It does not measure the natural
