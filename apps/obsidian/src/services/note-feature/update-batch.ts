@@ -34,6 +34,8 @@ import {
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
+import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
@@ -105,6 +107,7 @@ interface NotFoundEntry {
 
 /** Lease-scoped state shared across a run's per-action item loads. */
 interface RunContext {
+  reportExcerpts: (summary: ExcerptSummary) => void;
   client: NodeDatabaseClient;
   settings: Readonly<Settings>;
   groupIdMemo: GroupIDMemo;
@@ -610,6 +613,9 @@ async function executeBatchActions(
   controls: BatchRunControls,
 ): Promise<BatchRunResult> {
   const { actions, scope, profile } = plan;
+  using excerptReports = collectExcerptSummary((summary) =>
+    deps.noteFeature.reportExcerptImages(summary),
+  );
   const [settings] = await Promise.all([
     deps.settings.loaded,
     deps.noteFeature.ready,
@@ -619,6 +625,7 @@ async function executeBatchActions(
   // run-invariant too but only available inside the run closure, so they're
   // passed per call instead of baked in here.
   const baseContext: Omit<RunContext, "client" | "username"> = {
+    reportExcerpts: excerptReports.add,
     settings,
     groupIdMemo: new Map(),
     collectionCache: new CollectionCache(),
@@ -723,9 +730,12 @@ async function runAction(
       throw new BatchUpdateRefusedError(
         unknownProfileDiagnostic(action.prepared.selector),
       );
-    return batchCreateOutcome(await action.prepared.create());
+    return batchCreateOutcome(
+      await action.prepared.create({ reportExcerpts: run.reportExcerpts }),
+    );
   }
   const result = await deps.noteFeature.createNote(item, {
+    reportExcerpts: run.reportExcerpts,
     collectionCache: run.collectionCache,
     tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,

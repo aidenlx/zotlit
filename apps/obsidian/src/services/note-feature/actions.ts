@@ -61,6 +61,11 @@ export function addNoteFeatureActions(
   deps: NoteFeatureActionDeps,
 ): void {
   plugin.register(
+    deps.noteFeature.on("excerpt-images-reported", (summary) => {
+      new BaseNotice(m.excerpt_image_summary(summary));
+    }),
+  );
+  plugin.register(
     deps.noteFeature.on("frontmatter-eval-failed", ({ fields }) => {
       new BaseNotice(
         m.notice_frontmatter_eval_failed({ fields: fields.join(", ") }),

@@ -65,6 +65,7 @@ export function attachmentFileLink(
 export function buildAnnotationResolvers(options: {
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
+  annotationImageLink?: AnnotationResolvers["annotationImageLink"];
 }): AnnotationResolvers {
   const dataDir = options.zoteroPref.dataDir;
   const baseAttachmentPath = options.zoteroPref.baseAttachmentPath;
@@ -81,6 +82,8 @@ export function buildAnnotationResolvers(options: {
     },
     authorsShort: creatorSummary,
     annotationImageLink: (annotation) => {
+      if (options.annotationImageLink)
+        return options.annotationImageLink(annotation);
       const cachePath = resolveAnnotCachePath(annotation, {
         dataDir,
         groupID: annotation.groupID,

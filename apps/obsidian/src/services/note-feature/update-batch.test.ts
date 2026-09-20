@@ -12,7 +12,7 @@ import {
   getLibraryByGroupID,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
-import type { Library } from "@zotlit/db";
+import type { Item, Library } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -34,6 +34,7 @@ import type {
 } from "@/views/batch-modal";
 
 import type {
+  CreateNoteOptions,
   CreateNoteResult,
   CreationProfileSelection,
   PreparedCreationProfile,
@@ -251,6 +252,79 @@ describe("batchCreateOutcome", () => {
     }
   });
 });
+
+it.each([false, true])(
+  "reports affected creations once per batch (prepared Profiles: %s)",
+  async (prepared) => {
+    const deps = makeDeps();
+    const report = vi.fn();
+    deps.noteFeature.reportExcerptImages = report;
+    const summaries = [
+      { zotero: 1, unchecked: 0, unavailable: 1 },
+      { zotero: 0, unchecked: 1, unavailable: 2 },
+    ];
+    const create = async (
+      id: number,
+      options?: Pick<CreateNoteOptions, "reportExcerpts">,
+    ): Promise<CreateNoteResult> => {
+      expect(options?.reportExcerpts).toBeTypeOf("function");
+      options!.reportExcerpts!(summaries[id - 1]!);
+      expect(report).not.toHaveBeenCalled();
+      return {
+        outcome: "created",
+        file: { path: `Literature/Item ${id}.md` } as TFile,
+      };
+    };
+    deps.noteFeature.createNote = (item, options) =>
+      create(item.itemID, options);
+    if (prepared) {
+      deps.profile = profileReader({
+        ...defaults,
+        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+      });
+      deps.noteFeature.prepareBatchCreationProfiles = async (items) =>
+        new Map(
+          items.map((item) => [
+            item.itemID,
+            [
+              {
+                selector: "default",
+                label: undefined,
+                folder: "Literature",
+                citationStyle: null,
+                document: undefined,
+                path: `Literature/Item ${item.itemID}.md`,
+                create: (options) => create(item.itemID, options),
+              },
+            ],
+          ]),
+        );
+    }
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    vi.mocked(getItemsByID).mockImplementation((_client, ids) =>
+      ids.map((id) => ({ itemID: id, indexedKey: `ITEM${id}` }) as Item),
+    );
+    await runBatchUpdate(deps, [1, 2]);
+    await classifyLastModal();
+    const result = await openedModals.at(-1)!.onRun({
+      onItemSettled: () => {
+        expect(report).not.toHaveBeenCalled();
+      },
+      signal: new AbortController().signal,
+    });
+    expect(result).toMatchObject({ created: 2, failed: 0 });
+    expect(report).toHaveBeenCalledExactlyOnceWith({
+      zotero: 1,
+      unchecked: 1,
+      unavailable: 3,
+    });
+  },
+);
 
 it("classifies conflicting Companion Profiles as kept rows before any write or picker", async () => {
   const books = "Bk3Qn7XvT2Lp" as ProfileId;

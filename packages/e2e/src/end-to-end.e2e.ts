@@ -11,7 +11,14 @@
 // open. src/paired-run.e2e.ts is the suite that runs in that case.
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -477,6 +484,62 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  it("creates durable image and ink excerpts with PDF readers closed", async () => {
+    const parent = join(workspaceRoot, "tmp");
+    await mkdir(parent, { recursive: true });
+    const path = await mkdtemp(join(parent, "e2e-excerpt-note-vault-"));
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await runVaultScript(["remove", path, "--purge"]);
+    });
+    const opened = await runVaultScript([
+      "open",
+      path,
+      "--vault-case",
+      "fresh",
+    ]);
+    const id = opened.stdout.trim().split("\n")[0]!.trim();
+    // This suite skips when its Fixture has a live Zotero process.
+    expect(
+      await obEval(
+        id,
+        "(()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();return String(app.workspace.getLeavesOfType('pdf').length);})()",
+      ),
+    ).toBe("0");
+    const result = await createFixtureNote(id, 46);
+    expect(result.outcome).toBe("created");
+    if (result.outcome !== "created")
+      throw new Error("Excerpt note was not created");
+    const markdown = await readFile(join(path, result.path), "utf8");
+    const files: string[] = JSON.parse(
+      await obEval(
+        id,
+        "JSON.stringify(app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).map(f=>f.path))",
+      ),
+    );
+    expect(files).toHaveLength(3);
+    const targets = new Set(
+      markdown
+        .split("![[")
+        .slice(1)
+        .map((part) => part.split("]]")[0]!)
+        .filter((target) => target.startsWith("zotlit-excerpt-")),
+    );
+    expect(targets).toEqual(
+      new Set(files.map((file) => file.split("/").at(-1)!)),
+    );
+    for (const file of files) {
+      const bytes = await readFile(join(path, file));
+      expect([...bytes.subarray(0, 8)]).toEqual([
+        137, 80, 78, 71, 13, 10, 26, 10,
+      ]);
+      expect(bytes.length).toBeGreaterThan(1000);
+    }
+    expect(
+      await obEval(id, "String(app.workspace.getLeavesOfType('pdf').length)"),
+    ).toBe("0");
+  });
 
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;

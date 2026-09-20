@@ -22,6 +22,7 @@ import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
+import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
@@ -309,6 +310,7 @@ export function buildServices(
     })
     .useValue({
       noteFeature: ({
+        excerptImage,
         profile,
         template,
         db,
@@ -319,6 +321,15 @@ export function buildServices(
         noteImport,
       }): NoteFeature =>
         createNoteFeature({
+          excerptImages: (options) =>
+            createExcerptPreparation({
+              app: plugin.app,
+              resolver: excerptImage,
+              paths: {
+                dataDir: zoteroPref.dataDir,
+                baseAttachmentPath: zoteroPref.baseAttachmentPath,
+              },
+            })(options),
           profile,
           app: plugin.app,
           template,

@@ -1,3 +1,4 @@
+import { basename, dirname, join } from "node:path/posix";
 import type { TFile } from "obsidian";
 
 import {
@@ -50,6 +51,7 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { NoteImport } from "@/services/note-import/service";
 import {
   itemKeyFromFrontmatter,
@@ -214,7 +216,9 @@ export interface ProfilePreview {
 
 export interface PreparedCreationProfile extends ProfilePreview {
   /** Re-enters the create gate; the preview holds no database lease. */
-  create: () => Promise<CreateNoteResult>;
+  create: (
+    options?: Pick<CreateNoteOptions, "reportExcerpts">,
+  ) => Promise<CreateNoteResult>;
 }
 
 export interface ProfileNotePreview {
@@ -257,6 +261,8 @@ const MAX_CREATE_RETRIES = 5;
 
 /** Per-batch memos threaded through a multi-item create run. */
 export interface CreateNoteOptions {
+  /** A batch collects used outcomes here and reports once when the run settles. */
+  reportExcerpts?: (summary: ExcerptSummary) => void;
   collectionCache?: CollectionCache;
   tagMemo?: TagMemo;
   groupIdMemo?: GroupIDMemo;
@@ -298,6 +304,7 @@ export interface WriteNoteUpdateOptions {
 
 /** Events the bound note feature emits; a UI subscriber owns any rendering. */
 export interface NoteFeatureEvents {
+  "excerpt-images-reported": (summary: ExcerptSummary) => void;
   /**
    * A legacy settings-held frontmatter expression failed during a write; the
    * write completed with those keys skipped.
@@ -316,6 +323,7 @@ type OpsContext = NoteFeatureDeps & { events: Emitter<NoteFeatureEvents> };
  * Consumers hold this object; the collaborators stay behind the seam.
  */
 export interface NoteFeature {
+  reportExcerptImages(summary: ExcerptSummary): void;
   /**
    * Settles when templates and the note index are usable. Single-item methods
    * gate internally; batch runners await this once per run before a
@@ -464,6 +472,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
   };
 
   return {
+    reportExcerptImages: (summary) =>
+      events.emit("excerpt-images-reported", summary),
     ready: Promise.all([
       deps.template.ready,
       deps.noteIndex.ready,
@@ -619,7 +629,8 @@ async function prepareCreationProfiles(
     return {
       ...profilePreview(profile, preparedPath?.path),
       unavailable,
-      create: () => options.create(item, { profile: selector, preparedPath }),
+      create: (reporting) =>
+        options.create(item, { ...reporting, profile: selector, preparedPath }),
     };
   });
 }
@@ -846,52 +857,54 @@ async function createNote(
       document,
     });
 
-  for (let attempt = 0; ; attempt++) {
-    let fileCreated = false;
-    try {
-      return await writeNewNote(ctx, item, {
-        client: lease.client,
-        tagMemo,
-        collectionCache,
-        path,
-        settings: profile.settings,
-        profile,
-        document,
-        groupIdMemo: options.groupIdMemo,
-        username,
-        onFileCreated: (created) => {
-          fileCreated = true;
-          options.onFileCreated?.(created);
-        },
-      });
-    } catch (error) {
-      if (
-        fileCreated ||
-        !isFileExistsError(error) ||
-        !canSuffix ||
-        attempt >= MAX_CREATE_RETRIES
-      ) {
-        throw error;
+  const parentFolder = dirname(path);
+  return await writeNewNote(ctx, item, {
+    client: lease.client,
+    tagMemo,
+    collectionCache,
+    path,
+    settings: profile.settings,
+    profile,
+    document,
+    groupIdMemo: options.groupIdMemo,
+    username,
+    onFileCreated: options.onFileCreated,
+    reportExcerpts: options.reportExcerpts,
+    createFile: async (content) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await ensureParentFolder(ctx.app, path);
+          return await ctx.app.vault.create(path, content);
+        } catch (error) {
+          if (
+            !isFileExistsError(error) ||
+            !canSuffix ||
+            attempt >= MAX_CREATE_RETRIES
+          )
+            throw error;
+          logger.debug("Filename collided on create; retrying with suffix", {
+            path,
+            attempt,
+            itemKey: item.indexedKey,
+          });
+          ({ path, canSuffix } = resolveNotePath(ctx, item, {
+            itemTags,
+            itemCollections,
+            settings: profile.settings,
+            forceSuffix: true,
+            document,
+          }));
+          // Prepared relative links belong to the original parent folder.
+          path = join(parentFolder, basename(path));
+        }
       }
-      logger.debug("Filename collided on create; retrying with suffix", {
-        path,
-        attempt,
-        itemKey: item.indexedKey,
-      });
-      ({ path, canSuffix } = resolveNotePath(ctx, item, {
-        itemTags,
-        itemCollections,
-        settings: profile.settings,
-        forceSuffix: true,
-        document,
-      }));
-    }
-  }
+    },
+  });
 }
 
 /**
- * Inner write step for {@link createNote}, which handles path resolution and
- * collision retries before calling here.
+ * Prepare and render once; the supplied create boundary retries filename
+ * collisions with these same composed bytes.
  *
  * @throws an Obsidian vault error (e.g. a file already exists at `path`).
  */
@@ -909,10 +922,18 @@ async function writeNewNote(
     groupIdMemo?: GroupIDMemo;
     username: string | null;
     onFileCreated?: (file: TFile) => void;
+    createFile: (content: string) => Promise<TFile>;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
   },
 ): Promise<CreateNoteResult> {
   const { tagMemo, collectionCache, path, settings } = options;
   await ensureParentFolder(ctx.app, path);
+
+  const excerptImages = ctx.excerptImages?.({
+    client: options.client,
+    notePath: path,
+    settings,
+  });
 
   const attachmentImport = await ctx.attachmentImport.prepare(path);
   const noteImport = await ctx.noteImport.prepare({
@@ -927,6 +948,7 @@ async function writeNewNote(
     noteImport,
     settings,
     sourcePath: path,
+    excerptImages,
   });
   const context = fetchNoteContext(options.client, item, {
     resolvers,
@@ -935,6 +957,7 @@ async function writeNewNote(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
+  await excerptImages?.prepare();
   const composed = composeLiteratureNote(ctx, {
     context,
     itemKey: item.indexedKey,
@@ -951,11 +974,19 @@ async function writeNewNote(
     };
   }
 
-  const file = await ctx.app.vault.create(path, composed.content);
+  const file = await options.createFile(composed.content);
   options.onFileCreated?.(file);
   await attachmentImport.flush();
   await noteImport.flush();
-  logger.debug("Created literature note", { path, itemKey: item.indexedKey });
+  const summary = excerptImages?.summary();
+  if (summary && (summary.zotero || summary.unchecked || summary.unavailable)) {
+    if (options.reportExcerpts) options.reportExcerpts(summary);
+    else ctx.events.emit("excerpt-images-reported", summary);
+  }
+  logger.debug("Created literature note", {
+    path: file.path,
+    itemKey: item.indexedKey,
+  });
   return { outcome: "created", file };
 }
 

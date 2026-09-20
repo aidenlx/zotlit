@@ -1,5 +1,14 @@
-import { TFile, TFolder } from "obsidian";
-import type { FileManager } from "obsidian";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { join } from "node:path";
+import { FileSystemAdapter, TFile, TFolder } from "obsidian";
+import type { App, FileManager } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -25,7 +34,12 @@ import type {
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { filenameSuffix, inlineCitation } from "@zotlit/templates";
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+import {
+  filenameSuffix,
+  inlineCitation,
+  TemplateEngine,
+} from "@zotlit/templates";
 import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { MissingTemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
@@ -54,6 +68,12 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
+import type {
+  ExcerptOutcome,
+  ExcerptRequest,
+} from "@/services/excerpt-image/service";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -369,6 +389,12 @@ describe("Profile source selection", () => {
     });
     const app = makeApp();
     deps.app = app;
+    const prepareImages = vi.fn(() => ({
+      annotationImageLink: () => null,
+      prepare: async () => {},
+      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+    }));
+    deps.excerptImages = prepareImages;
     const document = makeDocumentTemplate({
       filename: `Paper${filenameSuffix()}`,
       createBody: "# A Study",
@@ -396,6 +422,7 @@ describe("Profile source selection", () => {
       topic: "Research",
     });
     expect(preview.body).toBe("# A Study");
+    expect(prepareImages).not.toHaveBeenCalled();
     expect(app.vault.create).toHaveBeenCalledTimes(1);
     const file = createdFile(await preview.create());
     expect(file.path).toBe(preview.path);
@@ -615,6 +642,235 @@ describe("Profile source selection", () => {
 });
 
 describe("createNote", () => {
+  it.each([
+    "valid",
+    "fallback",
+    "unchecked",
+    "unavailable",
+    "partial",
+    "write-failure",
+    "disabled",
+    "unused",
+    "collected",
+  ] as const)(
+    "prepares image and ink before one Eta execution (%s)",
+    async (mode) => {
+      const parent = join(
+        await getWorkspaceRoot(import.meta.dirname),
+        "tmp/excerpt-note-tests",
+      );
+      await mkdir(parent, { recursive: true });
+      const root = await mkdtemp(`${parent}/vault-`);
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(() => rm(root, { recursive: true, force: true }));
+      const { deps } = makeUpdateHarness({
+        content: "",
+        settings: {
+          "attachment.import": mode !== "disabled",
+          "attachment.folder-path": "Images",
+        },
+      });
+      const client = deps.db.client;
+      let leaseReleased = false;
+      deps.db.acquireRead = async () => ({
+        client,
+        [Symbol.dispose]() {
+          leaseReleased = true;
+        },
+      });
+      cleanup.defer(() => client.$client.close());
+      client.$client.exec(`
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
+          (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'ROOT1234'),
+          (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
+          (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
+          (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
+        insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values
+          (90, 1, 0, 'application/pdf', 'storage:paper.pdf');
+        insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal) values
+          (91, 90, 3, null, null, '#ffd400', '1', '00000|000000|00001', '{"pageIndex":0,"rects":[[0,0,10,10]]}', 0),
+          (92, 90, 4, null, null, '#ff0000', '1', '00000|000000|00002', '{"pageIndex":0,"width":2,"paths":[[1,2,3,4]]}', 0);
+      `);
+      const actual =
+        await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
+      vi.mocked(fetchNoteContext).mockImplementation(actual.fetchNoteContext);
+      const app = makeApp();
+      app.vault.createFolder = vi.fn(async (path: string) => {
+        await mkdir(`${root}/${path}`, { recursive: true });
+        return Object.assign(new TFolder(), { path });
+      });
+      app.vault.create.mockImplementation(
+        async (path: string, content: string) => {
+          expect(leaseReleased).toBe(false);
+          await mkdir(`${root}/Literature`, { recursive: true });
+          await writeFile(`${root}/${path}`, content);
+          return makeFile(path);
+        },
+      );
+      Object.assign(app.vault, {
+        adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
+          getFullPath: (path: string) => `${root}/${path}`,
+        }),
+      });
+      deps.app = app;
+      const resolver = {
+        resolve: vi.fn(
+          async (request: ExcerptRequest): Promise<ExcerptOutcome> => {
+            expect(leaseReleased).toBe(false);
+            if (mode === "partial" && request.annotation.type === "image")
+              throw new Error("Image renderer failed");
+            if (
+              mode === "unavailable" ||
+              mode === "unused" ||
+              mode === "collected"
+            )
+              return { kind: "unavailable" };
+            return {
+              kind: "available",
+              bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 42]),
+              provenance: mode === "fallback" ? "zotero" : "rendered",
+              freshness:
+                mode === "fallback"
+                  ? "uncertain"
+                  : mode === "unchecked"
+                    ? "unchecked"
+                    : "checked",
+            };
+          },
+        ),
+      };
+      deps.excerptImages = createExcerptPreparation({
+        app: app as unknown as App,
+        resolver,
+        paths: deps.zoteroPref,
+      });
+      if (mode === "write-failure")
+        await writeFile(`${root}/Images`, "occupied");
+      const engine = new TemplateEngine();
+      engine.define(
+        "note",
+        mode === "unused"
+          ? "<% zt.countRender() %>Text only"
+          : "<% zt.countRender() %><% for (const a of zt.annotations) { %><%= embed(a.imgLink) %>\n<% } %>End of note",
+      );
+      let runs = 0;
+      deps.template = {
+        ...makeTemplate(),
+        render: (name, data) =>
+          engine.render(name, {
+            ...data,
+            countRender: () => {
+              runs++;
+            },
+          }),
+      };
+      const feature = createNoteFeature(deps);
+      const notices: ExcerptSummary[] = [];
+      const collected: ExcerptSummary[] = [];
+      feature.on("excerpt-images-reported", (summary) => notices.push(summary));
+      const result = await feature.createNote(
+        makeItem({
+          key: "ROOT1234",
+          indexedKey: "ROOT1234",
+          title: "Paper",
+          citationKey: "paper2026",
+        }),
+        mode === "collected"
+          ? { reportExcerpts: (summary) => collected.push(summary) }
+          : undefined,
+      );
+      if (mode === "collected") {
+        expect(notices).toEqual([]);
+        expect(collected).toEqual([
+          { zotero: 0, unchecked: 0, unavailable: 2 },
+        ]);
+        feature.reportExcerptImages(collected[0]!);
+      }
+      expect(result.outcome).toBe("created");
+      expect(leaseReleased).toBe(true);
+      expect(runs).toBe(1);
+      const markdown = await readFile(`${root}/Literature/Paper.md`, "utf8");
+      expect(markdown).toContain(
+        mode === "unused" ? "Text only" : "End of note",
+      );
+      if (mode === "partial") {
+        expect(markdown.split("![[Images/zotlit-excerpt-")).toHaveLength(2);
+        expect(markdown).toContain(m.excerpt_image_unavailable());
+        expect(await readdir(`${root}/Images`)).toHaveLength(1);
+      } else if (["valid", "fallback", "unchecked"].includes(mode)) {
+        expect(markdown.split("![[Images/zotlit-excerpt-")).toHaveLength(3);
+        const files = await readdir(`${root}/Images`);
+        expect(files).toHaveLength(2);
+        for (const filename of files)
+          expect(await readFile(`${root}/Images/${filename}`)).toEqual(
+            Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 42]),
+          );
+      } else {
+        expect(markdown).not.toContain("![[");
+        expect(markdown).not.toContain("![");
+        if (mode !== "unused") {
+          expect(markdown).toContain(
+            mode === "disabled"
+              ? m.excerpt_image_import_disabled()
+              : m.excerpt_image_unavailable(),
+          );
+          expect(markdown).toContain(
+            "file:///zotero/storage/RGRPDF24/paper.pdf#page=1&zt-annotation=",
+          );
+        }
+      }
+      if (mode === "valid" || mode === "unused") expect(notices).toEqual([]);
+      else
+        expect(notices).toEqual([
+          {
+            zotero: mode === "fallback" ? 2 : 0,
+            unchecked: mode === "unchecked" ? 2 : 0,
+            unavailable:
+              mode === "partial"
+                ? 1
+                : [
+                      "disabled",
+                      "unavailable",
+                      "write-failure",
+                      "collected",
+                    ].includes(mode)
+                  ? 2
+                  : 0,
+          },
+        ]);
+      expect(resolver.resolve).toHaveBeenCalledTimes(
+        mode === "disabled" ? 0 : 2,
+      );
+      if (mode !== "disabled")
+        expect(
+          resolver.resolve.mock.calls.map(([request]) => ({
+            key: request.annotation.key,
+            type: request.annotation.type,
+            parent: request.attachmentKey,
+            source: request.source.kind,
+            pdf: request.pdfPath,
+          })),
+        ).toEqual([
+          {
+            key: "FDRFQ7C2",
+            type: "image",
+            parent: "RGRPDF24",
+            source: "zotero-db",
+            pdf: "/zotero/storage/RGRPDF24/paper.pdf",
+          },
+          {
+            key: "TYY6Z6ZF",
+            type: "ink",
+            parent: "RGRPDF24",
+            source: "zotero-db",
+            pdf: "/zotero/storage/RGRPDF24/paper.pdf",
+          },
+        ]);
+      if (mode === "disabled")
+        expect(await readdir(root)).toEqual(["Literature"]);
+    },
+  );
+
   it("resolves note helpers by item key, then filename fallback", async () => {
     const root = makeItem({
       itemID: 1,
@@ -850,6 +1106,9 @@ describe("createNote", () => {
       disk.add(path);
       return makeFile(path);
     });
+    const document = makeDocumentTemplate({
+      filename: `Root${filenameSuffix()}`,
+    });
 
     const deps: SyncRenderDeps = {
       app: {
@@ -870,8 +1129,7 @@ describe("createNote", () => {
       },
       template: {
         ...makeTemplate(),
-        getLiteratureNoteTemplate: () =>
-          makeDocumentTemplate({ filename: `Root${filenameSuffix()}` }),
+        getLiteratureNoteTemplate: () => document,
       },
       db: makeDb(),
       noteIndex: {
@@ -912,6 +1170,7 @@ describe("createNote", () => {
     expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
     expect(update).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(2);
+    expect(document.renderForCreate).toHaveBeenCalledTimes(1);
   });
 
   it("awaits noteIndex.whenIndexed (not just ready) before writing the note", async () => {
