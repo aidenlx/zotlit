@@ -20,8 +20,9 @@ export interface ActionState {
 /** Everything the row renders, decided before any element is touched. */
 export interface EditingRowModel {
   status: CapabilityCopy;
-  /** "Enable editing" — the gesture that asks Zotero, or re-checks it. */
+  /** "Allow editing" — the gesture that asks Zotero for write permission. */
   enable: ActionState;
+  check: ActionState;
   /** "Forget authorization" — offered only while there is one to forget. */
   forget: ActionState;
   /** Whether the row must redraw itself on a clock rather than on an event. */
@@ -39,12 +40,7 @@ export interface EditingRowInput {
 /**
  * What the "Zotero editing" row offers for one Editing Capability.
  *
- * "Enable editing" runs a Capability Probe before it asks Zotero for anything,
- * so it stays live for every state a fresh probe could clear — a closed Zotero,
- * the local API switched off, a database that was swapped. It goes away once
- * editing is on, and is refused only where asking cannot help: while a request
- * is already at Zotero's dialog, while Zotero's rate limit runs, and where
- * Zotero itself is the wrong version or the library refuses writes.
+ * Authorization and connection checks are separate user actions.
  */
 export function editingRowModel({
   capability,
@@ -54,27 +50,17 @@ export function editingRowModel({
   return {
     status: editingCapabilityCopy(capability, now),
     enable: {
-      shown: capability.kind !== "writable",
-      disabled: askingCannotHelp(capability),
+      shown: capability.kind === "authorization-required",
+      disabled: capability.kind !== "authorization-required",
     },
-    forget: { shown: remembered, disabled: false },
+    check: {
+      shown: capability.kind === "read-only",
+      disabled:
+        capability.kind === "read-only" && capability.reason === "probing",
+    },
+    forget: { shown: remembered, disabled: capability.kind === "authorizing" },
     countsDown: capability.kind === "cooldown",
   };
-}
-
-function askingCannotHelp(capability: EditingCapability): boolean {
-  switch (capability.kind) {
-    case "authorizing":
-    case "cooldown":
-      return true;
-    case "read-only":
-      return (
-        capability.reason === "incompatible-zotero" ||
-        capability.reason === "library-read-only"
-      );
-    default:
-      return false;
-  }
 }
 
 /**
@@ -102,15 +88,22 @@ function renderEditingRow(
   const stack = new DisposableStack();
 
   const desc = createFragment();
-  desc.append(m.settings_zotero_editing_desc());
-  desc.append(createEl("br"));
-  const statusEl = createSpan();
+  const statusEl = createEl("div", {
+    cls: "zt:font-medium zt:text-foreground",
+    attr: { role: "status" },
+  });
   desc.append(statusEl);
   const detailEl = createSpan({ cls: "zt:block zt:text-(--text-muted)" });
   desc.append(detailEl);
+  const rememberedEl = createEl("div", {
+    cls: "zt:mt-1 zt:text-muted-foreground",
+    text: m.settings_zotero_editing_saved(),
+  });
+  desc.append(rememberedEl);
   setting.setDesc(desc);
 
   let enableButton: ButtonComponent | undefined;
+  let checkButton: ButtonComponent | undefined;
   let forgetButton: ButtonComponent | undefined;
   let remembered = false;
   let stopCountdown: (() => void) | null = null;
@@ -124,11 +117,15 @@ function renderEditingRow(
     statusEl.textContent = model.status.label;
     statusEl.classList.toggle("mod-warning", model.status.tone === "warning");
     detailEl.textContent = model.status.detail ?? "";
-    detailEl.classList.toggle("zt:hidden", model.status.detail === null);
+    detailEl.toggle(model.status.detail !== null);
+    rememberedEl.toggle(
+      remembered && ctx.annotations.capability.kind === "read-only",
+    );
+    applyAction(checkButton, model.check);
     applyAction(enableButton, model.enable);
     applyAction(forgetButton, model.forget);
     if (model.countsDown) {
-      stopCountdown ??= countdownInterval(window, apply);
+      stopCountdown ??= countdownInterval(setting.settingEl.win, apply);
     } else {
       stopCountdown?.();
       stopCountdown = null;
@@ -154,19 +151,23 @@ function renderEditingRow(
         });
     })
     .addButton((button) => {
+      checkButton = button;
+      button.setButtonText(m.settings_zotero_editing_check()).onClick(() => {
+        void ctx.annotations.probe().then(refreshRemembered);
+      });
+    })
+    .addButton((button) => {
       forgetButton = button;
-      button
-        .setButtonText(m.settings_zotero_editing_forget())
-        .setWarning()
-        .onClick(() => {
-          void ctx.writeAuthorization
-            .forgetAuthorization()
-            .then(refreshRemembered);
-        });
+      button.setButtonText(m.settings_zotero_editing_forget()).onClick(() => {
+        void ctx.writeAuthorization
+          .forgetAuthorization()
+          .then(refreshRemembered);
+      });
     });
 
   apply();
   refreshRemembered();
+  void ctx.annotations.probe();
   stack.defer(ctx.annotations.on("capability-changed", apply));
   stack.defer(() => stopCountdown?.());
 
@@ -193,6 +194,6 @@ function applyAction(
   state: ActionState,
 ): void {
   if (!button) return;
-  button.buttonEl.classList.toggle("zt:hidden", !state.shown);
+  button.buttonEl.toggle(state.shown);
   button.setDisabled(state.disabled);
 }
