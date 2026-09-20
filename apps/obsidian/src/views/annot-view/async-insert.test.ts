@@ -89,4 +89,16 @@ describe("captured asynchronous insertion", () => {
     expect(target.commit(" DROP")).toBe(true);
     expect(f.cm.state.doc.toString()).toBe("prefix before TARGET after DROP");
   });
+  it("cancels an explicit drop position when an edit lands on it", () => {
+    using f = fixture();
+    using target = captureInsertion({
+      editor: f.info.editor!,
+      info: f.info,
+      isCurrent: () => true,
+      range: { from: 7, to: 7 },
+    });
+    f.cm.dispatch({ changes: { from: 7, insert: "overlap" } });
+    expect(target.commit(" DROP")).toBe(false);
+    expect(f.cm.state.doc.toString()).toBe("before overlapTARGET after");
+  });
 });

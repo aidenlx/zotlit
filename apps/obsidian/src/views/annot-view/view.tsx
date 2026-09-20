@@ -36,10 +36,6 @@ import type {
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
-import type {
-  AttachmentImport,
-  AttachmentImportService,
-} from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
 import { excerptRequest } from "@/services/excerpt-image/service";
 import type { ExcerptImageService } from "@/services/excerpt-image/service";
@@ -69,7 +65,6 @@ import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
-import type { DragInsertDeps } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
 import { buildPaneMenu } from "./pane-menu";
@@ -146,10 +141,9 @@ export interface AnnotViewDeps {
   excerptImage: Pick<ExcerptImageService, "resolve">;
   noteFeature: Pick<
     NoteFeature,
-    "renderAnnotation" | "renderAnnotationCitation" | "prepareAnnotationInsert"
+    "renderAnnotationCitation" | "prepareAnnotationInsert"
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
-  attachmentImport: Pick<AttachmentImportService, "prepare">;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
 }
@@ -169,11 +163,6 @@ export class AnnotationView extends ItemView {
   /** What the attachment choice and the saved filter are remembered against. */
   #memoryKey: string | null = null;
   #itemKey: string | null = null;
-  #importHandle: AttachmentImport | null = null;
-  /** Note path the standing (or in-flight) import handle was prepared for. */
-  #importHandlePath: string | null = null;
-  /** Monotonic prepare token, so a slow prepare cannot overwrite a newer one. */
-  #importHandleGen = 0;
   /** Counts the annotation reads, so a slower one never lands after a later one. */
   #reads = 0;
   #reading = Promise.resolve();
@@ -264,19 +253,7 @@ export class AnnotationView extends ItemView {
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
-    // One bundle behind both routes into a note: the drag, and the overflow
-    // menu's insert.
-    const insertDeps: DragInsertDeps = {
-      app: this.#deps.app,
-      noteFeature: this.#deps.noteFeature,
-      notify: (message) => void new BaseNotice(message),
-      getImportHandle: () => this.#importHandle,
-      resolveAnnotationID: (indexedKey) =>
-        this.#resolveAnnotationID(indexedKey),
-      onSettled: () => this.#syncImportHandle(),
-    };
-
-    const insert = createInsertHandler({
+    const insertDeps: Parameters<typeof createInsertHandler>[0] = {
       app: this.#deps.app,
       noteFeature: this.#deps.noteFeature,
       notify: (message) => void new BaseNotice(message),
@@ -289,8 +266,11 @@ export class AnnotationView extends ItemView {
           sourceScope: state.annotationSourceScope,
         };
       },
-    });
+    };
+    const insert = createInsertHandler(insertDeps);
+    const drag = createDragInsertHandler(insertDeps);
     this.register(insert.cancel);
+    this.register(drag.cancel);
 
     this.#actions = createAnnotActions({
       app: this.#deps.app,
@@ -340,7 +320,7 @@ export class AnnotationView extends ItemView {
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
-      onDragStart: createDragInsertHandler(insertDeps),
+      onDragStart: drag,
       insertAnnotation: (annotation) => {
         void insert(annotation);
       },
@@ -398,12 +378,7 @@ export class AnnotationView extends ItemView {
         }
         if (this.#followMode === "active-tab") {
           this.#reload();
-          return;
         }
-        // The other modes keep the same item across tab switches, so no reload
-        // runs to refresh the drag-insert handle. Sync it here so it tracks
-        // the note a drag would land in.
-        this.#syncImportHandle();
       }),
     );
 
@@ -746,8 +721,6 @@ export class AnnotationView extends ItemView {
       pinnable: itemKey,
       itemDisplayLabel: this.#resolveDisplayLabel(target),
     });
-
-    this.#syncImportHandle();
 
     try {
       const client = db.client;
@@ -1096,75 +1069,6 @@ export class AnnotationView extends ItemView {
     });
     this.#itemKey = null;
     this.#memoryKey = null;
-    this.#dropImportHandle();
-  }
-
-  /**
-   * Point the drag-insert import handle at the active note, in every follow
-   * mode. The handle is the active note's, not the loaded item's, so it tracks
-   * the active file rather than the load target.
-   */
-  #syncImportHandle(): void {
-    if (this.#memoryKey === null) return;
-    const activeFile = this.#deps.app.workspace.getActiveFile();
-    if (activeFile) this.#prepareImportHandle(activeFile.path);
-    else this.#dropImportHandle();
-  }
-
-  #dropImportHandle(): void {
-    this.#importHandleGen++;
-    this.#importHandle = null;
-    this.#importHandlePath = null;
-    this.#syncDragTarget();
-  }
-
-  /** Mirror the handle's state into the store so cards can disable the drag. */
-  #syncDragTarget(): void {
-    this.#store.setState({
-      dragTarget: this.#importHandle
-        ? "ready"
-        : this.#importHandlePath
-          ? "preparing"
-          : "none",
-    });
-  }
-
-  /**
-   * Prepare a fresh attachment-import handle for the active note so drag-insert
-   * can resolve image embeds synchronously and `flush()` them on drop.
-   *
-   * `prepare()` is async (settings, folder probe, root canonicalization), and
-   * this runs after every drag, drop-induced note change, and leaf activation
-   * — including the click that starts a drag. A handle already prepared for
-   * this same note keeps serving `dragstart` until the fresh one lands, so a
-   * drag inside that window renders through the template instead of taking
-   * the plain-text fallback. A handle for another note is dropped at once: it
-   * would resolve links and copy excerpts relative to the wrong note.
-   */
-  #prepareImportHandle(notePath: string): void {
-    const gen = ++this.#importHandleGen;
-    if (this.#importHandlePath !== notePath) {
-      this.#importHandle = null;
-      this.#importHandlePath = notePath;
-      this.#syncDragTarget();
-    }
-    void this.#deps.attachmentImport
-      .prepare(notePath)
-      .then((handle) => {
-        // A newer prepare (or a drop of the handle) superseded this one.
-        if (gen !== this.#importHandleGen) {
-          logger.debug("Skipped stale attachment import handle", { notePath });
-          return;
-        }
-        this.#importHandle = handle;
-        this.#syncDragTarget();
-      })
-      .catch((error) => {
-        logger.warn("Failed to prepare attachment import for drag-insert", {
-          notePath,
-          error,
-        });
-      });
   }
 
   #loadAttachmentSelection(memoryKey: string): string | null {

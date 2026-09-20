@@ -45,6 +45,7 @@ import {
 import type { LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyAnnotationDrag } from "./annotation-drag.ts";
 import { verifyAnnotationInsert } from "./annotation-insert.ts";
 import {
   cli,
@@ -490,6 +491,19 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     "inserts a captured annotation safely in a %s editor",
     async (host) => {
       await verifyAnnotationInsert(vaultId, host);
+    },
+    120000,
+  );
+
+  it.each([
+    ["main", "main"],
+    ["main", "popout"],
+    ["popout", "main"],
+    ["popout", "popout"],
+  ] as const)(
+    "drags a captured annotation from a %s view into a %s editor",
+    async (sourceHost, targetHost) => {
+      await verifyAnnotationDrag(vaultId, sourceHost, targetHost);
     },
     120000,
   );

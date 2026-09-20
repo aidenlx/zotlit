@@ -31,13 +31,6 @@ export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
  */
 export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
-/**
- * Whether a card can be dragged into the active note: `ready` once the
- * note's attachment-import handle stands, `preparing` while it is being
- * prepared, `none` when no note is open to receive the drop.
- */
-export type DragTarget = "ready" | "preparing" | "none";
-
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   /** Indexed Key of the Attachment on screen. */
@@ -89,7 +82,6 @@ export interface AnnotState {
   liveUpdatesOn: boolean;
   /** Whether the Zotero Reader closed, its last Attachment still on screen. */
   zoteroReaderClosed: boolean;
-  dragTarget: DragTarget;
   /** Search row visible. */
   searchOpen: boolean;
   /** Case-insensitive substring query typed into the search row. */
@@ -142,7 +134,6 @@ export function createAnnotStore() {
         pinnable: null,
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
-        dragTarget: "none",
         ...INITIAL_FILTER_STATE,
       }),
     ),

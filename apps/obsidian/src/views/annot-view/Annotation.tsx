@@ -107,7 +107,6 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
   const selected = useAnnotStore((s) =>
     s.selectedAnnotationKeys.includes(annot.key),
   );
-  const dragTarget = useAnnotStore((s) => s.dragTarget);
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
 
@@ -155,8 +154,8 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
             CARD_CONTROL_MARK,
             "zt:-ms-1.5 zt:data-drag-ready:[--cursor:grab]",
           )}
-          data-drag-ready={dragTarget === "ready" ? "" : undefined}
-          draggable={dragTarget === "ready"}
+          data-drag-ready=""
+          draggable
           onDragStart={(e) => actions.onDragStart(e, annot)}
           onClick={(e) => {
             claimClick(e);

@@ -5,6 +5,7 @@ import {
   StateField,
   Transaction,
 } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import type { Editor, MarkdownFileInfo } from "obsidian";
 
 /** Holds one destination across asynchronous preparation, independently of the cursor. */
@@ -27,7 +28,12 @@ export function captureInsertion(options: {
       if (!range || !transaction.docChanged) return range;
       let touched = false;
       transaction.changes.iterChangedRanges((from, to) => {
-        if (from < range.to && to > range.from) touched = true;
+        if (
+          range.from === range.to
+            ? from <= range.from && to >= range.from
+            : from < range.to && to > range.from
+        )
+          touched = true;
       });
       if (touched) return null;
       return {
@@ -39,7 +45,14 @@ export function captureInsertion(options: {
       };
     },
   });
-  cm.dispatch({ effects: StateEffect.appendConfig.of(compartment.of(marker)) });
+  const cancelOnOverlap = EditorView.updateListener.of((update) => {
+    if (update.state.field(marker, false) === null) controller.abort();
+  });
+  cm.dispatch({
+    effects: StateEffect.appendConfig.of(
+      compartment.of([marker, cancelOnOverlap]),
+    ),
+  });
   let settled = false;
   const valid = () =>
     !settled &&
