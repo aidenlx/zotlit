@@ -4,6 +4,7 @@ import type { App, Editor, EventRef, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
@@ -98,6 +99,14 @@ it("keeps the established text fallback for a Profile error", async () => {
   await operation;
   expect(f.cm.state.doc.toString()).toBe("one Original highlight");
   expect(f.notify).toHaveBeenCalledTimes(1);
+});
+
+it("keeps internal insertion errors out of the notice", async () => {
+  using f = fixture();
+  const operation = f.insert(card);
+  f.pending[0]!.reject(new Error("private failure detail"));
+  await operation;
+  expect(f.notify).toHaveBeenCalledWith(m.annot_view_insert_failed());
 });
 
 it("supersedes the pending action and inserts once with one undo", async () => {

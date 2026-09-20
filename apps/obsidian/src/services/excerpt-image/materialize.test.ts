@@ -134,13 +134,17 @@ it("waits for vault registration after complete bytes are published", async () =
   expect((await operation).kind).toBe("saved");
 });
 
-it("returns unavailable when publication cannot produce a registered TFile", async () => {
+it("leaves published bytes when vault registration fails", async () => {
   await using f = await fixture();
   f.adapter.reconcileInternalFile.mockImplementation(async () => {});
   expect(await f.save()).toEqual({ kind: "unavailable", reason: "write" });
+  const [name] = await readdir(join(f.root, "Images"));
+  expect(await readFile(join(f.root, "Images", name!))).toEqual(
+    Buffer.from([11, 22, 33]),
+  );
 });
 
-it("finishes cancelled-owner cleanup before a concurrent consumer adopts the same asset", async () => {
+it("releases a cancelled owner before a concurrent consumer adopts the same asset", async () => {
   await using f = await fixture();
   const controller = new AbortController();
   const started = Promise.withResolvers<void>();

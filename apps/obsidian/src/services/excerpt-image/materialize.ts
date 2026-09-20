@@ -6,7 +6,6 @@ import {
   open,
   readFile,
   realpath,
-  stat,
   unlink,
 } from "node:fs/promises";
 import { basename, dirname, relative, isAbsolute, sep } from "node:path";
@@ -30,6 +29,7 @@ import type { ExcerptOutcome } from "./service";
 
 const logger = getLogger("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
+const SHA256_HEX_LENGTH = 64;
 
 async function readPreviousImage(path: string): Promise<Buffer> {
   await using file = await open(path, "r");
@@ -71,16 +71,13 @@ export async function retainExcerpt(options: {
 }): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
   const adapter = options.app.vault.adapter;
   if (!(adapter instanceof FileSystemAdapter)) return;
-  const prefix = `zotlit-excerpt-${excerptAssetIdentity(options.request)}-`;
+  const identity = excerptAssetIdentity(options.request);
   for (const path of options.paths) {
     const local = relative(adapter.getFullPath(""), adapter.getFullPath(path));
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
       continue;
     const name = basename(path);
-    const owned =
-      name.startsWith(prefix) &&
-      name.endsWith(".png") &&
-      name.length === prefix.length + 68;
+    const owned = isOwnedExcerptAssetPath(path, identity);
     const legacy =
       name === `${parseIndexedKey(options.request.annotation.key)?.key}.png`;
     if (!owned && !legacy) continue;
@@ -130,6 +127,19 @@ export function excerptAssetIdentity(
     .digest("hex");
 }
 
+export function isOwnedExcerptAssetPath(
+  path: string,
+  identity: string,
+): boolean {
+  const name = basename(path);
+  const prefix = `zotlit-excerpt-${identity}-`;
+  return (
+    name.startsWith(prefix) &&
+    name.endsWith(".png") &&
+    name.length === prefix.length + SHA256_HEX_LENGTH + ".png".length
+  );
+}
+
 export async function materializeExcerpt(options: {
   app: App;
   notePath: string;
@@ -172,8 +182,6 @@ export async function materializeExcerpt(options: {
     const gate = Promise.withResolvers<void>();
     publications.set(destination, gate.promise);
     await previous;
-    let published = false;
-    let owned: Awaited<ReturnType<typeof stat>> | undefined;
     try {
       assertCurrent();
       await mkdir(dirname(destination), { recursive: true });
@@ -183,11 +191,9 @@ export async function materializeExcerpt(options: {
         await using file = await open(temporary, "wx");
         await file.writeFile(outcome.bytes, { signal: options.signal });
         await file.sync();
-        owned = await file.stat();
         assertCurrent();
         try {
           await link(temporary, destination);
-          published = true;
         } catch (error) {
           if (!isErrno(error, "EEXIST")) throw error;
         }
@@ -204,24 +210,14 @@ export async function materializeExcerpt(options: {
         });
       }
       // The atomic filesystem publish precedes the vault's asynchronous watcher.
-      // Register it now so the first rendered embed can resolve its TFile.
+      // Register it now so the first rendered embed can resolve its TFile. A
+      // later failure leaves the content-addressed asset for another caller.
       assertCurrent();
       await adapter.reconcileInternalFile(path);
       assertCurrent();
       if (!app.vault.getFileByPath(path))
         throw new Error("Published excerpt is not registered in the vault");
       return { kind: "saved", path, outcome };
-    } catch (error) {
-      if (published && owned) {
-        // An EEXIST asset belongs to another operation. Only this operation's
-        // still-identical inode can be removed before releasing the next waiter.
-        const current = await stat(destination).catch(() => null);
-        if (current?.ino === owned.ino && current.dev === owned.dev) {
-          await unlink(destination);
-          await adapter.reconcileInternalFile(path);
-        }
-      }
-      throw error;
     } finally {
       gate.resolve();
       if (publications.get(destination) === gate.promise)

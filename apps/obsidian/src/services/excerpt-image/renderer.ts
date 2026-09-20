@@ -79,19 +79,16 @@ export async function abortable<T>(
     void promise.catch(() => undefined);
     signal.throwIfAborted();
   }
-  let abort: (() => void) | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        abort = () => reject(signal.reason);
-        signal.addEventListener("abort", abort, { once: true });
-        if (signal.aborted) abort();
-      }),
-    ]);
-  } finally {
-    if (abort) signal.removeEventListener("abort", abort);
-  }
+  using cleanup = new DisposableStack();
+  return await Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      const abort = () => reject(signal.reason);
+      signal.addEventListener("abort", abort, { once: true });
+      cleanup.defer(() => signal.removeEventListener("abort", abort));
+      if (signal.aborted) abort();
+    }),
+  ]);
 }
 
 const MAX_PDF_BYTES = 256 * 1024 * 1024;

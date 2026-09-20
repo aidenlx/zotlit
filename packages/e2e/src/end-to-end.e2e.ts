@@ -638,6 +638,12 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       id,
       `(()=>{const feature=app.plugins.plugins.zotlit.services.noteFeature;window.__zotlitExcerptReports=[];window.__zotlitExcerptReportOff=feature.on('excerpt-images-reported',summary=>window.__zotlitExcerptReports.push(summary));return true;})()`,
     );
+    cleanup.defer(async () => {
+      await obEval(
+        id,
+        `(()=>{window.__zotlitExcerptReportOff?.();delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return true;})()`,
+      );
+    });
     const sourcePdf = join(path, "attachments/rougier-2014.pdf");
     const unavailablePdf = `${sourcePdf}.unavailable`;
     await rename(sourcePdf, unavailablePdf);
@@ -656,7 +662,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const pooledReports = JSON.parse(
       await obEval(
         id,
-        `JSON.stringify((()=>{window.__zotlitExcerptReportOff();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
+        `JSON.stringify((()=>{window.__zotlitExcerptReportOff?.();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
       ),
     ) as { zotero: number; unchecked: number; unavailable: number }[];
     expect(pooledReports).toEqual([

@@ -22,7 +22,10 @@ import {
   joinFolderPath,
   resolveAttachmentFolderPath,
 } from "@/lib/ensure-folder";
-import { excerptAssetIdentity } from "@/services/excerpt-image/materialize";
+import {
+  excerptAssetIdentity,
+  isOwnedExcerptAssetPath,
+} from "@/services/excerpt-image/materialize";
 import { referencedExcerptPaths } from "@/services/excerpt-image/references";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -120,15 +123,9 @@ async function annotationImageTargets(
         attachmentKey: attachment.indexedKey,
         annotation: { key: annotation.indexedKey },
       });
-      const owned = referenced.find((path) => {
-        const name = path.split("/").at(-1)!;
-        const prefix = `zotlit-excerpt-${identity}-`;
-        return (
-          name.startsWith(prefix) &&
-          name.endsWith(".png") &&
-          name.length === prefix.length + 68
-        );
-      });
+      const owned = referenced.find((path) =>
+        isOwnedExcerptAssetPath(path, identity),
+      );
       if (owned) {
         images[annotation.indexedKey] = owned;
         continue;

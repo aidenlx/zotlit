@@ -387,6 +387,7 @@
   "annot_view_attachment_unnamed": "Untitled attachment",
   "annot_view_more_tooltip": "More options",
   "annot_view_drag_unavailable": "Cannot insert the annotation: the template is not ready.",
+  "annot_view_insert_failed": "The annotation was not inserted.",
   "annot_view_collapse_tooltip": "Collapse previews",
   "annot_view_expand_tooltip": "Expand previews",
   "annot_view_search_tooltip": "Search annotations",

@@ -91,9 +91,7 @@ async function prepareAndCommit(
       annotationKey: annotation.key,
       error,
     });
-    deps.notify(
-      error instanceof Error ? error.message : m.annot_view_drag_unavailable(),
-    );
+    deps.notify(m.annot_view_insert_failed());
   }
 }
 
@@ -121,21 +119,21 @@ export function createInsertHandler(deps: AsyncInsertDeps) {
         workspace.activeEditor?.editor === editor &&
         workspace.activeEditor.file === info.file,
     });
+    using cleanup = new DisposableStack();
+    cleanup.defer(() => {
+      if (pending === target) pending = null;
+    });
     pending = target;
     const changed = workspace.on("active-leaf-change", () => {
       if (!target.valid()) target.cancel();
     });
-    try {
-      await prepareAndCommit(deps, {
-        annotation,
-        snapshot,
-        target,
-        notePath: info.file.path,
-      });
-    } finally {
-      workspace.offref(changed);
-      if (pending === target) pending = null;
-    }
+    cleanup.defer(() => workspace.offref(changed));
+    await prepareAndCommit(deps, {
+      annotation,
+      snapshot,
+      target,
+      notePath: info.file.path,
+    });
   };
   return Object.assign(insert, { cancel });
 }
@@ -236,21 +234,19 @@ async function insertDrop(
     isCurrent: () => info.file === file && info.editor === editor,
   });
   options.current(target);
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => options.settled(target));
   const validate = () => {
     if (!target.valid()) target.cancel();
   };
   const activeChanged = deps.app.workspace.on("active-leaf-change", validate);
+  cleanup.defer(() => deps.app.workspace.offref(activeChanged));
   const layoutChanged = deps.app.workspace.on("layout-change", validate);
-  try {
-    await prepareAndCommit(deps, {
-      annotation: options.annotation,
-      snapshot: options.snapshot,
-      target,
-      notePath: file.path,
-    });
-  } finally {
-    deps.app.workspace.offref(activeChanged);
-    deps.app.workspace.offref(layoutChanged);
-    options.settled(target);
-  }
+  cleanup.defer(() => deps.app.workspace.offref(layoutChanged));
+  await prepareAndCommit(deps, {
+    annotation: options.annotation,
+    snapshot: options.snapshot,
+    target,
+    notePath: file.path,
+  });
 }
