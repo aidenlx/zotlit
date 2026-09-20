@@ -1,9 +1,11 @@
 import {
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import type { KeyboardEvent } from "react";
 
@@ -27,6 +29,14 @@ import { AnnotActionsContext } from "./actions";
 import { conflictPanel } from "./card-conflict";
 import { cardControls, commentIcon } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
+import {
+  excerptImageForTarget,
+  transitionExcerptImage,
+} from "./excerpt-image-state";
+import type {
+  ExcerptImageEvent,
+  ExcerptImageState,
+} from "./excerpt-image-state";
 import {
   useAnnotStore,
   useMutation,
@@ -495,7 +505,6 @@ function ExcerptBlock({
   annot: AnnotationRecord;
   collapsed: boolean;
 }) {
-  const actions = useContext(AnnotActionsContext);
   const name = annot.type;
 
   if ((name === "note" || name === "text") && !annot.text) return null;
@@ -504,21 +513,7 @@ function ExcerptBlock({
 
   let content: React.ReactNode;
   if (isImage) {
-    content = (
-      <img
-        className={cn(
-          "zt:w-full zt:object-contain zt:object-left",
-          collapsed && "zt:max-h-20",
-        )}
-        src={actions.getImgSrc(annot)}
-        alt={
-          annot.text ??
-          (annot.pageLabel === null
-            ? m.annot_view_card_image_alt_no_page()
-            : m.annot_view_card_image_alt({ page: annot.pageLabel }))
-        }
-      />
-    );
+    content = <ExcerptImage annot={annot} collapsed={collapsed} />;
   } else if (annot.text) {
     content = <ExcerptText text={annot.text} />;
   } else {
@@ -536,6 +531,65 @@ function ExcerptBlock({
         {content}
       </blockquote>
     </div>
+  );
+}
+
+function ExcerptImage({ annot, collapsed }: AnnotationProps) {
+  const actions = useContext(AnnotActionsContext);
+  const source = useAnnotStore((s) => s.annotationSource);
+  const target = useMemo(() => ({ annot, source }), [annot, source]);
+  const state = useRef<ExcerptImageState>({ kind: "disposed" });
+  const [image, setImage] = useState(state.current);
+  const transition = useCallback((event: ExcerptImageEvent) => {
+    const next = transitionExcerptImage(state.current, event);
+    state.current = next.state;
+    for (const url of next.release) URL.revokeObjectURL(url);
+    if (event.kind !== "dispose" && next.state.kind !== "disposed")
+      setImage(next.state);
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    transition({ kind: "start", target });
+    void actions
+      .resolveImage(annot, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        const url =
+          result.kind === "available"
+            ? URL.createObjectURL(
+                new Blob([new Uint8Array(result.bytes)], { type: "image/png" }),
+              )
+            : null;
+        transition({ kind: "resolved", target, url });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) transition({ kind: "failed", target });
+      });
+    return () => {
+      controller.abort();
+      transition({ kind: "dispose" });
+    };
+  }, [actions, annot, target, transition]);
+  const current = excerptImageForTarget(image, target);
+  if (current.kind === "loading" || current.kind === "disposed")
+    return <span aria-busy="true">{m.annot_view_image_loading()}</span>;
+  if (current.kind === "unavailable")
+    return <span>{m.annot_view_image_unavailable()}</span>;
+  return (
+    <img
+      className={cn(
+        "zt:w-full zt:object-contain zt:object-left",
+        collapsed && "zt:max-h-20",
+      )}
+      src={current.url}
+      onError={() => transition({ kind: "failed", target })}
+      alt={
+        annot.text ??
+        (annot.pageLabel === null
+          ? m.annot_view_card_image_alt_no_page()
+          : m.annot_view_card_image_alt({ page: annot.pageLabel }))
+      }
+    />
   );
 }
 

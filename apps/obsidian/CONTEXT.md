@@ -277,7 +277,7 @@ The quoted region of an Annotation Card showing the Annotation's live text (with
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
 **Excerpt Image**:
-The PNG Zotero renders for an image or ink Annotation, stored under its data directory cache by Annotation key. It appears only after a Zotero UI trigger (the Reader, or the attachment's Annotations pane) and Zotero deletes it on a position change, an ink colour change, or deletion. The Excerpt Block displays it; ZotLit renders none of its own yet.
+The PNG representation of an image or ink Annotation's PDF region, including its ink strokes where applicable. A ZotLit Excerpt Image and a Zotero Excerpt Image have separate ownership; an image embedded in a Child Note belongs to that note's frozen snapshot.
 _Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annotation)
 
 **Reader Session**:

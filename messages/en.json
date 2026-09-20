@@ -2375,6 +2375,8 @@
   "annot_view_card_show_in_reader": "Show in reader",
   "annot_view_card_image_alt": "Area excerpt from page {page}",
   "annot_view_card_image_alt_no_page": "Area excerpt",
+  "annot_view_image_unavailable": "Image unavailable",
+  "annot_view_image_loading": "Loading image…",
   "annot_view_delete_confirm_title": "Delete annotation?",
   "annot_view_delete_confirm_content": "Zotero deletes this annotation. ZotLit cannot undo it.",
   "annot_view_delete_confirm_action": "Delete",

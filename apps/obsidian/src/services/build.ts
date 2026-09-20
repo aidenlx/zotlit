@@ -22,6 +22,7 @@ import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
+import { ExcerptImageService } from "./excerpt-image/service";
 import { GraphCitations } from "./graph-citations/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -135,6 +136,9 @@ export function buildServices(
     .use({
       db: ({ settings, zoteroPref }) =>
         new DatabaseService({ settings, zoteroPref }),
+    })
+    .use({
+      excerptImage: () => new ExcerptImageService(),
     })
     .use({
       attachmentResolver: ({ db, zoteroPref }) =>

@@ -2245,6 +2245,8 @@
   "annot_view_card_show_in_reader": "在阅读器中显示",
   "annot_view_card_image_alt": "第{page}页的标注图像",
   "annot_view_card_image_alt_no_page": "标注图像",
+  "annot_view_image_unavailable": "图像不可用",
+  "annot_view_image_loading": "正在加载图像…",
   "annot_view_delete_confirm_title": "删除标注？",
   "annot_view_delete_confirm_content": "Zotero 将删除此标注。ZotLit 无法撤销此操作。",
   "annot_view_delete_confirm_action": "删除",

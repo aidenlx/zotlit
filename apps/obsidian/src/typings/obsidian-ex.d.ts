@@ -30,6 +30,10 @@ declare global {
 }
 
 declare module "obsidian" {
+  /** Cold-loads the host PDF.js module and configures its worker. Internal. */
+  export function loadPdfJs(): Promise<
+    import("../services/excerpt-image/renderer").ExcerptPdfJs
+  >;
   interface ViewStateResult {
     /** Runs after native group assignment and ephemeral handoff (Obsidian 1.14). */
     done?: () => void;

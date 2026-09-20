@@ -41,6 +41,8 @@ import type {
   AttachmentImportService,
 } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
+import { excerptRequest } from "@/services/excerpt-image/service";
+import type { ExcerptImageService } from "@/services/excerpt-image/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type {
@@ -140,7 +142,8 @@ export interface AnnotViewDeps {
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  excerptImage: Pick<ExcerptImageService, "resolve">;
   noteFeature: Pick<
     NoteFeature,
     "renderAnnotation" | "renderAnnotationCitation"
@@ -276,7 +279,20 @@ export class AnnotationView extends ItemView {
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       scope: this.scope,
-      getDataDir: () => this.#deps.zoteroPref.dataDir,
+      resolveImage: async (annotation, signal) => {
+        const source = this.#store.getState().annotationSource;
+        if (!source || this.#deps.db.state !== "ready")
+          return { kind: "unavailable" };
+        const request = excerptRequest({
+          annotation,
+          source,
+          client: this.#deps.db.client,
+          paths: this.#deps.zoteroPref,
+        });
+        return request
+          ? this.#deps.excerptImage.resolve(request, signal)
+          : { kind: "unavailable" };
+      },
       annotations: this.#deps.annotations,
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>

@@ -1,10 +1,9 @@
-import { Menu, Platform } from "obsidian";
+import { Menu } from "obsidian";
 import type { App, Scope } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
-import { resolveAnnotCachePath } from "@zotlit/db/path";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
@@ -20,6 +19,7 @@ import type {
   MutationState,
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
+import type { ExcerptOutcome } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
@@ -81,7 +81,10 @@ export interface AnnotActions {
   onApplyAgain(annot: AnnotationRecord): void;
   /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
   onDiscardConflict(annot: AnnotationRecord): void;
-  getImgSrc(annot: AnnotationRecord): string;
+  resolveImage(
+    annot: AnnotationRecord,
+    signal: AbortSignal,
+  ): Promise<ExcerptOutcome>;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
@@ -90,7 +93,7 @@ export interface AnnotActions {
 export interface AnnotActionDeps {
   app: App;
   scope: Scope;
-  getDataDir: () => string;
+  resolveImage: AnnotActions["resolveImage"];
   /**
    * The one write path for an Annotation. Commands take Indexed Keys: the
    * repository holds the record a write stamps its precondition off.
@@ -152,19 +155,6 @@ export interface AnnotActionDeps {
   onEnableLiveUpdates: AnnotActions["onEnableLiveUpdates"];
   onSelectAnnotation: AnnotActions["onSelectAnnotation"];
   onExploreAnnotation: (annotationKey: string) => void;
-}
-
-const IMG_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="140">' +
-    '<rect width="100%" height="100%" fill="rgba(128,128,128,0.18)"/>' +
-    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" ' +
-    'fill="gray" font-family="sans-serif" font-size="14">Image not cached</text>' +
-    "</svg>",
-)}`;
-
-function resourceUrl(absolutePath: string): string {
-  const encoded = encodeURI(absolutePath);
-  return `${Platform.resourcePathPrefix}${encoded.replace(/^\//, "")}?${Date.now()}`;
 }
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
@@ -262,17 +252,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       pageLabel: annot.pageLabel,
       groupID: annotation.groupID,
     });
-  };
-
-  const getImgSrc = (annot: AnnotationRecord): string => {
-    const parsed = parseIndexedKey(annot.key);
-    const cachePath =
-      parsed &&
-      resolveAnnotCachePath(
-        { key: parsed.key, type: annot.type },
-        { dataDir: deps.getDataDir(), groupID: parsed.groupID },
-      );
-    return cachePath ? resourceUrl(cachePath) : IMG_PLACEHOLDER;
   };
 
   /**
@@ -391,7 +370,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   return {
     getBacklink,
-    getImgSrc,
+    resolveImage: deps.resolveImage,
     onSetColor,
     onSaveComment,
     bindCommentEditor,
@@ -475,7 +454,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onApplyAgain: () => {},
   onDiscardConflict: () => {},
   onRefresh: () => {},
-  getImgSrc: () => IMG_PLACEHOLDER,
+  resolveImage: async () => ({ kind: "unavailable" }),
   getBacklink: () => undefined,
   renderComment: () => () => {},
 };
