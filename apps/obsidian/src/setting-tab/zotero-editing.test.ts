@@ -7,6 +7,19 @@ import { editingRowModel } from "./zotero-editing";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
+it("shows a manual connection check while the service retains its last result", () => {
+  const model = editingRowModel({
+    capability: { kind: "read-only", reason: "local-api-disabled" },
+    remembered: true,
+    checking: true,
+    now: NOW,
+  });
+  expect(model.status.label).toBe(m.capability_probing());
+  expect(model.check).toEqual({ shown: true, disabled: true });
+  expect(model.enable.shown).toBe(false);
+  expect(model.forget.disabled).toBe(true);
+});
+
 it("shows the capability from the one shared copy table", () => {
   const model = row({ kind: "read-only", reason: "local-api-disabled" });
 

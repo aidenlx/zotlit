@@ -17,7 +17,7 @@ export function zoteroPageItems(
       type: "group",
       id: "settings_zotero_connection",
       heading: m.settings_zotero_connection_heading(),
-      items: [...databaseConnectionItems(ctx), zoteroEditingRow(ctx)],
+      items: [zoteroEditingRow(ctx), ...databaseConnectionItems(ctx)],
     },
     {
       type: "group",
