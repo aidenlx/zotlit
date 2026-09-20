@@ -246,7 +246,12 @@ function toolbarIn(slot: HTMLElement): ToolbarShape | null {
 
 function createToolbar(slot: HTMLElement): ToolbarShape {
   const root = slot.createDiv({
-    cls: [themeHook.pdfCreationToolbar, ...LAYOUT_CLASSES],
+    cls: [
+      themeHook.pdfCreationToolbar,
+      ...LAYOUT_CLASSES,
+      "zt:flex-wrap",
+      "zt:min-w-0",
+    ],
   });
   // The group's name is a hidden element rather than an `aria-label`, so it
   // reaches assistive technology without hanging a tooltip over the gaps

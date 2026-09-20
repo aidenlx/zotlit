@@ -14,7 +14,6 @@ import {
   authorized,
   createAccepted,
   createRefused,
-  denied,
   freshnessSignal,
   localApiClient,
   localApiDisabled,
@@ -347,10 +346,14 @@ it("drops the server partition on the Companion's Freshness Signal", async () =>
 it("keeps the marks under the Zotero DB source when Zotero closes mid-session", async () => {
   await using stack = new AsyncDisposableStack();
   let answering = true;
-  const { repository, serverEvents } = await setup(stack, {
-    root: () => (answering ? rootOk() : unreachable()),
-    children: () => annotationPage(ROUGIER_ANNOTATIONS),
-  });
+  const { repository, serverEvents } = await setup(
+    stack,
+    {
+      root: () => (answering ? rootOk() : unreachable()),
+      children: () => annotationPage(ROUGIER_ANNOTATIONS),
+    },
+    { key: REMEMBERED_KEY },
+  );
   await switchToLocalApi(repository);
   const live = await repository.read("RGRPDF24");
   repository.editComment("PUPR5FG5", "Visible while offline");
@@ -376,7 +379,7 @@ it("keeps the marks under the Zotero DB source when Zotero closes mid-session", 
   );
   repository.editComment("PUPR5FG5", "Still typing offline");
   expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
-    "Still typing offline",
+    "Visible while offline",
   );
 });
 
@@ -805,16 +808,20 @@ it("ignores a cancelled empty read when reconciling a shared draft", async () =>
   const obsolete = Promise.withResolvers<Response>();
   const started = Promise.withResolvers<void>();
   let deferNext = false;
-  const { repository, queryClient } = await setup(stack, {
-    children: () => {
-      if (deferNext) {
-        deferNext = false;
-        started.resolve();
-        return obsolete.promise;
-      }
-      return annotationPage(ROUGIER_ANNOTATIONS);
+  const { repository, queryClient } = await setup(
+    stack,
+    {
+      children: () => {
+        if (deferNext) {
+          deferNext = false;
+          started.resolve();
+          return obsolete.promise;
+        }
+        return annotationPage(ROUGIER_ANNOTATIONS);
+      },
     },
-  });
+    { key: REMEMBERED_KEY },
+  );
   await switchToLocalApi(repository);
   await repository.read("RGRPDF24");
   repository.editComment("PUPR5FG5", "Keep this draft");
@@ -894,8 +901,7 @@ it("answers the session's own capability, and announces when one moves", async (
   // The settings row reads this one: it names no Attachment, so no library
   // Zotero refused a write to is part of it.
   expect(repository.capability).toEqual({
-    kind: "read-only",
-    reason: "server-changed",
+    kind: "authorization-required",
   });
   expect(announced).toBeGreaterThan(0);
 });
@@ -1109,27 +1115,95 @@ it("keeps a failed autosave for explicit editing without replaying it", async ()
   }
 });
 
-it("does not open authorization from a background save", async () => {
+it("saves a one-time comment only after explicit submission", async () => {
   vi.useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
-    const { repository, requests } = await writable(
+    const { repository, localApi, requests } = await writable(
       stack,
-      { authorize: () => authorized({ remember: false }) },
+      {
+        authorize: () => authorized({ remember: false }),
+        item: () =>
+          annotationItem(
+            afterWrite("PUPR5FG5", {
+              comment: "Finished comment",
+              version: 20,
+            }),
+          ),
+      },
       { key: undefined },
     );
+    await localApi.authorize();
     const sent = requests.length;
-
-    repository.editComment("PUPR5FG5", "wait for a gesture");
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.waitFor(() =>
-      expect(repository.commentDraftFor("PUPR5FG5")?.state).toEqual({
-        kind: "failed",
-        failure: { kind: "unauthorized" },
-      }),
-    );
-
+    repository.editComment("PUPR5FG5", "Finished comment");
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(requests.slice(sent)).toEqual([]);
+    await repository.submitComment("PUPR5FG5", { automatic: true });
+    expect(requests.slice(sent)).toEqual([]);
+    expect(await repository.submitComment("PUPR5FG5")).toEqual({
+      kind: "idle",
+    });
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(1);
+    expect(repository.capabilityFor("RGRPDF24")).toEqual({
+      kind: "authorization-required",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("retains a paused draft until an explicit save after authorization returns", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const { repository, localApi, requests } = await writable(stack, {
+      item: () =>
+        annotationItem(
+          afterWrite("PUPR5FG5", { comment: "Keep these words", version: 20 }),
+        ),
+    });
+    repository.editComment("PUPR5FG5", "Keep these words");
+    await localApi.forgetAuthorization();
+    repository.editComment("PUPR5FG5", "Blocked typing");
+    expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+      "Keep these words",
+    );
+    await localApi.authorize();
+    const sent = requests.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await repository.submitComment("PUPR5FG5", { automatic: true });
+    expect(requests.slice(sent)).toEqual([]);
+    expect(await repository.submitComment("PUPR5FG5")).toEqual({
+      kind: "idle",
+    });
+    expect(
+      requests.slice(sent).filter(({ method }) => method === "PATCH"),
+    ).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("requires explicit recovery after a lost save response even when refresh reconnects", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const { repository, requests } = await writable(stack, {
+      write: () => unreachable(),
+    });
+    repository.editComment("PUPR5FG5", "Unconfirmed comment");
+    await repository.submitComment("PUPR5FG5");
+    expect(repository.capabilityFor("RGRPDF24").kind).toBe("writable");
+    const sent = requests.length;
+    repository.editComment("PUPR5FG5", "Review before retry");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await repository.submitComment("PUPR5FG5", { automatic: true });
+    expect(requests.slice(sent)).toEqual([]);
+    expect(repository.commentDraftFor("PUPR5FG5")?.text).toBe(
+      "Review before retry",
+    );
   } finally {
     vi.useRealTimers();
   }
@@ -1850,64 +1924,27 @@ it("refreshes after a lost ordinary write response without replaying it", async 
   expect(reads).toBeGreaterThan(readsBefore);
 });
 
-it("opens Zotero's dialog for a card gesture, then goes on — colour, comment, delete", async () => {
-  for (const verb of ["color", "comment", "delete"] as const) {
-    await using stack = new AsyncDisposableStack();
-    const { repository, requests } = await writable(
-      stack,
-      { authorize: () => authorized({ remember: false }) },
-      { key: undefined },
-    );
-    expect(repository.capabilityFor("RGRPDF24")).toEqual({
-      kind: "authorization-required",
-    });
-    const sent = requests.length;
-
-    const outcome =
-      verb === "color"
-        ? await repository.patchColor("PUPR5FG5", "#ff6666")
-        : verb === "comment"
-          ? await repository.patchComment("PUPR5FG5", "Worth citing")
-          : await repository.deleteAnnotation("PUPR5FG5");
-
-    expect([verb, outcome]).toEqual([verb, { kind: "idle" }]);
-    expect([
-      verb,
-      requests
-        .slice(sent)
-        .map(({ method, url }) => `${method} ${url.pathname}`),
-    ]).toEqual([
-      verb,
-      [
-        // The gesture probes before it asks, because the probe is the sole
-        // authority on whether the local API is on at all.
-        "GET /api/",
-        "POST /api/local/authorize",
-        `${verb === "delete" ? "DELETE" : "PATCH"} /api/users/0/items/PUPR5FG5`,
-        ...(verb === "delete" ? [] : ["GET /api/users/0/items/PUPR5FG5"]),
-        "GET /api/",
-        "GET /api/users/0/items/RGRPDF24/children",
-      ],
-    ]);
-  }
-});
-
-it("rolls a card gesture back when Zotero's dialog refuses it", async () => {
+it("requires explicit authorization before any annotation mutation", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(
     stack,
-    { authorize: () => denied() },
+    {},
     { key: undefined },
   );
   const sent = requests.length;
-
-  const outcome = await repository.patchColor("PUPR5FG5", "#ff6666");
-
-  expect(outcome).toEqual({ kind: "failed", failure: { kind: "denied" } });
-  expect(requests.slice(sent).map(({ url }) => url.pathname)).toEqual([
-    "/api/",
-    "/api/local/authorize",
+  const outcomes = [
+    await repository.patchColor("PUPR5FG5", "#ff6666"),
+    await repository.patchComment("PUPR5FG5", "Worth citing"),
+    await repository.deleteAnnotation("PUPR5FG5"),
+    await repository.createAnnotation("RGRPDF24", DRAFT),
+  ];
+  expect(outcomes).toEqual([
+    { kind: "failed", failure: { kind: "unauthorized" } },
+    { kind: "failed", failure: { kind: "unauthorized" } },
+    { kind: "failed", failure: { kind: "unauthorized" } },
+    { kind: "failed", failure: { kind: "unauthorized" } },
   ]);
+  expect(requests.slice(sent)).toEqual([]);
 });
 
 it("shows a write in flight as pending, and draws no provisional value", async () => {
@@ -2469,56 +2506,6 @@ it("refreshes the collection after Zotero definitely rejects a create", async ()
     failure: { kind: "invalid-response", issue: "400 no" },
   });
   expect(reads).toBeGreaterThan(readsBefore);
-});
-
-it("opens Zotero's dialog when the gesture needs one, then goes on", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(
-    stack,
-    {
-      authorize: () => authorized({ remember: false }),
-      write: () => createAccepted(MADE),
-      item: () => annotationItem(MADE),
-    },
-    { key: undefined, writeToken: () => TOKEN },
-  );
-  expect(repository.capabilityFor("RGRPDF24")).toEqual({
-    kind: "authorization-required",
-  });
-  const sent = requests.length;
-
-  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
-
-  expect(
-    requests.slice(sent).map(({ method, url }) => `${method} ${url.pathname}`),
-  ).toEqual([
-    // The gesture probes before it asks, because the probe is the sole
-    // authority on whether the local API is on at all.
-    "GET /api/",
-    "POST /api/local/authorize",
-    "POST /api/users/0/items",
-    "GET /api/",
-    "GET /api/users/0/items/RGRPDF24/children",
-  ]);
-  expect(outcome).toEqual({ kind: "created", annotationKey: "MADE2345" });
-});
-
-it("stops a create Zotero's dialog refused, and opens no second one", async () => {
-  await using stack = new AsyncDisposableStack();
-  const { repository, requests } = await writable(
-    stack,
-    { authorize: () => denied() },
-    { key: undefined },
-  );
-  const sent = requests.length;
-
-  const outcome = await repository.createAnnotation("RGRPDF24", DRAFT);
-
-  expect(outcome).toEqual({ kind: "failed", failure: { kind: "denied" } });
-  expect(requests.slice(sent).map(({ url }) => url.pathname)).toEqual([
-    "/api/",
-    "/api/local/authorize",
-  ]);
 });
 
 // #endregion

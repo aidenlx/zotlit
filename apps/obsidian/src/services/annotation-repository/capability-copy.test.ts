@@ -160,64 +160,26 @@ it("counts a cooldown down in whole seconds, and never past zero", () => {
   expect(secondsUntil(NOW.subtract({ seconds: 10 }), NOW)).toBe(0);
 });
 
-it("offers one enable-editing action for every unavailable capability", () => {
-  const states: EditingCapability[] = [
-    { kind: "authorization-required" },
-    { kind: "authorizing" },
-    { kind: "cooldown", retryAfter: NOW.add({ seconds: 42 }) },
-    ...READ_ONLY_REASONS.map(
-      (reason) => ({ kind: "read-only", reason }) as const,
-    ),
-  ];
-
+it("keeps reading quiet until authorization can be requested", () => {
   expect(editingCapabilityAffordance({ kind: "writable" }, NOW)).toBeNull();
+  for (const reason of READ_ONLY_REASONS) {
+    expect(
+      editingCapabilityAffordance({ kind: "read-only", reason }, NOW),
+    ).toBeNull();
+  }
   expect(
-    states.map((state) => editingCapabilityAffordance(state, NOW)?.label),
-  ).toEqual(states.map(() => m.capability_enable_editing()));
-});
-
-it("maps unavailable states to the enable-editing action presentation", () => {
-  const affordance = (capability: EditingCapability) =>
-    editingCapabilityAffordance(capability, NOW);
-
-  expect(affordance({ kind: "authorization-required" })).toEqual({
-    icon: "pencil",
-    tone: "action",
+    editingCapabilityAffordance({ kind: "authorization-required" }, NOW),
+  ).toMatchObject({
     label: m.capability_enable_editing(),
-    tooltip: m.capability_affordance_tooltip({
-      label: m.capability_authorization_required(),
-      detail: m.capability_authorization_required_detail(),
-    }),
-    spinning: false,
-    countdown: null,
-  });
-  expect(affordance({ kind: "authorizing" })).toMatchObject({
-    icon: "loader",
-    tone: "busy",
-    spinning: true,
-    countdown: null,
-  });
-  expect(affordance({ kind: "read-only", reason: "probing" })).toMatchObject({
-    icon: "loader",
-    tone: "busy",
-    spinning: true,
-    countdown: null,
+    disabled: false,
   });
   expect(
-    READ_ONLY_REASONS.filter((reason) => reason !== "probing").map((reason) =>
-      affordance({ kind: "read-only", reason }),
-    ),
-  ).toEqual(
-    READ_ONLY_REASONS.filter((reason) => reason !== "probing").map(() =>
-      expect.objectContaining({
-        icon: "pencil",
-        tone: "action",
-        label: m.capability_enable_editing(),
-        spinning: false,
-        countdown: null,
-      }),
-    ),
-  );
+    editingCapabilityAffordance({ kind: "authorizing" }, NOW),
+  ).toMatchObject({
+    label: m.capability_authorizing(),
+    disabled: true,
+    spinning: true,
+  });
 });
 
 it("counts down the enable-editing action until the capability changes", () => {
