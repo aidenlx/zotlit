@@ -98,8 +98,8 @@ describe("getAnnotationsByParent tags", () => {
     const annotation = result.find((a) => a.key === "JDJKX3N6");
     expect(annotation?.tags).toEqual(["first-tag", "second-tag"]);
     expect(annotation?.tagDetails).toEqual([
-      { name: "first-tag", type: "manual" },
-      { name: "second-tag", type: "auto" },
+      { name: "first-tag", type: 0 },
+      { name: "second-tag", type: 1 },
     ]);
   });
 });

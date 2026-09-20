@@ -179,6 +179,23 @@ it("narrows each position by the content type of the attachment that holds it", 
   ]);
 });
 
+it("converts raw database tag types for annotation template metadata", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, client } = await setup(stack);
+  client.$client.exec(`
+    insert into tags (tagID, name) values (991, 'hand-added'), (992, 'translator');
+    insert into itemTags (itemID, tagID, type) values (49, 991, 0), (49, 992, 1);
+  `);
+  const list = await repository.read("RGRPDF24");
+  expect(
+    list?.annotations.find(({ key }) => key === "FDRFQ7C2")?.templateMetadata
+      ?.tags,
+  ).toEqual([
+    { name: "hand-added", type: "manual" },
+    { name: "translator", type: "auto" },
+  ]);
+});
+
 it("serves one database read to every surface that asks for one attachment at once", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, acquireRead } = await setup(stack);

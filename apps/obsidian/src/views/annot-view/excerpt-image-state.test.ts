@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
   ExcerptEntry,
@@ -55,7 +56,7 @@ describe("Annotation Card image lifecycle", () => {
           if (!pdfReady) throw new Error("PDF absent");
           return new Uint8Array([revision]);
         },
-        read: async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1]),
+        read: async () => redPng,
         cache: {
           get: async (key) => entries.get(key),
           put: async (key, entry) => {

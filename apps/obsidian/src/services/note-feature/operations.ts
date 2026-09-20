@@ -987,14 +987,10 @@ async function writeNewNote(
 
   const file = await options.createFile(composed.content);
   options.onFileCreated?.(file);
-  using excerptReports = collectExcerptSummary(
-    options.reportExcerpts ??
-      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
-  );
-  const summary = excerptImages?.summary();
-  if (summary && (summary.zotero || summary.unchecked || summary.unavailable)) {
-    excerptReports.add(summary);
-  }
+  using excerptReports = collectNoteExcerpts(ctx, {
+    ...options,
+    excerptImages,
+  });
   await attachmentImport.flush();
   await noteImport.flush(excerptReports.add);
   logger.debug("Created literature note", {
@@ -1416,16 +1412,7 @@ async function applyManagedUpdate(
     reportExcerpts?: (summary: ExcerptSummary) => void;
   },
 ): Promise<UpdateResult> {
-  const {
-    context,
-    attachmentImport,
-    noteImport,
-    itemKey,
-    scope,
-    profile,
-    document,
-    beforeWrite,
-  } = input;
+  const { context, itemKey, scope, profile, document, beforeWrite } = input;
   const prepared = prepareFrontmatter({
     context,
     itemKey,
@@ -1454,26 +1441,7 @@ async function applyManagedUpdate(
     beforeWrite,
   });
 
-  using excerptReports = collectExcerptSummary(
-    input.reportExcerpts ??
-      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
-  );
-  const summary = input.excerptImages?.summary();
-  if (
-    summary &&
-    (summary.zotero ||
-      summary.unchecked ||
-      summary.unavailable ||
-      summary.notRefreshed)
-  )
-    excerptReports.add(summary);
-
-  const flushes = await Promise.allSettled([
-    attachmentImport.flush(),
-    noteImport.flush(excerptReports.add),
-  ]);
-  for (const result of flushes)
-    if (result.status === "rejected") throw result.reason;
+  await flushNoteImports(ctx, input);
 
   logger.debug("Updated literature note", {
     path: file.path,
@@ -1607,29 +1575,46 @@ async function overwriteNote(
     return `${prefix}${body}`;
   });
 
-  using excerptReports = collectExcerptSummary((summary) =>
-    ctx.events.emit("excerpt-images-reported", summary),
-  );
-  const summary = excerptImages?.summary();
-  if (
-    summary &&
-    (summary.zotero ||
-      summary.unchecked ||
-      summary.unavailable ||
-      summary.notRefreshed)
-  )
-    excerptReports.add(summary);
-  const flushes = await Promise.allSettled([
-    attachmentImport.flush(),
-    noteImport.flush(excerptReports.add),
-  ]);
-  for (const result of flushes)
-    if (result.status === "rejected") throw result.reason;
+  await flushNoteImports(ctx, { attachmentImport, noteImport, excerptImages });
   logger.info("Overwrote literature note", {
     path: file.path,
     itemKey: indexedKey,
   });
   return { bodyUpdated: true, duplicateRegionCount: 0 };
+}
+
+function collectNoteExcerpts(
+  ctx: OpsContext,
+  input: {
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+) {
+  const reports = collectExcerptSummary(
+    input.reportExcerpts ??
+      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
+  );
+  const summary = input.excerptImages?.summary();
+  if (summary) reports.add(summary);
+  return reports;
+}
+
+async function flushNoteImports(
+  ctx: OpsContext,
+  input: {
+    attachmentImport: Pick<AttachmentImport, "flush">;
+    noteImport: Pick<NoteImport, "flush">;
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+): Promise<void> {
+  using reports = collectNoteExcerpts(ctx, input);
+  const flushes = await Promise.allSettled([
+    input.attachmentImport.flush(),
+    input.noteImport.flush(reports.add),
+  ]);
+  for (const result of flushes)
+    if (result.status === "rejected") throw result.reason;
 }
 
 /**

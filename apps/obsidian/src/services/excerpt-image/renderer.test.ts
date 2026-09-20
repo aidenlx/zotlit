@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import { redPng } from "./__fixtures__/png";
 import { ExcerptRenderer } from "./renderer";
 import { ExcerptImageService } from "./service";
 import type { ExcerptRequest } from "./service";
@@ -468,7 +469,7 @@ it.each(["missing", "duplicate", "flag", "frozen"] as const)(
     await using service = new ExcerptImageService({
       stamp: async () => ({ size: 4, mtimeMs: 1 }),
       render: (request, signal) => f.renderer.render(request, signal),
-      read: async () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1]),
+      read: async () => redPng,
     });
     expect(
       await service.resolve({ ...f.request, zoteroPngPath: "/zotero.png" }),

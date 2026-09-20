@@ -124,7 +124,6 @@ export async function verifyAnnotationDrag(
       activeAfterCapture: true,
       targetInactive: true,
       dropPrevented: true,
-      expected: capture.expected,
       notePath: `Drag-${sourceHost}-${targetHost}.md`,
     });
     expect(capture.directPosition).toBeGreaterThanOrEqual(0);

@@ -1,7 +1,7 @@
 import type { AnnotationPositionRaw } from "@drizzle/schema";
 import { getLogger } from "@logtape/logtape";
 
-import type { TemplateTag } from "./zt-tag";
+import type { TagType } from "./zt-tag";
 
 const logger = getLogger(["zotlit", "db", "annotations"]);
 
@@ -89,7 +89,7 @@ export interface Annotation {
    * supply, and what a reader shows.
    */
   tags: string[];
-  tagDetails?: Pick<TemplateTag, "name" | "type">[];
+  tagDetails?: { name: string; type: TagType }[];
   /**
    * Raw Zotero sort key. Its zero-padded formats sort correctly as text.
    *

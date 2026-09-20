@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 import { history, undo } from "@codemirror/commands";
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
 import type { App, Editor, EventRef, MarkdownFileInfo, TFile } from "obsidian";
 import type { DragEvent as ReactDragEvent } from "react";
 import { expect, it, vi } from "vitest";
@@ -10,6 +8,7 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
+import { stateEditor } from "./__fixtures__/editor";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
 
 const card: AnnotationRecord = {
@@ -26,15 +25,10 @@ const card: AnnotationRecord = {
 };
 type Result = Awaited<ReturnType<NoteFeature["prepareAnnotationInsert"]>>;
 function fixture() {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const cm = new EditorView({
-    parent: host,
-    state: EditorState.create({
-      doc: "one two",
-      selection: { anchor: 4, head: 7 },
-      extensions: [history()],
-    }),
+  const cm = stateEditor({
+    doc: "one two",
+    selection: { anchor: 4, head: 7 },
+    extensions: [history()],
   });
   const info = {
     file: { path: "Target.md" } as TFile,
@@ -79,7 +73,6 @@ function fixture() {
     [Symbol.dispose]() {
       insert.cancel();
       cm.destroy();
-      host.remove();
     },
   };
 }
@@ -166,12 +159,7 @@ it("uses a source-link fallback when preparation cannot build template context",
 });
 
 function dragFixture() {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const cm = new EditorView({
-    parent: host,
-    state: EditorState.create({ doc: "one two", extensions: [history()] }),
-  });
+  const cm = stateEditor({ doc: "one two", extensions: [history()] });
   const editor = { cm } as Editor;
   const info = {
     file: { path: "Drop.md" } as TFile,
@@ -267,7 +255,6 @@ function dragFixture() {
     [Symbol.dispose]() {
       handler.cancel();
       cm.destroy();
-      host.remove();
       source.remove();
     },
   };

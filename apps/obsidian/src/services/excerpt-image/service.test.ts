@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { redPng, corruptPng } from "./__fixtures__/png";
 import { abortable, usePromiseScheduling } from "./renderer";
 import { ExcerptImageService, excerptKey, MAX_FALLBACK_BYTES } from "./service";
 import type { ExcerptEntry, ExcerptRequest } from "./service";
@@ -33,7 +34,7 @@ const request: ExcerptRequest = {
   zoteroPngPath: "/fallback.png",
 };
 const generated: Uint8Array = new Uint8Array([1, 2, 3]);
-const fallback = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 9]);
+const fallback = redPng;
 const inkRequest: ExcerptRequest = {
   ...request,
   annotation: {
@@ -74,6 +75,18 @@ function fixture() {
 }
 
 describe("Excerpt Image resolution", () => {
+  it.each(["truncated", "idat", "scanline"] as const)(
+    "rejects %s fallback PNG data",
+    async (kind) => {
+      await using service = new ExcerptImageService({
+        render: async () => {
+          throw new Error("PDF unavailable");
+        },
+        read: async () => corruptPng(kind),
+      });
+      expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
+    },
+  );
   it("admits 128 distinct requests and rejects the 129th without starting it", async () => {
     const gate = Promise.withResolvers<Uint8Array>();
     const started = Promise.withResolvers<void>();

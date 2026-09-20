@@ -76,6 +76,7 @@ import {
 import { materializeExcerpt } from "@/services/excerpt-image/materialize";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
   ExcerptOutcome,
   ExcerptRequest,
@@ -651,6 +652,7 @@ describe("createNote", () => {
   it.each([
     "valid",
     "fallback",
+    "corrupt-fallback",
     "unchecked",
     "unavailable",
     "partial",
@@ -661,6 +663,7 @@ describe("createNote", () => {
     "refresh",
     "overwrite",
     "retain",
+    "retain-corrupt-fallback",
     "retain-disabled",
     "retain-throw",
     "retain-write",
@@ -737,10 +740,20 @@ describe("createNote", () => {
         getFileByPath: (path: string) => makeFile(path),
       });
       deps.app = app;
+      const fallbackService = cleanup.use(
+        new ExcerptImageService({
+          render: async () => {
+            throw new Error("PDF unavailable");
+          },
+          read: async () => corruptPng("truncated"),
+        }),
+      );
       const resolver = {
         resolve: vi.fn(
           async (request: ExcerptRequest): Promise<ExcerptOutcome> => {
             expect(leaseReleased).toBe(false);
+            if (mode === "corrupt-fallback")
+              return fallbackService.resolve(request);
             if (mode === "partial" && request.annotation.type === "image")
               throw new Error("Image renderer failed");
             if (
@@ -879,6 +892,7 @@ describe("createNote", () => {
                 : [
                       "disabled",
                       "unavailable",
+                      "corrupt-fallback",
                       "write-failure",
                       "collected",
                     ].includes(mode)
@@ -1017,6 +1031,10 @@ describe("createNote", () => {
                 freshness: "checked",
               },
         );
+        if (mode === "retain-corrupt-fallback")
+          resolver.resolve.mockImplementation((request) =>
+            fallbackService.resolve(request),
+          );
         if (mode === "retain-disabled")
           deps.settings.update({ "attachment.import": false });
         if (mode === "retain-throw")

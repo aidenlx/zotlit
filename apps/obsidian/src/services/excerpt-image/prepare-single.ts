@@ -8,12 +8,11 @@ import {
 } from "@zotlit/db";
 import type { TemplateLink } from "@zotlit/db";
 
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { syntheticFile } from "@/lib/markdown-link";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { Settings } from "@/services/settings/schema";
 
+import { createExcerptLink, summarizeExcerpts } from "./helper";
 import { materializeExcerpt } from "./materialize";
 import type { MaterializedExcerpt } from "./materialize";
 import type { ExcerptSummary } from "./prepare";
@@ -31,7 +30,6 @@ export async function prepareSingleExcerpt(options: {
   valid: () => boolean;
 }): Promise<{ helper: TemplateLink | null; summary(): ExcerptSummary }> {
   const { annotation, request, signal, settings } = options;
-  let used = false;
   let result: MaterializedExcerpt = {
     kind: "unavailable",
     reason: settings["attachment.import"] ? "source" : "disabled",
@@ -58,38 +56,13 @@ export async function prepareSingleExcerpt(options: {
     (key && parent
       ? `[Zotero](${annotationOpenUri({ attachmentKey: parent.key, annotationKey: key.key, groupID: key.groupID, pageLabel: annotation.pageLabel })})`
       : "");
-  const render = (embed: boolean, alias?: string, subpath?: string) => {
-    used = true;
-    if (result.kind === "unavailable") {
-      return `${result.reason === "disabled" ? m.excerpt_image_import_disabled() : m.excerpt_image_unavailable()} ${sourceLink}`.trim();
-    }
-    const link = options.app.fileManager.generateMarkdownLink(
-      syntheticFile(result.path),
-      options.notePath,
-      subpath,
-      alias,
-    );
-    return embed ? `!${link}` : link;
-  };
+  const state = { used: false, result, sourceLink };
   return {
     helper: image
-      ? Object.assign(
-          (alias?: string, subpath?: string) => render(false, alias, subpath),
-          {
-            renderEmbed: (alias?: string, subpath?: string) =>
-              render(true, alias, subpath),
-          },
-        )
+      ? createExcerptLink(options.app, options.notePath, state)
       : null,
     summary() {
-      const summary = { zotero: 0, unchecked: 0, unavailable: 0 };
-      if (!used) return summary;
-      if (result.kind === "unavailable") summary.unavailable++;
-      else if (result.kind === "saved") {
-        if (result.outcome.provenance === "zotero") summary.zotero++;
-        else if (result.outcome.freshness !== "checked") summary.unchecked++;
-      }
-      return summary;
+      return summarizeExcerpts([state]);
     },
   };
 }

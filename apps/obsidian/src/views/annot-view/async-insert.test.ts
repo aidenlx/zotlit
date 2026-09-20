@@ -1,22 +1,16 @@
 // @vitest-environment happy-dom
 import { history, undo } from "@codemirror/commands";
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
 import type { Editor, MarkdownFileInfo, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { stateEditor } from "./__fixtures__/editor";
 import { captureInsertion } from "./async-insert";
 
 function fixture() {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const cm = new EditorView({
-    parent: host,
-    state: EditorState.create({
-      doc: "before TARGET after",
-      selection: { anchor: 7, head: 13 },
-      extensions: [history()],
-    }),
+  const cm = stateEditor({
+    doc: "before TARGET after",
+    selection: { anchor: 7, head: 13 },
+    extensions: [history()],
   });
   const editor = { cm } as Editor;
   const info = {
@@ -35,7 +29,6 @@ function fixture() {
     [Symbol.dispose]() {
       target[Symbol.dispose]();
       cm.destroy();
-      host.remove();
     },
   };
 }

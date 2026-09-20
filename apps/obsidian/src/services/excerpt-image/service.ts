@@ -5,6 +5,7 @@ import { Service } from "@/services/service-base";
 
 import { excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import { usableExcerptPng } from "./png";
 import { abortable, ExcerptRenderer } from "./renderer";
 import type { ExcerptRendererDiagnostics } from "./renderer";
 import type { ExcerptStore } from "./store";
@@ -313,9 +314,8 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         if (bytes.length > MAX_FALLBACK_BYTES)
           throw new Error("Zotero image exceeds byte limit");
         if (
-          bytes.length > 8 &&
-          [137, 80, 78, 71, 13, 10, 26, 10].every(
-            (byte, index) => bytes[index] === byte,
+          usableExcerptPng(
+            Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
           )
         ) {
           logger.debug("Excerpt uses uncertain Zotero image", {
@@ -329,7 +329,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
             freshness: "uncertain",
           };
         }
-        logger.debug("Zotero excerpt has invalid PNG signature", { key });
+        logger.debug("Zotero excerpt has unusable PNG data", { key });
       }
     } catch (error) {
       signal.throwIfAborted();

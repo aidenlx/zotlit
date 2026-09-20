@@ -16,23 +16,18 @@ import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
 
 import { attachmentFileLink } from "@/lib/annotation-render";
-import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { syntheticFile } from "@/lib/markdown-link";
 import type { Settings } from "@/services/settings/schema";
 
+import { createExcerptLink, summarizeExcerpts } from "./helper";
+import type { ExcerptSummary } from "./helper";
 import { materializeExcerpt, retainExcerpt } from "./materialize";
 import type { MaterializedExcerpt } from "./materialize";
 import { referencedExcerptPaths } from "./references";
 import type { ExcerptImageService, ExcerptRequest } from "./service";
+export type { ExcerptSummary } from "./helper";
 
 const logger = getLogger("excerpt-prepare");
-export interface ExcerptSummary {
-  zotero: number;
-  unchecked: number;
-  unavailable: number;
-  notRefreshed?: number;
-}
 
 /** One collector belongs to one user operation, including partial or cancelled batches. */
 export function collectExcerptSummary(
@@ -104,31 +99,7 @@ export function createExcerptPreparation(deps: {
           used: false,
           helper: (() => "") as TemplateLink,
         };
-        const render = (embed: boolean, alias?: string, subpath?: string) => {
-          candidate.used = true;
-          const result = candidate.result;
-          if (result.kind === "unavailable") {
-            const explanation =
-              result.reason === "disabled"
-                ? m.excerpt_image_import_disabled()
-                : m.excerpt_image_unavailable();
-            return `${explanation}${candidate.sourceLink ? ` ${candidate.sourceLink}` : ""}`;
-          }
-          const link = deps.app.fileManager.generateMarkdownLink(
-            syntheticFile(result.path),
-            notePath,
-            subpath,
-            alias,
-          );
-          return embed ? `!${link}` : link;
-        };
-        candidate.helper = Object.assign(
-          (alias?: string, subpath?: string) => render(false, alias, subpath),
-          {
-            renderEmbed: (alias?: string, subpath?: string) =>
-              render(true, alias, subpath),
-          },
-        );
+        candidate.helper = createExcerptLink(deps.app, notePath, candidate);
         candidates.set(annotation.indexedKey, candidate);
         return candidate.helper;
       },
@@ -218,20 +189,7 @@ export function createExcerptPreparation(deps: {
         }
       },
       summary() {
-        const summary: ExcerptSummary = {
-          zotero: 0,
-          unchecked: 0,
-          unavailable: 0,
-        };
-        for (const { used, result } of candidates.values()) {
-          if (!used) continue;
-          if (result.kind === "unavailable") summary.unavailable++;
-          else if (result.kind === "retained")
-            summary.notRefreshed = (summary.notRefreshed ?? 0) + 1;
-          else if (result.outcome.provenance === "zotero") summary.zotero++;
-          else if (result.outcome.freshness !== "checked") summary.unchecked++;
-        }
-        return summary;
+        return summarizeExcerpts(candidates.values());
       },
     };
   };

@@ -1,4 +1,4 @@
-// Checks complete PNG chunks and bounded decoded scanlines before retaining an existing asset.
+// Checks complete PNG chunks and bounded decoded scanlines for external excerpt assets.
 import { crc32, inflateSync } from "node:zlib";
 
 const MAX_DECODED_BYTES = 128 * 1024 * 1024;

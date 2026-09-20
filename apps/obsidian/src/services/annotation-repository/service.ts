@@ -10,6 +10,7 @@ import {
   parseAnnotationPosition,
   parseIndexedKey,
   resolveIndexedKeyLibrary,
+  tagTypeToName,
 } from "@zotlit/db";
 import type {
   Annotation,
@@ -1977,7 +1978,10 @@ function toRecord(
       dateModified: annotation.dateModified.toString(),
       authorName: annotation.authorName,
       isExternal: annotation.isExternal,
-      tags: annotation.tagDetails,
+      tags: annotation.tagDetails?.map(({ name, type }) => ({
+        name,
+        type: tagTypeToName(type),
+      })),
     },
   };
 }
