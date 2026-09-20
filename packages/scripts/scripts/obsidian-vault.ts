@@ -791,7 +791,14 @@ async function removeOnline(abs: string): Promise<string | undefined> {
     // `vault-remove` refuses while the vault window is open. Close it only when
     // it is open, because targeting a closed vault would re-open it.
     if ((await vaultList(host))[id]?.open) {
-      await obEval("window.close()", id).catch(() => undefined);
+      await obEval(
+        `(async function(){await app.plugins.disablePlugin(${JSON.stringify(pluginId)});await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve)})});return 'ready'})()`,
+        id,
+      ).catch(() => undefined);
+      await obEval(
+        "app.workspace.rootSplit.containerEl.ownerDocument.defaultView.close()",
+        id,
+      ).catch(() => undefined);
       await waitFor(async () => !(await vaultList(host))[id]?.open);
     }
 
