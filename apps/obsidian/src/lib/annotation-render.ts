@@ -113,11 +113,13 @@ export function renderAnnotations(
     groupIdMemo?: GroupIDMemo;
     tagMemo?: TagMemo;
     renderAnnotation?: (data: AnnotationTemplateContext) => string;
+    annotationImageLink?: AnnotationResolvers["annotationImageLink"];
   },
 ): Map<string, string> {
   const resolvers = buildAnnotationResolvers({
     zoteroPref: options.zoteroPref,
     attachmentImport: options.attachmentImport,
+    annotationImageLink: options.annotationImageLink,
   });
   const dataByKey = fetchAnnotationsTemplateData(client, annotations, {
     resolvers,

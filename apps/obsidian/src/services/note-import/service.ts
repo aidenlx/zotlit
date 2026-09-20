@@ -38,6 +38,11 @@ import type {
   AttachmentImport,
   AttachmentImportService,
 } from "@/services/attachment-import/service";
+import type {
+  ExcerptPreparation,
+  ExcerptSummary,
+  PreparedExcerpts,
+} from "@/services/excerpt-image/prepare";
 import {
   MAX_SEGMENT_BYTES,
   normalizeFilename,
@@ -54,7 +59,7 @@ import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { parseNote } from "./note-parser";
+import { noteAnnotationKeys, parseNote } from "./note-parser";
 
 const logger = getLogger(["note-import", "service"]);
 
@@ -80,6 +85,7 @@ interface RunContext {
   attachmentFolderCache: Map<string, string>;
   /** Profile every note this run writes belongs to. */
   profile: ResolvedProfile;
+  reportExcerpts?: (summary: ExcerptSummary) => void;
 }
 
 interface QueuedImport {
@@ -112,6 +118,7 @@ interface NoteImporterDeps {
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
+  excerptImages?: ExcerptPreparation;
 }
 
 export interface PrepareNoteImportOptions {
@@ -134,7 +141,9 @@ export interface NoteImport {
    * queued lazily on the link's first render (an unrendered link imports nothing).
    */
   resolveChildNote(note: ChildNote): TemplateNoteLink;
-  flush(): Promise<{ created: number; skipped: number; failed: number }>;
+  flush(
+    reportExcerpts?: (summary: ExcerptSummary) => void,
+  ): Promise<{ created: number; skipped: number; failed: number }>;
 }
 
 export interface ImportNoteOptions {
@@ -145,6 +154,7 @@ export interface ImportNoteOptions {
   attachmentFolderCache?: Map<string, string>;
   /** Explicit overwrite target; omitted resolves by imported-note index. */
   targetFile?: TFile;
+  reportExcerpts?: (summary: ExcerptSummary) => void;
 }
 
 interface PrepareExplicitImportOptions {
@@ -241,7 +251,8 @@ async function prepareImport(
   return {
     resolveChildNote: (note) =>
       resolveChildNote(ctx, note, { sourcePath, importFolder, queue }),
-    flush: () => flushQueue(ctx, queue, { importFolder, run }),
+    flush: (reportExcerpts) =>
+      flushQueue(ctx, queue, { importFolder, run: { ...run, reportExcerpts } }),
   };
 }
 
@@ -260,6 +271,7 @@ async function doImportNote(
       tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
       profile,
+      reportExcerpts: options.reportExcerpts,
     };
 
     if (existing) {
@@ -346,6 +358,7 @@ async function prepareExplicitImport(
             attachmentFolderCache:
               runOptions.attachmentFolderCache ?? new Map(),
             profile,
+            reportExcerpts: runOptions.reportExcerpts,
           },
         });
       }),
@@ -513,23 +526,46 @@ async function writeNote(
 
   let body = "";
   let attachmentBatch: AttachmentImport | undefined;
+  let excerpts: PreparedExcerpts | undefined;
   if (note.note) {
     const batch = await ctx.attachmentImport.prepare(path, {
       folderCache: run.attachmentFolderCache,
     });
     attachmentBatch = batch;
-    const renderAnnotationParagraph = getProfileBinding(
+    const templateMode = getProfileBinding(
       run.settings,
       "note.import-annotations-as-template",
-    )
+    );
+    const annotations =
+      templateMode && ctx.excerptImages
+        ? getAnnotationsByKey(
+            run.client,
+            noteAnnotationKeys(note.note),
+            note.libraryID,
+          )
+        : undefined;
+    if (annotations?.length) {
+      excerpts = ctx.excerptImages!({
+        client: run.client,
+        notePath: path,
+        settings: run.profile.settings,
+        previousNote: mode.action === "overwrite" ? mode.file : undefined,
+      });
+      for (const annotation of annotations)
+        excerpts.annotationImageLink(annotation);
+      await excerpts.prepare();
+    }
+    const renderAnnotationParagraph = templateMode
       ? (keys: readonly string[]) =>
           renderAnnotations(
             run.client,
-            getAnnotationsByKey(run.client, keys, note.libraryID),
+            annotations ??
+              getAnnotationsByKey(run.client, keys, note.libraryID),
             {
               template: ctx.template,
               zoteroPref: ctx.zoteroPref,
               attachmentImport: batch,
+              annotationImageLink: excerpts?.annotationImageLink,
               groupIdMemo: run.groupIdMemo,
               tagMemo: run.tagMemo,
               renderAnnotation: (data) =>
@@ -584,6 +620,7 @@ async function writeNote(
     outcome = "overwritten";
   }
 
+  if (excerpts) run.reportExcerpts?.(excerpts.summary());
   if (attachmentBatch) {
     const copied = await attachmentBatch.flush();
     logger.debug("Imported note attachments", {

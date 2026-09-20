@@ -262,6 +262,7 @@ export function buildServices(
         template,
         zoteroPref,
         attachmentImport,
+        excerptImage,
       }): NoteImporter =>
         createNoteImporter({
           profile,
@@ -270,6 +271,15 @@ export function buildServices(
           template,
           zoteroPref,
           attachmentImport,
+          excerptImages: (options) =>
+            createExcerptPreparation({
+              app: plugin.app,
+              resolver: excerptImage,
+              paths: {
+                dataDir: zoteroPref.dataDir,
+                baseAttachmentPath: zoteroPref.baseAttachmentPath,
+              },
+            })(options),
         }),
     })
     .use({

@@ -2611,6 +2611,58 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 }
 
 describe("updateNote", () => {
+  it.each(["update", "overwrite"] as const)(
+    "waits for Child Note outcomes after an early attachment failure (%s)",
+    async (operation) => {
+      const harness = makeUpdateHarness({
+        content: formatManagedRegion("OLD"),
+      });
+      stubIndexedKeyUpdate(updateContext());
+      using _database = {
+        [Symbol.dispose]: () => harness.deps.db.client.$client.close(),
+      };
+      const failed = Promise.withResolvers<void>();
+      const finishChild = Promise.withResolvers<void>();
+      const copyError = new Error("attachment copy failed");
+      harness.deps.attachmentImport = {
+        prepare: async () => ({
+          ...(await blockedAttachmentImport.prepare()),
+          flush: async () => {
+            failed.resolve();
+            throw copyError;
+          },
+        }),
+      };
+      const prepare = harness.deps.noteImport.prepare;
+      harness.deps.noteImport.prepare = async (options) => ({
+        ...(await prepare(options)),
+        flush: async (report) => {
+          await finishChild.promise;
+          report?.({ zotero: 0, unchecked: 0, unavailable: 1 });
+          return { created: 1, skipped: 0, failed: 0 };
+        },
+      });
+      const feature = createNoteFeature(harness.deps);
+      const report = vi.fn();
+      feature.on("excerpt-images-reported", report);
+      const file = makeFile("Literature/Test.md");
+      const pending =
+        operation === "update"
+          ? feature.updateNote(file, { indexedKey: "ABC12345", scope: "full" })
+          : feature.overwriteNote(file, "ABC12345");
+      const rejected = expect(pending).rejects.toBe(copyError);
+      await failed.promise;
+      expect(report).not.toHaveBeenCalled();
+      finishChild.resolve();
+      await rejected;
+      expect(report).toHaveBeenCalledExactlyOnceWith({
+        zotero: 0,
+        unchecked: 0,
+        unavailable: 1,
+      });
+    },
+  );
+
   it.each(["full", "metadata"] as const)(
     "preserves a replacement file when the session changes during %s preparation",
     async (scope) => {

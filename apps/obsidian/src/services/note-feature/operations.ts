@@ -51,6 +51,7 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
+import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   ExcerptSummary,
   PreparedExcerpts,
@@ -986,13 +987,16 @@ async function writeNewNote(
 
   const file = await options.createFile(composed.content);
   options.onFileCreated?.(file);
-  await attachmentImport.flush();
-  await noteImport.flush();
+  using excerptReports = collectExcerptSummary(
+    options.reportExcerpts ??
+      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
+  );
   const summary = excerptImages?.summary();
   if (summary && (summary.zotero || summary.unchecked || summary.unavailable)) {
-    if (options.reportExcerpts) options.reportExcerpts(summary);
-    else ctx.events.emit("excerpt-images-reported", summary);
+    excerptReports.add(summary);
   }
+  await attachmentImport.flush();
+  await noteImport.flush(excerptReports.add);
   logger.debug("Created literature note", {
     path: file.path,
     itemKey: item.indexedKey,
@@ -1450,7 +1454,10 @@ async function applyManagedUpdate(
     beforeWrite,
   });
 
-  await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  using excerptReports = collectExcerptSummary(
+    input.reportExcerpts ??
+      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
+  );
   const summary = input.excerptImages?.summary();
   if (
     summary &&
@@ -1459,8 +1466,14 @@ async function applyManagedUpdate(
       summary.unavailable ||
       summary.notRefreshed)
   )
-    if (input.reportExcerpts) input.reportExcerpts(summary);
-    else ctx.events.emit("excerpt-images-reported", summary);
+    excerptReports.add(summary);
+
+  const flushes = await Promise.allSettled([
+    attachmentImport.flush(),
+    noteImport.flush(excerptReports.add),
+  ]);
+  for (const result of flushes)
+    if (result.status === "rejected") throw result.reason;
 
   logger.debug("Updated literature note", {
     path: file.path,
@@ -1594,7 +1607,9 @@ async function overwriteNote(
     return `${prefix}${body}`;
   });
 
-  await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  using excerptReports = collectExcerptSummary((summary) =>
+    ctx.events.emit("excerpt-images-reported", summary),
+  );
   const summary = excerptImages?.summary();
   if (
     summary &&
@@ -1603,7 +1618,13 @@ async function overwriteNote(
       summary.unavailable ||
       summary.notRefreshed)
   )
-    ctx.events.emit("excerpt-images-reported", summary);
+    excerptReports.add(summary);
+  const flushes = await Promise.allSettled([
+    attachmentImport.flush(),
+    noteImport.flush(excerptReports.add),
+  ]);
+  for (const result of flushes)
+    if (result.status === "rejected") throw result.reason;
   logger.info("Overwrote literature note", {
     path: file.path,
     itemKey: indexedKey,
