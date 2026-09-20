@@ -341,7 +341,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       item
         .setTitle(m.annot_view_menu_insert())
         .setIcon("file-input")
-        .setDisabled(deps.getState().dragTarget !== "ready")
+        .setDisabled(
+          !deps.app.workspace.activeEditor?.file ||
+            !deps.app.workspace.activeEditor.editor,
+        )
         .onClick(() => deps.insertAnnotation(annot));
     });
 

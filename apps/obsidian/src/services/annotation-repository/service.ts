@@ -15,6 +15,7 @@ import type {
   Annotation,
   AnnotationPosition,
   ResolvedAnnotationTypeName,
+  TemplateTag,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -137,6 +138,14 @@ export interface AnnotationRecord {
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
    */
   version: number | null;
+  /** Source facts used by annotation templates; absent facts stay unknown. */
+  templateMetadata?: {
+    dateAdded: string | null;
+    dateModified: string | null;
+    authorName: string | null;
+    isExternal: boolean | null;
+    tags?: readonly Pick<TemplateTag, "name" | "type">[];
+  };
 }
 
 /** One Attachment's Annotations, beside the source that answered for them. */
@@ -1963,6 +1972,13 @@ function toRecord(
     tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
+    templateMetadata: {
+      dateAdded: annotation.dateAdded.toString(),
+      dateModified: annotation.dateModified.toString(),
+      authorName: annotation.authorName,
+      isExternal: annotation.isExternal,
+      tags: annotation.tagDetails,
+    },
   };
 }
 
@@ -1978,6 +1994,11 @@ function fromLocalApi({
   tags,
   position,
   version,
+  dateAdded,
+  dateModified,
+  authorName,
+  isExternal,
+  tagDetails,
 }: LocalApiAnnotation): AnnotationRecord {
   return {
     key,
@@ -1990,5 +2011,12 @@ function fromLocalApi({
     tags,
     position,
     version,
+    templateMetadata: {
+      dateAdded,
+      dateModified: dateModified ?? null,
+      authorName: authorName ?? null,
+      isExternal: isExternal ?? null,
+      tags: tagDetails,
+    },
   };
 }

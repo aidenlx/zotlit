@@ -45,6 +45,7 @@ import {
 import type { LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyAnnotationInsert } from "./annotation-insert.ts";
 import {
   cli,
   cliCommand,
@@ -484,6 +485,14 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  it.each(["main", "popout"] as const)(
+    "inserts a captured annotation safely in a %s editor",
+    async (host) => {
+      await verifyAnnotationInsert(vaultId, host);
+    },
+    120000,
+  );
 
   it("creates durable image and ink excerpts with PDF readers closed", async () => {
     const parent = join(workspaceRoot, "tmp");

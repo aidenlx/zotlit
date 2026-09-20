@@ -732,7 +732,9 @@ describe("createNote", () => {
       Object.assign(app.vault, {
         adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
           getFullPath: (path: string) => `${root}/${path}`,
+          reconcileInternalFile: async () => {},
         }),
+        getFileByPath: (path: string) => makeFile(path),
       });
       deps.app = app;
       const resolver = {

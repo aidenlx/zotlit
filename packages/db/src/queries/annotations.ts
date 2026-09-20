@@ -1,6 +1,7 @@
 import type { NodeDatabaseClient } from "@/client/node";
 import type { Annotation } from "@/lib/zt-annot";
 import { formatIndexedKey } from "@/lib/zt-key";
+import { tagTypeToName } from "@/lib/zt-tag";
 
 import { groupIDForLibrary, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
@@ -20,7 +21,7 @@ const annotationFindOptions = {
       },
       with: {
         itemTags: {
-          columns: {},
+          columns: { type: true },
           with: { tag: { columns: { name: true } } },
         },
       },
@@ -192,6 +193,10 @@ function toAnnotation(
     color: row.color,
     pageLabel: row.pageLabel,
     tags: row.item.itemTags.map((it) => it.tag.name),
+    tagDetails: row.item.itemTags.map((it) => ({
+      name: it.tag.name,
+      type: tagTypeToName(it.type),
+    })),
     sortIndex: row.sortIndex,
     position: row.position,
     authorName: row.authorName,

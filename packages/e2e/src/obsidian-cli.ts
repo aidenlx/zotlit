@@ -15,6 +15,8 @@ const CLI_TIMEOUT_MS = 15_000;
 export async function cli(args: string[]): Promise<string> {
   const result = await execFileAsync("obsidian", args, {
     timeout: CLI_TIMEOUT_MS,
+    // A wedged Electron CLI child can ignore SIGTERM; enforce the existing deadline.
+    killSignal: "SIGKILL",
     windowsHide: true,
   });
   return `${result.stdout}${result.stderr}`.trim();

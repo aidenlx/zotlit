@@ -26,6 +26,7 @@ import type {
   ExcerptPreparation,
   PreparedExcerpts,
 } from "@/services/excerpt-image/prepare";
+import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -99,6 +100,12 @@ export interface NoteFeatureDeps {
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   noteImport: Pick<NoteImporter, "prepare">;
   excerptImages?: ExcerptPreparation;
+  singleExcerpt?: (
+    options: Omit<
+      Parameters<typeof prepareSingleExcerpt>[0],
+      "app" | "resolver"
+    >,
+  ) => ReturnType<typeof prepareSingleExcerpt>;
 }
 
 /**

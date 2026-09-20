@@ -30,6 +30,10 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface FileSystemAdapter {
+    /** Register an externally published file before an editor consumes its link (Obsidian 1.14.2). */
+    reconcileInternalFile(normalizedPath: string): Promise<void>;
+  }
   /** Cold-loads the host PDF.js module and configures its worker. Internal. */
   export function loadPdfJs(): Promise<
     import("../services/excerpt-image/renderer").ExcerptPdfJs

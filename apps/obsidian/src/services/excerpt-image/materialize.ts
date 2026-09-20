@@ -6,6 +6,7 @@ import {
   open,
   readFile,
   realpath,
+  stat,
   unlink,
 } from "node:fs/promises";
 import { basename, dirname, relative, isAbsolute, sep } from "node:path";
@@ -50,6 +51,8 @@ async function readPreviousImage(path: string): Promise<Buffer> {
     throw new Error("Previous excerpt grew during verification");
   return buffer.subarray(0, offset);
 }
+// Hold publication ownership until cancellation cleanup or successful handoff.
+const publications = new Map<string, Promise<void>>();
 export type MaterializedExcerpt =
   | {
       kind: "saved";
@@ -132,13 +135,21 @@ export async function materializeExcerpt(options: {
   settings: Readonly<Settings>;
   request: ExcerptRequest;
   outcome: ExcerptOutcome;
+  signal?: AbortSignal;
+  valid?: () => boolean;
 }): Promise<MaterializedExcerpt> {
   const { app, request, outcome, settings } = options;
   if (!settings["attachment.import"])
     return { kind: "unavailable", reason: "disabled" };
   if (outcome.kind === "unavailable")
     return { kind: "unavailable", reason: "source" };
+  const assertCurrent = () => {
+    options.signal?.throwIfAborted();
+    if (options.valid && !options.valid())
+      throw new Error("Excerpt insertion target is no longer current");
+  };
   try {
+    assertCurrent();
     const folder = await resolveAttachmentFolderPath(
       app,
       settings["attachment.folder-path"],
@@ -156,30 +167,65 @@ export async function materializeExcerpt(options: {
       `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.png`,
     );
     const destination = adapter.getFullPath(path);
-    await mkdir(dirname(destination), { recursive: true });
-    const temporary = `${destination}.${randomUUID()}.tmp`;
-    // Publish only complete bytes, using an exclusive hard link to preserve every existing version.
+    const previous = publications.get(destination);
+    const gate = Promise.withResolvers<void>();
+    publications.set(destination, gate.promise);
+    await previous;
+    let published = false;
+    let owned: Awaited<ReturnType<typeof stat>> | undefined;
     try {
-      await using file = await open(temporary, "wx");
-      await file.writeFile(outcome.bytes);
-      await file.sync();
+      assertCurrent();
+      await mkdir(dirname(destination), { recursive: true });
+      const temporary = `${destination}.${randomUUID()}.tmp`;
+      // Publish only complete bytes, using an exclusive hard link to preserve every existing version.
       try {
-        await link(temporary, destination);
-      } catch (error) {
-        if (!isErrno(error, "EEXIST")) throw error;
+        await using file = await open(temporary, "wx");
+        await file.writeFile(outcome.bytes, { signal: options.signal });
+        await file.sync();
+        owned = await file.stat();
+        assertCurrent();
+        try {
+          await link(temporary, destination);
+          published = true;
+        } catch (error) {
+          if (!isErrno(error, "EEXIST")) throw error;
+        }
+        const actual = await readFile(destination);
+        if (!actual.equals(outcome.bytes))
+          throw new Error(
+            "Excerpt destination does not match its content identity",
+          );
+        assertCurrent();
+      } finally {
+        await unlink(temporary).catch((error) => {
+          if (!isErrno(error, "ENOENT"))
+            logger.warn("Excerpt temporary cleanup failed", { error });
+        });
       }
-      const actual = await readFile(destination);
-      if (!actual.equals(outcome.bytes))
-        throw new Error(
-          "Excerpt destination does not match its content identity",
-        );
+      // The atomic filesystem publish precedes the vault's asynchronous watcher.
+      // Register it now so the first rendered embed can resolve its TFile.
+      assertCurrent();
+      await adapter.reconcileInternalFile(path);
+      assertCurrent();
+      if (!app.vault.getFileByPath(path))
+        throw new Error("Published excerpt is not registered in the vault");
+      return { kind: "saved", path, outcome };
+    } catch (error) {
+      if (published && owned) {
+        // An EEXIST asset belongs to another operation. Only this operation's
+        // still-identical inode can be removed before releasing the next waiter.
+        const current = await stat(destination).catch(() => null);
+        if (current?.ino === owned.ino && current.dev === owned.dev) {
+          await unlink(destination);
+          await adapter.reconcileInternalFile(path);
+        }
+      }
+      throw error;
     } finally {
-      await unlink(temporary).catch((error) => {
-        if (!isErrno(error, "ENOENT"))
-          logger.warn("Excerpt temporary cleanup failed", { error });
-      });
+      gate.resolve();
+      if (publications.get(destination) === gate.promise)
+        publications.delete(destination);
     }
-    return { kind: "saved", path, outcome };
   } catch (error) {
     logger.debug("Excerpt materialization failed", { error });
     return { kind: "unavailable", reason: "write" };

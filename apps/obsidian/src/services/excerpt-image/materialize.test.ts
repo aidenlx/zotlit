@@ -8,7 +8,7 @@ import {
   truncate,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { FileSystemAdapter, TFolder } from "obsidian";
+import { FileSystemAdapter, TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -54,6 +54,7 @@ async function fixture() {
   await mkdir(parent, { recursive: true });
   const root = await mkdtemp(`${parent}/vault-`);
   const folders = new Map<string, TFolder>();
+  const files = new Map<string, TFile>();
   const createFolder = vi.fn(async (path: string) => {
     await mkdir(`${root}/${path}`, { recursive: true });
     const folder = Object.assign(new TFolder(), { path });
@@ -62,11 +63,16 @@ async function fixture() {
   });
   const adapter = Object.assign(Object.create(FileSystemAdapter.prototype), {
     getFullPath: (path: string) => `${root}/${path}`,
+    reconcileInternalFile: vi.fn(async (path: string) => {
+      await readFile(`${root}/${path}`);
+      files.set(path, Object.assign(new TFile(), { path }));
+    }),
   });
   const app = {
     vault: {
       adapter,
       createFolder,
+      getFileByPath: (path: string) => files.get(path) ?? null,
       getAbstractFileByPath: (path: string) => folders.get(path) ?? null,
     },
     fileManager: {},
@@ -80,8 +86,15 @@ async function fixture() {
     root,
     app,
     createFolder,
-    save: (input = request, bytes = new Uint8Array([11, 22, 33])) =>
+    adapter,
+    files,
+    save: (
+      input = request,
+      bytes = new Uint8Array([11, 22, 33]),
+      signal?: AbortSignal,
+    ) =>
       materializeExcerpt({
+        signal,
         app,
         notePath: "Paper.md",
         settings,
@@ -98,6 +111,59 @@ async function fixture() {
     },
   };
 }
+
+it("waits for vault registration after complete bytes are published", async () => {
+  await using f = await fixture();
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let completed = false;
+  f.adapter.reconcileInternalFile.mockImplementation(async (path: string) => {
+    expect([...(await readFile(join(f.root, path)))]).toEqual([11, 22, 33]);
+    expect(f.app.vault.getFileByPath(path)).toBeNull();
+    started.resolve();
+    await release.promise;
+    f.files.set(path, Object.assign(new TFile(), { path }));
+  });
+  const operation = f.save().then((result) => {
+    completed = true;
+    return result;
+  });
+  await started.promise;
+  expect(completed).toBe(false);
+  release.resolve();
+  expect((await operation).kind).toBe("saved");
+});
+
+it("returns unavailable when publication cannot produce a registered TFile", async () => {
+  await using f = await fixture();
+  f.adapter.reconcileInternalFile.mockImplementation(async () => {});
+  expect(await f.save()).toEqual({ kind: "unavailable", reason: "write" });
+});
+
+it("finishes cancelled-owner cleanup before a concurrent consumer adopts the same asset", async () => {
+  await using f = await fixture();
+  const controller = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  f.adapter.reconcileInternalFile.mockImplementationOnce(async () => {
+    started.resolve();
+    await release.promise;
+  });
+  const cancelled = f.save(undefined, undefined, controller.signal);
+  await started.promise;
+  const consumer = f.save();
+  controller.abort();
+  release.resolve();
+  expect((await cancelled).kind).toBe("unavailable");
+  const saved = await consumer;
+  expect(saved.kind).toBe("saved");
+  if (saved.kind !== "saved") return;
+  expect(await readFile(join(f.root, saved.path))).toEqual(
+    Buffer.from([11, 22, 33]),
+  );
+  expect(await readdir(join(f.root, "Images"))).toHaveLength(1);
+  expect(f.app.vault.getFileByPath(saved.path)).not.toBeNull();
+});
 
 it("publishes complete immutable versions and isolates source and library identity", async () => {
   await using f = await fixture();

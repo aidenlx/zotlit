@@ -146,7 +146,7 @@ export interface AnnotViewDeps {
   excerptImage: Pick<ExcerptImageService, "resolve">;
   noteFeature: Pick<
     NoteFeature,
-    "renderAnnotation" | "renderAnnotationCitation"
+    "renderAnnotation" | "renderAnnotationCitation" | "prepareAnnotationInsert"
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
@@ -276,6 +276,22 @@ export class AnnotationView extends ItemView {
       onSettled: () => this.#syncImportHandle(),
     };
 
+    const insert = createInsertHandler({
+      app: this.#deps.app,
+      noteFeature: this.#deps.noteFeature,
+      notify: (message) => void new BaseNotice(message),
+      snapshot: (annotation) => {
+        const state = this.#store.getState();
+        return {
+          source: state.annotations?.includes(annotation)
+            ? state.annotationSource
+            : null,
+          sourceScope: state.annotationSourceScope,
+        };
+      },
+    });
+    this.register(insert.cancel);
+
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       scope: this.scope,
@@ -325,7 +341,9 @@ export class AnnotationView extends ItemView {
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
       onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
       onDragStart: createDragInsertHandler(insertDeps),
-      insertAnnotation: createInsertHandler(insertDeps),
+      insertAnnotation: (annotation) => {
+        void insert(annotation);
+      },
       renderComment: createCommentRenderer({
         app: this.#deps.app,
         component: this,

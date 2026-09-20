@@ -105,7 +105,40 @@ it("reads every Annotation of one Attachment in Zotero's reading order", async (
     // Never moves after the create, which is what makes it the window an
     // Uncertain Create is reconciled inside (aidenlx/zotlit#1151).
     dateAdded: "2026-08-23T16:18:18Z",
+    dateModified: null,
+    authorName: null,
+    isExternal: null,
     tags: [],
+    tagDetails: [],
+  });
+});
+
+it("preserves template metadata supplied by the Local API", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: async () => {
+      const response = annotationPage([ROUGIER_ANNOTATIONS[0]!]);
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      }[];
+      Object.assign(body[0]!.data, {
+        dateModified: "2026-09-20T01:02:03Z",
+        annotationAuthorName: "A. Reader",
+        annotationIsExternal: true,
+        tags: [{ tag: "review" }, { tag: "imported", type: 1 }],
+      });
+      return new Response(JSON.stringify(body), { headers: response.headers });
+    },
+  });
+  await client.probe();
+  expect(read(await client.listAnnotations(ATTACHMENT_KEY))[0]).toMatchObject({
+    dateModified: "2026-09-20T01:02:03Z",
+    authorName: "A. Reader",
+    isExternal: true,
+    tagDetails: [
+      { name: "review", type: "manual" },
+      { name: "imported", type: "auto" },
+    ],
   });
 });
 

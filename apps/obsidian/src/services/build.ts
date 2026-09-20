@@ -23,6 +23,7 @@ import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
+import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
@@ -321,6 +322,12 @@ export function buildServices(
         noteImport,
       }): NoteFeature =>
         createNoteFeature({
+          singleExcerpt: (options) =>
+            prepareSingleExcerpt({
+              ...options,
+              app: plugin.app,
+              resolver: excerptImage,
+            }),
           excerptImages: (options) =>
             createExcerptPreparation({
               app: plugin.app,

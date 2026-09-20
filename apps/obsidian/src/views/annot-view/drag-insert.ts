@@ -1,14 +1,21 @@
 import type { App } from "obsidian";
 import type { DragEvent } from "react";
 
+import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type {
+  AnnotationRecord,
+  AnnotationSource,
+} from "@/services/annotation-repository/service";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
+
+import { captureInsertion } from "./async-insert";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -99,25 +106,96 @@ function renderAnnotation(
  * reaches, so a pointer is no longer the only thing that carries an Annotation
  * into a note.
  */
-export function createInsertHandler(deps: DragInsertDeps) {
-  return (annot: AnnotationRecord): void => {
-    const editor = deps.app.workspace.activeEditor?.editor;
-    if (!editor) {
-      new BaseNotice(m.annot_view_insert_no_note());
+export function createInsertHandler(deps: {
+  app: App;
+  noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
+  snapshot: (annotation: AnnotationRecord) => {
+    source: AnnotationSource | null;
+    sourceScope: string | null;
+  };
+  notify: (message: string | DocumentFragment) => void;
+}) {
+  let pending: ReturnType<typeof captureInsertion> | null = null;
+  const cancel = () => pending?.cancel();
+  const insert = async (annot: AnnotationRecord): Promise<void> => {
+    cancel();
+    const { workspace } = deps.app;
+    const info = workspace.activeEditor;
+    const editor = info?.editor;
+    if (!info?.file || !editor) {
+      deps.notify(m.annot_view_insert_no_note());
       return;
     }
-
-    const render = renderAnnotation(deps, annot);
-    if (render.kind === "unavailable") return;
-
-    editor.replaceSelection(render.text);
-    if (render.kind === "rendered") {
-      void render.handle.flush().catch((error) => {
-        logger.warn("Failed to import inserted annotation image", { error });
-      });
+    const { source, sourceScope } = deps.snapshot(annot);
+    if (!source || sourceScope === null) {
+      deps.notify(m.annot_view_drag_unavailable());
+      return;
     }
-    deps.onSettled();
+    using target = captureInsertion({
+      editor,
+      info,
+      isCurrent: () =>
+        workspace.activeEditor?.editor === editor &&
+        workspace.activeEditor.file === info.file,
+    });
+    pending = target;
+    const changed = workspace.on("active-leaf-change", () => {
+      if (!target.valid()) target.cancel();
+    });
+    try {
+      const result = await deps.noteFeature.prepareAnnotationInsert({
+        annotation: annot,
+        source,
+        sourceScope,
+        notePath: info.file.path,
+        signal: target.signal,
+        valid: target.valid,
+      });
+      if (!result && target.valid()) {
+        const key = parseIndexedKey(annot.key);
+        const parent = parseIndexedKey(annot.parentKey);
+        const fallback =
+          annot.text ??
+          `${m.excerpt_image_unavailable()}${key && parent ? ` [Zotero](${annotationOpenUri({ annotationKey: key.key, attachmentKey: parent.key, groupID: key.groupID, pageLabel: annot.pageLabel })})` : ""}`;
+        if (target.commit(fallback))
+          deps.notify(m.annot_view_drag_unavailable());
+      }
+      if (result && target.commit(result.text)) {
+        const summary = result.summary;
+        if (summary.zotero || summary.unchecked || summary.unavailable)
+          deps.notify(
+            m.excerpt_image_summary({
+              ...summary,
+              notRefreshed: summary.notRefreshed ?? 0,
+            }),
+          );
+      }
+    } catch (error) {
+      if (target.signal.aborted || !target.valid()) return;
+      if (error instanceof ProfileAnnotationError) {
+        deps.notify(
+          error.diagnostic.code === "unknown-literature-note-profile"
+            ? profileRecoveryNotice(deps.app, error.diagnostic)
+            : error.message,
+        );
+        target.commit(annot.text ?? annot.key);
+      } else {
+        logger.warn("Annotation insert failed", {
+          annotationKey: annot.key,
+          error,
+        });
+        deps.notify(
+          error instanceof Error
+            ? error.message
+            : m.annot_view_drag_unavailable(),
+        );
+      }
+    } finally {
+      workspace.offref(changed);
+      if (pending === target) pending = null;
+    }
   };
+  return Object.assign(insert, { cancel });
 }
 
 /**

@@ -142,6 +142,13 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
       rects: [[398.804, 685.107, 560.804, 702.107]],
     },
     version: 0,
+    templateMetadata: {
+      dateAdded: "2026-08-23T16:18:18Z",
+      dateModified: "2026-08-23T16:19:07Z",
+      authorName: null,
+      isExternal: false,
+      tags: [],
+    },
   });
 });
 
@@ -309,9 +316,19 @@ it("draws the same mark from either source, the object version apart", async () 
   // Each source carries its own committed revision, so compare the visible
   // Annotation data independently from that handoff metadata.
   expect(
-    fromLocalApi?.annotations.map((record) => ({ ...record, version: null })),
+    fromLocalApi?.annotations.map(
+      ({ templateMetadata: _metadata, ...record }) => ({
+        ...record,
+        version: null,
+      }),
+    ),
   ).toEqual(
-    fromDatabase?.annotations.map((record) => ({ ...record, version: null })),
+    fromDatabase?.annotations.map(
+      ({ templateMetadata: _metadata, ...record }) => ({
+        ...record,
+        version: null,
+      }),
+    ),
   );
   expect(fromDatabase?.annotations.map(({ version }) => version)).toEqual([
     0, 0, 0, 0, 29, 0, 0,

@@ -85,6 +85,8 @@ import type {
   ManagedFrontmatterPreparationFailure,
   PreparedManagedFrontmatter,
 } from "./frontmatter";
+import { prepareAnnotationInsert } from "./insert-annotation";
+import type { AnnotationInsertOptions } from "./insert-annotation";
 
 const logger = getLogger("note-feature");
 
@@ -396,6 +398,9 @@ export interface NoteFeature {
   ): string | null;
   /** @see renderAnnotationCitation */
   renderAnnotationCitation(annotationItemId: number): string | null;
+  prepareAnnotationInsert(
+    options: AnnotationInsertOptions,
+  ): ReturnType<typeof prepareAnnotationInsert>;
   /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
   on<K extends keyof NoteFeatureEvents>(
     event: K,
@@ -508,6 +513,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       renderAnnotation(ctx, annotationItemId, options),
     renderAnnotationCitation: (annotationItemId) =>
       renderAnnotationCitation(ctx, annotationItemId),
+    prepareAnnotationInsert: (options) => prepareAnnotationInsert(ctx, options),
     on: (event, cb) => events.on(event, cb),
   };
 }
