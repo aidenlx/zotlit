@@ -306,20 +306,12 @@ export class MarkSelection implements Disposable {
   }
 
   [Symbol.dispose](): void {
-    const annotation = this.#record();
-    if (annotation && this.#commentEditor) {
-      this.#submitCommentEditor(annotation);
-    }
-    this.#closeCommentEditor();
+    this.#submitAndCloseCommentEditor();
     this.#surfaces.dispose();
   }
 
   #close(): void {
-    const annotation = this.#record();
-    if (annotation && this.#commentEditor) {
-      this.#submitCommentEditor(annotation);
-    }
-    this.#closeCommentEditor();
+    this.#submitAndCloseCommentEditor();
     const popup = this.#popup;
     this.#popup = null;
     popup?.hide();
@@ -335,11 +327,7 @@ export class MarkSelection implements Disposable {
     { popup = true }: { popup?: boolean } = {},
   ): void {
     if (key !== this.#selected) {
-      const annotation = this.#record();
-      if (annotation && this.#commentEditor) {
-        this.#submitCommentEditor(annotation);
-      }
-      this.#closeCommentEditor();
+      this.#submitAndCloseCommentEditor();
     }
     this.#quiet = !popup && key !== null;
     this.#selected = key;
@@ -546,6 +534,14 @@ export class MarkSelection implements Disposable {
     if (!editor) return;
     this.#deps.annotations.editComment(annotation.key, editor.value);
     this.#write(this.#deps.annotations.submitComment(annotation.key));
+  }
+
+  #submitAndCloseCommentEditor(): void {
+    const annotation = this.#record();
+    if (annotation && this.#commentEditor) {
+      this.#submitCommentEditor(annotation);
+    }
+    this.#closeCommentEditor();
   }
 
   #closeCommentEditor(): void {

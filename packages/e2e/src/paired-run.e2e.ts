@@ -598,8 +598,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     beforeAll(async () => {
       const resources = new AsyncDisposableStack();
       cleanup = resources;
-      rdp = await openZoteroRdp(debuggerPort!);
-      resources.defer(() => rdp[Symbol.dispose]());
+      rdp = resources.use(await openZoteroRdp(debuggerPort!));
       const pdfDigestBefore = await digestAttachmentPdf();
       expect(pdfDigestBefore).toHaveLength(64);
       resources.defer(async () => {
@@ -765,8 +764,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       beforeAll(async () => {
         cleanup = new AsyncDisposableStack();
-        rdp = await openZoteroRdp(debuggerPort!);
-        cleanup.defer(() => rdp[Symbol.dispose]());
+        rdp = cleanup.use(await openZoteroRdp(debuggerPort!));
         await prepareAuthorizationFixture();
         workspaceLayout = await obEval(
           vaultId!,
@@ -1156,6 +1154,123 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           stored,
         );
       }, 120000);
+
+      for (const pending of ["unsent draft", "in-flight write"] as const) {
+        it(`reloads with an ${pending} and reads Zotero without replay`, async () => {
+          const baseline = await readAnnotationState(api, serverID, createdKey);
+          const color = "#a28ae5";
+          if (pending === "in-flight write") {
+            await installClosingPaneProbe(vaultId!, createdKey, color);
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                "String(window.__zotlitWriteOutcomeProbe?.reached)",
+                { expected: "true" },
+              ),
+            ).toBe(true);
+          }
+          const stored = await annotationState(api, serverID, createdKey);
+          if (pending === "in-flight write") {
+            expect(stored.color).toBe(color);
+          }
+
+          // Start the real plugin lifecycle in the same renderer turn as the
+          // draft edit, before its idle timer can fire. The plugin's unload
+          // starts asynchronous service disposal without awaiting it, so the
+          // registry is the completion signal available to this consumer.
+          const unloading = await obJson<{
+            draft: string | null;
+            timers: number;
+            calls: number;
+            outcome: unknown;
+          }>(`(()=>{
+            const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+            let draft=null;
+            let timers=0;
+            if (${String(pending === "unsent draft")}) {
+              const schedule=window.setTimeout;
+              window.setTimeout=function(...args){timers++;return schedule.apply(this,args)};
+              try { draft=repository.editComment(${JSON.stringify(createdKey)},'Unsent comment discarded on reload')?.text??null; }
+              finally { window.setTimeout=schedule; }
+            }
+            const probe=window.__zotlitWriteOutcomeProbe;
+            const calls=probe?.calls??0;
+            const outcome=probe?.outcome??null;
+            const lifecycle={disabled:false,enabled:false,error:null};
+            window.__zotlitReloadProbe=lifecycle;
+            void (async()=>{
+              try {
+                await app.plugins.disablePlugin('zotlit');
+                lifecycle.disabled=!app.plugins.plugins.zotlit;
+                await app.plugins.enablePlugin('zotlit');
+                lifecycle.enabled=!!app.plugins.plugins.zotlit?.services;
+              } catch(error) {
+                lifecycle.error=String(error);
+              }
+            })();
+            return JSON.stringify({draft,timers,calls,outcome});
+          })()`);
+          expect(unloading).toEqual(
+            pending === "unsent draft"
+              ? {
+                  draft: "Unsent comment discarded on reload",
+                  timers: 2,
+                  calls: 0,
+                  outcome: null,
+                }
+              : { draft: null, timers: 0, calls: 1, outcome: null },
+          );
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              "JSON.stringify(window.__zotlitReloadProbe)",
+              {
+                expected: JSON.stringify({
+                  disabled: true,
+                  enabled: true,
+                  error: null,
+                }),
+              },
+            ),
+          ).toBe(true);
+
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.probe();const list=await repository.read(${JSON.stringify(attachment.key)});const record=list?.annotations.find(annotation=>annotation.key===${JSON.stringify(createdKey)});return JSON.stringify({color:record?.color,comment:record?.comment,draft:repository.commentDraftFor(${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})});})()`,
+              {
+                expected: JSON.stringify({
+                  color: stored.color,
+                  comment: baseline.comment,
+                  draft: null,
+                  mutation: { kind: "idle" },
+                }),
+              },
+            ),
+          ).toBe(true);
+          // Complete the old response only after the new repository read.
+          // Its completion must not restore the old operation or send again.
+          await restoreWriteOutcomeProbe(vaultId!);
+          await obEval(vaultId!, "delete window.__zotlitReloadProbe;true");
+          expect(
+            await obJson(
+              `JSON.stringify((()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;return {draft:repository.commentDraftFor(${JSON.stringify(createdKey)}),mutation:repository.mutationFor(${JSON.stringify(createdKey)})}})())`,
+            ),
+          ).toEqual({ draft: null, mutation: { kind: "idle" } });
+          expect(await annotationState(api, serverID, createdKey)).toEqual(
+            stored,
+          );
+          expect(await readAnnotationState(api, serverID, createdKey)).toEqual({
+            ...baseline,
+            version: stored.version,
+          });
+          console.info("Pending-work reload evidence", {
+            pending,
+            unloading,
+            stored,
+          });
+        }, 120000);
+      }
 
       it("finishes a repository write after both panes close", async () => {
         const committed = "#2ea8e5";

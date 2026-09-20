@@ -4,7 +4,7 @@ Tested on 2026-09-20 in PR #1167, the #1157 integration build with the #1166
 acceptance changes applied. The paired run used Zotero 10.0, Build ID
 `20260817111755`.
 
-The real paired run passed all 26 tests. It covered Local API reads and write
+The final real paired run passed all 28 tests. It covered Local API reads and write
 authorization, native concurrent PATCH and DELETE behavior, create and edit in
 the PDF marks and annotation cards, a pop-out card's native shortcut scope,
 external Zotero changes, refresh without the Companion, an acknowledged write
@@ -57,3 +57,19 @@ work.
 
 The final repository test run passed all 28 tasks, including 4,474 Obsidian
 tests. Test TypeScript, repository lint, and repository format checks passed.
+
+## Pending-work reload follow-up
+
+The final review added two paired cases that unload and enable the real
+plugin while a comment has unsent save timers, and while a committed color
+write still waits for its response. The cases observe repository disposal
+through the plugin lifecycle. They then require a fresh repository read of
+Zotero's saved values, an empty draft, and idle mutation state. They release
+the old response after the new read and check the saved version and comment
+again to detect replay.
+
+On 2026-09-20, the final Paired Run passed all 28 tests in 22.54 seconds on
+Obsidian 1.14.2 and Zotero 10.0. Both pending-work reload cases passed. The
+e2e TypeScript check, focused Oxlint, and formatting also passed. Obsidian's
+main-process log contained no `frame.origin` exception, and its captured
+renderer errors contained only `ResizeObserver` delivery warnings.
