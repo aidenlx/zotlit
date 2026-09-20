@@ -793,7 +793,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     );
     await obEval(
       freshId,
-      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.leaf.getContainer().focus();return true;})()`,
+      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.contentEl.ownerDocument.defaultView.focus();app.workspace.setActiveLeaf(view.leaf,{focus:true});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -2221,9 +2221,11 @@ describe.skipIf(!reachable || pairedZotero !== null)(
         ),
       ).toBe("0");
       expect(
-        (await readdir(vaultPath, { recursive: true })).filter(
-          (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
-        ),
+        (await readdir(vaultPath, { recursive: true }))
+          .filter(
+            (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
+          )
+          .map((path) => path.replaceAll("\\", "/")),
       ).toEqual(["templates/zotlit-profile.default.md"]);
 
       await openAdd();

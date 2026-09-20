@@ -1,5 +1,6 @@
 // Real Obsidian acceptance for generated excerpt-rendering PDFs.
 
+import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 
 import {
@@ -83,6 +84,37 @@ function requestScript(index: number): string {
 function identity(result: PixelResult): Omit<PixelResult, "released"> {
   const { released: _released, ...value } = result;
   return value;
+}
+
+/** Stage long eval source below Windows' command-line limit, then run it. */
+async function stagedEval(vaultId: string, code: string): Promise<string> {
+  const property = "__zotlitE2EStagedEval";
+  expect(
+    await obEval(
+      vaultId,
+      `(()=>{if(app.${property}!==undefined)throw new Error('Staged eval already active');app.${property}='';return true;})()`,
+    ),
+  ).toBe("true");
+  try {
+    for (let offset = 0; offset < code.length; offset += 2000) {
+      const chunk = code.slice(offset, offset + 2000);
+      expect(
+        await obEval(
+          vaultId,
+          `(()=>{app.${property}+=${JSON.stringify(chunk)};return true;})()`,
+        ),
+      ).toBe("true");
+    }
+    return await obEval(
+      vaultId,
+      `(()=>{const code=app.${property};delete app.${property};return (0,eval)(code);})()`,
+    );
+  } finally {
+    await obEval(
+      vaultId,
+      `(()=>{delete app.${property};return true;})()`,
+    ).catch(() => undefined);
+  }
 }
 
 async function waitForPlugin(vaultId: string): Promise<void> {
@@ -211,11 +243,35 @@ async function startRenderProbe(
 }
 
 export async function verifyExcerptRendering(vaultId: string): Promise<void> {
-  const code = `(async()=>{
+  const owner = randomUUID();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(async () => {
+    await obEval(
+      vaultId,
+      `(async()=>{const acceptance=app.__zotlitExcerptAcceptance;if(!acceptance||acceptance.owner!==${JSON.stringify(owner)})return true;acceptance.controller.abort();if(acceptance.timer!==null){clearTimeout(acceptance.timer);acceptance.timer=null;acceptance.settled=true;}else if(!acceptance.started)acceptance.settled=true;const deadline=performance.now()+5000;while(!acceptance.settled&&performance.now()<deadline)await new Promise(resolve=>setTimeout(resolve,25));const settled=acceptance.settled;if(app.__zotlitExcerptAcceptance===acceptance)delete app.__zotlitExcerptAcceptance;if(!settled)throw new Error('Excerpt acceptance did not settle after abort');return true;})()`,
+    );
+  });
+  expect(
+    await obEval(
+      vaultId,
+      `(()=>{if(app.__zotlitExcerptAcceptance)throw new Error('Excerpt acceptance already active');app.__zotlitExcerptAcceptance={owner:${JSON.stringify(owner)},started:false,settled:false,timer:null,controller:new AbortController(),result:null,error:null,cases:${JSON.stringify(EXCERPT_RENDERING_CASES)}};return true;})()`,
+    ),
+  ).toBe("true");
+  const code = `(()=>{
+    const acceptance=app.__zotlitExcerptAcceptance;
+    if(!acceptance||acceptance.settled)throw new Error('Excerpt acceptance unavailable');
+    const assertActive=()=>{if(acceptance.controller.signal.aborted)throw new DOMException('Excerpt acceptance aborted','AbortError');};
+    acceptance.timer=setTimeout(()=>{acceptance.started=true;acceptance.timer=null;if(acceptance.controller.signal.aborted){acceptance.settled=true;return;}void (async()=>{
     const service=app.plugins.plugins.zotlit.services.excerptImage;
+    const clear=async()=>{assertActive();await service.clear();assertActive();};
+    const resolve=async request=>{assertActive();const outcome=await service.resolve(request,acceptance.controller.signal);assertActive();return outcome;};
     const pdfLeavesBefore=app.workspace.getLeavesOfType('pdf').length;
-    const cases=${JSON.stringify(EXCERPT_RENDERING_CASES)};
-    const pdfs=${JSON.stringify(EXCERPT_RENDERING_PDFS)};
+    const cases=acceptance.cases;
+    const failuresToCheck=${JSON.stringify(
+      EXCERPT_RENDERING_PDFS.filter(
+        ({ outcome }) => outcome !== "renderable",
+      ).map(({ asset }) => asset.split("/").at(-1)),
+    )};
     const relative=${JSON.stringify(relativePdf)};
     const file=app.vault.getAbstractFileByPath(relative);
     if(!file)throw new Error('Excerpt acceptance PDF missing from Fixture Vault');
@@ -227,14 +283,30 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
       try{canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');if(!context)throw new Error('Acceptance canvas unavailable');context.drawImage(bitmap,0,0);const samples=entry.expected.samples.map(([x,y])=>Array.from(context.getImageData(x,y,1,1).data));value={kind:outcome.kind,provenance:outcome.provenance,bytes:outcome.bytes.length,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex'),width:bitmap.width,height:bitmap.height,samples};}finally{if(canvas){canvas.width=0;canvas.height=0;}bitmap.close();}
       return {...value,released:canvas.width===0&&canvas.height===0};
     };
-    await service.clear();const coldStart=performance.now();const cold=[];for(const [index,entry] of cases.entries())cold.push(await summarize(await service.resolve(request(entry,index)),entry));const coldMs=performance.now()-coldStart;
-    const warmStart=performance.now();const warm=[];for(const [index,entry] of cases.entries())warm.push(await summarize(await service.resolve(request(entry,index)),entry));const warmMs=performance.now()-warmStart;
-    await service.clear();const rerenderStart=performance.now();const rerender=await summarize(await service.resolve(request(cases[0],0)),cases[0]);const rerenderMs=performance.now()-rerenderStart;
-    const failures=[];for(const fixture of pdfs.filter(({outcome})=>outcome!=='renderable')){const name=fixture.asset.split('/').at(-1);const path=app.vault.adapter.getFullPath(${JSON.stringify(EXCERPT_RENDERING_VAULT_DIR)}+'/'+name);const input={...request(cases[0],90+failures.length),attachmentKey:'FAIL'+failures.length,pdfPath:path};failures.push({name,kind:(await service.resolve(input)).kind});}
-    const electronWindow=require('@electron/remote').getCurrentWindow();const state=()=>({minimized:electronWindow.isMinimized(),visible:electronWindow.isVisible()});const before=state();const waitFor=(check,action)=>new Promise((resolve,reject)=>{const deadline=setTimeout(()=>{clearInterval(interval);reject(new Error('Electron window state did not settle'));},5000);const interval=setInterval(()=>{if(!check())return;clearTimeout(deadline);clearInterval(interval);resolve();},25);action();});let during,after;const minimized=[];try{if(!before.minimized)await waitFor(()=>electronWindow.isMinimized(),()=>electronWindow.minimize());during=state();await service.clear();for(const [index,entry] of cases.entries())minimized.push(await summarize(await service.resolve(request(entry,index)),entry));}finally{if(!before.minimized)await waitFor(()=>!electronWindow.isMinimized(),()=>electronWindow.restore());after=state();}
-    return JSON.stringify({coldMs,warmMs,rerenderMs,cold,warm,rerender,minimized,failures,pdfLeaves:{before:pdfLeavesBefore,after:app.workspace.getLeavesOfType('pdf').length},electron:{before,during,after}});
+    await clear();const coldStart=performance.now();const cold=[];for(const [index,entry] of cases.entries())cold.push(await summarize(await resolve(request(entry,index)),entry));const coldMs=performance.now()-coldStart;
+    const warmStart=performance.now();const warm=[];for(const [index,entry] of cases.entries())warm.push(await summarize(await resolve(request(entry,index)),entry));const warmMs=performance.now()-warmStart;
+    await clear();const rerenderStart=performance.now();const rerender=await summarize(await resolve(request(cases[0],0)),cases[0]);const rerenderMs=performance.now()-rerenderStart;
+    const failures=[];for(const name of failuresToCheck){const path=app.vault.adapter.getFullPath(${JSON.stringify(EXCERPT_RENDERING_VAULT_DIR)}+'/'+name);const input={...request(cases[0],90+failures.length),attachmentKey:'FAIL'+failures.length,pdfPath:path};failures.push({name,kind:(await resolve(input)).kind});}
+    const electronWindow=require('@electron/remote').getCurrentWindow();const state=()=>({minimized:electronWindow.isMinimized(),visible:electronWindow.isVisible()});const before=state();const waitFor=(check,action)=>new Promise((resolve,reject)=>{const deadline=setTimeout(()=>{clearInterval(interval);reject(new Error('Electron window state did not settle'));},5000);const interval=setInterval(()=>{if(!check())return;clearTimeout(deadline);clearInterval(interval);resolve();},25);action();});let during,after;const minimized=[];try{if(!before.minimized)await waitFor(()=>electronWindow.isMinimized(),()=>electronWindow.minimize());during=state();await clear();for(const [index,entry] of cases.entries())minimized.push(await summarize(await resolve(request(entry,index)),entry));}finally{if(!before.minimized)await waitFor(()=>!electronWindow.isMinimized(),()=>electronWindow.restore());after=state();}
+    assertActive();
+    acceptance.result={coldMs,warmMs,rerenderMs,cold,warm,rerender,minimized,failures,pdfLeaves:{before:pdfLeavesBefore,after:app.workspace.getLeavesOfType('pdf').length},electron:{before,during,after}};
+    })().catch(error=>{acceptance.error=error?.stack??String(error);}).finally(()=>{acceptance.settled=true;});},0);
+    return true;
   })()`;
-  const result = JSON.parse(await obEval(vaultId, code)) as RenderingResult;
+  expect(await stagedEval(vaultId, code)).toBe("true");
+  expect(
+    await obEvalUntil(
+      vaultId,
+      "String(!!app.__zotlitExcerptAcceptance?.settled)",
+      { expected: "true", tries: 120 },
+    ),
+  ).toBe(true);
+  const result = JSON.parse(
+    await obEval(
+      vaultId,
+      `(()=>{const acceptance=app.__zotlitExcerptAcceptance;if(!acceptance)throw new Error('Excerpt acceptance missing');if(acceptance.error)throw new Error(acceptance.error);return JSON.stringify(acceptance.result);})()`,
+    ),
+  ) as RenderingResult;
 
   expect(result.cold).toHaveLength(EXCERPT_RENDERING_CASES.length);
   expect(
@@ -438,7 +510,7 @@ export async function verifyZoteroExcerptParity(
   const result = JSON.parse(
     await obEval(
       vaultId,
-      `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.ready;await services.db.refresh();const list=await services.annotationRepository.read('RGRPDF24');if(!list)throw new Error('Fixture annotations unavailable');const pdfPath=app.vault.adapter.getFullPath('attachments/rougier-2014.pdf');const summarize=async(bytes,color)=>{const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));let canvas;try{canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');if(!context)throw new Error('Parity canvas unavailable');context.drawImage(bitmap,0,0);const data=context.getImageData(0,0,bitmap.width,bitmap.height).data;const counts=[0,0,0,0];let foreground=0;let annotationColor=0;const foregroundBounds=[bitmap.width,bitmap.height,-1,-1];const annotationBounds=[bitmap.width,bitmap.height,-1,-1];const mark=(bounds,x,y)=>{bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y);};const normalized=bounds=>bounds[2]<0?null:[bounds[0]/bitmap.width,bounds[1]/bitmap.height,(bounds[2]+1)/bitmap.width,(bounds[3]+1)/bitmap.height];const rgb=color?color.match(/[0-9a-f]{2}/gi).map(value=>parseInt(value,16)):null;for(let y=0;y<bitmap.height;y++)for(let x=0;x<bitmap.width;x++){const offset=(y*bitmap.width+x)*4;const marked=data[offset]<245||data[offset+1]<245||data[offset+2]<245;if(marked){foreground++;mark(foregroundBounds,x,y);counts[(y>=bitmap.height/2?2:0)+(x>=bitmap.width/2?1:0)]++;}if(rgb&&Math.abs(data[offset]-rgb[0])<48&&Math.abs(data[offset+1]-rgb[1])<48&&Math.abs(data[offset+2]-rgb[2])<48){annotationColor++;mark(annotationBounds,x,y);}}return {width:bitmap.width,height:bitmap.height,foreground:foreground/(bitmap.width*bitmap.height),quadrants:counts.map(value=>foreground?value/foreground:0),annotationColor:rgb?annotationColor/(bitmap.width*bitmap.height):undefined,foregroundBox:normalized(foregroundBounds),annotationBox:rgb?normalized(annotationBounds):undefined};}finally{if(canvas){canvas.width=0;canvas.height=0;}bitmap.close();}};await services.excerptImage.clear();const output=[];for(const key of ${JSON.stringify(keys)}){const annotation=list.annotations.find(value=>value.key===key);if(!annotation)throw new Error('Missing Fixture annotation '+key);const fallback=require('path').join(services.zoteroPref.dataDir,'cache','library',key+'.png');const request={annotation,source:list.source,sourceScope:services.zoteroPref.dataDir,attachmentKey:'RGRPDF24',libraryID:1,pdfPath,zoteroPngPath:fallback};const outcome=await services.excerptImage.resolve(request);if(outcome.kind!=='available'||outcome.provenance!=='rendered')throw new Error('PDF render unavailable for '+key);const reference=await require('fs').promises.readFile(fallback);output.push({key,type:annotation.type,rendered:await summarize(outcome.bytes,annotation.type==='ink'?annotation.color:null),zotero:await summarize(reference,annotation.type==='ink'?annotation.color:null)});}return JSON.stringify(output);})()`,
+      `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.ready;await services.db.refresh();const list=await services.annotationRepository.read('RGRPDF24');if(!list)throw new Error('Fixture annotations unavailable');const pdfPath=app.vault.adapter.getFullPath('attachments/rougier-2014.pdf');const summarize=async(bytes,color)=>{const bitmap=await createImageBitmap(new Blob([bytes],{type:'image/png'}));let canvas;try{canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');if(!context)throw new Error('Parity canvas unavailable');context.drawImage(bitmap,0,0);const data=context.getImageData(0,0,bitmap.width,bitmap.height).data;const counts=[0,0,0,0];let foreground=0;let annotationColor=0;const foregroundBounds=[bitmap.width,bitmap.height,-1,-1];const annotationBounds=[bitmap.width,bitmap.height,-1,-1];const mark=(bounds,x,y)=>{bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y);};const normalized=bounds=>bounds[2]<0?null:[bounds[0]/bitmap.width,bounds[1]/bitmap.height,(bounds[2]+1)/bitmap.width,(bounds[3]+1)/bitmap.height];const rgb=color?color.match(/[0-9a-f]{2}/gi).map(value=>parseInt(value,16)):null;const isColor=(x,y)=>{if(!rgb||x<0||y<0||x>=bitmap.width||y>=bitmap.height)return false;const offset=(y*bitmap.width+x)*4;return Math.abs(data[offset]-rgb[0])<48&&Math.abs(data[offset+1]-rgb[1])<48&&Math.abs(data[offset+2]-rgb[2])<48;};for(let y=0;y<bitmap.height;y++)for(let x=0;x<bitmap.width;x++){const offset=(y*bitmap.width+x)*4;const marked=data[offset]<245||data[offset+1]<245||data[offset+2]<245;if(marked){foreground++;mark(foregroundBounds,x,y);counts[(y>=bitmap.height/2?2:0)+(x>=bitmap.width/2?1:0)]++;}if(isColor(x,y)&&[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]].filter(([dx,dy])=>isColor(x+dx,y+dy)).length>=4){annotationColor++;mark(annotationBounds,x,y);}}return {width:bitmap.width,height:bitmap.height,foreground:foreground/(bitmap.width*bitmap.height),quadrants:counts.map(value=>foreground?value/foreground:0),annotationColor:rgb?annotationColor/(bitmap.width*bitmap.height):undefined,foregroundBox:normalized(foregroundBounds),annotationBox:rgb?normalized(annotationBounds):undefined};}finally{if(canvas){canvas.width=0;canvas.height=0;}bitmap.close();}};await services.excerptImage.clear();const output=[];for(const key of ${JSON.stringify(keys)}){const annotation=list.annotations.find(value=>value.key===key);if(!annotation)throw new Error('Missing Fixture annotation '+key);const fallback=require('path').join(services.zoteroPref.dataDir,'cache','library',key+'.png');const request={annotation,source:list.source,sourceScope:services.zoteroPref.dataDir,attachmentKey:'RGRPDF24',libraryID:1,pdfPath,zoteroPngPath:fallback};const outcome=await services.excerptImage.resolve(request);if(outcome.kind!=='available'||outcome.provenance!=='rendered')throw new Error('PDF render unavailable for '+key);const reference=await require('fs').promises.readFile(fallback);output.push({key,type:annotation.type,rendered:await summarize(outcome.bytes,annotation.type==='ink'?annotation.color:null),zotero:await summarize(reference,annotation.type==='ink'?annotation.color:null)});}return JSON.stringify(output);})()`,
     ),
   ) as {
     key: string;
@@ -447,6 +519,7 @@ export async function verifyZoteroExcerptParity(
     zotero: SemanticImage;
   }[];
 
+  console.info("Zotero excerpt parity evidence", JSON.stringify(result));
   expect(result.map(({ key }) => key)).toEqual(keys);
   for (const { type, rendered, zotero } of result) {
     const dimensionTolerance = type === "ink" ? 8 : 0;
@@ -484,5 +557,4 @@ export async function verifyZoteroExcerptParity(
         ).toBeLessThan(0.04);
     }
   }
-  console.info("Zotero excerpt parity evidence", result);
 }

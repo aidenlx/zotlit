@@ -48,6 +48,7 @@ export async function verifyAnnotationDrag(
       s.transfer=new s.sourceWin.DataTransfer();
       const start=new s.sourceWin.DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:s.transfer});
       s.assetsBeforeStart=app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length;
+      s.sourceWin.focus();app.workspace.setActiveLeaf(s.viewLeaf,{focus:true});
       s.button.dispatchEvent(start);s.assetsAfterStart=app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length;s.prepareCallsAfterStart=s.prepareCalls;s.activeAtStart=app.workspace.activeLeaf===s.viewLeaf;
       s.nativeAssetsBefore=app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).length;
       const rect=s.editor.cm.coordsAtPos(0);if(!rect)throw new Error('Native drop coordinates unavailable');s.nativeCoords={x:Math.floor(rect.left+1),y:Math.floor((rect.top+rect.bottom)/2)};
