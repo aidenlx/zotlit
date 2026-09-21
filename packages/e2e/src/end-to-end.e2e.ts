@@ -48,7 +48,11 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
 import { verifyAnnotationInsert } from "./annotation-insert.ts";
-import { verifyReaderBackedExcerpts } from "./excerpt-acceptance.ts";
+import {
+  verifyMultiPdfExcerptBatch,
+  verifyReaderBackedExcerpts,
+  verifySavedEditDisplay,
+} from "./excerpt-acceptance.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import {
   cli,
@@ -499,6 +503,122 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   // the same file the excerpt resolves from.
   it("crops from an open reader's document, reuses it for a note import, and falls back when it closes", async () => {
     await verifyReaderBackedExcerpts(vaultId);
+  }, 180000);
+
+  // The saved-edit case's write only lands in a Paired Run, and this is not one.
+  // What every run can show is the subject that case asks about: the repository
+  // indexes its verified database sources by Attachment, so an Annotation's own
+  // key answers `read-only`/`server-changed` wherever the Attachment it belongs
+  // to is writable — the answer the case used to skip on. The capability itself
+  // is stubbed here, so the key the case asks with is the whole observation.
+  it("asks the Fixture Attachment's Capability, not its Annotation's, before a saved edit", async () => {
+    await obEval(
+      vaultId,
+      `(()=>{
+        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+        app.__zotlitCapabilitySubjects=[];
+        repository.capabilityFor=key=>{app.__zotlitCapabilitySubjects.push(key);return {kind:'read-only',reason:'stubbed'};};
+        return true;
+      })()`,
+    );
+    const skips: string[] = [];
+    let asked: string[] = [];
+    try {
+      await verifySavedEditDisplay(vaultId, {
+        skip: (note) => void skips.push(note ?? ""),
+      });
+      asked = JSON.parse(
+        await obEval(vaultId, "JSON.stringify(app.__zotlitCapabilitySubjects)"),
+      ) as string[];
+    } finally {
+      await obEval(
+        vaultId,
+        `(()=>{
+          const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+          delete repository.capabilityFor;
+          delete app.__zotlitCapabilitySubjects;
+          return true;
+        })()`,
+      );
+    }
+    expect(
+      skips,
+      "a non-writable Attachment stops the saved-edit case before its assertions",
+    ).toHaveLength(1);
+    expect(
+      asked,
+      "the Capability is the Attachment's: an Annotation's key answers read-only/server-changed for every writable Attachment",
+    ).toEqual([annotationAttachment.key]);
+  }, 120000);
+
+  // #1184's multi-PDF batch: several of the Fixture's own PDFs, each asked for
+  // its own excerpts, cold and then warm. The Node harness behind the
+  // measurements record models PDF work; this case is the app's own answer.
+  it("measures a multi-PDF excerpt batch cold and warm", async () => {
+    const fixture = getFixtureLayout(getFixtureRoot(workspaceRoot));
+    const rougier = join(e2eVaultPath, "attachments/rougier-2014.pdf");
+    const generated = join(
+      e2eVaultPath,
+      "attachments/excerpt-acceptance/excerpt-rendering.pdf",
+    );
+    const researchInterfaces = join(
+      fixture.dataDir,
+      "storage/CNPDF26A/research-interfaces.pdf",
+    );
+    const sakimas = join(fixture.dataDir, "storage/PDFSTR22/sakimas-song.pdf");
+    // Four of the Fixture's PDFs, two excerpts each, grouped so the second of
+    // each pair is a repeated same-PDF excerpt: what one resident document
+    // serves. The rects are inside every page the Fixture ships.
+    await verifyMultiPdfExcerptBatch(vaultId, [
+      {
+        attachmentKey: "RGRPDF24",
+        pdfPath: rougier,
+        pageIndex: 0,
+        rect: [58, 538, 211, 578],
+      },
+      {
+        attachmentKey: "RGRPDF24",
+        pdfPath: rougier,
+        pageIndex: 0,
+        rect: [265.833, 611.202, 374.503, 620.019],
+      },
+      {
+        attachmentKey: "EXCERPT1",
+        pdfPath: generated,
+        pageIndex: 0,
+        rect: [70, 90, 190, 200],
+      },
+      {
+        attachmentKey: "EXCERPT1",
+        pdfPath: generated,
+        pageIndex: 4,
+        rect: [50, 350, 400, 740],
+      },
+      {
+        attachmentKey: "PDFSTR22",
+        pdfPath: sakimas,
+        pageIndex: 0,
+        rect: [80, 80, 280, 200],
+      },
+      {
+        attachmentKey: "PDFSTR22",
+        pdfPath: sakimas,
+        pageIndex: 1,
+        rect: [80, 80, 280, 200],
+      },
+      {
+        attachmentKey: "CNPDF26A",
+        pdfPath: researchInterfaces,
+        pageIndex: 0,
+        rect: [72, 96, 300, 200],
+      },
+      {
+        attachmentKey: "CNPDF26A",
+        pdfPath: researchInterfaces,
+        pageIndex: 1,
+        rect: [72, 96, 300, 200],
+      },
+    ]);
   }, 180000);
 
   it.each(["main", "popout"] as const)(

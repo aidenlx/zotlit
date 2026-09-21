@@ -12,6 +12,9 @@
 import { QueryClientService } from "@/services/query-client/service";
 
 import { check } from "./__fixtures__/check";
+import { settledDisplay } from "./__fixtures__/display-state";
+import { renderGate } from "./__fixtures__/render-gate";
+import type { GatedRender } from "./__fixtures__/render-gate";
 import { excerptAnnotationRecord, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
@@ -123,21 +126,15 @@ async function crop(seed: number): Promise<ExcerptImage> {
   return image;
 }
 
-/** One render the trial holds open, so the trial decides when a crop answers. */
-interface PendingRender {
-  readonly request: ExcerptRequest;
-  readonly answer: PromiseWithResolvers<ExcerptImage>;
-}
-
 /** What one live composition hands a scenario. */
 interface Live {
   readonly store: ExcerptStore;
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayService;
   readonly queries: QueryClientService;
-  readonly renders: PendingRender[];
+  readonly renders: GatedRender[];
   /** One render, once the service reached it. */
-  started(index: number): Promise<PendingRender>;
+  started(index: number): Promise<GatedRender>;
   /** The `index`-th read of a device-local image, once it settled. */
   storedRead(index: number): Promise<void>;
   /** Answer one crop with real Chromium pixels. */
@@ -155,22 +152,13 @@ async function live(options: {
 }): Promise<Live> {
   const stage = options.label;
   const store = await openExcerptStore(options.appId, options.budget);
-  const renders: PendingRender[] = [];
+  const gate = renderGate();
   const storedReads: Promise<void>[] = [];
-  const waiting: (() => void)[] = [];
   const storedWaiting: (() => void)[] = [];
   const service = new ExcerptImageService({
     cache: store,
     stamp: async () => PDF,
-    render: (request, signal) => {
-      const answer = Promise.withResolvers<ExcerptImage>();
-      renders.push({ request, answer });
-      signal.addEventListener("abort", () => answer.reject(signal.reason), {
-        once: true,
-      });
-      for (const arrived of waiting.splice(0)) arrived();
-      return answer.promise;
-    },
+    render: gate.render,
   });
   const queries = new QueryClientService();
   const display = new ExcerptDisplayService({
@@ -194,17 +182,16 @@ async function live(options: {
     service,
     display,
     queries,
-    renders,
+    renders: gate.renders,
     async started(index) {
-      while (renders.length <= index) {
-        const arrived = Promise.withResolvers<void>();
-        waiting.push(() => arrived.resolve());
-        await bounded(`${stage}: crop ${index}`, arrived.promise, () => ({
-          renders: renders.length,
+      return await bounded(
+        `${stage}: crop ${index}`,
+        gate.started(index),
+        () => ({
+          renders: gate.renders.length,
           queue: service.queueDiagnostics,
-        }));
-      }
-      return renders[index]!;
+        }),
+      );
     },
     async storedRead(index) {
       while (storedReads.length <= index) {
@@ -239,16 +226,9 @@ function settled(
   card: ExcerptDisplayDemand,
   matches: (display: ExcerptImageDisplay) => boolean,
 ): Promise<ExcerptImageDisplay> {
-  const next = Promise.withResolvers<ExcerptImageDisplay>();
-  const onChange = () => {
-    const snapshot = card.snapshot();
-    if (matches(snapshot)) next.resolve(snapshot);
-  };
-  const off = card.subscribe(onChange);
-  onChange();
-  return bounded(`the display of ${label}`, next.promise, () =>
+  return bounded(`the display of ${label}`, settledDisplay(card, matches), () =>
     JSON.stringify(card.snapshot()),
-  ).finally(off);
+  );
 }
 
 /** Whether the display paints the pixels the card demands. */

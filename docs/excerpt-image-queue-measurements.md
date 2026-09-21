@@ -33,17 +33,28 @@ The Fixture corpus is **37 items, 12 attachments, 7 notes, 12 annotations** (`pa
 
 The excerpt-rendering acceptance shares that shape: `EXCERPT_RENDERING_CASES` is **9 requests against one renderable PDF** (`attachments/excerpt-acceptance/excerpt-rendering.pdf`), beside a corrupt and an encrypted PDF that must answer `unavailable`.
 
-So a multi-PDF *excerpt* batch, and a multi-PDF *note* batch, are not reachable on this corpus at all: there is one PDF to render excerpts from, and one note that embeds them. Those rows stay modelled above.
+A multi-PDF *note* batch is therefore not reachable on this corpus: one note embeds the three excerpt-able Annotations, and they all live on one PDF. A multi-PDF *excerpt* batch is reachable, because the excerpts do not have to come from Annotations the corpus declares: the acceptance drives the same production service with requests of its own, over the Fixture's own PDFs. `verifyMultiPdfExcerptBatch` (`packages/e2e/src/excerpt-acceptance.ts`) does exactly that, and the numbers below are its output. Its corpus is four PDFs:
+
+| PDF | Path in the run | Committed bytes |
+| --- | --- | --- |
+| `RGRPDF24` | `<vault>/attachments/rougier-2014.pdf` | `rougier-2014/rougier-2014.pdf` |
+| `CNPDF26A` | `<fixture data>/storage/CNPDF26A/research-interfaces.pdf` | the same bytes, its own copy |
+| `EXCERPT1` | `<vault>/attachments/excerpt-acceptance/excerpt-rendering.pdf` | the generated six-page acceptance PDF |
+| `PDFSTR22` | `<fixture data>/storage/PDFSTR22/sakimas-song.pdf` | `sakimas-song/sakimas-song.pdf` |
+
+Three of the four carry distinct bytes; the fourth is the Fixture's one duplicated document (two Attachments, one committed PDF). The excerpts are two per PDF, contiguous, so the second of each pair is a repeated same-PDF excerpt. Their pixels have no oracle here — `verifyExcerptRendering` owns pixel oracles, over a PDF whose generated geometry it carries oracles for — so this batch asserts what it measures instead: every request resolves with real bytes, one crop of its own document, and the warm pass answers the same digests from the cache.
 
 ### Real PDF work: loads, renders, hits
 
 Measured by `packages/e2e/src/excerpt-acceptance.ts` in the End-to-end Run of this worktree (`pnpm exec vitest run --disableConsoleIntercept -t "crops from an open reader's document"`), from the renderer's own counters (`ExcerptRendererDiagnostics`, the same counters the Node harness stands in for) plus the resolution each request reported:
 
-| Pass | Crops drawn | PDF files opened | PDF documents loaded | Resolved from the cache |
+| Pass | Crops drawn | Detached renderer's PDF files opened | PDF documents loaded | Resolved from the cache |
 | --- | --- | --- | --- | --- |
 | Reader-backed crop (an open reader's own document) | 1 borrowed | 0 | 0 | 0 |
 | Note import over the warm cache (3 embedded Annotations prepared) | 0 | 0 | 0 | every excerpt it resolved |
 | Detached fallback (reader closed, card Refresh) | 1 detached | 1 | 1 | 0 |
+
+That column counts the **detached renderer's** opens, not every read of the PDF in the pass: a borrowed crop proves the reader's document against the file first, and that proof opens the PDF outside the renderer — `reader-borrow.ts`'s `verdictFor` opens and stats it, and a verdict it cannot remember opens it again in `readVerifiedBytes` to read and hash the revision. The reader-backed row's `0` therefore says what it claims — the borrow drew from the reader's own document, and the detached renderer opened nothing — and not that borrowing reads no file.
 
 The third row is the same request the first row answered, after the reader was gone: the crop is re-rendered from the file, and its decoded pixels are identical to the borrowed crop's — both decoded to 201 × 192 with pixel digest `8eb22d6a…`, which is the reader/detached parity the shared cache publication rests on.
 
@@ -58,28 +69,45 @@ The third row is the same request the first row answered, after the reader was g
 
 `verifyExcerptRendering` in the End-to-end Run (`pnpm exec vitest run --disableConsoleIntercept -t "deterministic PDF matrix"`; the flag is what prints the evidence on a run whose case passes) reports these through its own evidence line — emitted as soon as the batch result exists, before the memory probes that can fail. No PDF reader leaf is open in any pass (`pdfLeaves` `{ before: 0, after: 0 }`), and the corrupt and encrypted PDFs answer `unavailable`. Each pass's number covers resolving a case *and* decoding, digesting and sampling its image, so it is a pass time rather than a bare cache-hit latency.
 
+### The multi-PDF batch, through the app
+
+Measured **2026-09-22** in this worktree by the case `measures a multi-PDF excerpt batch cold and warm` (`pnpm exec vitest run --disableConsoleIntercept -t "multi-PDF excerpt batch"`), which prints its evidence as JSON. Cold is eight excerpts over the four PDFs above, then the same eight again warm, one request at a time through the production `ExcerptImageService`:
+
+| Pass | Requests | Files opened | Documents loaded | Crops drawn | Cache hits | Total |
+| --- | --- | --- | --- | --- | --- | --- |
+| Cold, four PDFs, 8 excerpts | 8 | 8 | 8 | 8 detached | 0 | 849 ms |
+| Warm, the same 8 excerpts | 8 | 0 | 0 | 0 | 8 | 30 ms |
+
+Per request, cold: 91, 68, 84, 102, 90, 89, 105, 219 ms — each request opened its PDF and loaded its document, one crop each; the two requests of a PDF are the same document asked twice and still cost two loads. Per request, warm: 3.2–4.3 ms, each answering its cold request's own `sha256`.
+
+The load counts are the measurement's most useful finding, and they correct a claim this record made earlier. The queue holds **one resident document for concurrent work**, shared by the excerpts in flight — not one document remembered between sequential jobs: a pass of one-request-at-a-time resolutions pays a file open and a document load per excerpt, which is what the eight and eight above are. The case asserts that shape (one detached crop, one open, one load per cold request; none of any in the warm pass) rather than a retention the app does not promise. The Node tables' "Loads" column counts resident-document changes in the modelled corpus; it is that harness's own scheduler question, and it does not predict these numbers.
+
 ### First-note completion
 
-The Fixture corpus's one excerpt-bearing note, imported over the warm cache (all three embedded Annotations already resolved), settled in **15 677 ms** — from the app job starting (its `noteIndex.whenIndexed()` wait included) to the app's own settlement flag — and every one of its excerpts came from the cache, with no PDF opened and no crop drawn during the import. That is a *single* note over a *single* PDF: the corpus has no multi-PDF note batch to time, which is the row this record cannot fill.
+The Fixture corpus's one excerpt-bearing note, imported over the warm cache (all three embedded Annotations already resolved), settled in **36.6 ms** — from the app job starting (its `noteIndex.whenIndexed()` wait included) to the app's own settlement flag — and every one of its excerpts came from the cache, with no PDF opened and no crop drawn during the import.
+
+This row carried **15 677 ms** before 2026-09-22, and that number was the harness's, not the import's: the case watched for settlement *before* answering the overwrite dialog the Fixture Vault's own Imported Note makes the import raise, and an import blocked on that dialog cannot settle until the wait has run its course (60 polls at 250 ms each, the floor of the old number). `settleImport` now answers the dialog and observes settlement in the same bounded poll — one observation per CLI child — which is where 36.6 ms comes from. It is still a *single* note over a *single* PDF: the corpus has no multi-PDF note batch to time, and that is the row this record cannot fill.
 
 ### Peak memory
 
-`process.getProcessMemoryInfo()` — the probe `verifyExcerptRendering` uses — is unreliable in this environment: the run above reported it for the maximum-pixels case (private 326 866 KiB / 329 602 KiB / 328 114 KiB, before / during / after the canvas) and then resolved it to `null` for the maximum-dimension case, which fails that case at the tip (a pre-existing failure, not one this record's section introduces). The renderer's own Node measurement does answer, so the reader-backed evidence records `process.memoryUsage()` around the note import: RSS 629 866 496 B → 631 701 504 B, `heapUsed` 94 692 884 B → 98 127 192 B (≈ 600.7 → 602.5 MiB RSS, 90.3 → 93.6 MiB heap). Those are one window's process numbers around a warm import, not a peak over a cold multi-PDF batch, and the harness's heap/RSS rows above stay the modelled ones.
+The multi-PDF case samples the renderer process's memory **as each request settles**, so the record has a peak over the batch rather than a window before and after it. Across the 16 samples of the two passes: the renderer's own Node view peaked at `rss` 590 004 224 B (562.6 MiB) and `heapUsed` 199 861 836 B (190.6 MiB), and Electron's `process.getProcessMemoryInfo()` — the probe `verifyExcerptRendering` uses — answered **2 of the 16** samples with a peak `private` of 354 354 KiB.
+
+That probe is bounded here at 1 s per sample and waited on outside each request's timing, because it has been seen to leave a promise pending for fifteen seconds: in the first run of this case, four samples' worth of that pending promise was recorded as the batch's own time, and the cold pass read 15 774 ms for work that takes 849 ms. A probe that never answers now costs the record a sample, not a time, and the count of answers is part of the record. The Node figures are the renderer's own process view, not the whole application's: Chromium's rasterization, PDF.js's parsed document and the canvas live outside a V8 heap, so both are lower bounds. `verifyExcerptRendering`'s own probe remains unreliable — it reported values for the maximum-pixels case (private 326 866 KiB / 329 602 KiB / 328 114 KiB, before / during / after the canvas) and then resolved to `null` for the maximum-dimension case, which fails that case at the tip (a pre-existing failure, not one this record's section introduces).
 
 ### What is measured for real, and what is not
 
 | The criterion asks for | How it is answered |
 | --- | --- |
-| Cold and warm batches | Real: 9 cases cold (3426 ms) and warm (363 ms) through the app; modelled at scale in the Node tables above |
-| Multi-PDF batches | **Modelled only**: the Fixture corpus's excerpt-able Annotations and its excerpt-bearing note all live on one PDF |
-| Repeated same-PDF excerpts | Real: the three embedded Annotations of `RGRPDF24`, resolved one after another and then reused by the import |
-| Loads | Real: PDF file opens and document loads from the renderer's counters (table above); modelled per resident-document change in the Node tables |
+| Cold and warm batches | Real: 9 cases cold (3426 ms) and warm (363 ms) through the app, and 8 excerpts over four PDFs cold (849 ms) and warm (30 ms); modelled at scale in the Node tables above |
+| Multi-PDF batches | Real for **excerpts**: eight excerpts over four of the Fixture's PDFs, cold and warm, with the load counts and times above. **Not measured** for a **note** batch over several PDFs — see [what remains unverified](#what-remains-unverified) |
+| Repeated same-PDF excerpts | Real: two excerpts of each of the four PDFs in the multi-PDF batch, and the three embedded Annotations of `RGRPDF24`, resolved one after another and then reused by the import |
+| Loads | Real: the detached renderer's file opens and document loads, counted per request (tables above), plus the borrowed proof's own reads; modelled per resident-document change in the Node tables |
 | Renders | Real: crops counted as borrowed + detached from the same counters; the renderer's counter peaks at one at a time |
-| Hits | Real: the warm import resolved its excerpts with no crop drawn and no PDF opened, and the warm pass answered all 9 cases from the cache; modelled as retention/cache decisions in the Node tables |
-| Total time | Real: the pass times and the first-note completion above; modelled wall times carry the 40 ms/12 ms costs |
-| First-note completion | Real for one note over one PDF (15 677 ms, warm, the job's index wait included); **not measured** for a multi-PDF batch — no such batch exists in this corpus |
-| Peak memory | Partly: the renderer's own `process.memoryUsage()` around the import above; `process.getProcessMemoryInfo()` answers `null` here, and the harness numbers stay the Node process's |
-| Corpus and runtime details | Real: the corpus counts and key names above; runtime Electron 43.7.1 / Chromium 150.0.7871.250 / Node 24.21.0 under desktop Obsidian 1.14.2 |
+| Hits | Real: the warm import resolved its excerpts with no crop drawn and no PDF opened, the warm pass answered all 9 cases from the cache, and the warm multi-PDF pass answered all 8 requests from it; modelled as retention/cache decisions in the Node tables |
+| Total time | Real: the pass times, the multi-PDF batch, and the first-note completion above; modelled wall times carry the 40 ms/12 ms costs |
+| First-note completion | Real for one note over one PDF (36.6 ms, warm, the job's index wait included); **not measured** for a multi-PDF note batch — no such note exists in this corpus |
+| Peak memory | Real for the multi-PDF batch: peak `rss` 562.6 MiB / `heapUsed` 190.6 MiB over 16 per-request samples of the renderer's own process, and 2 of 16 samples answering Electron's probe at 354 354 KiB private. The harness numbers stay the Node process's, and all of these are lower bounds of the application's |
+| Corpus and runtime details | Real: the corpus counts and key names above, and the four-PDF paths; runtime Electron 43.7.1 / Chromium 150.0.7871.250 / Node 24.21.0 under desktop Obsidian 1.14.2 |
 
 ## The runtime this record is against
 
@@ -185,7 +213,7 @@ The Node passes were re-measured after the queue gained its admission diagnostic
 
 ## What remains unverified
 
-- **Obsidian's own rendering at scale.** *The real app's own numbers* above are the Obsidian half of this record: real PDF.js loads, crops, cache hits, pass times and one note's completion, measured through the End-to-end Run on this machine. What that corpus cannot reach is scale and variety — its excerpt-able Annotations all live on one PDF, so multi-PDF batches and a multi-PDF note batch stay modelled here, and peak memory has only the renderer's own `process.memoryUsage()`, because `process.getProcessMemoryInfo()` resolves to `null` in this environment.
+- **Obsidian's own rendering at scale.** *The real app's own numbers* above are the Obsidian half of this record: real PDF.js loads, crops, cache hits, pass times, a multi-PDF excerpt batch and one note's completion, measured through the End-to-end Run on this machine. What is still missing is a **multi-PDF note batch**, and this is exactly what it would take: a second excerpt-bearing Attachment — an Annotation of type 3 or 4 (the two types Zotero keeps an excerpt cache image for) on another PDF, its generated cache PNG under `packages/scripts/lib/fixture/assets/<pdf>/annotations/<KEY>.png`, and a Note whose HTML embeds it — plus the corpus counts every other reader of `spec.ts` asserts (`packages/scripts/lib/fixture/build.test.ts` checks the built database's Annotation keys, item counts and note counts; the End-to-end Run's annotation keys, the Annotation View cases and the Library Scope cases read the same corpus). That is a corpus change with a whole-suite re-run behind it, not a measurement detail, so this record leaves the row open rather than filling it with a modelled number. Everything else the criterion names is measured above, and the peak-memory row is the renderer's own process view — real peaks over the batch, but lower bounds of the application's, since Chromium's rasterization and PDF.js's document live outside a V8 heap.
 - **The plugin's real store and corpus.** The Node passes use an in-memory `Map` behind the production `ExcerptCache` contract; IndexedDB storage, vault writes, and a real Zotero corpus with real PDFs are not measured here. The End-to-end Run's numbers above use the plugin's real IndexedDB store and a real vault, but a synthetic corpus.
-- **Where those are verified.** On a machine with desktop Obsidian and a running Zotero: `pnpm fixture open --local-api`, then `pnpm e2e`. `packages/e2e/src/excerpt-rendering.ts` is their acceptance — it clears the excerpt cache and renders each case cold with `pdfLeaves` asserted `{ before: 0, after: 0 }` (no PDF reader open), then warm (every case `provenance: "cache"` with identical pixels), then re-renders, then repeats the cold pass in a minimized window and requires the same pixels with `provenance: "rendered"`. See the [release checklist](release-checklist.md).
+- **Where those are verified.** On a machine with desktop Obsidian and a running Zotero: `pnpm fixture open --local-api`, then `pnpm e2e`. `packages/e2e/src/excerpt-rendering.ts` is their acceptance — it clears the excerpt cache and renders each case cold with `pdfLeaves` asserted `{ before: 0, after: 0 }` (no PDF reader open), then warm (every case `provenance: "cache"` with identical pixels), then re-renders, then repeats the cold pass in a minimized window and requires the same pixels with `provenance: "rendered"`. The multi-PDF batch's own acceptance is `verifyMultiPdfExcerptBatch`, run by the case `measures a multi-PDF excerpt batch cold and warm`. See the [release checklist](release-checklist.md).
 - **Why the minimized-window pass was not run here.** The Electron half of the minimized-window section ran in a disposable renderer rather than through the suite's own pass, because this worktree's `electron` package carries no downloaded binary ([`allowBuilds`](../pnpm-workspace.yaml) refuses its postinstall); its numbers are the trial's, not the End-to-end Run's.

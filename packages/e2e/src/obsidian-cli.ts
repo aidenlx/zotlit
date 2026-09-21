@@ -12,9 +12,12 @@ const execFileAsync = promisify(execFile);
 const CLI_TIMEOUT_MS = 15_000;
 
 /** The Obsidian CLI always exits 0 — failures come back only as output text. */
-export async function cli(args: string[]): Promise<string> {
+export async function cli(
+  args: string[],
+  timeoutMs = CLI_TIMEOUT_MS,
+): Promise<string> {
   const result = await execFileAsync("obsidian", args, {
-    timeout: CLI_TIMEOUT_MS,
+    timeout: timeoutMs,
     // A wedged Electron CLI child can ignore SIGTERM; enforce the existing deadline.
     killSignal: "SIGKILL",
     windowsHide: true,
@@ -40,9 +43,20 @@ function parseReply(text: string): string {
  * Run JavaScript in `vaultId`'s window. `vault=<id>` must be the first argv
  * token. The process timeout bounds a missing reply; callers use
  * {@link waitFor} when they need to poll application state.
+ *
+ * `timeoutMs` is for a call that is one measurement rather than one question —
+ * a batch the app answers when it has done the work — where the default
+ * deadline would report a loaded machine as a failed measurement.
  */
-export async function obEval(vaultId: string, code: string): Promise<string> {
-  const text = await cli([`vault=${vaultId}`, "eval", `code=${code}`]);
+export async function obEval(
+  vaultId: string,
+  code: string,
+  timeoutMs?: number,
+): Promise<string> {
+  const text = await cli(
+    [`vault=${vaultId}`, "eval", `code=${code}`],
+    timeoutMs,
+  );
   if (text === "") return "";
   return parseReply(text);
 }

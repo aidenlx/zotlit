@@ -12,7 +12,10 @@ import type {
 } from "@/services/annotation-repository/service";
 import { QueryClientService } from "@/services/query-client/service";
 
+import { settledDisplay } from "./__fixtures__/display-state";
 import { redPng } from "./__fixtures__/png";
+import { renderGate } from "./__fixtures__/render-gate";
+import type { GatedRender } from "./__fixtures__/render-gate";
 import { sizedWebp } from "./__fixtures__/webp";
 import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
 import type { ExcerptDisplayDemand, ExcerptImageDisplay } from "./display";
@@ -87,31 +90,19 @@ function image(byte: number): ExcerptImage {
   return { bytes: new Uint8Array([byte]), format: PNG_FORMAT };
 }
 
-/** One render the test holds open. */
-interface Render {
-  readonly request: ExcerptRequest;
-  readonly signal: AbortSignal;
-  readonly answer: PromiseWithResolvers<ExcerptImage>;
-  /** Resolves when the render was abandoned, which the caller can await. */
-  readonly cancelled: Promise<void>;
-  /** Whether the test has answered the render; a signal after that abandons nothing. */
-  answered: boolean;
-  aborted: boolean;
-}
-
 /** What one live display harness hands a test. */
 interface Live extends AsyncDisposable {
   readonly queries: QueryClientService;
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayService;
-  readonly renders: Render[];
+  readonly renders: GatedRender[];
   /** The store's own view of the devices images: what is cached, and its references. */
   readonly entries: Map<string, ExcerptEntry>;
   readonly references: Map<string, ExcerptIdentity>;
   /** One card's demand, released when the harness goes. */
   card(): ExcerptDisplayDemand;
   /** The render at `index`, once it has started. */
-  started(index: number): Promise<Render>;
+  started(index: number): Promise<GatedRender>;
   /** The display's `index`-th read of a device-local image, once it settled. */
   storedRead(index: number): Promise<void>;
   /** Wait for the render at `index` to be abandoned. */
@@ -129,45 +120,17 @@ interface Live extends AsyncDisposable {
  * not a clock, decides when one finishes and what it answers.
  */
 function harness(): Live {
-  const renders: Render[] = [];
+  const gate = renderGate();
   const entries = new Map<string, ExcerptEntry>();
   const references = new Map<string, ExcerptIdentity>();
   const demands: ExcerptDisplayDemand[] = [];
   const stack = new AsyncDisposableStack();
-  let arrived = Promise.withResolvers<void>();
   /** The PDF stamp every probe reads; a replacement moves its modification time. */
   let mtimeMs = 1;
   const service = stack.use(
     new ExcerptImageService({
       stamp: async () => ({ size: 100, mtimeMs }),
-      render: (renderRequest, signal) => {
-        const answer = Promise.withResolvers<ExcerptImage>();
-        const cancelled = Promise.withResolvers<void>();
-        const render: Render = {
-          request: renderRequest,
-          signal,
-          answer,
-          cancelled: cancelled.promise,
-          answered: false,
-          aborted: false,
-        };
-        renders.push(render);
-        arrived.resolve();
-        arrived = Promise.withResolvers<void>();
-        signal.addEventListener(
-          "abort",
-          () => {
-            // The service aborts the signal of its own finished job too; only a
-            // render it abandoned before the answer counts.
-            if (render.answered) return;
-            render.aborted = true;
-            cancelled.resolve();
-            answer.reject(signal.reason);
-          },
-          { once: true },
-        );
-        return answer.promise;
-      },
+      render: gate.render,
       read: async () => redPng,
       cache: {
         get: async (key) => entries.get(key),
@@ -204,7 +167,7 @@ function harness(): Live {
     queries,
     service,
     display,
-    renders,
+    renders: gate.renders,
     entries,
     references,
     card() {
@@ -212,24 +175,21 @@ function harness(): Live {
       demands.push(demand);
       return demand;
     },
-    async started(index) {
-      while (renders.length <= index) await arrived.promise;
-      return renders[index]!;
-    },
+    started: gate.started,
     async storedRead(index) {
       await storedReads[index];
     },
     async cancelled(index) {
-      await this.started(index);
-      await renders[index]!.cancelled;
+      const render = await gate.started(index);
+      await render.cancelled;
     },
     finish(index, bytes) {
-      const render = renders[index]!;
+      const render = gate.renders[index]!;
       render.answered = true;
       render.answer.resolve(image(bytes));
     },
     fail(index) {
-      const render = renders[index]!;
+      const render = gate.renders[index]!;
       render.answered = true;
       render.answer.reject(new Error("PDF render failed"));
     },
@@ -241,21 +201,6 @@ function harness(): Live {
       await stack.disposeAsync();
     },
   };
-}
-
-/** The next snapshot that answers `matches`, as one resolution's completion signal. */
-function settled(
-  demand: ExcerptDisplayDemand,
-  matches: (display: ExcerptImageDisplay) => boolean,
-): Promise<ExcerptImageDisplay> {
-  const next = Promise.withResolvers<ExcerptImageDisplay>();
-  const check = () => {
-    const snapshot = demand.snapshot();
-    if (matches(snapshot)) next.resolve(snapshot);
-  };
-  const off = demand.subscribe(check);
-  check();
-  return next.promise.finally(off);
 }
 
 /**
@@ -412,7 +357,7 @@ describe("Excerpt Image live display", () => {
     });
 
     live.finish(0, 7);
-    const display = await settled(card, painted);
+    const display = await settledDisplay(card, painted);
     expect(display.image?.bytes).toEqual(new Uint8Array([7]));
     expect(display.current).toBe(true);
   });
@@ -423,7 +368,7 @@ describe("Excerpt Image live display", () => {
     card.demand(request("#ff0000"));
     await live.started(0);
     live.finish(0, 1);
-    const first = await settled(card, painted);
+    const first = await settledDisplay(card, painted);
 
     const saved = request("#00ff00");
     live.display.revalidate(saved);
@@ -437,7 +382,7 @@ describe("Excerpt Image live display", () => {
     });
 
     live.finish(1, 2);
-    const replaced = await settled(card, (display) => painted(display));
+    const replaced = await settledDisplay(card, (display) => painted(display));
     expect(replaced.image?.bytes).toEqual(new Uint8Array([2]));
     expect(replaced.current).toBe(true);
   });
@@ -449,7 +394,7 @@ describe("Excerpt Image live display", () => {
     card.demand(pixels);
     await live.started(0);
     live.finish(0, 1);
-    await settled(card, painted);
+    await settledDisplay(card, painted);
 
     const other = request("#00ff00");
     live.display.revalidate(other);
@@ -464,7 +409,7 @@ describe("Excerpt Image live display", () => {
     expect(live.renders[1]!.aborted).toBe(true);
 
     live.finish(1, 2);
-    const display = await settled(card, painted);
+    const display = await settledDisplay(card, painted);
     expect(display.image?.bytes).toEqual(new Uint8Array([1]));
   });
 
@@ -484,7 +429,7 @@ describe("Excerpt Image live display", () => {
     newer.demand(saved);
     await live.started(0);
     live.finish(0, 1);
-    const first = await settled(newer, painted);
+    const first = await settledDisplay(newer, painted);
     expect(first.image?.bytes).toEqual(new Uint8Array([1]));
 
     // The delayed card states the record as it was before the newer save. What
@@ -512,7 +457,7 @@ describe("Excerpt Image live display", () => {
     await live.started(1);
     expect(live.renders).toHaveLength(2);
     live.finish(1, 3);
-    const replaced = await settled(delayed, painted);
+    const replaced = await settledDisplay(delayed, painted);
     expect(replaced.image?.bytes).toEqual(new Uint8Array([3]));
     expect(replaced.current).toBe(true);
   });
@@ -527,7 +472,7 @@ describe("Excerpt Image live display", () => {
     card.demand(saved);
     await live.started(0);
     live.finish(0, 1);
-    const first = await settled(card, painted);
+    const first = await settledDisplay(card, painted);
 
     // A revalidation of an older record — a list read that started before the
     // newer save — cannot move the display back: the demand it answers is still
@@ -559,8 +504,8 @@ describe("Excerpt Image live display", () => {
 
     live.finish(0, 1);
     const [first, second] = await Promise.all([
-      settled(one, painted),
-      settled(two, painted),
+      settledDisplay(one, painted),
+      settledDisplay(two, painted),
     ]);
     expect(first.image?.bytes).toEqual(new Uint8Array([1]));
     expect(second.image?.bytes).toEqual(new Uint8Array([1]));
@@ -573,14 +518,14 @@ describe("Excerpt Image live display", () => {
     card.demand(request("#ff0000"));
     await live.started(0);
     live.finish(0, 1);
-    const first = await settled(card, painted);
+    const first = await settledDisplay(card, painted);
 
     const saved = request("#00ff00");
     live.display.revalidate(saved);
     card.demand(saved);
     await live.started(1);
     live.fail(1);
-    const failed = await settled(
+    const failed = await settledDisplay(
       card,
       (display) => display.status === "failed",
     );
@@ -593,7 +538,7 @@ describe("Excerpt Image live display", () => {
     await live.started(2);
     expect(live.renders).toHaveLength(3);
     live.finish(2, 3);
-    const replaced = await settled(card, painted);
+    const replaced = await settledDisplay(card, painted);
     expect(replaced.image?.bytes).toEqual(new Uint8Array([3]));
   });
 
@@ -604,7 +549,7 @@ describe("Excerpt Image live display", () => {
     card.demand(saved);
     await live.started(0);
     live.finish(0, 1);
-    expect((await settled(card, painted)).image?.bytes).toEqual(
+    expect((await settledDisplay(card, painted)).image?.bytes).toEqual(
       new Uint8Array([1]),
     );
 
@@ -617,7 +562,7 @@ describe("Excerpt Image live display", () => {
     expect(again.request).toEqual(saved);
 
     live.finish(1, 2);
-    const replaced = await settled(
+    const replaced = await settledDisplay(
       card,
       (display) => painted(display) && display.image?.bytes[0] === 2,
     );
@@ -631,7 +576,7 @@ describe("Excerpt Image live display", () => {
     card.demand(request("#ff0000"));
     await live.started(0);
     live.fail(0);
-    await settled(card, (display) => display.status === "failed");
+    await settledDisplay(card, (display) => display.status === "failed");
 
     // A key whose last read failed is served from what it holds until the
     // client's cooldown passes, so the refresh drops that answer before it
@@ -639,7 +584,7 @@ describe("Excerpt Image live display", () => {
     live.display.refresh();
     await live.started(1);
     live.finish(1, 2);
-    const recovered = await settled(card, painted);
+    const recovered = await settledDisplay(card, painted);
     expect(recovered.image?.bytes).toEqual(new Uint8Array([2]));
     expect(recovered.current).toBe(true);
   });
@@ -656,7 +601,7 @@ describe("Excerpt Image live display", () => {
     one.release();
     expect(live.renders[0]!.aborted).toBe(false);
     live.finish(0, 1);
-    const display = await settled(two, painted);
+    const display = await settledDisplay(two, painted);
     expect(display.image?.bytes).toEqual(new Uint8Array([1]));
 
     two.demand(request("#00ff00"));
@@ -678,8 +623,8 @@ describe("Excerpt Image live display", () => {
     await live.started(0);
     live.finish(0, 1);
     const [first, second] = await Promise.all([
-      settled(one, painted),
-      settled(two, painted),
+      settledDisplay(one, painted),
+      settledDisplay(two, painted),
     ]);
     expect(first.image?.bytes).toEqual(new Uint8Array([1]));
     expect(second.image?.bytes).toEqual(new Uint8Array([1]));
@@ -709,7 +654,7 @@ describe("Excerpt Image live display", () => {
     one.demand(request("#00ff00"));
     await live.started(1);
     live.finish(1, 2);
-    const repainted = await settled(one, painted);
+    const repainted = await settledDisplay(one, painted);
     expect(repainted.image?.bytes).toEqual(new Uint8Array([2]));
   });
 
@@ -737,7 +682,7 @@ describe("Excerpt Image live display", () => {
 
     await live.started(1);
     live.finish(1, 2);
-    const display = await settled(card, painted);
+    const display = await settledDisplay(card, painted);
     expect(display.image?.bytes).toEqual(new Uint8Array([2]));
 
     // A note asking for pixels the display never held renders its own image.
@@ -759,7 +704,7 @@ describe("Excerpt Image live display", () => {
     shown.demand(pixels);
     await live.started(0);
     live.finish(0, 1);
-    await settled(shown, painted);
+    await settledDisplay(shown, painted);
     expect(live.references.get(stored(pixels))?.fingerprint).toBe(
       excerptFingerprint(pixels.annotation),
     );
@@ -773,13 +718,16 @@ describe("Excerpt Image live display", () => {
     const saved = request("#00ff00");
     returned.demand(saved);
     await live.started(1);
-    const seeded = await settled(returned, (display) => display.image !== null);
+    const seeded = await settledDisplay(
+      returned,
+      (display) => display.image !== null,
+    );
     expect(seeded.image?.bytes).toEqual(new Uint8Array([1]));
     expect(seeded.current).toBe(false);
     expect(seeded.status).toBe("reading");
 
     live.finish(1, 2);
-    const replaced = await settled(returned, painted);
+    const replaced = await settledDisplay(returned, painted);
     expect(replaced.image?.bytes).toEqual(new Uint8Array([2]));
     expect(replaced.current).toBe(true);
   });
@@ -801,7 +749,7 @@ describe("Excerpt Image live display", () => {
       zoteroPngPath: "/zotero/INK1.png",
     };
     card.demand(pixels);
-    expect((await settled(card, painted)).image?.bytes).toEqual(redPng);
+    expect((await settledDisplay(card, painted)).image?.bytes).toEqual(redPng);
 
     stored.mockClear();
     // The saved edit needs a read of its own, and the Held Read still holds the
@@ -833,7 +781,7 @@ describe("Excerpt Image live display", () => {
       card.demand(pixels);
       await live.started(0);
       live.finish(0, 1);
-      const first = await settled(card, painted);
+      const first = await settledDisplay(card, painted);
 
       await vi.advanceTimersByTimeAsync(30);
       expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
@@ -857,7 +805,7 @@ describe("Excerpt Image live display", () => {
 
       // ...and what it goes on painting once the replacement fails.
       live.fail(1);
-      const failed = await settled(
+      const failed = await settledDisplay(
         card,
         (display) => display.status === "failed",
       );
@@ -875,7 +823,7 @@ describe("Excerpt Image live display", () => {
     shown.demand(pixels);
     await live.started(0);
     live.finish(0, 1);
-    await settled(shown, painted);
+    await settledDisplay(shown, painted);
     shown.release();
 
     const saved = request("#00ff00");
@@ -908,7 +856,7 @@ describe("Excerpt Image live display", () => {
     shown.demand(pixels);
     await live.started(0);
     live.finish(0, 1);
-    await settled(shown, painted);
+    await settledDisplay(shown, painted);
     shown.release();
 
     live.display.revalidate(request("#00ff00"));
@@ -957,7 +905,7 @@ describe("Excerpt Image live display", () => {
     expect(live.diagnostics().canvas).not.toBeNull();
 
     live.finish();
-    const shown = await settled(live.card, painted);
+    const shown = await settledDisplay(live.card, painted);
     expect(shown.image?.format).toBe(WEBP_FORMAT);
     // The read is over while the card still demands it: what it held goes.
     expect(live.diagnostics()).toMatchObject({

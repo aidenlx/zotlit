@@ -168,8 +168,12 @@ function loadsBetween(
   };
 }
 
-async function evalJson<T>(vaultId: string, code: string): Promise<T> {
-  return JSON.parse(await obEval(vaultId, code)) as T;
+async function evalJson<T>(
+  vaultId: string,
+  code: string,
+  timeoutMs?: number,
+): Promise<T> {
+  return JSON.parse(await obEval(vaultId, code, timeoutMs)) as T;
 }
 
 /**
@@ -220,30 +224,45 @@ async function importState(vaultId: string): Promise<string> {
  * uses, and restore the settings and the note it overwrote, so none of them may
  * start beside a write still in flight (`policies/test-timing.md`). Every path —
  * this case's own observation and each cleanup step — goes through the one wait
- * this returns, so the app is asked once however the case ends.
+ * this returns, so a settlement the app reported is observed once however the
+ * case ends.
+ *
+ * A settlement the app has reported is cached; a *failed observation* is not,
+ * because a child killed under load says nothing about the app's own work. The
+ * next caller asks the app again, which is what lets a cleanup step restore the
+ * note and the settings once the CLI answers.
  */
 function importSettlement(vaultId: string): () => Promise<void> {
   let asked: Promise<void> | null = null;
-  return () => (asked ??= settleImport(vaultId));
+  return () =>
+    (asked ??= settleImport(vaultId).catch((error: unknown) => {
+      asked = null;
+      throw error;
+    }));
 }
 
-/** Poll the import to settlement, answering the overwrite confirm when it asks. */
+/**
+ * Poll the import to settlement, answering the overwrite confirm as it asks.
+ *
+ * The confirm and the settlement are observed in one poll, because the confirm
+ * is what holds the settlement back: the Fixture Vault's own Imported Note makes
+ * the import ask before it overwrites, and it stays unsettled until that dialog
+ * is answered. A phase that only watched for settlement first would spend its
+ * whole bound failing to see one, and the import's measured completion — which
+ * starts before it asks — would carry that wait as if it were the import's own
+ * cost.
+ */
 async function settleImport(vaultId: string): Promise<void> {
-  const settled = "String(!!app.__zotlitExcerptImport?.settled)";
-  if (await obEvalUntil(vaultId, settled, { expected: "true", tries: 60 }))
-    return;
-  // The Fixture Vault's own Imported Note makes the import ask before it
-  // overwrites; this answers that confirm the way a user answers it.
-  const answered = await obEval(
+  const observed = await obEvalUntil(
     vaultId,
-    "(()=>{const button=document.querySelector('.modal-container .modal .modal-button-container button.mod-destructive');if(!button)return false;button.click();return true;})()",
+    `(()=>{
+      const button=document.querySelector('.modal-container .modal .modal-button-container button.mod-destructive');
+      if(button)button.click();
+      return String(!!app.__zotlitExcerptImport?.settled);
+    })()`,
+    { expected: "true", tries: 240 },
   );
-  if (answered !== "true")
-    throw new Error(
-      `the note import raised no confirm to answer: ${await importState(vaultId)}`,
-    );
-  if (await obEvalUntil(vaultId, settled, { expected: "true", tries: 240 }))
-    return;
+  if (observed) return;
   throw new Error(
     `the note import did not settle: ${await importState(vaultId)}`,
   );
@@ -517,6 +536,22 @@ export async function verifyReaderBackedExcerpts(
     }),
   );
 
+  // The import writes a note's assets, which this case must not leave in the
+  // shared Fixture Vault. Registered against the files that exist now and
+  // resolved at disposal, so a failure anywhere between here and the assertions
+  // below — including the import's own start — still cleans up after itself.
+  // Disposal is LIFO, so this runs after the settlement waits registered above.
+  cleanup.defer(() =>
+    cleanupStep(async () => {
+      await settleImport();
+      const known = JSON.stringify([...existingFiles]);
+      await obEval(
+        vaultId,
+        `(async()=>{const known=new Set(${known});for(const file of app.vault.getFiles()){if(!known.has(file.path))await app.vault.delete(file);}return true;})()`,
+      );
+    }),
+  );
+
   // Every excerpt the note template embeds resolves against the open reader
   // first, so the cache stands for them when the import runs.
   const prepared = await evalJson<{
@@ -597,20 +632,15 @@ export async function verifyReaderBackedExcerpts(
     fileOpens: 0,
     documentLoads: 0,
   });
+  // What the import wrote, for the assertions below: the files the vault holds
+  // now that it did not hold when the case started. Their removal is registered
+  // above, before the import could create any.
   const written = (
     await evalJson<string[]>(
       vaultId,
       "JSON.stringify(app.vault.getFiles().map(file=>file.path))",
     )
   ).filter((path) => !existingFiles.has(path));
-  cleanup.defer(() =>
-    cleanupStep(async () => {
-      await obEval(
-        vaultId,
-        `(async()=>{for(const path of ${JSON.stringify(written)}){const file=app.vault.getFileByPath(path);if(file)await app.vault.delete(file);}return true;})()`,
-      );
-    }),
-  );
   // The durable asset carries the reader-backed bytes, so the image the import
   // links and the crop that preceded it are one image.
   const assets = written.filter((path) =>
@@ -842,6 +872,232 @@ export async function verifyReaderBackedExcerpts(
   });
 }
 
+/** One excerpt of a multi-PDF batch: a crop on one page of one real PDF. */
+export interface MultiPdfExcerpt {
+  /** The Fixture Attachment the PDF belongs to, so each PDF keeps its own key. */
+  readonly attachmentKey: string;
+  /** Host path of the PDF, resolved by the caller (vault- or Zotero-rooted). */
+  readonly pdfPath: string;
+  readonly pageIndex: number;
+  readonly rect: readonly [number, number, number, number];
+}
+
+/** One request of a measured batch, with what the renderer did for it. */
+interface BatchRequest {
+  attachmentKey: string;
+  /** What the app took to settle this request, crop and decode included. */
+  ms: number;
+  kind: string;
+  provenance?: string;
+  bytes?: number;
+  sha256?: string;
+  loads: Loads;
+}
+
+/**
+ * The renderer process's own memory, sampled as each request of the batch
+ * settles: the peak over the batch rather than a window before and after it.
+ * `private` is Electron's `process.getProcessMemoryInfo()`, which this
+ * environment answers inconsistently, so its answers are counted; the Node
+ * numbers come from the renderer's own `process.memoryUsage()`.
+ */
+interface BatchMemoryPeak {
+  samples: number;
+  node: { rss: number; heapUsed: number; heapTotal: number };
+  electron: { answers: number; nulls: number; private: number };
+}
+
+interface MultiPdfBatch {
+  coldMs: number;
+  warmMs: number;
+  cold: BatchRequest[];
+  warm: BatchRequest[];
+  memory: BatchMemoryPeak;
+  excerpts: { attachmentKey: string; pdfPath: string }[];
+}
+
+/** One pass over the batch, as one CLI call reports it. */
+interface BatchChunk {
+  ms: number;
+  requests: BatchRequest[];
+  memory: BatchMemoryPeak;
+}
+
+/**
+ * One multi-PDF excerpt batch through the production service, measured in the
+ * running app: every request asks for a crop of its own real PDF, cold and then
+ * warm, and the renderer's own counters say what the PDF work cost.
+ *
+ * This is the one measurement the Node harness behind
+ * `docs/excerpt-image-queue-measurements.md` cannot take: its PDF work is a
+ * stand-in charging modelled load and crop times, so its multi-PDF rows are
+ * corpus properties plus modelled delays rather than what Chromium and PDF.js
+ * do. The corpus here is the Fixture's own PDFs — several documents, not one —
+ * and the numbers are the app's.
+ *
+ * It is a measurement, not a pixel oracle: the crops are asserted to resolve
+ * with real bytes and to be served from the cache warm, while their pixels are
+ * `verifyExcerptRendering`'s business, against PDFs whose generated geometry it
+ * carries oracles for.
+ */
+export async function verifyMultiPdfExcerptBatch(
+  vaultId: string,
+  excerpts: readonly MultiPdfExcerpt[],
+): Promise<void> {
+  const pdfs = new Set(excerpts.map(({ attachmentKey }) => attachmentKey));
+  // One call per pass, so a pass is contiguous in the app: no CLI child spawns
+  // between two requests of it, and the deadline is the app's own work rather
+  // than the 15 s that bounds one question. A pass over several PDFs is one
+  // measurement, and a machine under load must not turn it into a failure.
+  const measurePass = (): Promise<BatchChunk> =>
+    evalJson<BatchChunk>(
+      vaultId,
+      `(async()=>{
+        const service=app.plugins.plugins.zotlit.services.excerptImage;
+        const excerpts=${JSON.stringify(excerpts)};
+        const sampleMemory=()=>{try{const value=process.memoryUsage();return {rss:value.rss,heapUsed:value.heapUsed,heapTotal:value.heapTotal};}catch(error){return String(error);}};
+        const request=(excerpt,index)=>({annotation:{key:'MULTIPDF'+String(index).padStart(2,'0'),parentKey:excerpt.attachmentKey,type:'image',color:'#ff0000',comment:null,text:null,pageLabel:String(excerpt.pageIndex+1),tags:[],version:null,position:{kind:'pdf-rects',pageIndex:excerpt.pageIndex,rects:[excerpt.rect]}},source:{kind:'zotero-local-api',serverID:'excerpt-acceptance'},sourceScope:'excerpt-acceptance',attachmentKey:excerpt.attachmentKey,libraryID:1,pdfPath:excerpt.pdfPath,zoteroPngPath:null});
+        const memory={samples:0,node:{rss:0,heapUsed:0,heapTotal:0},electron:{answers:0,nulls:0,private:0}};
+        const observeMemory=async()=>{
+          const value=sampleMemory();
+          if(typeof value!=='string'){memory.samples+=1;memory.node.rss=Math.max(memory.node.rss,value.rss);memory.node.heapUsed=Math.max(memory.node.heapUsed,value.heapUsed);memory.node.heapTotal=Math.max(memory.node.heapTotal,value.heapTotal);}
+          // Electron's own probe is the unreliable one: it answers null, and it
+          // has been seen to leave a promise pending for fifteen seconds. It is
+          // bounded here and awaited outside the request's own timing, so a
+          // probe that never answers costs the record a sample, not a time.
+          const deadline=Promise.withResolvers();
+          setTimeout(()=>deadline.resolve(null),1000);
+          const info=await Promise.race([process.getProcessMemoryInfo().catch(()=>null),deadline.promise]);
+          if(info&&Number.isFinite(info.private)){memory.electron.answers+=1;memory.electron.private=Math.max(memory.electron.private,info.private);}else{memory.electron.nulls+=1;}
+        };
+        const answers=[];
+        let ms=0;
+        for(const [index,excerpt] of excerpts.entries()){
+          const before=${diagnostics};
+          const requestStarted=performance.now();
+          const outcome=await service.resolve(request(excerpt,index));
+          const settled=performance.now()-requestStarted;
+          const after=${diagnostics};
+          await observeMemory();
+          ms+=settled;
+          answers.push({attachmentKey:excerpt.attachmentKey,ms:settled,before,after,outcome:outcome.kind==='available'?{kind:outcome.kind,provenance:outcome.provenance,bytes:outcome.bytes.length,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex')}:{kind:outcome.kind}});
+        }
+        const flatten=entry=>({attachmentKey:entry.attachmentKey,ms:entry.ms,...entry.outcome,loads:{borrowed:entry.after.loads.borrowed-entry.before.loads.borrowed,detached:entry.after.loads.detached-entry.before.loads.detached,fileOpens:entry.after.loads.fileOpens-entry.before.loads.fileOpens,documentLoads:entry.after.loads.documentLoads-entry.before.loads.documentLoads}});
+        return JSON.stringify({ms,requests:answers.map(flatten),memory});
+      })()`,
+      // Five minutes: every request here settles in well under a second on an
+      // idle machine, so anything near this bound is the machine, not the batch.
+      300_000,
+    );
+
+  // The app's own readiness first: a vault just opened is still indexing, and a
+  // measurement taken across that is the app's startup, not the queue's batch.
+  await obEval(
+    vaultId,
+    `(async()=>{
+      const services=app.plugins.plugins.zotlit.services;
+      await services.noteIndex.whenIndexed();
+      await services.excerptImage.clear();
+      return true;
+    })()`,
+    // The index of a freshly opened Fixture Vault is the one thing here that
+    // legitimately outlasts a single CLI call's default deadline.
+    300_000,
+  );
+  const cold = await measurePass();
+  const warm = await measurePass();
+  const batch: MultiPdfBatch = {
+    coldMs: cold.ms,
+    warmMs: warm.ms,
+    cold: cold.requests,
+    warm: warm.requests,
+    memory: {
+      samples: cold.memory.samples + warm.memory.samples,
+      node: {
+        rss: Math.max(cold.memory.node.rss, warm.memory.node.rss),
+        heapUsed: Math.max(
+          cold.memory.node.heapUsed,
+          warm.memory.node.heapUsed,
+        ),
+        heapTotal: Math.max(
+          cold.memory.node.heapTotal,
+          warm.memory.node.heapTotal,
+        ),
+      },
+      electron: {
+        answers: cold.memory.electron.answers + warm.memory.electron.answers,
+        nulls: cold.memory.electron.nulls + warm.memory.electron.nulls,
+        private: Math.max(
+          cold.memory.electron.private,
+          warm.memory.electron.private,
+        ),
+      },
+    },
+    excerpts: excerpts.map(({ attachmentKey, pdfPath }) => ({
+      attachmentKey,
+      pdfPath,
+    })),
+  };
+  // The batch's own numbers, emitted as soon as they exist: the record in
+  // `docs/excerpt-image-queue-measurements.md` cites them, and the assertions
+  // below are what make them the shape of a passing run. Serialized, because
+  // the numbers are nested and a console that collapses them records nothing.
+  console.info(
+    "Multi-PDF excerpt batch evidence",
+    JSON.stringify(batch, null, 2),
+  );
+
+  expect(pdfs.size).toBeGreaterThan(1);
+  expect(batch.excerpts).toHaveLength(excerpts.length);
+  const coldLoads: Loads = {
+    borrowed: 0,
+    detached: 0,
+    fileOpens: 0,
+    documentLoads: 0,
+  };
+  for (const { loads } of batch.cold)
+    for (const kind of Object.keys(coldLoads) as (keyof Loads)[])
+      coldLoads[kind] += loads[kind];
+  for (const [index, entry] of batch.cold.entries()) {
+    expect(
+      entry,
+      `cold request ${index} of the multi-PDF batch must render its own PDF`,
+    ).toMatchObject({
+      kind: "available",
+      provenance: "rendered",
+      loads: { borrowed: 0, detached: 1 },
+    });
+    expect(entry.bytes).toBeGreaterThan(0);
+    expect(entry.sha256).toMatch(/^[0-9a-f]{64}$/);
+  }
+  // Every PDF is opened once per excerpt and no more, with each open loaded and
+  // no double work: an excerpt is one crop of one document. The queue's
+  // residency is shared between concurrent work, so a pass of sequential
+  // requests pays a load each — the numbers below record that rather than
+  // assuming a retention the app does not promise.
+  expect(coldLoads).toEqual({
+    borrowed: 0,
+    detached: excerpts.length,
+    fileOpens: excerpts.length,
+    documentLoads: excerpts.length,
+  });
+  // The warm pass is pure cache: the same pixels for no PDF work at all.
+  for (const [index, entry] of batch.warm.entries()) {
+    expect(entry).toMatchObject({
+      provenance: "cache",
+      sha256: batch.cold[index]!.sha256,
+      loads: { borrowed: 0, detached: 0, fileOpens: 0, documentLoads: 0 },
+    });
+  }
+  expect(batch.warmMs).toBeLessThan(batch.coldMs);
+  // A measurement, not a benchmark: a pass this long means something in it
+  // stalled — the failures this case is here to report, rather than a slow
+  // machine, since every request above settles in tens of milliseconds.
+  expect(batch.coldMs).toBeLessThan(60_000);
+  expect(batch.memory.samples).toBe(2 * excerpts.length);
+  expect(batch.memory.node.rss).toBeGreaterThan(0);
+}
+
 /**
  * A saved edit's pixels: the card that shows an Annotation goes on painting
  * the image of the record that stood before the write while the replacement
@@ -850,6 +1106,14 @@ export async function verifyReaderBackedExcerpts(
  *
  * A confirmed write needs Zotero's Local API, so this runs where the Attachment
  * is writable — the Paired Run — and skips where it is not.
+ *
+ * The write this case verifies lands on the Annotation, but the question of
+ * whether one may land is about the **Attachment**: the repository indexes its
+ * verified database sources by Attachment, so `capabilityFor` answers
+ * `read-only`/`server-changed` for any key it holds no source for — an
+ * Annotation's own key among them — even where the Attachment it belongs to is
+ * writable. Asking with the Annotation key therefore skipped every assertion
+ * below in every run, whatever the Attachment allowed.
  */
 export async function verifySavedEditDisplay(
   vaultId: string,
@@ -865,7 +1129,7 @@ export async function verifySavedEditDisplay(
       await repository.ready;
       const list=await repository.read(${JSON.stringify(attachment.key)});
       const record=list?.annotations?.find(annotation=>annotation.key===${JSON.stringify(target.key)})??null;
-      return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(target.key)}),record:record&&{color:record.color,comment:record.comment}});
+      return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(attachment.key)}),record:record&&{color:record.color,comment:record.comment}});
     })()`,
   );
   if (card.capability.kind !== "writable") {
@@ -917,6 +1181,7 @@ export async function verifySavedEditDisplay(
   const before = await evalJson<{
     src: string;
     created: string[];
+    revoked: string[];
     diagnostics: RendererDiagnostics;
   }>(vaultId, cardState(target.key));
   expect(before.src).toMatch(/^blob:/);
@@ -1001,9 +1266,17 @@ export async function verifySavedEditDisplay(
     revoked: string[];
     diagnostics: RendererDiagnostics;
   }>(vaultId, cardState(target.key));
-  expect(edited.created.slice(before.created.length)).toHaveLength(1);
-  expect(edited.src).toBe(edited.created.at(-1));
-  expect(edited.revoked).toEqual([before.src]);
+  // URL ownership, not an allocation count: the card paints a URL it allocated
+  // to show the edited image, that URL is still live, and every URL it
+  // superseded — the image before the edit, and any temporary it allocated and
+  // did not keep — is released. A refactor is free to allocate more than one.
+  const allocated = edited.created.slice(before.created.length);
+  const revoked = edited.revoked.slice(before.revoked.length);
+  expect(allocated).toContain(edited.src);
+  expect(revoked).not.toContain(edited.src);
+  expect(revoked).toContain(before.src);
+  for (const url of allocated)
+    if (url !== edited.src) expect(revoked).toContain(url);
   expect(
     loadsBetween(before.diagnostics, edited.diagnostics).detached +
       loadsBetween(before.diagnostics, edited.diagnostics).borrowed,
