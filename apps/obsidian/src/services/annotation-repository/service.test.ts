@@ -1655,6 +1655,66 @@ it("announces nothing while a write is still in flight", async () => {
   expect(announced).toEqual(["TYY6Z6ZF"]);
 });
 
+it("announces the pixels a read found moved, where no write of its own said so", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering: readonly WireAnnotation[] = ROUGIER_ANNOTATIONS;
+  const { repository, serverEvents } = await setup(stack, {
+    children: () => annotationPage(answering),
+  });
+  const announced: Array<[string, string | null, string]> = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record, source) =>
+      announced.push([record.key, record.color, source.kind]),
+    ),
+  );
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+
+  // The switch to the Local API answered the same pixels as the database did,
+  // so the read that published them said nothing.
+  expect(announced).toEqual([]);
+
+  // Zotero saved an ink recolour and a crop resize of its own: both reach this
+  // repository through the Freshness Signal and the read after it, and neither
+  // is a write this repository made. A comment that moved with them is not a
+  // pixel input and says nothing.
+  answering = ROUGIER_ANNOTATIONS.map((record) =>
+    record.key === "TYY6Z6ZF"
+      ? { ...record, color: "#2ea8e5" }
+      : record.key === "FDRFQ7C2"
+        ? {
+            ...record,
+            position: { pageIndex: 1, rects: [[10, 20, 30, 40]] },
+          }
+        : record.key === "HRK7BG32"
+          ? { ...record, comment: "Edited in Zotero" }
+          : record,
+  );
+  const changed = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await changed;
+  const refreshed = await repository.read("RGRPDF24");
+
+  expect(colorOf(refreshed, "TYY6Z6ZF")).toBe("#2ea8e5");
+  expect(
+    refreshed?.annotations.find(({ key }) => key === "FDRFQ7C2")?.position,
+  ).toEqual({ kind: "pdf-rects", pageIndex: 1, rects: [[10, 20, 30, 40]] });
+  // The two Annotations whose pixels moved, in the Attachment's reading order,
+  // and only those: the five the read answered unchanged said nothing.
+  expect(announced).toEqual([
+    ["TYY6Z6ZF", "#2ea8e5", "zotero-local-api"],
+    ["FDRFQ7C2", "#ffd400", "zotero-local-api"],
+  ]);
+
+  // What stands now is the baseline the next read is compared against, so a
+  // surface re-reading the Attachment is not asked to replace anything again.
+  await repository.read("RGRPDF24");
+  expect(announced).toEqual([
+    ["TYY6Z6ZF", "#2ea8e5", "zotero-local-api"],
+    ["FDRFQ7C2", "#ffd400", "zotero-local-api"],
+  ]);
+});
+
 it("re-reads the annotation after the 204, and writes again off that version", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(stack, {

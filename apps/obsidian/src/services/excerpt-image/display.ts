@@ -281,7 +281,6 @@ export class ExcerptDisplayService extends Service<void> {
       slot.cards.add(card);
       card.slot = slot;
       this.#read(slot);
-      void this.#seed(slot);
       this.#notify(slot);
       return;
     }
@@ -290,8 +289,10 @@ export class ExcerptDisplayService extends Service<void> {
 
   /**
    * Paint what this device last displayed for the Annotation while its saved
-   * pixels resolve, which is what a card shows after a remount and after an
-   * application restart instead of nothing at all.
+   * pixels resolve, which is what a card shows after a remount, after an
+   * application restart, and wherever a read starts with nothing under its key —
+   * a Held Read the client's own garbage collection dropped while its card was
+   * still mounted included — instead of nothing at all.
    *
    * A key a read has already answered keeps its answer: the stored image is the
    * fallback, never a replacement for one the display holds.
@@ -383,6 +384,11 @@ export class ExcerptDisplayService extends Service<void> {
   #start(slot: Slot): void {
     const wanted = excerptKey(slot.latest);
     this.#deps.queries.invalidate(slot.key);
+    // Query Core's own garbage collection can drop the Held Read of a card that
+    // is still mounted, so a read that starts with nothing under its key paints
+    // what the device persists — the previous image — rather than nothing while
+    // it replaces it, and after the replacement fails.
+    void this.#seed(slot);
     const settled = this.#deps.queries.read<AvailableExcerpt>(
       slot.key,
       (context) => this.#resolve(slot, context),

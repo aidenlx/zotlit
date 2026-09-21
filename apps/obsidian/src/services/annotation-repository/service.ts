@@ -229,17 +229,19 @@ export interface AnnotationRepositoryEvents {
    */
   "annotations-changed": (attachmentKey: string) => void;
   /**
-   * A saved write moved one Annotation's pixels: its geometry or its ink
-   * appearance decides what an Excerpt Image crops and paints, while a comment,
-   * a tag, or a label leaves the pixels as they were and says nothing here.
+   * One Annotation's pixels moved: its geometry or its ink appearance decides
+   * what an Excerpt Image crops and paints, while a comment, a tag, or a label
+   * leaves the pixels as they were and says nothing here.
    *
    * A display holding an image of the previous pixels replaces it against this
-   * record: the write's own answer is what was saved, so a consumer needs no
-   * list re-read to know the new pixels.
+   * record. A write this repository confirmed answers with the record Zotero
+   * holds, so a consumer needs no list re-read to know the new pixels; an edit
+   * saved in Zotero itself is what a later read, compared against the list that
+   * stood before it, finds and announces here.
    *
    * @param record the saved Annotation, whose `parentKey` names its Attachment.
-   * @param source the Annotation Source the write was verified against, which is
-   *   what a consumer needs to resolve the record's files again.
+   * @param source the Annotation Source the record was read or written through,
+   *   which is what a consumer needs to resolve the record's files again.
    * @see apps/obsidian/docs/adr/0055-reader-edits-revalidate-excerpt-images.md
    */
   "excerpt-pixels-changed": (
@@ -449,12 +451,14 @@ export class AnnotationRepository extends Service<void> {
       ) {
         this.#confirmedWrites.delete(attachmentKey);
       }
+      const superseded = this.#publishedLists.get(attachmentKey);
       this.#publishedLists.set(attachmentKey, candidate);
       this.#publishedStatuses.set(
         attachmentKey,
         this.#queries.peek<AnnotationList>(queryKey)?.status ?? "fresh",
       );
       this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
+      this.#announceReadPixels(superseded, candidate);
       return candidate;
     }
     const published = this.#published(attachmentKey)?.value;
@@ -1204,6 +1208,44 @@ export class AnnotationRepository extends Service<void> {
     if (excerptFingerprint(before) === excerptFingerprint(applied.record))
       return;
     this.#emitter.emit("excerpt-pixels-changed", applied.record, source);
+  }
+
+  /**
+   * Announce every Annotation a read found moved, so an Excerpt Image made from
+   * the record that stood before it is replaced rather than shown.
+   *
+   * An edit saved in Zotero itself — a crop resize, an ink colour — reaches this
+   * repository through freshness invalidation and the read after it, where no
+   * write of its own says so, and this is where that read's movement is found.
+   * The comparison is the canonical pixel fingerprint against the list that
+   * stood before the read answered, so a read that answers the same pixels — a
+   * source switch, or Zotero echoing a colour the user picked — says nothing,
+   * and a second read of a list already published says nothing either.
+   *
+   * Whether the device holds an image for an Annotation is not this
+   * repository's to know: the consumer resolves that against its own store, and
+   * one this device never cached stays on demand.
+   */
+  #announceReadPixels(
+    superseded: AnnotationList | undefined,
+    candidate: AnnotationList,
+  ): void {
+    if (!superseded) return;
+    const stood = new Map(
+      superseded.annotations.map((record) => [
+        record.key,
+        excerptFingerprint(record),
+      ]),
+    );
+    for (const record of candidate.annotations) {
+      const fingerprint = stood.get(record.key);
+      if (
+        fingerprint === undefined ||
+        fingerprint === excerptFingerprint(record)
+      )
+        continue;
+      this.#emitter.emit("excerpt-pixels-changed", record, candidate.source);
+    }
   }
 
   #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {

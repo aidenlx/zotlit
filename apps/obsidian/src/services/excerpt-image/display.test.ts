@@ -707,6 +707,51 @@ describe("Excerpt Image live display", () => {
     expect(replaced.current).toBe(true);
   });
 
+  it("starts a replacement from the stored image when the client dropped the Held Read", async () => {
+    await using live = harness();
+    // The display's own keys carry the client's own retention, so a Held Read
+    // that no observer holds is dropped five minutes after it settles, whether
+    // a card is mounted on it or not. The test shortens that to outlive it
+    // rather than wait it out, then puts the default back so the replacement
+    // below runs under the retention the plugin really has.
+    live.queries.client.setQueryDefaults([EXCERPT_DISPLAY], { gcTime: 25 });
+    const card = live.card();
+    const pixels = request("#ff0000");
+    card.demand(pixels);
+    await live.started(0);
+    live.finish(0, 1);
+    const first = await settled(card, painted);
+
+    await vi.waitFor(() =>
+      expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]),
+    );
+    // The card is still mounted and still demands the pixels it was painted
+    // from; the Held Read behind it is what the client dropped.
+    expect(card.snapshot().image).toBeNull();
+    live.queries.client.setQueryDefaults([EXCERPT_DISPLAY], {
+      gcTime: 5 * 60 * 1_000,
+    });
+
+    // A saved edit starts the read the card is waiting on: what it paints while
+    // that read replaces the pixels is the image this device persists...
+    live.display.revalidate(request("#00ff00"));
+    await live.started(1);
+    await vi.waitFor(() => expect(card.snapshot().image).not.toBeNull());
+    const held = card.snapshot();
+    expect(held.image?.bytes).toEqual(first.image?.bytes);
+    expect(held.current).toBe(true);
+    expect(held.status).toBe("reading");
+
+    // ...and what it goes on painting once the replacement fails.
+    live.fail(1);
+    const failed = await settled(
+      card,
+      (display) => display.status === "failed",
+    );
+    expect(failed.image?.bytes).toEqual(first.image?.bytes);
+    expect(failed.current).toBe(true);
+  });
+
   it("replaces what the store holds for an Annotation nothing displays", async () => {
     await using live = harness();
     const shown = live.card();
