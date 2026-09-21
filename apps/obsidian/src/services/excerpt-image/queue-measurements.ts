@@ -10,6 +10,7 @@
 // IndexedDB store implements. Wall times therefore measure the queue, not
 // Chromium's rasterizer.
 
+import { delay } from "./__fixtures__/delay";
 import type { ExcerptImage } from "./format";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptEntry, ExcerptRequest } from "./service";
@@ -53,14 +54,11 @@ export interface QueueMeasurements {
 
 const bytes = new Uint8Array([1, 2, 3]);
 
-/** The harness models PDF work with wall-time costs the queue actually spends. */
-function delay(milliseconds: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, milliseconds);
-  return promise;
-}
-
-/** A counting stand-in for the PDF renderer's resident document session. */
+/**
+ * A counting stand-in for the PDF renderer's resident document session. PDF
+ * work costs the queue wall time it actually spends: one modelled delay per
+ * document load and one per crop render.
+ */
 class RendererStub {
   loads = 0;
   renders = 0;

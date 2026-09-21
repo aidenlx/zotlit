@@ -1,5 +1,6 @@
 // Runs in a disposable Electron renderer: the canvas encoding path, an
 // independent decode of its output, and the PNG/WebP size and timing comparison.
+import { check } from "./__fixtures__/check";
 import { encodeExcerptImage } from "./encode";
 import { usableExcerptWebp } from "./webp";
 
@@ -29,10 +30,6 @@ export interface EncodeReport {
     /** Worst channel step of a lossy payload, to show the oracle discriminates. */
     lossyStep: number;
   };
-}
-
-function check(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
 }
 
 function canvas(width: number, height: number) {

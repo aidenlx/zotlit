@@ -8,10 +8,13 @@ This record answers the evidence [issue #1182](https://github.com/aidenlx/zotlit
 
 ```sh
 cd apps/obsidian
-pnpm exec vitest run src/services/excerpt-image
+pnpm exec vitest run \
+  src/services/excerpt-image/request.test.ts \
+  src/services/excerpt-image/renderer.test.ts \
+  src/services/excerpt-image/service.test.ts
 ```
 
-The pair trial is `reuses one render for an API request followed by a database request` in `request.test.ts`, its renderer half is `keeps one resident document across the two representations of a database` in `renderer.test.ts`, and the admission bound is measured by one trial in `service.test.ts`: `returns a stored cache hit while every admission slot is taken`. The Electron browser trials in the same directory skip unless `ZOTLIT_TEST_ELECTRON_PATH` points at an Electron build, which is the state this record was taken in.
+The pair trial is `reuses one render for an API request followed by a database request` in `request.test.ts`, its renderer half is `keeps one resident document across the two representations of a database` in `renderer.test.ts`, and the admission bound is measured by one trial in `service.test.ts`: `returns a stored cache hit while every admission slot is taken`. Every number below comes from one of those three committed trials: asserted where the tables below say so, and counted on the trial's own doubles otherwise.
 
 ## The runtime this record is against
 
@@ -37,7 +40,7 @@ The API request carries a `zotero-local-api` source naming Server ID `A8sf5Zsz8y
 
 Totals for the pair: **1 load, 1 render, 1 cache hit**. The database representation reaches the bytes the API representation generated without re-entering the refresher.
 
-The provenance column, the render count, and the load column are the committed assertions: `request.test.ts` pins `provenance: "rendered"` then `provenance: "cache"` and `render` called once, and `renderer.test.ts` pins one `getDocument` for the pair — the step split of those totals follows the provenance each step reports. The cache-read, cache-hit, and cache-write counters come from an instrumented copy of that trial — the same doubles with counters attached — because call counts on doubles are not something the suite asserts.
+The provenance column, the render count, and the load column are the committed assertions: `request.test.ts` pins `provenance: "rendered"` then `provenance: "cache"` and `render` called once, and `renderer.test.ts` pins one `getDocument` for the pair — the step split of those totals follows the provenance each step reports. The cache columns come from that same committed trial: its injected cache double counts reads, the reads that answered an entry, and writes, and the trial pins their totals at `{ reads: 2, hits: 1, writes: 1 }`, so the pair of rows above is asserted whole rather than observed on an instrumented copy.
 
 ## The renderer keeps one document across both representations
 

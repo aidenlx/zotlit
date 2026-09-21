@@ -7,11 +7,11 @@ This record answers the questions behind [ADR 0054](../apps/obsidian/docs/adr/00
 ```sh
 cd apps/obsidian
 ZOTLIT_BORROW_MEASUREMENTS=1 \
-ZOTLIT_BORROW_MEASUREMENTS_OUT=/tmp/borrow-measurements.json \
+ZOTLIT_BORROW_MEASUREMENTS_OUT=../../tmp/borrow-measurements.json \
   pnpm exec vitest run src/services/excerpt-image/borrow-measurements.test.ts
 ```
 
-The suite skips unless `ZOTLIT_BORROW_MEASUREMENTS=1`, so it never runs in CI; `ZOTLIT_BORROW_MEASUREMENTS_OUT` is optional and just writes the record to a file. Two runs on this machine reproduced every count exactly (the wall times below are the second run's).
+The suite skips unless `ZOTLIT_BORROW_MEASUREMENTS=1`, so it never runs in CI; `ZOTLIT_BORROW_MEASUREMENTS_OUT` is optional and just writes the record to a file. It names a path relative to `apps/obsidian`, so `../../tmp` is the workspace root's gitignored `tmp/` ([scratch artifacts](../policies/scratch-artifacts.md)). Two runs on this machine reproduced every count exactly (the wall times below are the second run's).
 
 ## What the harness models, and what it does not
 

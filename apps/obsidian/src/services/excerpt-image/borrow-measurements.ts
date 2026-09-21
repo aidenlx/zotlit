@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { loadPdfJs } from "obsidian";
 import { vi } from "vitest";
 
+import { delay } from "./__fixtures__/delay";
 import { sizedWebp } from "./__fixtures__/webp";
 import type {
   BorrowedExcerptDocument,
@@ -66,12 +67,6 @@ const EXCERPTS_PER_PDF = 4;
 const FILE_BYTES = 64 * 1024;
 const LOAD_MS = 40;
 const CROP_MS = 12;
-
-function delay(milliseconds: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, milliseconds);
-  return promise;
-}
 
 /** Deterministic file content per PDF, so a rewrite can differ in every byte. */
 function content(pdf: number, marker = 0): Uint8Array {

@@ -159,6 +159,22 @@ function validatedEntry(probe: ExcerptProbe): ExcerptEntry | undefined {
     : undefined;
 }
 
+/**
+ * Whether a snapshot taken at `version` may stand as an Annotation's newest
+ * demand over one already recorded at `previous`.
+ *
+ * A record version is the saved order of the pixels it describes, so only a
+ * snapshot at least as new as the recorded one may replace it: a note or batch
+ * request carries the record as it was when the batch started, and admitting it
+ * after a later saved edit must not make its older pixels the demand the edit's
+ * own answer is measured against. A source that keeps no version — the database
+ * partition — leaves no order to keep, so admission order stands there.
+ */
+function supersedes(version: number | null, previous: number | null): boolean {
+  if (version === null || previous === null) return true;
+  return version >= previous;
+}
+
 export interface ExcerptImageOperation extends AsyncDisposable {
   resolve(
     request: ExcerptRequest,
@@ -172,12 +188,29 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   readonly #deps;
   readonly #pending = new Map<string, Pending>();
   /**
-   * The pixels each Annotation with a resolution in flight was last asked for.
+   * The pixels each Annotation was last asked for, in saved order, with the
+   * resolutions still in flight under them.
+   *
    * A resolution publishes the Annotation's latest reference only while it is
    * that newest demand, so a late answer from an edit the user has already
-   * replaced cannot move the reference back.
+   * replaced cannot move the reference back. The newest demand is the newest
+   * *saved* snapshot rather than the newest admitted one, because a note or
+   * batch resolution carries the record as it was before a later saved edit;
+   * ordering by admission would let that stale snapshot become the demand a
+   * late answer publishes against, writing its older pixels as the Annotation's
+   * latest image.
+   *
+   * A versioned entry is therefore kept for the session instead of only for as
+   * long as it has work in flight: the newer edit's own work has usually settled
+   * by the time the stale snapshot arrives, and an entry dropped then would let
+   * the snapshot stand as the newest demand again. One that carries no version —
+   * the database partition — is held only while it has work in flight, which is
+   * what this map held before.
    */
-  readonly #demands = new Map<string, { fingerprint: string; jobs: number }>();
+  readonly #demands = new Map<
+    string,
+    { fingerprint: string; version: number | null; jobs: number }
+  >();
   readonly #shutdown = new AbortController();
   readonly #queue = new ExcerptPdfQueue();
   #generation = 0;
@@ -333,9 +366,11 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
    * the Annotation while its saved pixels resolve.
    *
    * Only an outcome the store holds bytes for publishes one, and only while the
-   * resolution is still the Annotation's newest demand in a clear generation
-   * that still stands: a superseded answer, and one a manual clear has already
-   * overtaken, leaves the reference where it was, so a failed or a late
+   * resolution still carries the newest saved pixels this Annotation was asked
+   * for — the demand admission keeps in saved order, not in admission order — in
+   * a clear generation that still stands: a superseded answer, a note or batch
+   * snapshot taken before a later saved edit, and one a manual clear has already
+   * overtaken each leave the reference where it was, so a failed or a late
    * replacement never moves the latest image backward.
    */
   async #publishLatest(
@@ -426,6 +461,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     const controller = new AbortController();
     const annotation = excerptAnnotationRecord(request);
     const fingerprint = excerptFingerprint(request.annotation);
+    const version = request.annotation.version;
     // The place in line is taken now, in call order, so rapid requests for one
     // PDF render in the order their callers made them even though their
     // preflights finish out of order.
@@ -561,14 +597,19 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     })();
     const pending = { controller, promise, users: 0 };
     this.#pending.set(pendingKey, pending);
-    // This resolution is the Annotation's newest demand until a later one
-    // replaces it; the map holds only Annotations with work in flight.
+    // The demand is the newest saved pixels this Annotation has been asked for,
+    // which a snapshot taken before a later edit cannot displace; the entry then
+    // stands for as long as it holds a version, so the stale snapshot's own
+    // answer is measured against the edit rather than against itself.
     const demand = this.#demands.get(annotation);
     if (demand) {
-      demand.fingerprint = fingerprint;
+      if (supersedes(version, demand.version)) {
+        demand.fingerprint = fingerprint;
+        demand.version = version;
+      }
       demand.jobs++;
     } else {
-      this.#demands.set(annotation, { fingerprint, jobs: 1 });
+      this.#demands.set(annotation, { fingerprint, version, jobs: 1 });
     }
     void promise
       .finally(() => {
@@ -577,7 +618,8 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         const held = this.#demands.get(annotation);
         if (held) {
           held.jobs--;
-          if (held.jobs === 0) this.#demands.delete(annotation);
+          if (held.jobs === 0 && held.version === null)
+            this.#demands.delete(annotation);
         }
       })
       .catch(() => undefined);

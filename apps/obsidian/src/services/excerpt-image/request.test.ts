@@ -120,12 +120,22 @@ describe("Excerpt request verification", () => {
     const bytes = new Uint8Array([1, 2, 3]);
     const entries = new Map<string, ExcerptEntry>();
     const render = vi.fn(async () => ({ bytes, format: PNG_FORMAT }));
+    // The cache evidence the record in docs/excerpt-image-reuse-measurements.md
+    // states: reads, the reads that answered an entry, and writes, counted on
+    // the double the production preflight and the render path actually drive.
+    const cache = { reads: 0, hits: 0, writes: 0 };
     await using service = new ExcerptImageService({
       stamp: async () => ({ size: 100, mtimeMs: 10 }),
       render,
       cache: {
-        get: async (key) => entries.get(key),
+        get: async (key) => {
+          cache.reads++;
+          const entry = entries.get(key);
+          if (entry) cache.hits++;
+          return entry;
+        },
         put: async (key, entry) => {
+          cache.writes++;
           entries.set(key, entry);
         },
       },
@@ -140,6 +150,8 @@ describe("Excerpt request verification", () => {
       identity: { key: excerptKey(fromApi), pdf: { size: 100, mtimeMs: 10 } },
     });
     expect(render).toHaveBeenCalledTimes(1);
+    // One read misses and stores the bytes; the second reads them and hits.
+    expect(cache).toEqual({ reads: 2, hits: 1, writes: 1 });
   });
 
   it("isolates an identical key in another Library", async () => {

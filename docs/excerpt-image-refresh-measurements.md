@@ -54,7 +54,8 @@ The stand-ins:
   ],
   "bytes": {
     "budget": 1468,
-    "crop": 734
+    "crop": 734,
+    "retained": 1468
   },
   "queue": {
     "admitted": 0,
@@ -74,6 +75,7 @@ The stand-ins:
 | Crops drawn and encoded | 8 | the trial's own counter, incremented by every crop it answers a resolve with |
 | One crop, encoded | 734 B | a 320×120 lossless-WebP drawing of the trial's seed |
 | Image budget the eviction walk ran under | 1468 B | two crops, deliberately small so one eviction happens inside one trial |
+| Bytes the store still answers for afterwards | 1468 B | the walk's own keys read back from the store after it ended; the acceptance asserts this stays within the budget the run configured |
 | Images the walk wrote | 3 | the walk's own writes, one of which the budget evicted |
 | Images evicted | 1 | the oldest, together with the reference that located it |
 | References still standing | 40 | read back from the store after the walk |

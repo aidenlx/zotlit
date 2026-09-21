@@ -3,6 +3,7 @@
 // in is hidden — the background-throttled state a minimized Obsidian is in.
 // Nothing here parses a PDF: the renderer's own document load and rasterizer
 // live in Obsidian (see docs/excerpt-image-queue-measurements.md).
+import { check } from "./__fixtures__/check";
 import { encodeExcerptImage } from "./encode";
 import { EXCERPT_JOB_LIMIT, ExcerptPdfQueue } from "./pdf-queue";
 
@@ -27,10 +28,6 @@ export interface ChromiumQueueReport {
   teardown: { order: string[] };
   /** How a 200 ms timer and a 200 ms `AbortSignal.timeout` actually fired here. */
   throttledTimers: { timerMs: number; deadlineMs: number };
-}
-
-function check(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
 }
 
 /** The crop every job encodes: the full-width page crop an excerpt shows. */

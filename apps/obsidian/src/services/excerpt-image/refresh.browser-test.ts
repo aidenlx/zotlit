@@ -11,6 +11,7 @@
 // those exist — see `service.test.ts`.
 import { QueryClientService } from "@/services/query-client/service";
 
+import { check } from "./__fixtures__/check";
 import { excerptAnnotationRecord, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { EXCERPT_DISPLAY, ExcerptDisplayService } from "./display";
@@ -26,17 +27,18 @@ import type { ExcerptStore } from "./store";
 export interface RefreshReport {
   passed: string[];
   /** The store budget the eviction walk opened with, and one crop's size in it. */
-  bytes: { budget: number; crop: number };
+  bytes: {
+    budget: number;
+    crop: number;
+    /** Bytes the store still answered for the walk's own images once it ended. */
+    retained: number;
+  };
   /** The shared queue's counts after the replacements settled, and its bound. */
   queue: { admitted: number; awaiting: number; limit: number };
   /** References still standing after the eviction walk. */
   references: number;
   /** Crops this trial drew on a real canvas and encoded with the real encoder. */
   crops: number;
-}
-
-function check(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
 }
 
 /**
@@ -238,12 +240,12 @@ function settled(
   matches: (display: ExcerptImageDisplay) => boolean,
 ): Promise<ExcerptImageDisplay> {
   const next = Promise.withResolvers<ExcerptImageDisplay>();
-  const check = () => {
+  const onChange = () => {
     const snapshot = card.snapshot();
     if (matches(snapshot)) next.resolve(snapshot);
   };
-  const off = card.subscribe(check);
-  check();
+  const off = card.subscribe(onChange);
+  onChange();
   return bounded(`the display of ${label}`, next.promise, () =>
     JSON.stringify(card.snapshot()),
   ).finally(off);
@@ -264,7 +266,7 @@ async function held(
 
 export async function run(): Promise<RefreshReport> {
   const passed: string[] = [];
-  const bytes = { budget: 0, crop: 0 };
+  const bytes = { budget: 0, crop: 0, retained: 0 };
   let queue = { admitted: 0, awaiting: 0, limit: EXCERPT_JOB_LIMIT };
   let references = 0;
 
@@ -476,6 +478,17 @@ export async function run(): Promise<RefreshReport> {
       check(
         (await app.store.get("newest")) !== undefined,
         "Eviction took the newest image",
+      );
+      // What the walk left behind, measured back from the store: the budget it
+      // opened with is a bound on these bytes, not a restatement of itself.
+      const kept = await Promise.all(
+        [excerptKey(oldest), "replacement", "newest"].map((key) =>
+          app.store.get(key),
+        ),
+      );
+      bytes.retained = kept.reduce(
+        (total, entry) => total + (entry?.bytes.byteLength ?? 0),
+        0,
       );
       const standing = await Promise.all(
         Array.from({ length: 40 }, (_, index) =>

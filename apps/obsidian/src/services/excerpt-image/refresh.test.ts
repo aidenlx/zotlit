@@ -55,9 +55,9 @@ it.skipIf(!testElectron)(
       "eviction, references, and image byte accounting",
       "clear races with running and queued crop work",
     ]);
-    // The budget held two crops, so the third evicted exactly one, and the
-    // references of remembered Annotations cost none of it.
-    expect(report.bytes.budget).toBe(report.bytes.crop * 2);
+    // The walk evicted down to its budget: the bytes the store still answers
+    // for cannot outgrow the bound the run configured.
+    expect(report.bytes.retained).toBeLessThanOrEqual(report.bytes.budget);
     expect(report.references).toBe(40);
     // Every replacement went through the shared queue, under its bound.
     expect(report.queue.limit).toBe(128);

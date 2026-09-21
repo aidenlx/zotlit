@@ -1143,9 +1143,12 @@ describe("Excerpt latest references", () => {
   /** The record one Annotation's latest image lives under, as the store keys it. */
   const record = excerptAnnotationRecord(inkRequest);
   /** The ink pixels one colour asks for: another colour is another saved edit. */
-  const recolor = (color: string): ExcerptRequest => ({
+  const recolor = (
+    color: string,
+    version: number | null = null,
+  ): ExcerptRequest => ({
     ...inkRequest,
-    annotation: { ...inkRequest.annotation, color },
+    annotation: { ...inkRequest.annotation, color, version },
   });
 
   it("publishes the image of the saved pixels, and survives a failed replacement", async () => {
@@ -1225,6 +1228,47 @@ describe("Excerpt latest references", () => {
       bytes: generated,
     });
     await current;
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+  });
+
+  it("keeps the saved edit's pixels when an older snapshot is admitted after them", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const references = new Map<string, ExcerptIdentity>();
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render: async () => rendered,
+      read: async () => fallback,
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
+      },
+    });
+
+    // The saved edit is the display's own request, and it is admitted and
+    // resolved first: it is the Annotation's newest saved pixels.
+    const saved = recolor("#00ff00", 2);
+    await expect(service.resolve(saved)).resolves.toMatchObject({
+      provenance: "rendered",
+    });
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+
+    // A note or batch resolution holds the record as it was before that edit,
+    // and is admitted after the edit has settled. Its pixels are older, so its
+    // answer cannot become the latest reference.
+    const stale = recolor("#ff0000", 1);
+    await expect(service.resolve(stale)).resolves.toMatchObject({
+      provenance: "rendered",
+    });
     expect(references.get(record)?.fingerprint).toBe(
       excerptFingerprint(saved.annotation),
     );

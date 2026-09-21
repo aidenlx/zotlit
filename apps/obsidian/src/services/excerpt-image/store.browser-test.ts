@@ -1,4 +1,5 @@
 // Runs in a disposable Electron renderer so transactions use Chromium's IndexedDB.
+import { check } from "./__fixtures__/check";
 import { sizedWebp } from "./__fixtures__/webp";
 import { encodeExcerptImage } from "./encode";
 import { PNG_FORMAT, WEBP_FORMAT } from "./format";
@@ -6,10 +7,6 @@ import { openExcerptStore } from "./store";
 
 /** The budget assertions need exact lengths; every payload carries a PNG signature. */
 const UNIT = 1_000;
-
-function check(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return (

@@ -9,11 +9,11 @@ This record answers the questions behind [ADR 0051](../apps/obsidian/docs/adr/00
 ```sh
 cd apps/obsidian
 ZOTLIT_BATCH_MEASUREMENTS=1 \
-ZOTLIT_BATCH_MEASUREMENTS_OUT=/tmp/batch-measurements.json \
+ZOTLIT_BATCH_MEASUREMENTS_OUT=../../tmp/batch-measurements.json \
   pnpm exec vitest run src/services/excerpt-image/batch-measurements.test.ts
 ```
 
-The suite skips unless `ZOTLIT_BATCH_MEASUREMENTS=1`, so it never runs in CI; `ZOTLIT_BATCH_MEASUREMENTS_OUT` is optional and writes the record to a file. Two runs on this machine reproduced every count exactly.
+The suite skips unless `ZOTLIT_BATCH_MEASUREMENTS=1`, so it never runs in CI; `ZOTLIT_BATCH_MEASUREMENTS_OUT` is optional and writes the record to a file. It names a path relative to `apps/obsidian`, so `../../tmp` is the workspace root's gitignored `tmp/` ([scratch artifacts](../policies/scratch-artifacts.md)). Two runs on this machine reproduced every count exactly.
 
 ## The runtime this record is against
 
