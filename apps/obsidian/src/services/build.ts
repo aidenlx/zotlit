@@ -26,6 +26,7 @@ import { ExcerptDisplayService } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { savedExcerptRequest } from "./excerpt-image/request";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
@@ -183,11 +184,35 @@ export function buildServices(
         }),
     })
     .use({
-      annotationRepository: ({ db, queryClient, zoteroLocalApi }) =>
+      annotationRepository: ({
+        db,
+        queryClient,
+        zoteroLocalApi,
+        zoteroPref,
+        excerptImage,
+      }) =>
         new AnnotationRepository({
           db,
           queryClient,
           localApi: zoteroLocalApi,
+          // A session's first read of an Attachment has no list that stood
+          // before it to compare against, so it is compared against the image
+          // this device persists for the Annotation instead — the display's own
+          // stored-outcome read, so an Annotation this device never cached has
+          // no baseline here exactly as it has no image to replace there.
+          persistedExcerpt: async (annotation, source) => {
+            const request = savedExcerptRequest({
+              annotation,
+              source,
+              sourceScope: zoteroPref.dataDir,
+              db,
+              paths: zoteroPref,
+            });
+            if (!request) return null;
+            return (
+              (await excerptImage.stored(request))?.identity.fingerprint ?? null
+            );
+          },
         }),
     })
     .use({

@@ -7,6 +7,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { AbortError } from "@/lib/abort-error";
 import type { DatabaseEvents } from "@/services/database/service";
+import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import { QueryClientService } from "@/services/query-client/service";
 import {
   annotationItem,
@@ -34,7 +35,7 @@ import type {
 } from "@/services/zotero-local-api/__fixtures__";
 
 import { AnnotationRepository } from "./service";
-import type { AnnotationList } from "./service";
+import type { AnnotationList, AnnotationRepositoryDeps } from "./service";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -1715,6 +1716,88 @@ it("announces the pixels a read found moved, where no write of its own said so",
   ]);
 });
 
+it("finds a source change's moved pixels with no mounted consumer to ask", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering: readonly WireAnnotation[] = ROUGIER_ANNOTATIONS;
+  const { repository, serverEvents } = await setup(stack, {
+    children: () => annotationPage(answering),
+  });
+  const announced: Array<[string, string | null]> = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push([record.key, record.color]),
+    ),
+  );
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+
+  // A source change that answers the same pixels says nothing: what is announced
+  // is movement, not the change itself.
+  const unchanged = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await unchanged;
+  await repository.read("RGRPDF24");
+  expect(announced).toEqual([]);
+
+  // Zotero saved an ink recolour while nothing showed the Attachment at all: no
+  // Annotation View, reader, or binding asks again, so the read the repository
+  // runs itself after the change is the one that finds the pixels that moved.
+  // The consumer's stored-outcome gate is what decides which of them this device
+  // actually holds an image for.
+  answering = ROUGIER_ANNOTATIONS.map((record) =>
+    record.key === "TYY6Z6ZF" ? { ...record, color: "#2ea8e5" } : record,
+  );
+  const moved = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await moved;
+  await vi.waitFor(() => expect(announced).toEqual([["TYY6Z6ZF", "#2ea8e5"]]));
+});
+
+it("compares a session's first read against the image this device persists", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, client } = await setup(stack, undefined, {
+    /**
+     * The pixels this device's persisted Excerpt Images were made from. The two
+     * ink strokes and the text Annotation are the ones it holds an image for.
+     */
+    persistedExcerpt: async (annotation) => {
+      switch (annotation.key) {
+        // The image this device last displayed, from the colour this ink stroke
+        // held before the edit Zotero saved while ZotLit was not running.
+        case "TYY6Z6ZF":
+          return excerptFingerprint({ ...annotation, color: "#5fb236" });
+        // An image made from the pixels this read answers: nothing moved.
+        case "HRK7BG32":
+          return excerptFingerprint(annotation);
+        // Every other Annotation this device never cached stays on demand.
+        default:
+          return null;
+      }
+    },
+  });
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push(record.key),
+    ),
+  );
+  client.$client.exec(
+    "update itemAnnotations set color = '#2ea8e5' where itemID = 55",
+  );
+
+  // The first read of the session: no list stood before it, so the image this
+  // device persists for the Annotation is the baseline it is compared against.
+  const list = await repository.read("RGRPDF24");
+
+  expect(colorOf(list, "TYY6Z6ZF")).toBe("#2ea8e5");
+  expect(announced).toEqual(["TYY6Z6ZF"]);
+
+  // The list that read published is the baseline from here on, so a second read
+  // of a record already announced says nothing again.
+  await repository.read("RGRPDF24");
+  expect(announced).toEqual(["TYY6Z6ZF"]);
+});
+
 it("re-reads the annotation after the 204, and writes again off that version", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(stack, {
@@ -2768,9 +2851,12 @@ async function setup(
     writeToken?: () => string;
     /** The repository's own clock, which the `dateAdded` window is read against. */
     repositoryNow?: () => Temporal.Instant;
+    /** What this device's persisted Excerpt Images were made from, by Annotation. */
+    persistedExcerpt?: AnnotationRepositoryDeps["persistedExcerpt"];
   } = {},
 ) {
-  const { writeToken, repositoryNow, ...clientOptions } = options;
+  const { writeToken, repositoryNow, persistedExcerpt, ...clientOptions } =
+    options;
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -2810,6 +2896,7 @@ async function setup(
     localApi,
     now: repositoryNow ?? (() => NOW),
     writeToken,
+    persistedExcerpt,
   });
   stack.use(repository);
   await repository.ready;

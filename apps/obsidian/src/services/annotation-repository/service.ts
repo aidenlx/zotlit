@@ -237,7 +237,8 @@ export interface AnnotationRepositoryEvents {
    * record. A write this repository confirmed answers with the record Zotero
    * holds, so a consumer needs no list re-read to know the new pixels; an edit
    * saved in Zotero itself is what a later read, compared against the list that
-   * stood before it, finds and announces here.
+   * stood before it — or, for the first read of a session, against the image
+   * this device persists for the Annotation — finds and announces here.
    *
    * @param record the saved Annotation, whose `parentKey` names its Attachment.
    * @param source the Annotation Source the record was read or written through,
@@ -309,6 +310,21 @@ export interface AnnotationRepositoryDeps {
    * @default a fresh 32-character token per create
    */
   writeToken?: () => string;
+  /**
+   * The canonical pixel fingerprint of the Excerpt Image this device persists
+   * for one Annotation — the display's own stored-outcome read — or `null`
+   * where this device holds none.
+   *
+   * A session's first read of an Attachment has no list that stood before it,
+   * so this is the baseline it is compared against instead: an edit saved in
+   * Zotero while ZotLit was not running still announces the Annotation whose
+   * pixels the image this device carries was made from. An Annotation it never
+   * cached answers `null`, which says nothing and leaves it on demand.
+   */
+  persistedExcerpt?: (
+    annotation: AnnotationRecord,
+    source: AnnotationSource,
+  ) => Promise<string | null>;
 }
 
 /** One Annotation, beside the held list a write reads and replaces it in. */
@@ -371,7 +387,8 @@ export class LocalApiReadFailed extends Error {
  * and the Zotero Local API partition whenever that source moves — a Freshness
  * Signal, another Zotero database, a capability that changed. Every Attachment
  * the drop concerns is announced through `annotations-changed`, which is the
- * only signal that a list was superseded.
+ * only signal that a list was superseded, and read again here, so the pixels
+ * such a change moved are announced even with no surface mounted to ask.
  *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
@@ -417,6 +434,11 @@ export class AnnotationRepository extends Service<void> {
   /** Gives each database acquisition a separate query-cache generation. */
   #databaseGeneration = 0;
   readonly #writeToken;
+  /**
+   * The pixels this device's persisted Excerpt Image of one Annotation was made
+   * from, which is the baseline a session's first read is compared against.
+   */
+  readonly #persistedExcerpt;
 
   ready: Promise<void>;
 
@@ -426,6 +448,7 @@ export class AnnotationRepository extends Service<void> {
     localApi,
     now = () => Temporal.Now.instant(),
     writeToken = newWriteToken,
+    persistedExcerpt,
   }: AnnotationRepositoryDeps) {
     super();
     this.#db = db;
@@ -433,6 +456,7 @@ export class AnnotationRepository extends Service<void> {
     this.#localApi = localApi;
     this.#now = now;
     this.#writeToken = writeToken;
+    this.#persistedExcerpt = persistedExcerpt;
     this.ready = this.#load();
   }
 
@@ -458,7 +482,7 @@ export class AnnotationRepository extends Service<void> {
         this.#queries.peek<AnnotationList>(queryKey)?.status ?? "fresh",
       );
       this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
-      this.#announceReadPixels(superseded, candidate);
+      await this.#announceReadPixels(superseded, candidate);
       return candidate;
     }
     const published = this.#published(attachmentKey)?.value;
@@ -1222,21 +1246,20 @@ export class AnnotationRepository extends Service<void> {
    * source switch, or Zotero echoing a colour the user picked — says nothing,
    * and a second read of a list already published says nothing either.
    *
-   * Whether the device holds an image for an Annotation is not this
-   * repository's to know: the consumer resolves that against its own store, and
-   * one this device never cached stays on demand.
+   * The first read of a session has no such list: what stands before it then is
+   * the image this device persists for the Annotation, which is what the read is
+   * compared against instead. An Annotation this device never cached has no
+   * baseline and says nothing here, exactly as it is replaced nowhere: whether an
+   * image is held is the consumer's own stored-outcome gate to answer, and a
+   * record nothing stands for stays on demand.
    */
-  #announceReadPixels(
+  async #announceReadPixels(
     superseded: AnnotationList | undefined,
     candidate: AnnotationList,
-  ): void {
-    if (!superseded) return;
-    const stood = new Map(
-      superseded.annotations.map((record) => [
-        record.key,
-        excerptFingerprint(record),
-      ]),
-    );
+  ): Promise<void> {
+    const stood = superseded
+      ? fingerprintMap(superseded)
+      : await this.#persistedFingerprints(candidate);
     for (const record of candidate.annotations) {
       const fingerprint = stood.get(record.key);
       if (
@@ -1246,6 +1269,38 @@ export class AnnotationRepository extends Service<void> {
         continue;
       this.#emitter.emit("excerpt-pixels-changed", record, candidate.source);
     }
+  }
+
+  /**
+   * The pixels this device's persisted Excerpt Image of each of one Attachment's
+   * Annotations was made from, as the baseline a session's first read is
+   * compared against. An Annotation this device never cached answers nothing, so
+   * it stays on demand.
+   */
+  async #persistedFingerprints(
+    candidate: AnnotationList,
+  ): Promise<ReadonlyMap<string, string>> {
+    const persisted = this.#persistedExcerpt;
+    if (!persisted) return new Map();
+    const stood = await Promise.all(
+      candidate.annotations.map(async (record) => {
+        const fingerprint = await persisted(record, candidate.source).catch(
+          (error: unknown) => {
+            logger.debug("A persisted excerpt could not be read", {
+              annotationKey: record.key,
+              error,
+            });
+            return null;
+          },
+        );
+        return [record.key, fingerprint] as const;
+      }),
+    );
+    return new Map(
+      stood.filter(
+        (entry): entry is readonly [string, string] => entry[1] !== null,
+      ),
+    );
   }
 
   #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {
@@ -1768,6 +1823,7 @@ export class AnnotationRepository extends Service<void> {
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
     }
+    this.#rereadSuperseded(held);
   }
 
   /**
@@ -1798,6 +1854,34 @@ export class AnnotationRepository extends Service<void> {
     });
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
+    }
+    this.#rereadSuperseded(held);
+  }
+
+  /**
+   * Read every Attachment a source change superseded again, so the movement it
+   * carried is found and announced whether or not a surface is mounted to ask:
+   * an edit saved in Zotero itself reaches the repository through this change
+   * and the read after it, and a device that holds an Excerpt Image of the
+   * Annotation must replace it with no Annotation View, reader, or binding on
+   * screen. The lists this repository still stands for are read too, because a
+   * Held Read the query client collected leaves the standing list behind.
+   *
+   * Whether this device holds an image for an Annotation is not this
+   * repository's to know: the consumer resolves that against its own store, so
+   * one this device never cached stays on demand.
+   */
+  #rereadSuperseded(announced: readonly string[]): void {
+    for (const attachmentKey of new Set([
+      ...announced,
+      ...this.#publishedLists.keys(),
+    ])) {
+      void this.read(attachmentKey).catch((error: unknown) => {
+        logger.debug("A superseded Attachment was not read again", {
+          attachmentKey,
+          error,
+        });
+      });
     }
   }
 
@@ -1913,6 +1997,13 @@ function databaseSourcesEqual(
 
 function commentDraftID(serverID: string, annotationKey: string): string {
   return `${serverID}\0${annotationKey}`;
+}
+
+/** One list's canonical pixel fingerprints, by Indexed Key. */
+function fingerprintMap(list: AnnotationList): ReadonlyMap<string, string> {
+  return new Map(
+    list.annotations.map((record) => [record.key, excerptFingerprint(record)]),
+  );
 }
 
 function sameComment(a: string | null, b: string | null): boolean {
