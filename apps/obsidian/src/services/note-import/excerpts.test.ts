@@ -195,7 +195,12 @@ async function fixture(mode = "normal") {
     excerptImages: createExcerptPreparation({
       app,
       paths,
-      resolver: { resolve },
+      resolver: {
+        operation: () => ({
+          resolve,
+          [Symbol.asyncDispose]: async () => {},
+        }),
+      },
     }),
   });
   const priorTurndown = Object.getOwnPropertyDescriptor(

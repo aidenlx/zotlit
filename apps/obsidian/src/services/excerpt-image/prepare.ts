@@ -70,7 +70,7 @@ export type ExcerptPreparation = (options: {
 
 export function createExcerptPreparation(deps: {
   app: App;
-  resolver: Pick<ExcerptImageService, "resolve">;
+  resolver: Pick<ExcerptImageService, "operation">;
   paths: AttachmentPathContext;
 }): ExcerptPreparation {
   return ({ client, notePath, settings, previousNote }) => {
@@ -104,6 +104,7 @@ export function createExcerptPreparation(deps: {
         return candidate.helper;
       },
       async prepare() {
+        await using operation = deps.resolver.operation();
         const previousPaths = previousNote
           ? await referencedExcerptPaths(deps.app, previousNote)
           : [];
@@ -157,7 +158,7 @@ export function createExcerptPreparation(deps: {
               if (!settings["attachment.import"]) {
                 candidate.result = { kind: "unavailable", reason: "disabled" };
               } else {
-                const outcome = await deps.resolver.resolve(request);
+                const outcome = await operation.resolve(request);
                 candidate.result = await materializeExcerpt({
                   app: deps.app,
                   notePath,

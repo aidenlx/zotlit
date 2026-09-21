@@ -262,7 +262,39 @@ it("loads one document for distinct annotations and closes it once at shutdown",
   expect(f.destroys[0]).toHaveBeenCalledTimes(1);
 });
 
-it("the default service owns and reuses its renderer until service shutdown", async () => {
+it("reuses its renderer within one operation and releases it when the operation ends", async () => {
+  await using f = fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  vi.stubGlobal("document", { createElement: f.canvas });
+  vi.mocked(loadPdfJs).mockImplementation(f.load);
+  const service = cleanup.use(
+    new ExcerptImageService({
+      stamp: async () => ({ size: 4, mtimeMs: 1 }),
+    }),
+  );
+  {
+    await using operation = service.operation();
+    expect(await operation.resolve(f.request)).toMatchObject({
+      provenance: "rendered",
+    });
+    expect(
+      await operation.resolve({
+        ...f.request,
+        annotation: { ...f.request.annotation, key: "ANNOT002" },
+      }),
+    ).toMatchObject({ provenance: "rendered" });
+    expect(f.getDocument).toHaveBeenCalledTimes(1);
+    expect(f.tasks).toHaveLength(2);
+    expect(f.destroys[0]).not.toHaveBeenCalled();
+  }
+  expect(f.destroys[0]).toHaveBeenCalledTimes(1);
+  expect(service.rendererDiagnostics?.snapshot().documentOpen).toBe(false);
+});
+
+it("releases its renderer after a standalone resolution", async () => {
   await using f = fixture();
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(() => {
@@ -278,17 +310,8 @@ it("the default service owns and reuses its renderer until service shutdown", as
   expect(await service.resolve(f.request)).toMatchObject({
     provenance: "rendered",
   });
-  expect(
-    await service.resolve({
-      ...f.request,
-      annotation: { ...f.request.annotation, key: "ANNOT002" },
-    }),
-  ).toMatchObject({ provenance: "rendered" });
-  expect(f.getDocument).toHaveBeenCalledTimes(1);
-  expect(f.tasks).toHaveLength(2);
-  expect(f.destroys[0]).not.toHaveBeenCalled();
-  await service[Symbol.asyncDispose]();
   expect(f.destroys[0]).toHaveBeenCalledTimes(1);
+  expect(service.rendererDiagnostics?.snapshot().documentOpen).toBe(false);
 });
 
 it.each(["scope", "source", "library", "attachment", "path", "stamp"])(

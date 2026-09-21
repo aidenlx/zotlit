@@ -284,11 +284,16 @@ export class ExcerptRenderer implements AsyncDisposable {
     }
   }
 
+  /** Release the resident PDF document while keeping the renderer reusable. */
+  async release(): Promise<void> {
+    await this.#active?.catch(() => undefined);
+    await this.#close();
+  }
+
   async [Symbol.asyncDispose]() {
     this.#unusable = true;
     this.#shutdown.abort();
-    await this.#active?.catch(() => undefined);
-    await this.#close();
+    await this.release();
     this.diagnostics.close();
   }
 

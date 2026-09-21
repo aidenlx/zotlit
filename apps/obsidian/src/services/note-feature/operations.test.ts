@@ -775,6 +775,12 @@ describe("createNote", () => {
             };
           },
         ),
+        operation() {
+          return {
+            resolve: this.resolve,
+            [Symbol.asyncDispose]: async () => {},
+          };
+        },
       };
       deps.excerptImages = createExcerptPreparation({
         app: app as unknown as App,

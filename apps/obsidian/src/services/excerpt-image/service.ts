@@ -89,6 +89,13 @@ interface Pending {
   users: number;
 }
 
+export interface ExcerptImageOperation extends AsyncDisposable {
+  resolve(
+    request: ExcerptRequest,
+    signal?: AbortSignal,
+  ): Promise<ExcerptOutcome>;
+}
+
 /** Owns resolution, shared requests, and the bounded rendering queue. */
 export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   ready: Promise<ExcerptCache | undefined>;
@@ -101,6 +108,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   #renderer?: ExcerptRenderer;
   #stalled = false;
   #jobs = 0;
+  #operations = 0;
 
   /** Internal lifecycle diagnostics used by the real-app acceptance suite. */
   get rendererDiagnostics(): ExcerptRendererDiagnostics | undefined {
@@ -150,7 +158,41 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     return operation;
   }
 
+  /** Keep one PDF session reusable only for this bounded consumer operation. */
+  operation(): ExcerptImageOperation {
+    this.#operations++;
+    let active = true;
+    return {
+      resolve: (request, signal) => {
+        if (!active)
+          return Promise.reject(new Error("Excerpt operation ended"));
+        return this.#resolveRequest(request, signal);
+      },
+      [Symbol.asyncDispose]: async () => {
+        if (!active) return;
+        active = false;
+        this.#operations--;
+        if (this.#operations !== 0) return;
+        const settled = this.#jobs === 0;
+        const release = this.#tail.then(async () => {
+          if (this.#operations === 0) await this.#renderer?.release();
+        });
+        this.#tail = release.catch(() => undefined);
+        // Caller cancellation stays immediate while the queue owns late cleanup.
+        if (settled) await release;
+      },
+    };
+  }
+
   async resolve(
+    request: ExcerptRequest,
+    signal?: AbortSignal,
+  ): Promise<ExcerptOutcome> {
+    await using operation = this.operation();
+    return await operation.resolve(request, signal);
+  }
+
+  async #resolveRequest(
     request: ExcerptRequest,
     signal?: AbortSignal,
   ): Promise<ExcerptOutcome> {
