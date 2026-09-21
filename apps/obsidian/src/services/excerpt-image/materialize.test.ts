@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -16,12 +17,13 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { defaults } from "@/services/settings/schema";
 
+import { availableOutcome } from "./__fixtures__/outcome";
 import { redPng as png, bluePng, corruptPng } from "./__fixtures__/png";
 import { chromiumLosslessWebp, sizedWebp } from "./__fixtures__/webp";
 import { PNG_FORMAT, WEBP_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import {
-  excerptAssetIdentity,
+  excerptAssetIdentities,
   isOwnedExcerptAssetPath,
   materializeExcerpt,
   retainExcerpt,
@@ -106,12 +108,11 @@ async function fixture() {
         notePath: "Paper.md",
         settings,
         request: input,
-        outcome: {
-          kind: "available",
+        outcome: availableOutcome({
           ...image,
           provenance: "rendered",
           freshness: "checked",
-        },
+        }),
       }),
     async [Symbol.asyncDispose]() {
       await rm(root, { recursive: true, force: true });
@@ -213,13 +214,12 @@ it("creates no folder or file with attachment import disabled", async () => {
     notePath: "Paper.md",
     settings: { ...defaults, "attachment.import": false },
     request,
-    outcome: {
-      kind: "available",
+    outcome: availableOutcome({
       bytes: new Uint8Array([1]),
       format: PNG_FORMAT,
       provenance: "zotero",
       freshness: "uncertain",
-    },
+    }),
   });
   expect(result).toEqual({ kind: "unavailable", reason: "disabled" });
   expect(f.createFolder).not.toHaveBeenCalled();
@@ -290,7 +290,7 @@ it("refuses a WebP whose declared geometry is past the bounds, saved or retained
     reason: "source",
   });
   await mkdir(`${f.root}/Images`);
-  const path = `Images/zotlit-excerpt-${excerptAssetIdentity(request)}-${"a".repeat(64)}.webp`;
+  const path = `Images/zotlit-excerpt-${excerptAssetIdentities(request)[0]}-${"a".repeat(64)}.webp`;
   await writeFile(`${f.root}/${path}`, bytes);
   expect(
     await retainExcerpt({ app: f.app, request, paths: [path] }),
@@ -299,19 +299,52 @@ it("refuses a WebP whose declared geometry is past the bounds, saved or retained
 });
 
 it("owns published assets of either extension and nothing else", () => {
-  const identity = excerptAssetIdentity(request);
+  const identities = excerptAssetIdentities(request);
+  const identity = identities[0]!;
   const digest = "a".repeat(64);
   const name = (suffix: string) =>
     `Images/zotlit-excerpt-${identity}-${digest}.${suffix}`;
-  expect(isOwnedExcerptAssetPath(name("webp"), identity)).toBe(true);
-  expect(isOwnedExcerptAssetPath(name("png"), identity)).toBe(true);
+  expect(isOwnedExcerptAssetPath(name("webp"), identities)).toBe(true);
+  expect(isOwnedExcerptAssetPath(name("png"), identities)).toBe(true);
   for (const foreign of [
     name("gif"),
     `Images/zotlit-excerpt-${identity}-${digest}.webp.png`,
     `Images/zotlit-excerpt-${identity}-${"a".repeat(63)}.webp`,
     `Images/zotlit-excerpt-${"b".repeat(64)}-${digest}.webp`,
   ])
-    expect(isOwnedExcerptAssetPath(foreign, identity)).toBe(false);
+    expect(isOwnedExcerptAssetPath(foreign, identities)).toBe(false);
+});
+
+it("keeps an asset the previous release named, and names a new one after the current identity", async () => {
+  await using f = await fixture();
+  const [current, previous] = excerptAssetIdentities(request);
+  // The name the previous release wrote, derived here from its own identity
+  // array rather than from the code under test.
+  const released = createHash("sha256")
+    .update(
+      JSON.stringify([
+        "/zotero",
+        ["zotero-db", 1, "LOCAL", "SERVER", 1],
+        1,
+        "ATTACH01",
+        "ANNOT001",
+      ]),
+    )
+    .digest("hex");
+  expect(previous).toBe(released);
+  expect(current).not.toBe(previous);
+  await mkdir(`${f.root}/Images`);
+  const path = `Images/zotlit-excerpt-${released}-${"a".repeat(64)}.png`;
+  await writeFile(`${f.root}/${path}`, png);
+  expect(await retainExcerpt({ app: f.app, request, paths: [path] })).toEqual({
+    kind: "retained",
+    path,
+  });
+  expect(await readFile(`${f.root}/${path}`)).toEqual(png);
+  const saved = await f.save(request, pngImage);
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+  expect(saved.path).toContain(current);
+  expect(saved.path).not.toContain(previous);
 });
 
 it("retains only a referenced version owned by the same source, Library, Attachment and Annotation", async () => {

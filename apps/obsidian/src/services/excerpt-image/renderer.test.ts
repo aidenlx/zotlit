@@ -337,6 +337,23 @@ it.each(["scope", "source", "library", "attachment", "path", "stamp"])(
   },
 );
 
+it("keeps one resident document across the two representations of a database", async () => {
+  await using f = fixture();
+  await f.render();
+  await f.render({
+    ...f.request,
+    source: {
+      kind: "zotero-db",
+      database: { userID: 1, localUserKey: "local", serverID: "SERVER" },
+      libraryID: 1,
+      libraryRevision: 3,
+    },
+  });
+  expect(f.getDocument).toHaveBeenCalledTimes(1);
+  expect(f.files.map((file) => file.read.mock.calls.length)).toEqual([2, 0]);
+  expect(f.destroys[0]).not.toHaveBeenCalled();
+});
+
 it("rejects an oversized open file before allocating or loading PDF.js", async () => {
   await using f = fixture();
   f.state.size = 256 * 1024 * 1024 + 1;

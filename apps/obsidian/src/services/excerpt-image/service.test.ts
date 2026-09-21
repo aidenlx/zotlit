@@ -3,13 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import type { DatabaseAnnotationSource } from "@/services/annotation-repository/service";
+
 import { redPng, corruptPng } from "./__fixtures__/png";
 import { abortable } from "./abort";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import { usePromiseScheduling } from "./renderer";
-import { ExcerptImageService, excerptKey, MAX_FALLBACK_BYTES } from "./service";
-import type { ExcerptEntry, ExcerptRequest } from "./service";
+import {
+  ExcerptImageService,
+  excerptFingerprint,
+  excerptKey,
+  MAX_FALLBACK_BYTES,
+} from "./service";
+import type { ExcerptEntry, ExcerptOutcome, ExcerptRequest } from "./service";
 
 const request: ExcerptRequest = {
   annotation: {
@@ -78,6 +85,31 @@ function fixture() {
   };
 }
 
+/**
+ * One stored excerpt, then `count` distinct requests held open on a blocked
+ * render, which fills the queue's admission bound.
+ */
+async function storedExcerptWithBlockedRenders(count: number) {
+  const f = fixture();
+  expect(await f.service.resolve(request)).toMatchObject({
+    provenance: "rendered",
+  });
+  const gate = Promise.withResolvers<ExcerptImage>();
+  const started = Promise.withResolvers<void>();
+  f.render.mockImplementation(async () => {
+    started.resolve();
+    return gate.promise;
+  });
+  const pending = Array.from({ length: count }, (_, index) =>
+    f.service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: `ANNOT${index}` },
+    }),
+  );
+  await started.promise;
+  return { ...f, pending, release: () => gate.resolve(rendered) };
+}
+
 describe("Excerpt Image resolution", () => {
   it.each(["truncated", "idat", "scanline"] as const)(
     "rejects %s fallback PNG data",
@@ -91,7 +123,7 @@ describe("Excerpt Image resolution", () => {
       expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
     },
   );
-  it("admits 128 distinct requests and rejects the 129th without starting it", async () => {
+  it("admits 128 distinct requests and rejects the 129th without rendering it", async () => {
     const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
@@ -584,34 +616,50 @@ describe("Excerpt Image resolution", () => {
     });
   });
 
-  it("isolates geometry, renderer input, Library, and source identities", () => {
-    const api = {
+  it("isolates geometry, renderer input, Library, and unverified source identities", () => {
+    const api: ExcerptRequest = {
       ...request,
-      source: { kind: "zotero-local-api" as const, serverID: "SAME" },
+      source: { kind: "zotero-local-api", serverID: "SAME" },
     };
     expect(excerptKey({ ...api, libraryID: 2 })).not.toBe(excerptKey(api));
     if (request.source.kind !== "zotero-db")
       throw new Error("Expected database fixture");
-    for (const serverID of [null, "SAME"]) {
-      const first = {
-        ...request,
-        source: {
-          ...request.source,
-          database: { userID: 1, localUserKey: "LOCAL-A", serverID },
-        },
-      };
-      const second = {
-        ...first,
-        source: {
-          ...first.source,
-          database: { userID: 2, localUserKey: "LOCAL-B", serverID },
-        },
-      };
-      expect(excerptKey(first)).not.toBe(excerptKey(second));
-      expect(
-        excerptKey({ ...first, sourceScope: "/copied-database" }),
-      ).not.toBe(excerptKey(first));
-    }
+    const standalone = (
+      database: DatabaseAnnotationSource["database"],
+    ): ExcerptRequest => ({
+      ...request,
+      source: { kind: "zotero-db", database, libraryID: 1, libraryRevision: 0 },
+    });
+    // A database that names no Server ID keeps a local identity, which never
+    // stands in for another user's database.
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: null }),
+      ),
+    ).not.toBe(
+      excerptKey(
+        standalone({ userID: 2, localUserKey: "LOCAL-B", serverID: null }),
+      ),
+    );
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: null }),
+      ),
+    ).not.toBe(excerptKey(api));
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: "OTHER" }),
+      ),
+    ).not.toBe(excerptKey(api));
+    // One database reached through either representation shares one identity.
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: "SAME" }),
+      ),
+    ).toBe(excerptKey(api));
+    expect(excerptKey({ ...api, sourceScope: "/copied-database" })).not.toBe(
+      excerptKey(api),
+    );
     const changed = structuredClone(request);
     changed.annotation.position = {
       kind: "pdf-rects",
@@ -631,6 +679,215 @@ describe("Excerpt Image resolution", () => {
         annotation: { ...request.annotation, comment: "New comment" },
       }),
     ).toBe(excerptKey(request));
+  });
+
+  it("shares verified API and database sources of one Annotation", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const api: ExcerptRequest = {
+      ...request,
+      source: { kind: "zotero-local-api", serverID: "SERVER" },
+    };
+    expect(excerptKey(api)).toBe(excerptKey(request));
+    expect(await service.resolve(api)).toMatchObject({
+      provenance: "rendered",
+      bytes: generated,
+    });
+    // The database representation of the same Annotation reuses those pixels.
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      bytes: generated,
+    });
+    expect(f.render).toHaveBeenCalledTimes(1);
+  });
+
+  it("completes a cache hit while an unrelated render holds the queue", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(request);
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    f.render.mockImplementationOnce(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    const blocked = service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: "ANNOT002" },
+    });
+    await started.promise;
+    // A cache hit resolves without waiting for the blocked render.
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      bytes: generated,
+    });
+    expect(f.render).toHaveBeenCalledTimes(2);
+    gate.resolve(rendered);
+    expect(await blocked).toMatchObject({ provenance: "rendered" });
+  });
+
+  it("returns a stored cache hit while every admission slot is taken", async () => {
+    const f = await storedExcerptWithBlockedRenders(128);
+    await using service = f.service;
+    try {
+      // Every slot is held by a blocked render, and the stored bytes still
+      // resolve without one.
+      expect(await service.resolve(request)).toMatchObject({
+        provenance: "cache",
+        bytes: generated,
+      });
+      expect(f.render).toHaveBeenCalledTimes(2);
+    } finally {
+      f.release();
+    }
+    expect(
+      (await Promise.all(f.pending)).every(
+        (result) => result.kind === "available",
+      ),
+    ).toBe(true);
+    expect(f.render).toHaveBeenCalledTimes(129);
+  });
+
+  it("gives back the slot a stored cache hit took", async () => {
+    const f = await storedExcerptWithBlockedRenders(127);
+    await using service = f.service;
+    let extra: Promise<ExcerptOutcome> | undefined;
+    try {
+      expect(await service.resolve(request)).toMatchObject({
+        provenance: "cache",
+      });
+      extra = service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: "EXTRA" },
+      });
+    } finally {
+      f.release();
+    }
+    // The hit gave its slot back, so one request still finds room to render.
+    expect(await extra).toMatchObject({ provenance: "rendered" });
+    expect(
+      (await Promise.all(f.pending)).every(
+        (result) => result.kind === "available",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps shared work alive while another caller still demands it", async () => {
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(async (_request, signal: AbortSignal) => {
+      started.resolve();
+      await gate.promise;
+      signal.throwIfAborted();
+      return rendered;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      render,
+    });
+    const controller = new AbortController();
+    const database = service.resolve(request, controller.signal);
+    const api = service.resolve({
+      ...request,
+      source: { kind: "zotero-local-api", serverID: "SERVER" },
+    });
+    const rejection = expect(database).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await started.promise;
+    controller.abort();
+    await rejection;
+    // The remaining representation still receives the single shared render.
+    gate.resolve(rendered);
+    expect(await api).toMatchObject({
+      provenance: "rendered",
+      bytes: generated,
+    });
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases shared work once its last caller cancels", async () => {
+    const started = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    let aborted = false;
+    const render = vi.fn((_request, signal: AbortSignal) => {
+      started.resolve();
+      return new Promise<ExcerptImage>((_, reject) =>
+        signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            released.resolve();
+            reject(signal.reason);
+          },
+          { once: true },
+        ),
+      );
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      render,
+    });
+    const database = new AbortController();
+    const api = new AbortController();
+    const first = service.resolve(request, database.signal);
+    const second = service.resolve(
+      { ...request, source: { kind: "zotero-local-api", serverID: "SERVER" } },
+      api.signal,
+    );
+    const rejections = [
+      expect(first).rejects.toMatchObject({ name: "AbortError" }),
+      expect(second).rejects.toMatchObject({ name: "AbortError" }),
+    ];
+    await started.promise;
+    database.abort();
+    await rejections[0];
+    expect(aborted).toBe(false);
+    // Only the last caller's cancellation releases the shared render.
+    api.abort();
+    await rejections[1];
+    await released.promise;
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries the validated identity on every available outcome", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const identity = {
+      key: excerptKey(request),
+      fingerprint: excerptFingerprint(request.annotation),
+    };
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+      identity: { ...identity, pdf: { size: 100, mtimeMs: 10 } },
+    });
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      identity: { ...identity, pdf: { size: 100, mtimeMs: 10 } },
+    });
+    await using unreadable = new ExcerptImageService({
+      stamp: async () => {
+        throw new Error("offline");
+      },
+      cache: {
+        get: async () => ({ ...rendered, pdf: { size: 100, mtimeMs: 10 } }),
+        put: async () => {},
+      },
+    });
+    expect(await unreadable.resolve(request)).toMatchObject({
+      provenance: "cache",
+      identity: { ...identity, pdf: null },
+    });
+    await using fallbackOnly = new ExcerptImageService({
+      render: async () => {
+        throw new Error("broken PDF");
+      },
+      read: async () => fallback,
+    });
+    expect(await fallbackOnly.resolve(request)).toMatchObject({
+      provenance: "zotero",
+      identity: { ...identity, pdf: null },
+    });
   });
 
   it("retries rendering after an uncertain fallback and never validates that fallback", async () => {

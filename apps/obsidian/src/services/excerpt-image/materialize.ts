@@ -22,7 +22,7 @@ import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import type { Settings } from "@/services/settings/schema";
 
-import { excerptKey, excerptSourceIdentity } from "./contract";
+import { excerptKey, excerptSourceIdentities } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import {
   EXCERPT_IMAGE_EXTENSIONS,
@@ -98,13 +98,13 @@ export async function retainExcerpt(options: {
 }): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
   const adapter = options.app.vault.adapter;
   if (!(adapter instanceof FileSystemAdapter)) return;
-  const identity = excerptAssetIdentity(options.request);
+  const identities = excerptAssetIdentities(options.request);
   for (const path of options.paths) {
     const local = relative(adapter.getFullPath(""), adapter.getFullPath(path));
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
       continue;
     const name = basename(path);
-    const owned = isOwnedExcerptAssetPath(path, identity);
+    const owned = isOwnedExcerptAssetPath(path, identities);
     const legacy =
       name === `${parseIndexedKey(options.request.annotation.key)?.key}.png`;
     if (!owned && !legacy) continue;
@@ -134,39 +134,48 @@ export async function retainExcerpt(options: {
   }
 }
 
-/** Stable ownership remains readable from a target when the annotation's pixels change. */
-export function excerptAssetIdentity(
+/**
+ * Every identity form this request's existing assets may carry, the current
+ * form first, which is the one that names a new asset. A vault written before
+ * the shared source identity holds each asset and link under the previous form,
+ * so an ownership check has to accept both.
+ */
+export function excerptAssetIdentities(
   request: Pick<
     ExcerptRequest,
     "sourceScope" | "source" | "libraryID" | "attachmentKey"
   > & { annotation: { key: string } },
-): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        request.sourceScope,
-        excerptSourceIdentity(request.source),
-        request.libraryID,
-        request.attachmentKey,
-        request.annotation.key,
-      ]),
-    )
-    .digest("hex");
+): string[] {
+  return excerptSourceIdentities(request.source).map((sourceIdentity) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify([
+          request.sourceScope,
+          sourceIdentity,
+          request.libraryID,
+          request.attachmentKey,
+          request.annotation.key,
+        ]),
+      )
+      .digest("hex"),
+  );
 }
 
 export function isOwnedExcerptAssetPath(
   path: string,
-  identity: string,
+  identities: readonly string[],
 ): boolean {
   const name = basename(path);
-  const prefix = `zotlit-excerpt-${identity}-`;
-  if (!name.startsWith(prefix)) return false;
-  const digest = name.slice(prefix.length);
-  const dot = digest.indexOf(".");
-  return (
-    dot === SHA256_HEX_LENGTH &&
-    EXCERPT_IMAGE_EXTENSIONS.has(digest.slice(dot + 1))
-  );
+  return identities.some((identity) => {
+    const prefix = `zotlit-excerpt-${identity}-`;
+    if (!name.startsWith(prefix)) return false;
+    const digest = name.slice(prefix.length);
+    const dot = digest.indexOf(".");
+    return (
+      dot === SHA256_HEX_LENGTH &&
+      EXCERPT_IMAGE_EXTENSIONS.has(digest.slice(dot + 1))
+    );
+  });
 }
 
 export async function materializeExcerpt(options: {
@@ -211,9 +220,10 @@ export async function materializeExcerpt(options: {
       .update(excerptKey(request))
       .update(outcome.bytes)
       .digest("hex");
+    const [identity] = excerptAssetIdentities(request);
     const path = joinFolderPath(
       folder,
-      `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.${outcome.format.extension}`,
+      `zotlit-excerpt-${identity}-${digest}.${outcome.format.extension}`,
     );
     const destination = adapter.getFullPath(path);
     const previous = publications.get(destination);

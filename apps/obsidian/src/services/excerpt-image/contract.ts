@@ -36,16 +36,52 @@ export function excerptFingerprint(annotation: AnnotationRecord): string {
   return JSON.stringify([annotation.type, p.kind]);
 }
 
+/**
+ * The database one Annotation Source was verified against, in canonical form.
+ *
+ * A Zotero Server ID names exactly one Zotero database, so a Local API record
+ * and a database record that declare the same Server ID describe the same
+ * Library universe: they carry one identity and reuse one excerpt image. A
+ * source that names no Server ID keeps a local identity instead, which no other
+ * source whose database equivalence is unproven can match. A database record
+ * without a Server ID falls back to its Local API user identity, and only
+ * another snapshot of that same standalone database matches it.
+ *
+ * @see apps/obsidian/docs/adr/0050-excerpt-cache-identity-is-shared-across-verified-annotation-sources.md
+ */
 export function excerptSourceIdentity(source: AnnotationSource): unknown[] {
-  return source.kind === "zotero-db"
-    ? [
-        source.kind,
-        source.database.userID,
-        source.database.localUserKey,
-        source.database.serverID,
-        source.libraryID,
-      ]
-    : [source.kind, source.serverID];
+  if (source.kind === "zotero-db")
+    return source.database.serverID
+      ? ["zotero", source.database.serverID]
+      : ["zotero-db", source.database.userID, source.database.localUserKey];
+  return source.serverID ? ["zotero", source.serverID] : ["zotero-local-api"];
+}
+
+/**
+ * Every source identity form one request's durable assets may carry, the
+ * current form first.
+ *
+ * The previous release named a database source after its own fields and a Local
+ * API source after its Server ID alone, so an asset or link it wrote for the
+ * same logical source hashes differently. A cache lookup needs only the current
+ * form, because a stale key recomputes, but an ownership check has to keep
+ * recognizing the assets and links an upgraded vault already holds.
+ *
+ * @see apps/obsidian/docs/adr/0050-excerpt-cache-identity-is-shared-across-verified-annotation-sources.md
+ */
+export function excerptSourceIdentities(source: AnnotationSource): unknown[][] {
+  return [
+    excerptSourceIdentity(source),
+    source.kind === "zotero-db"
+      ? [
+          source.kind,
+          source.database.userID,
+          source.database.localUserKey,
+          source.database.serverID,
+          source.libraryID,
+        ]
+      : [source.kind, source.serverID],
+  ];
 }
 
 /** Excludes source revision and record versions, which cannot change the pixels. */

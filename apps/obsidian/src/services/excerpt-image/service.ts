@@ -4,7 +4,7 @@ import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
 import { abortable } from "./abort";
-import { excerptKey } from "./contract";
+import { excerptFingerprint, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
@@ -36,11 +36,21 @@ export interface ExcerptCache {
   put(key: string, entry: ExcerptEntry): Promise<void>;
   clear?(): Promise<void>;
 }
+/** What an available excerpt was resolved against, for a later latest reference. */
+export interface ExcerptIdentity {
+  /** Canonical cache key ({@link excerptKey}) of the request that was resolved. */
+  key: string;
+  /** Canonical pixel fingerprint ({@link excerptFingerprint}) of its snapshot. */
+  fingerprint: string;
+  /** PDF stamp that proved freshness; `null` when nothing was proven. */
+  pdf: PdfStamp | null;
+}
 export type ExcerptOutcome =
   | ({
       kind: "available";
       provenance: "rendered" | "cache" | "zotero";
       freshness: "checked" | "unchecked" | "uncertain";
+      identity: ExcerptIdentity;
     } & ExcerptImage)
   | { kind: "unavailable" };
 
@@ -56,6 +66,12 @@ export interface ExcerptDeps {
 }
 
 export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
+
+/** One resolution's bound on PDF work and on the preflight that precedes it. */
+const EXCERPT_JOB_DEADLINE_MS = 35_000;
+
+/** The PDF jobs the queue admits at once. */
+const MAX_EXCERPT_JOBS = 128;
 
 /** Check the open file before allocating; one extra byte detects later growth. */
 async function readFallback(
@@ -88,6 +104,24 @@ interface Pending {
   controller: AbortController;
   promise: Promise<ExcerptOutcome>;
   users: number;
+}
+
+/** Freshness and cache evidence gathered before queue admission. */
+interface ExcerptProbe {
+  /** PDF stamp that validated freshness; `undefined` when it could not be read. */
+  pdf: PdfStamp | undefined;
+  /** The cache record for the key, whether or not its stamp matched. */
+  cached: ExcerptEntry | undefined;
+}
+
+/** The record a probe validated: an unreadable PDF stamp accepts it unchanged. */
+function validatedEntry(probe: ExcerptProbe): ExcerptEntry | undefined {
+  const { pdf, cached } = probe;
+  if (!cached) return undefined;
+  if (!pdf) return cached;
+  return pdf.size === cached.pdf.size && pdf.mtimeMs === cached.pdf.mtimeMs
+    ? cached
+    : undefined;
 }
 
 export interface ExcerptImageOperation extends AsyncDisposable {
@@ -193,46 +227,124 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     return await operation.resolve(request, signal);
   }
 
-  async #resolveRequest(
+  /**
+   * Freshness and cache preflight. It runs before the entry takes its turn in
+   * the PDF chain, so a valid cached image completes while an unrelated PDF
+   * render holds the queue, and it runs before a full queue takes any slot.
+   */
+  async #probe(
     request: ExcerptRequest,
-    signal?: AbortSignal,
-  ): Promise<ExcerptOutcome> {
-    // Capture the published input before startup or queued work can yield.
-    const snapshot = structuredClone(request);
-    const generation = this.#generation;
-    const cache = await this.ready;
-    await this.#clearing;
+    options: {
+      key: string;
+      cache: ExcerptCache | undefined;
+      signal: AbortSignal | undefined;
+    },
+  ): Promise<ExcerptProbe> {
+    const { key, cache, signal } = options;
+    const stamp =
+      this.#deps.stamp ??
+      (async (path: string) => {
+        const info = await stat(path);
+        return { size: info.size, mtimeMs: info.mtimeMs };
+      });
+    const pdf = request.pdfPath
+      ? await stamp(request.pdfPath).catch((error) => {
+          logger.debug("Excerpt PDF freshness unavailable", { key, error });
+          return undefined;
+        })
+      : undefined;
+    const persistent = request.sourceScope ? cache : undefined;
     signal?.throwIfAborted();
-    this.#shutdown.signal.throwIfAborted();
-    const key = excerptKey(snapshot);
-    const pendingKey = JSON.stringify([
-      generation,
-      key,
-      snapshot.pdfPath,
-      snapshot.zoteroPngPath,
-    ]);
-    let pending = this.#pending.get(pendingKey);
-    if (!pending || pending.controller.signal.aborted) {
-      if (this.#jobs >= 128) {
-        logger.debug("Excerpt unavailable: queue full", {
-          key,
-          queued: this.#jobs,
+    if (!persistent) return { pdf, cached: undefined };
+    const cached = await persistent.get(key, pdf).catch((error) => {
+      logger.debug("Excerpt cache read failed", { key, error });
+      return undefined;
+    });
+    return { pdf, cached };
+  }
+
+  /**
+   * Admit one job per key, or adopt the live job another caller admitted.
+   *
+   * The entry takes the freshness and cache preflight before it renders. An
+   * entry admitted with room takes its slot here, in call order, so a cancelled
+   * job keeps its place until its teardown settles. An entry that arrives at the
+   * bound takes no slot, and its preflight alone decides: a cache hit answers
+   * without one, and only a request that would render is refused.
+   */
+  #admit(
+    pendingKey: string,
+    request: ExcerptRequest,
+    context: {
+      key: string;
+      cache: ExcerptCache | undefined;
+      generation: number;
+    },
+  ): Pending {
+    const live = this.#pending.get(pendingKey);
+    if (live && !live.controller.signal.aborted) return live;
+    const charged = this.#jobs < MAX_EXCERPT_JOBS;
+    if (charged) this.#jobs++;
+    const controller = new AbortController();
+    // Reserve this entry's turn among the PDF jobs now, in call order, so rapid
+    // requests for one PDF render in the order their callers made them.
+    const previous = this.#tail;
+    const promise = (async (): Promise<ExcerptOutcome> => {
+      try {
+        // The preflight shares the job deadline, so a wedged freshness or cache
+        // check cannot hold the key's later work; the job's own deadline starts
+        // when its turn among the PDF jobs comes.
+        const preflight = AbortSignal.any([
+          controller.signal,
+          this.#shutdown.signal,
+          AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
+        ]);
+        const probe = await this.#probe(request, {
+          key: context.key,
+          cache: context.cache,
+          signal: preflight,
         });
-        return { kind: "unavailable" };
-      }
-      const controller = new AbortController();
-      this.#jobs++;
-      const promise = this.#tail.then(async () => {
+        preflight.throwIfAborted();
+        // One snapshot of the request builds the identity both answers report.
+        const identity: ExcerptIdentity = {
+          key: context.key,
+          fingerprint: excerptFingerprint(request.annotation),
+          pdf: probe.pdf ?? null,
+        };
+        const cached = validatedEntry(probe);
+        if (cached) {
+          // A cache hit is not PDF work: it neither waits for the chain nor holds it.
+          logger.debug("Excerpt cache matched", {
+            key: context.key,
+            freshnessChecked: !!probe.pdf,
+          });
+          return {
+            kind: "available",
+            bytes: cached.bytes,
+            format: cached.format,
+            provenance: "cache",
+            freshness: probe.pdf ? "checked" : "unchecked",
+            identity,
+          };
+        }
+        if (!charged) {
+          logger.debug("Excerpt unavailable: queue full", {
+            key: context.key,
+            queued: this.#jobs,
+          });
+          return { kind: "unavailable" } as const;
+        }
+        await previous;
         if (this.#stalled) return { kind: "unavailable" } as const;
         const bounded = AbortSignal.any([
           controller.signal,
           this.#shutdown.signal,
-          AbortSignal.timeout(35_000),
+          AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
         ]);
         bounded.throwIfAborted();
         const job = this.#resolve(
-          snapshot,
-          { key, cache, generation },
+          request,
+          { ...context, probe, identity },
           bounded,
         );
         try {
@@ -251,96 +363,99 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
             logger.debug("Excerpt queue stopped after unsettled teardown");
           });
         }
-      });
-      pending = { controller, promise, users: 0 };
-      this.#pending.set(pendingKey, pending);
-      this.#tail = promise.catch(() => undefined);
-      const held = pending;
-      void promise
-        .finally(() => {
-          this.#jobs--;
-          if (this.#pending.get(pendingKey) === held)
-            this.#pending.delete(pendingKey);
-        })
-        .catch(() => undefined);
-    }
+      } finally {
+        // A hit releases the slot it took here; an uncharged entry took none.
+        if (charged) this.#jobs--;
+      }
+    })();
+    const pending = { controller, promise, users: 0 };
+    this.#pending.set(pendingKey, pending);
+    this.#tail = promise.catch(() => undefined);
+    void promise
+      .finally(() => {
+        if (this.#pending.get(pendingKey) === pending)
+          this.#pending.delete(pendingKey);
+      })
+      .catch(() => undefined);
+    return pending;
+  }
+
+  async #resolveRequest(
+    request: ExcerptRequest,
+    signal?: AbortSignal,
+  ): Promise<ExcerptOutcome> {
+    // Capture the published input before startup or queued work can yield.
+    const snapshot = structuredClone(request);
+    const generation = this.#generation;
+    const cache = await this.ready;
+    await this.#clearing;
+    signal?.throwIfAborted();
+    this.#shutdown.signal.throwIfAborted();
+    const key = excerptKey(snapshot);
+    const pendingKey = JSON.stringify([
+      generation,
+      key,
+      snapshot.pdfPath,
+      snapshot.zoteroPngPath,
+    ]);
+    const pending = this.#admit(pendingKey, snapshot, {
+      key,
+      cache,
+      generation,
+    });
+    // Callers share one admission; releasing one leaves the others' work owned.
     pending.users++;
-    const held = pending;
     try {
-      return await (signal ? abortable(held.promise, signal) : held.promise);
+      return await (signal
+        ? abortable(pending.promise, signal)
+        : pending.promise);
     } finally {
-      if (--held.users === 0) held.controller.abort();
+      if (--pending.users === 0) pending.controller.abort();
     }
   }
 
   async #resolve(
     request: ExcerptRequest,
     context: {
-      key: string;
       cache: ExcerptCache | undefined;
       generation: number;
+      probe: ExcerptProbe;
+      identity: ExcerptIdentity;
     },
     signal: AbortSignal,
   ): Promise<ExcerptOutcome> {
-    const { key, cache, generation } = context;
+    const { cache, generation, probe, identity } = context;
+    const { key } = identity;
     const persistent = request.sourceScope ? cache : undefined;
     signal.throwIfAborted();
-    const stamp =
-      this.#deps.stamp ??
-      (async (path: string) => {
-        const info = await stat(path);
-        return { size: info.size, mtimeMs: info.mtimeMs };
-      });
-    const pdf = request.pdfPath
-      ? await stamp(request.pdfPath).catch((error) => {
-          logger.debug("Excerpt PDF freshness unavailable", { key, error });
-          return undefined;
-        })
-      : undefined;
-    const cached = await persistent?.get(key, pdf).catch((error) => {
-      logger.debug("Excerpt cache read failed", { key, error });
-      return undefined;
-    });
-    signal.throwIfAborted();
-    if (
-      cached &&
-      (!pdf ||
-        (pdf.size === cached.pdf.size && pdf.mtimeMs === cached.pdf.mtimeMs))
-    ) {
-      logger.debug("Excerpt cache matched", { key, freshnessChecked: !!pdf });
-      return {
-        kind: "available",
-        bytes: cached.bytes,
-        format: cached.format,
-        provenance: "cache",
-        freshness: pdf ? "checked" : "unchecked",
-      };
-    }
     logger.trace("Excerpt cache missed; rendering", {
       key,
-      cached: !!cached,
-      freshnessChecked: !!pdf,
+      cached: !!probe.cached,
+      freshnessChecked: !!probe.pdf,
     });
     try {
       const image = await (this.#deps.render
         ? this.#deps.render(request, signal)
         : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
-      if (pdf && generation === this.#generation)
-        await persistent?.put(key, { ...image, pdf }).catch((error) => {
-          logger.debug("Excerpt cache write failed", { key, error });
-        });
+      if (probe.pdf && generation === this.#generation)
+        await persistent
+          ?.put(key, { ...image, pdf: probe.pdf })
+          .catch((error) => {
+            logger.debug("Excerpt cache write failed", { key, error });
+          });
       logger.debug("Excerpt rendered", {
         key,
         bytes: image.bytes.length,
         format: image.format.format,
-        freshnessChecked: !!pdf,
+        freshnessChecked: !!probe.pdf,
       });
       return {
         kind: "available",
         ...image,
         provenance: "rendered",
-        freshness: pdf ? "checked" : "unchecked",
+        freshness: probe.pdf ? "checked" : "unchecked",
+        identity,
       };
     } catch (error) {
       signal.throwIfAborted();
@@ -373,6 +488,8 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
             format: PNG_FORMAT,
             provenance: "zotero",
             freshness: "uncertain",
+            // Zotero's own bytes prove nothing about the PDF's freshness.
+            identity: { ...identity, pdf: null },
           };
         }
         logger.debug("Zotero excerpt has unusable PNG data", { key });

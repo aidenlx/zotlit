@@ -23,7 +23,7 @@ import {
   resolveAttachmentFolderPath,
 } from "@/lib/ensure-folder";
 import {
-  excerptAssetIdentity,
+  excerptAssetIdentities,
   isOwnedExcerptAssetPath,
 } from "@/services/excerpt-image/materialize";
 import { referencedExcerptPaths } from "@/services/excerpt-image/references";
@@ -111,7 +111,7 @@ async function annotationImageTargets(
       attachment.itemID,
     )) {
       if (!annotationHasCacheImage(annotation.type)) continue;
-      const identity = excerptAssetIdentity({
+      const identities = excerptAssetIdentities({
         sourceScope: deps.zoteroPref.dataDir,
         source: {
           kind: "zotero-db",
@@ -124,7 +124,7 @@ async function annotationImageTargets(
         annotation: { key: annotation.indexedKey },
       });
       const owned = referenced.find((path) =>
-        isOwnedExcerptAssetPath(path, identity),
+        isOwnedExcerptAssetPath(path, identities),
       );
       if (owned) {
         images[annotation.indexedKey] = owned;

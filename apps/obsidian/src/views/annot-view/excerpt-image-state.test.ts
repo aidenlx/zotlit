@@ -108,7 +108,7 @@ describe("Annotation Card image lifecycle", () => {
       });
     },
   );
-  it("keeps pixels through comment edits but captures new saved color and source snapshots", () => {
+  it("keeps pixels through comment edits and equivalent representations", () => {
     const first = excerptImageTarget(null, input);
     expect(
       excerptImageTarget(first, { ...input, sourceScope: "/other-install" }),
@@ -128,16 +128,25 @@ describe("Annotation Card image lifecycle", () => {
       annotation: { ...input.annotation, color: "#00ff00", version: 3 },
     });
     expect(recolored).not.toBe(first);
+    // The same Zotero database reached through its Local API representation
+    // keeps the displayed pixels; another database captures a new snapshot.
+    expect(
+      excerptImageTarget(recolored, {
+        ...input,
+        annotation: recolored.annotation,
+        source: { kind: "zotero-local-api", serverID: "server" },
+      }),
+    ).toBe(recolored);
     const handoff = excerptImageTarget(recolored, {
       refresh: input.refresh,
       sourceScope: input.sourceScope,
       annotation: recolored.annotation,
-      source: { kind: "zotero-local-api", serverID: "server" },
+      source: { kind: "zotero-local-api", serverID: "other" },
     });
     expect(handoff).not.toBe(recolored);
     expect(handoff.source).toEqual({
       kind: "zotero-local-api",
-      serverID: "server",
+      serverID: "other",
     });
     const state = transitionExcerptImage(
       { kind: "available", target: first, url: "blob:red" },

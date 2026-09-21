@@ -68,6 +68,7 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import {
   redPng,
   bluePng,
@@ -763,8 +764,7 @@ describe("createNote", () => {
               mode === "collected"
             )
               return { kind: "unavailable" };
-            return {
-              kind: "available",
+            return availableOutcome({
               bytes: redPng,
               format: PNG_FORMAT,
               provenance: mode === "fallback" ? "zotero" : "rendered",
@@ -774,7 +774,7 @@ describe("createNote", () => {
                   : mode === "unchecked"
                     ? "unchecked"
                     : "checked",
-            };
+            });
           },
         ),
         operation() {
@@ -967,13 +967,12 @@ describe("createNote", () => {
                 notePath: file.path,
                 settings: deps.settings.current!,
                 request,
-                outcome: {
-                  kind: "available",
+                outcome: availableOutcome({
                   bytes,
                   format: PNG_FORMAT,
                   provenance: "rendered",
                   freshness: "checked",
-                },
+                }),
               });
             const oldAsset = await save(redPng),
               newAsset = await save(bluePng);
@@ -1033,13 +1032,12 @@ describe("createNote", () => {
         resolver.resolve.mockImplementation(async () =>
           mode.startsWith("retain") || mode.startsWith("reject")
             ? { kind: "unavailable" }
-            : {
-                kind: "available",
+            : availableOutcome({
                 bytes: bluePng,
                 format: PNG_FORMAT,
                 provenance: "rendered",
                 freshness: "checked",
-              },
+              }),
         );
         if (mode === "retain-corrupt-fallback")
           resolver.resolve.mockImplementation((request) =>
@@ -1050,13 +1048,14 @@ describe("createNote", () => {
         if (mode === "retain-throw")
           resolver.resolve.mockRejectedValue(new Error("Resolver failed"));
         if (mode === "retain-write")
-          resolver.resolve.mockResolvedValue({
-            kind: "available",
-            bytes: bluePng,
-            format: PNG_FORMAT,
-            provenance: "rendered",
-            freshness: "checked",
-          });
+          resolver.resolve.mockResolvedValue(
+            availableOutcome({
+              bytes: bluePng,
+              format: PNG_FORMAT,
+              provenance: "rendered",
+              freshness: "checked",
+            }),
+          );
         if (mode.startsWith("reject"))
           for (const name of priorAssets)
             await writeFile(

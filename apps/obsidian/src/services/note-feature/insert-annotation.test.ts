@@ -19,6 +19,7 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { redPng } from "@/services/excerpt-image/__fixtures__/png";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
@@ -104,13 +105,12 @@ async function fixture(mode: string) {
       async (_request: ExcerptRequest): Promise<ExcerptOutcome> => {
         if (mode === "throw") throw new Error("renderer failed");
         if (mode === "unavailable") return { kind: "unavailable" };
-        return {
-          kind: "available",
+        return availableOutcome({
           bytes: redPng,
           format: PNG_FORMAT,
           provenance: mode === "fallback" ? "zotero" : "rendered",
           freshness: "checked",
-        };
+        });
       },
     ),
   };
@@ -211,13 +211,12 @@ it("cancels between resolution and materialization", async () => {
   await using f = await fixture("success");
   f.resolver.resolve.mockImplementation(async () => {
     f.invalidate();
-    return {
-      kind: "available",
+    return availableOutcome({
       bytes: new Uint8Array([1]),
       format: PNG_FORMAT,
       provenance: "rendered",
       freshness: "checked",
-    };
+    });
   });
   expect(await prepareAnnotationInsert(f.ctx, f.options)).toBeNull();
   expect(await readdir(f.root)).toEqual([]);
