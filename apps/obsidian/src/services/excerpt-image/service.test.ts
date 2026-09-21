@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { redPng, corruptPng } from "./__fixtures__/png";
 import { abortable, usePromiseScheduling } from "./renderer";
-import { ExcerptImageService, excerptKey, MAX_FALLBACK_BYTES } from "./service";
+import {
+  ExcerptImageService,
+  excerptFingerprint,
+  excerptKey,
+  MAX_FALLBACK_BYTES,
+} from "./service";
 import type { ExcerptEntry, ExcerptRequest } from "./service";
 
 const request: ExcerptRequest = {
@@ -625,6 +630,77 @@ describe("Excerpt Image resolution", () => {
         annotation: { ...request.annotation, comment: "New comment" },
       }),
     ).toBe(excerptKey(request));
+  });
+
+  it("reuses verified API pixels for a later database request", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const api = {
+      ...request,
+      source: { kind: "zotero-local-api" as const, serverID: "SERVER" },
+      verifiedDatabaseIdentity:
+        request.source.kind === "zotero-db"
+          ? request.source.database
+          : undefined,
+    };
+
+    expect(await service.resolve(api)).toMatchObject({
+      provenance: "rendered",
+      freshness: "checked",
+      bytes: generated,
+    });
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      freshness: "checked",
+      bytes: generated,
+    });
+    expect(f.render).toHaveBeenCalledTimes(1);
+    expect(service.metrics).toEqual({
+      cacheHits: 1,
+      cropRenders: 1,
+      pdfLoads: 0,
+    });
+  });
+
+  it("keeps an unverified API request separate from a database request", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const api = {
+      ...request,
+      source: { kind: "zotero-local-api" as const, serverID: "SERVER" },
+    };
+
+    await service.resolve(api);
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    expect(f.render).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps stable identity separate from rendering validity", () => {
+    expect(
+      excerptFingerprint({
+        ...request.annotation,
+        color: "#00ff00",
+        comment: "changed",
+        pageLabel: "different",
+        tags: ["new"],
+        text: "changed",
+        version: 4,
+      }),
+    ).toBe(excerptFingerprint(request.annotation));
+    expect(
+      excerptFingerprint({
+        ...request.annotation,
+        color: "#00ff00",
+      }),
+    ).toBe(excerptFingerprint(request.annotation));
+    expect(
+      excerptFingerprint({
+        ...inkRequest.annotation,
+        color: "#00ff00",
+      }),
+    ).not.toBe(excerptFingerprint(inkRequest.annotation));
   });
 
   it("retries rendering after an uncertain fallback and never validates that fallback", async () => {

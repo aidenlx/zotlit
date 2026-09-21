@@ -23,6 +23,7 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
+import { excerptAssetIdentity } from "@/services/excerpt-image/materialize";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
@@ -220,6 +221,7 @@ async function fixture(mode = "normal") {
   const cleanup = stack.move();
   return {
     app,
+    dataDir,
     vaultRoot,
     client,
     importer,
@@ -241,6 +243,56 @@ async function fixture(mode = "normal") {
     [Symbol.asyncDispose]: () => cleanup[Symbol.asyncDispose](),
   };
 }
+
+it("retains an API-owned excerpt through a database note refresh", async () => {
+  await using f = await fixture();
+  f.client.$client.exec(`
+    insert into settings (setting, key, value)
+      values
+        ('account', 'userID', 1),
+        ('account', 'localUserKey', 'LOCAL'),
+        ('localAPI', 'serverID', 'SERVER');
+  `);
+  const apiRequest: ExcerptRequest = {
+    annotation: {
+      key: "FDRFQ7C2",
+      parentKey: "RGRPDF24",
+      type: "image",
+      color: "#ffd400",
+      text: null,
+      comment: null,
+      pageLabel: "1",
+      tags: [],
+      version: null,
+      position: {
+        kind: "pdf-rects",
+        pageIndex: 0,
+        rects: [[0, 0, 10, 10]],
+      },
+    },
+    source: { kind: "zotero-local-api", serverID: "SERVER" },
+    sourceScope: f.dataDir,
+    libraryID: 1,
+    attachmentKey: "RGRPDF24",
+    pdfPath: null,
+    zoteroPngPath: null,
+  };
+  const oldPath = `Images/zotlit-excerpt-${excerptAssetIdentity(apiRequest)}-${"a".repeat(64)}.png`;
+  await f.app.vault.create(oldPath, "");
+  await writeFile(join(f.vaultRoot, oldPath), bluePng);
+  const previous = await f.app.vault.create("Existing.md", `![[${oldPath}]]`);
+
+  f.setOutcome({ kind: "unavailable" });
+  await f.import(previous);
+
+  const content = await f.app.vault.read(previous);
+  expect(content).toContain(`![[${oldPath}]]`);
+  expect(await readFile(join(f.vaultRoot, oldPath))).toEqual(bluePng);
+  expect(f.resolve).toHaveBeenCalledTimes(2);
+  expect(f.reports).toEqual([
+    { zotero: 0, unchecked: 0, unavailable: 1, notRefreshed: 1 },
+  ]);
+});
 
 it("refreshes live image and ink versions while preserving frozen snapshots and old assets", async () => {
   await using f = await fixture();

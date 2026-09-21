@@ -20,6 +20,7 @@ import {
 } from "@/lib/ensure-folder";
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
+import type { AnnotationSource } from "@/services/annotation-repository/service";
 import type { Settings } from "@/services/settings/schema";
 
 import { excerptKey, excerptSourceIdentity } from "./contract";
@@ -71,13 +72,15 @@ export async function retainExcerpt(options: {
 }): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
   const adapter = options.app.vault.adapter;
   if (!(adapter instanceof FileSystemAdapter)) return;
-  const identity = excerptAssetIdentity(options.request);
+  const identities = excerptAssetIdentities(options.request);
   for (const path of options.paths) {
     const local = relative(adapter.getFullPath(""), adapter.getFullPath(path));
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
       continue;
     const name = basename(path);
-    const owned = isOwnedExcerptAssetPath(path, identity);
+    const owned = identities.some((identity) =>
+      isOwnedExcerptAssetPath(path, identity),
+    );
     const legacy =
       name === `${parseIndexedKey(options.request.annotation.key)?.key}.png`;
     if (!owned && !legacy) continue;
@@ -125,6 +128,36 @@ export function excerptAssetIdentity(
       ]),
     )
     .digest("hex");
+}
+
+/** Keep source-specific assets owned when a verified API/DB handoff changes. */
+function excerptAssetIdentities(request: ExcerptRequest): string[] {
+  const current = excerptAssetIdentity(request);
+  const verified = request.verifiedDatabaseIdentity;
+  if (!verified) return [current];
+  let previousSource: AnnotationSource;
+  if (request.source.kind === "zotero-db") {
+    if (verified.serverID === null) return [current];
+    previousSource = {
+      kind: "zotero-local-api",
+      serverID: verified.serverID,
+    };
+  } else {
+    previousSource = {
+      kind: "zotero-db",
+      database: verified,
+      libraryID: request.libraryID,
+      libraryRevision: null,
+    };
+  }
+  const previous = excerptAssetIdentity({
+    sourceScope: request.sourceScope,
+    source: previousSource,
+    libraryID: request.libraryID,
+    attachmentKey: request.attachmentKey,
+    annotation: request.annotation,
+  });
+  return previous === current ? [current] : [current, previous];
 }
 
 export function isOwnedExcerptAssetPath(

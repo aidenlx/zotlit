@@ -11,6 +11,7 @@ import type { ExcerptRendererDiagnostics } from "./renderer";
 import type { ExcerptStore } from "./store";
 export {
   EXCERPT_RENDERER_VERSION,
+  excerptCacheSourceIdentity,
   excerptFingerprint,
   excerptKey,
   excerptSourceIdentity,
@@ -34,6 +35,14 @@ export interface ExcerptCache {
   put(key: string, entry: ExcerptEntry): Promise<void>;
   clear?(): Promise<void>;
 }
+
+/** Counters used to verify cache reuse at the capability boundary. */
+export interface ExcerptImageMetrics {
+  cacheHits: number;
+  cropRenders: number;
+  pdfLoads: number;
+}
+
 export type ExcerptOutcome =
   | {
       kind: "available";
@@ -109,10 +118,20 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   #stalled = false;
   #jobs = 0;
   #operations = 0;
+  #cacheHits = 0;
+  #cropRenders = 0;
 
   /** Internal lifecycle diagnostics used by the real-app acceptance suite. */
   get rendererDiagnostics(): ExcerptRendererDiagnostics | undefined {
     return this.#renderer?.diagnostics;
+  }
+
+  get metrics(): ExcerptImageMetrics {
+    return {
+      cacheHits: this.#cacheHits,
+      cropRenders: this.#cropRenders,
+      pdfLoads: this.#renderer?.diagnostics.snapshot().pdfLoads ?? 0,
+    };
   }
 
   constructor(deps: ExcerptDeps = {}) {
@@ -306,6 +325,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       (!pdf ||
         (pdf.size === cached.pdf.size && pdf.mtimeMs === cached.pdf.mtimeMs))
     ) {
+      this.#cacheHits++;
       logger.debug("Excerpt cache matched", { key, freshnessChecked: !!pdf });
       return {
         kind: "available",
@@ -324,6 +344,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         ? this.#deps.render(request, signal)
         : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
+      this.#cropRenders++;
       if (pdf && generation === this.#generation)
         await persistent?.put(key, { bytes, pdf }).catch((error) => {
           logger.debug("Excerpt cache write failed", { key, error });

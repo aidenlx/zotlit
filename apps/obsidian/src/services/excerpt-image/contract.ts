@@ -2,6 +2,8 @@
 
 import { createHash } from "node:crypto";
 
+import type { ZoteroDatabaseIdentity } from "@zotlit/db";
+
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -16,6 +18,8 @@ export interface ExcerptRequest {
   libraryID: number;
   pdfPath: string | null;
   zoteroPngPath: string | null;
+  /** Set only after the selected source has been checked against this database. */
+  verifiedDatabaseIdentity?: ZoteroDatabaseIdentity;
 }
 
 export const EXCERPT_RENDERER_VERSION = 2;
@@ -48,15 +52,45 @@ export function excerptSourceIdentity(source: AnnotationSource): unknown[] {
     : [source.kind, source.serverID];
 }
 
+function databaseIdentity(identity: ZoteroDatabaseIdentity): unknown[] {
+  return [
+    "zotero-database",
+    identity.userID,
+    identity.localUserKey,
+    identity.serverID,
+  ];
+}
+
+/**
+ * Canonical cache identity for requests whose source equivalence is proven.
+ * An API source carries only a server id until `excerptRequest` checks it
+ * against the open database, so an unverified API request remains isolated.
+ */
+export function excerptCacheSourceIdentity(
+  request: Pick<ExcerptRequest, "source" | "verifiedDatabaseIdentity">,
+): unknown[] {
+  const verified = request.verifiedDatabaseIdentity;
+  if (verified) {
+    if (
+      request.source.kind === "zotero-local-api" &&
+      request.source.serverID === verified.serverID
+    )
+      return databaseIdentity(verified);
+  }
+  if (request.source.kind === "zotero-db")
+    return databaseIdentity(request.source.database);
+  return excerptSourceIdentity(request.source);
+}
+
 /** Excludes source revision and record versions, which cannot change the pixels. */
 export function excerptKey(request: ExcerptRequest): string {
-  const { annotation: a, source } = request;
+  const { annotation: a } = request;
   return createHash("sha256")
     .update(
       JSON.stringify([
         EXCERPT_RENDERER_VERSION,
         request.sourceScope,
-        excerptSourceIdentity(source),
+        excerptCacheSourceIdentity(request),
         request.libraryID,
         request.attachmentKey,
         a.key,

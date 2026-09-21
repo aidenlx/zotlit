@@ -232,6 +232,7 @@ it("loads one document for distinct annotations and closes it once at shutdown",
     },
   });
   expect(f.getDocument).toHaveBeenCalledTimes(1);
+  expect(f.renderer.diagnostics.snapshot().pdfLoads).toBe(1);
   expect(f.pages.mock.calls).toEqual([[1], [3]]);
   expect(f.pageCleanups.map((cleanup) => cleanup.mock.calls.length)).toEqual([
     1, 1,
@@ -292,6 +293,102 @@ it("reuses its renderer within one operation and releases it when the operation 
   }
   expect(f.destroys[0]).toHaveBeenCalledTimes(1);
   expect(service.rendererDiagnostics?.snapshot().documentOpen).toBe(false);
+});
+
+it("counts only completed crop renders", async () => {
+  await using f = fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  vi.stubGlobal("document", { createElement: f.canvas });
+  vi.mocked(loadPdfJs).mockImplementation(f.load);
+  const service = cleanup.use(
+    new ExcerptImageService({
+      stamp: async () => ({ size: 4, mtimeMs: 1 }),
+      render: (request, signal) => f.renderer.render(request, signal),
+    }),
+  );
+  await using operation = service.operation();
+
+  expect(await operation.resolve({ ...f.request, pdfPath: null })).toEqual({
+    kind: "unavailable",
+  });
+  expect(service.metrics.cropRenders).toBe(0);
+
+  const invalid = structuredClone(f.request);
+  invalid.annotation.position = {
+    kind: "pdf-rects",
+    pageIndex: 0,
+    rects: [[0, 0, 0, 50]],
+  };
+  expect(await operation.resolve(invalid)).toEqual({ kind: "unavailable" });
+  expect(service.metrics.cropRenders).toBe(0);
+
+  expect(await operation.resolve(f.request)).toMatchObject({
+    kind: "available",
+    provenance: "rendered",
+  });
+  expect(service.metrics.cropRenders).toBe(1);
+});
+
+it("measures verified API-to-database reuse at the renderer boundary", async () => {
+  await using f = fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  vi.stubGlobal("document", { createElement: f.canvas });
+  vi.mocked(loadPdfJs).mockImplementation(f.load);
+  const entries = new Map<
+    string,
+    { bytes: Uint8Array; pdf: { size: number; mtimeMs: number } }
+  >();
+  const service = cleanup.use(
+    new ExcerptImageService({
+      stamp: async () => ({ size: 4, mtimeMs: 1 }),
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+      },
+    }),
+  );
+  const identity = { userID: 1, localUserKey: "LOCAL", serverID: "SERVER" };
+  const database = {
+    kind: "zotero-db" as const,
+    database: identity,
+    libraryID: 1,
+    libraryRevision: 1,
+  };
+  const api = {
+    ...f.request,
+    source: { kind: "zotero-local-api" as const, serverID: "SERVER" },
+    verifiedDatabaseIdentity: identity,
+  };
+  const db = {
+    ...f.request,
+    source: database,
+    verifiedDatabaseIdentity: identity,
+  };
+  await using operation = service.operation();
+  expect(await operation.resolve(api)).toMatchObject({
+    kind: "available",
+    provenance: "rendered",
+  });
+  expect(await operation.resolve(db)).toMatchObject({
+    kind: "available",
+    provenance: "cache",
+  });
+
+  expect(service.metrics).toEqual({
+    cacheHits: 1,
+    cropRenders: 1,
+    pdfLoads: 1,
+  });
+  expect(f.load).toHaveBeenCalledTimes(1);
+  expect(f.getDocument).toHaveBeenCalledTimes(1);
 });
 
 it("releases its renderer after a standalone resolution", async () => {

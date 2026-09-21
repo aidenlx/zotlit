@@ -153,6 +153,7 @@ export function createExcerptPreparation(deps: {
                 dataDir: deps.paths.dataDir,
                 groupID: a.groupID,
               }),
+              verifiedDatabaseIdentity: database,
             };
             try {
               if (!settings["attachment.import"]) {

@@ -49,5 +49,6 @@ export function excerptRequest(options: {
       { key: key.key, type: annotation.type },
       { dataDir: paths.dataDir, groupID: key.groupID },
     ),
+    verifiedDatabaseIdentity: identity,
   };
 }

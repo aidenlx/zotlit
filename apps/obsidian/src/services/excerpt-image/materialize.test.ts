@@ -263,6 +263,48 @@ it("retains only a referenced version owned by the same source, Library, Attachm
   ).toBeUndefined();
 });
 
+it("retains an existing asset when verified cache identity is added", async () => {
+  await using f = await fixture();
+  const saved = await f.save(request, png);
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+  if (request.source.kind !== "zotero-db")
+    throw new Error("Expected database fixture");
+
+  expect(
+    await retainExcerpt({
+      app: f.app,
+      request: {
+        ...request,
+        verifiedDatabaseIdentity: request.source.database,
+      },
+      paths: [saved.path],
+    }),
+  ).toEqual({ kind: "retained", path: saved.path });
+});
+
+it("retains an older API-owned asset during a verified database handoff", async () => {
+  await using f = await fixture();
+  if (request.source.kind !== "zotero-db")
+    throw new Error("Expected database fixture");
+  const apiRequest = {
+    ...request,
+    source: { kind: "zotero-local-api" as const, serverID: "SERVER" },
+  };
+  const saved = await f.save(apiRequest, png);
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+
+  expect(
+    await retainExcerpt({
+      app: f.app,
+      request: {
+        ...request,
+        verifiedDatabaseIdentity: request.source.database,
+      },
+      paths: [saved.path],
+    }),
+  ).toEqual({ kind: "retained", path: saved.path });
+});
+
 it("requires the current source bytes to prove ownership of a referenced legacy image", async () => {
   const legacyRequest = {
     ...request,

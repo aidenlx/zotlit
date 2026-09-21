@@ -3,7 +3,7 @@ import { loadPdfJs } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
-import { excerptSourceIdentity } from "./contract";
+import { excerptCacheSourceIdentity } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import {
   clipExcerptBounds,
@@ -102,6 +102,7 @@ export type ExcerptRendererPhase =
 export interface ExcerptRendererDiagnosticSnapshot {
   phase: ExcerptRendererPhase | "idle";
   jobActive: boolean;
+  pdfLoads: number;
   fileOpen: boolean;
   documentOpen: boolean;
   renderTaskActive: boolean;
@@ -126,6 +127,7 @@ const logger = getLogger(["excerpt-image", "renderer"]);
 export class ExcerptRendererDiagnostics {
   #phase: ExcerptRendererPhase | "idle" = "idle";
   #jobActive = false;
+  #pdfLoads = 0;
   #fileOpen = false;
   #task?: LoadingTask;
   #renderTaskActive = false;
@@ -143,6 +145,7 @@ export class ExcerptRendererDiagnostics {
     return {
       phase: this.#phase,
       jobActive: this.#jobActive,
+      pdfLoads: this.#pdfLoads,
       fileOpen: this.#fileOpen,
       documentOpen: !!this.#task,
       renderTaskActive: this.#renderTaskActive,
@@ -193,6 +196,10 @@ export class ExcerptRendererDiagnostics {
 
   job(active: boolean): void {
     this.#jobActive = active;
+  }
+
+  pdfLoad(): void {
+    this.#pdfLoads++;
   }
 
   file(open: boolean): void {
@@ -353,7 +360,7 @@ export class ExcerptRenderer implements AsyncDisposable {
       throw new Error("PDF exceeds excerpt byte limit");
     const key = JSON.stringify([
       request.sourceScope,
-      excerptSourceIdentity(request.source),
+      excerptCacheSourceIdentity(request),
       request.libraryID,
       request.attachmentKey,
       request.pdfPath,
@@ -394,6 +401,7 @@ export class ExcerptRenderer implements AsyncDisposable {
         throw new Error("PDF changed while reading");
       const lib = await abortable((this.#host.load ?? loadPdfJs)(), signal);
       signal.throwIfAborted();
+      this.diagnostics.pdfLoad();
       this.#session = {
         key,
         task: lib.getDocument({
