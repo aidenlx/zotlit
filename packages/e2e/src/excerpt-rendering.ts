@@ -308,6 +308,11 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     ),
   ) as RenderingResult;
 
+  // The batch's own numbers, emitted as soon as they exist: the probes below
+  // read host capabilities this environment does not always answer, and a
+  // failed probe must not cost the record the batch it measured.
+  console.info("Excerpt rendering evidence", result);
+
   expect(result.cold).toHaveLength(EXCERPT_RENDERING_CASES.length);
   expect(
     result.cold.every(({ kind, bytes }) => kind === "available" && !!bytes),
@@ -498,8 +503,6 @@ export async function verifyExcerptRendering(vaultId: string): Promise<void> {
     kind: "available",
     provenance: "cache",
   });
-
-  console.info("Excerpt rendering evidence", result);
 }
 
 /** Compare PDF.js output with independent PNGs produced by Zotero's worker. */

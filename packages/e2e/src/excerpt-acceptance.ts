@@ -209,6 +209,46 @@ async function importState(vaultId: string): Promise<string> {
   ).catch((error: unknown) => `import state unavailable: ${String(error)}`);
 }
 
+/**
+ * The app's own settlement of the note import this case starts — the authority
+ * every observation of it follows.
+ *
+ * An import writes a note and its assets, and the CLI child's deadline is not
+ * that work's lifetime: a poll that expires, or a child killed under load, is an
+ * observation failure rather than a signal that the in-app work stopped. The
+ * cleanup steps below delete the import's completion state, close the dialogs it
+ * uses, and restore the settings and the note it overwrote, so none of them may
+ * start beside a write still in flight (`policies/test-timing.md`). Every path —
+ * this case's own observation and each cleanup step — goes through the one wait
+ * this returns, so the app is asked once however the case ends.
+ */
+function importSettlement(vaultId: string): () => Promise<void> {
+  let asked: Promise<void> | null = null;
+  return () => (asked ??= settleImport(vaultId));
+}
+
+/** Poll the import to settlement, answering the overwrite confirm when it asks. */
+async function settleImport(vaultId: string): Promise<void> {
+  const settled = "String(!!app.__zotlitExcerptImport?.settled)";
+  if (await obEvalUntil(vaultId, settled, { expected: "true", tries: 60 }))
+    return;
+  // The Fixture Vault's own Imported Note makes the import ask before it
+  // overwrites; this answers that confirm the way a user answers it.
+  const answered = await obEval(
+    vaultId,
+    "(()=>{const button=document.querySelector('.modal-container .modal .modal-button-container button.mod-destructive');if(!button)return false;button.click();return true;})()",
+  );
+  if (answered !== "true")
+    throw new Error(
+      `the note import raised no confirm to answer: ${await importState(vaultId)}`,
+    );
+  if (await obEvalUntil(vaultId, settled, { expected: "true", tries: 240 }))
+    return;
+  throw new Error(
+    `the note import did not settle: ${await importState(vaultId)}`,
+  );
+}
+
 /** Install the object-URL probe, so a card's publication is observable. */
 async function installUrlProbe(vaultId: string): Promise<void> {
   expect(
@@ -242,6 +282,65 @@ function cardState(key: string): string {
 }
 
 /**
+ * What the renderer's own Node view reports for its process, or the error that
+ * reading it raised: Electron's `process.getProcessMemoryInfo()` is a Chromium
+ * probe this environment answers with `null`, while `process.memoryUsage()` is
+ * the renderer process's own Node measurement.
+ */
+type MemorySample =
+  | { rss: number; heapUsed: number; heapTotal: number }
+  | string;
+
+/** The decoded pixels of one image the app holds: its size and an RGBA digest. */
+interface DecodedPixels {
+  width: number;
+  height: number;
+  pixels: string;
+}
+
+/**
+ * Decode one image's bytes the way the card's own `<img>` does, and digest what
+ * came out. Two images compare equal here only if they really paint the same
+ * pixels at the same size: the crop offset, the drawn content and the scale all
+ * move the digest, which a URL or a byte-length comparison cannot see.
+ */
+const decodedPixels = `(async (bytes, mimeType) => {
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: mimeType }));
+  let canvas;
+  try {
+    canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Excerpt pixel canvas unavailable');
+    context.drawImage(bitmap, 0, 0);
+    const data = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+    return { width: bitmap.width, height: bitmap.height, pixels: require('crypto').createHash('sha256').update(new Uint8Array(data.buffer)).digest('hex') };
+  } finally {
+    if (canvas) { canvas.width = 0; canvas.height = 0; }
+    bitmap.close();
+  }
+})`;
+
+/** Decode what one card really paints: the `<img>` it holds, drawn and digested. */
+function paintedPixels(key: string): string {
+  return `(async()=>{
+    const image=${findImage(key)};
+    if(!image||!image.complete||image.naturalWidth===0)return JSON.stringify(null);
+    const canvas=document.createElement('canvas');
+    canvas.width=image.naturalWidth;
+    canvas.height=image.naturalHeight;
+    try{
+      const context=canvas.getContext('2d');
+      if(!context)throw new Error('Card pixel canvas unavailable');
+      context.drawImage(image,0,0);
+      const data=context.getImageData(0,0,canvas.width,canvas.height).data;
+      return JSON.stringify({width:canvas.width,height:canvas.height,pixels:require('crypto').createHash('sha256').update(new Uint8Array(data.buffer)).digest('hex')});
+    }finally{canvas.width=0;canvas.height=0;}
+  })()`;
+}
+
+/**
  * The reader-backed excerpt path, end to end in one run: a crop that draws
  * from the open reader's own document, the note import that reuses what it
  * produced, and the fallback to detached rendering once the reader is gone.
@@ -256,6 +355,11 @@ export async function verifyReaderBackedExcerpts(
     "JSON.stringify(app.workspace.getLayout())",
   );
   const basePath = await obEval(vaultId, "app.vault.adapter.getBasePath()");
+  // The runtime the evidence below is against, read from the app itself.
+  const runtime = await evalJson<Record<string, string>>(
+    vaultId,
+    `(()=>{const versions=process.versions;return JSON.stringify({userAgent:navigator.userAgent,electron:versions.electron??null,chrome:versions.chrome??null,node:versions.node});})()`,
+  );
   const existingFiles = new Set(
     await evalJson<string[]>(
       vaultId,
@@ -307,6 +411,7 @@ export async function verifyReaderBackedExcerpts(
       `(()=>{const state=JSON.parse(${reader});return String(state.page&&state.canvas&&state.borrowed);})()`,
       { expected: "true", tries: 80 },
     ),
+    `the Fixture PDF must open in the reader and lend its document: ${await obEval(vaultId, reader)}`,
   ).toBe(true);
   const held = await evalJson<{
     leaves: number;
@@ -320,6 +425,7 @@ export async function verifyReaderBackedExcerpts(
     before: RendererDiagnostics;
     after: RendererDiagnostics;
     outcome: { kind: string; provenance?: string; sha256?: string };
+    pixels: DecodedPixels | null;
   }>(
     vaultId,
     `(async()=>{
@@ -330,7 +436,12 @@ export async function verifyReaderBackedExcerpts(
       const before=${diagnostics};
       const outcome=await service.resolve(request);
       const after=${diagnostics};
-      return JSON.stringify({before,after,outcome:outcome.kind==='available'?{kind:outcome.kind,provenance:outcome.provenance,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex')}:{kind:outcome.kind}});
+      return JSON.stringify({
+        before,
+        after,
+        outcome:outcome.kind==='available'?{kind:outcome.kind,provenance:outcome.provenance,sha256:require('crypto').createHash('sha256').update(outcome.bytes).digest('hex')}:{kind:outcome.kind},
+        pixels:outcome.kind==='available'?await (${decodedPixels})(outcome.bytes,outcome.format.mimeType):null,
+      });
     })()`,
   );
   expect(borrowed.outcome).toMatchObject({
@@ -338,6 +449,14 @@ export async function verifyReaderBackedExcerpts(
     provenance: "rendered",
   });
   expect(borrowed.outcome.sha256).toMatch(/^[0-9a-f]{64}$/);
+  // The crop the reader's document produced, decoded once: the fallback below
+  // compares the detached crop's own pixels against these.
+  expect(borrowed.pixels).toMatchObject({
+    width: expect.any(Number),
+    height: expect.any(Number),
+    pixels: expect.stringMatching(/^[0-9a-f]{64}$/),
+  });
+  expect(borrowed.pixels!.width).toBeGreaterThan(0);
   // The whole claim: one crop, drawn from a document this renderer never
   // opened and never loaded.
   expect(loadsBetween(borrowed.before, borrowed.after)).toEqual({
@@ -375,10 +494,13 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     `(()=>{const settings=app.plugins.plugins.zotlit.services.settings;return JSON.stringify({enabled:settings.current['note.default-profile'].bindings['note.import-annotations-as-template']});})()`,
   );
+  const settleImport = importSettlement(vaultId);
   // The import overwrites a note the Fixture wrote and turns a setting on, so
-  // both go back the way they were found.
+  // both go back the way they were found — once the import has settled, so no
+  // step here writes beside it.
   cleanup.defer(() =>
     cleanupStep(async () => {
+      await settleImport();
       await obEval(
         vaultId,
         `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(importedNote.path)});if(file)await app.vault.modify(file,${JSON.stringify(importedNote.source)});return true;})()`,
@@ -387,6 +509,7 @@ export async function verifyReaderBackedExcerpts(
   );
   cleanup.defer(() =>
     cleanupStep(async () => {
+      await settleImport();
       await obEval(
         vaultId,
         `(()=>{app.plugins.plugins.zotlit.services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${templateBinding.enabled}});return true;})()`,
@@ -423,63 +546,49 @@ export async function verifyReaderBackedExcerpts(
     borrowed.outcome.sha256,
   );
 
-  // The import leaves state and, when it asks, a confirm behind; both go.
+  // The import leaves state and, when it asks, a confirm behind; both go — and
+  // both wait for the app's settlement first, so this step can never delete the
+  // state the import is still publishing under.
   cleanup.defer(() =>
     cleanupStep(async () => {
+      await settleImport();
       await obEval(
         vaultId,
         `(()=>{delete app.__zotlitExcerptImport;for(const button of document.querySelectorAll('.modal-container .modal .modal-close-button'))button.click();return true;})()`,
       );
     }),
   );
-  // The import writes a note and its assets, which can outlive the CLI's own
-  // child deadline, so it runs as the app's own job and is polled for.
+  // The import writes a note and its assets, which outlive the CLI's own child
+  // deadline, so it runs as the app's own job and reports its own settlement,
+  // completion time, and the memory its renderer process held around it.
   expect(
     await obEval(
       vaultId,
       `(async()=>{
         const services=app.plugins.plugins.zotlit.services;
+        const memory=()=>{try{const value=process.memoryUsage();return {rss:value.rss,heapUsed:value.heapUsed,heapTotal:value.heapTotal};}catch(error){return String(error);}};
         services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});
-        const state=app.__zotlitExcerptImport={settled:false,before:${diagnostics},after:null,result:null,error:null};
+        const state=app.__zotlitExcerptImport={settled:false,startedAt:performance.now(),settledAt:null,before:${diagnostics},memoryBefore:memory(),memoryAfter:null,after:null,result:null,error:null};
         await services.noteIndex.whenIndexed();
-        void services.batchImport.runBatchImport('note',[${noteItem.itemID}]).then((result)=>{state.after=${diagnostics};state.result=result;},(error)=>{state.after=${diagnostics};state.error=error?.stack??String(error);}).finally(()=>{state.settled=true;});
+        void services.batchImport.runBatchImport('note',[${noteItem.itemID}]).then((result)=>{state.after=${diagnostics};state.result=result;},(error)=>{state.after=${diagnostics};state.error=error?.stack??String(error);}).finally(()=>{state.memoryAfter=memory();state.settledAt=performance.now();state.settled=true;});
         return true;
       })()`,
     ),
   ).toBe("true");
-  const settled = await obEvalUntil(
-    vaultId,
-    "String(!!app.__zotlitExcerptImport?.settled)",
-    { expected: "true", tries: 60 },
-  );
-  if (!settled) {
-    // The Fixture Vault's own Imported Note makes the import ask before it
-    // overwrites; this answers that confirm the way a user answers it.
-    expect(
-      await obEval(
-        vaultId,
-        "(()=>{const button=document.querySelector('.modal-container .modal .modal-button-container button.mod-destructive');if(!button)return false;button.click();return true;})()",
-      ),
-      await importState(vaultId),
-    ).toBe("true");
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!app.__zotlitExcerptImport?.settled)",
-        { expected: "true", tries: 240 },
-      ),
-      `the note import did not settle: ${await importState(vaultId)}`,
-    ).toBe(true);
-  }
+  await settleImport();
   const imported = await evalJson<{
     before: RendererDiagnostics;
     after: RendererDiagnostics;
     result: { outcome: string; write?: string };
+    elapsedMs: number;
+    memoryBefore: MemorySample;
+    memoryAfter: MemorySample;
   }>(
     vaultId,
-    `(()=>{const state=app.__zotlitExcerptImport;if(!state)throw new Error('The note import state is gone');if(state.error)throw new Error(state.error);const value={before:state.before,after:state.after,result:state.result};delete app.__zotlitExcerptImport;return JSON.stringify(value);})()`,
+    `(()=>{const state=app.__zotlitExcerptImport;if(!state)throw new Error('The note import state is gone');if(state.error)throw new Error(state.error);const value={before:state.before,after:state.after,result:state.result,elapsedMs:state.settledAt-state.startedAt,memoryBefore:state.memoryBefore,memoryAfter:state.memoryAfter};delete app.__zotlitExcerptImport;return JSON.stringify(value);})()`,
   );
   expect(imported.result).toMatchObject({ outcome: "single" });
+  expect(imported.elapsedMs).toBeGreaterThan(0);
   // Reuse, not a second rendering: the import draws no crop at all, opens no
   // PDF file, and loads no PDF document.
   expect(loadsBetween(imported.before, imported.after)).toEqual({
@@ -642,13 +751,31 @@ export async function verifyReaderBackedExcerpts(
     vaultId,
     `(()=>{app.plugins.plugins.zotlit.services.excerptImage.rendererDiagnostics.release();return true;})()`,
   );
+  // The one request these pixels answer never changed, so the fallback's crop is
+  // the reader's crop: its decoded pixels must equal the borrowed crop's, at the
+  // same size. That is the parity the two routes' shared cache publication
+  // depends on, and it is read off the card that paints it.
+  //
+  // The wait is on the replacement *landing* rather than on a URL changing,
+  // because a card that keeps the URL of an unchanged image has published just
+  // as truly as one that allocated a fresh URL: what it must show is the crop,
+  // with either the URL it held and no work left, or a fresh URL painted while
+  // the previous image's was released.
   expect(
     await obEvalUntil(
       vaultId,
-      `String(${painted(target.key)}&&${findImage(target.key)}.src!==${JSON.stringify(demand.src)})`,
+      `(async()=>{
+        const pixels=JSON.parse(await ${paintedPixels(target.key)});
+        if(!pixels||pixels.width!==${borrowed.pixels!.width}||pixels.height!==${borrowed.pixels!.height}||pixels.pixels!==${JSON.stringify(borrowed.pixels!.pixels)})return 'false';
+        const state=${probe};
+        const image=${findImage(target.key)};
+        const diagnostics=${diagnostics};
+        if(state.created.length===${demand.created.length}&&image.src===${JSON.stringify(demand.src)}&&!diagnostics.jobActive&&diagnostics.phase==='idle')return 'true';
+        return String(state.created.length>${demand.created.length}&&image.src===state.created[state.created.length-1]&&state.revoked.includes(${JSON.stringify(demand.src)}));
+      })()`,
       { expected: "true", tries: 80 },
     ),
-    "the detached replacement must publish its image",
+    "the detached fallback must paint the reader's crop and settle its URL",
   ).toBe(true);
   const replaced = await evalJson<{
     src: string;
@@ -656,11 +783,23 @@ export async function verifyReaderBackedExcerpts(
     revoked: string[];
     diagnostics: RendererDiagnostics;
   }>(vaultId, cardState(target.key));
-  // One publication for one replacement, and the previous image released as
-  // the new one is painted.
-  expect(replaced.created.slice(demand.created.length)).toHaveLength(1);
-  expect(replaced.src).toBe(replaced.created.at(-1));
-  expect(replaced.revoked).toEqual([demand.src]);
+  // URL lifetime, not an allocation count: the previous URL stayed usable while
+  // the replacement ran (the card painted it, and nothing revoked it), and once
+  // the new image is shown the card either keeps that URL — the pixels did not
+  // move — or holds a fresh one it allocated and released the previous. What it
+  // must never do is paint a URL it released, or orphan the one it replaced.
+  const allocated = replaced.created.slice(demand.created.length);
+  if (replaced.src === demand.src) {
+    expect(allocated, "an unchanged URL needs no new allocation").toEqual([]);
+    expect(replaced.revoked).not.toContain(replaced.src);
+  } else {
+    expect(replaced.src).toBe(allocated.at(-1));
+    expect(
+      replaced.revoked.filter((url) => url === demand.src),
+      "the replaced image's URL is released exactly as the new one is shown",
+    ).toHaveLength(1);
+  }
+  expect(replaced.src).toMatch(/^blob:/);
   expect(replaced.diagnostics).toMatchObject({
     jobActive: false,
     renderTaskActive: false,
@@ -672,16 +811,34 @@ export async function verifyReaderBackedExcerpts(
     documentLoads: 1,
   });
   console.info("Reader-backed excerpt evidence", {
+    runtime,
     sha256: borrowed.outcome.sha256,
     borrowed: loadsBetween(borrowed.before, borrowed.after),
+    pixels: borrowed.pixels,
     import: {
       outcome: imported.result.outcome,
       write: imported.result.write,
       note: importedNote.path,
       loads: loadsBetween(imported.before, imported.after),
+      // The Fixture corpus's only excerpt-bearing note, imported warm: how long
+      // the app took to settle it, and the memory its renderer process held
+      // around it (`process.getProcessMemoryInfo()` answers null here, so the
+      // renderer's own Node view is what this record has).
+      elapsedMs: imported.elapsedMs,
+      memoryBefore: imported.memoryBefore,
+      memoryAfter: imported.memoryAfter,
+      prepared: prepared.outcomes.length,
     },
     asset: published[0],
-    detachedFallback: loadsBetween(demand.diagnostics, replaced.diagnostics),
+    detachedFallback: {
+      loads: loadsBetween(demand.diagnostics, replaced.diagnostics),
+      pixels: borrowed.pixels,
+      url: {
+        painted: replaced.src,
+        previous: demand.src,
+        reused: replaced.src === demand.src,
+      },
+    },
   });
 }
 
@@ -763,6 +920,33 @@ export async function verifySavedEditDisplay(
     diagnostics: RendererDiagnostics;
   }>(vaultId, cardState(target.key));
   expect(before.src).toMatch(/^blob:/);
+  // The record a note import or a batch resolution captures while it runs, taken
+  // here as the edit arrives: it is resolved again after the edit has answered,
+  // and the store's latest reference must still name the edit.
+  const staleSnapshot = await evalJson<{
+    version: number | null;
+    color: string | null;
+  }>(
+    vaultId,
+    `(async()=>{
+      ${requester}
+      const request=requestFor(${JSON.stringify(target.key)});
+      app.__zotlitExcerptStale=request;
+      return JSON.stringify({version:request.annotation.version??null,color:request.annotation.color??null});
+    })()`,
+  );
+  expect(staleSnapshot.color).toBe(card.record!.color);
+  expect(
+    staleSnapshot.version,
+    "the Fixture Annotations must carry a version for saved order to be an order",
+  ).not.toBeNull();
+  // What the card paints now, decoded: the edit's own replacement is compared
+  // against it, so a fresh URL over the old pixels cannot pass.
+  const beforePixels = await evalJson<DecodedPixels | null>(
+    vaultId,
+    paintedPixels(target.key),
+  );
+  expect(beforePixels?.pixels).toMatch(/^[0-9a-f]{64}$/);
 
   // A colour edit moves an ink Annotation's pixels, so the card's image is
   // replaced. Held inside the crop that replacement needs, the previous image
@@ -824,6 +1008,28 @@ export async function verifySavedEditDisplay(
     loadsBetween(before.diagnostics, edited.diagnostics).detached +
       loadsBetween(before.diagnostics, edited.diagnostics).borrowed,
   ).toBeGreaterThan(0);
+  // The replacement publishes pixels, not just a URL: what the card paints now
+  // is the image the saved record resolves to, and it is not the image the
+  // pre-edit record resolved to.
+  const editedPixels = await evalJson<DecodedPixels | null>(
+    vaultId,
+    paintedPixels(target.key),
+  );
+  const resolved = await evalJson<{ pixels: DecodedPixels | null }>(
+    vaultId,
+    `(async()=>{
+      ${requester}
+      const outcome=await services.excerptImage.resolve(requestFor(${JSON.stringify(target.key)}));
+      return JSON.stringify({pixels:outcome.kind==='available'?await (${decodedPixels})(outcome.bytes,outcome.format.mimeType):null});
+    })()`,
+  );
+  expect(editedPixels).toMatchObject({
+    width: expect.any(Number),
+    height: expect.any(Number),
+    pixels: expect.stringMatching(/^[0-9a-f]{64}$/),
+  });
+  expect(editedPixels!.pixels).not.toBe(beforePixels!.pixels);
+  expect(editedPixels).toEqual(resolved.pixels);
 
   // A comment moves no pixels: the record's own image stands, no crop runs, and
   // the card keeps the very URL it paints from.
@@ -867,6 +1073,97 @@ export async function verifySavedEditDisplay(
     fileOpens: 0,
     documentLoads: 0,
   });
+
+  // ── A captured older request, resolved after the saved edit ─────────────
+  // A note import or a batch resolution holds the record as it was when the
+  // batch started. This one is resolved now that the edit has already answered,
+  // and it must not become the Annotation's latest image: the reference a
+  // remount seeds from names the latest *saved* record, not the latest answer.
+  const superseded = await evalJson<{
+    version: number | null;
+    currentVersion: number | null;
+    before: RendererDiagnostics;
+    after: RendererDiagnostics;
+    outcome: {
+      kind: string;
+      provenance?: string;
+      pixels: DecodedPixels | null;
+    };
+    stored: DecodedPixels | null;
+  }>(
+    vaultId,
+    `(async()=>{
+      ${requester}
+      const request=app.__zotlitExcerptStale;
+      if(!request)throw new Error('The pre-edit snapshot is gone');
+      const before=${diagnostics};
+      const outcome=await services.excerptImage.resolve(request);
+      const after=${diagnostics};
+      const current=requestFor(${JSON.stringify(target.key)});
+      const reference=await services.excerptImage.stored(current);
+      delete app.__zotlitExcerptStale;
+      return JSON.stringify({
+        version:request.annotation.version??null,
+        currentVersion:current.annotation.version??null,
+        before,
+        after,
+        outcome:outcome.kind==='available'?{kind:outcome.kind,provenance:outcome.provenance,pixels:await (${decodedPixels})(outcome.bytes,outcome.format.mimeType)}:{kind:outcome.kind,pixels:null},
+        stored:reference&&reference.kind==='available'?await (${decodedPixels})(reference.bytes,reference.format.mimeType):null,
+      });
+    })()`,
+  );
+  expect(superseded.outcome.kind).toBe("available");
+  expect(
+    superseded.version!,
+    "the captured snapshot must predate the saved edit",
+  ).toBeLessThan(superseded.currentVersion!);
+  // The snapshot really carries the superseded pixels, so what the store keeps
+  // is a decision rather than the same image twice.
+  expect(superseded.outcome.pixels!.pixels).toBe(beforePixels!.pixels);
+  expect(superseded.outcome.pixels!.pixels).not.toBe(editedPixels!.pixels);
+  // The latest reference is the saved edit's image, not the answer that arrived
+  // last — this is what a card seeds from.
+  expect(
+    superseded.stored?.pixels,
+    "the store's latest reference must still name the saved edit's pixels",
+  ).toBe(editedPixels!.pixels);
+
+  // ── What a remount shows ────────────────────────────────────────────────
+  // Reopening the view drops its cards and mounts them again, which is the
+  // surface a restart shows: the card seeds from that reference, and what it
+  // paints must be the saved edit's pixels.
+  const viewState = await evalJson<{ state: unknown }>(
+    vaultId,
+    `(async()=>{
+      const leaves=app.workspace.getLeavesOfType('zotero-annotation-view');
+      if(leaves.length===0)throw new Error('The Annotation View is not open');
+      const state=leaves[0].getViewState();
+      for(const leaf of leaves)leaf.detach();
+      return JSON.stringify({state});
+    })()`,
+  );
+  expect(
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeaf('tab');await leaf.setViewState(Object.assign({},${JSON.stringify(viewState.state)},{active:true}));return true;})()`,
+    ),
+  ).toBe("true");
+  expect(
+    await obEvalUntil(vaultId, `String(${painted(target.key)})`, {
+      expected: "true",
+      tries: 80,
+    }),
+    "the reopened Annotation View must mount the target Annotation's card",
+  ).toBe(true);
+  const remounted = await evalJson<DecodedPixels | null>(
+    vaultId,
+    paintedPixels(target.key),
+  );
+  expect(
+    remounted?.pixels,
+    "a remount paints the saved edit's pixels, never the superseded answer's",
+  ).toBe(editedPixels!.pixels);
+
   console.info("Saved-edit display evidence", {
     annotation: target.key,
     color: { from: card.record!.color, to: editedColor },
@@ -874,6 +1171,19 @@ export async function verifySavedEditDisplay(
       painted: before.src,
       edited: edited.src,
       revoked: edited.revoked,
+    },
+    pixels: {
+      painted: beforePixels!.pixels,
+      edited: editedPixels!.pixels,
+      superseded: superseded.outcome.pixels!.pixels,
+      stored: superseded.stored?.pixels ?? null,
+      remounted: remounted?.pixels ?? null,
+    },
+    superseded: {
+      version: superseded.version,
+      currentVersion: superseded.currentVersion,
+      provenance: superseded.outcome.provenance ?? null,
+      loads: loadsBetween(superseded.before, superseded.after),
     },
   });
 }

@@ -280,7 +280,7 @@ it("owns its crop canvas and task alone", async () => {
   expect(reader.answered.readerTask.cancel).not.toHaveBeenCalled();
 });
 
-it("publishes the same bytes and cache identity as detached rendering", async () => {
+it("selects the reader's document and publishes under the detached identity", async () => {
   const reader = readerDocument({ bytes: PDF_BYTES });
   await using borrowed = await harness({ reader: holdingReader(reader) });
   await using detached = await harness({});
@@ -290,9 +290,18 @@ it("publishes the same bytes and cache identity as detached rendering", async ()
 
   if (fromReader.kind !== "available" || fromFile.kind !== "available")
     throw new Error("both sources answer an available image");
+  // Route selection, which is what this file's seams can answer: the reader's
+  // own document renders the crop and no PDF is loaded for it, while the same
+  // request without a reader loads the file once. Both publish under one
+  // identity, so a later resolution finds either route's entry.
+  //
+  // The canvases here encode a fixed fixture and ignore every drawing call, so
+  // the two routes' bytes compare equal whatever either route drew. Pixel
+  // parity between the routes is established where a crop is really drawn and
+  // decoded: `verifyReaderBackedExcerpts` in packages/e2e compares the decoded
+  // borrowed and detached crops of one Fixture Annotation in the running app.
   expect(borrowed.detached.load).not.toHaveBeenCalled();
   expect(detached.detached.load).toHaveBeenCalledTimes(1);
-  expect(fromReader.bytes).toEqual(fromFile.bytes);
   expect(fromReader.format).toEqual(fromFile.format);
   expect(fromReader.identity).toMatchObject({
     key: excerptKey(borrowed.request),

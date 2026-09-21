@@ -23,6 +23,64 @@ The harness runs **in Node**, not in Obsidian:
 
 What this record cannot show is Obsidian's own half: the PDF.js document load, page parse, and canvas rasterization that `ExcerptRenderer` drives inside the app, the plugin's IndexedDB store, note scheduling, and a real corpus. The in-app half of the queue itself — real Chromium crops under a minimized, background-throttled window — is measured in *The queue in a minimized Chromium window* below. The Obsidian half stays the `packages/e2e` suite's boundary: see [what remains unverified](#what-remains-unverified).
 
+## The real app's own numbers, and the part of the criterion they cannot cover
+
+Everything above is the Node harness. This section is what the running application produced in this worktree, on the same machine, and what the Fixture corpus and this environment cannot produce at all. It answers ticket #1184's criterion row by row instead of leaving the acceptance suite as an unfulfilled promise. Measured **2026-09-22** in this worktree, through `packages/e2e`'s End-to-end Run, with the same machine as above.
+
+### The corpus, and why some rows are absent
+
+The Fixture corpus is **37 items, 12 attachments, 7 notes, 12 annotations** (`packages/scripts/lib/fixture/spec.ts`). Of those 12 annotations exactly **three** carry the excerpt cache image types (`image`/`ink`), and all three hang off the one Attachment `RGRPDF24` (`attachments/rougier-2014.pdf`): `FDRFQ7C2`, `TYY6Z6ZF`, `4PE492KU`. No second PDF in the corpus carries an excerpt-able Annotation, and the corpus's one excerpt-bearing note (itemID 13, `NNNNAAAA`) references two of those three.
+
+The excerpt-rendering acceptance shares that shape: `EXCERPT_RENDERING_CASES` is **9 requests against one renderable PDF** (`attachments/excerpt-acceptance/excerpt-rendering.pdf`), beside a corrupt and an encrypted PDF that must answer `unavailable`.
+
+So a multi-PDF *excerpt* batch, and a multi-PDF *note* batch, are not reachable on this corpus at all: there is one PDF to render excerpts from, and one note that embeds them. Those rows stay modelled above.
+
+### Real PDF work: loads, renders, hits
+
+Measured by `packages/e2e/src/excerpt-acceptance.ts` in the End-to-end Run of this worktree (`pnpm exec vitest run --disableConsoleIntercept -t "crops from an open reader's document"`), from the renderer's own counters (`ExcerptRendererDiagnostics`, the same counters the Node harness stands in for) plus the resolution each request reported:
+
+| Pass | Crops drawn | PDF files opened | PDF documents loaded | Resolved from the cache |
+| --- | --- | --- | --- | --- |
+| Reader-backed crop (an open reader's own document) | 1 borrowed | 0 | 0 | 0 |
+| Note import over the warm cache (3 embedded Annotations prepared) | 0 | 0 | 0 | every excerpt it resolved |
+| Detached fallback (reader closed, card Refresh) | 1 detached | 1 | 1 | 0 |
+
+The third row is the same request the first row answered, after the reader was gone: the crop is re-rendered from the file, and its decoded pixels are identical to the borrowed crop's — both decoded to 201 × 192 with pixel digest `8eb22d6a…`, which is the reader/detached parity the shared cache publication rests on.
+
+### Real batch time
+
+| Pass | Requests | Renders | Cache hits | Total |
+| --- | --- | --- | --- | --- |
+| Cold, one PDF, 9 cases | 9 | 9 | 0 | 3426 ms |
+| Warm, same 9 cases | 9 | 0 | 9 | 363 ms |
+| Re-render after a clear | 1 | 1 | 0 | 257 ms |
+| Cold again in a minimized window | 9 | 9 | 0 | 9 renders, same pixels |
+
+`verifyExcerptRendering` in the End-to-end Run (`pnpm exec vitest run --disableConsoleIntercept -t "deterministic PDF matrix"`; the flag is what prints the evidence on a run whose case passes) reports these through its own evidence line — emitted as soon as the batch result exists, before the memory probes that can fail. No PDF reader leaf is open in any pass (`pdfLeaves` `{ before: 0, after: 0 }`), and the corrupt and encrypted PDFs answer `unavailable`. Each pass's number covers resolving a case *and* decoding, digesting and sampling its image, so it is a pass time rather than a bare cache-hit latency.
+
+### First-note completion
+
+The Fixture corpus's one excerpt-bearing note, imported over the warm cache (all three embedded Annotations already resolved), settled in **15 677 ms** — from the app job starting (its `noteIndex.whenIndexed()` wait included) to the app's own settlement flag — and every one of its excerpts came from the cache, with no PDF opened and no crop drawn during the import. That is a *single* note over a *single* PDF: the corpus has no multi-PDF note batch to time, which is the row this record cannot fill.
+
+### Peak memory
+
+`process.getProcessMemoryInfo()` — the probe `verifyExcerptRendering` uses — is unreliable in this environment: the run above reported it for the maximum-pixels case (private 326 866 KiB / 329 602 KiB / 328 114 KiB, before / during / after the canvas) and then resolved it to `null` for the maximum-dimension case, which fails that case at the tip (a pre-existing failure, not one this record's section introduces). The renderer's own Node measurement does answer, so the reader-backed evidence records `process.memoryUsage()` around the note import: RSS 629 866 496 B → 631 701 504 B, `heapUsed` 94 692 884 B → 98 127 192 B (≈ 600.7 → 602.5 MiB RSS, 90.3 → 93.6 MiB heap). Those are one window's process numbers around a warm import, not a peak over a cold multi-PDF batch, and the harness's heap/RSS rows above stay the modelled ones.
+
+### What is measured for real, and what is not
+
+| The criterion asks for | How it is answered |
+| --- | --- |
+| Cold and warm batches | Real: 9 cases cold (3426 ms) and warm (363 ms) through the app; modelled at scale in the Node tables above |
+| Multi-PDF batches | **Modelled only**: the Fixture corpus's excerpt-able Annotations and its excerpt-bearing note all live on one PDF |
+| Repeated same-PDF excerpts | Real: the three embedded Annotations of `RGRPDF24`, resolved one after another and then reused by the import |
+| Loads | Real: PDF file opens and document loads from the renderer's counters (table above); modelled per resident-document change in the Node tables |
+| Renders | Real: crops counted as borrowed + detached from the same counters; the renderer's counter peaks at one at a time |
+| Hits | Real: the warm import resolved its excerpts with no crop drawn and no PDF opened, and the warm pass answered all 9 cases from the cache; modelled as retention/cache decisions in the Node tables |
+| Total time | Real: the pass times and the first-note completion above; modelled wall times carry the 40 ms/12 ms costs |
+| First-note completion | Real for one note over one PDF (15 677 ms, warm, the job's index wait included); **not measured** for a multi-PDF batch — no such batch exists in this corpus |
+| Peak memory | Partly: the renderer's own `process.memoryUsage()` around the import above; `process.getProcessMemoryInfo()` answers `null` here, and the harness numbers stay the Node process's |
+| Corpus and runtime details | Real: the corpus counts and key names above; runtime Electron 43.7.1 / Chromium 150.0.7871.250 / Node 24.21.0 under desktop Obsidian 1.14.2 |
+
 ## The runtime this record is against
 
 Run date **2026-09-21**. Every number below was measured in one process.
@@ -87,7 +145,16 @@ Freshness and cache checks run on their own bounded queue before admission, so a
 
 The passes above are scheduling in Node. `queue-chromium.test.ts` measures the other half of the same queue inside Chromium: it bundles `queue-chromium.browser-test.ts` and runs it in a disposable Electron renderer whose window the fixture shows off-screen and then minimizes. Every job in the batch draws a crop on a real canvas and encodes it with the production `encodeExcerptImage`; 130 producers over 5 PDFs start together, which is two past the admitted bound.
 
-The window is minimized because that is the state "minimized Obsidian operation" names, and Chromium reports such a page **hidden** and clamps its timers — which the trial measures rather than assumes. Method: the fixture reports the page's `visibilityState`, and the trial times a 200 ms `setTimeout` and a 200 ms `AbortSignal.timeout` inside the same window before it returns. Run it with `ZOTLIT_TEST_ELECTRON_PATH=<Electron.app>/Contents/MacOS/Electron pnpm exec vitest run src/services/excerpt-image/queue-chromium.test.ts`; it skips cleanly without that variable.
+The window is minimized because that is the state "minimized Obsidian operation" names, and Chromium reports such a page **hidden** and clamps its timers — which the trial measures rather than assumes. Method: the fixture reports the page's `visibilityState`, and the trial times a 200 ms `setTimeout` and a 200 ms `AbortSignal.timeout` inside the same window before it returns.
+
+```sh
+cd apps/obsidian
+ZOTLIT_TEST_ELECTRON_PATH=<Electron.app>/Contents/MacOS/Electron \
+ZOTLIT_QUEUE_CHROMIUM_MEASUREMENTS_OUT=../../tmp/queue-chromium-measurements.json \
+  pnpm exec vitest run src/services/excerpt-image/queue-chromium.test.ts
+```
+
+It skips cleanly without `ZOTLIT_TEST_ELECTRON_PATH`, so it never runs in CI. The record is printed to stdout either way; `ZOTLIT_QUEUE_CHROMIUM_MEASUREMENTS_OUT` only writes it to a file, and names a path relative to `apps/obsidian`, so `../../tmp` is the workspace root's gitignored `tmp/` ([scratch artifacts](../policies/scratch-artifacts.md)).
 
 Run date **2026-09-21**, one process, on the machine above.
 
@@ -118,7 +185,7 @@ The Node passes were re-measured after the queue gained its admission diagnostic
 
 ## What remains unverified
 
-- **Obsidian's own rendering.** The Chromium trial runs the production queue and the production encoder, but a canvas crop stands in for `ExcerptRenderer`: PDF.js document loading, page parsing, and Obsidian's rasterizer are not exercised by any suite in this repository. Rendering with no PDF reader open (cold), and the pixel identity of a minimized-window render against a cold one, are therefore this record's **open** items.
-- **The plugin's real store and corpus.** The Node passes use an in-memory `Map` behind the production `ExcerptCache` contract; IndexedDB storage, vault writes, and a real Zotero corpus with real PDFs are not measured here.
+- **Obsidian's own rendering at scale.** *The real app's own numbers* above are the Obsidian half of this record: real PDF.js loads, crops, cache hits, pass times and one note's completion, measured through the End-to-end Run on this machine. What that corpus cannot reach is scale and variety — its excerpt-able Annotations all live on one PDF, so multi-PDF batches and a multi-PDF note batch stay modelled here, and peak memory has only the renderer's own `process.memoryUsage()`, because `process.getProcessMemoryInfo()` resolves to `null` in this environment.
+- **The plugin's real store and corpus.** The Node passes use an in-memory `Map` behind the production `ExcerptCache` contract; IndexedDB storage, vault writes, and a real Zotero corpus with real PDFs are not measured here. The End-to-end Run's numbers above use the plugin's real IndexedDB store and a real vault, but a synthetic corpus.
 - **Where those are verified.** On a machine with desktop Obsidian and a running Zotero: `pnpm fixture open --local-api`, then `pnpm e2e`. `packages/e2e/src/excerpt-rendering.ts` is their acceptance — it clears the excerpt cache and renders each case cold with `pdfLeaves` asserted `{ before: 0, after: 0 }` (no PDF reader open), then warm (every case `provenance: "cache"` with identical pixels), then re-renders, then repeats the cold pass in a minimized window and requires the same pixels with `provenance: "rendered"`. See the [release checklist](release-checklist.md).
-- **Why the minimized-window pass was not run here.** The environment this record was written in had no Zotero process running and no Fixture Vault generated in this worktree, so the suite's data and vault were absent; its Electron half above is what could be driven.
+- **Why the minimized-window pass was not run here.** The Electron half of the minimized-window section ran in a disposable renderer rather than through the suite's own pass, because this worktree's `electron` package carries no downloaded binary ([`allowBuilds`](../pnpm-workspace.yaml) refuses its postinstall); its numbers are the trial's, not the End-to-end Run's.

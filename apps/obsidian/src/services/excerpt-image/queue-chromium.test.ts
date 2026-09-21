@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
 
@@ -25,6 +26,14 @@ it.skipIf(!testElectron)(
       minimized: true,
       timeoutMs: 120_000,
     })) as ChromiumQueueReport;
+
+    // The record the doc's minimized-window table is read from, in the style of
+    // the other excerpt-image measurement suites: printed, and written where
+    // asked.
+    const serialized = JSON.stringify(report, null, 2);
+    process.stdout.write(`${serialized}\n`);
+    const out = process.env.ZOTLIT_QUEUE_CHROMIUM_MEASUREMENTS_OUT;
+    if (out) await writeFile(out, `${serialized}\n`, "utf8");
 
     expect(report.passed).toEqual([
       "cold batch of canvas crops",

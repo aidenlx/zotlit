@@ -7,10 +7,11 @@ This record answers two questions about the lossless WebP Excerpt Images that [A
 ```sh
 cd apps/obsidian
 ZOTLIT_TEST_ELECTRON_PATH=<Electron.app>/Contents/MacOS/Electron \
+ZOTLIT_WEBP_MEASUREMENTS_OUT=../../tmp/webp-measurements.json \
   pnpm exec vitest run src/services/excerpt-image/encode.test.ts
 ```
 
-The harness bundles the browser entry with Vite and runs its `run()` in a hidden Electron renderer, so the canvas is the same Chromium the plugin ships in. The test skips cleanly when `ZOTLIT_TEST_ELECTRON_PATH` is unset. Crop content is deterministic (a fixed seed), so a re-run on the same runtime reproduces every byte count.
+The harness bundles the browser entry with Vite and runs its `run()` in a hidden Electron renderer, so the canvas is the same Chromium the plugin ships in. The test skips cleanly when `ZOTLIT_TEST_ELECTRON_PATH` is unset. The record is printed to stdout either way; `ZOTLIT_WEBP_MEASUREMENTS_OUT` only writes it to a file, and names a path relative to `apps/obsidian`, so `../../tmp` is the workspace root's gitignored `tmp/` ([scratch artifacts](../policies/scratch-artifacts.md)). Crop content is deterministic (a fixed seed), so a re-run on the same runtime reproduces every byte count.
 
 ## The runtime this record is against
 
@@ -42,7 +43,12 @@ Both patterns carry the source pixels exactly, alpha included, as the WebCodecs 
 
 ## Size and encoding time
 
-Method: five encode calls per crop on one canvas, minimum wall time reported per encoder; byte counts are the returned blob sizes. The two timing columns are measured around different boundaries. `PNG ms` is one `toBlob(callback, "image/png")` call alone. `WebP ms` is all of `encodeExcerptImage`: its own `toBlob(callback, "image/webp", 1)`, the `blob.arrayBuffer()` that copies the payload into the returned bytes, the cancellation check, and the `usableExcerptWebp` container validation. So the ratio below compares a bare canvas PNG encode against a WebP encode plus the pipeline's own payload copy and validation, not two timings of the same work.
+Method: five encode calls per crop on one canvas, minimum wall time reported per encoder, byte counts read from the produced payloads. The two timed calls do **not** wrap the same work, so the ratio below is not two timings around one `toBlob`:
+
+- **PNG ms** is the awaited `toBlob(callback, "image/png")` call alone: one canvas encode, nothing else.
+- **WebP ms** wraps all of `encodeExcerptImage`, which is that same `toBlob` for `"image/webp"` at quality `1`, plus `blob.arrayBuffer()` (the payload copy out of the blob), the cancellation check that follows each await, and the container validation (`usableExcerptWebp`) that decides the format metadata. The WebP column therefore carries work the PNG column does not, and the ratio between them is an upper bound on the encoder's own cost rather than a like-for-like comparison.
+
+Sizes come from those same payloads: WebP bytes are `encodeExcerptImage`'s `bytes.byteLength`, PNG bytes `toBlob`'s blob size.
 
 | Crop | Size | PNG bytes | WebP bytes | Change | PNG ms | WebP ms |
 | --- | --- | --- | --- | --- | --- | --- |

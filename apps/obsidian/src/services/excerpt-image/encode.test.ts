@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
 
@@ -20,6 +21,13 @@ it.skipIf(!testElectron)(
       marker: "EXCERPT_ENCODE_RESULT",
       timeoutMs: 60_000,
     })) as EncodeReport;
+
+    // The record the doc's tables are read from, in the style of the other
+    // excerpt-image measurement suites: printed, and written where asked.
+    const serialized = JSON.stringify(report, null, 2);
+    process.stdout.write(`${serialized}\n`);
+    const out = process.env.ZOTLIT_WEBP_MEASUREMENTS_OUT;
+    if (out) await writeFile(out, `${serialized}\n`, "utf8");
 
     // The trial throws on any failed check, so this is the shape of a complete
     // run: every stage reported, every crop measured, every payload non-empty.
