@@ -240,6 +240,57 @@ export async function run(): Promise<string[]> {
     );
     passed.push("mixed PNG and WebP records");
   }
+  {
+    // One Annotation's latest image: the reference a display reads before its
+    // saved pixels resolve, which survives a launch and leaves with its bytes.
+    const reference = {
+      key: "first",
+      fingerprint: "F1",
+      pdf: { size: 1, mtimeMs: 1 },
+    };
+    {
+      using store = await openExcerptStore("latest", 10 * UNIT);
+      await store.put("first", entry(4));
+      await store.putLatest("annot", reference);
+      check(
+        (await store.latest("annot"))?.key === "first",
+        "A reference did not survive its write",
+      );
+    }
+    {
+      using store = await openExcerptStore("latest", 10 * UNIT);
+      using otherVault = await openExcerptStore(
+        "latest-other-vault",
+        10 * UNIT,
+      );
+      check(
+        (await store.latest("annot"))?.fingerprint === "F1",
+        "A reference did not survive a launch",
+      );
+      check(
+        (await otherVault.latest("annot")) === undefined,
+        "Vault identities collided on a reference",
+      );
+      await store.putLatest("annot", { ...reference, fingerprint: "F2" });
+      check(
+        (await store.latest("annot"))?.fingerprint === "F2",
+        "A later reference did not replace the one before it",
+      );
+      await store.putLatest("other", reference);
+      await store.clear();
+      check(
+        (await store.latest("annot")) === undefined &&
+          (await store.latest("other")) === undefined,
+        "Clear retained references",
+      );
+      await store.put("first", entry(10));
+      check(
+        (await store.get("first"))?.bytes.byteLength === 10 * UNIT,
+        "References outlived the accounting clear",
+      );
+    }
+    passed.push("latest references");
+  }
   // Simulate the next schema version using the real open/upgrade machinery.
   const originalOpen = Object.getOwnPropertyDescriptor(
     IDBFactory.prototype,

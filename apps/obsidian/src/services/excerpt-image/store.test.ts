@@ -14,7 +14,7 @@ it.skipIf(!testElectron)(
       marker: "EXCERPT_STORE_RESULT",
     })) as string[];
 
-    expect(report).toHaveLength(6);
+    expect(report).toHaveLength(7);
     expect(report.every((label) => label.length > 0)).toBe(true);
   },
   60_000,

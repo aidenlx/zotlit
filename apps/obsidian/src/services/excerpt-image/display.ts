@@ -8,10 +8,14 @@ import { getLogger } from "@/lib/log";
 import type { QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 
-import { excerptKey, excerptSourceIdentity } from "./contract";
+import {
+  excerptAnnotationIdentity,
+  excerptAnnotationRecord,
+  excerptKey,
+} from "./contract";
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
-import type { ExcerptImageService, ExcerptOutcome } from "./service";
+import type { AvailableExcerpt, ExcerptImageService } from "./service";
 
 const logger = getLogger("excerpt-image");
 
@@ -28,13 +32,7 @@ export const EXCERPT_DISPLAY = "excerpt-image-display";
  * @see apps/obsidian/docs/adr/0055-reader-edits-revalidate-excerpt-images.md
  */
 export function excerptDisplayKey(request: ExcerptRequest): QueryKey {
-  return [
-    EXCERPT_DISPLAY,
-    request.sourceScope,
-    excerptSourceIdentity(request.source),
-    request.attachmentKey,
-    request.annotation.key,
-  ];
+  return [EXCERPT_DISPLAY, ...excerptAnnotationIdentity(request)];
 }
 
 /**
@@ -50,7 +48,9 @@ export interface ExcerptImageDisplay {
   readonly current: boolean;
   /**
    * - `reading`: a read is answering the demand.
-   * - `failed`: the last read answered nothing; a previous image still paints.
+   * - `failed`: no read stands for the demand — the last one answered nothing,
+   *   so a previous image still paints, or a manual clear released the display,
+   *   so none does.
    * - `settled`: the read committed.
    * - `absent`: the card demands nothing — no source, no scope.
    */
@@ -99,12 +99,6 @@ interface Card {
   readonly listeners: Set<() => void>;
 }
 
-/**
- * What a display read commits: an image. The unavailable output is a failed
- * read, which is what keeps the image the key already holds on screen.
- */
-type DisplayedExcerpt = Extract<ExcerptOutcome, { kind: "available" }>;
-
 export interface ExcerptDisplayDeps {
   /** The plugin's one query client, where every display read is held. */
   queries: Pick<
@@ -113,6 +107,11 @@ export interface ExcerptDisplayDeps {
   >;
   /** One resolution of one request, through the shared PDF queue. */
   resolve: ExcerptImageService["resolve"];
+  /**
+   * The image this device last displayed for one Annotation, which a display
+   * that has nothing yet paints while the Annotation's pixels resolve.
+   */
+  stored: ExcerptImageService["stored"];
 }
 
 /** An Annotation whose pixels have no image: nothing rendered, nothing in Zotero's cache. */
@@ -140,6 +139,11 @@ export class ExcerptDisplayService extends Service<void> {
   readonly #deps: ExcerptDisplayDeps;
   /** One slot per Annotation, while a card demands it. */
   readonly #slots = new Map<string, Slot>();
+  /**
+   * One replacement per Annotation nothing displays, while it runs: the saved
+   * edit that started it, which a later edit aborts.
+   */
+  readonly #refreshes = new Map<string, AbortController>();
 
   constructor(deps: ExcerptDisplayDeps) {
     super();
@@ -179,14 +183,48 @@ export class ExcerptDisplayService extends Service<void> {
    * record that was saved, so a card that has not re-rendered yet still
    * resolves against the saved pixels rather than the superseded ones.
    *
-   * A change to an Annotation nothing displays is not read here.
+   * An Annotation nothing displays is replaced in the background instead, and
+   * only while this device still holds an image for it: one it never displayed
+   * stays on demand until a card asks for it.
    */
   revalidate(request: ExcerptRequest): void {
     const slot = this.#slots.get(hashKey(excerptDisplayKey(request)));
-    if (!slot) return;
+    if (!slot) {
+      void this.#replaceStored(request);
+      return;
+    }
     slot.latest = request;
     this.#read(slot);
     this.#notify(slot);
+  }
+
+  /**
+   * Release every live display — a manual clear, which removes the Held Reads
+   * together with the bytes and references they were painted from.
+   *
+   * The cards mounted when the clear lands release the image they were painted
+   * from in the same step, through the publication every other move of a slot
+   * goes through. A card that repaints after the clear therefore shows the
+   * unavailable output rather than the image the clear removed, until its own
+   * demand asks the display again.
+   */
+  clear(): void {
+    // Every slot leaves the map first, so a demand one of the publications below
+    // starts builds the read the clear took away instead of joining a slot that
+    // is on its way out.
+    const cleared = Array.from(this.#slots.values());
+    this.#slots.clear();
+    for (const slot of cleared) {
+      // The drop comes first: the publication below moves every card off a
+      // display that holds nothing, never off the image the drop just removed.
+      this.#drop(slot);
+      // A cleared slot releases its cards: they go on demanding their pixels,
+      // and the next demand builds the read the clear took away.
+      for (const card of slot.cards) card.slot = null;
+      this.#notify(slot);
+    }
+    for (const refresh of this.#refreshes.values()) refresh.abort();
+    this.#refreshes.clear();
   }
 
   /**
@@ -213,8 +251,7 @@ export class ExcerptDisplayService extends Service<void> {
     // The display holds no image of its own: a slot that no card demands goes,
     // and the bytes stay in the device-local store the capability owns.
     stack.defer(() => {
-      for (const slot of this.#slots.values()) this.#drop(slot);
-      this.#slots.clear();
+      this.clear();
     });
     this.commit(stack.move());
   }
@@ -242,10 +279,57 @@ export class ExcerptDisplayService extends Service<void> {
       slot.cards.add(card);
       card.slot = slot;
       this.#read(slot);
+      void this.#seed(slot);
       this.#notify(slot);
       return;
     }
     this.#publish(card);
+  }
+
+  /**
+   * Paint what this device last displayed for the Annotation while its saved
+   * pixels resolve, which is what a card shows after a remount and after an
+   * application restart instead of nothing at all.
+   *
+   * A key a read has already answered keeps its answer: the stored image is the
+   * fallback, never a replacement for one the display holds.
+   */
+  async #seed(slot: Slot): Promise<void> {
+    const stored = await this.#deps.stored(slot.latest);
+    if (!stored) return;
+    if (this.#slots.get(slot.hash) !== slot) return;
+    if (this.#deps.queries.peek(slot.key) !== null) return;
+    this.#deps.queries.client.setQueryData<AvailableExcerpt>(slot.key, stored);
+    this.#notify(slot);
+  }
+
+  /**
+   * Replace one Annotation's pixels while nothing displays it, through the same
+   * resolution a card uses and so the same shared PDF queue.
+   *
+   * The device-local image the Annotation has now is what says whether it is
+   * worth replacing at all, and a later saved edit replaces this work rather
+   * than joining it, so only the newest pixels reach the store.
+   */
+  async #replaceStored(request: ExcerptRequest): Promise<void> {
+    const annotation = excerptAnnotationRecord(request);
+    this.#refreshes.get(annotation)?.abort();
+    const refresh = new AbortController();
+    this.#refreshes.set(annotation, refresh);
+    try {
+      const stored = await this.#deps.stored(request);
+      if (!stored || stored.identity.key === excerptKey(request)) return;
+      await this.#deps.resolve(request, refresh.signal);
+    } catch (error) {
+      if (!refresh.signal.aborted)
+        logger.debug("Stored excerpt replacement failed", {
+          annotationKey: request.annotation.key,
+          error,
+        });
+    } finally {
+      if (this.#refreshes.get(annotation) === refresh)
+        this.#refreshes.delete(annotation);
+    }
   }
 
   /** Give up one card's demand, releasing the read once no card wants it. */
@@ -297,7 +381,7 @@ export class ExcerptDisplayService extends Service<void> {
   #start(slot: Slot): void {
     const wanted = excerptKey(slot.latest);
     this.#deps.queries.invalidate(slot.key);
-    const settled = this.#deps.queries.read<DisplayedExcerpt>(
+    const settled = this.#deps.queries.read<AvailableExcerpt>(
       slot.key,
       (context) => this.#resolve(slot, context),
     );
@@ -313,7 +397,7 @@ export class ExcerptDisplayService extends Service<void> {
   /** The excerpt key of what the slot holds, `null` where it holds nothing. */
   #held(slot: Slot): string | null {
     return (
-      this.#deps.queries.peek<DisplayedExcerpt>(slot.key)?.value.identity.key ??
+      this.#deps.queries.peek<AvailableExcerpt>(slot.key)?.value.identity.key ??
       null
     );
   }
@@ -329,7 +413,7 @@ export class ExcerptDisplayService extends Service<void> {
   async #resolve(
     slot: Slot,
     context: QueryFunctionContext,
-  ): Promise<DisplayedExcerpt> {
+  ): Promise<AvailableExcerpt> {
     const request = slot.latest;
     const outcome = await this.#deps.resolve(request, context.signal);
     if (outcome.kind === "unavailable") {
@@ -343,15 +427,17 @@ export class ExcerptDisplayService extends Service<void> {
 
   #snapshot(card: Card): ExcerptImageDisplay {
     const slot = card.slot;
-    // A demand a card has not stated yet is the commit that mounts it.
+    // A demand a card has not stated yet is the commit that mounts it, and one
+    // whose display a clear released holds nothing: both paint no image, and
+    // neither is still reading one.
     if (!slot || !card.demand)
       return {
         image: null,
         current: false,
-        status: card.stated ? "absent" : "reading",
+        status: card.demand ? "failed" : card.stated ? "absent" : "reading",
       };
     const request = card.demand;
-    const held = this.#deps.queries.peek<DisplayedExcerpt>(slot.key);
+    const held = this.#deps.queries.peek<AvailableExcerpt>(slot.key);
     if (!held)
       return {
         image: null,

@@ -39,7 +39,7 @@ import type {
 import { IDLE } from "@/services/annotation-repository/write";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
-import { excerptRequest } from "@/services/excerpt-image/service";
+import { savedExcerptRequest } from "@/services/excerpt-image/request";
 import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
@@ -767,24 +767,6 @@ export class AnnotationView extends ItemView {
         }),
       );
 
-      // A saved edit that moved an Annotation's pixels revalidates its Excerpt
-      // Image from the record Zotero answered with, so the card replaces the
-      // image it holds without waiting for the list on screen to catch up.
-      this.#loadDisposables.defer(
-        this.#deps.annotations.on("excerpt-pixels-changed", (record) => {
-          if (record.parentKey !== this.#store.getState().selectedAttachmentKey)
-            return;
-          const { annotationSource, annotationSourceScope } =
-            this.#store.getState();
-          const request = this.#excerptRequest({
-            annotation: record,
-            source: annotationSource,
-            sourceScope: annotationSourceScope,
-          });
-          if (request) this.#deps.excerptDisplay.revalidate(request);
-        }),
-      );
-
       this.#loadDisposables.defer(
         this.#store.subscribe(
           (s) => [s.selectedColors, s.selectedTags] as const,
@@ -891,28 +873,15 @@ export class AnnotationView extends ItemView {
     });
   }
 
-  /**
-   * The file inputs one record resolves through, or `null` where nothing can:
-   * no Annotation Source, another Zotero data directory, or an unready
-   * database. The database verifies the source again, so a record the source
-   * does not hold resolves to nothing rather than to another database's pixels.
-   */
+  /** The file inputs one record on screen resolves through ({@link savedExcerptRequest}). */
   #excerptRequest(input: {
     annotation: AnnotationRecord;
     source: AnnotationSource | null;
     sourceScope: string | null;
   }): ExcerptRequest | null {
-    const { annotation, source, sourceScope } = input;
-    if (
-      !source ||
-      sourceScope !== this.#deps.zoteroPref.dataDir ||
-      this.#deps.db.state !== "ready"
-    )
-      return null;
-    return excerptRequest({
-      annotation,
-      source,
-      client: this.#deps.db.client,
+    return savedExcerptRequest({
+      ...input,
+      db: this.#deps.db,
       paths: this.#deps.zoteroPref,
     });
   }

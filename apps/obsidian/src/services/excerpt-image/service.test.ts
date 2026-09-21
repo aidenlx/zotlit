@@ -1,6 +1,6 @@
 import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -22,11 +22,12 @@ import type { ExcerptImage } from "./format";
 import { usePromiseScheduling } from "./renderer";
 import {
   ExcerptImageService,
+  excerptAnnotationRecord,
   excerptFingerprint,
   excerptKey,
   MAX_FALLBACK_BYTES,
 } from "./service";
-import type { ExcerptEntry, ExcerptRequest } from "./service";
+import type { ExcerptEntry, ExcerptIdentity, ExcerptRequest } from "./service";
 
 /** Debug records the excerpt-image logger emits; read by the admission tests. */
 let captured: LogRecord[] = [];
@@ -96,6 +97,7 @@ const inkRequest: ExcerptRequest = {
 
 function fixture() {
   const entries = new Map<string, ExcerptEntry>();
+  const references = new Map<string, ExcerptIdentity>();
   let pdf = { size: 100, mtimeMs: 10 };
   const render = vi.fn(async () => rendered);
   const service = new ExcerptImageService({
@@ -103,6 +105,14 @@ function fixture() {
       get: async (key) => entries.get(key),
       put: async (key, entry) => {
         entries.set(key, entry);
+      },
+      latest: async (identity) => references.get(identity),
+      putLatest: async (identity, reference) => {
+        references.set(identity, reference);
+      },
+      clear: async () => {
+        entries.clear();
+        references.clear();
       },
     },
     stamp: async () => pdf,
@@ -112,6 +122,7 @@ function fixture() {
   return {
     service,
     entries,
+    references,
     render,
     changePdf: () => {
       pdf = { size: 101, mtimeMs: 11 };
@@ -1125,5 +1136,174 @@ describe("Excerpt Image resolution", () => {
     await expect(service.resolve(request)).rejects.toMatchObject({
       name: "AbortError",
     });
+  });
+});
+
+describe("Excerpt latest references", () => {
+  /** The record one Annotation's latest image lives under, as the store keys it. */
+  const record = excerptAnnotationRecord(inkRequest);
+  /** The ink pixels one colour asks for: another colour is another saved edit. */
+  const recolor = (color: string): ExcerptRequest => ({
+    ...inkRequest,
+    annotation: { ...inkRequest.annotation, color },
+  });
+
+  it("publishes the image of the saved pixels, and survives a failed replacement", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(inkRequest);
+    const previous = f.references.get(record);
+    expect(previous).toEqual({
+      key: excerptKey(inkRequest),
+      fingerprint: excerptFingerprint(inkRequest.annotation),
+      pdf: { size: 100, mtimeMs: 10 },
+    });
+
+    // A replacement that renders nothing keeps the reference the device has:
+    // the answer is Zotero's own image, which the store holds no bytes for.
+    const saved = recolor("#00ff00");
+    f.render.mockRejectedValueOnce(new Error("PDF unavailable"));
+    await expect(service.resolve(saved)).resolves.toMatchObject({
+      kind: "available",
+      provenance: "zotero",
+      freshness: "uncertain",
+    });
+    expect(f.references.get(record)).toBe(previous);
+
+    await expect(service.resolve(saved)).resolves.toMatchObject({
+      provenance: "rendered",
+    });
+    expect(f.references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+  });
+
+  it("keeps the newest saved pixels when a stale result lands last", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const references = new Map<string, ExcerptIdentity>();
+    const gate = Promise.withResolvers<void>();
+    let stale = false;
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render: async () => rendered,
+      read: async () => fallback,
+      cache: {
+        get: async (key) => {
+          // The stale request's preflight stalls; every other read answers.
+          if (stale && key === excerptKey(inkRequest)) await gate.promise;
+          return entries.get(key);
+        },
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
+      },
+    });
+    await service.resolve(inkRequest);
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(inkRequest.annotation),
+    );
+
+    // A request for the pixels the device already holds — a captured note, a
+    // read that started before the edit — is admitted first and answers late.
+    stale = true;
+    const late = service.resolve(inkRequest);
+    const saved = recolor("#00ff00");
+    const current = service.resolve(saved);
+    await vi.waitFor(() =>
+      expect(references.get(record)?.fingerprint).toBe(
+        excerptFingerprint(saved.annotation),
+      ),
+    );
+
+    gate.resolve();
+    await expect(late).resolves.toMatchObject({
+      provenance: "cache",
+      bytes: generated,
+    });
+    await current;
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+  });
+
+  it("stops work a clear overtook from restoring pixels or a reference", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    f.render.mockImplementationOnce(async () => {
+      started.resolve();
+      return gate.promise;
+    });
+    const pending = service.resolve(request);
+    await started.promise;
+
+    await service.clear();
+    gate.resolve(rendered);
+    await expect(pending).resolves.toMatchObject({
+      kind: "available",
+      provenance: "rendered",
+    });
+    expect(f.entries.size).toBe(0);
+    expect(f.references.size).toBe(0);
+  });
+
+  it("leaves durable note assets and Zotero's own cache out of the clear", async () => {
+    await using stack = new AsyncDisposableStack();
+    const folder = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-excerpt-clear-")),
+      (folder) => rm(folder, { recursive: true, force: true }),
+    );
+    const asset = join(folder, "excerpt.webp");
+    const zoteroImage = join(folder, "ANNOT001.png");
+    await writeFile(asset, generated);
+    await writeFile(zoteroImage, fallback);
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve({ ...request, zoteroPngPath: zoteroImage });
+    expect(f.entries.size).toBe(1);
+
+    await service.clear();
+    expect(f.entries.size).toBe(0);
+    expect(f.references.size).toBe(0);
+    expect(await readFile(asset)).toEqual(Buffer.from(generated));
+    expect(await readFile(zoteroImage)).toEqual(Buffer.from(fallback));
+  });
+
+  it("reads back the image this device last stored for an Annotation", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(inkRequest);
+    expect(await service.stored(inkRequest)).toMatchObject({
+      kind: "available",
+      provenance: "cache",
+      freshness: "unchecked",
+      bytes: generated,
+      identity: {
+        key: excerptKey(inkRequest),
+        fingerprint: excerptFingerprint(inkRequest.annotation),
+        pdf: { size: 100, mtimeMs: 10 },
+      },
+    });
+
+    // An Annotation whose pixels moved still reads back the image the device
+    // holds: that is what a display paints while the new pixels resolve.
+    expect(
+      (await service.stored(recolor("#00ff00")))?.identity.fingerprint,
+    ).toBe(excerptFingerprint(inkRequest.annotation));
+
+    // Evicted bytes read as nothing, even though the reference stands, and a
+    // cache that keeps no references reads as nothing either.
+    f.entries.clear();
+    expect(await service.stored(inkRequest)).toBeNull();
+    const bare = new ExcerptImageService({
+      cache: { get: async () => undefined, put: async () => {} },
+    });
+    await using _bare = bare;
+    expect(await bare.stored(inkRequest)).toBeNull();
   });
 });

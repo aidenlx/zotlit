@@ -22,8 +22,13 @@ import type {
   ExcerptPdfJs,
   ExcerptRendererDiagnosticSnapshot,
 } from "./renderer";
-import { ExcerptImageService } from "./service";
-import type { ExcerptEntry, ExcerptRequest } from "./service";
+import {
+  ExcerptImageService,
+  excerptAnnotationRecord,
+  excerptFingerprint,
+  excerptKey,
+} from "./service";
+import type { ExcerptEntry, ExcerptIdentity, ExcerptRequest } from "./service";
 
 // The one read below that goes through the service's own renderer doubles the
 // PDF file and the canvas that renderer needs, and nothing else.
@@ -44,9 +49,9 @@ const SOURCE: AnnotationSource = {
 };
 
 /** One ink Annotation: its colour and its path are the pixels an image paints. */
-function annotation(color: string): AnnotationRecord {
+function annotation(color: string, key = "INK1"): AnnotationRecord {
   return {
-    key: "INK1",
+    key,
     parentKey: "PDF1",
     type: "ink",
     color,
@@ -60,9 +65,9 @@ function annotation(color: string): AnnotationRecord {
 }
 
 /** One request for those pixels; every colour is another canonical cache key. */
-function request(color: string): ExcerptRequest {
+function request(color: string, key = "INK1"): ExcerptRequest {
   return {
-    annotation: annotation(color),
+    annotation: annotation(color, key),
     source: SOURCE,
     sourceScope: "/fixture",
     attachmentKey: "PDF1",
@@ -70,6 +75,11 @@ function request(color: string): ExcerptRequest {
     pdfPath: "/paper.pdf",
     zoteroPngPath: null,
   };
+}
+
+/** The store record one Annotation's latest image lives under. */
+function stored(identity: ExcerptRequest): string {
+  return excerptAnnotationRecord(identity);
 }
 
 /** The image one render answers with; the byte tells the images apart. */
@@ -95,10 +105,15 @@ interface Live extends AsyncDisposable {
   readonly service: ExcerptImageService;
   readonly display: ExcerptDisplayService;
   readonly renders: Render[];
+  /** The store's own view of the devices images: what is cached, and its references. */
+  readonly entries: Map<string, ExcerptEntry>;
+  readonly references: Map<string, ExcerptIdentity>;
   /** One card's demand, released when the harness goes. */
   card(): ExcerptDisplayDemand;
   /** The render at `index`, once it has started. */
   started(index: number): Promise<Render>;
+  /** The display's `index`-th read of a device-local image, once it settled. */
+  storedRead(index: number): Promise<void>;
   /** Wait for the render at `index` to be abandoned. */
   cancelled(index: number): Promise<void>;
   /** Answer one render; the caller awaits its commit through a snapshot. */
@@ -116,6 +131,7 @@ interface Live extends AsyncDisposable {
 function harness(): Live {
   const renders: Render[] = [];
   const entries = new Map<string, ExcerptEntry>();
+  const references = new Map<string, ExcerptIdentity>();
   const demands: ExcerptDisplayDemand[] = [];
   const stack = new AsyncDisposableStack();
   let arrived = Promise.withResolvers<void>();
@@ -158,15 +174,30 @@ function harness(): Live {
         put: async (key, entry) => {
           entries.set(key, entry);
         },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
       },
     }),
   );
   const queries = stack.use(new QueryClientService());
+  const storedReads: Promise<void>[] = [];
   const display = stack.use(
     new ExcerptDisplayService({
       queries,
       resolve: (resolveRequest, signal) =>
         service.resolve(resolveRequest, signal),
+      stored: (storedRequest) => {
+        const read = service.stored(storedRequest);
+        storedReads.push(
+          read.then(
+            () => undefined,
+            () => undefined,
+          ),
+        );
+        return read;
+      },
     }),
   );
   return {
@@ -174,6 +205,8 @@ function harness(): Live {
     service,
     display,
     renders,
+    entries,
+    references,
     card() {
       const demand = display.open();
       demands.push(demand);
@@ -182,6 +215,9 @@ function harness(): Live {
     async started(index) {
       while (renders.length <= index) await arrived.promise;
       return renders[index]!;
+    },
+    async storedRead(index) {
+      await storedReads[index];
     },
     async cancelled(index) {
       await this.started(index);
@@ -336,6 +372,7 @@ function resident(): Resident {
     new ExcerptDisplayService({
       queries,
       resolve: (request, signal) => service.resolve(request, signal),
+      stored: (storedRequest) => service.stored(storedRequest),
     }),
   );
   const card = display.open();
@@ -554,6 +591,51 @@ describe("Excerpt Image live display", () => {
     expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
   });
 
+  it("stops painting the cleared image on the cards mounted at clear time", async () => {
+    await using live = harness();
+    const one = live.card();
+    const two = live.card();
+    const pixels = request("#ff0000");
+    one.demand(pixels);
+    two.demand(pixels);
+    await live.started(0);
+    live.finish(0, 1);
+    const [first, second] = await Promise.all([
+      settled(one, painted),
+      settled(two, painted),
+    ]);
+    expect(first.image?.bytes).toEqual(new Uint8Array([1]));
+    expect(second.image?.bytes).toEqual(new Uint8Array([1]));
+    // Both cards read a painted snapshot now, which is the state the clear has
+    // to move: a card that kept it would go on painting the cleared image.
+    expect(one.snapshot().image?.bytes).toEqual(new Uint8Array([1]));
+    expect(two.snapshot().image?.bytes).toEqual(new Uint8Array([1]));
+
+    // The clear takes the Held Read and the image it held: the cards mounted on
+    // it release the image they were painted from rather than going on painting
+    // a display the clear released.
+    live.display.clear();
+    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+    expect(one.snapshot()).toEqual({
+      image: null,
+      current: false,
+      status: "failed",
+    });
+    expect(two.snapshot()).toEqual({
+      image: null,
+      current: false,
+      status: "failed",
+    });
+
+    // The demand those cards stated still stands: stating it again reads the
+    // pixels again, which is what a card that repaints after the clear does.
+    one.demand(request("#00ff00"));
+    await live.started(1);
+    live.finish(1, 2);
+    const repainted = await settled(one, painted);
+    expect(repainted.image?.bytes).toEqual(new Uint8Array([2]));
+  });
+
   it("resolves a captured note request from its own pixels, never from the display", async () => {
     await using live = harness();
     const card = live.card();
@@ -591,6 +673,129 @@ describe("Excerpt Image live display", () => {
       bytes: new Uint8Array([9]),
     });
     expect(card.snapshot().image?.bytes).toEqual(new Uint8Array([2]));
+  });
+
+  it("paints the image this device stored while the saved pixels resolve", async () => {
+    await using live = harness();
+    const shown = live.card();
+    const pixels = request("#ff0000");
+    shown.demand(pixels);
+    await live.started(0);
+    live.finish(0, 1);
+    await settled(shown, painted);
+    expect(live.references.get(stored(pixels))?.fingerprint).toBe(
+      excerptFingerprint(pixels.annotation),
+    );
+
+    // The card goes and the display forgets the Held Read it held: what the
+    // next card paints first is the device-local image, not the query cache.
+    shown.release();
+    expect(live.queries.keysUnder([EXCERPT_DISPLAY])).toEqual([]);
+
+    const returned = live.card();
+    const saved = request("#00ff00");
+    returned.demand(saved);
+    await live.started(1);
+    const seeded = await settled(returned, (display) => display.image !== null);
+    expect(seeded.image?.bytes).toEqual(new Uint8Array([1]));
+    expect(seeded.current).toBe(false);
+    expect(seeded.status).toBe("reading");
+
+    live.finish(1, 2);
+    const replaced = await settled(returned, painted);
+    expect(replaced.image?.bytes).toEqual(new Uint8Array([2]));
+    expect(replaced.current).toBe(true);
+  });
+
+  it("replaces what the store holds for an Annotation nothing displays", async () => {
+    await using live = harness();
+    const shown = live.card();
+    const pixels = request("#ff0000");
+    shown.demand(pixels);
+    await live.started(0);
+    live.finish(0, 1);
+    await settled(shown, painted);
+    shown.release();
+
+    const saved = request("#00ff00");
+    live.display.revalidate(saved);
+    await live.storedRead(1);
+    await live.started(1);
+    live.finish(1, 2);
+    await vi.waitFor(() =>
+      expect(live.entries.get(excerptKey(saved))?.bytes).toEqual(
+        new Uint8Array([2]),
+      ),
+    );
+    expect(live.references.get(stored(saved))?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+
+    // An Annotation this device never displayed has nothing to replace, so a
+    // saved edit to it stays on demand.
+    const untouched = request("#ff0000", "INK2");
+    live.display.revalidate(untouched);
+    await live.storedRead(2);
+    expect(live.renders).toHaveLength(2);
+    expect(live.references.has(stored(untouched))).toBe(false);
+  });
+
+  it("replaces a stored-image refresh with the newest saved pixels alone", async () => {
+    await using live = harness();
+    const shown = live.card();
+    const pixels = request("#ff0000");
+    shown.demand(pixels);
+    await live.started(0);
+    live.finish(0, 1);
+    await settled(shown, painted);
+    shown.release();
+
+    live.display.revalidate(request("#00ff00"));
+    await live.storedRead(1);
+    await live.started(1);
+    const newest = request("#0000ff");
+    live.display.revalidate(newest);
+    await live.cancelled(1);
+    expect(live.renders[1]!.aborted).toBe(true);
+    await live.started(2);
+
+    live.finish(2, 3);
+    await vi.waitFor(() =>
+      expect(live.entries.get(excerptKey(newest))?.bytes).toEqual(
+        new Uint8Array([3]),
+      ),
+    );
+    expect(live.references.get(stored(newest))?.fingerprint).toBe(
+      excerptFingerprint(newest.annotation),
+    );
+    expect(live.entries.has(excerptKey(request("#00ff00")))).toBe(false);
+  });
+
+  it("leaves no renderer document open for a display read", async () => {
+    // This service owns its own renderer, so a read that held a document or a
+    // file would still report one here; the read itself must report none.
+    await using service = new ExcerptImageService({ read: async () => redPng });
+    await using queries = new QueryClientService();
+    await using display = new ExcerptDisplayService({
+      queries,
+      resolve: (request, signal) => service.resolve(request, signal),
+      stored: (storedRequest) => service.stored(storedRequest),
+    });
+    const card = display.open();
+
+    card.demand({
+      ...request("#ff0000"),
+      pdfPath: null,
+      zoteroPngPath: "/zotero/INK1.png",
+    });
+    const shown = await settled(card, painted);
+    expect(shown.image?.bytes).toEqual(redPng);
+    expect(service.rendererDiagnostics?.snapshot()).toMatchObject({
+      jobActive: false,
+      fileOpen: false,
+      documentOpen: false,
+      renderTaskActive: false,
+    });
   });
 
   it("holds the renderer for the live read alone, and releases it when the read settles", async () => {

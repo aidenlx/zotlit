@@ -4,7 +4,11 @@ import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
 import { abortable } from "./abort";
-import { excerptFingerprint, excerptKey } from "./contract";
+import {
+  excerptAnnotationRecord,
+  excerptFingerprint,
+  excerptKey,
+} from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
@@ -17,6 +21,8 @@ import type { ExcerptRendererDiagnostics } from "./renderer";
 import type { ExcerptStore } from "./store";
 export {
   EXCERPT_RENDERER_VERSION,
+  excerptAnnotationIdentity,
+  excerptAnnotationRecord,
   excerptFingerprint,
   excerptKey,
   excerptSourceIdentity,
@@ -37,6 +43,15 @@ export interface ExcerptEntry extends ExcerptImage {
 export interface ExcerptCache {
   get(key: string, pdf?: PdfStamp): Promise<ExcerptEntry | undefined>;
   put(key: string, entry: ExcerptEntry): Promise<void>;
+  /**
+   * The image one verified Annotation last displayed on this device, as the
+   * reference that locates it. Absent from a cache that keeps no references.
+   *
+   * @param identity {@link excerptAnnotationIdentity} of the Annotation.
+   */
+  latest?(identity: string): Promise<ExcerptIdentity | undefined>;
+  /** Replaces one Annotation's latest reference ({@link latest}). */
+  putLatest?(identity: string, reference: ExcerptIdentity): Promise<void>;
   clear?(): Promise<void>;
 }
 /** What an available excerpt was resolved against, for a later latest reference. */
@@ -56,6 +71,12 @@ export type ExcerptOutcome =
       identity: ExcerptIdentity;
     } & ExcerptImage)
   | { kind: "unavailable" };
+
+/**
+ * The image an available Excerpt resolved to: what a display paints, what a
+ * note embeds, and what the store keeps as one Annotation's latest image.
+ */
+export type AvailableExcerpt = Extract<ExcerptOutcome, { kind: "available" }>;
 
 export interface ExcerptDeps {
   cache?: ExcerptCache;
@@ -150,6 +171,13 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   ready: Promise<ExcerptCache | undefined>;
   readonly #deps;
   readonly #pending = new Map<string, Pending>();
+  /**
+   * The pixels each Annotation with a resolution in flight was last asked for.
+   * A resolution publishes the Annotation's latest reference only while it is
+   * that newest demand, so a late answer from an edit the user has already
+   * replaced cannot move the reference back.
+   */
+  readonly #demands = new Map<string, { fingerprint: string; jobs: number }>();
   readonly #shutdown = new AbortController();
   readonly #queue = new ExcerptPdfQueue();
   #generation = 0;
@@ -257,6 +285,79 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   }
 
   /**
+   * What this device last displayed for one Annotation: the image its latest
+   * reference locates, or `null` where it holds none.
+   *
+   * A display that has just mounted paints this while the Annotation's current
+   * pixels resolve, which is what carries the last useful image across a remount
+   * and across an application restart. The reference records the stamp that was
+   * proven when the image was stored, and nothing proves that stamp now, so the
+   * image reads as unchecked until a read revalidates it.
+   */
+  async stored(request: ExcerptRequest): Promise<AvailableExcerpt | null> {
+    const cache = await this.ready;
+    await this.#clearing;
+    const store = request.sourceScope ? cache : undefined;
+    if (!store?.latest) return null;
+    const annotation = excerptAnnotationRecord(request);
+    const reference = await store.latest(annotation).catch((error) => {
+      logger.debug("Excerpt latest reference read failed", {
+        annotation,
+        error,
+      });
+      return undefined;
+    });
+    if (!reference) return null;
+    const entry = await store
+      .get(reference.key, reference.pdf ?? undefined)
+      .catch((error) => {
+        logger.debug("Excerpt latest image read failed", {
+          key: reference.key,
+          error,
+        });
+        return undefined;
+      });
+    if (!entry) return null;
+    return {
+      kind: "available",
+      bytes: entry.bytes,
+      format: entry.format,
+      provenance: "cache",
+      freshness: "unchecked",
+      identity: reference,
+    };
+  }
+
+  /**
+   * Record one Annotation's latest image, which is what a display reads to paint
+   * the Annotation while its saved pixels resolve.
+   *
+   * Only an outcome the store holds bytes for publishes one, and only while the
+   * resolution is still the Annotation's newest demand in a clear generation
+   * that still stands: a superseded answer, and one a manual clear has already
+   * overtaken, leaves the reference where it was, so a failed or a late
+   * replacement never moves the latest image backward.
+   */
+  async #publishLatest(
+    request: ExcerptRequest,
+    context: { cache: ExcerptCache | undefined; generation: number },
+    reference: ExcerptIdentity,
+  ): Promise<void> {
+    const store = request.sourceScope ? context.cache : undefined;
+    if (!store?.putLatest) return;
+    if (context.generation !== this.#generation) return;
+    const annotation = excerptAnnotationRecord(request);
+    const demand = this.#demands.get(annotation);
+    if (demand && demand.fingerprint !== reference.fingerprint) return;
+    await store.putLatest(annotation, reference).catch((error) => {
+      logger.debug("Excerpt latest reference write failed", {
+        key: reference.key,
+        error,
+      });
+    });
+  }
+
+  /**
    * Freshness and cache preflight. It runs on the bounded preflight queue,
    * outside the PDF render slot and ahead of admission, so a valid cached image
    * completes while an unrelated PDF render holds the queue, and a full queue
@@ -323,6 +424,8 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     const live = this.#pending.get(pendingKey);
     if (live && !live.controller.signal.aborted) return live;
     const controller = new AbortController();
+    const annotation = excerptAnnotationRecord(request);
+    const fingerprint = excerptFingerprint(request.annotation);
     // The place in line is taken now, in call order, so rapid requests for one
     // PDF render in the order their callers made them even though their
     // preflights finish out of order.
@@ -383,6 +486,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
           identity,
         };
         context.outcomes?.retain(context.key, probe.pdf, outcome);
+        await this.#publishLatest(request, context, identity);
         return outcome;
       }
       // A queue stopped by an unsettled teardown is a scheduler artifact: it
@@ -457,10 +561,24 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     })();
     const pending = { controller, promise, users: 0 };
     this.#pending.set(pendingKey, pending);
+    // This resolution is the Annotation's newest demand until a later one
+    // replaces it; the map holds only Annotations with work in flight.
+    const demand = this.#demands.get(annotation);
+    if (demand) {
+      demand.fingerprint = fingerprint;
+      demand.jobs++;
+    } else {
+      this.#demands.set(annotation, { fingerprint, jobs: 1 });
+    }
     void promise
       .finally(() => {
         if (this.#pending.get(pendingKey) === pending)
           this.#pending.delete(pendingKey);
+        const held = this.#demands.get(annotation);
+        if (held) {
+          held.jobs--;
+          if (held.jobs === 0) this.#demands.delete(annotation);
+        }
       })
       .catch(() => undefined);
     return pending;
@@ -529,12 +647,19 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         ? this.#deps.render(request, signal)
         : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
-      if (probe.pdf && generation === this.#generation)
-        await persistent
-          ?.put(key, { ...image, pdf: probe.pdf })
-          .catch((error) => {
-            logger.debug("Excerpt cache write failed", { key, error });
-          });
+      if (probe.pdf && generation === this.#generation && persistent) {
+        const stored = await persistent
+          .put(key, { ...image, pdf: probe.pdf })
+          .then(
+            () => true,
+            (error: unknown) => {
+              logger.debug("Excerpt cache write failed", { key, error });
+              return false;
+            },
+          );
+        // A reference locates stored bytes: only a write that landed publishes one.
+        if (stored) await this.#publishLatest(request, context, identity);
+      }
       logger.debug("Excerpt rendered", {
         key,
         bytes: image.bytes.length,

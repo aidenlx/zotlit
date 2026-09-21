@@ -162,6 +162,7 @@ export function buildServices(
         new ExcerptDisplayService({
           queries: queryClient,
           resolve: (request, signal) => excerptImage.resolve(request, signal),
+          stored: (request) => excerptImage.stored(request),
         }),
     })
     .use({

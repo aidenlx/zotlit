@@ -238,9 +238,14 @@ export interface AnnotationRepositoryEvents {
    * list re-read to know the new pixels.
    *
    * @param record the saved Annotation, whose `parentKey` names its Attachment.
+   * @param source the Annotation Source the write was verified against, which is
+   *   what a consumer needs to resolve the record's files again.
    * @see apps/obsidian/docs/adr/0055-reader-edits-revalidate-excerpt-images.md
    */
-  "excerpt-pixels-changed": (record: AnnotationRecord) => void;
+  "excerpt-pixels-changed": (
+    record: AnnotationRecord,
+    source: AnnotationSource,
+  ) => void;
   /**
    * What a surface may do to an Attachment's Annotations moved. Every consumer
    * re-reads {@link AnnotationRepository.capabilityFor}; no record set is
@@ -1177,7 +1182,7 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
-    this.#announcePixels(held.record, applied.value);
+    this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
   }
@@ -1190,11 +1195,15 @@ export class AnnotationRepository extends Service<void> {
    * answers the same pixels — Zotero echoes a colour the user picked — is not a
    * change at all.
    */
-  #announcePixels(before: AnnotationRecord, applied: ConfirmedWrite): void {
+  #announcePixels(
+    before: AnnotationRecord,
+    applied: ConfirmedWrite,
+    source: AnnotationSource,
+  ): void {
     if (applied.kind !== "record") return;
     if (excerptFingerprint(before) === excerptFingerprint(applied.record))
       return;
-    this.#emitter.emit("excerpt-pixels-changed", applied.record);
+    this.#emitter.emit("excerpt-pixels-changed", applied.record, source);
   }
 
   #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {

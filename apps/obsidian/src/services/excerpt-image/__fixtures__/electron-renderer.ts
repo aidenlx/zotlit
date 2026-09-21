@@ -28,6 +28,12 @@ export async function runInElectron(options: {
   marker: string;
   timeoutMs?: number;
   minimized?: boolean;
+  /**
+   * Extra module aliases for the bundled entry. A trial that drives logic whose
+   * own module graph reaches a host seam — Obsidian, a Node builtin, a Zotero
+   * database — points that specifier at a stub here.
+   */
+  alias?: Record<string, string>;
 }): Promise<unknown> {
   const workspaceRoot = await getWorkspaceRoot(options.entry);
   const parent = resolve(workspaceRoot, "tmp");
@@ -40,7 +46,16 @@ export async function runInElectron(options: {
   const output = await build({
     configFile: false,
     logLevel: "silent",
-    resolve: { alias: { "@": resolve(getPackageRoot(options.entry), "src") } },
+    // The plugin's own build defines this, and the libraries a trial bundles —
+    // TanStack Query Core among them — read it at runtime: without it a renderer
+    // that has no Node `process` fails on the first read.
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+    resolve: {
+      alias: {
+        "@": resolve(getPackageRoot(options.entry), "src"),
+        ...options.alias,
+      },
+    },
     build: {
       write: false,
       lib: { entry: options.entry, name: options.name, formats: ["iife"] },

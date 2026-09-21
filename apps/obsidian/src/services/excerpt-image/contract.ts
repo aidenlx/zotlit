@@ -84,6 +84,35 @@ export function excerptSourceIdentities(source: AnnotationSource): unknown[][] {
   ];
 }
 
+/**
+ * One verified Annotation's stable identity, which the canonical pixel
+ * fingerprint ({@link excerptKey}) deliberately excludes.
+ *
+ * A display holds the image of an Annotation under it, so a saved edit that
+ * replaces the pixels keeps answering the same identity, and the device-local
+ * latest image of an Annotation is stored under it, so the image that was last
+ * displayed survives a remount and an application restart.
+ */
+export function excerptAnnotationIdentity(request: ExcerptRequest): unknown[] {
+  return [
+    request.sourceScope,
+    excerptSourceIdentity(request.source),
+    request.attachmentKey,
+    request.annotation.key,
+  ];
+}
+
+/**
+ * The record one Annotation's latest image lives under, which the store keeps it
+ * by and the display tracks the replacement of.
+ *
+ * One encoding of {@link excerptAnnotationIdentity}, so the store and the
+ * surfaces that read or replace its records cannot key one Annotation two ways.
+ */
+export function excerptAnnotationRecord(request: ExcerptRequest): string {
+  return JSON.stringify(excerptAnnotationIdentity(request));
+}
+
 /** Excludes source revision and record versions, which cannot change the pixels. */
 export function excerptKey(request: ExcerptRequest): string {
   const { annotation: a, source } = request;

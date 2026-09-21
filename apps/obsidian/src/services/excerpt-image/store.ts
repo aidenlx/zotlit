@@ -4,12 +4,16 @@ import type { DBSchema } from "idb";
 
 import { detectExcerptImageFormat, isExcerptImage } from "./format";
 import type { ExcerptImage, ExcerptImageFormat } from "./format";
-import type { ExcerptCache, ExcerptEntry } from "./service";
+import type { ExcerptCache, ExcerptEntry, ExcerptIdentity } from "./service";
 
 export const EXCERPT_CACHE_BUDGET = 256 * 1024 * 1024;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export interface ExcerptStore extends ExcerptCache, Disposable {
+  /** One Annotation's latest image, as {@link ExcerptCache.latest} records it. */
+  latest(identity: string): Promise<ExcerptIdentity | undefined>;
+  /** Replaces one Annotation's latest reference. */
+  putLatest(identity: string, reference: ExcerptIdentity): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -20,11 +24,28 @@ interface StoredExcerpt extends Omit<ExcerptEntry, "format"> {
   /** Absent on records written before format metadata; the payload then decides. */
   format?: ExcerptImageFormat;
 }
+
+/** One Annotation's latest image, as the store keeps the reference that locates it. */
+interface StoredLatest extends ExcerptIdentity {
+  /** {@link excerptAnnotationIdentity} of the Annotation, which is the record key. */
+  identity: string;
+}
+
 interface ExcerptSchema extends DBSchema {
   images: {
     key: string;
     value: StoredExcerpt;
     indexes: { access: number };
+  };
+  /**
+   * One record per verified Annotation: the image it last displayed, which is
+   * what a display paints while the Annotation's current pixels resolve, and
+   * what an eviction follows to the bytes it locates.
+   */
+  latest: {
+    key: string;
+    value: StoredLatest;
+    indexes: { image: string };
   };
   accounting: {
     key: string;
@@ -60,6 +81,9 @@ export async function openExcerptStore(
         database
           .createObjectStore("images", { keyPath: "key" })
           .createIndex("access", "lastAccess");
+        database
+          .createObjectStore("latest", { keyPath: "identity" })
+          .createIndex("image", "key");
         database.createObjectStore("accounting");
       },
       blocking() {
@@ -95,9 +119,13 @@ export async function openExcerptStore(
     async put(key, entry) {
       const byteCount = entry.bytes.byteLength;
       if (byteCount > budget) return;
-      const tx = db.transaction(["images", "accounting"], "readwrite");
+      const tx = db.transaction(
+        ["images", "latest", "accounting"],
+        "readwrite",
+      );
       void tx.done.catch(() => undefined);
       const images = tx.objectStore("images");
+      const latest = tx.objectStore("latest");
       const accounting = tx.objectStore("accounting");
       const state = (await accounting.get("state")) ?? {
         totalBytes: 0,
@@ -109,17 +137,37 @@ export async function openExcerptStore(
       let cursor = await images.index("access").openCursor();
       while (cursor && state.totalBytes > budget) {
         state.totalBytes -= cursor.value.byteCount;
+        // The bytes a reference locates leave with them: a reference without its
+        // image would paint nothing after a restart and refresh for nothing.
+        let pointing = await latest.index("image").openCursor(cursor.value.key);
+        while (pointing) {
+          await pointing.delete();
+          pointing = await pointing.continue();
+        }
         await cursor.delete();
         cursor = await cursor.continue();
       }
       await accounting.put(state, "state");
       await tx.done;
     },
+    async latest(identity) {
+      return await db.get("latest", identity);
+    },
+    async putLatest(identity, reference) {
+      const tx = db.transaction("latest", "readwrite");
+      void tx.done.catch(() => undefined);
+      await tx.objectStore("latest").put({ identity, ...reference });
+      await tx.done;
+    },
     async clear() {
-      const tx = db.transaction(["images", "accounting"], "readwrite");
+      const tx = db.transaction(
+        ["images", "latest", "accounting"],
+        "readwrite",
+      );
       void tx.done.catch(() => undefined);
       await Promise.all([
         tx.objectStore("images").clear(),
+        tx.objectStore("latest").clear(),
         tx.objectStore("accounting").clear(),
       ]);
       await tx.done;
