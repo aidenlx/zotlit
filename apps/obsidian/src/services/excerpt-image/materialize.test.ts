@@ -29,6 +29,7 @@ import {
   retainExcerpt,
 } from "./materialize";
 import type { ExcerptRequest } from "./service";
+import { usableExcerptWebp } from "./webp";
 
 const pngImage: ExcerptImage = { bytes: png, format: PNG_FORMAT };
 const otherImage: ExcerptImage = { bytes: bluePng, format: PNG_FORMAT };
@@ -296,6 +297,40 @@ it("refuses a WebP whose declared geometry is past the bounds, saved or retained
     await retainExcerpt({ app: f.app, request, paths: [path] }),
   ).toBeUndefined();
   expect(await readdir(f.root)).toEqual(["Images"]);
+});
+
+it("refuses a vault WebP whose pixels the host's decoder cannot reconstruct", async () => {
+  await using f = await fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  const [identity] = excerptAssetIdentities(request);
+  // 44 bytes of complete container with no pixel data: the shared container
+  // walk accepts them, which is why the vault read decodes before it links one.
+  const headerOnly = sizedWebp(8, 8);
+  expect(usableExcerptWebp(headerOnly)).toBe(true);
+  await mkdir(`${f.root}/Images`);
+  const damaged = `Images/zotlit-excerpt-${identity}-${"a".repeat(64)}.webp`;
+  await writeFile(`${f.root}/${damaged}`, headerOnly);
+  vi.stubGlobal("createImageBitmap", async () => {
+    throw new Error("WebP decode failed");
+  });
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [damaged] }),
+  ).toBeUndefined();
+  // Pixels the same host does reconstruct are still retained.
+  const decodable = `Images/zotlit-excerpt-${identity}-${"b".repeat(64)}.webp`;
+  await writeFile(`${f.root}/${decodable}`, chromiumLosslessWebp);
+  vi.stubGlobal("createImageBitmap", async () => ({
+    close: () => undefined,
+  }));
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [decodable] }),
+  ).toEqual({ kind: "retained", path: decodable });
+  expect(await readFile(`${f.root}/${decodable}`)).toEqual(
+    Buffer.from(chromiumLosslessWebp),
+  );
 });
 
 it("owns published assets of either extension and nothing else", () => {

@@ -56,8 +56,8 @@ export function detectExcerptImageFormat(
 /**
  * The payload check each format's bytes must pass. Cheap by design: this is the
  * check every boundary pays, including the cache read that runs before every hit.
- * `materialize.ts` deepens it for the PNG bytes it reads out of the vault, and
- * says why there; WebP's container walk is already the deep check.
+ * `materialize.ts` deepens it for the bytes it reads out of the vault — PNG
+ * scanlines and WebP pixels alike — and says why there.
  */
 const PAYLOAD_CHECKS: Record<string, (bytes: Uint8Array) => boolean> = {
   png: isPngSignature,

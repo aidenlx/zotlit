@@ -32,6 +32,7 @@ import {
 } from "./format";
 import { usableExcerptPng } from "./png";
 import type { ExcerptOutcome } from "./service";
+import { usableExcerptWebpPixels } from "./webp-pixels";
 
 const logger = getLogger("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
@@ -42,19 +43,17 @@ const SHA256_HEX_LENGTH = 64;
  *
  * `format.ts` owns the payload check both readers share; the vault read is the
  * one place that deepens it, because these bytes came from outside this process:
- * PNG must also inflate to the scanlines its header declares (`png.ts`). WebP's
- * container walk is already the deep check, so it stops at the shared one. That
- * depth stays here rather than in `format.ts`, which the cache read bundles
- * without Node's `zlib` for a check that runs before every hit.
+ * PNG must also inflate to the scanlines its header declares (`png.ts`), and
+ * WebP must also decode to the pixels its container declares (`webp-pixels.ts`).
+ * That depth stays here rather than in `format.ts`, which the cache read bundles
+ * without a decoder for a check that runs before every hit.
  */
-function usableRetainedAsset(bytes: Uint8Array): boolean {
+async function usableRetainedAsset(bytes: Uint8Array): Promise<boolean> {
   const format = detectExcerptImageFormat(bytes);
   if (!format || !isExcerptPayload(format, bytes)) return false;
-  return (
-    format.format !== "png" ||
-    usableExcerptPng(
-      Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
-    )
+  if (format.format === "webp") return usableExcerptWebpPixels(bytes);
+  return usableExcerptPng(
+    Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
   );
 }
 
@@ -119,7 +118,7 @@ export async function retainExcerpt(options: {
       )
         continue;
       const bytes = await readPreviousImage(actualPath);
-      if (!usableRetainedAsset(bytes)) continue;
+      if (!(await usableRetainedAsset(bytes))) continue;
       // Legacy names carry no source identity. The current source's bytes must prove ownership.
       if (
         !owned &&
