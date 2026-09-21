@@ -142,7 +142,7 @@ export interface ExcerptJobAdmission {
     task: () => Promise<T>,
     options: { pdf: string; sequence: number; signal: AbortSignal },
   ): Promise<T>;
-  /** Hand the capacity slot back; the oldest waiting producer takes it. */
+  /** Hand the capacity slot back; the oldest waiting job takes it. */
   release(): void;
 }
 
@@ -151,8 +151,9 @@ export interface ExcerptJobAdmission {
  * them. Freshness and cache checks run on their own bounded queue and never
  * charge admission, so a valid cache hit completes while an unrelated crop
  * render holds the slot and while the admitted bound is full. Only work that
- * needs PDF rendering reserves one of the {@link EXCERPT_JOB_LIMIT} slots, and
- * a full bound makes the producer wait, cancellably, rather than reporting an
+ * needs PDF rendering reserves one of the {@link EXCERPT_JOB_LIMIT} slots —
+ * document teardown, which takes the render slot, charges one too — and a full
+ * bound makes the producer wait, cancellably, rather than reporting an
  * unavailable image.
  */
 export class ExcerptPdfQueue {
@@ -176,7 +177,10 @@ export class ExcerptPdfQueue {
     });
   }
 
-  /** Jobs holding an admitted slot: queued, rendering, or waiting for capacity. */
+  /**
+   * Jobs holding an admitted slot: queued, rendering, or waiting for capacity —
+   * the document teardown among them.
+   */
   get admitted(): number {
     return this.#reserved;
   }
@@ -213,9 +217,25 @@ export class ExcerptPdfQueue {
   /**
    * Freshness and cache check, on its own bounded queue: a valid cache hit
    * completes while a crop render holds the PDF slot, and it never takes one.
+   *
+   * Cancellation stops a check that is still waiting for the lane, and stops
+   * following the caller the moment a check starts: one that already began
+   * keeps its slot until the filesystem and store work inside it settles, which
+   * is what makes the lane's bound count the checks that are really running
+   * rather than the callers that still want them.
    */
   preflight<T>(task: () => Promise<T>, signal: AbortSignal): Promise<T> {
-    return this.#preflight.add(task, { signal });
+    const queued = new AbortController();
+    const stop = () => queued.abort(signal.reason);
+    signal.addEventListener("abort", stop, { once: true });
+    if (signal.aborted) stop();
+    return this.#preflight.add(
+      () => {
+        signal.removeEventListener("abort", stop);
+        return task();
+      },
+      { signal: queued.signal },
+    );
   }
 
   /**
@@ -233,12 +253,36 @@ export class ExcerptPdfQueue {
    * instead of reusing a session that is closing. Its place in line is taken
    * when teardown is asked for, so the renders already admitted keep their
    * order and later ones come after the document is gone.
+   *
+   * It is one of the admitted jobs as well, not work laid over a full queue: it
+   * charges a slot the moment it is asked for, so producers arriving while it
+   * waits for the render slot wait for capacity themselves rather than filling
+   * the bound beside it. Teardown is never cancelled and never refused, so at
+   * capacity it waits for a slot to be handed over like any other job — and
+   * enters the render queue then, with the place in line it took above.
    */
   teardown<T>(task: () => Promise<T>): Promise<T> {
-    return this.#render.add(task, {
-      pdf: "",
-      sequence: this.nextSequence(),
-    });
+    const sequence = this.nextSequence();
+    // Capacity free: the teardown is queue work in this turn, which is what
+    // keeps `idle()` a signal for it. At capacity it follows the slot it waits
+    // for instead.
+    return this.#charge()
+      ? this.#enqueueTeardown(task, sequence)
+      : this.#awaitSlot().then(() => this.#enqueueTeardown(task, sequence));
+  }
+
+  /** One teardown in the render slot, handing its admitted slot back after. */
+  #enqueueTeardown<T>(task: () => Promise<T>, sequence: number): Promise<T> {
+    return this.#render.add(
+      async () => {
+        try {
+          return await task();
+        } finally {
+          this.#settle();
+        }
+      },
+      { pdf: "", sequence },
+    );
   }
 
   /**
@@ -248,8 +292,7 @@ export class ExcerptPdfQueue {
    */
   async reserve(signal: AbortSignal): Promise<ExcerptJobAdmission> {
     signal.throwIfAborted();
-    if (this.#reserved < this.#limit) this.#reserved += 1;
-    else await this.#awaitSlot(signal);
+    if (!this.#charge()) await this.#awaitSlot(signal);
     let held = true;
     return {
       render: (task, options) => {
@@ -286,32 +329,47 @@ export class ExcerptPdfQueue {
     await Promise.all([this.#render.onIdle(), this.#preflight.onIdle()]);
   }
 
-  /** Wait for a settling job's slot; the slot is handed over, never retaken. */
-  #awaitSlot(signal: AbortSignal): Promise<void> {
+  /**
+   * Charge one admitted slot in this turn, or report the bound is full. The
+   * check and the charge are one synchronous step, so the jobs that call
+   * together cannot both take the last slot.
+   */
+  #charge(): boolean {
+    if (this.#reserved >= this.#limit) return false;
+    this.#reserved += 1;
+    return true;
+  }
+
+  /**
+   * Wait for a settling job's slot; the slot is handed over, never retaken. A
+   * waiting job that carries no signal — a teardown — waits for as long as the
+   * queue holds it.
+   */
+  #awaitSlot(signal?: AbortSignal): Promise<void> {
     const slot = Promise.withResolvers<void>();
     let waiting = true;
     const abort = () => {
       if (!waiting) return;
       waiting = false;
       this.#waiters.delete(waiter);
-      slot.reject(signal.reason);
+      slot.reject(signal!.reason);
     };
     const waiter: CapacityWaiter = {
       take: () => {
         if (!waiting) return;
         waiting = false;
         this.#waiters.delete(waiter);
-        signal.removeEventListener("abort", abort);
+        signal?.removeEventListener("abort", abort);
         slot.resolve();
       },
     };
     this.#waiters.add(waiter);
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
     return slot.promise;
   }
 
-  /** One slot came back: move it to the oldest waiting producer, or free it. */
+  /** One slot came back: move it to the oldest waiting job, or free it. */
   #settle(): void {
     for (const waiter of this.#waiters) {
       waiter.take();

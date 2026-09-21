@@ -380,6 +380,99 @@ describe("Excerpt PDF queue rendering", () => {
     third.release();
   });
 
+  it("counts a queued teardown against the admission bound", async () => {
+    const queue = new ExcerptPdfQueue();
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const hold = () => gate.promise;
+    // A previous operation's document teardown holds the render slot.
+    const teardown = queue.teardown(async () => {
+      started.resolve();
+      await hold();
+    });
+    await started.promise;
+    // The producers take what is left of the bound and queue for that slot.
+    const producers = await Promise.all(
+      Array.from({ length: EXCERPT_JOB_LIMIT - 1 }, () =>
+        queue.reserve(running()),
+      ),
+    );
+    const rendering = producers.map((admission) =>
+      admission.render(hold, {
+        pdf: "PDF",
+        sequence: queue.nextSequence(),
+        signal: running(),
+      }),
+    );
+    // The job that would be the 129th waits for capacity rather than filling
+    // the bound beside the teardown.
+    const overflow = queue.reserve(running());
+    const counts = queue.diagnostics;
+    expect(counts.admitted).toBe(EXCERPT_JOB_LIMIT);
+    expect(counts.rendering + counts.queued).toBe(EXCERPT_JOB_LIMIT);
+    expect(counts.awaiting).toBe(1);
+
+    gate.resolve();
+    await teardown;
+    await Promise.all(rendering);
+    const resumed = await overflow;
+    for (const producer of producers) producer.release();
+    resumed.release();
+    expect(queue.diagnostics.admitted).toBe(0);
+  });
+
+  it("waits for a slot instead of overshooting a bound a teardown arrives at", async () => {
+    const queue = new ExcerptPdfQueue({ limit: 1 });
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const ran: string[] = [];
+    const first = await queue.reserve(running());
+    const rendering = first.render(
+      async () => {
+        ran.push("render");
+        started.resolve();
+        await gate.promise;
+      },
+      { pdf: "PDF", sequence: queue.nextSequence(), signal: running() },
+    );
+    await started.promise;
+    // The bound is full, so the teardown is not a 129th job: it waits for the
+    // slot the render hands over, then destroys the document behind it.
+    const teardown = queue.teardown(async () => {
+      ran.push("teardown");
+    });
+    expect(queue.diagnostics.admitted).toBe(1);
+    expect(queue.diagnostics.awaiting).toBe(1);
+    gate.resolve();
+    await rendering;
+    first.release();
+    await teardown;
+    expect(ran).toEqual(["render", "teardown"]);
+    expect(queue.diagnostics.admitted).toBe(0);
+  });
+
+  it("keeps a cancelled check's lane slot until the check itself settles", async () => {
+    const queue = new ExcerptPdfQueue({ preflight: 1 });
+    const cancelled = new AbortController();
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const checking = queue.preflight(async () => {
+      started.resolve();
+      await gate.promise;
+      return "checked";
+    }, cancelled.signal);
+    await started.promise;
+    // The check has started against a store that has not answered yet: its
+    // demand going does not hand the lane's one slot to the next check, because
+    // the work behind it is still running.
+    cancelled.abort(new Error("cancelled"));
+    const next = queue.preflight(async () => "next", running());
+    expect(queue.diagnostics.checking).toBe(1);
+    gate.resolve();
+    await expect(checking).resolves.toBe("checked");
+    await expect(next).resolves.toBe("next");
+  });
+
   it("signals idle only after a running job's teardown settles", async () => {
     const queue = new ExcerptPdfQueue({ limit: 2 });
     const release = Promise.withResolvers<void>();

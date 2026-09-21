@@ -15,6 +15,7 @@ import {
 } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import type { ExcerptImage } from "./format";
+import { supersedes } from "./service";
 import type { AvailableExcerpt, ExcerptImageService } from "./service";
 
 const logger = getLogger("excerpt-image");
@@ -187,7 +188,9 @@ export class ExcerptDisplayService extends Service<void> {
    *
    * An Annotation nothing displays is replaced in the background instead, and
    * only while this device still holds an image for it: one it never displayed
-   * stays on demand until a card asks for it.
+   * stays on demand until a card asks for it. A record older than the pixels
+   * the slot already holds leaves that demand standing, exactly as an older
+   * card demand does ({@link supersedes}).
    */
   revalidate(request: ExcerptRequest): void {
     const slot = this.#slots.get(hashKey(excerptDisplayKey(request)));
@@ -195,7 +198,8 @@ export class ExcerptDisplayService extends Service<void> {
       void this.#replaceStored(request);
       return;
     }
-    slot.latest = request;
+    if (supersedes(request.annotation.version, slot.latest.annotation.version))
+      slot.latest = request;
     this.#read(slot);
     this.#notify(slot);
   }
@@ -267,8 +271,18 @@ export class ExcerptDisplayService extends Service<void> {
     card.stated = true;
     if (request && key && hash) {
       let slot = this.#slots.get(hash);
-      if (slot) slot.latest = request;
-      else {
+      // The slot answers the newest saved pixels any card has demanded. A
+      // demand whose snapshot is older than the request the slot holds cannot
+      // replace it — a note or a card that states its pixels late still carries
+      // the record as it was when its work started — so the display keeps the
+      // newer saved pixels, and this card paints them while its own demand
+      // reads as superseded.
+      if (slot) {
+        if (
+          supersedes(request.annotation.version, slot.latest.annotation.version)
+        )
+          slot.latest = request;
+      } else {
         slot = {
           hash,
           key,
@@ -298,9 +312,13 @@ export class ExcerptDisplayService extends Service<void> {
    * fallback, never a replacement for one the display holds.
    */
   async #seed(slot: Slot): Promise<void> {
+    // A Held Read that already answers the key needs no fallback: the store
+    // read below would be discarded, so it never starts.
+    if (this.#deps.queries.peek(slot.key) !== null) return;
     const stored = await this.#deps.stored(slot.latest);
     if (!stored) return;
     if (this.#slots.get(slot.hash) !== slot) return;
+    // A publication that landed while the store read ran is the answer now.
     if (this.#deps.queries.peek(slot.key) !== null) return;
     this.#deps.queries.client.setQueryData<AvailableExcerpt>(slot.key, stored);
     this.#notify(slot);

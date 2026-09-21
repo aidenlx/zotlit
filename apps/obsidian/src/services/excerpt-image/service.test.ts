@@ -747,6 +747,76 @@ describe("Excerpt Image resolution", () => {
     expect(f.render).toHaveBeenCalledTimes(2);
   });
 
+  it("publishes the revision the renderer loaded, not the one the probe saw", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    let pdf = { size: 100, mtimeMs: 10 };
+    const replacement = new Uint8Array([4, 5, 6]);
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const probed = Promise.withResolvers<void>();
+    let renders = 0;
+    const render = vi.fn(async () => {
+      // The revision this call reads, which for the queued job below is the one
+      // that replaced the PDF while it waited for the render slot.
+      const revision = pdf;
+      renders += 1;
+      if (renders === 1) {
+        started.resolve();
+        await gate.promise;
+      }
+      return revision.mtimeMs === 10
+        ? rendered
+        : { bytes: replacement, format: PNG_FORMAT };
+    });
+    await using service = new ExcerptImageService({
+      stamp: async (path) => {
+        if (path === "/late.pdf") probed.resolve();
+        return pdf;
+      },
+      render,
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+      },
+    });
+    const lateRequest: ExcerptRequest = {
+      ...request,
+      pdfPath: "/late.pdf",
+      annotation: { ...request.annotation, key: "ANNOT002" },
+    };
+    // The first job holds the render slot, rendering the stored revision.
+    const first = service.resolve(request);
+    await started.promise;
+    // The second job's own probe reads that revision, and then waits.
+    const late = service.resolve(lateRequest);
+    await probed.promise;
+    pdf = { size: 101, mtimeMs: 11 };
+    gate.resolve();
+    expect(await first).toMatchObject({
+      provenance: "rendered",
+      identity: { pdf: { size: 100, mtimeMs: 10 } },
+    });
+    // The bytes it renders are the replacement revision, and so is the stamp
+    // published beside them and stored under the excerpt's key.
+    expect(await late).toMatchObject({
+      provenance: "rendered",
+      bytes: replacement,
+      identity: { pdf: { size: 101, mtimeMs: 11 } },
+    });
+    expect(entries.get(excerptKey(lateRequest))?.pdf).toEqual({
+      size: 101,
+      mtimeMs: 11,
+    });
+    // An unchanged request reuses those bytes instead of rendering again.
+    expect(await service.resolve(lateRequest)).toMatchObject({
+      provenance: "cache",
+      bytes: replacement,
+    });
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+
   it("uses matching cached pixels when the PDF cannot be checked", async () => {
     await using service = new ExcerptImageService({
       stamp: async () => {

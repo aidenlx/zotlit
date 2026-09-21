@@ -159,6 +159,8 @@ const STALLED: ExcerptOutcome = { kind: "unavailable" };
 interface ExcerptProbe {
   /** PDF stamp that validated freshness; `undefined` when it could not be read. */
   pdf: PdfStamp | undefined;
+  /** The batch's own retained outcome for the key, fresh against `pdf`. */
+  retained: ExcerptOutcome | undefined;
   /** The cache record for the key, whether or not its stamp matched. */
   cached: ExcerptEntry | undefined;
 }
@@ -183,8 +185,14 @@ function validatedEntry(probe: ExcerptProbe): ExcerptEntry | undefined {
  * after a later saved edit must not make its older pixels the demand the edit's
  * own answer is measured against. A source that keeps no version — the database
  * partition — leaves no order to keep, so admission order stands there.
+ *
+ * Shared with the live display, which asks the same question of the demand one
+ * of its slots already holds.
  */
-function supersedes(version: number | null, previous: number | null): boolean {
+export function supersedes(
+  version: number | null,
+  previous: number | null,
+): boolean {
   if (version === null || previous === null) return true;
   return version >= previous;
 }
@@ -319,8 +327,15 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         const release = this.#queue.teardown(async () => {
           if (this.#operations === 0) await this.#renderer?.release();
         });
-        // Caller cancellation stays immediate while the queue owns late cleanup.
+        // Caller cancellation stays immediate while the queue owns late
+        // cleanup; the caller that cannot wait still observes the teardown's
+        // result, so a queue that stops before it runs leaves no unhandled
+        // rejection behind.
         if (settled) await release;
+        else
+          void release.catch((error) => {
+            logger.debug("Excerpt queued teardown did not run", { error });
+          });
       },
     };
   }
@@ -409,40 +424,57 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   }
 
   /**
-   * Freshness and cache preflight. It runs on the bounded preflight queue,
-   * outside the PDF render slot and ahead of admission, so a valid cached image
-   * completes while an unrelated PDF render holds the queue, and a full queue
-   * takes no slot to answer it.
+   * The PDF's current size and modification time, or `undefined` where it
+   * cannot be read: a stamp that cannot be taken proves nothing about pixels.
    */
-  async #probe(
-    request: ExcerptRequest,
-    options: {
-      key: string;
-      cache: ExcerptCache | undefined;
-      signal: AbortSignal | undefined;
-    },
-  ): Promise<ExcerptProbe> {
-    const { key, cache, signal } = options;
+  async #stamp(path: string, key: string): Promise<PdfStamp | undefined> {
     const stamp =
       this.#deps.stamp ??
       (async (path: string) => {
         const info = await stat(path);
         return { size: info.size, mtimeMs: info.mtimeMs };
       });
+    return await stamp(path).catch((error) => {
+      logger.debug("Excerpt PDF freshness unavailable", { key, error });
+      return undefined;
+    });
+  }
+
+  /**
+   * Freshness and cache preflight. It runs on the bounded preflight queue,
+   * outside the PDF render slot and ahead of admission, so a valid cached image
+   * completes while an unrelated PDF render holds the queue, and a full queue
+   * takes no slot to answer it.
+   *
+   * The freshness stamp comes first, then the batch's own retention — bytes
+   * this batch already holds — and only a memory miss reads the persistent
+   * store, so a repeat the retention can answer pays no store transaction.
+   */
+  async #probe(
+    request: ExcerptRequest,
+    options: {
+      key: string;
+      cache: ExcerptCache | undefined;
+      outcomes: ExcerptOutcomeScope | undefined;
+      signal: AbortSignal | undefined;
+    },
+  ): Promise<ExcerptProbe> {
+    const { key, cache, outcomes, signal } = options;
     const pdf = request.pdfPath
-      ? await stamp(request.pdfPath).catch((error) => {
-          logger.debug("Excerpt PDF freshness unavailable", { key, error });
-          return undefined;
-        })
+      ? await this.#stamp(request.pdfPath, key)
       : undefined;
+    // The batch's own retention holds what a store whose write failed never
+    // kept, and it answers without touching the store.
+    const retained = outcomes?.get(key, pdf);
+    if (retained) return { pdf, retained, cached: undefined };
     const persistent = request.sourceScope ? cache : undefined;
     signal?.throwIfAborted();
-    if (!persistent) return { pdf, cached: undefined };
+    if (!persistent) return { pdf, retained: undefined, cached: undefined };
     const cached = await persistent.get(key, pdf).catch((error) => {
       logger.debug("Excerpt cache read failed", { key, error });
       return undefined;
     });
-    return { pdf, cached };
+    return { pdf, retained: undefined, cached };
   }
 
   /**
@@ -544,6 +576,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
           this.#probe(request, {
             key: context.key,
             cache: context.cache,
+            outcomes: context.outcomes,
             signal: preflight,
           }),
         preflight,
@@ -556,15 +589,14 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         fingerprint: excerptFingerprint(request.annotation),
         pdf: probe.pdf ?? null,
       };
-      // The batch's own retention comes first: it holds what a store whose
-      // write failed never kept, and it answers without touching the store.
-      const retained = context.outcomes?.get(context.key, probe.pdf);
-      if (retained) {
+      // The batch's own retention answered the preflight, ahead of any store
+      // read: what it holds is what a store whose write failed never kept.
+      if (probe.retained) {
         logger.debug("Excerpt batch outcome reused", {
           key: context.key,
-          outcome: retained.kind,
+          outcome: probe.retained.kind,
         });
-        return retained;
+        return probe.retained;
       }
       const cached = validatedEntry(probe);
       if (cached) {
@@ -612,7 +644,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
             bounded.throwIfAborted();
             const job = this.#resolve(
               request,
-              { ...context, probe, identity },
+              { ...context, probe, identity, evidence },
               bounded,
             );
             try {
@@ -715,10 +747,12 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       generation: number;
       probe: ExcerptProbe;
       identity: ExcerptIdentity;
+      /** Where this job's callers read the freshness it settled against. */
+      evidence: { pdf?: PdfStamp };
     },
     signal: AbortSignal,
   ): Promise<ExcerptOutcome> {
-    const { cache, generation, probe, identity } = context;
+    const { cache, generation, probe, identity, evidence } = context;
     const { key } = identity;
     const persistent = request.sourceScope ? cache : undefined;
     signal.throwIfAborted();
@@ -728,35 +762,46 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       freshnessChecked: !!probe.pdf,
     });
     try {
+      // The probe ran before this job waited for capacity and for the render
+      // slot, so the PDF may have been replaced while it waited, and the
+      // document read below is the revision on disk now. The stamp taken here
+      // is what these bytes are labelled with — never older than them, so a
+      // replacement that lands after it still revalidates — where a stamp that
+      // cannot be read now leaves the probe's own standing.
+      const pdf = probe.pdf
+        ? ((await this.#stamp(request.pdfPath!, key)) ?? probe.pdf)
+        : undefined;
+      const rendered: ExcerptIdentity = { ...identity, pdf: pdf ?? null };
       const image = await (this.#deps.render
         ? this.#deps.render(request, signal)
         : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
-      if (probe.pdf && generation === this.#generation && persistent) {
-        const stored = await persistent
-          .put(key, { ...image, pdf: probe.pdf })
-          .then(
-            () => true,
-            (error: unknown) => {
-              logger.debug("Excerpt cache write failed", { key, error });
-              return false;
-            },
-          );
+      // The callers that keep this answer read the freshness it was rendered
+      // under, so their own repeat validates against the bytes they hold.
+      evidence.pdf = pdf;
+      if (pdf && generation === this.#generation && persistent) {
+        const stored = await persistent.put(key, { ...image, pdf }).then(
+          () => true,
+          (error: unknown) => {
+            logger.debug("Excerpt cache write failed", { key, error });
+            return false;
+          },
+        );
         // A reference locates stored bytes: only a write that landed publishes one.
-        if (stored) await this.#publishLatest(request, context, identity);
+        if (stored) await this.#publishLatest(request, context, rendered);
       }
       logger.debug("Excerpt rendered", {
         key,
         bytes: image.bytes.length,
         format: image.format.format,
-        freshnessChecked: !!probe.pdf,
+        freshnessChecked: !!pdf,
       });
       return {
         kind: "available",
         ...image,
         provenance: "rendered",
-        freshness: probe.pdf ? "checked" : "unchecked",
-        identity,
+        freshness: pdf ? "checked" : "unchecked",
+        identity: rendered,
       };
     } catch (error) {
       signal.throwIfAborted();

@@ -93,6 +93,40 @@ describe("Excerpt outcome scope", () => {
     });
   });
 
+  it("answers a repeat from retention without reading the store", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const stored = vi.fn(async (key: string) => entries.get(key));
+    const render = vi.fn(
+      async (): Promise<ExcerptImage> => ({
+        bytes: new Uint8Array(3),
+        format: PNG_FORMAT,
+      }),
+    );
+    await using service = new ExcerptImageService({
+      cache: {
+        get: stored,
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+      },
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render,
+    });
+    await using outcomes = new ExcerptOutcomeScope();
+    await using operation = service.operation({ outcomes });
+    expect(await operation.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    stored.mockClear();
+    // Retention holds these bytes, so the repeat answers from memory: a store
+    // that stalls or fails cannot hold back what the batch already owns.
+    expect(await operation.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    expect(stored).not.toHaveBeenCalled();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
   it("reuses the bytes a store whose write failed never kept", async () => {
     const f = fixture({ failWrites: true });
     await using service = f.service;
