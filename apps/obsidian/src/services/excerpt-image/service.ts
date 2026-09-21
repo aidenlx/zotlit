@@ -11,6 +11,7 @@ import type { ExcerptImage } from "./format";
 import type { ExcerptOutcomeScope } from "./outcome-scope";
 import { ExcerptPdfQueue } from "./pdf-queue";
 import { usableExcerptPng } from "./png";
+import type { ExcerptReaderDocuments } from "./reader-borrow";
 import { ExcerptRenderer } from "./renderer";
 import type { ExcerptRendererDiagnostics } from "./renderer";
 import type { ExcerptStore } from "./store";
@@ -65,6 +66,13 @@ export interface ExcerptDeps {
     request: ExcerptRequest,
     signal: AbortSignal,
   ) => Promise<ExcerptImage>;
+  /**
+   * Where a crop borrows an open reader's document instead of loading the
+   * file, when that document is proven to hold the file's current bytes.
+   *
+   * @see apps/obsidian/docs/adr/0054-reader-and-detached-excerpts-share-cache-publication.md
+   */
+  readers?: ExcerptReaderDocuments;
 }
 
 export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
@@ -168,7 +176,10 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
 
   async #load(): Promise<ExcerptCache | undefined> {
     await using stack = new AsyncDisposableStack();
-    if (!this.#deps.render) this.#renderer = stack.use(new ExcerptRenderer());
+    if (!this.#deps.render)
+      this.#renderer = stack.use(
+        new ExcerptRenderer({ readers: this.#deps.readers }),
+      );
     let cache = this.#deps.cache;
     if (this.#deps.openStore) {
       try {

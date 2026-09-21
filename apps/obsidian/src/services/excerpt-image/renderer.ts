@@ -14,28 +14,17 @@ import {
   paintInk,
   viewportBounds,
 } from "./geometry";
+import { MAX_PDF_BYTES, borrowedExcerptPage } from "./reader-borrow";
+import type { ExcerptCropPage, ExcerptReaderDocuments } from "./reader-borrow";
 
-interface Viewport {
-  convertToViewportPoint(x: number, y: number): [number, number];
-}
 export interface ExcerptRenderTask {
   promise: Promise<void>;
   cancel(): void;
   onContinue?: (continueCallback: () => void) => void;
 }
-interface PdfPage {
-  view: number[];
+/** A page of a document this renderer loaded itself, which it also cleans up. */
+interface PdfPage extends ExcerptCropPage {
   cleanup(): boolean;
-  getViewport(options: {
-    scale: number;
-    offsetX?: number;
-    offsetY?: number;
-  }): Viewport;
-  render(options: {
-    canvasContext: CanvasRenderingContext2D;
-    viewport: Viewport;
-    intent: "display";
-  }): ExcerptRenderTask;
 }
 export interface ExcerptPdfJs {
   getDocument(options: Record<string, unknown>): {
@@ -72,7 +61,6 @@ export function usePromiseScheduling(
   matches[0]!._useRequestAnimationFrame = false;
 }
 
-const MAX_PDF_BYTES = 256 * 1024 * 1024;
 type LoadingTask = ReturnType<ExcerptPdfJs["getDocument"]>;
 
 export type ExcerptRendererPhase =
@@ -228,6 +216,8 @@ export class ExcerptRenderer implements AsyncDisposable {
       load?: typeof loadPdfJs;
       canvas?: () => HTMLCanvasElement;
       deadline?: (milliseconds: number) => AbortSignal;
+      /** Where a crop may borrow an open reader's document instead of loading. */
+      readers?: ExcerptReaderDocuments;
     } = {},
   ) {
     this.#host = host;
@@ -412,6 +402,25 @@ export class ExcerptRenderer implements AsyncDisposable {
     )
       throw new Error("Unsupported excerpt");
     signal.throwIfAborted();
+    const borrowed = await borrowedExcerptPage({
+      readers: this.#host.readers,
+      path: request.pdfPath,
+      pageIndex: position.pageIndex,
+      signal,
+    });
+    if (borrowed) {
+      try {
+        return await this.#crop(request, borrowed, signal);
+      } catch (error) {
+        // A reader that closed or replaced its document under the crop leaves
+        // the file as the validated source: this resolution goes on detached.
+        signal.throwIfAborted();
+        logger.debug("Borrowed reader page did not render; reading the file", {
+          path: request.pdfPath,
+          error,
+        });
+      }
+    }
     await using stack = new AsyncDisposableStack();
     const pdf = await this.#document(request, signal);
     if (this.#unusable) throw new Error("Excerpt renderer is closed");
@@ -421,6 +430,19 @@ export class ExcerptRenderer implements AsyncDisposable {
         page.cleanup();
       },
     );
+    return await this.#crop(request, page, signal);
+  }
+
+  /**
+   * Draw, ink, and encode the requested crop of `page`. The canvas and the
+   * render task belong to this call; a borrowed page keeps its owner.
+   */
+  async #crop(
+    request: ExcerptRequest,
+    page: ExcerptCropPage,
+    signal: AbortSignal,
+  ): Promise<ExcerptImage> {
+    await using stack = new AsyncDisposableStack();
     const rect = excerptBounds(request.annotation);
     const crop = clipExcerptBounds(rect, page.view);
     const bounds = (scale: number) => {

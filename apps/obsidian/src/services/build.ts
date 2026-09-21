@@ -25,6 +25,7 @@ import { DatabaseService } from "./database/service";
 import { ExcerptDisplayService } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
+import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
 import { ExcerptImageService } from "./excerpt-image/service";
 import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
@@ -91,6 +92,14 @@ export function buildServices(
     console.error(`Service "${key}" failed to initialize`, error);
   });
 
+  // The excerpt service is registered before the PDF reader, so the reader
+  // hands its documents over through this one holder. A crop asks for a reader
+  // document per resolution, and answers detached while the holder is empty.
+  let reader: PdfAnnotationEditor | undefined;
+  const readers: ExcerptReaderDocuments = {
+    borrow: (path) => reader?.borrowDocument(path) ?? null,
+  };
+
   return container
     .use({
       settings: () =>
@@ -145,6 +154,7 @@ export function buildServices(
       excerptImage: () =>
         new ExcerptImageService({
           openStore: () => openExcerptStore(plugin.app.appId),
+          readers,
         }),
     })
     .use({
@@ -204,8 +214,8 @@ export function buildServices(
         annotationRepository,
         capabilityNotices,
         settings,
-      }) =>
-        new PdfAnnotationEditor({
+      }) => {
+        reader = new PdfAnnotationEditor({
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
@@ -220,7 +230,9 @@ export function buildServices(
             revealAnnotation: (annotationKey, options) =>
               void revealAnnotationInView(plugin, annotationKey, options),
           },
-        }),
+        });
+        return reader;
+      },
     })
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
