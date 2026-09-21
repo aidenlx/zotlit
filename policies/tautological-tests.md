@@ -6,5 +6,6 @@
 - **Declaration mirrors:** Exercise registered actions and the module that decides what a control shows, rather than asserting definition literals. A rendered control is exercised where it really renders: the running app.
 - **Canonical sources:** Authoritative declarations are valid oracles for consumers. Pin exact translated copy at the translation boundary; consumers use canonical messages.
 - **Consumer boundaries:** Verify wiring through the real consumer lifecycle. Direct hook calls establish hook behavior only; generated output must work when consumed.
+- **Change detectors:** Assert on observable behavior, not implementation structure. A test that breaks on a refactor that preserves output tests the shape of the code, not its correctness.
 - **Bulk output:** Parse or index artifacts once, then compare relevant keys and fields. Keep whole-output scans constant per artifact as the expected collection grows.
 - **Duplicate coverage:** Keep detailed behavior tests in the owning module and integration tests at consumers. Before deleting a duplicate, identify the retained test that catches the same regression.
