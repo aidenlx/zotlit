@@ -16,9 +16,20 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { defaults } from "@/services/settings/schema";
 
-import { redPng as png, corruptPng } from "./__fixtures__/png";
-import { materializeExcerpt, retainExcerpt } from "./materialize";
+import { redPng as png, bluePng, corruptPng } from "./__fixtures__/png";
+import { chromiumLosslessWebp, sizedWebp } from "./__fixtures__/webp";
+import { PNG_FORMAT, WEBP_FORMAT } from "./format";
+import type { ExcerptImage } from "./format";
+import {
+  excerptAssetIdentity,
+  isOwnedExcerptAssetPath,
+  materializeExcerpt,
+  retainExcerpt,
+} from "./materialize";
 import type { ExcerptRequest } from "./service";
+
+const pngImage: ExcerptImage = { bytes: png, format: PNG_FORMAT };
+const otherImage: ExcerptImage = { bytes: bluePng, format: PNG_FORMAT };
 
 const request: ExcerptRequest = {
   annotation: {
@@ -88,11 +99,7 @@ async function fixture() {
     createFolder,
     adapter,
     files,
-    save: (
-      input = request,
-      bytes = new Uint8Array([11, 22, 33]),
-      signal?: AbortSignal,
-    ) =>
+    save: (input = request, image = pngImage, signal?: AbortSignal) =>
       materializeExcerpt({
         signal,
         app,
@@ -101,7 +108,7 @@ async function fixture() {
         request: input,
         outcome: {
           kind: "available",
-          bytes,
+          ...image,
           provenance: "rendered",
           freshness: "checked",
         },
@@ -118,7 +125,7 @@ it("waits for vault registration after complete bytes are published", async () =
   const release = Promise.withResolvers<void>();
   let completed = false;
   f.adapter.reconcileInternalFile.mockImplementation(async (path: string) => {
-    expect([...(await readFile(join(f.root, path)))]).toEqual([11, 22, 33]);
+    expect(await readFile(join(f.root, path))).toEqual(png);
     expect(f.app.vault.getFileByPath(path)).toBeNull();
     started.resolve();
     await release.promise;
@@ -139,9 +146,7 @@ it("leaves published bytes when vault registration fails", async () => {
   f.adapter.reconcileInternalFile.mockImplementation(async () => {});
   expect(await f.save()).toEqual({ kind: "unavailable", reason: "write" });
   const [name] = await readdir(join(f.root, "Images"));
-  expect(await readFile(join(f.root, "Images", name!))).toEqual(
-    Buffer.from([11, 22, 33]),
-  );
+  expect(await readFile(join(f.root, "Images", name!))).toEqual(png);
 });
 
 it("releases a cancelled owner before a concurrent consumer adopts the same asset", async () => {
@@ -162,9 +167,7 @@ it("releases a cancelled owner before a concurrent consumer adopts the same asse
   const saved = await consumer;
   expect(saved.kind).toBe("saved");
   if (saved.kind !== "saved") return;
-  expect(await readFile(join(f.root, saved.path))).toEqual(
-    Buffer.from([11, 22, 33]),
-  );
+  expect(await readFile(join(f.root, saved.path))).toEqual(png);
   expect(await readdir(join(f.root, "Images"))).toHaveLength(1);
   expect(f.app.vault.getFileByPath(saved.path)).not.toBeNull();
 });
@@ -174,7 +177,7 @@ it("publishes complete immutable versions and isolates source and library identi
   const results = await Promise.all([
     f.save(),
     f.save(),
-    f.save(request, new Uint8Array([44, 55])),
+    f.save(request, otherImage),
     f.save({ ...request, libraryID: 2 }),
     f.save({ ...request, sourceScope: "/other-zotero" }),
   ]);
@@ -186,12 +189,8 @@ it("publishes complete immutable versions and isolates source and library identi
   expect(new Set(paths).size).toBe(4);
   const files = await readdir(`${f.root}/Images`);
   expect(files).toHaveLength(4);
-  expect(await readFile(`${f.root}/${paths[0]}`)).toEqual(
-    Buffer.from([11, 22, 33]),
-  );
-  expect(await readFile(`${f.root}/${paths[2]}`)).toEqual(
-    Buffer.from([44, 55]),
-  );
+  expect(await readFile(`${f.root}/${paths[0]}`)).toEqual(png);
+  expect(await readFile(`${f.root}/${paths[2]}`)).toEqual(bluePng);
 });
 
 it("refuses a corrupt occupied target without overwriting it", async () => {
@@ -217,6 +216,7 @@ it("creates no folder or file with attachment import disabled", async () => {
     outcome: {
       kind: "available",
       bytes: new Uint8Array([1]),
+      format: PNG_FORMAT,
       provenance: "zotero",
       freshness: "uncertain",
     },
@@ -233,9 +233,90 @@ it("returns a destination failure before any embed can be emitted", async () => 
   expect(await readFile(`${f.root}/Images`, "utf8")).toBe("occupied");
 });
 
+it("publishes a lossless WebP asset under its own extension and retains it", async () => {
+  await using f = await fixture();
+  const bytes = Buffer.from(chromiumLosslessWebp);
+  const saved = await f.save(request, { bytes, format: WEBP_FORMAT });
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+  expect(saved.path.endsWith(".webp")).toBe(true);
+  expect(saved.outcome.format).toBe(WEBP_FORMAT);
+  expect(await readFile(`${f.root}/${saved.path}`)).toEqual(bytes);
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [saved.path] }),
+  ).toEqual({ kind: "retained", path: saved.path });
+  expect(f.app.vault.getFileByPath(saved.path)).not.toBeNull();
+});
+
+it("keeps legacy PNG assets retainable beside a WebP asset", async () => {
+  await using f = await fixture();
+  const legacy = await f.save(request, pngImage);
+  const webp = await f.save(request, {
+    bytes: Buffer.from(chromiumLosslessWebp),
+    format: WEBP_FORMAT,
+  });
+  if (legacy.kind !== "saved" || webp.kind !== "saved")
+    throw new Error("Fixture images were not saved");
+  expect(await readdir(`${f.root}/Images`)).toHaveLength(2);
+  for (const path of [legacy.path, webp.path])
+    expect(await retainExcerpt({ app: f.app, request, paths: [path] })).toEqual(
+      { kind: "retained", path },
+    );
+});
+
+it("refuses bytes that disagree with their declared format", async () => {
+  await using f = await fixture();
+  const malformed: ExcerptImage[] = [
+    { bytes: png, format: WEBP_FORMAT },
+    { bytes: Buffer.from(chromiumLosslessWebp), format: PNG_FORMAT },
+    {
+      bytes: Buffer.from(chromiumLosslessWebp.subarray(0, 12)),
+      format: WEBP_FORMAT,
+    },
+  ];
+  for (const image of malformed)
+    expect(await f.save(request, image)).toEqual({
+      kind: "unavailable",
+      reason: "source",
+    });
+  expect(await readdir(f.root)).toEqual([]);
+});
+
+it("refuses a WebP whose declared geometry is past the bounds, saved or retained", async () => {
+  await using f = await fixture();
+  // 44 bytes that declare 16 383 × 16 383: 1 GiB of RGBA for whoever decodes them.
+  const bytes = sizedWebp(16_383, 16_383);
+  expect(await f.save(request, { bytes, format: WEBP_FORMAT })).toEqual({
+    kind: "unavailable",
+    reason: "source",
+  });
+  await mkdir(`${f.root}/Images`);
+  const path = `Images/zotlit-excerpt-${excerptAssetIdentity(request)}-${"a".repeat(64)}.webp`;
+  await writeFile(`${f.root}/${path}`, bytes);
+  expect(
+    await retainExcerpt({ app: f.app, request, paths: [path] }),
+  ).toBeUndefined();
+  expect(await readdir(f.root)).toEqual(["Images"]);
+});
+
+it("owns published assets of either extension and nothing else", () => {
+  const identity = excerptAssetIdentity(request);
+  const digest = "a".repeat(64);
+  const name = (suffix: string) =>
+    `Images/zotlit-excerpt-${identity}-${digest}.${suffix}`;
+  expect(isOwnedExcerptAssetPath(name("webp"), identity)).toBe(true);
+  expect(isOwnedExcerptAssetPath(name("png"), identity)).toBe(true);
+  for (const foreign of [
+    name("gif"),
+    `Images/zotlit-excerpt-${identity}-${digest}.webp.png`,
+    `Images/zotlit-excerpt-${identity}-${"a".repeat(63)}.webp`,
+    `Images/zotlit-excerpt-${"b".repeat(64)}-${digest}.webp`,
+  ])
+    expect(isOwnedExcerptAssetPath(foreign, identity)).toBe(false);
+});
+
 it("retains only a referenced version owned by the same source, Library, Attachment and Annotation", async () => {
   await using f = await fixture();
-  const saved = await f.save(request, png);
+  const saved = await f.save(request, pngImage);
   if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
   const changed = {
     ...request,
@@ -297,7 +378,7 @@ it("requires the current source bytes to prove ownership of a referenced legacy 
 
 it("rejects an oversized referenced image before reading its contents", async () => {
   await using f = await fixture();
-  const saved = await f.save(request, png);
+  const saved = await f.save(request, pngImage);
   if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
   await truncate(`${f.root}/${saved.path}`, 32 * 1024 * 1024 + 1);
   expect(
@@ -309,7 +390,10 @@ it.each(["truncated", "idat", "scanline"] as const)(
   "rejects an unusable PNG (%s)",
   async (kind) => {
     await using f = await fixture();
-    const saved = await f.save(request, corruptPng(kind));
+    const saved = await f.save(request, {
+      bytes: corruptPng(kind),
+      format: PNG_FORMAT,
+    });
     if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
     expect(
       await retainExcerpt({ app: f.app, request, paths: [saved.path] }),

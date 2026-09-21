@@ -19,6 +19,8 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { redPng } from "@/services/excerpt-image/__fixtures__/png";
+import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type {
   ExcerptOutcome,
@@ -104,7 +106,8 @@ async function fixture(mode: string) {
         if (mode === "unavailable") return { kind: "unavailable" };
         return {
           kind: "available",
-          bytes: new Uint8Array([137, 80, 78, 71, 42]),
+          bytes: redPng,
+          format: PNG_FORMAT,
           provenance: mode === "fallback" ? "zotero" : "rendered",
           freshness: "checked",
         };
@@ -189,9 +192,7 @@ it.each([
     const names = await readdir(join(f.root, "Images"));
     expect(names).toHaveLength(1);
     expect(result?.text).toContain(`![[Images/${names[0]}]]`);
-    expect([...(await readFile(join(f.root, "Images", names[0]!)))]).toEqual([
-      137, 80, 78, 71, 42,
-    ]);
+    expect(await readFile(join(f.root, "Images", names[0]!))).toEqual(redPng);
     expect(result?.summary).toEqual({
       zotero: mode === "fallback" ? 1 : 0,
       unchecked: 0,
@@ -213,6 +214,7 @@ it("cancels between resolution and materialization", async () => {
     return {
       kind: "available",
       bytes: new Uint8Array([1]),
+      format: PNG_FORMAT,
       provenance: "rendered",
       freshness: "checked",
     };

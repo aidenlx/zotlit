@@ -3,10 +3,13 @@ import { open, stat } from "node:fs/promises";
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
+import { abortable } from "./abort";
 import { excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import { PNG_FORMAT } from "./format";
+import type { ExcerptImage } from "./format";
 import { usableExcerptPng } from "./png";
-import { abortable, ExcerptRenderer } from "./renderer";
+import { ExcerptRenderer } from "./renderer";
 import type { ExcerptRendererDiagnostics } from "./renderer";
 import type { ExcerptStore } from "./store";
 export {
@@ -25,8 +28,7 @@ export interface PdfStamp {
   size: number;
   mtimeMs: number;
 }
-export interface ExcerptEntry {
-  bytes: Uint8Array;
+export interface ExcerptEntry extends ExcerptImage {
   pdf: PdfStamp;
 }
 export interface ExcerptCache {
@@ -35,12 +37,11 @@ export interface ExcerptCache {
   clear?(): Promise<void>;
 }
 export type ExcerptOutcome =
-  | {
+  | ({
       kind: "available";
-      bytes: Uint8Array;
       provenance: "rendered" | "cache" | "zotero";
       freshness: "checked" | "unchecked" | "uncertain";
-    }
+    } & ExcerptImage)
   | { kind: "unavailable" };
 
 export interface ExcerptDeps {
@@ -51,7 +52,7 @@ export interface ExcerptDeps {
   render?: (
     request: ExcerptRequest,
     signal: AbortSignal,
-  ) => Promise<Uint8Array>;
+  ) => Promise<ExcerptImage>;
 }
 
 export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
@@ -310,6 +311,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       return {
         kind: "available",
         bytes: cached.bytes,
+        format: cached.format,
         provenance: "cache",
         freshness: pdf ? "checked" : "unchecked",
       };
@@ -320,22 +322,23 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       freshnessChecked: !!pdf,
     });
     try {
-      const bytes = await (this.#deps.render
+      const image = await (this.#deps.render
         ? this.#deps.render(request, signal)
         : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
       if (pdf && generation === this.#generation)
-        await persistent?.put(key, { bytes, pdf }).catch((error) => {
+        await persistent?.put(key, { ...image, pdf }).catch((error) => {
           logger.debug("Excerpt cache write failed", { key, error });
         });
       logger.debug("Excerpt rendered", {
         key,
-        bytes: bytes.length,
+        bytes: image.bytes.length,
+        format: image.format.format,
         freshnessChecked: !!pdf,
       });
       return {
         kind: "available",
-        bytes,
+        ...image,
         provenance: "rendered",
         freshness: pdf ? "checked" : "unchecked",
       };
@@ -367,6 +370,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
           return {
             kind: "available",
             bytes,
+            format: PNG_FORMAT,
             provenance: "zotero",
             freshness: "uncertain",
           };

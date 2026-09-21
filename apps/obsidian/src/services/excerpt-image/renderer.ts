@@ -3,8 +3,11 @@ import { loadPdfJs } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
+import { abortable } from "./abort";
 import { excerptSourceIdentity } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import { encodeExcerptImage } from "./encode";
+import type { ExcerptImage } from "./format";
 import {
   clipExcerptBounds,
   excerptBounds,
@@ -67,28 +70,6 @@ export function usePromiseScheduling(
   }
   if (matches.length !== 1) throw new Error("Unsupported PDF.js render task");
   matches[0]!._useRequestAnimationFrame = false;
-}
-
-/** Deadlines also cover hosts whose cancellation method does not settle. */
-export async function abortable<T>(
-  promise: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  if (signal.aborted) {
-    // The caller may already have started work: observe its eventual rejection.
-    void promise.catch(() => undefined);
-    signal.throwIfAborted();
-  }
-  using cleanup = new DisposableStack();
-  return await Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      const abort = () => reject(signal.reason);
-      signal.addEventListener("abort", abort, { once: true });
-      cleanup.defer(() => signal.removeEventListener("abort", abort));
-      if (signal.aborted) abort();
-    }),
-  ]);
 }
 
 const MAX_PDF_BYTES = 256 * 1024 * 1024;
@@ -240,7 +221,7 @@ export class ExcerptRenderer implements AsyncDisposable {
   #session?: { key: string; task: LoadingTask; close?: Promise<void> };
   #unusable = false;
   readonly #shutdown = new AbortController();
-  #active?: Promise<Uint8Array>;
+  #active?: Promise<ExcerptImage>;
 
   constructor(
     host: {
@@ -300,7 +281,7 @@ export class ExcerptRenderer implements AsyncDisposable {
   async render(
     request: ExcerptRequest,
     cancellation: AbortSignal,
-  ): Promise<Uint8Array> {
+  ): Promise<ExcerptImage> {
     if (this.#unusable) throw new Error("Excerpt renderer is closed");
     if (this.#active) throw new Error("Excerpt renderer is busy");
     const signal = AbortSignal.any([
@@ -419,7 +400,7 @@ export class ExcerptRenderer implements AsyncDisposable {
   async #render(
     request: ExcerptRequest,
     signal: AbortSignal,
-  ): Promise<Uint8Array> {
+  ): Promise<ExcerptImage> {
     const position = request.annotation.position;
     if (
       !request.pdfPath ||
@@ -503,16 +484,6 @@ export class ExcerptRenderer implements AsyncDisposable {
       this.diagnostics.leave("page-rendering");
     }
     paintInk({ annotation: request.annotation, viewport, context });
-    const blob = await abortable(
-      new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (blob) =>
-            blob ? resolve(blob) : reject(new Error("PNG encoding failed")),
-          "image/png",
-        ),
-      ),
-      signal,
-    );
-    return new Uint8Array(await abortable(blob.arrayBuffer(), signal));
+    return await encodeExcerptImage(canvas, signal);
   }
 }

@@ -4,6 +4,7 @@ import { loadPdfJs } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { redPng } from "./__fixtures__/png";
+import { sizedWebp } from "./__fixtures__/webp";
 import { ExcerptRenderer } from "./renderer";
 import { ExcerptImageService } from "./service";
 import type { ExcerptRequest } from "./service";
@@ -158,7 +159,9 @@ function fixture() {
           started.resolve();
           return;
         }
-        callback(new Blob([new Uint8Array([137, 80, 78, 71])]));
+        callback(
+          new Blob([sizedWebp(this.width, this.height) as unknown as BlobPart]),
+        );
       },
     };
     canvases.push(canvas);

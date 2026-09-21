@@ -23,6 +23,7 @@ import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
+import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
@@ -157,6 +158,7 @@ async function fixture(mode = "normal") {
   let outcome: ExcerptOutcome = {
     kind: "available",
     bytes: bluePng,
+    format: PNG_FORMAT,
     provenance: "rendered",
     freshness: "checked",
   };
@@ -257,6 +259,7 @@ it("refreshes live image and ink versions while preserving frozen snapshots and 
   f.setOutcome({
     kind: "available",
     bytes: redPng,
+    format: PNG_FORMAT,
     provenance: "rendered",
     freshness: "checked",
   });

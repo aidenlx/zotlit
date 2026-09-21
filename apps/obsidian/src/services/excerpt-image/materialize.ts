@@ -24,12 +24,39 @@ import type { Settings } from "@/services/settings/schema";
 
 import { excerptKey, excerptSourceIdentity } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import {
+  EXCERPT_IMAGE_EXTENSIONS,
+  detectExcerptImageFormat,
+  isExcerptImage,
+  isExcerptPayload,
+} from "./format";
 import { usableExcerptPng } from "./png";
 import type { ExcerptOutcome } from "./service";
 
 const logger = getLogger("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
 const SHA256_HEX_LENGTH = 64;
+
+/**
+ * A retained asset must still decode as the container its bytes claim.
+ *
+ * `format.ts` owns the payload check both readers share; the vault read is the
+ * one place that deepens it, because these bytes came from outside this process:
+ * PNG must also inflate to the scanlines its header declares (`png.ts`). WebP's
+ * container walk is already the deep check, so it stops at the shared one. That
+ * depth stays here rather than in `format.ts`, which the cache read bundles
+ * without Node's `zlib` for a check that runs before every hit.
+ */
+function usableRetainedAsset(bytes: Uint8Array): boolean {
+  const format = detectExcerptImageFormat(bytes);
+  if (!format || !isExcerptPayload(format, bytes)) return false;
+  return (
+    format.format !== "png" ||
+    usableExcerptPng(
+      Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    )
+  );
+}
 
 async function readPreviousImage(path: string): Promise<Buffer> {
   await using file = await open(path, "r");
@@ -92,7 +119,7 @@ export async function retainExcerpt(options: {
       )
         continue;
       const bytes = await readPreviousImage(actualPath);
-      if (!usableExcerptPng(bytes)) continue;
+      if (!usableRetainedAsset(bytes)) continue;
       // Legacy names carry no source identity. The current source's bytes must prove ownership.
       if (
         !owned &&
@@ -133,10 +160,12 @@ export function isOwnedExcerptAssetPath(
 ): boolean {
   const name = basename(path);
   const prefix = `zotlit-excerpt-${identity}-`;
+  if (!name.startsWith(prefix)) return false;
+  const digest = name.slice(prefix.length);
+  const dot = digest.indexOf(".");
   return (
-    name.startsWith(prefix) &&
-    name.endsWith(".png") &&
-    name.length === prefix.length + SHA256_HEX_LENGTH + ".png".length
+    dot === SHA256_HEX_LENGTH &&
+    EXCERPT_IMAGE_EXTENSIONS.has(digest.slice(dot + 1))
   );
 }
 
@@ -154,6 +183,15 @@ export async function materializeExcerpt(options: {
     return { kind: "unavailable", reason: "disabled" };
   if (outcome.kind === "unavailable")
     return { kind: "unavailable", reason: "source" };
+  // Bytes that disagree with their format must not become a vault asset whose
+  // name and link claim the declared extension.
+  if (!isExcerptImage(outcome)) {
+    logger.debug("Excerpt payload does not match its format", {
+      format: outcome.format.format,
+      bytes: outcome.bytes.byteLength,
+    });
+    return { kind: "unavailable", reason: "source" };
+  }
   const assertCurrent = () => {
     options.signal?.throwIfAborted();
     if (options.valid && !options.valid())
@@ -175,7 +213,7 @@ export async function materializeExcerpt(options: {
       .digest("hex");
     const path = joinFolderPath(
       folder,
-      `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.png`,
+      `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.${outcome.format.extension}`,
     );
     const destination = adapter.getFullPath(path);
     const previous = publications.get(destination);

@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { redPng, corruptPng } from "./__fixtures__/png";
-import { abortable, usePromiseScheduling } from "./renderer";
+import { abortable } from "./abort";
+import { PNG_FORMAT } from "./format";
+import type { ExcerptImage } from "./format";
+import { usePromiseScheduling } from "./renderer";
 import { ExcerptImageService, excerptKey, MAX_FALLBACK_BYTES } from "./service";
 import type { ExcerptEntry, ExcerptRequest } from "./service";
 
@@ -34,6 +37,7 @@ const request: ExcerptRequest = {
   zoteroPngPath: "/fallback.png",
 };
 const generated: Uint8Array = new Uint8Array([1, 2, 3]);
+const rendered: ExcerptImage = { bytes: generated, format: PNG_FORMAT };
 const fallback = redPng;
 const inkRequest: ExcerptRequest = {
   ...request,
@@ -52,7 +56,7 @@ const inkRequest: ExcerptRequest = {
 function fixture() {
   const entries = new Map<string, ExcerptEntry>();
   let pdf = { size: 100, mtimeMs: 10 };
-  const render = vi.fn(async () => generated);
+  const render = vi.fn(async () => rendered);
   const service = new ExcerptImageService({
     cache: {
       get: async (key) => entries.get(key),
@@ -88,7 +92,7 @@ describe("Excerpt Image resolution", () => {
     },
   );
   it("admits 128 distinct requests and rejects the 129th without starting it", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
       started.resolve();
@@ -111,7 +115,7 @@ describe("Excerpt Image resolution", () => {
       ).toEqual({ kind: "unavailable" });
       expect(render).toHaveBeenCalledTimes(1);
     } finally {
-      gate.resolve(generated);
+      gate.resolve(rendered);
     }
     expect(
       (await Promise.all(pending)).every(
@@ -128,7 +132,7 @@ describe("Excerpt Image resolution", () => {
       started.resolve();
       await release.promise;
       signal.throwIfAborted();
-      return generated;
+      return rendered;
     });
     await using service = new ExcerptImageService({ render });
 
@@ -165,7 +169,7 @@ describe("Excerpt Image resolution", () => {
     const release = Promise.withResolvers<void>();
     const render = vi.fn(
       async (_request: ExcerptRequest, signal: AbortSignal) => {
-        if (render.mock.calls.length > 1) return generated;
+        if (render.mock.calls.length > 1) return rendered;
         started.resolve();
         await new Promise<void>((resolve) =>
           signal.addEventListener("abort", () => resolve(), { once: true }),
@@ -212,7 +216,7 @@ describe("Excerpt Image resolution", () => {
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
       started.resolve();
-      return new Promise<Uint8Array>(() => {});
+      return new Promise<ExcerptImage>(() => {});
     });
     await using service = new ExcerptImageService({ render });
     const pending = service.resolve(request);
@@ -238,7 +242,7 @@ describe("Excerpt Image resolution", () => {
     await using service = new ExcerptImageService({
       render: async (snapshot) => {
         savedColor = snapshot.annotation.color;
-        return generated;
+        return rendered;
       },
     });
     const result = service.resolve(input);
@@ -315,7 +319,7 @@ describe("Excerpt Image resolution", () => {
 
   it("captures each rapid saved edit before waiting for an older render", async () => {
     const started = Promise.withResolvers<void>();
-    const old = Promise.withResolvers<Uint8Array>();
+    const old = Promise.withResolvers<ExcerptImage>();
     const colors: (string | null)[] = [];
     await using service = new ExcerptImageService({
       render: async (snapshot) => {
@@ -324,7 +328,7 @@ describe("Excerpt Image resolution", () => {
           started.resolve();
           return old.promise;
         }
-        return generated;
+        return rendered;
       },
     });
     const first = service.resolve(inkRequest);
@@ -337,7 +341,7 @@ describe("Excerpt Image resolution", () => {
       ...inkRequest,
       annotation: { ...inkRequest.annotation, color: "#0000ff" },
     });
-    old.resolve(generated);
+    old.resolve(rendered);
     await Promise.all([first, second, third]);
     expect(colors).toEqual(["#ff0000", "#00ff00", "#0000ff"]);
   });
@@ -365,14 +369,14 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("keeps pre-clear work out of storage and starts a new generation for later callers", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const entries = new Map<string, ExcerptEntry>();
     const put = vi.fn(async (key: string, entry: ExcerptEntry) => {
       entries.set(key, entry);
     });
     const render = vi
-      .fn(async () => generated)
+      .fn(async () => rendered)
       .mockImplementationOnce(() => {
         started.resolve();
         return gate.promise;
@@ -392,7 +396,7 @@ describe("Excerpt Image resolution", () => {
     await started.promise;
     await service.clear();
     const current = service.resolve(request);
-    gate.resolve(generated);
+    gate.resolve(rendered);
     expect(await old).toMatchObject({ provenance: "rendered" });
     expect(await current).toMatchObject({ provenance: "rendered" });
     expect(render).toHaveBeenCalledTimes(2);
@@ -405,13 +409,14 @@ describe("Excerpt Image resolution", () => {
       .fn()
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValue({ size: 101, mtimeMs: 11 });
-    const render = vi.fn(async () => generated);
+    const render = vi.fn(async () => rendered);
     await using service = new ExcerptImageService({
       stamp,
       render,
       cache: {
         get: async () => ({
           bytes: generated,
+          format: PNG_FORMAT,
           pdf: { size: 100, mtimeMs: 10 },
         }),
         put: async () => {},
@@ -430,7 +435,7 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("degrades after open and read failures and refuses persistence without a source scope", async () => {
-    const render = vi.fn(async () => generated);
+    const render = vi.fn(async () => rendered);
     await using failedOpen = new ExcerptImageService({
       render,
       openStore: async () => {
@@ -501,7 +506,7 @@ describe("Excerpt Image resolution", () => {
     });
   });
   it("drops cancelled queued work without an unhandled rejection or poisoning the queue", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(async () => {
       started.resolve();
@@ -532,7 +537,7 @@ describe("Excerpt Image resolution", () => {
     controller.abort();
     await rejection;
     const last = service.resolve({ ...request, attachmentKey: "THIRD" });
-    gate.resolve(generated);
+    gate.resolve(rendered);
     expect(await first).toMatchObject({ kind: "available" });
     expect(await last).toMatchObject({ kind: "available" });
     expect(render).toHaveBeenCalledTimes(2);
@@ -567,6 +572,7 @@ describe("Excerpt Image resolution", () => {
       cache: {
         get: async () => ({
           bytes: generated,
+          format: PNG_FORMAT,
           pdf: { size: 100, mtimeMs: 10 },
         }),
         put: async () => {},
@@ -656,7 +662,7 @@ describe("Excerpt Image resolution", () => {
     expect(await failed.resolve(request)).toEqual({ kind: "unavailable" });
     await using working = new ExcerptImageService({
       stamp: async () => ({ size: 1, mtimeMs: 1 }),
-      render: async () => generated,
+      render: async () => rendered,
       cache: {
         get: async () => undefined,
         put: async () => {
@@ -671,7 +677,7 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("shares identical work while cancellation releases only that caller", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
       started.resolve();
@@ -690,7 +696,7 @@ describe("Excerpt Image resolution", () => {
     await started.promise;
     controller.abort();
     await rejected;
-    gate.resolve(generated);
+    gate.resolve(rendered);
     expect(await second).toMatchObject({ provenance: "rendered" });
     expect(render).toHaveBeenCalledTimes(1);
   });
@@ -720,7 +726,7 @@ describe("Excerpt Image resolution", () => {
     await using service = new ExcerptImageService({
       stamp: async () => ({ size: 1, mtimeMs: 1 }),
       render: async (_, signal) => {
-        if (!first) return generated;
+        if (!first) return rendered;
         first = false;
         started.resolve();
         return new Promise((_, reject) =>

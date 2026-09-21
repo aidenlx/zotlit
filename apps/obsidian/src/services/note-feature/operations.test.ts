@@ -73,6 +73,7 @@ import {
   bluePng,
   corruptPng,
 } from "@/services/excerpt-image/__fixtures__/png";
+import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import { materializeExcerpt } from "@/services/excerpt-image/materialize";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
@@ -765,6 +766,7 @@ describe("createNote", () => {
             return {
               kind: "available",
               bytes: redPng,
+              format: PNG_FORMAT,
               provenance: mode === "fallback" ? "zotero" : "rendered",
               freshness:
                 mode === "fallback"
@@ -968,6 +970,7 @@ describe("createNote", () => {
                 outcome: {
                   kind: "available",
                   bytes,
+                  format: PNG_FORMAT,
                   provenance: "rendered",
                   freshness: "checked",
                 },
@@ -1033,6 +1036,7 @@ describe("createNote", () => {
             : {
                 kind: "available",
                 bytes: bluePng,
+                format: PNG_FORMAT,
                 provenance: "rendered",
                 freshness: "checked",
               },
@@ -1049,6 +1053,7 @@ describe("createNote", () => {
           resolver.resolve.mockResolvedValue({
             kind: "available",
             bytes: bluePng,
+            format: PNG_FORMAT,
             provenance: "rendered",
             freshness: "checked",
           });

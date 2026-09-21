@@ -562,9 +562,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     for (const file of files) {
       const bytes = await readFile(join(path, file));
       initialImages.set(file, bytes);
-      expect([...bytes.subarray(0, 8)]).toEqual([
-        137, 80, 78, 71, 13, 10, 26, 10,
-      ]);
+      // ADR 0053: a newly generated Excerpt Image is lossless WebP, so the
+      // durable asset is a RIFF/WEBP container carrying the VP8L chunk.
+      expect(bytes.subarray(0, 4).toString("latin1")).toBe("RIFF");
+      expect(bytes.subarray(8, 12).toString("latin1")).toBe("WEBP");
+      expect(bytes.includes("VP8L", 12, "latin1")).toBe(true);
       expect(bytes.length).toBeGreaterThan(1000);
     }
     expect(
