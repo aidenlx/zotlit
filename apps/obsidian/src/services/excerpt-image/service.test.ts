@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { redPng, corruptPng } from "./__fixtures__/png";
+import { webp } from "./__fixtures__/webp";
+import { metadataForFormat } from "./format";
+import type { ExcerptImagePayload } from "./format";
 import { abortable, usePromiseScheduling } from "./renderer";
 import {
   ExcerptImageService,
@@ -54,10 +57,10 @@ const inkRequest: ExcerptRequest = {
   },
 };
 
-function fixture() {
+function fixture(rendered: Uint8Array | ExcerptImagePayload = generated) {
   const entries = new Map<string, ExcerptEntry>();
   let pdf = { size: 100, mtimeMs: 10 };
-  const render = vi.fn(async () => generated);
+  const render = vi.fn(async () => rendered);
   const service = new ExcerptImageService({
     cache: {
       get: async (key) => entries.get(key),
@@ -90,9 +93,14 @@ describe("Excerpt Image resolution", () => {
         read: async () => corruptPng(kind),
       });
       expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
+      expect(service.metrics).toMatchObject({
+        renderAttempts: 1,
+        cropRenders: 0,
+        pdfLoads: 0,
+      });
     },
   );
-  it("admits 128 distinct requests and rejects the 129th without starting it", async () => {
+  it("waits beyond 128 admitted requests and starts the 129th after capacity frees", async () => {
     const gate = Promise.withResolvers<Uint8Array>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
@@ -108,13 +116,13 @@ describe("Excerpt Image resolution", () => {
     );
     try {
       await started.promise;
-      expect(
-        await service.resolve({
-          ...request,
-          annotation: { ...request.annotation, key: "OVERFLOW" },
-        }),
-      ).toEqual({ kind: "unavailable" });
+      const overflow = service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: "OVERFLOW" },
+      });
       expect(render).toHaveBeenCalledTimes(1);
+      gate.resolve(generated);
+      expect(await overflow).toMatchObject({ provenance: "rendered" });
     } finally {
       gate.resolve(generated);
     }
@@ -123,7 +131,178 @@ describe("Excerpt Image resolution", () => {
         (result) => result.kind === "available",
       ),
     ).toBe(true);
-    expect(render).toHaveBeenCalledTimes(128);
+    expect(render).toHaveBeenCalledTimes(129);
+  });
+
+  it("returns a valid cache hit while an unrelated PDF render is blocked", async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    const started = Promise.withResolvers<void>();
+    const cached = {
+      ...request,
+      annotation: { ...request.annotation, key: "CACHED" },
+      pdfPath: "/cached.pdf",
+    };
+    const entries = new Map<string, ExcerptEntry>([
+      [excerptKey(cached), { bytes: generated, pdf: { size: 1, mtimeMs: 1 } }],
+    ]);
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async () => {},
+      },
+      render,
+    });
+    const blocked = service.resolve(request);
+    await started.promise;
+    expect(await service.resolve(cached)).toMatchObject({
+      provenance: "cache",
+      freshness: "checked",
+    });
+    expect(render).toHaveBeenCalledTimes(1);
+    gate.resolve(generated);
+    await blocked;
+  });
+
+  it("cancels a capacity waiter without cancelling admitted work", async () => {
+    const gate = Promise.withResolvers<Uint8Array>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({ render });
+    const pending = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `ADMITTED${index}` },
+      }),
+    );
+    await started.promise;
+    const controller = new AbortController();
+    const subscribed = Promise.withResolvers<void>();
+    const addEventListener = controller.signal.addEventListener.bind(
+      controller.signal,
+    );
+    vi.spyOn(controller.signal, "addEventListener").mockImplementation(
+      (...args) => {
+        addEventListener(...args);
+        if (args[0] === "abort") subscribed.resolve();
+      },
+    );
+    const waiter = service.resolve(
+      {
+        ...request,
+        annotation: { ...request.annotation, key: "CAPACITY" },
+      },
+      controller.signal,
+    );
+    const rejected = expect(waiter).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await subscribed.promise;
+    controller.abort();
+    await rejected;
+    expect(render).toHaveBeenCalledTimes(1);
+    gate.resolve(generated);
+    await Promise.all(pending);
+  });
+
+  it("gives another waiting PDF a turn after four same-PDF jobs", async () => {
+    const starts = Array.from({ length: 6 }, () =>
+      Promise.withResolvers<void>(),
+    );
+    const gates: PromiseWithResolvers<Uint8Array>[] = [];
+    const order: string[] = [];
+    const cacheReady = Promise.withResolvers<void>();
+    let cacheReads = 0;
+    const render = vi.fn(async (input: ExcerptRequest) => {
+      order.push(input.pdfPath!);
+      starts[order.length - 1]!.resolve();
+      const gate = Promise.withResolvers<Uint8Array>();
+      gates.push(gate);
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      cache: {
+        get: async () => {
+          cacheReads++;
+          if (cacheReads === 6) cacheReady.resolve();
+          await cacheReady.promise;
+          return undefined;
+        },
+        put: async () => {},
+      },
+      render,
+    });
+    await service.ready;
+    const requests = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        ...request,
+        pdfPath: "/same.pdf",
+        annotation: { ...request.annotation, key: `SAME${index}` },
+      })),
+      {
+        ...request,
+        pdfPath: "/other.pdf",
+        annotation: { ...request.annotation, key: "OTHER" },
+      },
+    ];
+    const pending = requests.map((input) => service.resolve(input));
+    await cacheReady.promise;
+    for (const [index, start] of starts.entries()) {
+      await start.promise;
+      gates[index]!.resolve(generated);
+    }
+    await Promise.all(pending);
+    expect(order).toEqual([
+      "/same.pdf",
+      "/same.pdf",
+      "/same.pdf",
+      "/same.pdf",
+      "/other.pdf",
+      "/same.pdf",
+    ]);
+  });
+
+  it("keeps persistent cache writes outside the PDF worker", async () => {
+    const putStarted = Promise.withResolvers<void>();
+    const releasePut = Promise.withResolvers<void>();
+    const secondStarted = Promise.withResolvers<void>();
+    let puts = 0;
+    const render = vi.fn(async (input: ExcerptRequest) => {
+      if (input.annotation.key === "SECOND") secondStarted.resolve();
+      return generated;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      render,
+      cache: {
+        get: async () => undefined,
+        put: async () => {
+          puts++;
+          if (puts === 1) {
+            putStarted.resolve();
+            await releasePut.promise;
+          }
+        },
+      },
+    });
+    const first = service.resolve(request);
+    await putStarted.promise;
+    const second = service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: "SECOND" },
+    });
+    await secondStarted.promise;
+    expect(render).toHaveBeenCalledTimes(2);
+    releasePut.resolve();
+    await Promise.all([first, second]);
   });
 
   it("bounds cancelled same-key jobs that replace the dedup entry", async () => {
@@ -159,9 +338,11 @@ describe("Excerpt Image resolution", () => {
       await rejection;
     }
 
-    expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
-    expect(render).toHaveBeenCalledTimes(1);
     release.resolve();
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    expect(render).toHaveBeenCalledTimes(2);
   });
 
   it("waits for actual teardown before advancing a cancelled request's queue slot", async () => {
@@ -632,35 +813,41 @@ describe("Excerpt Image resolution", () => {
     ).toBe(excerptKey(request));
   });
 
-  it("reuses verified API pixels for a later database request", async () => {
-    const f = fixture();
-    await using service = f.service;
-    const api = {
-      ...request,
-      source: { kind: "zotero-local-api" as const, serverID: "SERVER" },
-      verifiedDatabaseIdentity:
-        request.source.kind === "zotero-db"
-          ? request.source.database
-          : undefined,
-    };
-
-    expect(await service.resolve(api)).toMatchObject({
-      provenance: "rendered",
-      freshness: "checked",
-      bytes: generated,
-    });
-    expect(await service.resolve(request)).toMatchObject({
-      provenance: "cache",
-      freshness: "checked",
-      bytes: generated,
-    });
-    expect(f.render).toHaveBeenCalledTimes(1);
-    expect(service.metrics).toEqual({
-      cacheHits: 1,
-      cropRenders: 1,
-      pdfLoads: 0,
-    });
-  });
+  it.each(["png", "webp"] as const)(
+    "reuses verified API %s pixels for a later database request",
+    async (format) => {
+      const payload = {
+        ...metadataForFormat(format),
+        bytes: format === "webp" ? webp() : redPng,
+      };
+      const f = fixture(payload);
+      await using service = f.service;
+      const api = {
+        ...request,
+        source: { kind: "zotero-local-api" as const, serverID: "SERVER" },
+        verifiedDatabaseIdentity:
+          request.source.kind === "zotero-db"
+            ? request.source.database
+            : undefined,
+      };
+      expect(await service.resolve(api)).toMatchObject({
+        provenance: "rendered",
+        freshness: "checked",
+        ...payload,
+      });
+      expect(await service.resolve(request)).toMatchObject({
+        provenance: "cache",
+        freshness: "checked",
+        ...payload,
+      });
+      expect(f.render).toHaveBeenCalledTimes(1);
+      expect(service.metrics).toMatchObject({
+        cacheHits: 1,
+        cropRenders: 1,
+        pdfLoads: 0,
+      });
+    },
+  );
 
   it("keeps an unverified API request separate from a database request", async () => {
     const f = fixture();

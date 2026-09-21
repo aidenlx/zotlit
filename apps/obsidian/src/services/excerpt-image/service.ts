@@ -11,6 +11,7 @@ import type {
   ExcerptImageMetadata,
   ExcerptImagePayload,
 } from "./format";
+import { PdfExcerptQueue } from "./pdf-queue";
 import { usableExcerptPng } from "./png";
 import { abortable, ExcerptRenderer } from "./renderer";
 import type { ExcerptRendererDiagnostics } from "./renderer";
@@ -31,6 +32,13 @@ export type {
 export { excerptRequest } from "./request";
 
 const logger = getLogger("excerpt-image");
+
+class ExcerptRenderDeadlineError extends Error {
+  constructor(readonly reason: unknown) {
+    super("Excerpt PDF render deadline expired", { cause: reason });
+    this.name = "ExcerptRenderDeadlineError";
+  }
+}
 
 /** Size/mtime validation intentionally cannot detect a replacement with identical metadata. */
 export interface PdfStamp {
@@ -57,6 +65,9 @@ export interface ExcerptImageMetrics {
   cacheHits: number;
   cropRenders: number;
   pdfLoads: number;
+  renderAttempts: number;
+  pdfDocumentLoads: number;
+  queue: ReturnType<PdfExcerptQueue["snapshot"]>;
 }
 
 export type ExcerptOutcome =
@@ -131,27 +142,37 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   ready: Promise<ExcerptCache | undefined>;
   readonly #deps;
   readonly #pending = new Map<string, Pending>();
+  readonly #queue = new PdfExcerptQueue();
   readonly #shutdown = new AbortController();
-  #tail: Promise<unknown> = Promise.resolve();
+  #releaseTail: Promise<unknown> = Promise.resolve();
   #generation = 0;
   #clearing: Promise<void> = Promise.resolve();
   #renderer?: ExcerptRenderer;
   #stalled = false;
-  #jobs = 0;
-  #operations = 0;
   #cacheHits = 0;
+  #renderAttempts = 0;
   #cropRenders = 0;
+  #operations = 0;
 
   /** Internal lifecycle diagnostics used by the real-app acceptance suite. */
   get rendererDiagnostics(): ExcerptRendererDiagnostics | undefined {
     return this.#renderer?.diagnostics;
   }
 
+  /** Internal queue diagnostics used by controlled acceptance measurements. */
+  get pdfQueueDiagnostics() {
+    return this.#queue.snapshot();
+  }
+
   get metrics(): ExcerptImageMetrics {
+    const renderer = this.#renderer?.diagnostics.snapshot();
     return {
       cacheHits: this.#cacheHits,
-      cropRenders: this.#cropRenders,
-      pdfLoads: this.#renderer?.diagnostics.snapshot().pdfLoads ?? 0,
+      pdfLoads: renderer?.pdfLoads ?? 0,
+      renderAttempts: this.#renderAttempts,
+      pdfDocumentLoads: renderer?.documentLoads ?? 0,
+      cropRenders: renderer?.cropRenders ?? this.#cropRenders,
+      queue: this.#queue.snapshot(),
     };
   }
 
@@ -178,7 +199,8 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       await Promise.allSettled(
         [...this.#pending.values()].map((p) => p.promise),
       );
-      await this.#tail;
+      await this.#queue[Symbol.asyncDispose]();
+      await this.#releaseTail;
     });
     this.commit(stack.move());
     return cache;
@@ -213,11 +235,12 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         active = false;
         this.#operations--;
         if (this.#operations !== 0) return;
-        const settled = this.#jobs === 0;
-        const release = this.#tail.then(async () => {
+        const settled = this.#pending.size === 0;
+        const release = this.#releaseTail.then(async () => {
+          await this.#queue.whenIdle();
           if (this.#operations === 0) await this.#renderer?.release();
         });
-        this.#tail = release.catch(() => undefined);
+        this.#releaseTail = release.catch(() => undefined);
         // Caller cancellation stays immediate while the queue owns late cleanup.
         if (settled) await release;
       },
@@ -252,52 +275,17 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     ]);
     let pending = this.#pending.get(pendingKey);
     if (!pending || pending.controller.signal.aborted) {
-      if (this.#jobs >= 128) {
-        logger.debug("Excerpt unavailable: queue full", {
-          key,
-          queued: this.#jobs,
-        });
-        return { kind: "unavailable" };
-      }
       const controller = new AbortController();
-      this.#jobs++;
-      const promise = this.#tail.then(async () => {
-        if (this.#stalled) return { kind: "unavailable" } as const;
-        const bounded = AbortSignal.any([
-          controller.signal,
-          this.#shutdown.signal,
-          AbortSignal.timeout(35_000),
-        ]);
-        bounded.throwIfAborted();
-        const job = this.#resolve(
-          snapshot,
-          { key, cache, generation },
-          bounded,
-        );
-        try {
-          return await abortable(job, bounded);
-        } finally {
-          // Caller cancellation is immediate; the queue still owns teardown.
-          // A host that cannot settle must not accumulate more active jobs.
-          await abortable(
-            job.then(
-              () => undefined,
-              () => undefined,
-            ),
-            AbortSignal.timeout(5_000),
-          ).catch(() => {
-            this.#stalled = true;
-            logger.debug("Excerpt queue stopped after unsettled teardown");
-          });
-        }
-      });
+      const promise = this.#resolve(
+        snapshot,
+        { key, cache, generation },
+        controller,
+      );
       pending = { controller, promise, users: 0 };
       this.#pending.set(pendingKey, pending);
-      this.#tail = promise.catch(() => undefined);
       const held = pending;
       void promise
         .finally(() => {
-          this.#jobs--;
           if (this.#pending.get(pendingKey) === held)
             this.#pending.delete(pendingKey);
         })
@@ -319,8 +307,9 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       cache: ExcerptCache | undefined;
       generation: number;
     },
-    signal: AbortSignal,
+    controller: AbortController,
   ): Promise<ExcerptOutcome> {
+    const { signal } = controller;
     const { key, cache, generation } = context;
     const persistent = request.sourceScope ? cache : undefined;
     signal.throwIfAborted();
@@ -373,9 +362,12 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       freshnessChecked: !!pdf,
     });
     try {
-      const rendered = await (this.#deps.render
-        ? this.#deps.render(request, signal)
-        : this.#renderer!.render(request, signal));
+      if (this.#stalled) return { kind: "unavailable" };
+      const rendered = await this.#queue.enqueue(
+        this.#pdfKey(request),
+        controller.signal,
+        () => this.#render(request, controller.signal),
+      );
       signal.throwIfAborted();
       const payload = normalizeExcerptPayload(
         rendered instanceof Uint8Array ? { bytes: rendered } : rendered,
@@ -398,6 +390,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       };
     } catch (error) {
       signal.throwIfAborted();
+      if (error instanceof ExcerptRenderDeadlineError) throw error.reason;
       logger.debug("Excerpt rendering failed; checking Zotero image", {
         key,
         error,
@@ -436,5 +429,47 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     }
     logger.debug("Excerpt unavailable", { key });
     return { kind: "unavailable" };
+  }
+
+  #pdfKey(request: ExcerptRequest): string {
+    return JSON.stringify([request.sourceScope, request.pdfPath]);
+  }
+
+  async #render(
+    request: ExcerptRequest,
+    cancellation: AbortSignal,
+  ): Promise<Uint8Array | ExcerptImagePayload> {
+    this.#renderAttempts++;
+    const deadline = AbortSignal.timeout(35_000);
+    const signal = AbortSignal.any([
+      cancellation,
+      this.#shutdown.signal,
+      deadline,
+    ]);
+    const job = Promise.resolve().then(() =>
+      this.#deps.render
+        ? this.#deps.render(request, signal)
+        : this.#renderer!.render(request, signal),
+    );
+    try {
+      return await abortable(job, signal);
+    } catch (error) {
+      if (deadline.aborted)
+        throw new ExcerptRenderDeadlineError(deadline.reason ?? error);
+      throw error;
+    } finally {
+      // Caller cancellation is immediate; the queue still owns teardown.
+      // A host that cannot settle must not accumulate another active job.
+      await abortable(
+        job.then(
+          () => undefined,
+          () => undefined,
+        ),
+        AbortSignal.timeout(5_000),
+      ).catch(() => {
+        this.#stalled = true;
+        logger.debug("Excerpt queue stopped after unsettled teardown");
+      });
+    }
   }
 }

@@ -402,7 +402,7 @@ it("measures verified API-to-database reuse at the renderer boundary", async () 
     provenance: "cache",
   });
 
-  expect(service.metrics).toEqual({
+  expect(service.metrics).toMatchObject({
     cacheHits: 1,
     cropRenders: 1,
     pdfLoads: 1,

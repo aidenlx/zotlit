@@ -97,6 +97,8 @@ export interface ExcerptRendererDiagnosticSnapshot {
     workerKeys: string[];
     portType: string | null;
   } | null;
+  documentLoads: number;
+  cropRenders: number;
 }
 
 interface DiagnosticGate {
@@ -117,6 +119,8 @@ export class ExcerptRendererDiagnostics {
   #canvas?: HTMLCanvasElement;
   #lastCanvas?: { width: number; height: number };
   #gate?: DiagnosticGate;
+  #documentLoads = 0;
+  #cropRenders = 0;
 
   snapshot(): ExcerptRendererDiagnosticSnapshot {
     const worker = (
@@ -150,7 +154,17 @@ export class ExcerptRendererDiagnostics {
             portType,
           }
         : null,
+      documentLoads: this.#documentLoads,
+      cropRenders: this.#cropRenders,
     };
+  }
+
+  documentLoaded(): void {
+    this.#documentLoads++;
+  }
+
+  cropRendered(): void {
+    this.#cropRenders++;
   }
 
   hold(phase: ExcerptRendererPhase): void {
@@ -401,6 +415,7 @@ export class ExcerptRenderer implements AsyncDisposable {
           isEvalSupported: false,
         }),
       };
+      this.diagnostics.documentLoaded();
       this.diagnostics.document(this.#session.task);
     }
     try {
@@ -499,6 +514,9 @@ export class ExcerptRenderer implements AsyncDisposable {
     }
     paintInk({ annotation: request.annotation, viewport, context });
     const encode = this.#host.encode ?? encodeLosslessWebp;
-    return await encode(canvas, signal);
+    const payload = await encode(canvas, signal);
+    signal.throwIfAborted();
+    this.diagnostics.cropRendered();
+    return payload;
   }
 }
