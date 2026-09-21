@@ -58,8 +58,13 @@ export function excerptReuseProbe(): ExcerptReuseProbe {
   const service = new ExcerptImageService({ render });
   return {
     renders: () => render.mock.calls.length,
-    resolve: (outcomes) =>
-      service.operation({ outcomes }).resolve(reusedRequest),
+    // The probe owns the operation it acquires, so the service's active count
+    // comes back down the way a consumer's does and the batch it drives runs at
+    // the lifetime production gives it.
+    resolve: async (outcomes) => {
+      await using operation = service.operation({ outcomes });
+      return await operation.resolve(reusedRequest);
+    },
     [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
 }

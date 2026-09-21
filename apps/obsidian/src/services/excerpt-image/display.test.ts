@@ -619,12 +619,12 @@ describe("Excerpt Image live display", () => {
     expect(one.snapshot()).toEqual({
       image: null,
       current: false,
-      status: "failed",
+      status: "cleared",
     });
     expect(two.snapshot()).toEqual({
       image: null,
       current: false,
-      status: "failed",
+      status: "cleared",
     });
 
     // The demand those cards stated still stands: stating it again reads the

@@ -171,6 +171,28 @@ describe("Annotation Card image lifecycle", () => {
     expect(replaced.release).toEqual(["blob:1"]);
   });
 
+  it("releases the URL when a manual clear takes the image away", () => {
+    const identity = stated(null).identity;
+    const held: ExcerptImageOwnership = {
+      identity,
+      image: image(1),
+      url: "blob:1",
+    };
+
+    // A clear removed the image together with the bytes behind it: the card owns
+    // nothing and paints the established unavailable output, so the URL it was
+    // painted from goes rather than standing for an image the clear deleted.
+    // A replacement that failed is the other case, and keeps its image above.
+    expect(
+      excerptImageOwnership({
+        held,
+        display: display(null, "cleared"),
+        identity,
+        create,
+      }),
+    ).toEqual({ owned: null, release: ["blob:1"] });
+  });
+
   it("releases the URL when the card paints another Annotation", () => {
     const held: ExcerptImageOwnership = {
       identity: stated(null).identity,

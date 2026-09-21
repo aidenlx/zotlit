@@ -42,7 +42,7 @@ Both patterns carry the source pixels exactly, alpha included, as the WebCodecs 
 
 ## Size and encoding time
 
-Method: five encode calls per crop on one canvas, each timed around a single `toBlob` call, minimum wall time reported per encoder; byte counts are the returned blob sizes. WebP sizes come from `encodeExcerptImage`, PNG sizes from `toBlob(callback, "image/png")`.
+Method: five encode calls per crop on one canvas, minimum wall time reported per encoder; byte counts are the returned blob sizes. The two timing columns are measured around different boundaries. `PNG ms` is one `toBlob(callback, "image/png")` call alone. `WebP ms` is all of `encodeExcerptImage`: its own `toBlob(callback, "image/webp", 1)`, the `blob.arrayBuffer()` that copies the payload into the returned bytes, the cancellation check, and the `usableExcerptWebp` container validation. So the ratio below compares a bare canvas PNG encode against a WebP encode plus the pipeline's own payload copy and validation, not two timings of the same work.
 
 | Crop | Size | PNG bytes | WebP bytes | Change | PNG ms | WebP ms |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ Method: five encode calls per crop on one canvas, each timed around a single `to
 | ink, four stroke passes | 900 × 300 | 29 278 | 9 754 | −66.7 % | 1.3 | 3.0 |
 | image-heavy, gradient, blobs, grain | 600 × 400 | 361 827 | 309 196 | −14.5 % | 4.8 | 17.5 |
 
-Lossless WebP pays off on text, ink, and image-heavy crops and costs 398 bytes on a crop whose page area is mostly empty, where the lossless bitstream has little to model — the same overhead Chromium pays for the `ICCP` profile chunk it writes beside the payload (456 bytes of the 706-byte 8 × 8 fixture the validator tests use, measured with the same chunk walk). Encoding WebP costs roughly 1.3 to 3.6 times the PNG encode, which the excerpt pipeline spends once per generated result because the same bytes feed the display, the derived cache, and the durable note asset.
+Lossless WebP pays off on text, ink, and image-heavy crops and costs 398 bytes on a crop whose page area is mostly empty, where the lossless bitstream has little to model — the same overhead Chromium pays for the `ICCP` profile chunk it writes beside the payload (456 bytes of the 706-byte 8 × 8 fixture the validator tests use, measured with the same chunk walk). Encoding WebP costs roughly 1.3 to 3.6 times the PNG encode measured at those boundaries — the ratio counts the WebP call's payload copy and container validation as well as its canvas encode — and the excerpt pipeline spends that work once per generated result because the same bytes feed the display, the derived cache, and the durable note asset.
 
 The test pins the size relations it measured: WebP is smaller for the text, ink, and image crops, and within 10 % of PNG for the sparse equation crop.
 

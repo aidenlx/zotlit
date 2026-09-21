@@ -49,12 +49,14 @@ export interface ExcerptImageDisplay {
   /**
    * - `reading`: a read is answering the demand.
    * - `failed`: no read stands for the demand — the last one answered nothing,
-   *   so a previous image still paints, or a manual clear released the display,
-   *   so none does.
+   *   so a previous image still paints.
+   * - `cleared`: a manual clear released the display — the clear removed the
+   *   Held Read and the bytes it was painted from, so nothing paints, not even
+   *   the image the clear removed.
    * - `settled`: the read committed.
    * - `absent`: the card demands nothing — no source, no scope.
    */
-  readonly status: "reading" | "failed" | "settled" | "absent";
+  readonly status: "reading" | "failed" | "cleared" | "settled" | "absent";
 }
 
 /**
@@ -429,12 +431,14 @@ export class ExcerptDisplayService extends Service<void> {
     const slot = card.slot;
     // A demand a card has not stated yet is the commit that mounts it, and one
     // whose display a clear released holds nothing: both paint no image, and
-    // neither is still reading one.
+    // neither is still reading one. They are not the same state for the card:
+    // after a failed read the card keeps painting the last image it held, while
+    // a clear removed that image, so a cleared card says so and releases it.
     if (!slot || !card.demand)
       return {
         image: null,
         current: false,
-        status: card.demand ? "failed" : card.stated ? "absent" : "reading",
+        status: card.demand ? "cleared" : card.stated ? "absent" : "reading",
       };
     const request = card.demand;
     const held = this.#deps.queries.peek<AvailableExcerpt>(slot.key);

@@ -57,8 +57,10 @@ export interface ExcerptImageOwnership {
  * Move one card's object URL onto the image it paints now.
  *
  * The previous URL stays while the display has nothing newer to paint — during a
- * replacement and after a failed one — and it is released the moment the image
- * it was made from is replaced, or the card paints another Annotation.
+ * replacement and after a failed one, where the last image is still the best
+ * thing the card has. It is released the moment the image it was made from is
+ * replaced, the card paints another Annotation, or a manual clear released the
+ * display, which removed that image with the bytes behind it.
  *
  * @param options.create makes one object URL, which the caller owns from then on.
  * @returns the URL the card holds, and the URLs it must revoke.
@@ -74,6 +76,7 @@ export function excerptImageOwnership(options: {
   const keep =
     held &&
     held.identity === identity &&
+    display.status !== "cleared" &&
     (image === null || image === held.image);
   if (keep) return { owned: held, release: [] };
   const url = image ? create(image) : null;
