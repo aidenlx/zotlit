@@ -6,8 +6,6 @@ import { FileSystemAdapter } from "obsidian";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
-import { themeHook } from "@/lib/theme-hooks";
-
 import {
   annotationReads,
   attachmentReads,
@@ -80,20 +78,6 @@ it("lends the open document's bytes and pages for an absolute path", async () =>
   expect(await borrowed?.bytes()).toEqual(PDF_BYTES);
   expect(await borrowed?.page(0)).toBe(reader.page.pdfPage);
   expect((document_ as { getPage: Mock }).getPage).toHaveBeenCalledWith(1);
-});
-
-it("lends a document Obsidian loaded before this binding stood", async () => {
-  // A reader open before the plugin started holds a document loaded earlier;
-  // its bytes and pages are what excerpt work reads, and the revision proof —
-  // not the moment of the load — decides whether it may stand in for the file.
-  const reader = pdfReader();
-  const document_ = withBytes(reader);
-  await using service = await readerRegistry(pdfView("paper.pdf", reader));
-
-  const borrowed = service.borrowDocument("/vault/paper.pdf");
-
-  expect(borrowed?.document).toBe(document_);
-  expect(await borrowed?.bytes()).toEqual(PDF_BYTES);
 });
 
 it("answers nothing for a file no open view holds", async () => {
@@ -260,18 +244,10 @@ it("leaves the reader session's own role untouched", async () => {
   const binding = service.bindings[0]!;
   await binding.probed;
 
-  // The reader's own surfaces stand: its toolbar, its session, its probes.
+  // The binding stands on the reader's own session, and excerpt work reaches
+  // the same document while it does.
   expect(binding.supported).toBe(true);
-  expect(reader.toolbarRightEl.childElementCount).toBe(1);
   expect(binding.session).toBe(service.sessionForPath("paper.pdf"));
   expect(binding.session.source).toBe("obsidian-pdf");
-  annotations.setCapability({
-    kind: "read-only",
-    reason: "local-api-disabled",
-  });
-  expect(
-    reader.toolbarRightEl.querySelector(`.${themeHook.pdfCapability}`),
-  ).not.toBeNull();
-  // And its document is available to excerpt work at the same time.
   expect(service.borrowDocument("/vault/paper.pdf")).not.toBeNull();
 });

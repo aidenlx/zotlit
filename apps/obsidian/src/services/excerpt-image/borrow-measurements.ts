@@ -63,7 +63,7 @@ export interface ReaderMeasurements {
 
 const PDFS = 3;
 const EXCERPTS_PER_PDF = 4;
-/** Small enough to hash in microseconds, large enough to be a real file read. */
+/** Small enough to read in microseconds, large enough to be a real file read. */
 const FILE_BYTES = 64 * 1024;
 const LOAD_MS = 40;
 const CROP_MS = 12;

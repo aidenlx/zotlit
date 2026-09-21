@@ -1,10 +1,12 @@
 // The revision proof a borrowed reader document passes: only a document whose
 // own bytes are the file's current bytes may stand in for the file.
 
+import type { Stats } from "node:fs";
 import {
   mkdtemp,
   open,
   rm,
+  stat,
   truncate,
   utimes,
   writeFile,
@@ -359,6 +361,111 @@ it("closes the handle of an open the caller cancelled while it was in flight", a
 
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   expect(close).toHaveBeenCalledTimes(1);
+  expect(reader.bytes).not.toHaveBeenCalled();
+  expect(reader.page).not.toHaveBeenCalled();
+});
+
+it("stops waiting on the file's own revision read that never settles", async () => {
+  const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
+  const reader = readerDocument({ path, bytes: new Uint8Array([1, 2, 3, 4]) });
+  const revising = Promise.withResolvers<Stats>();
+  const stat = vi.fn(() => revising.promise);
+  const close = vi.fn(async () => undefined);
+  vi.mocked(open).mockReturnValueOnce(
+    Promise.resolve({ stat, close } as unknown as FileHandle),
+  );
+  const caller = new AbortController();
+
+  const pending = borrowedExcerptPage({
+    readers: reader.readers,
+    path,
+    pageIndex: 0,
+    signal: caller.signal,
+  });
+  await vi.waitFor(() => expect(stat).toHaveBeenCalledTimes(1));
+  caller.abort();
+
+  // The stat is this borrow's own read of the file, not the reader's: a
+  // filesystem that never settles it must not hold the proof — and the
+  // renderer release waiting behind it — open past the caller's deadline.
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(reader.bytes).not.toHaveBeenCalled();
+  expect(reader.page).not.toHaveBeenCalled();
+});
+
+it("settles a proven borrow whose handle will not close, on the teardown bound", async () => {
+  const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
+  const reader = readerDocument({ path, bytes: new Uint8Array([1, 2, 3, 4]) });
+  const borrow = () =>
+    borrowedExcerptPage({
+      readers: reader.readers,
+      path,
+      pageIndex: 0,
+      signal: SIGNAL(),
+    });
+  // The first borrow reads the file and remembers the revision it proved.
+  expect(await borrow()).toMatchObject({ page: reader.answered });
+
+  const bounds = new Map<number, AbortController>();
+  using _bounds = vi
+    .spyOn(AbortSignal, "timeout")
+    .mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      bounds.set(milliseconds, controller);
+      return controller.signal;
+    });
+  const info = await stat(path);
+  const close = vi.fn(() => Promise.withResolvers<void>().promise);
+  vi.mocked(open).mockReturnValueOnce(
+    Promise.resolve({
+      stat: async () => info,
+      close,
+    } as unknown as FileHandle),
+  );
+
+  const pending = borrow();
+  await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  // The remembered revision needs no fresh read, but the handle still has to
+  // close: nothing settles it, so the borrow waits on the one bound it gives
+  // its own teardown — the same 5s the detached path closes under.
+  expect([...bounds.keys()]).toStrictEqual([5_000]);
+  bounds.get(5_000)!.abort(new Error("close deadline"));
+
+  expect(await pending).toMatchObject({ page: reader.answered });
+  expect(reader.bytes).toHaveBeenCalledTimes(1);
+});
+
+it("settles the cleanup of an open the caller cancelled that never answers", async () => {
+  const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
+  const reader = readerDocument({ path, bytes: new Uint8Array([1, 2, 3, 4]) });
+  const opening = Promise.withResolvers<FileHandle>();
+  vi.mocked(open).mockReturnValueOnce(opening.promise);
+  const bounds = new Map<number, AbortController>();
+  using _bounds = vi
+    .spyOn(AbortSignal, "timeout")
+    .mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      bounds.set(milliseconds, controller);
+      return controller.signal;
+    });
+  const caller = new AbortController();
+
+  const pending = borrowedExcerptPage({
+    readers: reader.readers,
+    path,
+    pageIndex: 0,
+    signal: caller.signal,
+  });
+  await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+  caller.abort();
+  // The cancelled open answers nothing, so the borrow is not left waiting on
+  // the host for it: the close it keeps in this call's own teardown is bounded
+  // the same way, and the cancellation is still what the caller sees.
+  await vi.waitFor(() => expect([...bounds.keys()]).toStrictEqual([5_000]));
+  bounds.get(5_000)!.abort(new Error("close deadline"));
+
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   expect(reader.bytes).not.toHaveBeenCalled();
   expect(reader.page).not.toHaveBeenCalled();
 });

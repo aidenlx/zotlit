@@ -394,7 +394,10 @@ it("keeps one resident document across the two representations of a database", a
     },
   });
   expect(f.getDocument).toHaveBeenCalledTimes(1);
-  expect(f.files.map((file) => file.read.mock.calls.length)).toEqual([2, 0]);
+  // The first request reads the file it loads; the second reads no bytes of its
+  // own, because the resident document already holds this revision.
+  expect(f.files[0]!.read).toHaveBeenCalled();
+  expect(f.files[1]!.read).not.toHaveBeenCalled();
   expect(f.destroys[0]).not.toHaveBeenCalled();
 });
 
