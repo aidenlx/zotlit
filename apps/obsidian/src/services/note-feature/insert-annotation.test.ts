@@ -310,7 +310,7 @@ it.each(["signal", "target"])(
 );
 
 it.each([false, true])(
-  "cancels during registration and preserves pre-existing assets (%s)",
+  "cancels during registration and retains content-addressed assets (%s)",
   async (existing) => {
     await using f = await fixture("success");
     if (existing) await prepareAnnotationInsert(f.ctx, f.options);
@@ -324,9 +324,7 @@ it.each([false, true])(
       },
     );
     expect(await prepareAnnotationInsert(f.ctx, f.options)).toBeNull();
-    expect(await readdir(join(f.root, "Images"))).toHaveLength(
-      existing ? 1 : 0,
-    );
+    expect(await readdir(join(f.root, "Images"))).toHaveLength(1);
     expect(f.render).not.toHaveBeenCalled();
   },
 );
