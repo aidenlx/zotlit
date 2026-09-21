@@ -158,6 +158,7 @@ function readerStub(options: {
         return loaded;
       },
       page: async () => pages,
+      current: () => true,
     });
   }
   return { borrow: (path) => documents.get(path) ?? null };

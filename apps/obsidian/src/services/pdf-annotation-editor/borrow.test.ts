@@ -159,6 +159,62 @@ it("withdraws a lent document when the reader replaces it", async () => {
   expect(await next?.page(0)).toBe(reader.page.pdfPage);
 });
 
+it("withdraws a lent document when the binding lets its controller go", async () => {
+  const reader = pdfReader();
+  const document_ = withBytes(reader);
+  // A resolved Attachment is what mounts the binding's surfaces, including the
+  // teardown that lets its controller go.
+  await using service = await readerRegistry(
+    pdfView("paper.pdf", reader),
+    attachmentReads({
+      kind: "resolved",
+      attachmentKey: "ABCD2345",
+      itemKey: "WXYZ6789g4711",
+      openable: true,
+    }),
+  );
+  const borrowed = service.borrowDocument("/vault/paper.pdf");
+  expect(borrowed?.current()).toBe(true);
+
+  // The binding drops the controller it lent from — the leaf closed — while the
+  // viewer object behind it still holds the document the borrow was taken for.
+  service.bindings[0]![Symbol.dispose]();
+
+  expect(borrowed!.current()).toBe(false);
+  expect(await borrowed!.bytes()).toBeNull();
+  expect(await borrowed!.page(0)).toBeNull();
+  // Only the borrow was withdrawn: the reader's own document is untouched.
+  // `withBytes` attached the spy this reads back from the fixture's document.
+  const documentSpies = document_ as { getData: Mock; getPage: Mock };
+  expect(documentSpies.getData).not.toHaveBeenCalled();
+  expect(documentSpies.getPage).not.toHaveBeenCalled();
+});
+
+it("withdraws a page the reader replaced while its read was in flight", async () => {
+  const reader = pdfReader();
+  const document_ = withBytes(reader);
+  await using service = await readerRegistry(pdfView("paper.pdf", reader));
+  const borrowed = service.borrowDocument("/vault/paper.pdf")!;
+  const reading = Promise.withResolvers<unknown>();
+  const getPage = vi.fn(() => reading.promise);
+  Object.assign(document_, { getPage });
+
+  const page = borrowed.page(0);
+  await vi.waitFor(() => expect(getPage).toHaveBeenCalledTimes(1));
+  // Obsidian reloads the file into a new document while that read is pending,
+  // so the page it answers belongs to the document the reader moved on from.
+  const viewer = reader.child.pdfViewer as { pdfDocument: unknown };
+  viewer.pdfDocument = {
+    numPages: 1,
+    getPage: vi.fn(async () => reader.page.pdfPage),
+    getPageLabels: vi.fn(async () => null),
+  };
+  reading.resolve(reader.page.pdfPage);
+
+  expect(await page).toBeNull();
+  expect(borrowed.current()).toBe(false);
+});
+
 it("answers no bytes for a document whose build cannot report them", async () => {
   const reader = pdfReader();
   await using service = await readerRegistry(pdfView("paper.pdf", reader));

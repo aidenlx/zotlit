@@ -73,6 +73,15 @@ export interface BorrowedExcerptDocument {
    * or replaced the document.
    */
   page(pageIndex: number): Promise<ExcerptCropPage | null>;
+  /**
+   * Whether the reader still holds this exact document, asked live rather than
+   * snapshotted when the handle was taken. A reader that closed, swapped its
+   * file, or dropped its viewer answers `false`, and nothing read through this
+   * handle may stand in for the file after that.
+   *
+   * @see apps/obsidian/docs/adr/0054-reader-and-detached-excerpts-share-cache-publication.md
+   */
+  current(): boolean;
 }
 
 /**
@@ -87,6 +96,19 @@ export interface ExcerptReaderDocuments {
    * @returns that reader's document, or `null` while none holds the file.
    */
   borrow(path: string): BorrowedExcerptDocument | null;
+}
+
+/**
+ * One borrowed crop: the reader's own page, and the live check that the
+ * document it came from still stands behind it. A reader that closes or
+ * replaces its document while the crop draws answers `false` afterwards, and
+ * the image drawn from that page must not be published as the outcome — the
+ * caller renders from the file instead.
+ */
+export interface BorrowedExcerptCrop {
+  page: ExcerptCropPage;
+  /** Whether the reader still holds the document this page came from. */
+  current(): boolean;
 }
 
 /** A document revision the file was shown to hold, or the refusal of one. */
@@ -116,6 +138,11 @@ const verdicts = new WeakMap<object, BorrowVerdict>();
  * whose bytes are byte-for-byte the file's is borrowed, however long ago the
  * reader loaded it.
  *
+ * Both reads the reader answers are bounded by `signal`: a host that never
+ * settles one of them cannot hold a resolution open past its deadline. Nothing
+ * of the reader's is cancelled or cleaned up to end that wait — the borrow
+ * stops waiting and the caller renders from the file.
+ *
  * @see apps/obsidian/docs/adr/0054-reader-and-detached-excerpts-share-cache-publication.md
  */
 export async function borrowedExcerptPage(options: {
@@ -123,20 +150,26 @@ export async function borrowedExcerptPage(options: {
   path: string | null;
   pageIndex: number;
   signal: AbortSignal;
-}): Promise<ExcerptCropPage | null> {
+}): Promise<BorrowedExcerptCrop | null> {
   const { readers, path, pageIndex, signal } = options;
   if (!readers || !path) return null;
   const borrowed = await provenDocument({ readers, path, signal });
   if (!borrowed) return null;
-  const page = await borrowed.page(pageIndex);
-  if (!page) {
-    logger.debug("Reader document closed before its page was read", {
+  // The reader owns the read it answers: stopping to wait for one that never
+  // settles is this call's alone to do, and it leaves the reader's own task,
+  // page, and document untouched.
+  const page = await abortable(borrowed.page(pageIndex), signal);
+  // The reader may have closed or replaced its document while the page read
+  // was in flight, so the page is re-checked against the document it came from
+  // rather than trusted for having been asked of it.
+  if (!page || !borrowed.current()) {
+    logger.debug("Reader document closed before its page could be borrowed", {
       path,
       page: pageIndex + 1,
     });
     return null;
   }
-  return page;
+  return { page, current: () => borrowed.current() };
 }
 
 /**
@@ -247,7 +280,10 @@ async function verify(options: {
   // A file past the excerpt limit is refused before its document's bytes are
   // read: it is also past what the detached renderer parses.
   if (size > MAX_PDF_BYTES) return { size, mtimeMs, digest: null };
-  const data = await borrowed.bytes();
+  // `getData()` on a reader's document is the reader's own work: a host that
+  // never settles it must not hold this proof — and the resolution behind it —
+  // open past the caller's bound.
+  const data = await abortable(borrowed.bytes(), signal);
   signal.throwIfAborted();
   if (!data || data.byteLength !== size) return { size, mtimeMs, digest: null };
   const document = createHash("sha256").update(data).digest("hex");

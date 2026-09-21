@@ -163,15 +163,18 @@ function readerDocument(options: {
   const bytes = vi.fn(async () => options.bytes);
   const answered = cropPage();
   const page = vi.fn(options.page ?? (async () => answered.page));
+  // Whether the reader still holds the document, until a test withdraws it.
+  const current = vi.fn(() => true);
   const borrowed: Omit<BorrowedExcerptDocument, "path"> & { path: string } = {
     path: "",
     document: { name: "reader-document" },
     bytes,
     page,
+    current,
   };
   const borrow = vi.fn(() => borrowed);
   const readers: ExcerptReaderDocuments = { borrow };
-  return { readers, borrow, borrowed, bytes, page, answered };
+  return { readers, borrow, borrowed, bytes, page, answered, current };
 }
 
 /** A file two harnesses can share, so both resolutions read one revision. */
@@ -422,6 +425,90 @@ it("renders from the file when the reader's page fails under the crop", async ()
     provenance: "rendered",
   });
   // One publication, from the file the borrow fell back to.
+  expect(f.detached.load).toHaveBeenCalledTimes(1);
+  expect([...f.entries.keys()]).toEqual([excerptKey(f.request)]);
+});
+
+it("stops waiting on a borrowed byte read that never settles", async () => {
+  const reader = readerDocument({ bytes: PDF_BYTES });
+  const reading = Promise.withResolvers<Uint8Array | null>();
+  reader.bytes.mockImplementation(() => reading.promise);
+  await using f = await harness({ reader: holdingReader(reader) });
+  const caller = new AbortController();
+
+  const pending = f.service.resolve(f.request, caller.signal);
+  const rejected = expect(pending).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  await vi.waitFor(() => expect(reader.bytes).toHaveBeenCalledTimes(1));
+  caller.abort();
+
+  await rejected;
+  // The reader's own read is not cancelled or cleaned up to end the wait, and
+  // the render slot comes back at once instead of after a teardown that has to
+  // give up on the unresolved render.
+  await vi.waitFor(() =>
+    expect(f.service.queueDiagnostics).toMatchObject({
+      rendering: 0,
+      queued: 0,
+    }),
+  );
+  expect(reader.page).not.toHaveBeenCalled();
+  expect(f.detached.load).not.toHaveBeenCalled();
+  expect(f.entries.size).toBe(0);
+});
+
+it("reads the file when the reader replaces its document while the page is resolving", async () => {
+  const reading = Promise.withResolvers<ExcerptCropPage | null>();
+  const withdrawn = cropPage();
+  const reader = readerDocument({
+    bytes: PDF_BYTES,
+    page: () => reading.promise,
+  });
+  await using f = await harness({ reader: holdingReader(reader) });
+
+  const pending = f.service.resolve(f.request);
+  await vi.waitFor(() => expect(reader.page).toHaveBeenCalledTimes(1));
+  // The reader swaps its document while that page read is in flight.
+  reader.current.mockReturnValue(false);
+  reading.resolve(withdrawn.page);
+
+  expect(await pending).toMatchObject({
+    kind: "available",
+    provenance: "rendered",
+  });
+  // The withdrawn page was never drawn from, and the file supplied the one
+  // publication.
+  expect(withdrawn.tasks).toHaveLength(0);
+  expect(withdrawn.cleanup).not.toHaveBeenCalled();
+  expect(f.detached.load).toHaveBeenCalledTimes(1);
+  expect([...f.entries.keys()]).toEqual([excerptKey(f.request)]);
+});
+
+it("reads the file when the reader replaces its document while the crop draws", async () => {
+  const gate = Promise.withResolvers<void>();
+  const held = cropPage({
+    task: () => ({ promise: gate.promise, cancel: () => undefined }),
+  });
+  const reader = readerDocument({
+    bytes: PDF_BYTES,
+    page: async () => held.page,
+  });
+  await using f = await harness({ reader: holdingReader(reader) });
+
+  const pending = f.service.resolve(f.request);
+  await vi.waitFor(() => expect(held.tasks).toHaveLength(1));
+  // The reader swaps its document under the crop, which goes on to finish.
+  reader.current.mockReturnValue(false);
+  gate.resolve();
+
+  expect(await pending).toMatchObject({
+    kind: "available",
+    provenance: "rendered",
+  });
+  // One publication, from the file: the withdrawn page's finished image was
+  // not it, and nothing of the reader's own task was cancelled for it.
+  expect(held.readerTask.cancel).not.toHaveBeenCalled();
   expect(f.detached.load).toHaveBeenCalledTimes(1);
   expect([...f.entries.keys()]).toEqual([excerptKey(f.request)]);
 });

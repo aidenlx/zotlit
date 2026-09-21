@@ -30,6 +30,14 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 const folders: string[] = [];
 
+/**
+ * A fixed revision time later than any write the fixture makes, in the epoch
+ * seconds `utimes` takes: a test that moves a file's revision never reads the
+ * wall clock to do it.
+ */
+const LATER_MTIME_SECONDS =
+  Temporal.Instant.from("2030-01-01T00:00:00Z").epochMilliseconds / 1000;
+
 afterEach(async () => {
   vi.mocked(open).mockClear();
   await Promise.all(
@@ -63,16 +71,19 @@ function readerDocument(options: {
   const document_ = { name: "reader-document" };
   const bytes = vi.fn(async () => options.bytes);
   const readPage = vi.fn(async (): Promise<ExcerptCropPage | null> => page);
+  // A reader that still holds its document, until a test says it withdrew it.
+  const current = vi.fn(() => true);
   const borrowed: BorrowedExcerptDocument = {
     path: options.path,
     document: document_,
     bytes,
     page: readPage,
+    current,
   };
   const readers: ExcerptReaderDocuments = {
     borrow: vi.fn(() => borrowed),
   };
-  return { readers, borrowed, bytes, page: readPage, answered: page };
+  return { readers, borrowed, bytes, page: readPage, answered: page, current };
 }
 
 const SIGNAL = () => new AbortController().signal;
@@ -88,7 +99,7 @@ it("borrows a document whose own bytes are the file's current bytes", async () =
     signal: SIGNAL(),
   });
 
-  expect(page).toBe(reader.answered);
+  expect(page?.page).toBe(reader.answered);
   expect(reader.page.mock.calls).toEqual([[2]]);
 });
 
@@ -134,12 +145,11 @@ it("proves again once the file moves past the remembered revision", async () => 
       pageIndex: 0,
       signal: SIGNAL(),
     });
-  expect(await borrow()).toBe(reader.answered);
+  expect(await borrow()).toMatchObject({ page: reader.answered });
 
   // The reader's document still holds the old bytes; the file does not.
   await writeFile(path, new Uint8Array([5, 6, 7, 8]));
-  const moved = new Date(Date.now() + 5_000);
-  await utimes(path, moved, moved);
+  await utimes(path, LATER_MTIME_SECONDS, LATER_MTIME_SECONDS);
 
   expect(await borrow()).toBeNull();
   expect(reader.page).toHaveBeenCalledTimes(1);
@@ -170,15 +180,14 @@ it("borrows the reader's replacement document once it holds the file's bytes aga
       pageIndex: 0,
       signal: SIGNAL(),
     }),
-  ).toBe(reloaded.answered);
+  ).toMatchObject({ page: reloaded.answered });
 });
 
 it("refuses a document loaded long before the request when the file changed since", async () => {
   const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
   const reader = readerDocument({ path, bytes: new Uint8Array([1, 2, 3, 4]) });
   await writeFile(path, new Uint8Array([5, 6]));
-  const moved = new Date(Date.now() + 5_000);
-  await utimes(path, moved, moved);
+  await utimes(path, LATER_MTIME_SECONDS, LATER_MTIME_SECONDS);
 
   expect(
     await borrowedExcerptPage({
@@ -231,6 +240,85 @@ it("refuses a page the reader no longer holds, though its bytes matched", async 
       signal: SIGNAL(),
     }),
   ).toBeNull();
+});
+
+it("refuses a page the reader withdrew while its read was in flight", async () => {
+  const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
+  const reader = readerDocument({ path, bytes: new Uint8Array([1, 2, 3, 4]) });
+  const reading = Promise.withResolvers<ExcerptCropPage | null>();
+  reader.page.mockImplementation(() => reading.promise);
+
+  const pending = borrowedExcerptPage({
+    readers: reader.readers,
+    path,
+    pageIndex: 0,
+    signal: SIGNAL(),
+  });
+  await vi.waitFor(() => expect(reader.page).toHaveBeenCalledTimes(1));
+  // The reader replaced its document while the page was resolving: the page
+  // that read answers belongs to the document the reader moved on from.
+  reader.current.mockReturnValue(false);
+  reading.resolve(reader.answered);
+
+  expect(await pending).toBeNull();
+});
+
+it("stops waiting on a borrowed document read that never settles", async () => {
+  const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
+  const reader = readerDocument({ path, bytes: new Uint8Array([1, 2, 3, 4]) });
+  const reading = Promise.withResolvers<Uint8Array | null>();
+  reader.bytes.mockImplementation(() => reading.promise);
+  const caller = new AbortController();
+
+  const pending = borrowedExcerptPage({
+    readers: reader.readers,
+    path,
+    pageIndex: 0,
+    signal: caller.signal,
+  });
+  await vi.waitFor(() => expect(reader.bytes).toHaveBeenCalledTimes(1));
+  caller.abort();
+
+  // The reader's own read stays the reader's: this borrow stops waiting for it
+  // rather than cancelling or cleaning anything up, and reaches no page.
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  expect(reader.page).not.toHaveBeenCalled();
+});
+
+it("stops waiting on a borrowed page read that never settles", async () => {
+  const path = await pdfFile(new Uint8Array([1, 2, 3, 4]));
+  const render = vi.fn(() => ({
+    promise: Promise.resolve(),
+    cancel: vi.fn(),
+  }));
+  const answered: ExcerptCropPage = {
+    view: [0, 0, 612, 792],
+    getViewport: () => ({ convertToViewportPoint: (x, y) => [x, y] }),
+    render,
+  };
+  const reader = readerDocument({
+    path,
+    bytes: new Uint8Array([1, 2, 3, 4]),
+    page: answered,
+  });
+  const reading = Promise.withResolvers<ExcerptCropPage | null>();
+  reader.page.mockImplementation(() => reading.promise);
+  const caller = new AbortController();
+
+  const pending = borrowedExcerptPage({
+    readers: reader.readers,
+    path,
+    pageIndex: 0,
+    signal: caller.signal,
+  });
+  await vi.waitFor(() => expect(reader.page).toHaveBeenCalledTimes(1));
+  caller.abort();
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+
+  // The page the reader answers after the borrow gave up is its own, and the
+  // cancelled borrow draws nothing from it.
+  reading.resolve(answered);
+  expect(render).not.toHaveBeenCalled();
 });
 
 it("refuses a file past the borrow limit without reading its document", async () => {

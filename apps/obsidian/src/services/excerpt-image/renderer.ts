@@ -460,9 +460,20 @@ export class ExcerptRenderer implements AsyncDisposable {
     });
     if (borrowed) {
       try {
-        const image = await this.#crop(request, borrowed, signal);
-        this.diagnostics.borrowed();
-        return image;
+        const image = await this.#crop(request, borrowed.page, signal);
+        // The reader may have closed or replaced its document while the crop
+        // drew, and the page it withdrew is not this outcome's source: the
+        // file is. Only a document still holding the page publishes here.
+        if (borrowed.current()) {
+          this.diagnostics.borrowed();
+          return image;
+        }
+        logger.debug(
+          "Reader document withdrew under the crop; reading the file",
+          {
+            path: request.pdfPath,
+          },
+        );
       } catch (error) {
         // A reader that closed or replaced its document under the crop leaves
         // the file as the validated source: this resolution goes on detached.
