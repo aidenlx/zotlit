@@ -74,8 +74,10 @@ import {
   bluePng,
   corruptPng,
 } from "@/services/excerpt-image/__fixtures__/png";
+import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
 import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import { materializeExcerpt } from "@/services/excerpt-image/materialize";
+import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import { ExcerptImageService } from "@/services/excerpt-image/service";
@@ -2326,6 +2328,76 @@ describe("createNote", () => {
       },
     });
   });
+
+  it("runs the created note and its Child Note import under one outcome scope", async () => {
+    const root = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: "root2024",
+    });
+    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
+      stubNoteContext(item, [], options.resolvers),
+    );
+    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    await using probe = excerptReuseProbe();
+    const deps: SyncRenderDeps = {
+      app: makeApp(),
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      excerptImages: (options) => {
+        excerptScopes.push(options.outcomes);
+        return {
+          annotationImageLink: () => null,
+          // Runs after the Child Note import prepared, so this resolution is the
+          // batch's second one and only the retention can answer it.
+          prepare: async () => {
+            await probe.resolve(options.outcomes);
+          },
+          summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+        };
+      },
+      noteImport: {
+        prepare: async (options) => {
+          importScopes.push(options.outcomes);
+          await probe.resolve(options.outcomes);
+          return {
+            resolveChildNote: () => ({
+              key: "",
+              indexedKey: "",
+              title: null,
+              noteLink: () => "",
+            }),
+            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+          };
+        },
+      },
+    };
+
+    const result = await createNoteFeature(deps).createNote(root);
+
+    expect(result.outcome).toBe("created");
+    expect(excerptScopes).toHaveLength(1);
+    // The Child Notes this note's template imports inherit the batch scope, so
+    // the note's own resolution reuses what the import's rendered.
+    expect(importScopes[0]).toBe(excerptScopes[0]);
+    expect(probe.renders()).toBe(1);
+    // The batch is over once the note and its imports settle: a later request
+    // through that scope renders again.
+    await probe.resolve(excerptScopes[0]);
+    expect(probe.renders()).toBe(2);
+  });
 });
 
 describe("overwriteNote", () => {
@@ -4242,6 +4314,76 @@ describe("writeNoteUpdate", () => {
       `${prefix}${formatManagedRegion("NEW")}${suffix}`,
     );
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
+  });
+
+  it("shares one outcome scope with the Child Note import and releases it after the update", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    await using probe = excerptReuseProbe();
+    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    harness.deps.excerptImages = (options) => {
+      excerptScopes.push(options.outcomes);
+      return {
+        annotationImageLink: () => null,
+        // Runs after the Child Note import prepared, so this resolution is the
+        // batch's second one and only the retention can answer it.
+        prepare: async () => {
+          await probe.resolve(options.outcomes);
+        },
+        summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+      };
+    };
+    const prepare = harness.deps.noteImport.prepare;
+    harness.deps.noteImport.prepare = async (options) => {
+      importScopes.push(options.outcomes);
+      await probe.resolve(options.outcomes);
+      return await prepare(options);
+    };
+
+    await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Literature/Root.md"),
+      writeOptions("full"),
+    );
+
+    expect(excerptScopes).toHaveLength(1);
+    expect(excerptScopes[0]).toBeDefined();
+    // The Child Notes this update imports inherit the batch scope, so the
+    // update's second resolution reuses what the import's first one rendered.
+    expect(importScopes[0]).toBe(excerptScopes[0]);
+    expect(probe.renders()).toBe(1);
+    // The update released what it retained: a later request through that scope
+    // renders again rather than reusing.
+    await probe.resolve(excerptScopes[0]);
+    expect(probe.renders()).toBe(2);
+  });
+
+  it("leaves a caller's batch scope open for the rest of its run", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    const outcomes = new ExcerptOutcomeScope();
+    await using probe = excerptReuseProbe();
+    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    harness.deps.excerptImages = (options) => {
+      excerptScopes.push(options.outcomes);
+      return {
+        annotationImageLink: () => null,
+        prepare: async () => {
+          await probe.resolve(options.outcomes);
+        },
+        summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+      };
+    };
+
+    await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Literature/Root.md"),
+      { ...writeOptions("full"), outcomes },
+    );
+
+    expect(excerptScopes).toEqual([outcomes]);
+    // The caller's scope outlives the update: it still answers a repeat.
+    await probe.resolve(outcomes);
+    expect(probe.renders()).toBe(1);
   });
 
   it("honors scope 'metadata' by leaving the body untouched", async () => {

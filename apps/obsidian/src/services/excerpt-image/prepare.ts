@@ -23,6 +23,7 @@ import { createExcerptLink, summarizeExcerpts } from "./helper";
 import type { ExcerptSummary } from "./helper";
 import { materializeExcerpt, retainExcerpt } from "./materialize";
 import type { MaterializedExcerpt } from "./materialize";
+import type { ExcerptOutcomeScope } from "./outcome-scope";
 import { referencedExcerptPaths } from "./references";
 import type { ExcerptImageService, ExcerptRequest } from "./service";
 export type { ExcerptSummary } from "./helper";
@@ -66,6 +67,12 @@ export type ExcerptPreparation = (options: {
   notePath: string;
   settings: Readonly<Settings>;
   previousNote?: TFile;
+  /**
+   * The initiating batch's retained outcomes. Every note that batch writes —
+   * including the Child Notes imported through this one's template — resolves
+   * through this same scope, so repeated excerpts reuse one resolution.
+   */
+  outcomes?: ExcerptOutcomeScope;
 }) => PreparedExcerpts;
 
 export function createExcerptPreparation(deps: {
@@ -73,7 +80,7 @@ export function createExcerptPreparation(deps: {
   resolver: Pick<ExcerptImageService, "operation">;
   paths: AttachmentPathContext;
 }): ExcerptPreparation {
-  return ({ client, notePath, settings, previousNote }) => {
+  return ({ client, notePath, settings, previousNote, outcomes }) => {
     const candidates = new Map<
       string,
       {
@@ -104,7 +111,7 @@ export function createExcerptPreparation(deps: {
         return candidate.helper;
       },
       async prepare() {
-        await using operation = deps.resolver.operation();
+        await using operation = deps.resolver.operation({ outcomes });
         const previousPaths = previousNote
           ? await referencedExcerptPaths(deps.app, previousNote)
           : [];

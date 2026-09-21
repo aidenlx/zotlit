@@ -51,6 +51,8 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
   ExcerptSummary,
@@ -223,7 +225,7 @@ export interface ProfilePreview {
 export interface PreparedCreationProfile extends ProfilePreview {
   /** Re-enters the create gate; the preview holds no database lease. */
   create: (
-    options?: Pick<CreateNoteOptions, "reportExcerpts">,
+    options?: Pick<CreateNoteOptions, "reportExcerpts" | "outcomes">,
   ) => Promise<CreateNoteResult>;
 }
 
@@ -273,6 +275,12 @@ export interface CreateNoteOptions {
   tagMemo?: TagMemo;
   groupIdMemo?: GroupIDMemo;
   /**
+   * The initiating batch's retained outcomes. Omitted, this create opens its
+   * own scope for the note it writes and the Child Notes its template imports,
+   * then releases it once they settle.
+   */
+  outcomes?: ExcerptOutcomeScope;
+  /**
    * The batch supplies the once-resolved account username; a single-item create
    * resolves it from its own lease when omitted.
    */
@@ -307,6 +315,11 @@ export interface WriteNoteUpdateOptions {
   username: string | null;
   /** Headless explicit Profile. A different stamp is refused. */
   profile?: ProfileSelector;
+  /**
+   * The initiating batch's retained outcomes, shared with every other note the
+   * batch writes and the Child Notes this update imports.
+   */
+  outcomes?: ExcerptOutcomeScope;
 }
 
 /** Events the bound note feature emits; a UI subscriber owns any rendering. */
@@ -379,7 +392,11 @@ export interface NoteFeature {
   /** Imported Notes currently materialized for one Zotero item. */
   getImportedNotesForItem(indexedKey: string): Promise<TFile[]>;
   /** @see overwriteNote */
-  overwriteNote(file: TFile, indexedKey: string): Promise<UpdateResult>;
+  overwriteNote(
+    file: TFile,
+    indexedKey: string,
+    options?: { outcomes?: ExcerptOutcomeScope },
+  ): Promise<UpdateResult>;
   /** @see writeNoteUpdate */
   writeNoteUpdate(
     file: TFile,
@@ -507,7 +524,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     getImportedNotesForItem: (indexedKey) =>
       getImportedNotesForItem(ctx, indexedKey),
-    overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
+    overwriteNote: (file, indexedKey, options) =>
+      overwriteNote(ctx, file, { ...options, indexedKey }),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
     renderCitation: (items, variant) => renderCitation(ctx, items, variant),
     renderAnnotation: (annotationItemId, options) =>
@@ -881,6 +899,7 @@ async function createNote(
     username,
     onFileCreated: options.onFileCreated,
     reportExcerpts: options.reportExcerpts,
+    outcomes: options.outcomes,
     createFile: async (content) => {
       for (let attempt = 0; ; attempt++) {
         try {
@@ -935,15 +954,22 @@ async function writeNewNote(
     onFileCreated?: (file: TFile) => void;
     createFile: (content: string) => Promise<TFile>;
     reportExcerpts?: (summary: ExcerptSummary) => void;
+    /** The batch's retained outcomes, or omitted for this note's own scope. */
+    outcomes?: ExcerptOutcomeScope;
   },
 ): Promise<CreateNoteResult> {
   const { tagMemo, collectionCache, path, settings } = options;
   await ensureParentFolder(ctx.app, path);
+  await using stack = new AsyncDisposableStack();
+  // One created note is one initiating batch: its own excerpts and the Child
+  // Notes its template imports share this retention until both settle.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
 
   const excerptImages = ctx.excerptImages?.({
     client: options.client,
     notePath: path,
     settings,
+    outcomes,
   });
 
   const attachmentImport = await ctx.attachmentImport.prepare(path);
@@ -953,6 +979,7 @@ async function writeNewNote(
     settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo,
+    outcomes,
   });
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport,
@@ -1008,6 +1035,12 @@ async function updateNote(
     scope?: UpdateScope;
     profile?: ProfileSelector;
     beforeWrite?: () => void;
+    /**
+     * The initiating batch's retained outcomes. Omitted, this update opens its
+     * own scope for the note it writes and the Child Notes its template
+     * imports, then releases it once they settle.
+     */
+    outcomes?: ExcerptOutcomeScope;
   },
 ): Promise<UpdateResult> {
   const { indexedKey, scope = "full" } = options;
@@ -1048,6 +1081,10 @@ async function updateNote(
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
+  await using stack = new AsyncDisposableStack();
+  // One initiating batch: this note's own excerpts and the Child Notes it
+  // imports share one retention until both settle.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
   const { context, noteImport, excerptImages } = await contextForIndexedKey(
     ctx,
     indexedKey,
@@ -1057,9 +1094,12 @@ async function updateNote(
       sourcePath: file.path,
       settings: profile.settings,
       previousNote: scope === "full" ? file : undefined,
+      outcomes,
     },
   );
-  return applyManagedUpdate(ctx, file, {
+  // Awaited inside the retention's scope: returning the pending update would
+  // release it before the Child Note imports resolved their excerpts.
+  return await applyManagedUpdate(ctx, file, {
     context,
     attachmentImport,
     noteImport,
@@ -1345,12 +1385,17 @@ async function writeNoteUpdate(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+  await using stack = new AsyncDisposableStack();
+  // Without a batch above it, this update is its own initiating batch: its own
+  // excerpts and the Child Notes it imports share this retention.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
   const noteImport = await ctx.noteImport.prepare({
     client: options.client,
     sourcePath: file.path,
     settings: profile.settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
+    outcomes,
   });
   const excerptImages =
     options.scope !== "metadata"
@@ -1359,6 +1404,7 @@ async function writeNoteUpdate(
           notePath: file.path,
           settings: profile.settings,
           previousNote: file,
+          outcomes,
         })
       : undefined;
   const resolvers = buildNoteResolvers(ctx, {
@@ -1375,7 +1421,9 @@ async function writeNoteUpdate(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
-  return applyManagedUpdate(ctx, file, {
+  // Awaited inside the scope: returning the pending update would release the
+  // retention before its Child Note imports resolved their excerpts.
+  return await applyManagedUpdate(ctx, file, {
     context,
     attachmentImport,
     noteImport,
@@ -1513,11 +1561,24 @@ async function replaceManagedBody(
   return { bodyUpdated: replaced, duplicateRegionCount: duplicateCount };
 }
 
+/** What an overwrite writes, and the batch above it when there is one. */
+interface OverwriteNoteOptions {
+  /** The Indexed Key of the Zotero item the note is stamped for. */
+  indexedKey: string;
+  /**
+   * The initiating batch's retained outcomes. Omitted, this overwrite opens its
+   * own scope for the note it writes and the Child Notes its template imports,
+   * then releases it once they settle.
+   */
+  outcomes?: ExcerptOutcomeScope;
+}
+
 async function overwriteNote(
   ctx: OpsContext,
   file: TFile,
-  indexedKey: string,
+  options: OverwriteNoteOptions,
 ): Promise<UpdateResult> {
+  const { indexedKey } = options;
   // Settle readiness and prepare the attachment handle before pinning the
   // client, so the lease (an auto-refresh gate) spans only the DB reads, the
   // vault writes, and the child-note import flush — not the warm-up awaits.
@@ -1539,6 +1600,10 @@ async function overwriteNote(
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
+  await using stack = new AsyncDisposableStack();
+  // One initiating batch: this note's own excerpts and the Child Notes it
+  // imports share one retention until both settle.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
   const { context, noteImport, excerptImages } = await contextForIndexedKey(
     ctx,
     indexedKey,
@@ -1548,6 +1613,7 @@ async function overwriteNote(
       sourcePath: file.path,
       settings: profile.settings,
       previousNote: file,
+      outcomes,
     },
   );
   const prepared = prepareFrontmatter({
@@ -1746,6 +1812,8 @@ async function contextForIndexedKey(
     sourcePath: string;
     settings: Readonly<Settings>;
     previousNote?: TFile;
+    /** The initiating batch's retained outcomes, shared with its Child Notes. */
+    outcomes?: ExcerptOutcomeScope;
   },
 ): Promise<{
   context: NoteTemplateContext;
@@ -1762,6 +1830,7 @@ async function contextForIndexedKey(
     client,
     sourcePath,
     settings,
+    outcomes: options.outcomes,
   });
   const excerptImages = options.previousNote
     ? ctx.excerptImages?.({
@@ -1769,6 +1838,7 @@ async function contextForIndexedKey(
         notePath: sourcePath,
         settings,
         previousNote: options.previousNote,
+        outcomes: options.outcomes,
       })
     : undefined;
   const resolvers = buildNoteResolvers(ctx, {

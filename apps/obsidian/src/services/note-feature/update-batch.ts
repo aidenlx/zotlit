@@ -34,6 +34,7 @@ import {
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
+import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { ResolvedProfile } from "@/services/profile/bindings";
@@ -115,6 +116,8 @@ interface RunContext {
   collectionCache: CollectionCache;
   /** Spans the whole batch so a shared item's tags load once. */
   tagMemo: TagMemo;
+  /** The one retention every note this batch writes reuses outcomes from. */
+  outcomes: ExcerptOutcomeScope;
   /**
    * Signed-in account username, resolved once for the whole batch.
    *
@@ -620,6 +623,10 @@ async function executeBatchActions(
     deps.settings.loaded,
     deps.noteFeature.ready,
   ]);
+  // The whole run is one initiating batch, so every row's notes — including the
+  // Child Notes they import — reuse one retention; it is released as soon as
+  // the run's last admitted consumer settles.
+  await using outcomes = new ExcerptOutcomeScope();
 
   // Per-run caches + scope span the whole batch; `client` and `username` are
   // run-invariant too but only available inside the run closure, so they're
@@ -632,6 +639,7 @@ async function executeBatchActions(
     tagMemo: new Map(),
     scope,
     profile,
+    outcomes,
   };
 
   // The signed-in username is an account-wide scalar, resolved once under the
@@ -715,6 +723,7 @@ async function runAction(
       scope: run.scope,
       groupIdMemo: run.groupIdMemo,
       username: run.username,
+      outcomes: run.outcomes,
     });
     if (result.diagnostic) {
       throw new BatchUpdateRefusedError(result.diagnostic);
@@ -732,7 +741,10 @@ async function runAction(
         unknownProfileDiagnostic(action.prepared.selector),
       );
     return batchCreateOutcome(
-      await action.prepared.create({ reportExcerpts: run.reportExcerpts }),
+      await action.prepared.create({
+        reportExcerpts: run.reportExcerpts,
+        outcomes: run.outcomes,
+      }),
     );
   }
   const result = await deps.noteFeature.createNote(item, {
@@ -742,6 +754,7 @@ async function runAction(
     groupIdMemo: run.groupIdMemo,
     username: run.username,
     profile: action.selection?.selector ?? run.profile,
+    outcomes: run.outcomes,
   });
   return batchCreateOutcome(result);
 }

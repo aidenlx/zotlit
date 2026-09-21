@@ -8,6 +8,7 @@ import { excerptFingerprint, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
+import type { ExcerptOutcomeScope } from "./outcome-scope";
 import { ExcerptPdfQueue } from "./pdf-queue";
 import { usableExcerptPng } from "./png";
 import { ExcerptRenderer } from "./renderer";
@@ -104,6 +105,13 @@ interface Pending {
   users: number;
 }
 
+/**
+ * What a stalled queue answers with. It is a scheduler artifact, not a
+ * resolution, so the two places that hand it out share one value the batch
+ * retention can recognise and refuse to keep.
+ */
+const STALLED: ExcerptOutcome = { kind: "unavailable" };
+
 /** Freshness and cache evidence gathered before queue admission. */
 interface ExcerptProbe {
   /** PDF stamp that validated freshness; `undefined` when it could not be read. */
@@ -196,15 +204,23 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
     return operation;
   }
 
-  /** Keep one PDF session reusable only for this bounded consumer operation. */
-  operation(): ExcerptImageOperation {
+  /**
+   * Keep one PDF session reusable only for this bounded consumer operation.
+   *
+   * `options.outcomes` is the initiating batch's retained outcomes: a settled
+   * record whose identity and freshness match answers without PDF work, and
+   * every outcome this operation settles is retained for the rest of that batch.
+   */
+  operation(
+    options: { outcomes?: ExcerptOutcomeScope } = {},
+  ): ExcerptImageOperation {
     this.#operations++;
     let active = true;
     return {
       resolve: (request, signal) => {
         if (!active)
           return Promise.reject(new Error("Excerpt operation ended"));
-        return this.#resolveRequest(request, signal);
+        return this.#resolveRequest(request, signal, options.outcomes);
       },
       [Symbol.asyncDispose]: async () => {
         if (!active) return;
@@ -267,7 +283,13 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   }
 
   /**
-   * Admit one job per key, or adopt the live job another caller admitted.
+   * Admit one job per key per batch scope, or adopt the live job another
+   * caller admitted.
+   *
+   * The key carries the caller's batch scope, so a batch admits one job per
+   * excerpt for its consumers, while a scope-less caller asking for the same
+   * excerpt at the same time gets an admission of its own and the two render it
+   * twice. Batch isolation is deliberate; that overlap is its accepted price.
    *
    * The entry takes the freshness and cache preflight before it renders, and
    * the cache hit is answered by that preflight alone: it returns here before
@@ -284,6 +306,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       key: string;
       cache: ExcerptCache | undefined;
       generation: number;
+      outcomes: ExcerptOutcomeScope | undefined;
     },
   ): Pending {
     const live = this.#pending.get(pendingKey);
@@ -303,6 +326,9 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
     ]);
     const promise = (async (): Promise<ExcerptOutcome> => {
+      // This resolution keeps the batch's retention alive: the scope drops it
+      // only once every consumer admitted here has settled.
+      using _consumer = context.outcomes?.admit();
       // Freshness and cache checks run before admission: a valid cache hit
       // resolves without taking one of the admitted slots or the PDF slot.
       const probe = await this.#queue.preflight(
@@ -321,13 +347,23 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         fingerprint: excerptFingerprint(request.annotation),
         pdf: probe.pdf ?? null,
       };
+      // The batch's own retention comes first: it holds what a store whose
+      // write failed never kept, and it answers without touching the store.
+      const retained = context.outcomes?.get(context.key, probe.pdf);
+      if (retained) {
+        logger.debug("Excerpt batch outcome reused", {
+          key: context.key,
+          outcome: retained.kind,
+        });
+        return retained;
+      }
       const cached = validatedEntry(probe);
       if (cached) {
         logger.debug("Excerpt cache matched", {
           key: context.key,
           freshnessChecked: !!probe.pdf,
         });
-        return {
+        const outcome: ExcerptOutcome = {
           kind: "available",
           bytes: cached.bytes,
           format: cached.format,
@@ -335,7 +371,13 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
           freshness: probe.pdf ? "checked" : "unchecked",
           identity,
         };
+        context.outcomes?.retain(context.key, probe.pdf, outcome);
+        return outcome;
       }
+      // A queue stopped by an unsettled teardown is a scheduler artifact: it
+      // answers unavailable without queueing more work, and a batch never
+      // retains that answer for its other excerpts.
+      if (this.#stalled) return STALLED;
       // Queued cancellation drops demand only: an aborted signal removes the
       // job from the queue, while a running job keeps its slot until the
       // bounded teardown above finishes.
@@ -354,9 +396,13 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       });
       const admission = await this.#queue.reserve(preflight);
       try {
-        return await admission.render(
+        const outcome = await admission.render(
           async () => {
-            if (this.#stalled) return { kind: "unavailable" } as const;
+            // A host that cannot settle must not accumulate more active jobs:
+            // the stall may have flipped while this job waited for its slot, so
+            // the queued task checks it before it renders and answers without
+            // touching the renderer.
+            if (this.#stalled) return STALLED;
             const bounded = AbortSignal.any([
               cancelling,
               AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
@@ -386,6 +432,14 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
           },
           { pdf: request.pdfPath ?? "", sequence, signal: cancelling },
         );
+        // Only a settled resolution reaches here, so a deadline-aborted one
+        // never retains anything, and a stalled queue's answer is a scheduler
+        // artifact the batch must not answer another excerpt from. A cancelled
+        // one keeps nothing either: its callers no longer want this excerpt,
+        // and the batch must not answer for it after they are gone.
+        if (!cancelling.aborted && outcome !== STALLED)
+          context.outcomes?.retain(context.key, probe.pdf, outcome);
+        return outcome;
       } finally {
         admission.release();
       }
@@ -404,6 +458,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   async #resolveRequest(
     request: ExcerptRequest,
     signal?: AbortSignal,
+    outcomes?: ExcerptOutcomeScope,
   ): Promise<ExcerptOutcome> {
     // Capture the published input before startup or queued work can yield.
     const snapshot = structuredClone(request);
@@ -418,11 +473,15 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       key,
       snapshot.pdfPath,
       snapshot.zoteroPngPath,
+      // Batches never share an admission: only callers inside one batch carry
+      // its scope, and its retention belongs to those callers alone.
+      outcomes?.id ?? null,
     ]);
     const pending = this.#admit(pendingKey, snapshot, {
       key,
       cache,
       generation,
+      outcomes,
     });
     // Callers share one admission; releasing one leaves the others' work owned.
     pending.users++;
