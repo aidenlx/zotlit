@@ -1,88 +1,82 @@
+// What one Annotation card paints: the demand it states, and the object URL it
+// owns for the image the shared display read holds.
+
 import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { ExcerptImageDisplay } from "@/services/excerpt-image/display";
+import type { ExcerptImage } from "@/services/excerpt-image/format";
 import {
   excerptFingerprint,
   excerptSourceIdentity,
 } from "@/services/excerpt-image/service";
 
 export interface ExcerptImageTarget {
+  /**
+   * The demanded inputs, as one comparable string: two records that ask for the
+   * same pixels are one target, so a list refresh that moved only a comment,
+   * a tag, or the record's version states the same demand again.
+   */
   key: string;
+  /**
+   * The Annotation and source the card paints, across pixel changes. The shared
+   * display read is held under this identity, so a replacement keeps painting
+   * the previous image of the same Annotation.
+   */
+  identity: string;
   annotation: AnnotationRecord;
   source: AnnotationSource | null;
   sourceScope: string | null;
-  refresh: number;
 }
 
-/** Retain the owned result when a published list changes only non-pixel input. */
+/** Retain the stated demand when a published list changes only non-pixel input. */
 export function excerptImageTarget(
   previous: ExcerptImageTarget | null,
-  input: Omit<ExcerptImageTarget, "key">,
+  input: Omit<ExcerptImageTarget, "key" | "identity">,
 ): ExcerptImageTarget {
-  const { annotation, source } = input;
-  const key = JSON.stringify([
+  const { annotation } = input;
+  const identity = JSON.stringify([
     annotation.key,
     annotation.parentKey,
     input.sourceScope,
-    input.refresh,
-    source && excerptSourceIdentity(source),
-    excerptFingerprint(annotation),
+    input.source && excerptSourceIdentity(input.source),
   ]);
-  return previous?.key === key ? previous : { key, ...input };
+  const key = JSON.stringify([identity, excerptFingerprint(annotation)]);
+  return previous?.key === key ? previous : { key, identity, ...input };
 }
 
-/** Pure card lifecycle. URL ownership transfers only to the current target. */
-export type ExcerptImageState =
-  | { kind: "disposed" }
-  | { kind: "loading"; target: object }
-  | { kind: "unavailable"; target: object }
-  | { kind: "available"; target: object; url: string };
-
-export type ExcerptImageEvent =
-  | { kind: "start"; target: object }
-  | { kind: "resolved"; target: object; url: string | null }
-  | { kind: "failed"; target: object }
-  | { kind: "dispose" };
-
-export function transitionExcerptImage(
-  state: ExcerptImageState,
-  event: ExcerptImageEvent,
-): {
-  state: ExcerptImageState;
-  release: string[];
-} {
-  const previous = state.kind === "available" ? [state.url] : [];
-  if (event.kind === "start")
-    return {
-      state: { kind: "loading", target: event.target },
-      release: previous,
-    };
-  if (event.kind === "dispose")
-    return { state: { kind: "disposed" }, release: previous };
-  if (state.kind === "disposed" || state.target !== event.target) {
-    return {
-      state,
-      release: event.kind === "resolved" && event.url ? [event.url] : [],
-    };
-  }
-  if (event.kind === "failed" || !event.url)
-    return {
-      state: { kind: "unavailable", target: event.target },
-      release: previous,
-    };
-  return {
-    state: { kind: "available", target: event.target, url: event.url },
-    release: previous.filter((url) => url !== event.url),
-  };
+/** One card's object URL, and the image it was made from. */
+export interface ExcerptImageOwnership {
+  identity: string;
+  image: ExcerptImage;
+  url: string;
 }
 
-/** A target change hides the old result before the next effect runs. */
-export function excerptImageForTarget(
-  state: ExcerptImageState,
-  target: object,
-): ExcerptImageState {
-  return state.kind !== "disposed" && state.target === target
-    ? state
-    : { kind: "loading", target };
+/**
+ * Move one card's object URL onto the image it paints now.
+ *
+ * The previous URL stays while the display has nothing newer to paint — during a
+ * replacement and after a failed one — and it is released the moment the image
+ * it was made from is replaced, or the card paints another Annotation.
+ *
+ * @param options.create makes one object URL, which the caller owns from then on.
+ * @returns the URL the card holds, and the URLs it must revoke.
+ */
+export function excerptImageOwnership(options: {
+  held: ExcerptImageOwnership | null;
+  display: ExcerptImageDisplay;
+  identity: string;
+  create: (image: ExcerptImage) => string;
+}): { owned: ExcerptImageOwnership | null; release: string[] } {
+  const { held, display, identity, create } = options;
+  const image = display.image;
+  const keep =
+    held &&
+    held.identity === identity &&
+    (image === null || image === held.image);
+  if (keep) return { owned: held, release: [] };
+  const url = image ? create(image) : null;
+  const owned = image && url ? { identity, image, url } : null;
+  return { owned, release: held ? [held.url] : [] };
 }

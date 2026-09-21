@@ -19,7 +19,12 @@ import type {
   MutationState,
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
-import type { ExcerptOutcome } from "@/services/excerpt-image/service";
+import type {
+  ExcerptDisplayDemand,
+  ExcerptDisplayService,
+  ExcerptImageDisplay,
+} from "@/services/excerpt-image/display";
+import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
@@ -82,10 +87,16 @@ export interface AnnotActions {
   onApplyAgain(annot: AnnotationRecord): void;
   /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
   onDiscardConflict(annot: AnnotationRecord): void;
-  resolveImage(
-    target: ExcerptImageTarget,
-    signal: AbortSignal,
-  ): Promise<ExcerptOutcome>;
+  /**
+   * Open one card's demand on its Annotation's live Excerpt Image. The card
+   * states what it paints and releases the demand as it goes.
+   */
+  openExcerptImage(): ExcerptDisplayDemand;
+  /**
+   * The request one card's target resolves, or `null` where nothing can: no
+   * Annotation Source, another Zotero data directory, or an unready database.
+   */
+  excerptImageRequest(target: ExcerptImageTarget): ExcerptRequest | null;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
@@ -94,7 +105,9 @@ export interface AnnotActions {
 export interface AnnotActionDeps {
   app: App;
   scope: Scope;
-  resolveImage: AnnotActions["resolveImage"];
+  /** The plugin's live display surface for Excerpt Images. */
+  excerptDisplay: Pick<ExcerptDisplayService, "open">;
+  excerptImageRequest: AnnotActions["excerptImageRequest"];
   /**
    * The one write path for an Annotation. Commands take Indexed Keys: the
    * repository holds the record a write stamps its precondition off.
@@ -374,7 +387,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   return {
     getBacklink,
-    resolveImage: deps.resolveImage,
+    openExcerptImage: () => deps.excerptDisplay.open(),
+    excerptImageRequest: deps.excerptImageRequest,
     onSetColor,
     onSaveComment,
     bindCommentEditor,
@@ -437,6 +451,20 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 }
 
+/** What a card outside a configured view shows: nothing, and no demand to make. */
+const NOOP_DISPLAY: ExcerptImageDisplay = {
+  image: null,
+  current: false,
+  status: "absent",
+};
+
+const NOOP_DEMAND: ExcerptDisplayDemand = {
+  demand: () => {},
+  release: () => {},
+  subscribe: () => () => {},
+  snapshot: () => NOOP_DISPLAY,
+};
+
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
   onFollowModeMenu: () => {},
@@ -458,7 +486,8 @@ const NOOP_ACTIONS: AnnotActions = {
   onApplyAgain: () => {},
   onDiscardConflict: () => {},
   onRefresh: () => {},
-  resolveImage: async () => ({ kind: "unavailable" }),
+  openExcerptImage: () => NOOP_DEMAND,
+  excerptImageRequest: () => null,
   getBacklink: () => undefined,
   renderComment: () => () => {},
 };

@@ -22,6 +22,7 @@ import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
+import { ExcerptDisplayService } from "./excerpt-image/display";
 import { createExcerptPreparation } from "./excerpt-image/prepare";
 import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
 import { ExcerptImageService } from "./excerpt-image/service";
@@ -144,6 +145,13 @@ export function buildServices(
       excerptImage: () =>
         new ExcerptImageService({
           openStore: () => openExcerptStore(plugin.app.appId),
+        }),
+    })
+    .use({
+      excerptDisplay: ({ queryClient, excerptImage }) =>
+        new ExcerptDisplayService({
+          queries: queryClient,
+          resolve: (request, signal) => excerptImage.resolve(request, signal),
         }),
     })
     .use({

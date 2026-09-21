@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type { KeyboardEvent } from "react";
 
@@ -24,19 +25,18 @@ import {
   tooltipAttrs,
 } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type { ExcerptImage } from "@/services/excerpt-image/format";
 
 import { AnnotActionsContext } from "./actions";
 import { conflictPanel } from "./card-conflict";
 import { cardControls, commentIcon } from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 import {
-  excerptImageForTarget,
+  excerptImageOwnership,
   excerptImageTarget,
-  transitionExcerptImage,
 } from "./excerpt-image-state";
 import type {
-  ExcerptImageEvent,
-  ExcerptImageState,
+  ExcerptImageOwnership,
   ExcerptImageTarget,
 } from "./excerpt-image-state";
 import {
@@ -539,53 +539,52 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
   const actions = useContext(AnnotActionsContext);
   const source = useAnnotStore((s) => s.annotationSource);
   const sourceScope = useAnnotStore((s) => s.annotationSourceScope);
-  const refresh = useAnnotStore((s) => s.excerptRefresh);
   const heldTarget = useRef<ExcerptImageTarget | null>(null);
   const target = excerptImageTarget(heldTarget.current, {
     annotation: annot,
     source,
     sourceScope,
-    refresh,
   });
   heldTarget.current = target;
-  const state = useRef<ExcerptImageState>({ kind: "disposed" });
-  const [image, setImage] = useState(state.current);
-  const transition = useCallback((event: ExcerptImageEvent) => {
-    const next = transitionExcerptImage(state.current, event);
-    state.current = next.state;
-    for (const url of next.release) URL.revokeObjectURL(url);
-    if (event.kind !== "dispose" && next.state.kind !== "disposed")
-      setImage(next.state);
-  }, []);
+  const demand = useMemo(() => actions.openExcerptImage(), [actions]);
+  // A card states its demand as the record it paints moves; the demand lives on
+  // until the card goes, so a replacement keeps the previous image it holds.
   useEffect(() => {
-    const controller = new AbortController();
-    transition({ kind: "start", target });
-    void actions
-      .resolveImage(target, controller.signal)
-      .then((result) => {
-        if (controller.signal.aborted) return;
-        const url =
-          result.kind === "available"
-            ? URL.createObjectURL(
-                new Blob([new Uint8Array(result.bytes)], {
-                  type: result.format.mimeType,
-                }),
-              )
-            : null;
-        transition({ kind: "resolved", target, url });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) transition({ kind: "failed", target });
-      });
-    return () => {
-      controller.abort();
-      transition({ kind: "dispose" });
-    };
-  }, [actions, target, transition]);
-  const current = excerptImageForTarget(image, target);
-  if (current.kind === "loading" || current.kind === "disposed")
+    demand.demand(actions.excerptImageRequest(target));
+  }, [actions, demand, target]);
+  useEffect(() => () => demand.release(), [demand]);
+  const display = useSyncExternalStore(demand.subscribe, demand.snapshot);
+  const owned = useRef<ExcerptImageOwnership | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  /** The image the card could not decode, which paints unavailable until another replaces it. */
+  const [undecodable, setUndecodable] = useState<ExcerptImage | null>(null);
+  useEffect(() => {
+    const next = excerptImageOwnership({
+      held: owned.current,
+      display,
+      identity: target.identity,
+      create: (image) =>
+        URL.createObjectURL(
+          new Blob([new Uint8Array(image.bytes)], {
+            type: image.format.mimeType,
+          }),
+        ),
+    });
+    owned.current = next.owned;
+    for (const stale of next.release) URL.revokeObjectURL(stale);
+    setUrl(next.owned?.url ?? null);
+  }, [display, target.identity]);
+  useEffect(
+    () => () => {
+      const last = owned.current;
+      owned.current = null;
+      if (last) URL.revokeObjectURL(last.url);
+    },
+    [],
+  );
+  if (url === null && display.status === "reading")
     return <span aria-busy="true">{m.annot_view_image_loading()}</span>;
-  if (current.kind === "unavailable")
+  if (url === null || undecodable === display.image)
     return <span>{m.annot_view_image_unavailable()}</span>;
   return (
     <img
@@ -593,8 +592,10 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
         "zt:w-full zt:object-contain zt:object-left",
         collapsed && "zt:max-h-20",
       )}
-      src={current.url}
-      onError={() => transition({ kind: "failed", target })}
+      src={url}
+      onError={() => {
+        setUndecodable(display.image);
+      }}
       alt={
         annot.text ??
         (annot.pageLabel === null

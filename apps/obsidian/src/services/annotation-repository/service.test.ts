@@ -1583,6 +1583,78 @@ it("recolours an ink annotation like any other", async () => {
   );
 });
 
+it("announces the pixels a saved recolour moved, off the record Zotero answered with", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    item: () =>
+      annotationItem(afterWrite("TYY6Z6ZF", { color: "#2ea8e5", version: 17 })),
+  });
+  const announced: Array<[string, string | null]> = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push([record.key, record.color]),
+    ),
+  );
+
+  await repository.patchColor("TYY6Z6ZF", "#2EA8E5");
+
+  expect(announced).toEqual([["TYY6Z6ZF", "#2ea8e5"]]);
+});
+
+it("says nothing for a saved write that left the pixels alone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    item: ({ url }) =>
+      annotationItem(
+        // A comment on an ink stroke, and a colour on a highlight: neither is a
+        // pixel of the image ZotLit renders for this Annotation.
+        url.pathname.endsWith("TYY6Z6ZF")
+          ? afterWrite("TYY6Z6ZF", { comment: "Saved" })
+          : afterWrite("PUPR5FG5", { color: "#5fb236" }),
+      ),
+  });
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push(record.key),
+    ),
+  );
+
+  await repository.patchComment("TYY6Z6ZF", "Saved");
+  await repository.patchColor("PUPR5FG5", "#5FB236");
+
+  expect(announced).toEqual([]);
+});
+
+it("announces nothing while a write is still in flight", async () => {
+  await using stack = new AsyncDisposableStack();
+  const reread = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const { repository } = await writable(stack, {
+    item: async () => {
+      reread.resolve();
+      await release.promise;
+      return annotationItem(afterWrite("TYY6Z6ZF", { color: "#2ea8e5" }));
+    },
+  });
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push(record.key),
+    ),
+  );
+
+  const saved = repository.patchColor("TYY6Z6ZF", "#2EA8E5");
+  // Zotero has taken the write; the record it answers with has not landed, so
+  // the pixels a card paints are still the saved ones it was showing.
+  await reread.promise;
+  expect(announced).toEqual([]);
+
+  release.resolve();
+  await saved;
+  expect(announced).toEqual(["TYY6Z6ZF"]);
+});
+
 it("re-reads the annotation after the 204, and writes again off that version", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(stack, {

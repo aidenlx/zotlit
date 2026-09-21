@@ -23,6 +23,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
+import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type {
@@ -227,6 +228,19 @@ export interface AnnotationRepositoryEvents {
    * @param attachmentKey the Attachment's Indexed Key.
    */
   "annotations-changed": (attachmentKey: string) => void;
+  /**
+   * A saved write moved one Annotation's pixels: its geometry or its ink
+   * appearance decides what an Excerpt Image crops and paints, while a comment,
+   * a tag, or a label leaves the pixels as they were and says nothing here.
+   *
+   * A display holding an image of the previous pixels replaces it against this
+   * record: the write's own answer is what was saved, so a consumer needs no
+   * list re-read to know the new pixels.
+   *
+   * @param record the saved Annotation, whose `parentKey` names its Attachment.
+   * @see apps/obsidian/docs/adr/0055-reader-edits-revalidate-excerpt-images.md
+   */
+  "excerpt-pixels-changed": (record: AnnotationRecord) => void;
   /**
    * What a surface may do to an Attachment's Annotations moved. Every consumer
    * re-reads {@link AnnotationRepository.capabilityFor}; no record set is
@@ -1163,8 +1177,24 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
+    this.#announcePixels(held.record, applied.value);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * Announce a saved record whose pixels moved, so an Excerpt Image made from
+   * the record that stood before it is replaced rather than shown.
+   *
+   * The comparison is the canonical pixel fingerprint, so a re-read that
+   * answers the same pixels — Zotero echoes a colour the user picked — is not a
+   * change at all.
+   */
+  #announcePixels(before: AnnotationRecord, applied: ConfirmedWrite): void {
+    if (applied.kind !== "record") return;
+    if (excerptFingerprint(before) === excerptFingerprint(applied.record))
+      return;
+    this.#emitter.emit("excerpt-pixels-changed", applied.record);
   }
 
   #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {
