@@ -120,6 +120,7 @@ async function harness(
     vaultFiles?: readonly string[];
     partials?: readonly LiteratureNoteTemplatePartial[];
     immutable?: "owned" | "foreign";
+    immutableExtension?: "png" | "webp";
     reference?: "embed" | "link";
     shifted?: boolean;
   } = {},
@@ -151,7 +152,7 @@ async function harness(
     attachmentKey: "ATCH2345",
     annotation: { key: "ANIM2345" },
   });
-  const immutablePath = `literatures/attachments/zotlit-excerpt-${identity}-${"a".repeat(64)}.png`;
+  const immutablePath = `literatures/attachments/zotlit-excerpt-${identity}-${"a".repeat(64)}.${options.immutableExtension ?? "png"}`;
   const original = options.immutable
     ? `${options.reference === "link" ? "" : "!"}[[${immutablePath}]]`
     : "";
@@ -407,6 +408,25 @@ it.each(["embed", "link"] as const)(
     );
   },
 );
+
+it("finds an owned immutable WebP target for the Local Bridge", async () => {
+  await using bridge = await harness({
+    immutable: "owned",
+    immutableExtension: "webp",
+  });
+  const res = await bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
+    method: "POST",
+    body: JSON.stringify({ item: ITEM }),
+  });
+  const snapshot = (await res.json()) as {
+    roots: { annotations: unknown[] };
+    unavailable: { path: string }[];
+  };
+  expect(JSON.stringify(snapshot.roots.annotations[0])).toContain(".webp");
+  expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
+    "annotations[0].zt.imgLink",
+  );
+});
 
 it("reports an annotation image the vault does not hold and links the one it does", async () => {
   await using bridge = await harness();

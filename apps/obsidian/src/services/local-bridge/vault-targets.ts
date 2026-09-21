@@ -83,10 +83,9 @@ export async function collectVaultTargets(
 }
 
 /**
- * Excerpt images the vault already holds. Import names each copy
- * `<annotation key>.png` in the note's attachment folder, so a file at that
- * path is the image this Item's annotation renders; anything absent is left for
- * the exporter to report rather than pointed at a Zotero cache path.
+ * Excerpt images the vault already holds. New imports use immutable `.webp`
+ * names while legacy `<annotation key>.png` files stay readable, so a file at
+ * either path is the image this Item's annotation renders.
  */
 async function annotationImageTargets(
   client: NodeDatabaseClient,
@@ -131,9 +130,8 @@ async function annotationImageTargets(
         continue;
       }
       const path = joinFolderPath(folder, `${annotation.key}.png`);
-      if (deps.app.vault.getFileByPath(path)) {
+      if (deps.app.vault.getFileByPath(path))
         images[annotation.indexedKey] = path;
-      }
     }
   }
   return images;

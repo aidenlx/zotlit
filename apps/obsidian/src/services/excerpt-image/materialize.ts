@@ -25,8 +25,13 @@ import type { Settings } from "@/services/settings/schema";
 
 import { excerptKey, excerptSourceIdentity } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import { normalizeExcerptPayload } from "./format";
+import type { ExcerptImagePayload } from "./format";
 import { usableExcerptPng } from "./png";
 import type { ExcerptOutcome } from "./service";
+import { usableExcerptWebp } from "./webp";
+import { verifyWebpDecodes } from "./webp-decode";
+import type { WebpDecoder } from "./webp-decode";
 
 const logger = getLogger("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
@@ -69,6 +74,7 @@ export async function retainExcerpt(options: {
   app: App;
   request: ExcerptRequest;
   paths: readonly string[];
+  decodeWebp?: WebpDecoder;
 }): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
   const adapter = options.app.vault.adapter;
   if (!(adapter instanceof FileSystemAdapter)) return;
@@ -95,7 +101,15 @@ export async function retainExcerpt(options: {
       )
         continue;
       const bytes = await readPreviousImage(actualPath);
-      if (!usableExcerptPng(bytes)) continue;
+      const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+      if (
+        extension === "png"
+          ? !usableExcerptPng(bytes)
+          : extension !== "webp" || !usableExcerptWebp(bytes)
+      )
+        continue;
+      if (extension === "webp")
+        await verifyWebpDecodes(bytes, options.decodeWebp);
       // Legacy names carry no source identity. The current source's bytes must prove ownership.
       if (
         !owned &&
@@ -166,10 +180,11 @@ export function isOwnedExcerptAssetPath(
 ): boolean {
   const name = basename(path);
   const prefix = `zotlit-excerpt-${identity}-`;
+  const extension = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
   return (
+    (extension === "png" || extension === "webp") &&
     name.startsWith(prefix) &&
-    name.endsWith(".png") &&
-    name.length === prefix.length + SHA256_HEX_LENGTH + ".png".length
+    name.length === prefix.length + SHA256_HEX_LENGTH + extension.length + 1
   );
 }
 
@@ -181,12 +196,36 @@ export async function materializeExcerpt(options: {
   outcome: ExcerptOutcome;
   signal?: AbortSignal;
   valid?: () => boolean;
+  decodeWebp?: WebpDecoder;
 }): Promise<MaterializedExcerpt> {
   const { app, request, outcome, settings } = options;
   if (!settings["attachment.import"])
     return { kind: "unavailable", reason: "disabled" };
   if (outcome.kind === "unavailable")
     return { kind: "unavailable", reason: "source" };
+  const explicitFormat = outcome.format !== undefined;
+  let payload: ExcerptImagePayload;
+  try {
+    payload = normalizeExcerptPayload(outcome);
+    if (
+      explicitFormat &&
+      (payload.format === "webp"
+        ? !usableExcerptWebp(payload.bytes)
+        : !usableExcerptPng(
+            Buffer.from(
+              payload.bytes.buffer,
+              payload.bytes.byteOffset,
+              payload.bytes.byteLength,
+            ),
+          ))
+    )
+      throw new Error("Excerpt bytes do not match their declared format");
+    if (payload.format === "webp")
+      await verifyWebpDecodes(payload.bytes, options.decodeWebp);
+  } catch (error) {
+    logger.debug("Excerpt bytes failed format validation", { error });
+    return { kind: "unavailable", reason: "write" };
+  }
   const assertCurrent = () => {
     options.signal?.throwIfAborted();
     if (options.valid && !options.valid())
@@ -204,11 +243,12 @@ export async function materializeExcerpt(options: {
       throw new Error("Excerpt import requires a filesystem vault");
     const digest = createHash("sha256")
       .update(excerptKey(request))
-      .update(outcome.bytes)
+      .update(payload.format)
+      .update(payload.bytes)
       .digest("hex");
     const path = joinFolderPath(
       folder,
-      `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.png`,
+      `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.${payload.extension}`,
     );
     const destination = adapter.getFullPath(path);
     const previous = publications.get(destination);
@@ -222,7 +262,7 @@ export async function materializeExcerpt(options: {
       // Publish only complete bytes, using an exclusive hard link to preserve every existing version.
       try {
         await using file = await open(temporary, "wx");
-        await file.writeFile(outcome.bytes, { signal: options.signal });
+        await file.writeFile(payload.bytes, { signal: options.signal });
         await file.sync();
         assertCurrent();
         try {
@@ -231,7 +271,7 @@ export async function materializeExcerpt(options: {
           if (!isErrno(error, "EEXIST")) throw error;
         }
         const actual = await readFile(destination);
-        if (!actual.equals(outcome.bytes))
+        if (!actual.equals(payload.bytes))
           throw new Error(
             "Excerpt destination does not match its content identity",
           );
@@ -250,7 +290,11 @@ export async function materializeExcerpt(options: {
       assertCurrent();
       if (!app.vault.getFileByPath(path))
         throw new Error("Published excerpt is not registered in the vault");
-      return { kind: "saved", path, outcome };
+      return {
+        kind: "saved",
+        path,
+        outcome: { ...outcome, ...payload },
+      };
     } finally {
       gate.resolve();
       if (publications.get(destination) === gate.promise)

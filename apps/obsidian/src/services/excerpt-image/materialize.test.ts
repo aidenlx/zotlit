@@ -17,6 +17,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import { defaults } from "@/services/settings/schema";
 
 import { redPng as png, corruptPng } from "./__fixtures__/png";
+import { corruptWebp, webp } from "./__fixtures__/webp";
 import { materializeExcerpt, retainExcerpt } from "./materialize";
 import type { ExcerptRequest } from "./service";
 
@@ -45,6 +46,12 @@ const request: ExcerptRequest = {
   pdfPath: "/paper.pdf",
   zoteroPngPath: null,
 };
+
+const decodeWebp = async () => ({
+  width: 2,
+  height: 2,
+  data: new Uint8Array(2 * 2 * 4),
+});
 
 async function fixture() {
   const parent = join(
@@ -85,6 +92,7 @@ async function fixture() {
   return {
     root,
     app,
+    settings,
     createFolder,
     adapter,
     files,
@@ -192,6 +200,162 @@ it("publishes complete immutable versions and isolates source and library identi
   expect(await readFile(`${f.root}/${paths[2]}`)).toEqual(
     Buffer.from([44, 55]),
   );
+});
+
+it("publishes generated WebP bytes once with a matching immutable extension", async () => {
+  await using f = await fixture();
+  const bytes = webp();
+  const outcome = {
+    kind: "available" as const,
+    bytes,
+    format: "webp" as const,
+    mimeType: "image/webp" as const,
+    extension: "webp" as const,
+    provenance: "rendered" as const,
+    freshness: "checked" as const,
+  };
+  const first = await materializeExcerpt({
+    app: f.app,
+    notePath: "Paper.md",
+    settings: f.settings,
+    request,
+    outcome,
+    decodeWebp,
+  });
+  const second = await materializeExcerpt({
+    app: f.app,
+    notePath: "Paper.md",
+    settings: f.settings,
+    request,
+    outcome,
+    decodeWebp,
+  });
+  expect(first).toMatchObject({ kind: "saved", outcome });
+  expect(second).toMatchObject({ kind: "saved", outcome });
+  if (first.kind !== "saved" || second.kind !== "saved") return;
+  expect(first.path).toMatch(/\.webp$/);
+  expect(second.path).toBe(first.path);
+  expect(await readFile(`${f.root}/${first.path}`)).toEqual(Buffer.from(bytes));
+  expect(await readdir(join(f.root, "Images"))).toEqual([
+    first.path.slice("Images/".length),
+  ]);
+});
+
+it("does not publish a structurally valid WebP that the native decoder rejects", async () => {
+  await using f = await fixture();
+  expect(
+    await materializeExcerpt({
+      app: f.app,
+      notePath: "Paper.md",
+      settings: f.settings,
+      request,
+      decodeWebp: async () => {
+        throw new Error("decoder rejected the bitstream");
+      },
+      outcome: {
+        kind: "available",
+        bytes: webp(),
+        format: "webp",
+        mimeType: "image/webp",
+        extension: "webp",
+        provenance: "rendered",
+        freshness: "checked",
+      },
+    }),
+  ).toEqual({ kind: "unavailable", reason: "write" });
+});
+
+it.each(["malformed", "oversized"] as const)(
+  "rejects an explicit WebP asset when it is %s",
+  async (kind) => {
+    await using f = await fixture();
+    const bytes =
+      kind === "malformed" ? corruptWebp : new Uint8Array(32 * 1024 * 1024 + 1);
+    expect(
+      await materializeExcerpt({
+        app: f.app,
+        notePath: "Paper.md",
+        settings: f.settings,
+        request,
+        decodeWebp,
+        outcome: {
+          kind: "available",
+          bytes,
+          format: "webp",
+          mimeType: "image/webp",
+          extension: "webp",
+          provenance: "rendered",
+          freshness: "checked",
+        },
+      }),
+    ).toEqual({ kind: "unavailable", reason: "write" });
+  },
+);
+
+it.each(["malformed", "oversized"] as const)(
+  "does not retain an invalid owned WebP asset (%s)",
+  async (kind) => {
+    await using f = await fixture();
+    const saved = await materializeExcerpt({
+      app: f.app,
+      notePath: "Paper.md",
+      settings: f.settings,
+      request,
+      decodeWebp,
+      outcome: {
+        kind: "available",
+        bytes: webp(),
+        format: "webp",
+        mimeType: "image/webp",
+        extension: "webp",
+        provenance: "rendered",
+        freshness: "checked",
+      },
+    });
+    if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+    if (kind === "malformed")
+      await writeFile(`${f.root}/${saved.path}`, corruptWebp);
+    else await truncate(`${f.root}/${saved.path}`, 32 * 1024 * 1024 + 1);
+    expect(
+      await retainExcerpt({
+        app: f.app,
+        request,
+        paths: [saved.path],
+        decodeWebp,
+      }),
+    ).toBeUndefined();
+  },
+);
+
+it("does not retain a structurally valid WebP that the native decoder rejects", async () => {
+  await using f = await fixture();
+  const saved = await materializeExcerpt({
+    app: f.app,
+    notePath: "Paper.md",
+    settings: f.settings,
+    request,
+    decodeWebp,
+    outcome: {
+      kind: "available",
+      bytes: webp(),
+      format: "webp",
+      mimeType: "image/webp",
+      extension: "webp",
+      provenance: "rendered",
+      freshness: "checked",
+    },
+  });
+  if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
+  expect(
+    await retainExcerpt({
+      app: f.app,
+      request,
+      paths: [saved.path],
+      decodeWebp: async () => {
+        throw new Error("decoder rejected the bitstream");
+      },
+    }),
+  ).toBeUndefined();
 });
 
 it("refuses a corrupt occupied target without overwriting it", async () => {
@@ -354,7 +518,11 @@ it.each(["truncated", "idat", "scanline"] as const)(
     const saved = await f.save(request, corruptPng(kind));
     if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
     expect(
-      await retainExcerpt({ app: f.app, request, paths: [saved.path] }),
+      await retainExcerpt({
+        app: f.app,
+        request,
+        paths: [saved.path],
+      }),
     ).toBeUndefined();
   },
 );

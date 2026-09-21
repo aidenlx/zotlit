@@ -2,10 +2,11 @@
 import { openDB } from "idb";
 import type { DBSchema } from "idb";
 
+import { normalizeExcerptPayload } from "./format";
 import type { ExcerptCache, ExcerptEntry } from "./service";
 
 export const EXCERPT_CACHE_BUDGET = 256 * 1024 * 1024;
-const SCHEMA_VERSION = 1;
+export const EXCERPT_CACHE_SCHEMA_VERSION = 2;
 
 export interface ExcerptStore extends ExcerptCache, Disposable {
   clear(): Promise<void>;
@@ -35,7 +36,7 @@ export async function openExcerptStore(
 ): Promise<ExcerptStore> {
   const db = await openDB<ExcerptSchema>(
     `${appId}-zotlit-excerpt-images`,
-    SCHEMA_VERSION,
+    EXCERPT_CACHE_SCHEMA_VERSION,
     {
       upgrade(database) {
         while (database.objectStoreNames.length)
@@ -58,21 +59,29 @@ export async function openExcerptStore(
       const images = tx.objectStore("images");
       const accounting = tx.objectStore("accounting");
       const record = await images.get(key);
+      let payload: ReturnType<typeof normalizeExcerptPayload> | undefined;
       if (
         record &&
         (!pdf ||
           (pdf.size === record.pdf.size && pdf.mtimeMs === record.pdf.mtimeMs))
       ) {
+        try {
+          payload = normalizeExcerptPayload(record);
+        } catch {
+          await tx.done;
+          return undefined;
+        }
         const state = (await accounting.get("state"))!;
         record.lastAccess = ++state.clock;
         await images.put(record);
         await accounting.put(state, "state");
       }
       await tx.done;
-      return record && { bytes: record.bytes, pdf: record.pdf };
+      return payload && record ? { ...payload, pdf: record.pdf } : undefined;
     },
     async put(key, entry) {
-      const byteCount = entry.bytes.byteLength;
+      const payload = normalizeExcerptPayload(entry);
+      const byteCount = payload.bytes.byteLength;
       if (byteCount > budget) return;
       const tx = db.transaction(["images", "accounting"], "readwrite");
       void tx.done.catch(() => undefined);
@@ -84,7 +93,13 @@ export async function openExcerptStore(
       };
       const previous = await images.get(key);
       state.totalBytes += byteCount - (previous?.byteCount ?? 0);
-      await images.put({ ...entry, key, byteCount, lastAccess: ++state.clock });
+      await images.put({
+        ...payload,
+        pdf: entry.pdf,
+        key,
+        byteCount,
+        lastAccess: ++state.clock,
+      });
       let cursor = await images.index("access").openCursor();
       while (cursor && state.totalBytes > budget) {
         state.totalBytes -= cursor.value.byteCount;

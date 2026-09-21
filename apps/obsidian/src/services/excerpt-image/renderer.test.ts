@@ -4,17 +4,31 @@ import { loadPdfJs } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { redPng } from "./__fixtures__/png";
-import { ExcerptRenderer } from "./renderer";
+import { abortable, ExcerptRenderer } from "./renderer";
 import { ExcerptImageService } from "./service";
 import type { ExcerptRequest } from "./service";
+
+vi.mock("obsidian", async (original) => ({
+  ...(await original<typeof import("obsidian")>()),
+  loadPdfJs: vi.fn(),
+}));
+vi.mock("./encoder", async (original) => ({
+  ...(await original<typeof import("./encoder")>()),
+  encodeLosslessWebp: vi.fn(
+    async (canvas: { width: number; height: number }) => ({
+      bytes: redPng,
+      format: "png" as const,
+      mimeType: "image/png" as const,
+      extension: "png" as const,
+      width: canvas.width,
+      height: canvas.height,
+    }),
+  ),
+}));
 
 vi.mock("node:fs/promises", async (original) => ({
   ...(await original<typeof import("node:fs/promises")>()),
   open: vi.fn(),
-}));
-vi.mock("obsidian", async (original) => ({
-  ...(await original<typeof import("obsidian")>()),
-  loadPdfJs: vi.fn(),
 }));
 
 function fixture() {
@@ -152,17 +166,24 @@ function fixture() {
       width: 0,
       height: 0,
       getContext: () => ({}),
-      toBlob(callback: (blob: Blob) => void) {
-        measured.push([this.width, this.height]);
-        if (state.stage === "encode") {
-          started.resolve();
-          return;
-        }
-        callback(new Blob([new Uint8Array([137, 80, 78, 71])]));
-      },
     };
     canvases.push(canvas);
     return canvas as unknown as HTMLCanvasElement;
+  };
+  const encode = async (canvas: HTMLCanvasElement, signal: AbortSignal) => {
+    measured.push([canvas.width, canvas.height]);
+    if (state.stage === "encode") {
+      started.resolve();
+      await abortable(never, signal);
+    }
+    return {
+      bytes: redPng,
+      format: "png" as const,
+      mimeType: "image/png" as const,
+      extension: "png" as const,
+      width: canvas.width,
+      height: canvas.height,
+    };
   };
   const renderer = new ExcerptRenderer({
     load,
@@ -172,6 +193,7 @@ function fixture() {
       return controller.signal;
     },
     canvas,
+    encode,
   });
   const request: ExcerptRequest = {
     annotation: {
@@ -249,13 +271,11 @@ it("loads one document for distinct annotations and closes it once at shutdown",
       width: 0,
       height: 0,
       getContext: expect.any(Function),
-      toBlob: expect.any(Function),
     },
     {
       width: 0,
       height: 0,
       getContext: expect.any(Function),
-      toBlob: expect.any(Function),
     },
   ]);
   expect(f.destroys[0]).not.toHaveBeenCalled();

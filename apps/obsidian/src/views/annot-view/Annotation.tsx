@@ -567,7 +567,9 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
         const url =
           result.kind === "available"
             ? URL.createObjectURL(
-                new Blob([new Uint8Array(result.bytes)], { type: "image/png" }),
+                new Blob([new Uint8Array(result.bytes)], {
+                  type: result.mimeType ?? "image/png",
+                }),
               )
             : null;
         transition({ kind: "resolved", target, url });

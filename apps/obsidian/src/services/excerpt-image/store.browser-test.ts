@@ -1,4 +1,5 @@
 // Runs in a disposable Electron renderer so transactions use Chromium's IndexedDB.
+import { losslessWebp } from "./__fixtures__/webp";
 import { openExcerptStore } from "./store";
 
 function check(condition: unknown, message: string): asserts condition {
@@ -7,9 +8,16 @@ function check(condition: unknown, message: string): asserts condition {
 
 export async function run(): Promise<string[]> {
   const passed: string[] = [];
-  const entry = (count: number, marker = 7) => ({
+  const entry = (
+    count: number,
+    marker = 7,
+    format: "png" | "webp" = "png",
+  ) => ({
     bytes: new Uint8Array(count).fill(marker),
     pdf: { size: 100, mtimeMs: 10 },
+    format,
+    mimeType: `image/${format}` as `image/${"png" | "webp"}`,
+    extension: format,
   });
   {
     using store = await openExcerptStore("restart", 10);
@@ -18,9 +26,23 @@ export async function run(): Promise<string[]> {
   {
     using store = await openExcerptStore("restart", 10);
     using otherVault = await openExcerptStore("other-vault", 10);
+    using formats = await openExcerptStore(
+      "formats",
+      losslessWebp.byteLength + 1,
+    );
     check(
       (await store.get("first"))?.bytes[0] === 7,
       "Restart lost generated pixels",
+    );
+    await formats.put("webp", {
+      ...entry(losslessWebp.byteLength, 13, "webp"),
+      bytes: new Uint8Array(losslessWebp),
+    });
+    check(
+      (await formats.get("webp"))?.format === "webp" &&
+        (await formats.get("webp"))?.mimeType === "image/webp" &&
+        (await formats.get("webp"))?.extension === "webp",
+      "Mixed PNG/WebP metadata was not retained",
     );
     check(
       (await otherVault.get("first")) === undefined,

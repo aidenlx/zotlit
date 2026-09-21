@@ -5,6 +5,12 @@ import { Service } from "@/services/service-base";
 
 import { excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import { normalizeExcerptPayload } from "./format";
+import type {
+  ExcerptFormat,
+  ExcerptImageMetadata,
+  ExcerptImagePayload,
+} from "./format";
 import { usableExcerptPng } from "./png";
 import { abortable, ExcerptRenderer } from "./renderer";
 import type { ExcerptRendererDiagnostics } from "./renderer";
@@ -17,6 +23,11 @@ export {
   excerptSourceIdentity,
 } from "./contract";
 export type { ExcerptRequest } from "./contract";
+export type {
+  ExcerptFormat,
+  ExcerptImageMetadata,
+  ExcerptImagePayload,
+} from "./format";
 export { excerptRequest } from "./request";
 
 const logger = getLogger("excerpt-image");
@@ -29,6 +40,11 @@ export interface PdfStamp {
 export interface ExcerptEntry {
   bytes: Uint8Array;
   pdf: PdfStamp;
+  format?: ExcerptFormat;
+  mimeType?: ExcerptImageMetadata["mimeType"];
+  extension?: ExcerptFormat;
+  width?: number;
+  height?: number;
 }
 export interface ExcerptCache {
   get(key: string, pdf?: PdfStamp): Promise<ExcerptEntry | undefined>;
@@ -47,6 +63,11 @@ export type ExcerptOutcome =
   | {
       kind: "available";
       bytes: Uint8Array;
+      format?: ExcerptFormat;
+      mimeType?: ExcerptImageMetadata["mimeType"];
+      extension?: ExcerptFormat;
+      width?: number;
+      height?: number;
       provenance: "rendered" | "cache" | "zotero";
       freshness: "checked" | "unchecked" | "uncertain";
     }
@@ -60,7 +81,7 @@ export interface ExcerptDeps {
   render?: (
     request: ExcerptRequest,
     signal: AbortSignal,
-  ) => Promise<Uint8Array>;
+  ) => Promise<Uint8Array | ExcerptImagePayload>;
 }
 
 export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
@@ -325,14 +346,26 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       (!pdf ||
         (pdf.size === cached.pdf.size && pdf.mtimeMs === cached.pdf.mtimeMs))
     ) {
-      this.#cacheHits++;
-      logger.debug("Excerpt cache matched", { key, freshnessChecked: !!pdf });
-      return {
-        kind: "available",
-        bytes: cached.bytes,
-        provenance: "cache",
-        freshness: pdf ? "checked" : "unchecked",
-      };
+      let payload: ExcerptImagePayload | undefined;
+      try {
+        payload = normalizeExcerptPayload(cached);
+      } catch (error) {
+        logger.debug("Excerpt cache metadata was inconsistent", { key, error });
+        payload = undefined;
+      }
+      if (payload) {
+        this.#cacheHits++;
+        logger.debug("Excerpt cache matched", {
+          key,
+          freshnessChecked: !!pdf,
+        });
+        return {
+          kind: "available",
+          ...payload,
+          provenance: "cache",
+          freshness: pdf ? "checked" : "unchecked",
+        };
+      }
     }
     logger.trace("Excerpt cache missed; rendering", {
       key,
@@ -340,23 +373,26 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       freshnessChecked: !!pdf,
     });
     try {
-      const bytes = await (this.#deps.render
+      const rendered = await (this.#deps.render
         ? this.#deps.render(request, signal)
         : this.#renderer!.render(request, signal));
       signal.throwIfAborted();
+      const payload = normalizeExcerptPayload(
+        rendered instanceof Uint8Array ? { bytes: rendered } : rendered,
+      );
       this.#cropRenders++;
       if (pdf && generation === this.#generation)
-        await persistent?.put(key, { bytes, pdf }).catch((error) => {
+        await persistent?.put(key, { ...payload, pdf }).catch((error) => {
           logger.debug("Excerpt cache write failed", { key, error });
         });
       logger.debug("Excerpt rendered", {
         key,
-        bytes: bytes.length,
+        bytes: payload.bytes.length,
         freshnessChecked: !!pdf,
       });
       return {
         kind: "available",
-        bytes,
+        ...payload,
         provenance: "rendered",
         freshness: pdf ? "checked" : "unchecked",
       };
@@ -387,7 +423,7 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
           });
           return {
             kind: "available",
-            bytes,
+            ...normalizeExcerptPayload({ bytes }),
             provenance: "zotero",
             freshness: "uncertain",
           };
