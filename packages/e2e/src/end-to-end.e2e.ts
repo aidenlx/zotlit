@@ -48,6 +48,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { verifyAnnotationDrag } from "./annotation-drag.ts";
 import { verifyAnnotationInsert } from "./annotation-insert.ts";
+import { verifyReaderBackedExcerpts } from "./excerpt-acceptance.ts";
 import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import {
   cli,
@@ -492,6 +493,13 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   it("renders the deterministic PDF matrix and reuses its cache", async () => {
     await verifyExcerptRendering(vaultId);
   }, 120000);
+
+  // The reader-backed path against the Fixture's own Attachment: its
+  // Annotations, its Item's literature note, and Obsidian's PDF reader holding
+  // the same file the excerpt resolves from.
+  it("crops from an open reader's document, reuses it for a note import, and falls back when it closes", async () => {
+    await verifyReaderBackedExcerpts(vaultId);
+  }, 180000);
 
   it.each(["main", "popout"] as const)(
     "inserts a captured annotation safely in a %s editor",
