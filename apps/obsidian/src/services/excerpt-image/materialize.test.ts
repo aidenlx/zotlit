@@ -60,6 +60,19 @@ const request: ExcerptRequest = {
   zoteroPngPath: null,
 };
 
+/**
+ * The decoder the host supplies in production. A Node test process has none of
+ * its own, so a test that crosses a WebP boundary states which host it drives:
+ * one whose decoder reconstructs the pixels, or one that cannot. The real
+ * decoder is `webp-pixels.test.ts`'s Electron trial.
+ */
+function stubWebpDecoder(host: "decodes" | "fails") {
+  vi.stubGlobal("createImageBitmap", async () => {
+    if (host === "fails") throw new Error("WebP decode failed");
+    return { close: () => undefined };
+  });
+}
+
 async function fixture() {
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
@@ -102,6 +115,7 @@ async function fixture() {
     createFolder,
     adapter,
     files,
+    settings,
     save: (input = request, image = pngImage, signal?: AbortSignal) =>
       materializeExcerpt({
         signal,
@@ -236,6 +250,12 @@ it("returns a destination failure before any embed can be emitted", async () => 
 
 it("publishes a lossless WebP asset under its own extension and retains it", async () => {
   await using f = await fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  // The vault read decodes what it links, so this host's decoder must work.
+  stubWebpDecoder("decodes");
   const bytes = Buffer.from(chromiumLosslessWebp);
   const saved = await f.save(request, { bytes, format: WEBP_FORMAT });
   if (saved.kind !== "saved") throw new Error("Fixture image was not saved");
@@ -250,6 +270,12 @@ it("publishes a lossless WebP asset under its own extension and retains it", asy
 
 it("keeps legacy PNG assets retainable beside a WebP asset", async () => {
   await using f = await fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  // The vault read decodes what it links, so this host's decoder must work.
+  stubWebpDecoder("decodes");
   const legacy = await f.save(request, pngImage);
   const webp = await f.save(request, {
     bytes: Buffer.from(chromiumLosslessWebp),
@@ -313,24 +339,64 @@ it("refuses a vault WebP whose pixels the host's decoder cannot reconstruct", as
   await mkdir(`${f.root}/Images`);
   const damaged = `Images/zotlit-excerpt-${identity}-${"a".repeat(64)}.webp`;
   await writeFile(`${f.root}/${damaged}`, headerOnly);
-  vi.stubGlobal("createImageBitmap", async () => {
-    throw new Error("WebP decode failed");
-  });
+  stubWebpDecoder("fails");
   expect(
     await retainExcerpt({ app: f.app, request, paths: [damaged] }),
   ).toBeUndefined();
   // Pixels the same host does reconstruct are still retained.
   const decodable = `Images/zotlit-excerpt-${identity}-${"b".repeat(64)}.webp`;
   await writeFile(`${f.root}/${decodable}`, chromiumLosslessWebp);
-  vi.stubGlobal("createImageBitmap", async () => ({
-    close: () => undefined,
-  }));
+  stubWebpDecoder("decodes");
   expect(
     await retainExcerpt({ app: f.app, request, paths: [decodable] }),
   ).toEqual({ kind: "retained", path: decodable });
   expect(await readFile(`${f.root}/${decodable}`)).toEqual(
     Buffer.from(chromiumLosslessWebp),
   );
+});
+
+it("refuses a store WebP whose pixels the host's decoder cannot reconstruct", async () => {
+  await using f = await fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  // A record `storedImage()` accepted: a complete container with no image data,
+  // which reaches publication as available cache bytes and only the decoder
+  // tells apart from the pixels its name and link claim.
+  const headerOnly = sizedWebp(8, 8);
+  expect(usableExcerptWebp(headerOnly)).toBe(true);
+  const publish = (bytes: Uint8Array, provenance: "cache" | "rendered") =>
+    materializeExcerpt({
+      app: f.app,
+      notePath: "Paper.md",
+      settings: f.settings,
+      request,
+      outcome: availableOutcome({
+        bytes,
+        format: WEBP_FORMAT,
+        provenance,
+        freshness: "checked",
+      }),
+    });
+  stubWebpDecoder("fails");
+  expect(await publish(headerOnly, "cache")).toEqual({
+    kind: "unavailable",
+    reason: "source",
+  });
+  expect(await readdir(f.root)).toEqual([]);
+  // Bytes this process's own encoder produced are already decoded output.
+  expect((await publish(headerOnly, "rendered")).kind).toBe("saved");
+  // Pixels the same host does reconstruct are still published.
+  stubWebpDecoder("decodes");
+  expect((await publish(chromiumLosslessWebp, "cache")).kind).toBe("saved");
+  // A host with no decoder cannot draw these pixels either, so the bytes are
+  // refused rather than admitted uninspected.
+  vi.stubGlobal("createImageBitmap", undefined);
+  expect(await publish(chromiumLosslessWebp, "cache")).toEqual({
+    kind: "unavailable",
+    reason: "source",
+  });
 });
 
 it("owns published assets of either extension and nothing else", () => {

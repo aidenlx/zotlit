@@ -39,16 +39,19 @@ const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
 const SHA256_HEX_LENGTH = 64;
 
 /**
- * A retained asset must still decode as the container its bytes claim.
+ * Whether bytes read back from outside this process still decode as the
+ * container they claim.
  *
- * `format.ts` owns the payload check both readers share; the vault read is the
- * one place that deepens it, because these bytes came from outside this process:
- * PNG must also inflate to the scanlines its header declares (`png.ts`), and
- * WebP must also decode to the pixels its container declares (`webp-pixels.ts`).
- * That depth stays here rather than in `format.ts`, which the cache read bundles
- * without a decoder for a check that runs before every hit.
+ * `format.ts` owns the payload check every reader shares; this is where the two
+ * readers holding bytes that came from outside this process deepen it — the
+ * vault read in {@link retainExcerpt}, and the publication of an outcome this
+ * process did not encode. PNG must also inflate to the scanlines its header
+ * declares (`png.ts`), and WebP must also decode to the pixels its container
+ * declares (`webp-pixels.ts`). That depth stays here rather than in `format.ts`,
+ * which the cache read bundles without a decoder for a check that runs before
+ * every hit.
  */
-async function usableRetainedAsset(bytes: Uint8Array): Promise<boolean> {
+async function usableExternalAsset(bytes: Uint8Array): Promise<boolean> {
   const format = detectExcerptImageFormat(bytes);
   if (!format || !isExcerptPayload(format, bytes)) return false;
   if (format.format === "webp") return usableExcerptWebpPixels(bytes);
@@ -118,7 +121,7 @@ export async function retainExcerpt(options: {
       )
         continue;
       const bytes = await readPreviousImage(actualPath);
-      if (!(await usableRetainedAsset(bytes))) continue;
+      if (!(await usableExternalAsset(bytes))) continue;
       // Legacy names carry no source identity. The current source's bytes must prove ownership.
       if (
         !owned &&
@@ -195,6 +198,21 @@ export async function materializeExcerpt(options: {
   // name and link claim the declared extension.
   if (!isExcerptImage(outcome)) {
     logger.debug("Excerpt payload does not match its format", {
+      format: outcome.format.format,
+      bytes: outcome.bytes.byteLength,
+    });
+    return { kind: "unavailable", reason: "source" };
+  }
+  // A rendered outcome's bytes are this process's own encoder output; every
+  // other outcome read them from outside it, where a persistent record can hold
+  // a container whose image data is damaged. Those must decode before they
+  // become an asset whose name and link claim that image.
+  if (
+    outcome.provenance !== "rendered" &&
+    !(await usableExternalAsset(outcome.bytes))
+  ) {
+    logger.debug("Excerpt payload has no usable pixels", {
+      provenance: outcome.provenance,
       format: outcome.format.format,
       bytes: outcome.bytes.byteLength,
     });
