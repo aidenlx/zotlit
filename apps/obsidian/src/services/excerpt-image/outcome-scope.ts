@@ -22,9 +22,6 @@ export const EXCERPT_OUTCOME_BYTES = 32 * 1024 * 1024;
 /** Outcome entries one batch retains, failures included. */
 export const EXCERPT_OUTCOME_ENTRIES = 256;
 
-/** Distinguishes one batch's scope from another's in the pending-request key. */
-let scopes = 0;
-
 /** What a retained record is: validated pixels, uncertain fallback pixels, or a failure. */
 type OutcomeVerdict = "validated" | "fallback" | "failure";
 
@@ -84,14 +81,15 @@ function verdictOf(outcome: ExcerptOutcome): OutcomeVerdict {
  * The outcomes one initiating batch reuses. Every note that batch writes —
  * the Literature Note, its Imported Notes, and the Child Notes imported through
  * its template — resolves through the same scope, so they share one retention;
- * a simultaneous batch owns another and stays isolated.
+ * a simultaneous batch owns another and stays isolated. Only what a batch keeps
+ * is its own: the resolution itself is shared across batches when it is the
+ * same excerpt in flight, and each batch retains that one answer for itself.
  *
  * The batch that creates the scope disposes it when its consumers have settled.
  * Retention then ends for good: a consumer admitted after that point neither
  * reads nor refills it.
  */
 export class ExcerptOutcomeScope implements AsyncDisposable {
-  readonly id = ++scopes;
   readonly #bytesLimit: number;
   readonly #entryLimit: number;
   /** Insertion order is recency: the first key is the least recently used. */

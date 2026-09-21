@@ -317,6 +317,50 @@ it("releases its renderer after a standalone resolution", async () => {
   expect(service.rendererDiagnostics?.snapshot().documentOpen).toBe(false);
 });
 
+it("renders only after the resident document has been destroyed", async () => {
+  await using f = fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  vi.stubGlobal("document", { createElement: f.canvas });
+  vi.mocked(loadPdfJs).mockImplementation(f.load);
+  const destroying = Promise.withResolvers<void>();
+  f.state.destroyGate = destroying.promise;
+  // Whatever this test asserts, the fixture's document must be allowed to close.
+  cleanup.defer(() => destroying.resolve());
+  const service = cleanup.use(
+    new ExcerptImageService({
+      stamp: async () => ({ size: 4, mtimeMs: 1 }),
+    }),
+  );
+
+  const operation = service.operation();
+  await operation.resolve(f.request);
+  // The operation ends, and its teardown holds the render slot until the
+  // resident document is destroyed.
+  void operation[Symbol.asyncDispose]();
+  await f.destroyStarted.promise;
+  const second = service.resolve(f.request);
+  // Wait for the second resolution to reach the render queue: parked behind the
+  // teardown, or — without the serialization — already rendering.
+  await vi.waitFor(() => {
+    expect(service.queueDiagnostics.queued === 1 || f.tasks.length === 2).toBe(
+      true,
+    );
+  });
+  const renderedWhileDestroying = f.tasks.length;
+
+  destroying.resolve();
+  expect(await second).toMatchObject({ provenance: "rendered" });
+  // Nothing rendered while the resident document was being destroyed, and the
+  // render that waited loaded the file itself instead of reusing the closing
+  // session — which it could only do once the document was gone.
+  expect(renderedWhileDestroying).toBe(1);
+  expect(f.getDocument).toHaveBeenCalledTimes(2);
+  expect(f.tasks).toHaveLength(2);
+});
+
 it.each(["scope", "source", "library", "attachment", "path", "stamp"])(
   "replaces the resident document on %s changes",
   async (change) => {

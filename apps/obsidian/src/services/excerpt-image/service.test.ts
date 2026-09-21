@@ -192,6 +192,92 @@ describe("Excerpt Image resolution", () => {
     expect(render).toHaveBeenCalledTimes(129);
   });
 
+  it("waits at full capacity past the job deadline and still renders the image", async () => {
+    const limits = new Map<number, AbortController>();
+    using _deadlines = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((milliseconds) => {
+        const controller = new AbortController();
+        limits.set(milliseconds, controller);
+        return controller.signal;
+      });
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({ render });
+    const blocked = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `BLOCKED${index}` },
+      }),
+    );
+    await started.promise;
+    const waiting = service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: "WAITING" },
+    });
+    await vi.waitFor(() =>
+      expect(service.queueDiagnostics).toMatchObject({ awaiting: 1 }),
+    );
+    // Every slot is held, so the last deadline this producer created is its own
+    // preflight's. Letting it expire must not end the wait: a full bound is not
+    // a resolution, and the render's own deadline starts with its turn.
+    limits.get(35_000)!.abort(new Error("job deadline"));
+    const stillWaiting = service.queueDiagnostics;
+    gate.resolve(rendered);
+    const outcomes = await Promise.allSettled([...blocked, waiting]);
+    expect(stillWaiting).toMatchObject({ awaiting: 1, admitted: 128 });
+    expect(
+      outcomes.map(
+        (settled) =>
+          settled.status === "fulfilled" && settled.value.kind === "available",
+      ),
+    ).toStrictEqual(Array.from({ length: 129 }, () => true));
+    expect(render).toHaveBeenCalledTimes(129);
+  });
+
+  it("leaves a full-capacity wait promptly when its caller cancels", async () => {
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({ render });
+    const blocked = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `BLOCKED${index}` },
+      }),
+    );
+    await started.promise;
+    const controller = new AbortController();
+    const waiting = service.resolve(
+      { ...request, annotation: { ...request.annotation, key: "WAITING" } },
+      controller.signal,
+    );
+    await vi.waitFor(() =>
+      expect(service.queueDiagnostics).toMatchObject({ awaiting: 1 }),
+    );
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    // The cancelled producer left no slot and no wait behind it.
+    expect(service.queueDiagnostics).toMatchObject({
+      admitted: 128,
+      awaiting: 0,
+    });
+    gate.resolve(rendered);
+    expect(
+      (await Promise.all(blocked)).every(
+        (outcome) => outcome.kind === "available",
+      ),
+    ).toBe(true);
+    expect(render).toHaveBeenCalledTimes(128);
+  });
+
   it("resolves a cache hit while every admitted slot is held", async () => {
     const f = fixture();
     await using service = f.service;
@@ -1179,6 +1265,56 @@ describe("Excerpt latest references", () => {
     expect(f.references.get(record)?.fingerprint).toBe(
       excerptFingerprint(saved.annotation),
     );
+  });
+
+  it("takes the newer saved snapshot when it joins the older one's live job", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const references = new Map<string, ExcerptIdentity>();
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(async () => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render,
+      read: async () => fallback,
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
+      },
+    });
+
+    // A is in flight, a saved edit to B is admitted behind it, and the user
+    // saves A again: that third request joins the first one's job instead of
+    // admitting anything of its own.
+    const first = recolor("#ff0000", 1);
+    const second = recolor("#00ff00", 2);
+    const latest = recolor("#ff0000", 3);
+    const a = service.resolve(first);
+    const b = service.resolve(second);
+    await started.promise;
+    const joined = service.resolve(latest);
+    gate.resolve(rendered);
+    await Promise.all([a, b, joined]);
+
+    // The joining caller carries the newest saved pixels, so A's answer is the
+    // one that becomes the reference and B's older one cannot move it back.
+    expect(references.get(record)).toMatchObject({
+      key: excerptKey(latest),
+      fingerprint: excerptFingerprint(latest.annotation),
+    });
+    expect(references.get(record)?.fingerprint).not.toBe(
+      excerptFingerprint(second.annotation),
+    );
+    expect(render).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the newest saved pixels when a stale result lands last", async () => {

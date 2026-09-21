@@ -228,6 +228,20 @@ export class ExcerptPdfQueue {
   }
 
   /**
+   * Renderer teardown as queue work: it takes the single render slot, so a
+   * render admitted after it waits for the resident document to be destroyed
+   * instead of reusing a session that is closing. Its place in line is taken
+   * when teardown is asked for, so the renders already admitted keep their
+   * order and later ones come after the document is gone.
+   */
+  teardown<T>(task: () => Promise<T>): Promise<T> {
+    return this.#render.add(task, {
+      pdf: "",
+      sequence: this.nextSequence(),
+    });
+  }
+
+  /**
    * Take one of the admitted slots, waiting at capacity. The check and the
    * reservation are one synchronous step, so producers that call together
    * cannot both take the last slot.

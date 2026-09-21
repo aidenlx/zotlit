@@ -234,20 +234,32 @@ describe("Excerpt outcome scope", () => {
     await operation[Symbol.asyncDispose]();
   });
 
-  it("keeps simultaneous batches isolated", async () => {
+  it("shares one resolution across simultaneous batches and keeps what each retains", async () => {
     const f = fixture({ failWrites: true });
     await using service = f.service;
     await using first = new ExcerptOutcomeScope();
     await using second = new ExcerptOutcomeScope();
     await using one = service.operation({ outcomes: first });
     await using two = service.operation({ outcomes: second });
-    const [a, b] = await Promise.all([
+    // The store keeps nothing here, so only each batch's own retention can
+    // answer its repeats.
+    const [a, b, unscoped] = await Promise.all([
       one.resolve(request),
       two.resolve(request),
+      service.resolve(request),
     ]);
-    expect(f.render).toHaveBeenCalledTimes(2);
-    expect(a).not.toBe(b);
+    // Identical active work is one admission: the two batches and the
+    // scope-less consumer render it once.
+    expect(f.render).toHaveBeenCalledTimes(1);
+    expect(a).toMatchObject({ kind: "available" });
+    expect(b).toMatchObject({ kind: "available" });
+    expect(unscoped).toMatchObject({ kind: "available" });
+    // Each batch retains that one answer for itself, and reads only its own.
     expect(first.diagnostics).toMatchObject({ retained: 1, hits: 0 });
+    expect(second.diagnostics).toMatchObject({ retained: 1, hits: 0 });
+    await one.resolve(request);
+    expect(f.render).toHaveBeenCalledTimes(1);
+    expect(first.diagnostics).toMatchObject({ retained: 1, hits: 1 });
     expect(second.diagnostics).toMatchObject({ retained: 1, hits: 0 });
   });
 

@@ -337,6 +337,49 @@ describe("Excerpt PDF queue rendering", () => {
     admission.release();
   });
 
+  it("keeps teardown's place in line and holds a later render until it settles", async () => {
+    const queue = new ExcerptPdfQueue({ limit: 4 });
+    const order: string[] = [];
+    const release = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const job = (name: string) => async () => {
+      order.push(name);
+      started.resolve();
+      await release.promise;
+    };
+    const first = await queue.reserve(running());
+    const rendering = first.render(job("first"), {
+      pdf: "PDF",
+      sequence: queue.nextSequence(),
+      signal: running(),
+    });
+    await started.promise;
+    // One render is already waiting, and another is admitted after the teardown
+    // is asked for.
+    const second = await queue.reserve(running());
+    const queued = second.render(job("second"), {
+      pdf: "PDF",
+      sequence: queue.nextSequence(),
+      signal: running(),
+    });
+    const teardown = queue.teardown(job("teardown"));
+    const third = await queue.reserve(running());
+    const later = third.render(job("later"), {
+      pdf: "PDF",
+      sequence: queue.nextSequence(),
+      signal: running(),
+    });
+
+    release.resolve();
+    await Promise.all([rendering, queued, teardown, later]);
+    // Teardown keeps its place among the renders already admitted, and the
+    // render admitted after it waits for the document to be destroyed.
+    expect(order).toEqual(["first", "second", "teardown", "later"]);
+    first.release();
+    second.release();
+    third.release();
+  });
+
   it("signals idle only after a running job's teardown settles", async () => {
     const queue = new ExcerptPdfQueue({ limit: 2 });
     const release = Promise.withResolvers<void>();
