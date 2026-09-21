@@ -1,7 +1,7 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
 import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
-import pLimit from "p-limit";
+import PQueue from "p-queue";
 
 import { getAnnotationsByKey, getItemsByID, getNoteByKey } from "@zotlit/db";
 import type {
@@ -173,8 +173,8 @@ export interface PreparedExplicitImport {
 
 /**
  * Stateless note-import surface: lazy child-note batching via `prepare` and
- * explicit single-note writes via `importNote`. Deps are captured once; a
- * shared `pLimit` bounds concurrent vault writes across all callers.
+ * explicit single-note writes via `importNote`. Deps are captured once; one
+ * shared `PQueue` bounds concurrent vault writes across all callers.
  */
 export interface NoteImporter {
   prepare(options: PrepareNoteImportOptions): Promise<NoteImport>;
@@ -194,7 +194,7 @@ export interface NoteImporter {
 
 /** Per-factory state shared across all calls. */
 type Ctx = NoteImporterDeps & {
-  limit: ReturnType<typeof pLimit>;
+  writes: PQueue;
   /**
    * Note key -> minted import path, recorded synchronously the moment a path
    * is minted (before the write lands). `ctx.noteIndex` is populated from
@@ -214,7 +214,7 @@ type Ctx = NoteImporterDeps & {
 export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
   const ctx: Ctx = {
     ...deps,
-    limit: pLimit(WRITE_CONCURRENCY),
+    writes: new PQueue({ concurrency: WRITE_CONCURRENCY }),
     pendingMints: new Map(),
   };
   return {
@@ -262,7 +262,7 @@ async function doImportNote(
   options: ImportNoteOptions,
 ): Promise<WriteOutcome> {
   await ctx.profile.ready;
-  return ctx.limit(async () => {
+  return ctx.writes.add(async () => {
     const { existing, profile } = explicitImportTarget(ctx, note, options);
     const run: RunContext = {
       client: options.client,
@@ -320,7 +320,7 @@ async function prepareExplicitImport(
     profile,
     path,
     import: (current, runOptions) =>
-      ctx.limit(async () => {
+      ctx.writes.add(async () => {
         const target = explicitImportTarget(ctx, current, {
           client: runOptions.client,
           groupIdMemo: runOptions.groupIdMemo,
@@ -472,7 +472,7 @@ async function flushQueue(
 
   const results = await Promise.allSettled(
     queue.map((entry) =>
-      ctx.limit(async () => {
+      ctx.writes.add(async () => {
         const noteData = getNoteByKey(options.run.client, entry.note.key, {
           libraryID: entry.note.libraryID,
           memo: options.run.groupIdMemo,

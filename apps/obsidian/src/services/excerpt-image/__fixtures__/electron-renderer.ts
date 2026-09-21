@@ -15,12 +15,19 @@ export const testElectron = process.env.ZOTLIT_TEST_ELECTRON_PATH;
  * Bundles `entry`, runs its exported `run()` in a hidden window, and returns the
  * value `run()` resolved with. `name` is the bundle's global, `marker` the stdout
  * line the parent process reads the result from.
+ *
+ * @param options.minimized Shows the window off-screen and minimizes it before
+ *   running, so Chromium's background throttling applies: Chromium reports a
+ *   page hidden only after the window was shown once, and a hidden page clamps
+ *   timers to one second. Use it for a trial whose claim depends on running as a
+ *   minimized window would.
  */
 export async function runInElectron(options: {
   entry: string;
   name: string;
   marker: string;
   timeoutMs?: number;
+  minimized?: boolean;
 }): Promise<unknown> {
   const workspaceRoot = await getWorkspaceRoot(options.entry);
   const parent = resolve(workspaceRoot, "tmp");
@@ -44,15 +51,34 @@ export async function runInElectron(options: {
   const chunk = result.output.find((part) => part.type === "chunk");
   if (!chunk) throw new Error("Missing entry bundle");
   const script = resolve(folder, "main.cjs");
+  const minimize = options.minimized
+    ? `
+    window.show();
+    window.minimize();
+    // Minimizing settles with the window animation, and Chromium reports the
+    // page hidden only then — that state is what turns throttling on, so wait
+    // for it instead of racing it.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if ((await window.webContents.executeJavaScript("document.visibilityState")) === "hidden") break;
+      const { promise, resolve } = Promise.withResolvers();
+      setTimeout(resolve, 100);
+      await promise;
+    }`
+    : "";
   await writeFile(
     script,
     `
 const { app, BrowserWindow } = require("electron");
 app.setPath("userData", ${JSON.stringify(resolve(folder, "profile"))});
 app.whenReady().then(async () => {
-  const window = new BrowserWindow({ show: false });
+  const window = new BrowserWindow({
+    show: false${
+      options.minimized ? ",\n    x: -10000,\n    y: -10000" : ""
+    }
+  });
   try {
     await window.loadFile(${JSON.stringify(resolve(folder, "index.html"))});
+    ${minimize}
     const result = await window.webContents.executeJavaScript(${JSON.stringify(`${chunk.code}\n${options.name}.run()`)});
     process.stdout.write(${JSON.stringify(`${options.marker}=`)} + JSON.stringify(result) + "\\n");
     app.exit(0);

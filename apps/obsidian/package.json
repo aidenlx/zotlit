@@ -50,7 +50,7 @@
     "idb": "^8.0.3",
     "monkey-around": "catalog:",
     "nanoid": "catalog:",
-    "p-limit": "^7.3.0",
+    "p-queue": "catalog:",
     "preact": "catalog:",
     "react-textarea-autosize": "^8.5.9",
     "semver": "^7.8.0",

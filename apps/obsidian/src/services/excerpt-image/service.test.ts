@@ -1,7 +1,17 @@
+import { configureSync, resetSync } from "@logtape/logtape";
+import type { LogRecord } from "@logtape/logtape";
 import { mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import type { DatabaseAnnotationSource } from "@/services/annotation-repository/service";
 
@@ -16,7 +26,31 @@ import {
   excerptKey,
   MAX_FALLBACK_BYTES,
 } from "./service";
-import type { ExcerptEntry, ExcerptOutcome, ExcerptRequest } from "./service";
+import type { ExcerptEntry, ExcerptRequest } from "./service";
+
+/** Debug records the excerpt-image logger emits; read by the admission tests. */
+let captured: LogRecord[] = [];
+
+beforeAll(() => {
+  configureSync({
+    reset: true,
+    sinks: {
+      capture: (record: LogRecord) => {
+        captured.push(record);
+      },
+    },
+    loggers: [
+      { category: ["zotlit"], sinks: ["capture"], lowestLevel: "debug" },
+      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
+    ],
+  });
+});
+
+beforeEach(() => {
+  captured = [];
+});
+
+afterAll(() => resetSync());
 
 const request: ExcerptRequest = {
   annotation: {
@@ -123,7 +157,7 @@ describe("Excerpt Image resolution", () => {
       expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
     },
   );
-  it("admits 128 distinct requests and rejects the 129th without rendering it", async () => {
+  it("waits at full capacity and renders the 129th request once a slot settles", async () => {
     const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
@@ -131,68 +165,88 @@ describe("Excerpt Image resolution", () => {
       return gate.promise;
     });
     await using service = new ExcerptImageService({ render });
-    const pending = Array.from({ length: 128 }, (_, index) =>
+    const pending = Array.from({ length: 129 }, (_, index) =>
       service.resolve({
         ...request,
         annotation: { ...request.annotation, key: `ANNOT${index}` },
       }),
     );
+    await started.promise;
+    // One render holds the PDF slot, and the queue keeps every other admitted
+    // job behind it rather than refusing them.
+    expect(render).toHaveBeenCalledTimes(1);
+    gate.resolve(rendered);
+    const outcomes = await Promise.all(pending);
+    expect(outcomes.every((result) => result.kind === "available")).toBe(true);
+    expect(render).toHaveBeenCalledTimes(129);
+  });
+
+  it("resolves a cache hit while every admitted slot is held", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(request);
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    f.render.mockImplementation(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    const blocked = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `BLOCKED${index}` },
+      }),
+    );
     try {
       await started.promise;
-      expect(
-        await service.resolve({
-          ...request,
-          annotation: { ...request.annotation, key: "OVERFLOW" },
-        }),
-      ).toEqual({ kind: "unavailable" });
-      expect(render).toHaveBeenCalledTimes(1);
+      // Freshness and cache checks run before admission: a cache hit resolves
+      // even though the admitted bound is full and a render is in flight.
+      expect(await service.resolve(request)).toMatchObject({
+        provenance: "cache",
+        bytes: generated,
+      });
     } finally {
       gate.resolve(rendered);
     }
     expect(
-      (await Promise.all(pending)).every(
+      (await Promise.all(blocked)).every(
         (result) => result.kind === "available",
       ),
     ).toBe(true);
-    expect(render).toHaveBeenCalledTimes(128);
   });
 
-  it("bounds cancelled same-key jobs that replace the dedup entry", async () => {
+  it("returns every cancelled job's capacity and keeps the queue usable", async () => {
     const started = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const render = vi.fn(async (_request, signal: AbortSignal) => {
-      started.resolve();
-      await release.promise;
-      signal.throwIfAborted();
-      return rendered;
-    });
+    const render = vi.fn(
+      async (_request: ExcerptRequest, signal: AbortSignal) => {
+        if (render.mock.calls.length > 1) return rendered;
+        started.resolve();
+        await release.promise;
+        signal.throwIfAborted();
+        return rendered;
+      },
+    );
     await using service = new ExcerptImageService({ render });
 
     for (let index = 0; index < 128; index++) {
       const controller = new AbortController();
-      const listening = Promise.withResolvers<void>();
-      const addEventListener = controller.signal.addEventListener.bind(
-        controller.signal,
-      );
-      vi.spyOn(controller.signal, "addEventListener").mockImplementation(
-        (...args) => {
-          addEventListener(...args);
-          if (args[0] === "abort") listening.resolve();
-        },
-      );
       const pending = service.resolve(request, controller.signal);
       const rejection = expect(pending).rejects.toMatchObject({
         name: "AbortError",
       });
-      await listening.promise;
       if (index === 0) await started.promise;
       controller.abort();
       await rejection;
     }
 
-    expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
-    expect(render).toHaveBeenCalledTimes(1);
+    // Cancelled demand released its slots: the same image can be requested
+    // again once the cancelled job's bounded teardown frees the render slot.
     release.resolve();
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    expect(render).toHaveBeenCalledTimes(2);
   });
 
   it("waits for actual teardown before advancing a cancelled request's queue slot", async () => {
@@ -748,28 +802,55 @@ describe("Excerpt Image resolution", () => {
     expect(f.render).toHaveBeenCalledTimes(129);
   });
 
-  it("gives back the slot a stored cache hit took", async () => {
-    const f = await storedExcerptWithBlockedRenders(127);
+  it("records the excerpt key and the queue's counts at the admission decision", async () => {
+    const f = await storedExcerptWithBlockedRenders(128);
     await using service = f.service;
-    let extra: Promise<ExcerptOutcome> | undefined;
-    try {
-      expect(await service.resolve(request)).toMatchObject({
-        provenance: "cache",
-      });
-      extra = service.resolve({
-        ...request,
-        annotation: { ...request.annotation, key: "EXTRA" },
-      });
-    } finally {
-      f.release();
-    }
-    // The hit gave its slot back, so one request still finds room to render.
-    expect(await extra).toMatchObject({ provenance: "rendered" });
-    expect(
-      (await Promise.all(f.pending)).every(
-        (result) => result.kind === "available",
-      ),
-    ).toBe(true);
+    const firstRequest = {
+      ...request,
+      annotation: { ...request.annotation, key: "WAITING-A" },
+    };
+    const first = service.resolve(firstRequest);
+    await vi.waitFor(() =>
+      expect(
+        captured.find(
+          (record) => record.properties.key === excerptKey(firstRequest),
+        ),
+      ).toBeDefined(),
+    );
+    const secondRequest = {
+      ...request,
+      annotation: { ...request.annotation, key: "WAITING-B" },
+    };
+    const second = service.resolve(secondRequest);
+    await vi.waitFor(() =>
+      expect(
+        captured.find(
+          (record) => record.properties.key === excerptKey(secondRequest),
+        ),
+      ).toBeDefined(),
+    );
+    const firstRecord = captured.find(
+      (record) => record.properties.key === excerptKey(firstRequest),
+    )!;
+    const secondRecord = captured.find(
+      (record) => record.properties.key === excerptKey(secondRequest),
+    )!;
+    // Both records name the excerpt and the full bound; the second also counts
+    // the producer already waiting for a slot, which is the saturation a
+    // diagnosis log would otherwise have to infer from a stalled progress bar.
+    expect(firstRecord.properties).toMatchObject({
+      admitted: 128,
+      awaiting: 0,
+    });
+    expect(secondRecord.properties).toMatchObject({
+      admitted: 128,
+      awaiting: 1,
+    });
+    f.release();
+    const outcomes = await Promise.all([first, second, ...f.pending]);
+    expect(outcomes.every((outcome) => outcome.kind === "available")).toBe(
+      true,
+    );
   });
 
   it("keeps shared work alive while another caller still demands it", async () => {

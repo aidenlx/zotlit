@@ -8,6 +8,7 @@ import { excerptFingerprint, excerptKey } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
+import { ExcerptPdfQueue } from "./pdf-queue";
 import { usableExcerptPng } from "./png";
 import { ExcerptRenderer } from "./renderer";
 import type { ExcerptRendererDiagnostics } from "./renderer";
@@ -69,9 +70,6 @@ export const MAX_FALLBACK_BYTES = 32 * 1024 * 1024;
 
 /** One resolution's bound on PDF work and on the preflight that precedes it. */
 const EXCERPT_JOB_DEADLINE_MS = 35_000;
-
-/** The PDF jobs the queue admits at once. */
-const MAX_EXCERPT_JOBS = 128;
 
 /** Check the open file before allocating; one extra byte detects later growth. */
 async function readFallback(
@@ -137,17 +135,21 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   readonly #deps;
   readonly #pending = new Map<string, Pending>();
   readonly #shutdown = new AbortController();
-  #tail: Promise<unknown> = Promise.resolve();
+  readonly #queue = new ExcerptPdfQueue();
   #generation = 0;
   #clearing: Promise<void> = Promise.resolve();
   #renderer?: ExcerptRenderer;
   #stalled = false;
-  #jobs = 0;
   #operations = 0;
 
   /** Internal lifecycle diagnostics used by the real-app acceptance suite. */
   get rendererDiagnostics(): ExcerptRendererDiagnostics | undefined {
     return this.#renderer?.diagnostics;
+  }
+
+  /** Admission and slot counts, for tests and the measurement harness. */
+  get queueDiagnostics(): ExcerptPdfQueue["diagnostics"] {
+    return this.#queue.diagnostics;
   }
 
   constructor(deps: ExcerptDeps = {}) {
@@ -173,7 +175,8 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
       await Promise.allSettled(
         [...this.#pending.values()].map((p) => p.promise),
       );
-      await this.#tail;
+      // A queued task's own bounded teardown holds its slot; this waits for it.
+      await this.#queue.idle();
     });
     this.commit(stack.move());
     return cache;
@@ -208,11 +211,10 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
         active = false;
         this.#operations--;
         if (this.#operations !== 0) return;
-        const settled = this.#jobs === 0;
-        const release = this.#tail.then(async () => {
+        const settled = !this.#queue.busy;
+        const release = this.#queue.idle().then(async () => {
           if (this.#operations === 0) await this.#renderer?.release();
         });
-        this.#tail = release.catch(() => undefined);
         // Caller cancellation stays immediate while the queue owns late cleanup.
         if (settled) await release;
       },
@@ -228,9 +230,10 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   }
 
   /**
-   * Freshness and cache preflight. It runs before the entry takes its turn in
-   * the PDF chain, so a valid cached image completes while an unrelated PDF
-   * render holds the queue, and it runs before a full queue takes any slot.
+   * Freshness and cache preflight. It runs on the bounded preflight queue,
+   * outside the PDF render slot and ahead of admission, so a valid cached image
+   * completes while an unrelated PDF render holds the queue, and a full queue
+   * takes no slot to answer it.
    */
   async #probe(
     request: ExcerptRequest,
@@ -266,11 +269,13 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   /**
    * Admit one job per key, or adopt the live job another caller admitted.
    *
-   * The entry takes the freshness and cache preflight before it renders. An
-   * entry admitted with room takes its slot here, in call order, so a cancelled
-   * job keeps its place until its teardown settles. An entry that arrives at the
-   * bound takes no slot, and its preflight alone decides: a cache hit answers
-   * without one, and only a request that would render is refused.
+   * The entry takes the freshness and cache preflight before it renders, and
+   * the cache hit is answered by that preflight alone: it returns here before
+   * admission, so it never takes a slot and never waits for one. A request that
+   * would render takes its slot in call order, so a cancelled job keeps its
+   * place until its teardown settles; one that arrives at the bound waits,
+   * cancellably, for a slot to come back, and is refused only by a real failure
+   * or by the caller's own cancellation.
    */
   #admit(
     pendingKey: string,
@@ -283,94 +288,110 @@ export class ExcerptImageService extends Service<ExcerptCache | undefined> {
   ): Pending {
     const live = this.#pending.get(pendingKey);
     if (live && !live.controller.signal.aborted) return live;
-    const charged = this.#jobs < MAX_EXCERPT_JOBS;
-    if (charged) this.#jobs++;
     const controller = new AbortController();
-    // Reserve this entry's turn among the PDF jobs now, in call order, so rapid
-    // requests for one PDF render in the order their callers made them.
-    const previous = this.#tail;
+    // The place in line is taken now, in call order, so rapid requests for one
+    // PDF render in the order their callers made them even though their
+    // preflights finish out of order.
+    const sequence = this.#queue.nextSequence();
+    // The preflight shares the job deadline, so a wedged freshness or cache
+    // check cannot hold the key's later work, and a capacity wait is bounded
+    // too. The render's own deadline starts when its turn among the PDF jobs
+    // comes, inside the queued task below.
+    const preflight = AbortSignal.any([
+      controller.signal,
+      this.#shutdown.signal,
+      AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
+    ]);
     const promise = (async (): Promise<ExcerptOutcome> => {
-      try {
-        // The preflight shares the job deadline, so a wedged freshness or cache
-        // check cannot hold the key's later work; the job's own deadline starts
-        // when its turn among the PDF jobs comes.
-        const preflight = AbortSignal.any([
-          controller.signal,
-          this.#shutdown.signal,
-          AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
-        ]);
-        const probe = await this.#probe(request, {
+      // Freshness and cache checks run before admission: a valid cache hit
+      // resolves without taking one of the admitted slots or the PDF slot.
+      const probe = await this.#queue.preflight(
+        () =>
+          this.#probe(request, {
+            key: context.key,
+            cache: context.cache,
+            signal: preflight,
+          }),
+        preflight,
+      );
+      preflight.throwIfAborted();
+      // One snapshot of the request builds the identity both answers report.
+      const identity: ExcerptIdentity = {
+        key: context.key,
+        fingerprint: excerptFingerprint(request.annotation),
+        pdf: probe.pdf ?? null,
+      };
+      const cached = validatedEntry(probe);
+      if (cached) {
+        logger.debug("Excerpt cache matched", {
           key: context.key,
-          cache: context.cache,
-          signal: preflight,
+          freshnessChecked: !!probe.pdf,
         });
-        preflight.throwIfAborted();
-        // One snapshot of the request builds the identity both answers report.
-        const identity: ExcerptIdentity = {
-          key: context.key,
-          fingerprint: excerptFingerprint(request.annotation),
-          pdf: probe.pdf ?? null,
+        return {
+          kind: "available",
+          bytes: cached.bytes,
+          format: cached.format,
+          provenance: "cache",
+          freshness: probe.pdf ? "checked" : "unchecked",
+          identity,
         };
-        const cached = validatedEntry(probe);
-        if (cached) {
-          // A cache hit is not PDF work: it neither waits for the chain nor holds it.
-          logger.debug("Excerpt cache matched", {
-            key: context.key,
-            freshnessChecked: !!probe.pdf,
-          });
-          return {
-            kind: "available",
-            bytes: cached.bytes,
-            format: cached.format,
-            provenance: "cache",
-            freshness: probe.pdf ? "checked" : "unchecked",
-            identity,
-          };
-        }
-        if (!charged) {
-          logger.debug("Excerpt unavailable: queue full", {
-            key: context.key,
-            queued: this.#jobs,
-          });
-          return { kind: "unavailable" } as const;
-        }
-        await previous;
-        if (this.#stalled) return { kind: "unavailable" } as const;
-        const bounded = AbortSignal.any([
-          controller.signal,
-          this.#shutdown.signal,
-          AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
-        ]);
-        bounded.throwIfAborted();
-        const job = this.#resolve(
-          request,
-          { ...context, probe, identity },
-          bounded,
+      }
+      // Queued cancellation drops demand only: an aborted signal removes the
+      // job from the queue, while a running job keeps its slot until the
+      // bounded teardown above finishes.
+      const cancelling = AbortSignal.any([
+        controller.signal,
+        this.#shutdown.signal,
+      ]);
+      // One record per job that needs a slot, carrying the bound's own counts:
+      // a saturated queue (admitted at the bound, producers awaiting) reads in
+      // a diagnosis log instead of only as a stalled progress bar.
+      const { admitted, awaiting } = this.#queue.diagnostics;
+      logger.debug("Excerpt job entering the PDF queue", {
+        key: context.key,
+        admitted,
+        awaiting,
+      });
+      const admission = await this.#queue.reserve(preflight);
+      try {
+        return await admission.render(
+          async () => {
+            if (this.#stalled) return { kind: "unavailable" } as const;
+            const bounded = AbortSignal.any([
+              cancelling,
+              AbortSignal.timeout(EXCERPT_JOB_DEADLINE_MS),
+            ]);
+            bounded.throwIfAborted();
+            const job = this.#resolve(
+              request,
+              { ...context, probe, identity },
+              bounded,
+            );
+            try {
+              return await abortable(job, bounded);
+            } finally {
+              // Caller cancellation is immediate; the queue still owns teardown.
+              // A host that cannot settle must not accumulate more active jobs.
+              await abortable(
+                job.then(
+                  () => undefined,
+                  () => undefined,
+                ),
+                AbortSignal.timeout(5_000),
+              ).catch(() => {
+                this.#stalled = true;
+                logger.debug("Excerpt queue stopped after unsettled teardown");
+              });
+            }
+          },
+          { pdf: request.pdfPath ?? "", sequence, signal: cancelling },
         );
-        try {
-          return await abortable(job, bounded);
-        } finally {
-          // Caller cancellation is immediate; the queue still owns teardown.
-          // A host that cannot settle must not accumulate more active jobs.
-          await abortable(
-            job.then(
-              () => undefined,
-              () => undefined,
-            ),
-            AbortSignal.timeout(5_000),
-          ).catch(() => {
-            this.#stalled = true;
-            logger.debug("Excerpt queue stopped after unsettled teardown");
-          });
-        }
       } finally {
-        // A hit releases the slot it took here; an uncharged entry took none.
-        if (charged) this.#jobs--;
+        admission.release();
       }
     })();
     const pending = { controller, promise, users: 0 };
     this.#pending.set(pendingKey, pending);
-    this.#tail = promise.catch(() => undefined);
     void promise
       .finally(() => {
         if (this.#pending.get(pendingKey) === pending)

@@ -11,7 +11,7 @@ cd apps/obsidian
 pnpm exec vitest run src/services/excerpt-image
 ```
 
-The pair trial is `reuses one render for an API request followed by a database request` in `request.test.ts`, its renderer half is `keeps one resident document across the two representations of a database` in `renderer.test.ts`, and the admission bound is measured by two trials in `service.test.ts`: `returns a stored cache hit while every admission slot is taken` and `gives back the slot a stored cache hit took`. The two Electron browser trials in the same directory skip unless `ZOTLIT_TEST_ELECTRON_PATH` points at an Electron build, which is the state this record was taken in.
+The pair trial is `reuses one render for an API request followed by a database request` in `request.test.ts`, its renderer half is `keeps one resident document across the two representations of a database` in `renderer.test.ts`, and the admission bound is measured by one trial in `service.test.ts`: `returns a stored cache hit while every admission slot is taken`. The Electron browser trials in the same directory skip unless `ZOTLIT_TEST_ELECTRON_PATH` points at an Electron build, which is the state this record was taken in.
 
 ## The runtime this record is against
 
@@ -66,7 +66,7 @@ Method: one annotation is rendered and stored, then 128 distinct annotations are
 | Renders caused by that request | 0 |
 | Total renders after the bound is released | 129 (128 admitted + the one that stored the bytes) |
 
-A stored excerpt answers while the bound is full: the preflight runs before the refusal, so the bound decides only for work that would render, never for bytes that already exist.
+A stored excerpt answers while the bound is full: the preflight runs before admission, so the bound decides only for work that would render — a producer that arrives at the full bound waits for capacity, and bytes that already exist never queue for it.
 
 ## What this record does not say
 
