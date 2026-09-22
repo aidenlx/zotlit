@@ -2,7 +2,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -16,6 +15,7 @@ import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { useSanitizedHtml } from "@/lib/sanitize-html";
 import { themeHook } from "@/lib/theme-hooks";
@@ -38,6 +38,8 @@ import {
   heldCommentDraft,
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
+import { createCommentEditor } from "./comment-editor";
+import type { CommentEditor as CommentEditorHandle } from "./comment-editor";
 import {
   excerptImageOwnership,
   excerptImageTarget,
@@ -521,13 +523,13 @@ function Comment({
 
 /**
  * The comment editor, in the slot the rendered comment stood in, with the
- * caret at the end of what is already there.
+ * caret at the end of what is already there. It edits the comment as Zotero
+ * stores it, formats and all; see {@link createCommentEditor}.
  *
  * Escape and blur store the text and close the editor. Ctrl/Command+Enter
  * stores it and keeps the editor open.
  */
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
-  const labelId = useId();
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
   const stored = annot.comment ?? "";
@@ -545,39 +547,8 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   );
   const annotRef = useRef(annot);
   annotRef.current = annot;
-  const editor = useRef<HTMLTextAreaElement>(null);
-  const editorBinding = useRef<Disposable | null>(null);
-
-  const focusEnd = useCallback(
-    (el: HTMLTextAreaElement | null) => {
-      editorBinding.current?.[Symbol.dispose]();
-      editorBinding.current = null;
-      editor.current = el;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(el.value.length, el.value.length);
-      editorBinding.current = actions.bindCommentEditor(
-        el,
-        annotRef.current,
-        () => el.value,
-      );
-    },
-    [actions],
-  );
-
-  useLayoutEffect(() => {
-    const el = editor.current;
-    if (!el || el.value === text) return;
-    const active = el.doc.activeElement === el;
-    const { selectionStart, selectionEnd } = el;
-    el.value = text;
-    if (!active) return;
-    el.focus();
-    el.setSelectionRange(
-      Math.min(selectionStart, text.length),
-      Math.min(selectionEnd, text.length),
-    );
-  }, [text]);
+  const app = useObsidianApp();
+  const editor = useRef<CommentEditorHandle | null>(null);
 
   // Every close asks for the submit, including one that changed nothing: the
   // request is what drops a draft holding only what Zotero already has, so
@@ -586,41 +557,65 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     setEditing(null);
     actions.onSaveComment(annot, text, true);
   };
+  // The editor outlives renders; its callbacks read this render's values.
+  const latest = useRef({ text, controls, save });
+  latest.current = { text, controls, save };
 
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-    e.stopPropagation();
-    if (e.key === "Escape") {
-      e.preventDefault();
-      save();
-    }
-  };
+  const mount = useCallback(
+    (el: HTMLDivElement | null) => {
+      editor.current?.[Symbol.dispose]();
+      editor.current = null;
+      if (!el) return;
+      const handle = createCommentEditor({
+        app,
+        parent: el,
+        text: latest.current.text,
+        readOnly: latest.current.controls.readOnly,
+        onChange: (value) => actions.onEditComment(annotRef.current, value),
+        onEscape: () => latest.current.save(),
+        onSubmit: () =>
+          actions.onSaveComment(
+            annotRef.current,
+            handle.view.state.doc.toString(),
+          ),
+        onBlur: (next) => {
+          if (el.parentElement?.contains(next)) return;
+          const { controls: now } = latest.current;
+          if (!now.manual && !now.readOnly) latest.current.save();
+        },
+      });
+      editor.current = handle;
+      const { view } = handle;
+      view.focus();
+      view.dispatch({ selection: { anchor: view.state.doc.length } });
+    },
+    [actions, app],
+  );
+
+  useLayoutEffect(() => {
+    editor.current?.setText(text);
+  }, [text]);
+
+  useLayoutEffect(() => {
+    editor.current?.setReadOnly(controls.readOnly);
+  }, [controls.readOnly]);
 
   return (
     // Placing the caret is not the card's selection.
     <div onClick={(e) => e.stopPropagation()}>
-      <span id={labelId} className="zt:sr-only">
-        {m.annot_view_card_edit_comment()}
-      </span>
-      <textarea
-        ref={focusEnd}
-        // `block` drops the baseline strip an inline-level control leaves
-        // under itself, which the card's own 6px gap would otherwise sit on.
-        className="zt-annot-comment-editor zt:block zt:w-full zt:resize-none zt:bg-transparent zt:text-xs zt:text-foreground"
-        defaultValue={text}
-        readOnly={controls.readOnly}
-        aria-labelledby={labelId}
-        rows={Math.min(6, Math.max(2, text.split("\n").length + 1))}
-        placeholder={m.annot_view_card_comment_placeholder()}
-        onChange={(e) => actions.onEditComment(annot, e.currentTarget.value)}
-        onKeyDown={onKeyDown}
-        onBlur={(event) => {
-          if (
-            event.relatedTarget?.instanceOf(Node) &&
-            event.currentTarget.parentElement?.contains(event.relatedTarget)
-          )
-            return;
-          if (!controls.manual && !controls.readOnly) save();
-        }}
+      {/* Obsidian's own text field — its fill, radius, resting border and
+          focus ring — drawn as rings so neither changes the layout. The inset
+          is taken back out of the margin on every side, so the text keeps the
+          place the rendered comment held and opening the editor moves
+          nothing; the field fades in around it. */}
+      <div
+        ref={mount}
+        className={cn(
+          "zt-annot-comment-editor zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:bg-(--background-modifier-form-field) zt:px-1.5 zt:py-1 zt:text-xs zt:text-foreground",
+          "zt:ring-1 zt:ring-(--background-modifier-border) zt:focus-within:ring-2 zt:focus-within:ring-(--background-modifier-border-focus)",
+          "zt:motion-safe:transition-[box-shadow,background-color] zt:starting:bg-transparent zt:starting:ring-transparent",
+        )}
+        onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => e.stopPropagation()}
       />
       {/* The row's air belongs to what it holds: an automatic save says
           nothing and shows no button, so the editor ends at the text rather

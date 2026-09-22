@@ -1,5 +1,5 @@
 import { Menu } from "obsidian";
-import type { App, Scope } from "obsidian";
+import type { App } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
@@ -7,7 +7,6 @@ import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
 import { confirm } from "@/lib/confirm";
-import { bindEditorSubmitScope } from "@/lib/editor-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
@@ -85,11 +84,6 @@ export interface AnnotActions {
     comment: string,
     automatic?: boolean,
   ): void;
-  bindCommentEditor(
-    editor: HTMLTextAreaElement,
-    annot: AnnotationRecord,
-    comment: () => string,
-  ): Disposable;
   onOpenComment(annot: AnnotationRecord): void;
   onEditComment(annot: AnnotationRecord, comment: string): void;
   /**
@@ -124,7 +118,6 @@ export interface AnnotActions {
 
 export interface AnnotActionDeps {
   app: App;
-  scope: Scope;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<ExcerptDisplayService, "open">;
   excerptImageRequest: AnnotActions["excerptImageRequest"];
@@ -229,14 +222,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     deps.annotations.editComment(annot.key, comment);
     report(deps.annotations.submitComment(annot.key, { automatic }));
   };
-  const bindCommentEditor: AnnotActions["bindCommentEditor"] = (
-    editor,
-    annot,
-    comment,
-  ) =>
-    bindEditorSubmitScope(editor, deps.scope, () => {
-      onSaveComment(annot, comment());
-    });
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
@@ -432,7 +417,6 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     excerptImageRequest: deps.excerptImageRequest,
     onSetColor,
     onSaveComment,
-    bindCommentEditor,
     onOpenComment,
     onEditComment,
     onDiscardComment,
@@ -533,7 +517,6 @@ const NOOP_ACTIONS: AnnotActions = {
   onSetColor: () => {},
   onSaveComment: () => {},
   onDiscardComment: () => {},
-  bindCommentEditor: () => ({ [Symbol.dispose]: () => {} }),
   onOpenComment: () => {},
   onEditComment: () => {},
   onDeleteAnnotation: () => {},
