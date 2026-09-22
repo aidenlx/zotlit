@@ -1,24 +1,25 @@
 // Minimal Obsidian CLI client for the e2e suite. Mirrors the `=> `-prefixed
 // output convention and bounded polling documented for `obEval` in
 // packages/scripts/scripts/obsidian-vault.ts, whose own header carries the
-// routing and transport background. Not importing that script directly: it has
-// no public exports, it's a script, not a library.
+// routing and transport background. The call itself comes from
+// `@zotlit/scripts/obsidian-cli`, the same bounded client the scripts use, so
+// one unanswered call cannot strand a run.
 
-import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+import { createObsidianCall } from "@zotlit/scripts/obsidian-cli";
+
 const CLI_TIMEOUT_MS = 15_000;
 
-/** The Obsidian CLI always exits 0 — failures come back only as output text. */
-export async function cli(args: string[]): Promise<string> {
-  const result = await execFileAsync("obsidian", args, {
-    timeout: CLI_TIMEOUT_MS,
-    windowsHide: true,
-  });
-  return `${result.stdout}${result.stderr}`.trim();
-}
+/**
+ * The Obsidian CLI always exits 0 — failures come back only as output text.
+ *
+ * A single `eval` can hang while its window keeps answering every other call,
+ * and the CLI process then outlives SIGTERM. Unbounded, that stalled one test
+ * per run until Vitest's own timeout, on a different test each run. The
+ * bounded call turns it into a named failure in {@link CLI_TIMEOUT_MS}.
+ */
+export const cli = createObsidianCall({ timeoutMs: CLI_TIMEOUT_MS });
 
 /**
  * Pull the `=> `-prefixed reply out of raw CLI output. Evaluated code that
@@ -77,6 +78,11 @@ export async function waitFor(
  * mirrors the `.catch(() => "")` around the "loaded" check in
  * obsidian-vault.ts's own `create()` — so a failed parse here means "not
  * ready yet", not "give up".
+ *
+ * An unanswered call counts as "not ready yet" too. The stall is per call,
+ * not per window: a traced run showed one `navigateToSearchResult` never
+ * answer while the identical call on the same vault answered in 12 ms right
+ * afterwards. So the deadline ends the call, and the next try goes on.
  */
 export async function obEvalUntil(
   vaultId: string,

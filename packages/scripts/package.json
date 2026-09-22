@@ -18,6 +18,7 @@
     "./fixture/paired-run-node": "./lib/fixture/paired-run-node.ts",
     "./fixture/spec": "./lib/fixture/spec.ts",
     "./fixture/local-bridge": "./lib/fixture/local-bridge.ts",
+    "./obsidian-cli": "./lib/obsidian-cli.ts",
     "./obsidian-manifest": "./lib/obsidian-manifest.ts",
     "./package-roots": "./lib/package-roots.ts",
     "./dev-vault": "./lib/dev-vault.ts"
