@@ -1,11 +1,12 @@
 import { expect, it } from "vitest";
 
 import {
+  activatedRow,
+  chooserLayout,
   clampedHighlight,
   movedHighlight,
   rehomedHighlight,
   toggledValues,
-  visibleRows,
 } from "./chooser-logic";
 import type { ChooserMatcher, ChooserRow } from "./chooser-logic";
 
@@ -37,8 +38,21 @@ const scoresAgainstSourceOrder: ChooserMatcher = (text) => {
 
 const labelsOf = (rows: readonly ChooserRow[]) => rows.map((row) => row.label);
 
+/** The tag Chooser's own shape: a group of tags, then a group of one action. */
+const CLEAR: ChooserRow = {
+  value: "zt:clear-tags",
+  label: "Clear selected tags",
+  action: () => {},
+};
+const TAGS_ONLY = [{ label: "Tags", items: ROWS }];
+const GROUPS = [{ label: "Tags", items: ROWS }, { items: [CLEAR] }];
+
+/** Matches the action row's label alone, and nothing in the tag vocabulary. */
+const clearOnly: ChooserMatcher = (text) =>
+  text === CLEAR.label ? { score: -1 } : null;
+
 it("shows every row for the empty query", () => {
-  expect(labelsOf(visibleRows(ROWS, null))).toEqual([
+  expect(labelsOf(chooserLayout(TAGS_ONLY, null).rows)).toEqual([
     "method",
     "theory",
     "review",
@@ -47,20 +61,118 @@ it("shows every row for the empty query", () => {
 });
 
 it("keeps matching rows in source order, not in score order", () => {
-  expect(labelsOf(visibleRows(ROWS, scoresAgainstSourceOrder))).toEqual([
-    "method",
-    "theory",
-    "review",
-  ]);
-});
-
-it("leaves nothing standing when a query matches no row", () => {
-  expect(visibleRows(ROWS, () => null)).toEqual([]);
+  expect(
+    labelsOf(chooserLayout(TAGS_ONLY, scoresAgainstSourceOrder).rows),
+  ).toEqual(["method", "theory", "review"]);
 });
 
 it("leaves the rows themselves untouched", () => {
-  visibleRows(ROWS, scoresAgainstSourceOrder);
+  chooserLayout(TAGS_ONLY, scoresAgainstSourceOrder);
   expect(labelsOf(ROWS)).toEqual(["method", "theory", "review", "draft"]);
+});
+
+it("draws the groups in the order they were given", () => {
+  const { sections } = chooserLayout(GROUPS, null);
+  expect(sections.map((section) => section.label)).toEqual(["Tags", undefined]);
+  expect(sections.map((section) => section.at)).toEqual([0, 1]);
+  expect(sections.map((section) => labelsOf(section.rows))).toEqual([
+    ["method", "theory", "review", "draft"],
+    ["Clear selected tags"],
+  ]);
+});
+
+it("walks every group's rows as one sequence", () => {
+  expect(labelsOf(chooserLayout(GROUPS, null).rows)).toEqual([
+    "method",
+    "theory",
+    "review",
+    "draft",
+    "Clear selected tags",
+  ]);
+});
+
+it("drops a group the query empties, heading and all", () => {
+  const groups = [
+    { label: "Tags", items: ROWS },
+    { label: "More", items: [] },
+  ];
+  const { sections } = chooserLayout(groups, null);
+  expect(sections.map((section) => section.label)).toEqual(["Tags"]);
+});
+
+it("keeps a surviving group's place in the caller's list", () => {
+  const groups = [
+    { label: "Gone", items: [] },
+    { label: "Tags", items: ROWS },
+  ];
+  expect(chooserLayout(groups, null).sections.map((s) => s.at)).toEqual([1]);
+});
+
+it("leaves an action row standing whatever the query matches", () => {
+  const narrowed = chooserLayout(GROUPS, scoresAgainstSourceOrder);
+  expect(labelsOf(narrowed.rows)).toEqual([
+    "method",
+    "theory",
+    "review",
+    "Clear selected tags",
+  ]);
+  expect(narrowed.empty).toBe(false);
+
+  // A query naming the action itself is no search hit either: the entries
+  // decide, and they came out empty.
+  const onlyTheAction = chooserLayout(GROUPS, clearOnly);
+  expect(labelsOf(onlyTheAction.rows)).toEqual(["Clear selected tags"]);
+  expect(onlyTheAction.empty).toBe(true);
+});
+
+it("reports an empty query result while the action row still stands", () => {
+  const nothing = chooserLayout(GROUPS, () => null);
+  expect(nothing.sections.map((section) => section.at)).toEqual([1]);
+  expect(labelsOf(nothing.rows)).toEqual(["Clear selected tags"]);
+  expect(nothing.empty).toBe(true);
+});
+
+it("leaves no group standing when the query matches nothing but entries", () => {
+  expect(chooserLayout(TAGS_ONLY, () => null)).toEqual({
+    sections: [],
+    rows: [],
+    empty: true,
+  });
+});
+
+it("runs the action a row carries instead of ticking it", () => {
+  const ran: string[] = [];
+  const close = () => ran.push("closed");
+  const activation = activatedRow(
+    {
+      ...CLEAR,
+      action: (shut) => {
+        ran.push("ran");
+        shut();
+      },
+    },
+    ["method"],
+  );
+  expect(activation.kind).toBe("action");
+  if (activation.kind === "action") activation.run(close);
+  expect(ran).toEqual(["ran", "closed"]);
+});
+
+it("ticks a row that carries no action", () => {
+  expect(activatedRow(ROWS[1], ["method"])).toEqual({
+    kind: "select",
+    values: ["method", "theory"],
+  });
+});
+
+it("activates neither a disabled row nor a row that is not there", () => {
+  expect(activatedRow({ ...CLEAR, disabled: true }, [])).toEqual({
+    kind: "ignored",
+  });
+  expect(
+    activatedRow({ value: "method", label: "method", disabled: true }, []),
+  ).toEqual({ kind: "ignored" });
+  expect(activatedRow(undefined, [])).toEqual({ kind: "ignored" });
 });
 
 it("appends a value the selection does not hold", () => {

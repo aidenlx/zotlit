@@ -4,6 +4,7 @@
 import { useCallback, useMemo } from "react";
 
 import { Chooser } from "@/components/chooser";
+import type { ChooserGroup, ChooserRow } from "@/components/chooser";
 import { Icon } from "@/components/obsidian/icon";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
@@ -173,9 +174,17 @@ function ColorChooser({
       })
     : m.annot_view_filter_color_trigger_show_all();
 
-  const rows = useMemo(
-    () =>
-      colors.map((hex) => ({ value: hex, label: annotationColorLabel(hex) })),
+  // One group and no action row: a palette is the whole list, and the filter
+  // bar's own Clear already empties it.
+  const groups = useMemo(
+    () => [
+      {
+        items: colors.map((hex) => ({
+          value: hex,
+          label: annotationColorLabel(hex),
+        })),
+      },
+    ],
     [colors],
   );
 
@@ -222,7 +231,7 @@ function ColorChooser({
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-40">
         <Chooser.List
-          items={rows}
+          groups={groups}
           emptyLabel={m.annot_view_filter_color_empty()}
         >
           {(row) => (
@@ -279,6 +288,27 @@ function TagPill({
   );
 }
 
+/** A tag row, carrying the hit count its tooltip reads. */
+interface TagEntryRow extends ChooserRow {
+  hitCount: number;
+  action?: undefined;
+}
+
+/** The row beside the tags that clears the selection; it names no tag. */
+interface TagActionRow extends ChooserRow {
+  action: (close: () => void) => void;
+}
+
+/** What the render callback discriminates on `action` to tell apart. */
+type TagRow = TagEntryRow | TagActionRow;
+
+/**
+ * What the action row answers to inside the Chooser, where a value names a row
+ * rather than a tag. It wears the plugin's own prefix so a tag is unlikely to
+ * carry the same name.
+ */
+const CLEAR_TAGS = "zt:clear-tags";
+
 /**
  * The whole tag vocabulary, in a Chooser hanging under a dashed action chip.
  * Counting (k = selected tag count ≥ 2) shows a filter icon and k in accent
@@ -304,16 +334,35 @@ function TagChooser({
 
   // The Chooser matches on the label alone, so what a row needs beyond its
   // name travels with it rather than being looked up again while rendering.
-  const rows = useMemo(
-    () =>
-      chips.map((chip) => ({
-        value: chip.name,
-        label: chip.name,
-        hitCount: chip.hitCount,
-        disabled: !chip.selected && !chip.available,
-      })),
-    [chips],
-  );
+  //
+  // The action row sits in a second group, separated from the tags and
+  // reached by the same arrow keys. It appears only while something is
+  // selected, which is beyond what #1193 asked for and kept because a row
+  // offering to clear an empty selection is a row that does nothing: the
+  // vocabulary the user came to read is what the list should hold. Its label
+  // is fixed — nothing here reads what the user typed, and the query leaves
+  // the row standing either way.
+  const groups = useMemo<ChooserGroup<TagRow>[]>(() => {
+    const tags = chips.map((chip) => ({
+      value: chip.name,
+      label: chip.name,
+      hitCount: chip.hitCount,
+      disabled: !chip.selected && !chip.available,
+    }));
+    if (selectedTags.length === 0) return [{ items: tags }];
+    return [
+      { items: tags },
+      {
+        items: [
+          {
+            value: CLEAR_TAGS,
+            label: m.annot_view_filter_tag_clear(),
+            action: () => onChange([]),
+          },
+        ],
+      },
+    ];
+  }, [chips, selectedTags.length, onChange]);
 
   return (
     <Chooser value={selectedTags} onValueChange={onChange}>
@@ -331,22 +380,30 @@ function TagChooser({
           placeholder={m.annot_view_filter_tag_search_placeholder()}
           clearLabel={m.annot_view_clear_search()}
         />
-        <Chooser.List items={rows} emptyLabel={m.annot_view_filter_tag_empty()}>
-          {(row) => (
-            <Chooser.Item
-              key={row.value}
-              value={row.value}
-              disabled={row.disabled}
-              {...tooltipAttrs(
-                m.annot_view_filter_tag_tooltip({
-                  name: row.label,
-                  count: row.hitCount,
-                }),
-              )}
-            >
-              {row.label}
-            </Chooser.Item>
-          )}
+        <Chooser.List
+          groups={groups}
+          emptyLabel={m.annot_view_filter_tag_empty()}
+        >
+          {(row) =>
+            row.action ? (
+              <Chooser.Action key={row.value} value={row.value} icon="x">
+                {row.label}
+              </Chooser.Action>
+            ) : (
+              <Chooser.Item
+                key={row.value}
+                value={row.value}
+                {...tooltipAttrs(
+                  m.annot_view_filter_tag_tooltip({
+                    name: row.label,
+                    count: row.hitCount,
+                  }),
+                )}
+              >
+                {row.label}
+              </Chooser.Item>
+            )
+          }
         </Chooser.List>
       </Chooser.Popup>
     </Chooser>

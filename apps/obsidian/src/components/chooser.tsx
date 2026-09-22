@@ -1,4 +1,9 @@
-// The Chooser: an anchored popover holding a search field and tickable rows.
+// The Chooser: an anchored popover holding a search field, tickable rows in
+// optional groups, and action rows that run something instead of ticking.
+//
+// An action row is an option in the same list as the entries and scrolls with
+// them, so one highlight and one Enter reach both. A group heading is no
+// option, and the highlight never lands on one.
 //
 // The popup is a native popover in the browser's top layer, so the platform
 // owns showing it, the outside click and Escape; CSS anchor positioning places
@@ -7,14 +12,19 @@
 //
 // The keyboard is Obsidian's: one Scope per mounted Chooser, parented to the
 // app scope and pushed while the popup stands, so a key it never registered
-// reaches Obsidian's own hotkeys. DOM focus stays in the search field the whole
-// time — the highlight is row state, a scroll-into-view and an active
-// descendant, not real focus.
+// reaches Obsidian's own hotkeys, while every key it did register stops here.
+// The highlight is row state, a scroll-into-view and an active descendant,
+// never real focus — but something inside the popup has to hold DOM focus and
+// name it, or a screen reader is told nothing. The search field holds it
+// throughout when the caller rendered one, and the list box holds it when the
+// caller left the search out.
 //
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
 
 import { Scope, prepareFuzzySearch } from "obsidian";
+import type { IconName } from "obsidian";
 import {
+  Fragment,
   createContext,
   useCallback,
   useContext,
@@ -40,25 +50,34 @@ import { themeHook } from "@/lib/theme-hooks";
 import { cn } from "@/lib/utils";
 
 import {
+  activatedRow,
+  chooserLayout,
   clampedHighlight,
   movedHighlight,
   rehomedHighlight,
-  toggledValues,
-  visibleRows,
 } from "./chooser-logic";
-import type { ChooserMove, ChooserRow } from "./chooser-logic";
+import type {
+  ChooserActivation,
+  ChooserGroup,
+  ChooserMove,
+  ChooserRow,
+} from "./chooser-logic";
 import "./chooser.css";
 
-// The decision logic is a sibling file; this module is the entry, so its
-// surface is reachable from here too.
-export {
-  clampedHighlight,
-  movedHighlight,
-  rehomedHighlight,
-  toggledValues,
-  visibleRows,
-};
-export type { ChooserMatcher, ChooserMove, ChooserRow } from "./chooser-logic";
+// The decision logic is a sibling file; this module is the entry, so the types
+// a caller writes its rows and its render callback against come from here too.
+// The functions stay in the sibling: the one consumer outside this component —
+// the Annotation View's store, toggling a tag — imports it directly rather than
+// pulling the component graph in behind a helper.
+export type {
+  ChooserActivation,
+  ChooserGroup,
+  ChooserLayout,
+  ChooserMatcher,
+  ChooserMove,
+  ChooserRow,
+  ChooserSection,
+} from "./chooser-logic";
 
 /** Rows a page step covers when the list is too empty to measure one. */
 const FALLBACK_PAGE_SIZE = 10;
@@ -74,17 +93,27 @@ interface ChooserState {
   /** The `--zt-chooser-*` identifier binding the popup to its trigger. */
   anchorName: string;
   popupId: string;
+  /** The popup element, held so an action can shut the popup it ran from. */
+  popupRef: RefObject<HTMLDivElement | null>;
+  /** Shuts the popup. Only an action ever calls it; a tick never does. */
+  close: () => void;
   listId: string;
   /** The row box, which a page step measures itself against. */
   listRef: RefObject<HTMLDivElement | null>;
-  /** The rows on screen now, as the list part last published them. */
-  rows: readonly ChooserRow[];
   publishRows: (rows: readonly ChooserRow[]) => void;
-  /** Index into {@link rows}; out-of-range until the list publishes. */
-  highlight: number;
-  setHighlight: (index: number) => void;
   /** The `id` of the row at an index, for `aria-activedescendant`. */
   optionId: (index: number) => string;
+  /**
+   * The highlighted row's index, clamped to the rows the list last published,
+   * or `-1` while it points at no row.
+   *
+   * The root is the one place the highlight is resolved against a row set. The
+   * list derived it a second time from its own freshly filtered copy, and for
+   * the one render between a keystroke and the publish that follows it the two
+   * copies disagreed — so the search field and the list box named different
+   * rows as the active descendant.
+   */
+  active: number;
   /** The `id` the highlight points at, or `null` while it points at no row. */
   activeOptionId: string | null;
 }
@@ -126,6 +155,20 @@ function composing(event: KeyboardEvent): boolean {
 }
 
 /**
+ * Carrying out what {@link activatedRow} decided. Enter on the highlight and a
+ * click on a row both come through here, so a row carrying an action runs on
+ * both and a row carrying none ticks on both — one model rather than two.
+ */
+function runActivation(
+  activation: ChooserActivation,
+  close: () => void,
+  emit: (next: string[]) => void,
+): void {
+  if (activation.kind === "action") activation.run(close);
+  else if (activation.kind === "select") emit(activation.values);
+}
+
+/**
  * How many rows a Page Up or Page Down step covers: as many whole rows as the
  * scroll box shows. Read off the DOM at the moment the key fires, because a
  * themed row height and a flipped popup both change it.
@@ -164,6 +207,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
   const [highlight, setHighlight] = useState(0);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  const close = useCallback(() => popupRef.current?.hidePopover(), []);
 
   /**
    * What the key handlers read. They are registered once, so a closure would
@@ -213,6 +258,13 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
   // would be a keystroke behind. Committing synchronously is what keeps the
   // keyboard and the rows on screen describing the same moment.
   useLayoutEffect(() => {
+    // Every handler below answers `false` once it has decided the key is its
+    // own, composition aside. A key the Chooser registered is a key it
+    // consumed: letting one fall through because the list happened to be empty
+    // or the row happened to refuse a tick would hand Obsidian a hotkey the
+    // user aimed at the popup standing in front of it. Falling through is for
+    // keys this scope never registered, which reach the app scope it is
+    // parented to.
     const move = (step: ChooserMove) => (event: KeyboardEvent) => {
       if (composing(event)) return;
       const { rows: shown, highlight: at } = latest.current;
@@ -224,7 +276,9 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       );
       return false;
     };
-    const tick = (event: KeyboardEvent) => {
+    // Enter reaches an action row exactly as it reaches an entry: one key, one
+    // highlight, and the row itself deciding whether it ticks or runs.
+    const activate = (event: KeyboardEvent) => {
       if (composing(event)) return;
       const {
         rows: shown,
@@ -233,37 +287,43 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
         onValueChange: emit,
       } = latest.current;
       const row = shown[clampedHighlight(at, shown.length)];
-      if (!row || row.disabled) return;
-      emit(toggledValues(selected, row.value));
+      runActivation(activatedRow(row, selected), close, emit);
       return false;
     };
     // Escape is absent on purpose: the popover's own light dismiss closes it,
     // and a handler here returning `false` would preventDefault and suppress
     // that. Ctrl-P and Ctrl-N repeat the arrows, the way every Obsidian list
     // does.
-    const bound = [
-      registerKeymap(scope, [], "ArrowUp", move("previous")),
-      registerKeymap(scope, [], "ArrowDown", move("next")),
-      registerKeymap(scope, [], "PageUp", move("page-up")),
-      registerKeymap(scope, [], "PageDown", move("page-down")),
-      registerKeymap(scope, [], "Home", move("first")),
-      registerKeymap(scope, [], "End", move("last")),
-      registerKeymap(scope, ["Ctrl"], "p", move("previous")),
-      registerKeymap(scope, ["Ctrl"], "n", move("next")),
-      registerKeymap(scope, [], "Enter", tick),
-    ];
-    return () => {
-      for (const handler of bound) handler[Symbol.dispose]();
-    };
-  }, [scope]);
+    const stack = new DisposableStack();
+    stack.use(registerKeymap(scope, [], "ArrowUp", move("previous")));
+    stack.use(registerKeymap(scope, [], "ArrowDown", move("next")));
+    stack.use(registerKeymap(scope, [], "PageUp", move("page-up")));
+    stack.use(registerKeymap(scope, [], "PageDown", move("page-down")));
+    stack.use(registerKeymap(scope, [], "Home", move("first")));
+    stack.use(registerKeymap(scope, [], "End", move("last")));
+    stack.use(registerKeymap(scope, ["Ctrl"], "p", move("previous")));
+    stack.use(registerKeymap(scope, ["Ctrl"], "n", move("next")));
+    stack.use(registerKeymap(scope, [], "Enter", activate));
+    return () => stack.dispose();
+  }, [scope, close]);
 
   /**
    * Pushed and popped on the popup's own toggle event, so the Chooser holds
    * the keyboard exactly while it is on screen and a closed one is inert.
+   *
+   * DOM focus moves into the popup at the same moment, because the highlight
+   * is named by whatever element holds focus: a screen reader follows the
+   * active descendant of the focused element, and Enter on a trigger that kept
+   * focus is the invoker press that shuts the popup again. The search field
+   * takes focus when the caller rendered one; the list box takes it otherwise,
+   * which is why the list carries a programmatic tab index. The search part is
+   * optional, so the highlight cannot depend on it to have an owner.
    */
   useLayoutEffect(() => {
     if (!open) return;
     setHighlight(0);
+    const field = popupRef.current?.querySelector<HTMLElement>("input");
+    (field ?? listRef.current)?.focus();
     app.keymap.pushScope(scope);
     return () => app.keymap.popScope(scope);
   }, [open, app, scope]);
@@ -278,13 +338,13 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       setOpen,
       anchorName: `--${popupId}`,
       popupId,
+      popupRef,
+      close,
       listId: `${popupId}-list`,
       listRef,
-      rows,
       publishRows,
-      highlight,
-      setHighlight,
       optionId,
+      active,
       activeOptionId: active < 0 ? null : optionId(active),
     }),
     [
@@ -293,9 +353,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       query,
       open,
       popupId,
-      rows,
+      close,
       publishRows,
-      highlight,
       optionId,
       active,
     ],
@@ -359,10 +418,30 @@ export interface ChooserPopupProps extends Omit<
  * background.
  */
 function Popup({ className, style, ref, ...rest }: ChooserPopupProps) {
-  const { anchorName, popupId, setOpen } = useChooser();
+  const { anchorName, popupId, popupRef, setOpen } = useChooser();
+  /**
+   * The root holds the popup element too, beside whatever ref the caller
+   * passed. Two things reach for it: opening moves DOM focus to the search
+   * field inside it, and an action row closes the popup it ran from by hiding
+   * this element — the capability #1193 asks for when it says running an
+   * action leaves the popup standing unless the action chooses otherwise. In a
+   * popout window this element is also the only handle on the right document's
+   * popup.
+   *
+   * Memoised because a fresh callback ref is detached and reattached on every
+   * render, which would null `popupRef` and the caller's ref mid-flight.
+   */
+  const attach = useCallback(
+    (node: HTMLDivElement | null) => {
+      popupRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [popupRef, ref],
+  );
   return (
     <div
-      ref={ref}
+      ref={attach}
       id={popupId}
       popover="auto"
       onToggle={(event) => setOpen(event.newState === "open")}
@@ -392,12 +471,19 @@ export interface ChooserInputProps {
  * It is also where DOM focus stays while the highlight moves, so it is the
  * element that names the highlighted row as its active descendant: a screen
  * reader follows the active descendant of whatever holds focus.
+ *
+ * The combobox role and the two attributes beside it are what make that
+ * announcement work, and are kept for that: a search box naming an active
+ * descendant says nothing about the list the row lives in, while a combobox
+ * that controls the list box and reports itself expanded is the pattern a
+ * screen reader reads the pair as. The root moves focus here on open rather
+ * than this part claiming it, because a Chooser without a search field has to
+ * hand the highlight another owner.
  */
 function Input({ placeholder, clearLabel }: ChooserInputProps) {
   const { query, setQuery, open, listId, activeOptionId } = useChooser();
   return (
     <SearchInput
-      autoFocus
       role="combobox"
       aria-expanded={open}
       aria-controls={listId}
@@ -415,8 +501,21 @@ export interface ChooserListProps<Row extends ChooserRow> extends Omit<
   HTMLAttributes<HTMLDivElement>,
   "children"
 > {
-  /** Every row the caller offers, in the order it wants them read. */
-  items: readonly Row[];
+  /**
+   * Every row the caller offers, in the order it wants them read, split into
+   * the groups it wants them drawn in. A group is a heading and a separator,
+   * never a second highlight: the rows below run on as one sequence.
+   *
+   * Spec aidenlx/zotlit#1190 names `Chooser.Group`, `Chooser.GroupLabel` and
+   * `Chooser.Separator` as parts. They stay data on this prop, as the sibling
+   * `Chooser.Empty` deviation does and for the same reason: the query filter
+   * runs here, so this part is the only one that knows which groups a query
+   * left standing. Parts would have each group filter itself, and neither a
+   * heading nor a rule could then be dropped with the rows it belongs to —
+   * the group would have to report emptiness back up to a parent that had
+   * already drawn its separator.
+   */
+  groups: readonly ChooserGroup<Row>[];
   /**
    * Shown in place of the rows when the query matches none of them.
    *
@@ -430,25 +529,31 @@ export interface ChooserListProps<Row extends ChooserRow> extends Omit<
 }
 
 function List<Row extends ChooserRow>({
-  items,
+  groups,
   emptyLabel,
   children,
   className,
   ...rest
 }: ChooserListProps<Row>) {
-  const { query, listId, listRef, highlight, optionId, publishRows } =
-    useChooser();
-  const rows = useMemo(
-    () => visibleRows(items, query ? prepareFuzzySearch(query) : null),
-    [items, query],
+  const {
+    query,
+    listId,
+    listRef,
+    active,
+    activeOptionId,
+    optionId,
+    publishRows,
+  } = useChooser();
+  const { sections, rows, empty } = useMemo(
+    () => chooserLayout(groups, query ? prepareFuzzySearch(query) : null),
+    [groups, query],
   );
 
   // The keys are registered on the root, so the rows they move over have to
   // reach it. The list is where the query filter runs, so it is the only part
-  // that knows them.
+  // that knows them; where the highlight then lands is the root's to say.
   useLayoutEffect(() => publishRows(rows), [rows, publishRows]);
 
-  const active = clampedHighlight(highlight, rows.length);
   const list = useMemo<ChooserListState>(
     () => ({
       indexOf: new Map(rows.map((row, index) => [row.value, index])),
@@ -460,31 +565,125 @@ function List<Row extends ChooserRow>({
   );
 
   return (
+    // The tab index is programmatic: the root focuses this element when the
+    // caller rendered no search field, and a Chooser still holds exactly one
+    // tab stop either way.
     <div
       ref={listRef}
       id={listId}
       role="listbox"
+      tabIndex={-1}
       aria-multiselectable
-      aria-activedescendant={active < 0 ? undefined : optionId(active)}
+      aria-activedescendant={activeOptionId ?? undefined}
       {...rest}
       className={cn("zt:min-h-0 zt:flex-1 zt:overflow-y-auto", className)}
     >
-      {rows.length === 0 ? (
+      {/* The empty message stands beside the rows rather than in their place:
+          action rows are exempt from the query, so a query that matches no
+          entry can still leave one standing, and "nothing matched" and "here
+          is what you can still do" are both true at once. */}
+      {empty && (
         <div className="zt:px-2 zt:py-1 zt:text-xs zt:text-muted-foreground">
           {emptyLabel}
         </div>
-      ) : (
-        <ChooserListContext value={list}>
-          {rows.map(children)}
-        </ChooserListContext>
       )}
+      <ChooserListContext value={list}>
+        {sections.map((section, index) => (
+          <Fragment key={section.at}>
+            {(index > 0 || empty) && <Separator />}
+            {section.label === undefined ? (
+              section.rows.map(children)
+            ) : (
+              // A labelled run is a list-box group, so a screen reader reads
+              // the heading with the rows under it. The heading itself is no
+              // option and carries no id the highlight can point at.
+              <div
+                role="group"
+                aria-labelledby={`${listId}-group-${section.at}`}
+              >
+                <div
+                  id={`${listId}-group-${section.at}`}
+                  className="zt:px-2 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
+                >
+                  {section.label}
+                </div>
+                {section.rows.map(children)}
+              </div>
+            )}
+          </Fragment>
+        ))}
+      </ChooserListContext>
     </div>
   );
 }
 
+/**
+ * The rule between two groups. `--menu-divider-*` are declared only in
+ * Obsidian's mobile blocks and resolve to nothing on the desktop this plugin
+ * ships for, so each one carries the fallback that keeps the rule visible —
+ * the theme's own border colour, which is what Obsidian's own menus draw.
+ */
+function Separator() {
+  return (
+    <div
+      role="presentation"
+      aria-hidden
+      className="zt:my-1 zt:h-[var(--menu-divider-width,1px)] zt:bg-[var(--menu-divider-color,var(--background-modifier-border))]"
+    />
+  );
+}
+
+/**
+ * What an entry and an action share: where the row sits in the list, whether
+ * the highlight is on it, whether it is disabled, the scroll-into-view that
+ * keeps the highlight in sight, and what activating it comes to. Both draw the
+ * same box, so both ask the same question here and one keyboard model reaches
+ * both.
+ *
+ * Whether a row is disabled is read off the published row alone, never off a
+ * prop beside it: the key handler reads the same flag, so a row the pointer
+ * refuses and a row Enter refuses are the same row.
+ */
+function useRowSlot(value: string) {
+  const { selected, onValueChange, close } = useChooser();
+  const { indexOf, rows, active, optionId } = useChooserList();
+  const ref = useRef<HTMLDivElement>(null);
+
+  const index = indexOf.get(value) ?? -1;
+  const row = rows[index];
+  const highlighted = index >= 0 && index === active;
+
+  useLayoutEffect(() => {
+    if (highlighted) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [highlighted]);
+
+  return {
+    ref,
+    id: index < 0 ? undefined : optionId(index),
+    highlighted,
+    disabled: row?.disabled ?? false,
+    /** A click on the row, decided exactly as Enter on the highlight is. */
+    activate: () =>
+      runActivation(activatedRow(row, selected), close, onValueChange),
+  };
+}
+
+/** The box an entry and an action are both drawn in. */
+const rowBox = (disabled: boolean, className?: string) =>
+  cn(
+    "zt:flex zt:cursor-clickable zt:items-center zt:gap-1.5 zt:rounded-sm zt:px-2 zt:py-1 zt:text-sm",
+    disabled ? "zt:text-muted-foreground" : "zt:hover:bg-muted",
+    "zt:data-highlighted:bg-muted",
+    className,
+  );
+
 export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
+  /**
+   * Which published row this draws. Everything else about the row — whether it
+   * is disabled, and whether it ticks or runs — travels with the row itself,
+   * so the pointer and the keyboard read one flag rather than two.
+   */
   value: string;
-  disabled?: boolean;
 }
 
 /**
@@ -499,46 +698,22 @@ export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
  * The tick is a styled indicator rather than a checkbox, because a list box
  * option may hold no focusable control; `aria-selected` is what reports it.
  */
-function Item({
-  value,
-  disabled,
-  className,
-  children,
-  ...rest
-}: ChooserItemProps) {
-  const { selected, onValueChange } = useChooser();
-  const { indexOf, rows, active, optionId } = useChooserList();
-  const ref = useRef<HTMLDivElement>(null);
-
-  const index = indexOf.get(value) ?? -1;
-  const highlighted = index >= 0 && index === active;
+function Item({ value, className, children, ...rest }: ChooserItemProps) {
+  const { selected } = useChooser();
+  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
   const ticked = selected.includes(value);
-  const off = disabled ?? rows[index]?.disabled ?? false;
-
-  useLayoutEffect(() => {
-    if (highlighted) ref.current?.scrollIntoView({ block: "nearest" });
-  }, [highlighted]);
 
   return (
     <div
       ref={ref}
-      id={index < 0 ? undefined : optionId(index)}
+      id={id}
       role="option"
       aria-selected={ticked}
-      aria-disabled={off || undefined}
+      aria-disabled={disabled || undefined}
       data-highlighted={highlighted ? "" : undefined}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (off) return;
-        onValueChange(toggledValues(selected, value));
-      }}
+      onClick={activate}
       {...rest}
-      className={cn(
-        "zt:flex zt:cursor-clickable zt:items-center zt:gap-1.5 zt:rounded-sm zt:px-2 zt:py-1 zt:text-sm",
-        off ? "zt:text-muted-foreground" : "zt:hover:bg-muted",
-        "zt:data-highlighted:bg-muted",
-        className,
-      )}
+      className={rowBox(disabled, className)}
     >
       <Icon
         name="check"
@@ -550,8 +725,65 @@ function Item({
   );
 }
 
+export interface ChooserActionProps extends HTMLAttributes<HTMLDivElement> {
+  /** Which published row this draws; what it runs travels with that row. */
+  value: string;
+  /**
+   * The glyph in the tick's place. Without one the row keeps the tick's width
+   * anyway, so its label lines up with the entries above it.
+   *
+   * It goes beyond what #1193 asked for and is kept because the gap it fills
+   * misreads: an action row standing among entries with an empty tick column
+   * reads as an entry nobody has ticked yet. A glyph is what says the row does
+   * something instead.
+   */
+  icon?: IconName;
+}
+
+/**
+ * A row that runs something instead of ticking. What it runs travels with the
+ * row the caller handed the list, so Enter on the highlight and a click on the
+ * row reach the same callback.
+ *
+ * It is an option in the same list as the entries, not a pinned footer: it
+ * scrolls with them, the arrow keys walk onto it, and it reports its selected
+ * state as false because it holds none. Running it leaves the popup standing
+ * unless the action calls the `close` it is handed.
+ */
+function Action({
+  value,
+  icon,
+  className,
+  children,
+  ...rest
+}: ChooserActionProps) {
+  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
+
+  return (
+    <div
+      ref={ref}
+      id={id}
+      role="option"
+      aria-selected={false}
+      aria-disabled={disabled || undefined}
+      data-highlighted={highlighted ? "" : undefined}
+      onClick={activate}
+      {...rest}
+      className={rowBox(disabled, className)}
+    >
+      <Icon
+        name={icon ?? "check"}
+        size={14}
+        className={cn("zt:shrink-0", !icon && "zt:invisible")}
+      />
+      <span className="zt:truncate">{children}</span>
+    </div>
+  );
+}
+
 Chooser.Trigger = Trigger;
 Chooser.Popup = Popup;
 Chooser.Input = Input;
 Chooser.List = List;
 Chooser.Item = Item;
+Chooser.Action = Action;

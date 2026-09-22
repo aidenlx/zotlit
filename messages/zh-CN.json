@@ -473,6 +473,7 @@
   "annot_view_filter_trigger_show_all": "显示所有标签",
   "annot_view_filter_tag_tooltip": "{name} ({count})",
   "annot_view_filter_tag_search_placeholder": "搜索标签…",
+  "annot_view_filter_tag_clear": "清除已选标签",
   "annot_view_filter_tag_empty": "没有标签匹配搜索词",
   "annot_view_filter_color_trigger_selected": "正在按 {count} 种颜色筛选",
   "annot_view_filter_color_trigger_show_all": "显示所有颜色",

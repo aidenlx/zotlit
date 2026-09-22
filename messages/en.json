@@ -402,6 +402,7 @@
   "annot_view_filter_trigger_show_all": "Show all tags",
   "annot_view_filter_tag_tooltip": "{name} ({count})",
   "annot_view_filter_tag_search_placeholder": "Search tags…",
+  "annot_view_filter_tag_clear": "Clear selected tags",
   "annot_view_filter_tag_empty": "No tags match the search term",
   "annot_view_filter_color_trigger_selected": [
     {

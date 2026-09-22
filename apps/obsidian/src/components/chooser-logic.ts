@@ -1,7 +1,7 @@
 // What a Chooser shows, where its highlight lands, and what a tick leaves
-// behind, decided as data rather than in a component: the rows a query leaves
-// standing, the row a navigation key highlights, and the selection a toggled
-// row produces.
+// behind, decided as data rather than in a component: the groups and rows a
+// query leaves standing, the row a navigation key highlights, what activating
+// a row comes to, and the selection a toggled row produces.
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
@@ -15,6 +15,22 @@ export interface ChooserRow {
    * with the rendered item, so a key reads the same flag the row draws.
    */
   disabled?: boolean;
+  /**
+   * What the row runs in place of ticking. A row carrying one is an action
+   * row: it stands in the same list as the entries, reports no selected state,
+   * and the highlight reaches it with the same keys.
+   *
+   * The `close` it is handed is the only way an action leaves the popup shut;
+   * an action that never calls it leaves the popup standing.
+   */
+  action?: (close: () => void) => void;
+}
+
+/** A run of rows drawn together, under a heading when the caller names one. */
+export interface ChooserGroup<Row extends ChooserRow> {
+  /** The heading over the group. A group without one draws no heading. */
+  label?: string;
+  items: readonly Row[];
 }
 
 /**
@@ -24,24 +40,73 @@ export interface ChooserRow {
  */
 export type ChooserMatcher = (text: string) => { score: number } | null;
 
+/** A group once the query has been through it, with its survivors. */
+export interface ChooserSection<Row extends ChooserRow> {
+  label?: string;
+  /**
+   * Where the group sits in the caller's list. A query that empties a group
+   * drops it, so a section's place among the survivors shifts under it; this
+   * is the identity that holds still, and what a renderer keys a section by.
+   */
+  at: number;
+  rows: Row[];
+}
+
+/** How the rows are drawn, and the order the highlight walks them in. */
+export interface ChooserLayout<Row extends ChooserRow> {
+  /** The groups that still have a row, in the order they were given. */
+  sections: ChooserSection<Row>[];
+  /** Every surviving row, flattened: what a navigation key moves over. */
+  rows: Row[];
+  /**
+   * Whether the query left no entry standing. Action rows are exempt from the
+   * query, so a layout can still hold rows while this is true, and the empty
+   * message belongs beside them rather than in their place.
+   */
+  empty: boolean;
+}
+
 /**
- * The rows a query leaves standing, in the order they arrived. `null` is the
- * empty query, which every row survives.
+ * The groups a query leaves standing, and the flat row sequence underneath
+ * them. A group the query empties is dropped whole — no heading and no
+ * separator draw for rows that are not there. `null` is the empty query, which
+ * every row survives.
  *
  * A match is read as "matched or not"; its score is discarded and never
  * reorders the list, the way Obsidian's own lists keep the order they were
  * given.
  *
+ * An action row is exempt from the query. What it runs is not part of the
+ * vocabulary being searched, so typing a fragment of an entry must not carry
+ * "Clear selected tags" away, and typing a fragment of the action's own label
+ * must not read as a search hit that leaves the action standing alone. Entries
+ * alone decide whether the query came out empty, which is why {@link
+ * ChooserLayout.empty} is reported rather than read off the row count.
+ *
  * The row stays a type parameter because a caller's row carries more than a
  * value and a label — the tag rows hold a hit count — and the survivors are
  * handed back for that caller to render.
  */
-export function visibleRows<Row extends ChooserRow>(
-  rows: readonly Row[],
+export function chooserLayout<Row extends ChooserRow>(
+  groups: readonly ChooserGroup<Row>[],
   matcher: ChooserMatcher | null,
-): Row[] {
-  if (!matcher) return [...rows];
-  return rows.filter((row) => matcher(row.label) !== null);
+): ChooserLayout<Row> {
+  const sections: ChooserSection<Row>[] = [];
+  for (const [at, group] of groups.entries()) {
+    const rows = group.items.filter(
+      (row) =>
+        row.action !== undefined ||
+        matcher === null ||
+        matcher(row.label) !== null,
+    );
+    if (rows.length > 0) sections.push({ label: group.label, at, rows });
+  }
+  const rows = sections.flatMap((section) => section.rows);
+  return {
+    sections,
+    rows,
+    empty: rows.every((row) => row.action !== undefined),
+  };
 }
 
 /**
@@ -61,6 +126,30 @@ export function toggledValues(
     : [...values, value];
 }
 
+/** What activating a row comes to. */
+export type ChooserActivation =
+  | { kind: "ignored" }
+  | { kind: "action"; run: (close: () => void) => void }
+  | { kind: "select"; values: string[] };
+
+/**
+ * What activating a row does: run the action it carries, or hand back the
+ * selection a tick leaves behind. A row that is absent or disabled answers
+ * "ignored", so a key on an empty list and a key on a row that refuses a tick
+ * come to the same nothing.
+ *
+ * One rule for both the highlighted row under Enter and the row under a click,
+ * which is what keeps an action row reachable by exactly the keys an entry is.
+ */
+export function activatedRow(
+  row: ChooserRow | undefined,
+  selected: readonly string[],
+): ChooserActivation {
+  if (!row || row.disabled) return { kind: "ignored" };
+  if (row.action) return { kind: "action", run: row.action };
+  return { kind: "select", values: toggledValues(selected, row.value) };
+}
+
 /**
  * A step the highlight takes when a navigation key fires: one row either way,
  * a page either way, or an end of the list.
@@ -75,7 +164,6 @@ export type ChooserMove =
 
 /** The list the highlight moves over. */
 export interface ChooserExtent {
-  /** How many rows the list is showing. */
   count: number;
   /** How many rows a page step covers; at least one row. */
   pageSize: number;
