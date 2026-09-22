@@ -93,15 +93,6 @@
   --text-2xl: calc(var(--font-ui-large) * 1.5);
   --text-3xl: calc(var(--font-ui-large) * 1.875);
 
-  /* A quotation lifted out of a document, named by that use rather than by its
-     size: the Annotation excerpt takes the reading face a step under the
-     reading size the user set — 14px at Obsidian's default 16px — and a
-     unitless 1.5 keeps a clamped three-line block readable. The UI scale above
-     follows Obsidian's interface setting; a quotation answers to the text it
-     came from. */
-  --text-quote: calc(var(--font-text-size) * 0.875);
-  --text-quote--line-height: 1.5;
-
   /* ===== Fonts ===== */
   --font-*: initial;
   --font-sans: var(--font-interface);

@@ -115,13 +115,13 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
   return (
     <div
-      className="zt-annot-card zt:group zt:flex zt:flex-col zt:gap-2 zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
+      className="zt-annot-card zt:group zt:flex zt:flex-col zt:gap-1 zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:leading-(--line-height-tight) zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
       // The card is the surface Obsidian draws for a Bases card: its fill, its
       // radius and its hairline-and-drop shadow are read from the same theme
-      // variables, so a theme that restyles Bases cards restyles these. The
-      // parts inside stack on one 8px gap with no divider rule between them.
-      // The card's own voice is chrome at 12px; the excerpt and the comment
-      // name their sizes themselves.
+      // variables, so a theme that restyles Bases cards restyles these. Inside,
+      // it is set as a search result's match is: 12px on the tight leading in
+      // 8px by 12px of padding, its parts stacked on a 4px gap with no divider
+      // rule between them.
       //
       // Zotero's hex is data, so it rides in a custom property and
       // `data-annot-color` says it is there; the declaration that reads them
@@ -332,7 +332,7 @@ function CardActionBar({
  * The Annotation's own tags, in the card rather than behind a control: a
  * researcher scanning a column reads what an Annotation is filed under without
  * opening anything. They wear the same native-tag chip the filter bar and its
- * drawer draw, at the tag's own padding.
+ * drawer draw, dense, because the card is the densest of the three surfaces.
  *
  * A chip is a filter toggle, so a tag seen on one card is the gesture that
  * narrows the list to it, and a chip already in the filter rests in the accent.
@@ -343,7 +343,7 @@ function TagRow({ annot }: { annot: AnnotationRecord }) {
   if (annot.tags.length === 0) return null;
 
   return (
-    <div className="zt:flex zt:flex-wrap zt:gap-1.5">
+    <div className="zt:flex zt:flex-wrap zt:gap-1">
       {annot.tags.map((tag) => {
         const selected = selectedTags.includes(tag);
         return (
@@ -352,6 +352,7 @@ function TagRow({ annot }: { annot: AnnotationRecord }) {
             aria-pressed={selected}
             className={tagChipVariants({
               state: selected ? "selected" : "resting",
+              density: "dense",
               truncate: true,
             })}
             // The card's own click takes the selection; filtering is not that.
@@ -395,7 +396,7 @@ function CommentSlot({
         <div className="zt:text-xs zt:text-muted-foreground">
           {m.annot_view_comment_draft()}
         </div>
-        <div className="zt:text-sm zt:break-words zt:whitespace-pre-wrap zt:text-foreground zt:select-text">
+        <div className="zt:break-words zt:whitespace-pre-wrap zt:text-foreground zt:select-text">
           {draft.text}
         </div>
         <div
@@ -440,7 +441,7 @@ function Comment({
     <div
       ref={ref}
       className={cn(
-        "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:text-sm zt:break-words zt:text-foreground zt:select-text",
+        "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:text-xs zt:break-words zt:text-foreground zt:select-text",
         editable && "zt:cursor-text",
       )}
       onClick={(e) => {
@@ -541,7 +542,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
       </span>
       <textarea
         ref={focusEnd}
-        className="zt:w-full zt:resize-none zt:bg-transparent zt:text-sm zt:text-foreground"
+        className="zt:w-full zt:resize-none zt:bg-transparent zt:text-xs zt:text-foreground"
         defaultValue={text}
         readOnly={controls.readOnly}
         aria-labelledby={labelId}
@@ -612,12 +613,11 @@ function ExcerptBlock({
   }
 
   return (
-    // A quotation lifted out of a document, so it takes the reading face at
-    // the one size named for that use. The clamp keeps its 1.5 leading:
-    // three tight lines under a fade is the shape this redesign replaced.
+    // The excerpt reads as a search result's match does: the card's own 12px
+    // on the tight leading, in the full ink. The clamp cuts it at three lines.
     <blockquote
       className={cn(
-        "zt:font-content zt:text-quote zt:text-pretty",
+        "zt:text-pretty",
         collapsed && !isImage && "zt:line-clamp-3",
       )}
     >

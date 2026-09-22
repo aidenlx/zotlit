@@ -456,7 +456,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     // query on it, and `items-start` keeps each card the height of its own
     // content rather than its row's.
     <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3">
-      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-3 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
+      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
         {filtered.map((annot) => (
           <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
         ))}
