@@ -398,12 +398,14 @@ function CommentSlot({
         <div className="zt:break-words zt:whitespace-pre-wrap zt:text-foreground zt:select-text">
           {draft.text}
         </div>
-        <div
-          role="status"
-          className="zt:mt-1 zt:text-xs zt:text-muted-foreground"
-        >
-          {controls.hint}
-        </div>
+        {controls.hint && (
+          <div
+            role="status"
+            className="zt:mt-1 zt:text-xs zt:text-muted-foreground"
+          >
+            {controls.hint}
+          </div>
+        )}
       </div>
     );
   }
@@ -559,6 +561,9 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
         }}
       />
       <div className="zt:mt-2 zt:flex zt:flex-wrap zt:items-center zt:gap-2">
+        {/* The live region stays mounted through the quiet case, so the save
+            states it announces are a change inside it rather than a new node,
+            and the Save button keeps the row's end. */}
         <span
           role="status"
           className="zt:min-w-0 zt:flex-1 zt:text-xs zt:text-muted-foreground"
@@ -708,9 +713,10 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
 /**
  * What the Annotation is, where it is and what colour it was made in, as one
  * chip: the type glyph in the highlight colour before the page, on a fill of
- * that colour at 22%. The page is a locator, so it is set in the monospace
- * face, which reads as a reference rather than as a word of the excerpt
- * below it. The colour is data Zotero stored,
+ * that colour at 22%, in the 22px box the row's verbs wear. The page is a
+ * locator, so it is set in the monospace face at 11px, which reads as a
+ * reference rather than as a word of the excerpt below it; `zt-annot-page-chip`
+ * is where the view stylesheet sets that size, one step under the card's own. The colour is data Zotero stored,
  * so it rides in the card's own `--zt-annot-color` and the declarations that
  * read it stay utilities; an Annotation with no colour gets the glyph in the
  * muted ink on no fill, which is the whole of what "no colour" has to say.
@@ -734,7 +740,7 @@ function PageChip({
   onDragStart: (e: DragEvent<HTMLElement>) => void;
 }) {
   const chip = cn(
-    "zt:flex zt:h-5.5 zt:min-w-0 zt:items-center zt:gap-1.5 zt:rounded-sm zt:ps-1.5 zt:pe-2 zt:font-mono zt:font-medium zt:tabular-nums",
+    "zt-annot-page-chip zt:flex zt:h-5.5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:ps-1 zt:pe-1.5 zt:font-mono zt:font-medium zt:tabular-nums",
     color
       ? "zt:bg-(--zt-annot-color)/22 zt:text-foreground zt:hover:ring-1 zt:hover:ring-(--zt-annot-color) zt:motion-safe:transition-shadow"
       : "zt:text-muted-foreground",

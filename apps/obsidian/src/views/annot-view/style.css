@@ -87,6 +87,13 @@
   text-decoration-line: none;
 }
 
+/* The page is a locator in the 22px chip the row's verbs share, one step
+   under the card's 12px so the chip reads as the verbs' size rather than as a
+   line of the excerpt. 11px is the floor the design test holds chrome to. */
+.zt-annot-page-chip {
+  font-size: 11px;
+}
+
 /* The header block is one `<button>`, and Obsidian's own `button` rules are
    unlayered, so they outrank every `zt:` utility it wears — its fill, its
    padding and its shadow among them. This rule is unlayered too and outranks
