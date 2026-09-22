@@ -75,13 +75,21 @@ const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
 const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
 const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
 const annotationAttachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
-const annotationKeys = ANNOTATIONS.filter(
+/** Every Fixture Annotation hanging off that attachment. */
+const attachmentAnnotations = ANNOTATIONS.filter(
   ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
-).map(({ key }) => key);
-const annotationKeysByPage = Map.groupBy(
-  ANNOTATIONS.filter(
-    ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
+);
+const annotationKeys = attachmentAnnotations.map(({ key }) => key);
+/** The tag vocabulary those Annotations carry, which is what the tag Chooser lists. */
+const attachmentTags = [
+  ...new Set(
+    attachmentAnnotations.flatMap(
+      ({ tags }) => tags?.map(({ name }) => name) ?? [],
+    ),
   ),
+].sort();
+const annotationKeysByPage = Map.groupBy(
+  attachmentAnnotations,
   ({ position }) => position.pageIndex,
 );
 
@@ -446,6 +454,73 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
+      // positioning — which only a running Obsidian has. A popup that collapsed
+      // still holds its rows in the DOM, so what tells is whether its own box
+      // is still around them.
+      //
+      // The tag Chooser is named by the search field it holds, never by DOM
+      // order: the filter bar draws the colour Chooser first whenever the
+      // palette has a colour, and every Fixture Annotation under this
+      // attachment carries one. The search field is the difference between the
+      // two — the colour Chooser has none — and the trigger is then the button
+      // whose popover target is this popup, rather than whichever trigger comes
+      // first.
+      const tagPopup = `(()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;return Array.from(root?.querySelectorAll('.zt-chooser')??[]).find(p=>p.querySelector('input[role="combobox"]'))??null;})()`;
+      await obEval(
+        vaultId,
+        `(function(){const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=${tagPopup};if(!popup)throw new Error('No tag Chooser in the Annotation View');if(!popup.matches(':popover-open'))root.querySelector('[popovertarget="'+popup.id+'"]').click();return true;})()`,
+      );
+      // `menuChrome` is the computed-style half of the proof. The popup wears no
+      // `.menu` class, so its chrome can only come from Obsidian's `--menu-*`
+      // variables. A throwaway sibling declares the same seven variables and is
+      // measured beside it: equal computed values mean the popup reads them, in
+      // whatever units the engine resolved, under whatever theme is loaded. The
+      // sibling is also checked against the initial values, because an
+      // undefined variable would leave both boxes bare and make equality say
+      // nothing.
+      //
+      // The shadow is the one read compared by suffix. Tailwind's `shadow-()`
+      // utility composes its ring and inset placeholders ahead of the value, so
+      // the popup carries four transparent stops in front of the three
+      // `--menu-shadow` supplies.
+      //
+      // #1191 asks for one assertion, and this scenario carries three. The
+      // chrome read is kept here rather than left to the development loop
+      // because it is the one place ADR 0044's variable contract is held: the
+      // popup wears no `.menu` class, so nothing else would notice a theme
+      // hook that stopped reading those variables. The closed state below is
+      // kept for the same reason — only a running Obsidian has the user-agent
+      // rule it depends on. `rows` names the vocabulary, which is what proves
+      // the popup under measurement is the tag one.
+      const tagChooserBox = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,rows:[],rowsInsidePopup:false,menuChrome:false};const box=popup.getBoundingClientRect();const rows=Array.from(popup.querySelectorAll('[role="option"]'));const probe=popup.parentElement.appendChild(document.createElement('div'));probe.style.cssText='position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)';const got=getComputedStyle(popup),want=getComputedStyle(probe);const reads=['backgroundColor','borderTopWidth','borderTopColor','borderTopLeftRadius','cornerShape','paddingTop'];const chrome=reads.every(name=>got[name]===want[name])&&got.boxShadow.endsWith(want.boxShadow)&&want.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(want.borderTopWidth)>0&&parseFloat(want.borderTopLeftRadius)>0&&parseFloat(want.paddingTop)>0&&want.cornerShape!==''&&want.boxShadow!=='none';probe.remove();return{open:popup.matches(':popover-open'),rows:rows.map(row=>row.textContent).sort(),rowsInsidePopup:rows.length>0&&rows.every(row=>{const r=row.getBoundingClientRect();return r.height>0&&r.top>=box.top&&r.bottom<=box.bottom&&r.left>=box.left&&r.right<=box.right;}),menuChrome:chrome};})())`;
+      const tagChooserClosed = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,hidden:false};return{open:popup.matches(':popover-open'),hidden:!popup.checkVisibility()&&popup.getBoundingClientRect().height===0};})())`;
+      expect(
+        await obEvalUntil(vaultId, tagChooserBox, {
+          expected: JSON.stringify({
+            open: true,
+            rows: attachmentTags,
+            rowsInsidePopup: true,
+            menuChrome: true,
+          }),
+        }),
+      ).toBe(true);
+      await obEval(
+        vaultId,
+        `(function(){const popup=${tagPopup};popup?.hidePopover();return true;})()`,
+      );
+      // A closed popover is hidden by the user-agent rule
+      // `[popover]:not(:popover-open) { display: none }`, which any
+      // unconditional author-origin `display` outranks. The popup then keeps
+      // painting after it closes and the view behind draws over it, which
+      // reads as a popup that will not close and has lost its background.
+      // Only a running Obsidian has that user-agent rule, so this is the one
+      // place the closed state can be proven.
+      expect(
+        await obEvalUntil(vaultId, tagChooserClosed, {
+          expected: JSON.stringify({ open: false, hidden: true }),
+        }),
+      ).toBe(true);
       for (const [pageIndex, annotations] of annotationKeysByPage) {
         const pageKeys = annotations.map(({ key }) => key).sort();
         expect(

@@ -9,6 +9,17 @@ export interface SearchInputProps extends Omit<
   value: string;
   onChange: (next: string) => void;
   clearLabel: string;
+  /**
+   * The input type, which decides who owns Escape while the field holds text.
+   *
+   * `"search"` keeps the browser's own Escape-to-clear, and with it the
+   * browser's claim on the key: a surface around the field never sees Escape
+   * while the query is non-empty. `"text"` leaves Escape to that surface, so a
+   * field inside a popover lets the platform's light dismiss close it on the
+   * first press. Both types take the same Obsidian input styling, and the
+   * clear control beside the field is this component's own either way.
+   */
+  type?: "search" | "text";
   ref?: Ref<HTMLInputElement>;
 }
 
@@ -18,6 +29,7 @@ export function SearchInput({
   className,
   placeholder = "Search…",
   clearLabel,
+  type = "search",
   ref,
   ...rest
 }: SearchInputProps) {
@@ -25,7 +37,7 @@ export function SearchInput({
     <div className={cn("search-input-container", className)}>
       <input
         ref={ref}
-        type="search"
+        type={type}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}

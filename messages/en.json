@@ -401,6 +401,22 @@
   "annot_view_filter_trigger_selected": "Filtering by {count} tags",
   "annot_view_filter_trigger_show_all": "Show all tags",
   "annot_view_filter_tag_tooltip": "{name} ({count})",
+  "annot_view_filter_tag_search_placeholder": "Search tags…",
+  "annot_view_filter_tag_clear": "Clear selected tags",
+  "annot_view_filter_tag_empty": "No tags match the search term",
+  "annot_view_filter_tag_list": "Tags",
+  "annot_view_filter_color_trigger_selected": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "Filtering by 1 color",
+        "countPlural=*": "Filtering by {count} colors"
+      }
+    }
+  ],
+  "annot_view_filter_color_trigger_show_all": "Show all colors",
+  "annot_view_filter_color_list": "Colors",
   "annot_view_color_yellow": "Yellow",
   "annot_view_color_red": "Red",
   "annot_view_color_green": "Green",

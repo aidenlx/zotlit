@@ -18,3 +18,13 @@ it("promises the Annotation View hooks by literal name", () => {
     conflict: "zt-annot-conflict",
   });
 });
+
+it("promises the Chooser hooks by literal name", () => {
+  expect({
+    popup: themeHook.chooser,
+    trigger: themeHook.chooserTrigger,
+  }).toEqual({
+    popup: "zt-chooser",
+    trigger: "zt-chooser-trigger",
+  });
+});

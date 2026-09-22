@@ -8,6 +8,8 @@
 // that endless wait into a diagnosis the caller can act on, and aborts the CLI
 // process instead of stranding it.
 
+import { execFile } from "node:child_process";
+
 /** Generous next to the slowest observed answer (a database refresh, ~5 s). */
 export const OBSIDIAN_CALL_TIMEOUT_MS = 30_000;
 
@@ -95,4 +97,51 @@ export function createBoundedObsidianCall(
       signal?.removeEventListener("abort", abortCall);
     }
   };
+}
+
+/**
+ * The bounded CLI call every caller shares — scripts and the End-to-end Run
+ * suite alike, so the reaping behaviour cannot drift between two copies.
+ *
+ * @param command the executable, injectable so the reaping is provable
+ *   against a child that ignores SIGTERM — the failure this call contains.
+ */
+export function createObsidianCall({
+  command = "obsidian",
+  timeoutMs = OBSIDIAN_CALL_TIMEOUT_MS,
+}: { command?: string; timeoutMs?: number } = {}): (
+  args: string[],
+  options?: CallOptions,
+) => Promise<string> {
+  return createBoundedObsidianCall(
+    (args, signal) =>
+      new Promise<string>((resolve, reject) => {
+        const child = execFile(
+          command,
+          args,
+          {
+            // `timeout` paired with SIGKILL is what settles this promise. A
+            // CLI waiting on a window that never answers sits in
+            // `pthread_join` and outlives SIGTERM, which keeps its pipes — so
+            // `execFile` never fires its callback and the caller waits for
+            // ever. Measured against a child that ignores SIGTERM: the
+            // default leaves the call pending and the child running, while
+            // SIGKILL settles in ~300 ms and reaps it.
+            timeout: timeoutMs,
+            killSignal: "SIGKILL",
+            windowsHide: true,
+          },
+          (error, stdout, stderr) => {
+            if (error) reject(error);
+            else resolve(`${stdout}${stderr}`.trim());
+          },
+        );
+        // Node applies `killSignal` to `timeout` but not to an abort, so a
+        // caller's own cancellation needs the signal sent by hand.
+        signal.addEventListener("abort", () => child.kill("SIGKILL"), {
+          once: true,
+        });
+      }),
+    { timeoutMs },
+  );
 }
