@@ -1,5 +1,6 @@
 import { configureSync, resetSync } from "@logtape/logtape";
 import type { LogRecord } from "@logtape/logtape";
+import { abortable } from "@std/async/abortable";
 import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +17,6 @@ import {
 import type { DatabaseAnnotationSource } from "@/services/annotation-repository/service";
 
 import { redPng, corruptPng } from "./__fixtures__/png";
-import { abortable } from "./abort";
 import { PNG_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import { usePromiseScheduling } from "./renderer";

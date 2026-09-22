@@ -2,9 +2,10 @@
 // onto a canvas and hands it here; the encoded bytes are then reused unchanged by
 // the cache entry, the outcome, and the durable note asset.
 
+import { abortable } from "@std/async/abortable";
+
 import { getLogger } from "@/lib/log";
 
-import { abortable } from "./abort";
 import { detectExcerptImageFormat, PNG_FORMAT, WEBP_FORMAT } from "./format";
 import type { ExcerptImage } from "./format";
 import { usableExcerptWebp } from "./webp";

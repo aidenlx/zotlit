@@ -1,12 +1,12 @@
 // Borrowing the PDF document an open reader already holds, and the revision
 // proof a borrowed document passes before excerpt work crops from it.
 
+import { abortable } from "@std/async/abortable";
 import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 
 import { getLogger } from "@/lib/log";
 
-import { abortable } from "./abort";
 import type { ExcerptViewport } from "./geometry";
 
 const logger = getLogger(["excerpt-image", "reader"]);

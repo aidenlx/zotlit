@@ -1,9 +1,9 @@
+import { abortable } from "@std/async/abortable";
 import { open, stat } from "node:fs/promises";
 
 import { getLogger } from "@/lib/log";
 import { Service } from "@/services/service-base";
 
-import { abortable } from "./abort";
 import {
   excerptAnnotationRecord,
   excerptFingerprint,

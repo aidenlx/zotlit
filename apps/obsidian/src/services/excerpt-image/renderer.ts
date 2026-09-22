@@ -1,9 +1,9 @@
+import { abortable } from "@std/async/abortable";
 import { open } from "node:fs/promises";
 import { loadPdfJs } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
-import { abortable } from "./abort";
 import { excerptSourceIdentity } from "./contract";
 import type { ExcerptRequest } from "./contract";
 import { encodeExcerptImage } from "./encode";
