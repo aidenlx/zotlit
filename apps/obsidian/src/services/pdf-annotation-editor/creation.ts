@@ -14,6 +14,7 @@ import type { PdfTextStructure } from "@zotlit/pdf-structure";
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -22,7 +23,7 @@ import type {
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
 import { writeFailureReason } from "@/services/annotation-repository/write";
-import { editingLive } from "@/views/annot-view/card-controls";
+import { capabilityBlock, editingLive } from "@/views/annot-view/card-controls";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import {
@@ -36,18 +37,16 @@ import {
   removeCreationToolbar,
   renderCreationToolbar,
 } from "./creation-toolbar";
-import type { CreationToolbarNodes, MarkTool } from "./creation-toolbar";
+import type { CreationToolbarNodes } from "./creation-toolbar";
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
 import type { OverlayPageView } from "./render";
 import { captureSelection, selectionPagesOf } from "./selection-capture";
 import type { CapturedSelection, SelectionPage } from "./selection-capture";
-import { belowOf, colorMenu, onScreen, selectionCollapsed } from "./surface";
+import { colorMenu, onScreen, selectionCollapsed } from "./surface";
+import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
-
-/** Zotero's own default, which both tools start on. */
-const DEFAULT_COLOR = ANNOTATION_COLORS[0]!;
 
 /** One page of the reader, as selection capture and the anchor read it. */
 export interface ReaderPage {
@@ -98,6 +97,8 @@ export interface MarkCreationDeps {
   reveal: (annotationKey: string) => void;
   /** Draws the Editing Capability affordance into the toolbar's own slot. */
   renderCapability: (slot: HTMLElement) => void;
+  /** Each tool's own colour, which is kept across PDFs rather than per view. */
+  colors: ToolColorStore;
   annotations: AnnotationCreates;
   now: () => Temporal.Instant;
 }
@@ -109,10 +110,6 @@ export interface MarkCreationDeps {
 export class MarkCreation implements CreationGestures, Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
-  readonly #colors: Record<MarkTool, string> = {
-    highlight: DEFAULT_COLOR,
-    underline: DEFAULT_COLOR,
-  };
   #armed: MarkTool | null = null;
   #marksVisible = true;
   /** The reader's right toolbar slot, once the toolbar is mounted into it. */
@@ -191,7 +188,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     this.#captured = captured;
     const armed = this.#armed;
     if (armed) {
-      this.#commit(armed, this.#colors[armed]);
+      this.#commit(armed, this.#colors()[armed]);
       return;
     }
     this.#open();
@@ -224,7 +221,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     const live = editingLive(this.#capability());
     if (tool !== null) {
       event.preventDefault();
-      if (waiting) this.#commit(tool, this.#colors[tool]);
+      if (waiting) this.#commit(tool, this.#colors()[tool]);
       else if (live) this.#arm(this.#armed === tool ? null : tool);
       return;
     }
@@ -260,9 +257,14 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   #setColor(tool: MarkTool, color: string): void {
-    this.#colors[tool] = color;
+    this.#deps.colors.set(tool, color);
     this.#drawToolbar();
     this.#popup?.refresh();
+  }
+
+  /** Every tool's colour as it now stands, which is a settings read. */
+  #colors(): Readonly<Record<AnnotationTool, string>> {
+    return this.#deps.colors.current();
   }
 
   /**
@@ -313,11 +315,17 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
   }
 
-  /** The tool's own colour list, under the swatch that opened it. */
+  /**
+   * The tool's own colour list, under the chevron half of its split button.
+   * The toolbar sits at the right of the reader's own toolbar, so the menu
+   * lines up with the chevron's far edge and grows inward.
+   */
   #openColorMenu(tool: MarkTool, node: HTMLElement): void {
-    colorMenu(this.#colors[tool], (hex) =>
-      this.#setColor(tool, hex),
-    ).showAtPosition(belowOf(node), node.doc);
+    showMenuAtButton(
+      colorMenu(this.#colors()[tool], (hex) => this.#setColor(tool, hex)),
+      node,
+      "end",
+    );
   }
 
   #drawToolbar(): void {
@@ -331,7 +339,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   #model() {
     return creationToolbar({
       armed: this.#armed,
-      colors: this.#colors,
+      colors: this.#colors(),
       marksVisible: this.#marksVisible,
       capability: this.#capability(),
       now: this.#deps.now(),
@@ -373,7 +381,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       row,
       createPopupRow({
         armed: this.#armed,
-        colors: this.#colors,
+        colors: this.#colors(),
         capability: this.#capability(),
         mutation: this.#inFlight ? { kind: "pending" } : { kind: "idle" },
         commenting: this.#commenting,
@@ -384,12 +392,17 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (!this.#commenting) return;
     const editor = renderCommentSheet(column.createDiv(), {
       value: this.#comment,
+      blocked:
+        capabilityBlock(this.#capability(), this.#deps.now())?.reason ?? null,
       onSave: (comment) => {
         this.#comment = comment;
         const tool = this.#armed ?? "highlight";
-        this.#commit(tool, this.#colors[tool]);
+        this.#commit(tool, this.#colors()[tool]);
       },
       onCancel: () => this.#setCommenting(false),
+    });
+    editor.addEventListener("input", () => {
+      this.#comment = editor.value;
     });
     editor.focus();
     editor.setSelectionRange(editor.value.length, editor.value.length);
@@ -398,7 +411,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   #activate(action: CreatePopupAction): void {
     switch (action.kind) {
       case "tool":
-        this.#commit(action.tool, this.#colors[action.tool]);
+        this.#commit(action.tool, this.#colors()[action.tool]);
         return;
       case "color": {
         // A colour chosen in the popup becomes that tool's colour, so the
@@ -450,6 +463,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     this.#inFlight = true;
     this.#popup?.refresh();
+    let created = false;
     try {
       const position = {
         pageIndex: captured.pageIndex,
@@ -485,11 +499,16 @@ export class MarkCreation implements CreationGestures, Disposable {
         );
         return;
       }
-      if (outcome.kind === "created") this.#deps.reveal(outcome.annotationKey);
+      created = true;
+      this.#deps.reveal(outcome.annotationKey);
     } finally {
       this.#inFlight = false;
-      this.#clear();
-      this.#collapse();
+      if (created) {
+        this.#clear();
+        this.#collapse();
+      } else {
+        this.#popup?.refresh();
+      }
     }
   }
 

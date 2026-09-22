@@ -1,123 +1,252 @@
-import type { App } from "obsidian";
+// Asynchronous annotation insertion for the menu action and ZotLit-owned drops.
+import { nanoid } from "nanoid";
+import type { App, Editor, MarkdownFileInfo } from "obsidian";
 import type { DragEvent } from "react";
+
+import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
-import type { AnnotationRecord } from "@/services/annotation-repository/service";
-import type { AttachmentImport } from "@/services/attachment-import/service";
+import type {
+  AnnotationRecord,
+  AnnotationSource,
+} from "@/services/annotation-repository/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
 
+import { captureInsertion } from "./async-insert";
+
 const logger = getLogger(["views", "annot-view"]);
+const SOURCE_TAG = "application/x-zotlit-annotation";
 
-/** Custom drag MIME type tagging a drag that originated from the annot view. */
-const SOURCE_TAG = "zotlit-annot-drag";
-
-export interface DragInsertDeps {
-  app: App;
-  noteFeature: Pick<NoteFeature, "renderAnnotation">;
-  notify: (message: string | DocumentFragment) => void;
-  /** Pre-prepared attachment-import handle for the active note. */
-  getImportHandle: () => AttachmentImport | null;
-  /**
-   * The numeric id the Zotero database holds for an Annotation, or `null` for
-   * one it does not hold yet. The annotation template renders from the
-   * database, so a card the Zotero Local API answered before SQLite caught up
-   * cannot be rendered — the drag says so rather than inserting nothing.
-   */
-  resolveAnnotationID: (indexedKey: string) => number | null;
-  /**
-   * Called once a drag settles (dropped or abandoned) so the view can swap in a
-   * fresh handle — discarding an abandoned drag's pending image (v1's `cancel`).
-   */
-  onSettled: () => void;
+interface AnnotationSnapshot {
+  source: AnnotationSource | null;
+  sourceScope: string | null;
 }
 
-/**
- * Build the annot-view `onDragStart` handler. On drag start it renders the
- * dragged annotation through the `annotation` template into the `text/plain`
- * payload (Obsidian inserts it natively on drop) and, when the drop lands in an
- * editor, flushes the annotation's image excerpt into the vault — mirroring v1's
- * templated drag-insert.
- *
- * When the render cannot run, the drag is cancelled and a notice says so; the
- * card disables its handle ahead of time via the store's `dragTarget`, so
- * this branch is the last line, not the usual path.
- */
-export function createDragInsertHandler(deps: DragInsertDeps) {
-  return (evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void => {
-    const handle = deps.getImportHandle();
-    const annotationID = deps.resolveAnnotationID(annot.key);
-    evt.dataTransfer.dropEffect = "copy";
+interface AsyncInsertDeps {
+  app: App;
+  noteFeature: Pick<NoteFeature, "prepareAnnotationInsert">;
+  snapshot: (annotation: AnnotationRecord) => AnnotationSnapshot;
+  notify: (message: string | DocumentFragment) => void;
+}
 
-    if (annotationID === null) {
-      evt.preventDefault();
-      new BaseNotice(m.annot_view_annotation_not_in_database());
+type InsertionTarget = ReturnType<typeof captureInsertion>;
+
+function fallbackText(annotation: AnnotationRecord): string {
+  const key = parseIndexedKey(annotation.key);
+  const parent = parseIndexedKey(annotation.parentKey);
+  return (
+    annotation.text ??
+    `${m.excerpt_image_unavailable()}${key && parent ? ` [Zotero](${annotationOpenUri({ annotationKey: key.key, attachmentKey: parent.key, groupID: key.groupID, pageLabel: annotation.pageLabel })})` : ""}`
+  );
+}
+
+async function prepareAndCommit(
+  deps: AsyncInsertDeps,
+  options: {
+    annotation: AnnotationRecord;
+    snapshot: AnnotationSnapshot;
+    target: InsertionTarget;
+    notePath: string;
+  },
+): Promise<void> {
+  const { annotation, snapshot, target, notePath } = options;
+  try {
+    const result = await deps.noteFeature.prepareAnnotationInsert({
+      annotation,
+      source: snapshot.source!,
+      sourceScope: snapshot.sourceScope!,
+      notePath,
+      signal: target.signal,
+      valid: target.valid,
+    });
+    if (!result && target.valid()) {
+      if (target.commit(fallbackText(annotation)))
+        deps.notify(m.annot_view_drag_unavailable());
       return;
     }
-
-    let rendered: string | null = null;
-    try {
-      rendered = handle
-        ? deps.noteFeature.renderAnnotation(annotationID, {
-            attachmentImport: handle,
-          })
-        : null;
-    } catch (error) {
-      if (!(error instanceof ProfileAnnotationError)) throw error;
-      evt.dataTransfer.setData("text/plain", annot.text ?? annot.key);
+    if (!result || !target.commit(result.text)) return;
+    const { summary } = result;
+    if (summary.zotero || summary.unchecked || summary.unavailable)
+      deps.notify(
+        m.excerpt_image_summary({
+          ...summary,
+          notRefreshed: summary.notRefreshed ?? 0,
+        }),
+      );
+  } catch (error) {
+    if (target.signal.aborted || !target.valid()) return;
+    if (error instanceof ProfileAnnotationError) {
       deps.notify(
         error.diagnostic.code === "unknown-literature-note-profile"
           ? profileRecoveryNotice(deps.app, error.diagnostic)
           : error.message,
       );
-      deps.onSettled();
+      target.commit(annotation.text ?? annotation.key);
+      return;
+    }
+    logger.warn("Annotation insert failed", {
+      annotationKey: annotation.key,
+      error,
+    });
+    deps.notify(m.annot_view_insert_failed());
+  }
+}
+
+export function createInsertHandler(deps: AsyncInsertDeps) {
+  let pending: InsertionTarget | null = null;
+  const cancel = () => pending?.cancel();
+  const insert = async (annotation: AnnotationRecord): Promise<void> => {
+    cancel();
+    const { workspace } = deps.app;
+    const info = workspace.activeEditor;
+    const editor = info?.editor;
+    if (!info?.file || !editor) {
+      deps.notify(m.annot_view_insert_no_note());
+      return;
+    }
+    const snapshot = deps.snapshot(annotation);
+    if (!snapshot.source || snapshot.sourceScope === null) {
+      deps.notify(m.annot_view_drag_unavailable());
+      return;
+    }
+    using target = captureInsertion({
+      editor,
+      info,
+      isCurrent: () =>
+        workspace.activeEditor?.editor === editor &&
+        workspace.activeEditor.file === info.file,
+    });
+    using cleanup = new DisposableStack();
+    cleanup.defer(() => {
+      if (pending === target) pending = null;
+    });
+    pending = target;
+    const changed = workspace.on("active-leaf-change", () => {
+      if (!target.valid()) target.cancel();
+    });
+    cleanup.defer(() => workspace.offref(changed));
+    await prepareAndCommit(deps, {
+      annotation,
+      snapshot,
+      target,
+      notePath: info.file.path,
+    });
+  };
+  return Object.assign(insert, { cancel });
+}
+
+interface ActiveDrag {
+  cancel(): void;
+}
+
+export function createDragInsertHandler(deps: AsyncInsertDeps) {
+  let active: ActiveDrag | null = null;
+  let pending: InsertionTarget | null = null;
+  const cancel = () => {
+    active?.cancel();
+    pending?.cancel();
+  };
+  const drag = (
+    event: DragEvent<HTMLElement>,
+    annotation: AnnotationRecord,
+  ): void => {
+    cancel();
+    const snapshot = deps.snapshot(annotation);
+    if (!snapshot.source || snapshot.sourceScope === null) {
+      event.preventDefault();
+      deps.notify(m.annot_view_drag_unavailable());
       return;
     }
 
-    if (rendered == null || handle == null) {
-      logger.warn("Drag-insert cancelled", {
-        annotationKey: annot.key,
-        reason: handle == null ? "no-import-handle" : "render-unavailable",
-      });
-      evt.preventDefault();
-      new BaseNotice(m.annot_view_drag_unavailable());
-      return;
-    }
-
-    const timestamp = String(evt.timeStamp);
-    evt.dataTransfer.setData("text/plain", rendered);
-    evt.dataTransfer.setData(SOURCE_TAG, timestamp);
+    const request = nanoid();
+    event.dataTransfer.dropEffect = "copy";
+    event.dataTransfer.setData("text/plain", annotation.text ?? annotation.key);
+    event.dataTransfer.setData(SOURCE_TAG, request);
 
     const { workspace } = deps.app;
-    const win = (evt.target as HTMLElement).win;
-
+    const win = event.currentTarget.win;
+    let settled = false;
     const cleanup = () => {
+      if (settled) return;
+      settled = true;
       workspace.offref(dropRef);
       win.removeEventListener("dragend", onDragEnd);
-      deps.onSettled();
+      if (active === operation) active = null;
     };
-    // Side-effect listener only (flushes the pending attachment import); the
-    // actual insertion is Obsidian's native `text/plain` drop handling above,
-    // so calling `preventDefault()` here would break it.
+    const operation: ActiveDrag = { cancel: cleanup };
+    const onDragEnd = () => cleanup();
     // eslint-disable-next-line obsidianmd/editor-drop-paste
-    const dropRef = workspace.on("editor-drop", (dropEvt) => {
-      if (dropEvt.dataTransfer?.getData(SOURCE_TAG) === timestamp) {
-        void handle.flush().catch((error) => {
-          logger.warn("Failed to import dragged annotation image", { error });
-        });
-      }
+    const dropRef = workspace.on("editor-drop", (dropEvent, editor, info) => {
+      if (dropEvent.dataTransfer?.getData(SOURCE_TAG) !== request) return;
+      dropEvent.preventDefault();
+      dropEvent.dataTransfer.dropEffect = "copy";
       cleanup();
+      void insertDrop(deps, {
+        annotation,
+        snapshot,
+        dropEvent,
+        editor,
+        info,
+        current: (target) => {
+          pending?.cancel();
+          pending = target;
+        },
+        settled: (target) => {
+          if (pending === target) pending = null;
+        },
+      });
     });
-    // Reached only when no editor drop ran (the drop path detaches this
-    // listener), so the excerpt this render queued must not ride along with
-    // the next drop's flush.
-    const onDragEnd = (): void => {
-      handle.discard();
-      cleanup();
-    };
+    active = operation;
     win.addEventListener("dragend", onDragEnd, { once: true });
   };
+  return Object.assign(drag, { cancel });
+}
+
+async function insertDrop(
+  deps: AsyncInsertDeps,
+  options: {
+    annotation: AnnotationRecord;
+    snapshot: AnnotationSnapshot;
+    dropEvent: globalThis.DragEvent;
+    editor: Editor;
+    info: MarkdownFileInfo;
+    current: (target: InsertionTarget) => void;
+    settled: (target: InsertionTarget) => void;
+  },
+): Promise<void> {
+  const { editor, info } = options;
+  const file = info.file;
+  const position = editor.cm.posAtCoords({
+    x: options.dropEvent.clientX,
+    y: options.dropEvent.clientY,
+  });
+  if (!file || position === null) {
+    deps.notify(m.annot_view_drag_unavailable());
+    return;
+  }
+  using target = captureInsertion({
+    editor,
+    info,
+    range: { from: position, to: position },
+    isCurrent: () => info.file === file && info.editor === editor,
+  });
+  options.current(target);
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => options.settled(target));
+  const validate = () => {
+    if (!target.valid()) target.cancel();
+  };
+  const activeChanged = deps.app.workspace.on("active-leaf-change", validate);
+  cleanup.defer(() => deps.app.workspace.offref(activeChanged));
+  const layoutChanged = deps.app.workspace.on("layout-change", validate);
+  cleanup.defer(() => deps.app.workspace.offref(layoutChanged));
+  await prepareAndCommit(deps, {
+    annotation: options.annotation,
+    snapshot: options.snapshot,
+    target,
+    notePath: file.path,
+  });
 }

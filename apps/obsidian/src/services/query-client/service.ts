@@ -324,10 +324,10 @@ export class QueryClientService extends Service {
       // A read the invalidation reverted resolves with the value it reverted
       // to, and the stale mark it left is what tells that value apart from one
       // this read committed.
-      (value) =>
+      () =>
         this.#client.getQueryState(key)?.isInvalidated === true
           ? CANCELLED
-          : value,
+          : (this.#client.getQueryData<T>(key) ?? null),
       (error: unknown) => {
         if (!(error instanceof CancelledError)) return null;
         if (error.silent !== true) return CANCELLED;

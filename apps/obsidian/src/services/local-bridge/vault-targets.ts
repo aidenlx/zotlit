@@ -12,6 +12,7 @@ import {
   getChildNotesByParentIDs,
   getItemsByKey,
   getRelatedKeysByItemID,
+  getZoteroDatabaseIdentity,
 } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -21,13 +22,20 @@ import {
   joinFolderPath,
   resolveAttachmentFolderPath,
 } from "@/lib/ensure-folder";
+import {
+  excerptAssetIdentities,
+  isOwnedExcerptAssetPath,
+} from "@/services/excerpt-image/materialize";
+import { referencedExcerptPaths } from "@/services/excerpt-image/references";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 export interface VaultTargetDeps {
   app: App;
   settings: Pick<SettingsService, "loaded">;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "getImportedNoteByNoteKey">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
 }
 
 /**
@@ -93,12 +101,35 @@ async function annotationImageTargets(
     deps.notePath,
   );
   const images: Record<string, string> = {};
+  const note = deps.notePath
+    ? deps.app.vault.getFileByPath(deps.notePath)
+    : null;
+  const referenced = note ? await referencedExcerptPaths(deps.app, note) : [];
   for (const attachment of getAttachmentsByParents(client, [item.itemID])) {
     for (const annotation of getAnnotationsByParent(
       client,
       attachment.itemID,
     )) {
       if (!annotationHasCacheImage(annotation.type)) continue;
+      const identities = excerptAssetIdentities({
+        sourceScope: deps.zoteroPref.dataDir,
+        source: {
+          kind: "zotero-db",
+          database: getZoteroDatabaseIdentity(client),
+          libraryID: annotation.libraryID,
+          libraryRevision: null,
+        },
+        libraryID: annotation.libraryID,
+        attachmentKey: attachment.indexedKey,
+        annotation: { key: annotation.indexedKey },
+      });
+      const owned = referenced.find((path) =>
+        isOwnedExcerptAssetPath(path, identities),
+      );
+      if (owned) {
+        images[annotation.indexedKey] = owned;
+        continue;
+      }
       const path = joinFolderPath(folder, `${annotation.key}.png`);
       if (deps.app.vault.getFileByPath(path)) {
         images[annotation.indexedKey] = path;

@@ -14,6 +14,7 @@ import {
   markGestures,
   pageView,
   pdfReader,
+  readerSettings,
 } from "./__fixtures__";
 import { PdfAnnotationEditor } from "./service";
 import type { AttachmentResolution } from "./service";
@@ -26,6 +27,7 @@ const RESOLVED = {
   kind: "resolved",
   attachmentKey: "ABCD2345",
   itemKey: "WXYZ6789g4711",
+  openable: true,
 } as const satisfies AttachmentResolution;
 
 /** Two of the Fixture's own Annotations on `rougier-2014.pdf`, page one. */
@@ -64,14 +66,16 @@ function pdfView(path: string | null, reader = pdfReader()) {
 
 function workspace(views: { view: unknown }[]) {
   const offref = vi.fn();
-  const handlers: (() => void)[] = [];
+  const handlers = new Map<string, ((leaf?: { view: unknown }) => void)[]>();
   const app = {
     vault: { adapter: new FileSystemAdapter() },
     workspace: {
       getLeavesOfType: () => views,
       onLayoutReady: (callback: () => void) => callback(),
-      on: (_name: string, callback: () => void) => {
-        handlers.push(callback);
+      on: (name: string, callback: (leaf?: { view: unknown }) => void) => {
+        const eventHandlers = handlers.get(name) ?? [];
+        eventHandlers.push(callback);
+        handlers.set(name, eventHandlers);
         return { e: { offref } };
       },
     },
@@ -82,7 +86,14 @@ function workspace(views: { view: unknown }[]) {
     offref,
     /** Replays what Obsidian's `file-open` and `layout-change` events drive. */
     relayout: () => {
-      for (const handler of handlers) handler();
+      for (const name of ["file-open", "layout-change"]) {
+        for (const handler of handlers.get(name) ?? []) handler();
+      }
+    },
+    activate: (view: unknown) => {
+      for (const handler of handlers.get("active-leaf-change") ?? []) {
+        handler({ view });
+      }
     },
   };
 }
@@ -94,7 +105,10 @@ function affordanceIn(slot: HTMLElement): HTMLElement | null {
 
 /** The cooldown's remaining seconds, as the affordance prints them. */
 function secondsShown(slot: HTMLElement): string | null {
-  return affordanceIn(slot)?.querySelector("span")?.textContent ?? null;
+  return (
+    affordanceIn(slot)?.querySelector("[data-zt-capability-countdown]")
+      ?.textContent ?? null
+  );
 }
 
 /** The instant the affordance reads a cooldown at, and a deadline 45s past it. */
@@ -129,6 +143,7 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
 
   {
@@ -147,11 +162,8 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     expect(binding.probes).toHaveLength(PROBE_COUNT);
     expect(failedIn(binding.probes)).toEqual([]);
     expect(binding.supported).toBe(true);
-    // The rest of the Creation Toolbar arrives with creation; what stands here
-    // is the always-present Editing Capability affordance.
-    expect(affordanceIn(reader.toolbarRightEl)?.className).toContain(
-      "clickable-icon",
-    );
+    // A writable attachment shows only the normal editing tools.
+    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
     expect(reader.toolbarRightEl.childElementCount).toBe(1);
     // An attachment with no Annotations leaves the page as Obsidian built it.
     expect(reader.page.div.childElementCount).toBe(0);
@@ -163,7 +175,26 @@ it("binds an open PDF view, resolves its vault path, and unbinds on unload", asy
     "pagerendered",
     expect.any(Function),
   );
-  expect(offref).toHaveBeenCalledTimes(2);
+  expect(offref).toHaveBeenCalledTimes(3);
+});
+
+it("refreshes the repository when an open PDF leaf becomes active", async () => {
+  const view = pdfView("attachments/rougier-2014.pdf");
+  const annotations = annotationReads();
+  const harness = workspace([{ view }]);
+  await using service = new PdfAnnotationEditor({
+    app: harness.app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+
+  harness.activate(view);
+
+  expect(annotations.refresh).toHaveBeenCalledExactlyOnceWith("ABCD2345");
 });
 
 it("paints the attachment's annotations over every page it renders", async () => {
@@ -178,6 +209,7 @@ it("paints the attachment's annotations over every page it renders", async () =>
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -201,6 +233,7 @@ it("rebuilds the marks from data after PDF.js recycles the page", async () => {
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -228,6 +261,7 @@ it("replaces the whole list when the repository announces a change", async () =>
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -257,6 +291,7 @@ it("takes every mark off the page when the leaf closes", async () => {
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -280,6 +315,7 @@ it("probes the page a view had already painted before the binding attached", asy
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -308,6 +344,7 @@ it("waits for the first render when Obsidian is still opening the document", asy
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -334,6 +371,7 @@ it("reads an external file's absolute path from its `file:` prefix", async () =>
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -358,6 +396,7 @@ it("leaves a PDF Zotero does not know exactly as Obsidian opened it", async () =
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -391,6 +430,7 @@ it("paints a view bound while the resolver could not answer yet", async () => {
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -424,6 +464,7 @@ it("unbinds a leaf whose viewer Obsidian already closed", async () => {
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   await service.bindings[0]!.refreshed;
@@ -454,6 +495,7 @@ it("fails closed to the reader when the controller seam changed shape", async ()
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -481,6 +523,7 @@ it("drops its page listener when a page's viewport changed shape", async () => {
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -509,6 +552,7 @@ it("rebinds a leaf that opened another PDF and unbinds a closed leaf", async () 
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -550,6 +594,7 @@ it("waits for the file a view has yet to load before it resolves anything", asyn
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -577,6 +622,7 @@ it("exposes each open PDF view as a Reader Session, by the file it holds", async
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -590,6 +636,39 @@ it("exposes each open PDF view as a Reader Session, by the file it holds", async
   expect(service.sessionForPath("attachments/other.pdf")).toBeNull();
 });
 
+it("announces a late PDF session after its resolved target is available", async () => {
+  const reader = pdfReader();
+  const view = pdfView(null, reader);
+  const { app, relayout } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads([HIGHLIGHT]),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+  const announced: unknown[] = [];
+  service.on("session-added", (filePath) => {
+    announced.push({
+      filePath,
+      target: service.sessionForPath(filePath)?.target,
+    });
+  });
+
+  Object.assign(view, pdfView("attachments/rougier-2014.pdf", reader));
+  relayout();
+
+  expect(announced).toEqual([
+    {
+      filePath: "attachments/rougier-2014.pdf",
+      target: { attachmentKey: "ABCD2345", itemKey: "WXYZ6789g4711" },
+    },
+  ]);
+});
+
 it("names a standalone attachment in its session, with no parent Item", async () => {
   const view = pdfView("attachments/loose.pdf");
   const { app } = workspace([{ view }]);
@@ -600,10 +679,12 @@ it("names a standalone attachment in its session, with no parent Item", async ()
       kind: "resolved",
       attachmentKey: "LSTAND23",
       itemKey: null,
+      openable: true,
     }),
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -623,6 +704,7 @@ it("holds the selection a consumer sets, and announces it", async () => {
     annotations: annotationReads([HIGHLIGHT, UNDERLINE]),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -647,6 +729,7 @@ it("paints the mark a consumer selected, and drops one the read retired", async 
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -675,6 +758,7 @@ it("moves the reader to the page an annotation is drawn on", async () => {
     annotations: annotationReads([HIGHLIGHT]),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const binding = service.bindings[0]!;
@@ -703,6 +787,7 @@ it("stops announcing once the view's binding is gone", async () => {
     annotations: annotationReads(),
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
   const session = service.bindings[0]!.session;
@@ -729,24 +814,26 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   {
     await using _service = service;
     await service.ready;
     expect(annotations.capabilityFor).toHaveBeenCalledWith("ABCD2345");
-    expect(affordanceIn(reader.toolbarRightEl)?.dataset.ztCapabilityTone).toBe(
-      "ready",
-    );
+    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
 
     // A probe that changed what this Attachment may do redraws the one node.
     annotations.setCapability({
       kind: "read-only",
       reason: "local-api-disabled",
     });
+    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
+    annotations.setCapability({ kind: "authorizing" });
     const node = affordanceIn(reader.toolbarRightEl)!;
-    expect(node.dataset.ztCapabilityTone).toBe("warning");
-    expect(node.classList.contains("mod-warning")).toBe(true);
-    expect(node.getAttribute("aria-label")).toContain("local API");
+    expect(node.dataset.ztCapabilityTone).toBe("busy");
+    expect(node.classList.contains("mod-warning")).toBe(false);
+    expect(node.textContent).toContain("Waiting for approval in Zotero");
+    expect(node.getAttribute("role")).toBe("status");
     expect(reader.toolbarRightEl.childElementCount).toBe(1);
   }
 
@@ -769,6 +856,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
     annotations,
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
+    settings: readerSettings(),
     now: () => NOW,
   });
   {
@@ -794,7 +882,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
   expect(stopped).toHaveBeenCalledOnce();
 });
 
-it("hands the affordance's click and its keyboard activation to the one gesture", async () => {
+it("keeps pending authorization informational in the PDF reader", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const gestures = capabilityGestures();
@@ -803,9 +891,10 @@ it("hands the affordance's click and its keyboard activation to the one gesture"
   await using service = new PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
-    annotations: annotationReads(),
+    annotations: annotationReads([], { kind: "authorizing" }),
     capabilityGestures: gestures,
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -813,9 +902,7 @@ it("hands the affordance's click and its keyboard activation to the one gesture"
   node.click();
   node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
-  // What the gesture then does — probe, then reveal the row — is the UI seam's,
-  // and is asserted where it lives.
-  expect(gestures.showEditingCapability).toHaveBeenCalledTimes(2);
+  expect(node.getAttribute("role")).toBe("status");
 });
 
 it("probes before a blocked keystroke is answered, and stays out of the way otherwise", async () => {
@@ -834,6 +921,7 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
     annotations,
     capabilityGestures: gestures,
     markGestures: markGestures(),
+    settings: readerSettings(),
   });
   await service.ready;
 
@@ -862,10 +950,9 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   expect(annotations.probe).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
 
-  // A gesture that opens Zotero's dialog and goes on is not a blocked one, so
-  // it is never answered with a notice saying the edit did not happen.
+  // Unauthorized editing remains blocked until explicit approval.
   annotations.setCapability({ kind: "authorization-required" });
   await press("h");
-  expect(annotations.probe).toHaveBeenCalledOnce();
-  expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(annotations.probe).toHaveBeenCalledTimes(2);
+  expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
 });

@@ -8,6 +8,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { App, TFile } from "obsidian";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
+import { getZoteroDatabaseIdentity } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with { type: "json" };
 import noteSchema from "@zotlit/db/contract/note.schema.json" with { type: "json" };
@@ -18,6 +19,7 @@ import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -117,6 +119,9 @@ async function harness(
     /** Vault paths the note index and the vault answer for. */
     vaultFiles?: readonly string[];
     partials?: readonly LiteratureNoteTemplatePartial[];
+    immutable?: "owned" | "previous" | "foreign";
+    reference?: "embed" | "link";
+    shifted?: boolean;
   } = {},
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
@@ -134,10 +139,57 @@ async function harness(
   const vaultFiles = new Set(
     options.vaultFiles ?? [ITEM_NOTE_PATH, CHILD_NOTE_PATH, IMAGE_PATH],
   );
+  const identities = excerptAssetIdentities({
+    sourceScope: options.immutable === "foreign" ? "/other-source" : dataDir,
+    source: {
+      kind: "zotero-db",
+      database: getZoteroDatabaseIdentity(sqlite),
+      libraryID: 1,
+      libraryRevision: null,
+    },
+    libraryID: 1,
+    attachmentKey: "ATCH2345",
+    annotation: { key: "ANIM2345" },
+  });
+  // "previous" writes the name the release before the shared identity used.
+  const identity =
+    options.immutable === "previous" ? identities[1]! : identities[0]!;
+  const immutablePath = `literatures/attachments/zotlit-excerpt-${identity}-${"a".repeat(64)}.png`;
+  const original = options.immutable
+    ? `${options.reference === "link" ? "" : "!"}[[${immutablePath}]]`
+    : "";
+  const content = options.shifted
+    ? `A user paragraph inserted after the metadata scan.\n${original}`
+    : original;
+  if (options.immutable) {
+    vaultFiles.delete(IMAGE_PATH);
+    vaultFiles.add(immutablePath);
+  }
   const fileAt = (path: string): TFile | null =>
     vaultFiles.has(path) ? ({ path } as TFile) : null;
   const app = {
-    vault: { getName: () => VAULT_NAME, getFileByPath: fileAt },
+    vault: {
+      getName: () => VAULT_NAME,
+      getFileByPath: fileAt,
+      read: async () => content,
+    },
+    metadataCache: {
+      getFileCache: () => ({
+        [options.reference === "link" ? "links" : "embeds"]: options.immutable
+          ? [
+              {
+                original,
+                link: immutablePath,
+                position: {
+                  start: { offset: 0 },
+                  end: { offset: original.length },
+                },
+              },
+            ]
+          : [],
+      }),
+      getFirstLinkpathDest: fileAt,
+    },
     fileManager: {
       getAvailablePathForAttachment: (name: string) =>
         Promise.resolve(`literatures/attachments/${name}`),
@@ -301,6 +353,64 @@ it("exports the selected Item with the vault targets this vault can answer", asy
   expect(body).not.toContain("/Users/");
   expect(body).not.toContain("PRIVATE CHILD NOTE BODY");
 });
+
+it.each(["owned", "previous", "foreign"] as const)(
+  "exports only referenced immutable images with matching ownership (%s)",
+  async (immutable) => {
+    await using bridge = await harness({ immutable });
+    const res = await bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
+      method: "POST",
+      body: JSON.stringify({ item: ITEM }),
+    });
+    expect(res.status).toBe(200);
+    const snapshot = (await res.json()) as {
+      roots: { annotations: unknown[] };
+      unavailable: { path: string }[];
+    };
+    if (immutable === "foreign") {
+      expect(JSON.stringify(snapshot.roots.annotations[0])).not.toContain(
+        "zotlit-excerpt-",
+      );
+      expect(snapshot.unavailable.map(({ path }) => path)).toContain(
+        "annotations[0].zt.imgLink",
+      );
+    } else {
+      // An asset the previous release named is still the annotation's own image.
+      expect(JSON.stringify(snapshot.roots.annotations[0])).toContain(
+        "zotlit-excerpt-",
+      );
+      expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
+        "annotations[0].zt.imgLink",
+      );
+    }
+  },
+);
+
+it.each(["embed", "link"] as const)(
+  "keeps a current immutable %s after its cached offsets shift",
+  async (reference) => {
+    await using bridge = await harness({
+      immutable: "owned",
+      reference,
+      shifted: true,
+    });
+    const res = await bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
+      method: "POST",
+      body: JSON.stringify({ item: ITEM }),
+    });
+    expect(res.status).toBe(200);
+    const snapshot = (await res.json()) as {
+      roots: { annotations: unknown[] };
+      unavailable: { path: string }[];
+    };
+    expect(JSON.stringify(snapshot.roots.annotations[0])).toContain(
+      "zotlit-excerpt-",
+    );
+    expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
+      "annotations[0].zt.imgLink",
+    );
+  },
+);
 
 it("reports an annotation image the vault does not hold and links the one it does", async () => {
   await using bridge = await harness();

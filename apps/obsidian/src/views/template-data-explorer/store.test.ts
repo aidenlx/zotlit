@@ -194,8 +194,13 @@ describe("native Explorer sample data", () => {
         error: null,
         data: { type: "note" },
       });
+      // The conference-paper sample's own two Annotations, and nothing the
+      // discarded read carried.
       expect(session.state.getState().annotations?.map(({ id }) => id)).toEqual(
-        ['["sample:conference-paper","CNPAN26A"]'],
+        [
+          '["sample:conference-paper","CNPAN26A"]',
+          '["sample:conference-paper","CNPVL26A"]',
+        ],
       );
     },
   );

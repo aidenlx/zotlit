@@ -1,4 +1,5 @@
 import { getLanguage, Plugin, requestUrl } from "obsidian";
+import type { FileSystemAdapter } from "obsidian";
 import semverGte from "semver/functions/gte";
 
 import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
@@ -15,7 +16,11 @@ import { enableStartupLogging } from "./lib/log";
 import { BaseNotice } from "./lib/notice";
 import { openSettingsTab, revealSetting } from "./lib/open-settings";
 import { registerAttachmentSkipNotice } from "./services/attachment-import/notices";
-import { addAttachmentOpenActions } from "./services/attachment-open/actions";
+import {
+  addAttachmentOpenActions,
+  createPdfReader,
+} from "./services/attachment-open/actions";
+import { registerFileLinkCapture } from "./services/attachment-open/capture";
 import { registerAttachmentOpenFileMenu } from "./services/attachment-open/menu";
 import { buildServices } from "./services/build";
 import { registerCitationsCli } from "./services/citation-index/cli/register";
@@ -24,6 +29,7 @@ import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candid
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
+import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
@@ -265,6 +271,8 @@ export default class ZotLitPlugin extends Plugin {
         customize,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
+        excerptImage: services.excerptImage,
+        excerptDisplay: services.excerptDisplay,
         annotations: services.annotationRepository,
         writeAuthorization: services.zoteroLocalApi,
         template: services.template,
@@ -294,12 +302,28 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
     registerAttachmentOpenFileMenu(this, {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+      settings: services.settings,
     });
+    void stack.use(
+      registerFileLinkCapture({
+        // Desktop-only plugin: the adapter is always a `FileSystemAdapter`.
+        vaultBasePath: (
+          this.app.vault.adapter as FileSystemAdapter
+        ).getBasePath(),
+        attachments: services.attachmentResolver,
+        settings: services.settings,
+        reader: createPdfReader({
+          app: this.app,
+          settings: services.settings,
+        }),
+      }),
+    );
     const updateAll = () =>
       runBatchUpdateAll({
         createProfile: services.createProfile,
@@ -371,12 +395,11 @@ export default class ZotLitPlugin extends Plugin {
       liveUpdate: services.localServer,
       pdfReaders: services.pdfAnnotationEditor,
       annotations: services.annotationRepository,
-      showEditingCapability: () =>
-        void services.capabilityNotices.showEditingCapability(),
+      excerptDisplay: services.excerptDisplay,
+      showEditingCapability: () => void services.zoteroLocalApi.authorize(),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
-      attachmentImport: services.attachmentImport,
       itemLookup: services.itemLookup,
       settings: services.settings,
     });
@@ -434,7 +457,7 @@ export default class ZotLitPlugin extends Plugin {
         revealSetting(
           this.app,
           this.manifest.id,
-          m.settings_citation_references_style_name(),
+          "settings_citation_references_style",
         );
       }),
     );
@@ -532,11 +555,7 @@ export default class ZotLitPlugin extends Plugin {
     );
     stack.defer(
       registerLibraryScopeNotices(services.libraryScope, () => {
-        revealSetting(
-          this.app,
-          this.manifest.id,
-          m.settings_library_scope_name(),
-        );
+        revealSetting(this.app, this.manifest.id, "settings_library_scope");
       }),
     );
 
@@ -547,6 +566,26 @@ export default class ZotLitPlugin extends Plugin {
       services.localServer.on("db/updated", () => {
         services.db.notifyExternalChange();
       }),
+    );
+
+    // A saved pixel edit revalidates its Excerpt Image wherever the image
+    // stands: the card that shows the Annotation, and — with no card on screen —
+    // the device-local image the store already holds for it. One subscriber
+    // covers every surface that can save an edit.
+    stack.defer(
+      services.annotationRepository.on(
+        "excerpt-pixels-changed",
+        (record, source) => {
+          const request = savedExcerptRequest({
+            annotation: record,
+            source,
+            sourceScope: services.zoteroPref.dataDir,
+            db: services.db,
+            paths: services.zoteroPref,
+          });
+          if (request) services.excerptDisplay.revalidate(request);
+        },
+      ),
     );
 
     this.#services = services;

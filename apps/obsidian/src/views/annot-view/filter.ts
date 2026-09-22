@@ -146,9 +146,10 @@ export interface TagChip {
 }
 
 /**
- * Distinct tags across the annotations, ordered alphabetically by name
- * (localeCompare). Stable regardless of selection so the drawer never
- * reorders on toggle.
+ * Distinct tags across the annotations, ordered by hit count descending and
+ * then by name (localeCompare), so the tags that reach the most annotations
+ * lead the Chooser. Stable regardless of selection so the list never reorders
+ * on toggle.
  *
  * Keyed by name, not a numeric id — the Local API source has none, and two
  * annotations' same-named tags were already indistinguishable to a reader,
@@ -184,16 +185,33 @@ export function deriveTagChips(
     };
   });
 
-  return chips.sort((a, b) => a.name.localeCompare(b.name));
+  return chips.sort(
+    (a, b) => b.hitCount - a.hitCount || a.name.localeCompare(b.name),
+  );
+}
+
+/** What a bounded active state draws, and what it only counts. */
+export interface CappedSelection<T> {
+  /** The leading values the control draws, at most `cap` of them. */
+  shown: T[];
+  /** How many the cap left out; `0` while everything is drawn. */
+  hiddenCount: number;
 }
 
 /**
- * The filter bar's first-tag chip: the first selected tag (alphabetically) while
- * filtering, else the first alphabetical tag.
- * @returns `undefined` when the tag vocabulary is empty.
+ * A selection bounded for a control that must stop growing as it fills: the
+ * leading `cap` values, and a count of the rest. The order given is kept, so
+ * the control reads the same way whatever order its values were ticked in.
+ *
+ * The cap reaches the eye alone — the control's accessible name is built from
+ * the whole selection, which a screen reader has no width constraint on.
  */
-export function pickFirstTagChip(
-  chips: readonly TagChip[],
-): TagChip | undefined {
-  return chips.find((chip) => chip.selected) ?? chips[0];
+export function cappedSelection<T>(
+  values: readonly T[],
+  cap: number,
+): CappedSelection<T> {
+  return {
+    shown: values.slice(0, cap),
+    hiddenCount: Math.max(0, values.length - cap),
+  };
 }

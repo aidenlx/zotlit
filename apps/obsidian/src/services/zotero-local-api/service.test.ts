@@ -105,7 +105,79 @@ it("reads every Annotation of one Attachment in Zotero's reading order", async (
     // Never moves after the create, which is what makes it the window an
     // Uncertain Create is reconciled inside (aidenlx/zotlit#1151).
     dateAdded: "2026-08-23T16:18:18Z",
+    dateModified: null,
+    authorName: null,
+    isExternal: null,
     tags: [],
+    tagDetails: [],
+  });
+});
+
+it("preserves template metadata supplied by the Local API", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: async () => {
+      const response = annotationPage([ROUGIER_ANNOTATIONS[0]!]);
+      const body = (await response.json()) as {
+        data: Record<string, unknown>;
+      }[];
+      Object.assign(body[0]!.data, {
+        dateModified: "2026-09-20T01:02:03Z",
+        annotationAuthorName: "A. Reader",
+        annotationIsExternal: true,
+        tags: [{ tag: "review" }, { tag: "imported", type: 1 }],
+      });
+      return new Response(JSON.stringify(body), { headers: response.headers });
+    },
+  });
+  await client.probe();
+  expect(read(await client.listAnnotations(ATTACHMENT_KEY))[0]).toMatchObject({
+    dateModified: "2026-09-20T01:02:03Z",
+    authorName: "A. Reader",
+    isExternal: true,
+    tagDetails: [
+      { name: "review", type: "manual" },
+      { name: "imported", type: "auto" },
+    ],
+  });
+});
+
+it.each([null, "", " ", "two"])(
+  "rejects an empty page whose total header is %j",
+  async (total) => {
+    await using stack = new AsyncDisposableStack();
+    const { client } = await setup(stack, {
+      children: () => {
+        const response = annotationPage([]);
+        if (total === null) response.headers.delete("Total-Results");
+        else response.headers.set("Total-Results", total);
+        return response;
+      },
+    });
+    await client.probe();
+
+    expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+      failure: {
+        kind: "invalid-response",
+        issue: "annotation page named no valid total",
+      },
+    });
+  },
+);
+
+it("rejects a duplicate Annotation within one page", async () => {
+  await using stack = new AsyncDisposableStack();
+  const annotation = ROUGIER_ANNOTATIONS[0]!;
+  const { client } = await setup(stack, {
+    children: () => annotationPage([annotation, annotation]),
+  });
+  await client.probe();
+
+  expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+    failure: {
+      kind: "invalid-response",
+      issue: "annotation page repeated an annotation",
+    },
   });
 });
 
@@ -198,6 +270,25 @@ it("follows the list route to its end, so an Attachment past one page is whole",
     expect(url.searchParams.get("sort")).toBe("dateAdded");
     expect(url.searchParams.get("direction")).toBe("asc");
   }
+});
+
+it("rejects a collection whose total changes between pages", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client } = await setup(stack, {
+    children: ({ start }: ChildrenRequest) =>
+      annotationPage(manyAnnotations(start, start === 0 ? 100 : 30), {
+        total: start === 0 ? 130 : 131,
+        start,
+      }),
+  });
+  await client.probe();
+
+  expect(await client.listAnnotations(ATTACHMENT_KEY)).toEqual({
+    failure: {
+      kind: "invalid-response",
+      issue: "annotation total changed during pagination",
+    },
+  });
 });
 
 it("answers an empty list for a key Zotero does not hold", async () => {

@@ -364,10 +364,17 @@ describe("Sample Items", () => {
     expect(result.creationBody).toContain(
       "# Designing reproducible research interfaces",
     );
-    expect(result.annotationRanges).toHaveLength(1);
-    const mark = result.annotationRanges[0]!;
-    expect(result.creationBody!.slice(mark.from, mark.to)).toContain(
-      SAMPLE_ITEMS[1]!.roots.annotations[0]!.text,
+    // One mark per Annotation the sample carries, each over the text it
+    // rendered. The two conference-paper Annotations share their text, so
+    // the marks are told apart by count and order, not by content.
+    expect(
+      result.annotationRanges.map(({ from, to }) =>
+        result.creationBody!.slice(from, to),
+      ),
+    ).toEqual(
+      SAMPLE_ITEMS[1]!.roots.annotations.map(({ text }) =>
+        expect.stringContaining(String(text)),
+      ),
     );
     expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
   });

@@ -85,3 +85,26 @@ export function activatable(
     },
   };
 }
+
+/** The clicks a control has already answered, keyed by the event itself. */
+const claimedClicks = new WeakSet<Event>();
+
+/**
+ * Claim a click for the control it landed on, so an ancestor that acts on the
+ * same click stands down.
+ *
+ * Halting the click would stand the ancestor down too, but Obsidian dismisses
+ * an open `Menu` from a `click` listener on the window: a click that never
+ * reaches the window leaves the menu standing, and the trigger that opened it
+ * can never shut it.
+ *
+ * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+ */
+export function claimClick(e: { nativeEvent: Event }): void {
+  claimedClicks.add(e.nativeEvent);
+}
+
+/** Whether a control has already answered this click. */
+export function clickClaimed(e: { nativeEvent: Event }): boolean {
+  return claimedClicks.has(e.nativeEvent);
+}

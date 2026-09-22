@@ -155,6 +155,13 @@ export interface FixtureItem {
    * stamp. An absent value seeds the note under the default Profile, unstamped.
    */
   literatureNoteProfile?: string;
+  /**
+   * Seed this Item's Literature Note with a managed region holding the
+   * per-Annotation output ZotLit wrote before Mark Landing (#1156): a plain
+   * page label, with no link and no Annotation Anchor. Update Note rewrites
+   * that region, so the note stands for work a reader has already done.
+   */
+  literatureNoteStaleAnnotations?: boolean;
   title: string;
   /**
    * The Item's **Venue**. The builder resolves which per-type field receives
@@ -514,6 +521,7 @@ export const ITEMS: readonly FixtureItem[] = [
     ],
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
+    literatureNoteStaleAnnotations: true,
   },
   {
     itemID: 57,
@@ -873,7 +881,7 @@ export const NOTES: readonly FixtureNote[] = [
     key: "NNNNAAAA",
     parentItemID: 1,
     title: "Reading notes on the personal alpha",
-    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the personal alpha</h1>\n<p>A child note of an item filed in two collections.</p>\n</div></div>',
+    note: '<div class="zotero-note znv1"><div data-schema-version="9"><h1>Reading notes on the personal alpha</h1>\n<p><img data-attachment-key="SNAP2345" data-annotation="%7B%22attachmentURI%22%3A%22http%3A%2F%2Fzotero.org%2Fusers%2Flocal%2FLOCAL%2Fitems%2FRGRPDF24%22%2C%22annotationKey%22%3A%22FDRFQ7C2%22%7D"></p>\n<p><img data-attachment-key="SNAP3456" data-annotation="%7B%22attachmentURI%22%3A%22http%3A%2F%2Fzotero.org%2Fusers%2Flocal%2FLOCAL%2Fitems%2FRGRPDF24%22%2C%22annotationKey%22%3A%22TYY6Z6ZF%22%7D"></p>\n<p>Saved snapshot <img data-attachment-key="FRZN2345"></p>\n<p>A child note of an item filed in two collections.</p>\n</div></div>',
     importedNoteBody:
       "# Reading notes on the personal alpha\n\nA child note of an item filed in two collections.\n",
     dateModified: "2025-02-28 12:00:00",
@@ -959,6 +967,9 @@ export type FixtureAnnotationAsset =
 
 export type FixtureAsset =
   | FixtureAnnotationAsset
+  | "excerpt-rendering/corrupt.pdf"
+  | "excerpt-rendering/encrypted.pdf"
+  | "excerpt-rendering/excerpt-rendering.pdf"
   | "ioannidis-2005/ioannidis-2005.pdf"
   | "pdf-parity/pdf-parity-layout.pdf"
   | "pdf-parity/pdf-parity-scanned.pdf"
@@ -1007,13 +1018,183 @@ export const PARITY_PDFS: readonly FixtureParityPdf[] = [
   },
 ];
 
+/** Stable vault directory for the excerpt-rendering acceptance inputs. */
+export const EXCERPT_RENDERING_VAULT_DIR = "attachments/excerpt-acceptance";
+
+export interface FixtureExcerptPdf {
+  readonly asset: FixtureAsset;
+  readonly outcome: "renderable" | "corrupt" | "password-required";
+  readonly sha256: string;
+}
+
+/**
+ * Small, generated PDFs for renderer acceptance. They are copied into the
+ * Fixture Vault, but stay out of Zotero's database and Item count assertions.
+ */
+export const EXCERPT_RENDERING_PDFS: readonly FixtureExcerptPdf[] = [
+  {
+    asset: "excerpt-rendering/excerpt-rendering.pdf",
+    outcome: "renderable",
+    sha256: "cd292fc28f13fc469df6694c64a2e4a60d5ef2e02ce2c4beb4a43065285b415a",
+  },
+  {
+    asset: "excerpt-rendering/corrupt.pdf",
+    outcome: "corrupt",
+    sha256: "48c92d5c280dfbd46680f7ec622426f4e8d90d2e1f5f7531c585a6f7ea09be67",
+  },
+  {
+    asset: "excerpt-rendering/encrypted.pdf",
+    outcome: "password-required",
+    sha256: "875fe363708b463a04568096d2681870f17a22cdd5813f7ed2b7ac779ec66374",
+  },
+];
+
+export interface FixtureExcerptCase {
+  readonly id: string;
+  readonly type: "image" | "ink";
+  readonly pageIndex: number;
+  readonly rect?: readonly [number, number, number, number];
+  readonly width?: number;
+  readonly paths?: readonly (readonly number[])[];
+  readonly measureMemory?: boolean;
+  /** Independent decoded-PNG oracles; sample coordinates are output pixels. */
+  readonly expected: {
+    readonly width: number;
+    readonly height: number;
+    readonly samples: readonly (readonly [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ])[];
+  };
+}
+
+/** Independent geometry cases consumed by desktop acceptance tests. */
+export const EXCERPT_RENDERING_CASES: readonly FixtureExcerptCase[] = [
+  {
+    id: "crop-user-unit",
+    type: "image",
+    pageIndex: 0,
+    rect: [70, 90, 190, 200],
+    expected: {
+      width: 960,
+      height: 880,
+      samples: [[480, 440, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "rotate-90",
+    type: "image",
+    pageIndex: 1,
+    rect: [250, 250, 440, 400],
+    expected: {
+      width: 600,
+      height: 760,
+      samples: [[300, 380, 0, 115, 230, 255]],
+    },
+  },
+  {
+    id: "rotate-180",
+    type: "image",
+    pageIndex: 2,
+    rect: [70, 90, 190, 200],
+    expected: {
+      width: 480,
+      height: 440,
+      samples: [[240, 220, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "rotate-270",
+    type: "image",
+    pageIndex: 3,
+    rect: [250, 250, 440, 400],
+    expected: {
+      width: 600,
+      height: 760,
+      samples: [[300, 380, 0, 115, 230, 255]],
+    },
+  },
+  {
+    id: "cjk-native-form-optional-content",
+    type: "image",
+    pageIndex: 4,
+    rect: [50, 350, 400, 740],
+    expected: {
+      width: 1400,
+      height: 1560,
+      samples: [
+        [200, 192, 0, 0, 0, 255],
+        [520, 192, 0, 0, 0, 255],
+        [160, 800, 255, 128, 0, 255],
+        [600, 800, 204, 0, 204, 255],
+        [200, 1240, 26, 178, 76, 255],
+      ],
+    },
+  },
+  {
+    id: "small-point-ink",
+    type: "ink",
+    pageIndex: 0,
+    width: 1,
+    paths: [[220, 180]],
+    expected: {
+      width: 480,
+      height: 480,
+      samples: [[240, 240, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "large-multi-path-ink",
+    type: "ink",
+    pageIndex: 4,
+    width: 18,
+    paths: [
+      [60, 80, 540, 700],
+      [60, 700, 540, 80],
+    ],
+    expected: {
+      width: 2072,
+      height: 2632,
+      samples: [[1036, 1316, 255, 0, 0, 255]],
+    },
+  },
+  {
+    id: "maximum-pixels",
+    type: "image",
+    pageIndex: 0,
+    rect: [24, 36, 588, 756],
+    measureMemory: true,
+    expected: {
+      width: 3625,
+      height: 4627,
+      samples: [[1774, 2930, 0, 115, 230, 255]],
+    },
+  },
+  {
+    id: "maximum-dimension",
+    type: "image",
+    pageIndex: 5,
+    rect: [0, 0, 3000, 100],
+    measureMemory: true,
+    expected: {
+      width: 8192,
+      height: 273,
+      samples: [[4096, 136, 38, 64, 191, 255]],
+    },
+  },
+];
+
 interface FixtureAttachmentBase {
   itemID: number;
   libraryID: number;
   /** Bare Zotero key for the Attachment row. */
   key: string;
   parentItemID: number;
-  contentType: "application/pdf" | "text/html";
+  contentType: "application/pdf" | "image/png" | "text/html";
   title: string;
   /** Committed source to copy; `null` makes a URL row or deliberate miss. */
   sourceAsset: FixtureAsset | null;
@@ -1160,6 +1341,59 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "rougier-2014/rougier-2014.pdf",
     dateModified: "2025-01-03 11:00:00",
   },
+  {
+    itemID: 80,
+    libraryID: 1,
+    key: "CNPVLT26",
+    parentItemID: 60,
+    linkMode: "linked_file",
+    fileRoot: "vault",
+    contentType: "application/pdf",
+    title: "Research interfaces conference paper (linked copy)",
+    path: "attachments/research-interfaces.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-01-03 11:30:00",
+  },
+  {
+    itemID: 82,
+    libraryID: 1,
+    key: "SNAP2345",
+    parentItemID: 13,
+    linkMode: "imported_file",
+    contentType: "image/png",
+    title: "Live image excerpt snapshot",
+    path: "snapshot.png",
+    url: null,
+    sourceAsset: "rougier-2014/annotations/FDRFQ7C2.png",
+    dateModified: "2025-02-28 12:00:00",
+  },
+  {
+    itemID: 83,
+    libraryID: 1,
+    key: "SNAP3456",
+    parentItemID: 13,
+    linkMode: "imported_file",
+    contentType: "image/png",
+    title: "Live ink excerpt snapshot",
+    path: "snapshot.png",
+    url: null,
+    sourceAsset: "rougier-2014/annotations/TYY6Z6ZF.png",
+    dateModified: "2025-02-28 12:00:00",
+  },
+  {
+    itemID: 84,
+    libraryID: 1,
+    key: "FRZN2345",
+    parentItemID: 13,
+    linkMode: "imported_file",
+    contentType: "image/png",
+    title: "Frozen excerpt snapshot",
+    path: "snapshot.png",
+    url: null,
+    sourceAsset: "rougier-2014/annotations/4PE492KU.png",
+    dateModified: "2025-02-28 12:00:00",
+  },
 ];
 
 interface FixtureAnnotationBase {
@@ -1171,6 +1405,8 @@ interface FixtureAnnotationBase {
   text: string | null;
   comment: string | null;
   color: string;
+  /** Manual (`0`) or automatic (`1`) Zotero tags on the Annotation. */
+  tags?: readonly { name: string; type: 0 | 1 }[];
   pageLabel: string;
   sortIndex: string;
   /** `YYYY-MM-DD HH:MM:SS` in UTC, the shape Zotero writes. */
@@ -1269,6 +1505,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: "Identify Your Message",
     comment: null,
     color: "#2ea8e5",
+    tags: [{ name: "visualization", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|002041|00170",
     position: {
@@ -1288,6 +1525,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: null,
     color: "#ffd400",
+    tags: [{ name: "figure", type: 0 }],
     pageLabel: "2",
     sortIndex: "00001|001860|00047",
     position: {
@@ -1307,6 +1545,10 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: "Scientific visualization is classically defined as the process of graphically displaying scientific data.",
     comment: null,
     color: "#ff6666",
+    tags: [
+      { name: "visualization", type: 0 },
+      { name: "methodology", type: 0 },
+    ],
     pageLabel: "1",
     sortIndex: "00000|000434|00180",
     position: {
@@ -1330,6 +1572,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: "Making figures is hard :(",
     color: "#a28ae5",
+    tags: [{ name: "figure", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|000191|00088",
     position: {
@@ -1351,6 +1594,7 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     text: null,
     comment: "some text comment",
     color: "#ffd400",
+    tags: [{ name: "methodology", type: 0 }],
     pageLabel: "1",
     sortIndex: "00000|003354|00170",
     position: {
@@ -1360,6 +1604,30 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     cacheImageAsset: null,
     dateAdded: "2026-08-23 16:19:19",
     dateModified: "2026-08-23 16:19:30",
+  },
+  {
+    itemID: 53,
+    libraryID: 1,
+    key: "Q8ZR4TDH",
+    parentItemID: 47,
+    type: 1,
+    text: "There are so many different ways to represent the same data: scatter plots, linear plots, bar plots, and pie charts, to name just a few.",
+    comment: null,
+    color: "#e56eee",
+    pageLabel: "1",
+    sortIndex: "00000|000566|00223",
+    position: {
+      pageIndex: 0,
+      rects: [
+        [58.054, 570.005, 211.468, 578.137],
+        [58.054, 559.347, 211.474, 567.479],
+        [58.054, 548.688, 211.47, 556.821],
+        [58.054, 538.03, 121.296, 546.163],
+      ],
+    },
+    cacheImageAsset: null,
+    dateAdded: "2026-08-23 16:19:52",
+    dateModified: "2026-08-23 16:19:52",
   },
   {
     itemID: 55,
@@ -1436,6 +1704,22 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     type: 1,
     text: "A reproducible interface makes its inputs and outputs inspectable.",
     comment: "Reviewed Fixture text; it contains no personal library data.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000001|00000",
+    position: { pageIndex: 0, rects: [[58, 590, 375, 610]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-01-03 11:30:00",
+    dateModified: "2025-01-03 11:30:00",
+  },
+  {
+    itemID: 81,
+    libraryID: 1,
+    key: "CNPVL26A",
+    parentItemID: 80,
+    type: 1,
+    text: "A reproducible interface makes its inputs and outputs inspectable.",
+    comment: null,
     color: "#ffd400",
     pageLabel: "1",
     sortIndex: "00000|000001|00000",

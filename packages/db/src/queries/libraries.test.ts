@@ -20,6 +20,9 @@ describe("libraries queries", () => {
   beforeEach(() => {
     sqlite = new DatabaseSync(":memory:");
     createFixtureSchema(sqlite);
+    sqlite.exec(
+      "insert into version (schema, version) values ('userdata', 129), ('compatibility', 9)",
+    );
     sqlite.exec(SEED);
     db = drizzle({ client: sqlite, relations });
   });
@@ -30,16 +33,53 @@ describe("libraries queries", () => {
 
   it("enumerates libraries with their group join", () => {
     expect(getLibraries(db)).toEqual([
-      { libraryID: 1, type: "user", groupID: null, name: null },
-      { libraryID: 4, type: "group", groupID: 100, name: "Shared A" },
-      { libraryID: 5, type: "group", groupID: 200, name: "Shared B" },
+      {
+        libraryID: 1,
+        type: "user",
+        version: 0,
+        clientVersion: 0,
+        groupID: null,
+        name: null,
+      },
+      {
+        libraryID: 4,
+        type: "group",
+        version: 0,
+        clientVersion: 0,
+        groupID: 100,
+        name: "Shared A",
+      },
+      {
+        libraryID: 5,
+        type: "group",
+        version: 0,
+        clientVersion: 0,
+        groupID: 200,
+        name: "Shared B",
+      },
     ]);
+  });
+
+  it("reads userdata 125 without local client revision columns", () => {
+    sqlite.exec(`
+      update version set version = 125 where schema = 'userdata';
+      alter table libraries drop column clientVersion;
+    `);
+
+    expect(getLibraries(db).map(({ clientVersion }) => clientVersion)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect(getLibraryByGroupID(db, 200)?.clientVersion).toBeNull();
   });
 
   it("resolves a group library by groupID", () => {
     expect(getLibraryByGroupID(db, 200)).toEqual({
       libraryID: 5,
       type: "group",
+      version: 0,
+      clientVersion: 0,
       groupID: 200,
       name: "Shared B",
     });

@@ -171,7 +171,7 @@ export class GraphCitations extends Service<void> {
   #wikilinkCitations = false;
   #stopped = false;
   #renderPending = false;
-  #renderTimer: ReturnType<typeof setTimeout> | null = null;
+  #renderTimer: number | null = null;
 
   ready: Promise<void>;
 
@@ -252,7 +252,7 @@ export class GraphCitations extends Service<void> {
     // event during teardown lands on a restored leaf.
     stack.defer(() => {
       this.#stopped = true;
-      if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
+      if (this.#renderTimer !== null) window.clearTimeout(this.#renderTimer);
       this.#uninstallAll();
     });
     this.commit(stack.move());
@@ -476,8 +476,8 @@ export class GraphCitations extends Service<void> {
   #requestRender(withRender = true): void {
     if (this.#stopped || !this.#enabled) return;
     this.#renderPending ||= withRender;
-    if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
-    this.#renderTimer = setTimeout(() => {
+    if (this.#renderTimer !== null) window.clearTimeout(this.#renderTimer);
+    this.#renderTimer = window.setTimeout(() => {
       this.#renderTimer = null;
       const render = this.#renderPending;
       this.#renderPending = false;

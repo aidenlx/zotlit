@@ -67,3 +67,61 @@
   > .task-list-item-checkbox {
   margin-inline-start: calc(var(--list-indent) * -1);
 }
+
+/* A card's verbs and its type glyph are the `clickable-icon` Obsidian draws
+   inside a property value row: a 14px glyph in 4px of padding, so the box
+   is 22px in a row of 12px text rather than the toolbar's 24px. Obsidian
+   declares the padding unlayered, where no utility reaches it. */
+.zt-annot-card .clickable-icon {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  padding: var(--size-2-2);
+}
+
+/* A card's buttons are set in the card's own 12px, not the 13px Obsidian gives
+   a modal button, and in half its padding. The card is 12px text in a dock a
+   few hundred pixels wide: at Obsidian's own size three verbs never fit one
+   line, and the held-draft panel wraps its last verb onto a line of its own.
+   Obsidian declares both unlayered, where no utility reaches them. */
+.zt-annot-card button {
+  padding: var(--size-2-2) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
+   no utility can quiet it. The page chip is a row of chrome that happens to
+   open Zotero: it keeps the ink its utilities set, and its hover is the ring
+   of its own colour rather than the theme's link underline. */
+.zt-root a.zt-annot-page-link {
+  color: inherit;
+  text-decoration-line: none;
+}
+
+/* The page is a locator in the chip beside the row's verbs, one step under
+   the card's 12px so the chip reads as the verbs' size rather than as a line
+   of the excerpt. 11px is the floor the design test holds chrome to. In the
+   monospace face the no-break space between "p." and the number is a whole
+   cell, which reads as a gap; the word-spacing takes it back to a hair. */
+.zt-annot-page-chip {
+  font-size: 11px;
+  letter-spacing: -0.02em;
+  word-spacing: -0.5ch;
+}
+
+/* The header block is one `<button>`, and Obsidian's own `button` rules are
+   unlayered, so they outrank every `zt:` utility it wears — its fill, its
+   padding and its shadow among them. This rule is unlayered too and outranks
+   them in turn, and `revert-layer` rolls the element back to the plugin's own
+   layers, where the utilities on the block are what draws it. The same trick
+   the Chooser trigger takes.
+   @see apps/obsidian/src/components/chooser.css */
+.zt-root button.zt-annot-header {
+  all: revert-layer;
+}
+
+/* The Attachment suggester exists to tell two similar names apart, so a long
+   name wraps rather than being clipped. Obsidian declares the clip unlayered
+   on `.suggestion-item`, where no utility reaches it. */
+.zt-annot-attachment-suggester .suggestion-item {
+  white-space: normal;
+}

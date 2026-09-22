@@ -3,19 +3,25 @@ import { describe, expect, it } from "vitest";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ItemSummary } from "@/lib/item-summary";
+import type { EditingCapability } from "@/services/annotation-repository/capability";
+import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 
 import {
   annotViewBody,
   attachmentLine,
-  conditionLines,
   followModeIcon,
   followModeLabel,
   followModeMenu,
-  identityLabel,
-  pinBlockedReason,
-  sourceTooltip,
+  headerIndicators,
+  headerMenu,
+  headerShape,
 } from "./presentation";
-import type { FollowMenuEntry, FollowMenuState } from "./presentation";
+import type {
+  FollowMenuAction,
+  FollowMenuEntry,
+  HeaderMenuEntry,
+} from "./presentation";
 import { createAnnotStore } from "./store";
 import type { AnnotState } from "./store";
 
@@ -34,6 +40,19 @@ const ATTACHMENTS: AnnotViewAttachment[] = [
   },
 ];
 
+/** An Item the header can name: its own title over its creators and year. */
+const PAPER: ItemSummary = {
+  title: "A paper",
+  subtitle: "Author (2024)",
+  formatted: "Author (2024): A paper",
+};
+
+/** Editing is on, so no capability reaches the header or its menu. */
+const WRITABLE: EditingCapability = { kind: "writable" };
+
+const NOW = Temporal.Instant.from("2026-09-22T10:00:00Z");
+const RETRY_AFTER = NOW.add({ seconds: 30 });
+
 /** A view showing a Literature Note's Item with two attachments. */
 function state(overrides: Partial<AnnotState> = {}): AnnotState {
   const store = createAnnotStore();
@@ -43,24 +62,21 @@ function state(overrides: Partial<AnnotState> = {}): AnnotState {
     attachments: ATTACHMENTS,
     selectedAttachmentKey: "ATCH0001",
     annotations: [],
-    annotationSource: { kind: "zotero-db" },
+    annotationSource: {
+      kind: "zotero-db",
+      database: { userID: null, localUserKey: null, serverID: null },
+      libraryID: 1,
+      libraryRevision: null,
+    },
     liveUpdatesOn: true,
     ...overrides,
   });
   return store.getState();
 }
 
-/** The menu's entries as a reader sees them: label, and why it is blocked. */
-function entryLabels(entries: FollowMenuEntry[]): (string | null)[] {
-  return entries.map((entry) =>
-    entry.kind === "separator" ? null : entry.label,
-  );
-}
-
-function action(entries: FollowMenuEntry[], label: string) {
-  return entries.find(
-    (entry) => entry.kind !== "separator" && entry.label === label,
-  );
+/** What the menu runs, in the order it offers it. */
+function entryActions(entries: FollowMenuEntry[]): FollowMenuAction[] {
+  return entries.map((entry) => entry.action);
 }
 
 describe("the Follow Mode table", () => {
@@ -81,101 +97,45 @@ describe("the Follow Mode table", () => {
 });
 
 describe("the Follow Mode menu", () => {
-  it("offers the two modes a gesture can switch to, and checks the one in force", () => {
+  it("offers the two mode switches, the pin, and the item picker", () => {
     const entries = followModeMenu(state({ followMode: "zotero-reader" }));
-    const modes = entries.filter((entry) => entry.kind === "mode");
 
-    expect(
-      modes.map((entry) => [entry.mode, entry.checked, entry.select]),
-    ).toStrictEqual([
-      ["active-tab", false, "active-tab"],
-      ["zotero-reader", true, "zotero-reader"],
+    expect(entries.map((entry) => [entry.action, entry.label])).toStrictEqual([
+      ["active-tab", m.annot_view_mode_active_tab()],
+      ["zotero-reader", m.annot_view_mode_zotero_reader()],
+      ["pin-current-item", m.annot_view_mode_pin_current_item()],
+      ["choose-item", m.annot_view_pin_choose_item()],
     ]);
   });
 
-  it("reports Pinned as the mode in force, and never as a switch", () => {
-    const entries = followModeMenu(state({ followMode: "pinned" }));
-    const pinned = entries.find(
-      (entry) => entry.kind === "mode" && entry.mode === "pinned",
-    );
-
-    expect(pinned).toMatchObject({ checked: true, select: null });
-  });
-
-  it("swaps Pin current item for Unpin while pinned", () => {
-    const pinning = followModeMenu(state());
-    expect(entryLabels(pinning)).toContain(
-      m.annot_view_mode_pin_current_item(),
-    );
-    expect(entryLabels(pinning)).not.toContain(m.annot_view_mode_unpin());
-
-    const pinned = followModeMenu(state({ followMode: "pinned" }));
-    expect(entryLabels(pinned)).toContain(m.annot_view_mode_unpin());
-    expect(entryLabels(pinned)).not.toContain(
-      m.annot_view_mode_pin_current_item(),
-    );
-  });
-
-  it("always offers the item picker", () => {
+  it("pictures every entry, whatever the mode", () => {
     for (const followMode of [
       "active-tab",
       "zotero-reader",
       "pinned",
     ] as const) {
-      expect(
-        action(
-          followModeMenu(state({ followMode })),
-          m.annot_view_pin_choose_item(),
-        ),
-      ).toMatchObject({ action: "choose-item", reason: null });
+      const icons = followModeMenu(state({ followMode })).map(
+        (entry) => entry.icon,
+      );
+      expect(icons.filter((icon) => icon.length > 0)).toStrictEqual(icons);
     }
   });
 
-  it("blocks Pin current item with its reason, and only then", () => {
+  it("swaps Pin current item for Unpin while pinned", () => {
     expect(
-      action(followModeMenu(state()), m.annot_view_mode_pin_current_item()),
-    ).toMatchObject({ action: "pin-current-item", reason: null });
+      entryActions(followModeMenu(state({ followMode: "pinned" }))),
+    ).toStrictEqual(["active-tab", "zotero-reader", "unpin", "choose-item"]);
+  });
 
+  it("leaves out the pin while no Item stands to be pinned", () => {
     // A standalone Attachment: an Attachment stands, but no Item owns it.
     const standalone = state({ itemKey: null, pinnable: null });
-    expect(
-      action(followModeMenu(standalone), m.annot_view_mode_pin_current_item()),
-    ).toMatchObject({ reason: m.annot_view_pin_unavailable_standalone() });
 
-    // Nothing at all resolved, which is a different reason.
-    const nothing = state({
-      itemKey: null,
-      pinnable: null,
-      attachments: null,
-      selectedAttachmentKey: null,
-    });
-    expect(
-      action(followModeMenu(nothing), m.annot_view_mode_pin_current_item()),
-    ).toMatchObject({ reason: m.annot_view_pin_unavailable_none() });
-  });
-
-  it("separates the modes from the gestures", () => {
-    const entries = followModeMenu(state());
-    const separator = entries.findIndex((entry) => entry.kind === "separator");
-
-    expect(separator).toBeGreaterThan(0);
-    expect(
-      entries.slice(0, separator).every((entry) => entry.kind === "mode"),
-    ).toBe(true);
-    expect(
-      entries.slice(separator + 1).every((entry) => entry.kind === "action"),
-    ).toBe(true);
-  });
-});
-
-describe("pinBlockedReason", () => {
-  it("answers null while an Item stands to be pinned", () => {
-    const pinnable: FollowMenuState = {
-      followMode: "active-tab",
-      pinnable: "ABCD2345",
-      selectedAttachmentKey: "ATCH0001",
-    };
-    expect(pinBlockedReason(pinnable)).toBeNull();
+    expect(entryActions(followModeMenu(standalone))).toStrictEqual([
+      "active-tab",
+      "zotero-reader",
+      "choose-item",
+    ]);
   });
 });
 
@@ -333,90 +293,365 @@ describe("what stands where the card list would", () => {
   });
 });
 
-describe("the condition lines", () => {
-  it("says the list came from the Zotero database", () => {
-    expect(conditionLines(state())).toStrictEqual([
-      m.annot_view_source_database(),
+describe("the header's indicators", () => {
+  it("keeps an ordinary writable list free of indicators", () => {
+    expect(
+      headerIndicators(
+        state({ attachments: [ATTACHMENTS[0]!], capability: WRITABLE }),
+      ),
+    ).toStrictEqual([]);
+  });
+
+  it("counts the attachments while the choice is the user's", () => {
+    expect(headerIndicators(state({ capability: WRITABLE }))).toStrictEqual([
+      "2 attachments",
     ]);
   });
 
-  it("says nothing about the source while the Zotero Local API answered", () => {
+  it("says nothing about attachments a reader chose", () => {
     expect(
-      conditionLines(
+      headerIndicators(
+        state({ attachmentLock: "zotero-reader", capability: WRITABLE }),
+      ),
+    ).toStrictEqual([]);
+  });
+
+  it("reports every capability that cannot write", () => {
+    for (const capability of [
+      { kind: "authorization-required" },
+      { kind: "authorizing" },
+      { kind: "cooldown", retryAfter: RETRY_AFTER },
+      { kind: "read-only", reason: "zotero-unavailable" },
+      { kind: "read-only", reason: "library-read-only" },
+    ] as const) {
+      expect(
+        headerIndicators(state({ attachments: [ATTACHMENTS[0]!], capability })),
+      ).toStrictEqual(["Reading only"]);
+    }
+  });
+
+  it("stays quiet while the capability is still being checked", () => {
+    expect(
+      headerIndicators(
         state({
-          annotationSource: {
-            kind: "zotero-local-api",
-            serverID: "abcdef012345",
-          },
+          attachments: [ATTACHMENTS[0]!],
+          capability: { kind: "read-only", reason: "probing" },
         }),
       ),
     ).toStrictEqual([]);
   });
 
-  it("says the Zotero reader closed, above the source it read from", () => {
+  it("says the reader closed, after the count and the read-only state", () => {
     expect(
-      conditionLines(
-        state({ followMode: "zotero-reader", zoteroReaderClosed: true }),
+      headerIndicators(
+        state({
+          followMode: "zotero-reader",
+          zoteroReaderClosed: true,
+          capability: { kind: "read-only", reason: "zotero-unavailable" },
+        }),
       ),
-    ).toStrictEqual([
-      m.annot_view_reader_closed(),
-      m.annot_view_source_database(),
-    ]);
+    ).toStrictEqual(["2 attachments", "Reading only", "Reader closed"]);
   });
 
   it("says nothing about a closed reader in the other modes", () => {
-    expect(conditionLines(state({ zoteroReaderClosed: true }))).not.toContain(
-      m.annot_view_reader_closed(),
+    expect(headerIndicators(state({ zoteroReaderClosed: true }))).not.toContain(
+      "Reader closed",
     );
   });
 
   it("says nothing about a closed reader with no attachment on screen", () => {
     expect(
-      conditionLines(
+      headerIndicators(
         state({
           followMode: "zotero-reader",
           zoteroReaderClosed: true,
           attachments: null,
         }),
       ),
-    ).not.toContain(m.annot_view_reader_closed());
+    ).not.toContain("Reader closed");
   });
 });
 
-describe("the source region's tooltip", () => {
-  it("names Zotero while the Zotero Local API answered, where no line does", () => {
+describe("the header's shape", () => {
+  it("stands the mode phrase in a status bar while the active tab names the item", () => {
     expect(
-      sourceTooltip({
-        annotationSource: {
-          kind: "zotero-local-api",
-          serverID: "abcdef012345",
-        },
+      headerShape(state({ attachments: [ATTACHMENTS[0]!] })),
+    ).toStrictEqual({
+      kind: "status-bar",
+      modeIcon: followModeIcon("active-tab"),
+      modeLabel: "Following the active tab",
+      indicators: [],
+      label: "Following the active tab.",
+    });
+  });
+
+  it("names the item over a byline where nothing else on screen names it", () => {
+    expect(
+      headerShape(
+        state({
+          followMode: "pinned",
+          attachments: [ATTACHMENTS[0]!],
+          itemDisplay: PAPER,
+          capability: WRITABLE,
+        }),
+      ),
+    ).toStrictEqual({
+      kind: "masthead",
+      modeIcon: followModeIcon("pinned"),
+      title: "A paper",
+      byline: ["Author (2024)"],
+      label: "A paper. Pinned.",
+    });
+  });
+
+  it("carries the indicators in the byline, after the creators", () => {
+    expect(
+      headerShape(
+        state({
+          followMode: "pinned",
+          itemDisplay: PAPER,
+          capability: { kind: "read-only", reason: "zotero-unavailable" },
+        }),
+      ),
+    ).toMatchObject({
+      byline: ["Author (2024)", "2 attachments", "Reading only"],
+      label: "A paper. Pinned. 2 attachments. Reading only.",
+    });
+  });
+
+  it("drops the byline's creators for an item Zotero stored without any", () => {
+    expect(
+      headerShape(
+        state({
+          followMode: "pinned",
+          attachments: [ATTACHMENTS[0]!],
+          itemDisplay: { title: "A paper", subtitle: "", formatted: "A paper" },
+          capability: WRITABLE,
+        }),
+      ),
+    ).toMatchObject({ byline: [] });
+  });
+
+  it("names the mode in words for a screen reader in the status bar too", () => {
+    expect(
+      headerShape(
+        state({
+          followMode: "zotero-reader",
+          capability: { kind: "read-only", reason: "zotero-unavailable" },
+        }),
+      ),
+    ).toMatchObject({
+      label: "Following the Zotero reader. 2 attachments. Reading only.",
+    });
+  });
+
+  it("gives a screen reader every fact the eye gets", () => {
+    const shape = headerShape(
+      state({
+        followMode: "zotero-reader",
+        zoteroReaderClosed: true,
+        capability: { kind: "read-only", reason: "zotero-unavailable" },
       }),
-    ).toBe(m.annot_view_source_zotero());
+    );
+
+    expect(shape).toMatchObject({
+      indicators: ["2 attachments", "Reading only", "Reader closed"],
+      label:
+        "Following the Zotero reader. 2 attachments. Reading only. Reader closed.",
+    });
   });
 
-  it("names the database under the DB source, and nothing with no source", () => {
-    expect(sourceTooltip({ annotationSource: { kind: "zotero-db" } })).toBe(
-      m.annot_view_source_database(),
-    );
-    expect(sourceTooltip({ annotationSource: null })).toBeNull();
+  it("names a closed reader on its own, under an item it can name", () => {
+    expect(
+      headerShape(
+        state({
+          followMode: "zotero-reader",
+          zoteroReaderClosed: true,
+          attachments: [ATTACHMENTS[0]!],
+          itemDisplay: PAPER,
+          capability: WRITABLE,
+        }),
+      ),
+    ).toMatchObject({
+      byline: ["Author (2024)", "Reader closed"],
+      label: "A paper. Zotero reader. Reader closed.",
+    });
   });
 });
 
-describe("the identity block", () => {
-  it("stays hidden while the active tab already names the item", () => {
-    expect(
-      identityLabel(state({ itemDisplayLabel: "A Paper — Author (2024)" })),
-    ).toBeNull();
+/** The rows one group offers, each as its text and what pressing it runs. */
+function rows(group: HeaderMenuEntry[]): (string | undefined)[][] {
+  return group.map((entry) => [
+    entry.label,
+    entry.action === undefined ? undefined : entry.action.kind,
+  ]);
+}
+
+describe("the header's menu", () => {
+  it("leads with the Follow Mode, checking the one in force", () => {
+    const [modes] = headerMenu(
+      state({ followMode: "zotero-reader", capability: WRITABLE }),
+      NOW,
+    );
+
+    expect(rows(modes!)).toStrictEqual([
+      ["Show annotations from", undefined],
+      ["Active tab", "follow"],
+      ["Zotero reader", "follow"],
+    ]);
+    expect(modes!.map((entry) => entry.checked)).toStrictEqual([
+      undefined,
+      undefined,
+      true,
+    ]);
+    expect(modes![0]!.report).toBe(true);
   });
 
-  it("names the item in the modes nothing else on screen names it", () => {
-    for (const followMode of ["zotero-reader", "pinned"] as const) {
-      expect(
-        identityLabel(
-          state({ followMode, itemDisplayLabel: "A Paper — Author (2024)" }),
-        ),
-      ).toBe("A Paper — Author (2024)");
+  it("names the pin itself as the mode in force", () => {
+    const [modes] = headerMenu(
+      state({ followMode: "pinned", capability: WRITABLE }),
+      NOW,
+    );
+
+    expect(rows(modes!)).toStrictEqual([
+      ["Show annotations from", undefined],
+      ["Active tab", "follow"],
+      ["Zotero reader", "follow"],
+      ["Pinned", undefined],
+    ]);
+    expect(modes![3]!.checked).toBe(true);
+  });
+
+  it("offers the pin and the item picker in their own group", () => {
+    const [, pin] = headerMenu(state({ capability: WRITABLE }), NOW);
+
+    expect(rows(pin!)).toStrictEqual([
+      ["Pin current item", "follow"],
+      ["Choose item…", "follow"],
+    ]);
+  });
+
+  it("opens the attachment picker while the choice is the user's", () => {
+    const groups = headerMenu(state({ capability: WRITABLE }), NOW);
+
+    expect(rows(groups[2]!)).toStrictEqual([
+      ["Choose attachment…", "choose-attachment"],
+    ]);
+  });
+
+  it("names the attachment a reader holds, and who holds it", () => {
+    const groups = headerMenu(
+      state({ attachmentLock: "zotero-reader", capability: WRITABLE }),
+      NOW,
+    );
+
+    expect(groups[2]).toStrictEqual([
+      {
+        label: "first.pdf (2)",
+        icon: "lock",
+        disabled: true,
+      },
+      {
+        label: "The Zotero reader chooses this attachment",
+        report: true,
+      },
+    ]);
+  });
+
+  it("leaves the attachment group out where there is no choice to report", () => {
+    const groups = headerMenu(
+      state({ attachments: [ATTACHMENTS[0]!], capability: WRITABLE }),
+      NOW,
+    );
+
+    expect(groups.flatMap(rows)).not.toContainEqual([
+      "Choose attachment…",
+      "choose-attachment",
+    ]);
+  });
+
+  it("reports a closed Zotero reader in a group of its own", () => {
+    const groups = headerMenu(
+      state({
+        followMode: "zotero-reader",
+        zoteroReaderClosed: true,
+        capability: WRITABLE,
+      }),
+      NOW,
+    );
+
+    expect(groups.at(-1)).toStrictEqual([
+      {
+        label: m.annot_view_reader_closed(),
+        report: true,
+      },
+    ]);
+  });
+
+  it("offers Allow editing under the state it would fix", () => {
+    const groups = headerMenu(
+      state({
+        attachments: [ATTACHMENTS[0]!],
+        capability: { kind: "authorization-required" },
+      }),
+      NOW,
+    );
+
+    expect(groups.at(-1)).toStrictEqual([
+      {
+        label: "Allow editing to change annotations",
+        report: true,
+      },
+      {
+        label: "Allow editing",
+        icon: "pencil",
+        action: { kind: "allow-editing" },
+      },
+    ]);
+  });
+
+  it("reports a capability with no action, and offers none", () => {
+    for (const capability of [
+      { kind: "authorizing" },
+      { kind: "cooldown", retryAfter: RETRY_AFTER },
+      { kind: "read-only", reason: "library-read-only" },
+    ] as const) {
+      const groups = headerMenu(
+        state({ attachments: [ATTACHMENTS[0]!], capability }),
+        NOW,
+      );
+
+      expect(groups.at(-1)).toStrictEqual([
+        { label: editingCapabilityCopy(capability, NOW).label, report: true },
+      ]);
     }
+  });
+
+  it("says nothing about a capability that writes, or one still being checked", () => {
+    for (const capability of [
+      WRITABLE,
+      { kind: "read-only", reason: "probing" },
+    ] as const) {
+      const groups = headerMenu(
+        state({ attachments: [ATTACHMENTS[0]!], capability }),
+        NOW,
+      );
+
+      expect(groups.flatMap(rows).map(([label]) => label)).not.toContain(
+        "Allow editing",
+      );
+      expect(groups).toHaveLength(2);
+    }
+  });
+
+  it("keeps the detail sentence out of every row", () => {
+    const groups = headerMenu(
+      state({ capability: { kind: "authorization-required" } }),
+      NOW,
+    );
+
+    expect(groups.flatMap(rows).map(([label]) => label)).not.toContain(
+      m.capability_authorization_required_detail(),
+    );
   });
 });

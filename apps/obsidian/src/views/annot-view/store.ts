@@ -1,16 +1,18 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
 
 import type { AnnotViewAttachment } from "@zotlit/db";
 
+import { toggledValues } from "@/components/chooser-logic";
+import type { ItemSummary } from "@/lib/item-summary";
 import type {
   AnnotationRecord,
   AnnotationSource,
+  CommentDraft,
   EditingCapability,
   MutationState,
-  UncertainCreate,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 
@@ -31,13 +33,6 @@ export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
  */
 export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
-/**
- * Whether a card can be dragged into the active note: `ready` once the
- * note's attachment-import handle stands, `preparing` while it is being
- * prepared, `none` when no note is open to receive the drop.
- */
-export type DragTarget = "ready" | "preparing" | "none";
-
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   /** Indexed Key of the Attachment on screen. */
@@ -47,6 +42,7 @@ export interface AnnotState {
   annotations: readonly AnnotationRecord[] | null;
   /** Which Annotation Source answered for {@link annotations}. */
   annotationSource: AnnotationSource | null;
+  annotationSourceScope: string | null;
   /** What the cards may do to the Attachment on screen. */
   capability: EditingCapability;
   /**
@@ -54,14 +50,8 @@ export interface AnnotState {
    * entry is idle, so the map holds only the few this session has edited.
    */
   mutations: ReadonlyMap<string, MutationState>;
-  /**
-   * The creates on the Attachment on screen whose answer was lost, in the
-   * order they were made. Each stands as a badged card under the list until
-   * the user tries again or discards it.
-   *
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
-  uncertainCreates: readonly UncertainCreate[];
+  /** Shared comment drafts currently observed by this view. */
+  commentDrafts: ReadonlyMap<string, CommentDraft>;
   /**
    * The Annotation whose comment is open in its card's editor; `null` while
    * none is. One at a time: the editor takes the caret.
@@ -74,8 +64,12 @@ export interface AnnotState {
    * while nothing resolves. An Attachment can stand without one.
    */
   itemKey: string | null;
-  /** Pre-formatted identity label (e.g. "Title — Author (2024)"). */
-  itemDisplayLabel: string | null;
+  /**
+   * The Item on screen as the header names it: its own title, the creators and
+   * year the byline carries, and the one line built from both. `null` while
+   * nothing resolves.
+   */
+  itemDisplay: ItemSummary | null;
   /** Group library ID for the current item; `null` for user library. */
   groupID: number | null;
   followMode: FollowMode;
@@ -92,7 +86,6 @@ export interface AnnotState {
   liveUpdatesOn: boolean;
   /** Whether the Zotero Reader closed, its last Attachment still on screen. */
   zoteroReaderClosed: boolean;
-  dragTarget: DragTarget;
   /** Search row visible. */
   searchOpen: boolean;
   /** Case-insensitive substring query typed into the search row. */
@@ -101,20 +94,20 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
-  /** Inline tag panel (below the filter bar) open. */
-  panelOpen: boolean;
 }
 
-/** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
+/**
+ * Search and filter defaults, not persisted; reset whenever the displayed item
+ * changes.
+ */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags" | "panelOpen"
+  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
   selectedTags: [],
-  panelOpen: false,
 };
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -128,14 +121,15 @@ export function createAnnotStore() {
         attachmentLock: null,
         annotations: null,
         annotationSource: null,
+        annotationSourceScope: null,
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
-        uncertainCreates: [],
+        commentDrafts: new Map(),
         editingCommentKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,
-        itemDisplayLabel: null,
+        itemDisplay: null,
         groupID: null,
         followMode: "active-tab",
         previousMode: "active-tab",
@@ -143,7 +137,6 @@ export function createAnnotStore() {
         pinnable: null,
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
-        dragTarget: "none",
         ...INITIAL_FILTER_STATE,
       }),
     ),
@@ -191,11 +184,6 @@ export function useSetEditingComment(): (key: string | null) => void {
   return (key) => store.setState({ editingCommentKey: key });
 }
 
-export function useSetSelectedAttachmentKey(): (key: string) => void {
-  const store = useAnnotStoreApi();
-  return (key) => store.setState({ selectedAttachmentKey: key });
-}
-
 /**
  * Toggle the search row. Closing must also clear the query so a hidden row
  * never keeps filtering the list.
@@ -217,21 +205,19 @@ export function useSetFilterQuery(): (query: string) => void {
   return (query) => store.setState({ filterQuery: query });
 }
 
-/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen/panelOpen untouched. */
+/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen untouched. */
 export function useClearFilters(): () => void {
   const store = useAnnotStoreApi();
   return () =>
     store.setState({ filterQuery: "", selectedColors: [], selectedTags: [] });
 }
 
-export function useTogglePanel(): () => void {
-  const store = useAnnotStoreApi();
-  return () => {
-    const { panelOpen } = store.getState();
-    store.setState({ panelOpen: !panelOpen });
-  };
-}
-
+/**
+ * The colour filter after one colour is toggled. Unchanged by the Chooser
+ * migration: aidenlx/zotlit#1194 asks for this action to be reused as it
+ * stands, so the filter bar names the one colour that moved rather than the
+ * store taking a whole selection.
+ */
 export function useToggleSelectedColor(): (color: string) => void {
   const store = useAnnotStoreApi();
   return (color) => {
@@ -244,6 +230,19 @@ export function useToggleSelectedColor(): (color: string) => void {
   };
 }
 
+/**
+ * Takes a whole colour selection, for the Chooser's own action row: clearing
+ * names no single colour, so {@link useToggleSelectedColor} has nothing to be
+ * handed. Memoised on the store, as {@link useSetSelectedTags} is.
+ */
+export function useSetSelectedColors(): (colors: string[]) => void {
+  const store = useAnnotStoreApi();
+  return useCallback(
+    (colors) => store.setState({ selectedColors: colors }),
+    [store],
+  );
+}
+
 /** Assembles the {@link AnnotFilter} from the store's query/colors/tags slices. */
 export function useAnnotFilter(): AnnotFilter {
   const query = useAnnotStore((s) => s.filterQuery);
@@ -252,14 +251,38 @@ export function useAnnotFilter(): AnnotFilter {
   return useMemo(() => ({ query, colors, tags }), [query, colors, tags]);
 }
 
+/**
+ * The tag filter after one tag is toggled. Named apart from the hook because
+ * the card's tag menu is built outside React, from the view's own store handle.
+ *
+ * The rule itself is {@link toggledValues}, which the Chooser's rows tick
+ * through as well, so the two paths into the tag filter cannot drift.
+ */
+export function toggledTags(selectedTags: string[], tag: string): string[] {
+  return toggledValues(selectedTags, tag);
+}
+
+/** Memoised on the store, as {@link useSetSelectedTags} is. */
 export function useToggleSelectedTag(): (tag: string) => void {
   const store = useAnnotStoreApi();
-  return (tag) => {
-    const { selectedTags } = store.getState();
-    store.setState({
-      selectedTags: selectedTags.includes(tag)
-        ? selectedTags.filter((name) => name !== tag)
-        : [...selectedTags, tag],
-    });
-  };
+  return useCallback(
+    (tag) =>
+      store.setState({
+        selectedTags: toggledTags(store.getState().selectedTags, tag),
+      }),
+    [store],
+  );
+}
+
+/**
+ * Takes a whole tag selection, for a surface that decides the next one itself
+ * — the Chooser reports what a tick leaves behind rather than which tag moved.
+ *
+ * Memoised on the store: the Chooser's row groups are built in a memo over it,
+ * and a fresh closure per render would rebuild them on every render of the
+ * filter bar.
+ */
+export function useSetSelectedTags(): (tags: string[]) => void {
+  const store = useAnnotStoreApi();
+  return useCallback((tags) => store.setState({ selectedTags: tags }), [store]);
 }

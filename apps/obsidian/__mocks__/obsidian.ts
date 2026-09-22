@@ -20,7 +20,7 @@ import type {
   HoverParent,
   HoverPopover as ObsidianHoverPopover,
   IconName,
-  WorkspaceLeaf,
+  WorkspaceLeaf as ObsidianWorkspaceLeaf,
   Instruction,
   MenuPositionDef,
   Modifier,
@@ -354,12 +354,20 @@ export class TFolder extends TAbstractFile {
   }
 }
 
+/**
+ * Minimal WorkspaceLeaf shell. Only the prototype matters here: ZotLit patches
+ * `setEphemeralState` on it to read an Annotation Anchor off an open.
+ */
+export class WorkspaceLeaf {
+  setEphemeralState(_state: unknown): void {}
+}
+
 /** Minimal ItemView shell for tests of plugin-registered views. */
 export class ItemView {
   readonly contentEl: HTMLElement;
   readonly titleEl: HTMLElement;
 
-  constructor(readonly leaf: WorkspaceLeaf) {
+  constructor(readonly leaf: ObsidianWorkspaceLeaf) {
     if (typeof Reflect.get(leaf, "updateHeader") !== "function")
       leaf.updateHeader = () => {};
     const content = globalThis.document?.createElement("div");
@@ -447,7 +455,7 @@ export class TextFileView extends ItemView {
   lastSavedData: string | null = null;
   scope: Scope | null = null;
   requestSave = (): void => {};
-  constructor(leaf: WorkspaceLeaf) {
+  constructor(leaf: ObsidianWorkspaceLeaf) {
     super(leaf);
     this.app = (leaf as unknown as { app: App }).app;
   }
@@ -636,6 +644,13 @@ export class Scope {
     this.handlers.push(handler);
     return handler;
   }
+
+  unregister(handler: unknown): void {
+    const index = this.handlers.indexOf(
+      handler as (typeof this.handlers)[number],
+    );
+    if (index !== -1) this.handlers.splice(index, 1);
+  }
 }
 
 export abstract class FuzzySuggestModal<T> {
@@ -779,7 +794,8 @@ export const apiVersion = "1.0.0-test";
  * chains off `Menu.addItem` plus a test-only `click()` to invoke the
  * registered handler. */
 export class MenuItem {
-  #title = "";
+  #title: string | DocumentFragment = "";
+  #icon: string | null = null;
   #section = "";
   #checked: boolean | null = null;
   #disabled = false;
@@ -789,8 +805,21 @@ export class MenuItem {
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
   submenu: Menu | null = null;
 
+  /** The title's text, whether it was set as a string or as a fragment. */
   get title(): string {
-    return this.#title;
+    return typeof this.#title === "string"
+      ? this.#title
+      : (this.#title.textContent ?? "");
+  }
+
+  /** The fragment a rich title was built from, or `null` for a plain one. */
+  get titleFragment(): DocumentFragment | null {
+    return typeof this.#title === "string" ? null : this.#title;
+  }
+
+  /** `null` for an item that carries no icon, as in Obsidian. */
+  get icon(): string | null {
+    return this.#icon;
   }
 
   /** `null` for an item that carries no check mark, as in Obsidian. */
@@ -813,12 +842,13 @@ export class MenuItem {
     return this.#isLabel;
   }
 
-  setTitle(title: string): this {
+  setTitle(title: string | DocumentFragment): this {
     this.#title = title;
     return this;
   }
 
-  setIcon(_icon: string | null): this {
+  setIcon(icon: string | null): this {
+    this.#icon = icon;
     return this;
   }
 

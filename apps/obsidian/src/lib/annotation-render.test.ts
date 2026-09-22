@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Attachment } from "@zotlit/db";
+import type { Annotation, Attachment } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 
 import type {
@@ -53,11 +53,23 @@ describe("attachmentFileLink", () => {
     ).toBe("[paper.pdf](file:///data/storage/ATCH2345/paper.pdf)");
   });
 
+  it("anchors an annotation link to its page and to the annotation itself", () => {
+    expect(
+      attachmentFileLink(
+        makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
+        ctx,
+        { page: 3, annotation: "ANNX2345" },
+      )(),
+    ).toBe(
+      "[paper.pdf](file:///data/storage/ATCH2345/paper.pdf#page=3&zt-annotation=ANNX2345)",
+    );
+  });
+
   it("overrides the display text and subpath when given", () => {
     const link = attachmentFileLink(
       makeAttachment({ path: "storage:paper.pdf", linkMode: 0 }),
       ctx,
-      3,
+      { page: 3 },
     );
     // default anchors to the page
     expect(link()).toBe(
@@ -106,6 +118,21 @@ describe("attachmentFileLink", () => {
 });
 
 describe("buildAnnotationResolvers", () => {
+  it("uses a prepared excerpt helper without queuing a cache copy", () => {
+    const annotation = { key: "FDRFQ7C2", type: 3 } as Annotation;
+    const helper = () =>
+      "Excerpt image unavailable. [Zotero](zotero://open/library/items/RGRPDF24)";
+    const prepared = vi.fn(() => helper);
+    const resolveLink = vi.fn();
+    const resolvers = buildAnnotationResolvers({
+      zoteroPref: ctx,
+      attachmentImport: { decide: blockedDecide, resolveLink },
+      annotationImageLink: prepared,
+    });
+    expect(resolvers.annotationImageLink(annotation)?.()).toBe(helper());
+    expect(prepared).toHaveBeenCalledWith(annotation);
+    expect(resolveLink).not.toHaveBeenCalled();
+  });
   it("resolves no filePath/fileLink for a malformed row and attempts no copy", () => {
     const resolveLink = vi.fn();
     const resolvers = buildAnnotationResolvers({

@@ -63,7 +63,7 @@ export async function profileServiceFixture(
   );
   const libraryScope = stack.use(new LibraryScopeService({ settings,
     db: db ?? { ready: Promise.resolve(), state: "ready", client: {}, on: () => () => {} } as unknown as DatabaseService,
-    ...(db ? {} : { loadLibraries: () => [{ libraryID: 1, type: "user", groupID: null, name: null }] }),
+    ...(db ? {} : { loadLibraries: () => [{ libraryID: 1, type: "user", version: 0, clientVersion: null, groupID: null, name: null }] }),
   }));
   const profile = stack.use(
     new ProfileService({ app, settings, template, noteIndex, libraryScope }),

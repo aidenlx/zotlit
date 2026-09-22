@@ -10,11 +10,21 @@ import {
   removeCreationToolbar,
   renderCreationToolbar,
 } from "./creation-toolbar";
-import type { CreationToolbarControl } from "./creation-toolbar";
+import type {
+  CreationToolbarControl,
+  CreationToolbarControlId,
+} from "./creation-toolbar";
+import { MARK_TOOLS } from "./tools";
+import type { MarkTool } from "./tools";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
 const COLORS = { highlight: "#ffd400", underline: "#2ea8e5" } as const;
+
+/** Both halves of one tool, in the order the toolbar draws them. */
+function halves(tool: MarkTool): CreationToolbarControlId[] {
+  return [tool, `${tool}-color`];
+}
 
 function model(
   overrides: {
@@ -60,25 +70,39 @@ function shownIn(slot: HTMLElement) {
   );
 }
 
-it("offers the two tools, their colours and mark visibility, and nothing else", () => {
+it("splits every tool in two, then mark visibility, and nothing else", () => {
   // "Clear all annotations" is deliberately absent (ADR 0042): the reader's
   // toolbar carries no verb that erases what ZotLit did not just create.
   expect(model().map(({ id }) => id)).toEqual([
-    "highlight",
-    "highlight-color",
-    "underline",
-    "underline-color",
+    ...MARK_TOOLS.flatMap(halves),
     "visibility",
   ]);
 });
 
-it("shows each tool's own colour, so underline is a peer of highlight", () => {
+it("shows each tool's own colour on its toggle, so underline is a peer of highlight", () => {
   const byId = new Map(model().map((control) => [control.id, control]));
 
   expect(byId.get("highlight")?.color).toBe(COLORS.highlight);
-  expect(byId.get("highlight-color")?.color).toBe(COLORS.highlight);
   expect(byId.get("underline")?.color).toBe(COLORS.underline);
-  expect(byId.get("underline-color")?.color).toBe(COLORS.underline);
+  // The chevron says a menu opens; the toggle beside it shows the colour.
+  expect(byId.get("highlight-color")?.color).toBeNull();
+  expect(byId.get("underline-color")?.color).toBeNull();
+});
+
+it("offers each tool's colours from its own chevron, armed or not", () => {
+  const byId = (armed: "highlight" | "underline" | null) =>
+    new Map(model({ armed }).map((control) => [control.id, control]));
+
+  for (const armed of ["highlight", null] as const) {
+    const control = byId(armed).get("underline-color")!;
+    expect(control.icon).toBe("chevron-down");
+    expect(control.disabled).toBe(false);
+    expect(control.pressed).toBeNull();
+  }
+  // Each chevron names the tool it colours, so the two never read alike.
+  expect(byId(null).get("highlight-color")?.tooltip).not.toBe(
+    byId(null).get("underline-color")?.tooltip,
+  );
 });
 
 it("presses only the armed tool", () => {
@@ -108,14 +132,15 @@ it.each([
 ] satisfies EditingCapability[])(
   "stands the writing controls down in place and says why under $kind",
   (capability) => {
-    const controls = model({ capability });
+    const controls = model({ armed: "highlight", capability });
     const copy = editingCapabilityCopy(capability, NOW);
+    const writing: string[] = MARK_TOOLS.flatMap(halves);
 
     expect(
       controls.filter(({ disabled }) => disabled).map(({ id }) => id),
-    ).toEqual(["highlight", "highlight-color", "underline", "underline-color"]);
+    ).toEqual(writing);
     for (const control of controls) {
-      if (!control.disabled) continue;
+      if (!writing.includes(control.id)) continue;
       expect(control.tooltip).toBe(copy.detail ?? copy.label);
     }
   },
@@ -123,11 +148,18 @@ it.each([
 
 it.each([
   { kind: "writable" },
-  { kind: "authorization-required" },
+  { kind: "writable", oneTime: true },
 ] satisfies EditingCapability[])(
-  "keeps every control live under $kind, because the gesture is what asks",
+  "enables editing tools with an available grant",
   (capability) => {
-    expect(model({ capability }).some(({ disabled }) => disabled)).toBe(false);
+    const live = model({ armed: "highlight", capability }).filter(
+      ({ disabled }) => !disabled,
+    );
+
+    expect(live.map(({ id }) => id)).toEqual([
+      ...MARK_TOOLS.flatMap(halves),
+      "visibility",
+    ]);
   },
 );
 
@@ -151,7 +183,7 @@ it("draws every control into the slot with its state and its tooltip", () => {
     model({ armed: "underline" }).map((control) => ({
       id: control.id,
       pressed: control.pressed === null ? null : String(control.pressed),
-      disabled: null,
+      disabled: control.disabled ? "true" : null,
       tooltip: control.tooltip,
       color: control.color ?? "",
       icon: expect.stringContaining("lucide-"),
@@ -231,6 +263,7 @@ it("promises the theme hook and the data attribute by their literal names", () =
   draw(slot);
 
   expect(slot.querySelector(".zt-pdf-creation-toolbar")).not.toBeNull();
+  expect(slot.querySelectorAll(".zt-pdf-tool")).toHaveLength(MARK_TOOLS.length);
   expect(
     [...slot.querySelectorAll<HTMLElement>("[data-zt-tool]")].map(
       (node) => node.dataset.ztTool,

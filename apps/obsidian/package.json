@@ -23,10 +23,10 @@
     "test:lua-filter": "node scripts/check-lua-filter.ts"
   },
   "dependencies": {
-    "@base-ui/react": "catalog:",
     "@bjorn3/browser_wasi_shim": "^0.4.2",
     "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
+    "@lezer/markdown": "catalog:",
     "@std/async": "catalog:",
     "@std/collections": "catalog:",
     "@std/ini": "jsr:0.225.2",
@@ -50,7 +50,7 @@
     "idb": "^8.0.3",
     "monkey-around": "catalog:",
     "nanoid": "catalog:",
-    "p-limit": "^7.3.0",
+    "p-queue": "catalog:",
     "preact": "catalog:",
     "react-textarea-autosize": "^8.5.9",
     "semver": "^7.8.0",

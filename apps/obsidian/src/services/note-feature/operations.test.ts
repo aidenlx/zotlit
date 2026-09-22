@@ -1,5 +1,14 @@
-import { TFile, TFolder } from "obsidian";
-import type { FileManager } from "obsidian";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { join } from "node:path";
+import { FileSystemAdapter, TFile, TFolder } from "obsidian";
+import type { App, FileManager } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -25,7 +34,12 @@ import type {
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
-import { filenameSuffix, inlineCitation } from "@zotlit/templates";
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+import {
+  filenameSuffix,
+  inlineCitation,
+  TemplateEngine,
+} from "@zotlit/templates";
 import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
 import { MissingTemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
@@ -54,6 +68,23 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
+import {
+  redPng,
+  bluePng,
+  corruptPng,
+} from "@/services/excerpt-image/__fixtures__/png";
+import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
+import { PNG_FORMAT } from "@/services/excerpt-image/format";
+import { materializeExcerpt } from "@/services/excerpt-image/materialize";
+import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
+import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
+import { ExcerptImageService } from "@/services/excerpt-image/service";
+import type {
+  ExcerptOutcome,
+  ExcerptRequest,
+} from "@/services/excerpt-image/service";
 import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
@@ -369,6 +400,12 @@ describe("Profile source selection", () => {
     });
     const app = makeApp();
     deps.app = app;
+    const prepareImages = vi.fn(() => ({
+      annotationImageLink: () => null,
+      prepare: async () => {},
+      summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+    }));
+    deps.excerptImages = prepareImages;
     const document = makeDocumentTemplate({
       filename: `Paper${filenameSuffix()}`,
       createBody: "# A Study",
@@ -396,6 +433,7 @@ describe("Profile source selection", () => {
       topic: "Research",
     });
     expect(preview.body).toBe("# A Study");
+    expect(prepareImages).not.toHaveBeenCalled();
     expect(app.vault.create).toHaveBeenCalledTimes(1);
     const file = createdFile(await preview.create());
     expect(file.path).toBe(preview.path);
@@ -615,6 +653,468 @@ describe("Profile source selection", () => {
 });
 
 describe("createNote", () => {
+  it.each([
+    "valid",
+    "fallback",
+    "corrupt-fallback",
+    "unchecked",
+    "unavailable",
+    "partial",
+    "write-failure",
+    "disabled",
+    "unused",
+    "collected",
+    "refresh",
+    "overwrite",
+    "retain",
+    "retain-corrupt-fallback",
+    "retain-disabled",
+    "retain-throw",
+    "retain-write",
+    "retain-link",
+    "retain-stale",
+    "retain-replaced",
+    "reject-truncated",
+    "reject-idat",
+  ] as const)(
+    "prepares image and ink before one Eta execution (%s)",
+    async (mode) => {
+      const refreshOperation =
+        mode.startsWith("retain") ||
+        mode.startsWith("reject") ||
+        mode === "refresh" ||
+        mode === "overwrite";
+      const parent = join(
+        await getWorkspaceRoot(import.meta.dirname),
+        "tmp/excerpt-note-tests",
+      );
+      await mkdir(parent, { recursive: true });
+      const root = await mkdtemp(`${parent}/vault-`);
+      await using cleanup = new AsyncDisposableStack();
+      cleanup.defer(() => rm(root, { recursive: true, force: true }));
+      const { deps } = makeUpdateHarness({
+        content: "",
+        settings: {
+          "attachment.import": mode !== "disabled",
+          "attachment.folder-path": "Images",
+        },
+      });
+      const client = deps.db.client;
+      let leaseReleased = false;
+      deps.db.acquireRead = async () => ({
+        client,
+        [Symbol.dispose]() {
+          leaseReleased = true;
+        },
+      });
+      cleanup.defer(() => client.$client.close());
+      client.$client.exec(`
+        insert into items (itemID, itemTypeID, dateAdded, dateModified, libraryID, key) values
+          (1, 1, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'ROOT1234'),
+          (90, 2, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'RGRPDF24'),
+          (91, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'FDRFQ7C2'),
+          (92, 4, '2025-01-01 00:00:00', '2025-01-01 00:00:00', 1, 'TYY6Z6ZF');
+        insert into itemAttachments (itemID, parentItemID, linkMode, contentType, path) values
+          (90, 1, 0, 'application/pdf', 'storage:paper.pdf');
+        insert into itemAnnotations (itemID, parentItemID, type, text, comment, color, pageLabel, sortIndex, position, isExternal) values
+          (91, 90, 3, null, null, '#ffd400', '1', '00000|000000|00001', '{"pageIndex":0,"rects":[[0,0,10,10]]}', 0),
+          (92, 90, 4, null, null, '#ff0000', '1', '00000|000000|00002', '{"pageIndex":0,"width":2,"paths":[[1,2,3,4]]}', 0);
+      `);
+      const actual =
+        await vi.importActual<typeof import("@zotlit/db")>("@zotlit/db");
+      vi.mocked(fetchNoteContext).mockImplementation(actual.fetchNoteContext);
+      const app = makeApp();
+      app.vault.createFolder = vi.fn(async (path: string) => {
+        await mkdir(`${root}/${path}`, { recursive: true });
+        return Object.assign(new TFolder(), { path });
+      });
+      app.vault.create.mockImplementation(
+        async (path: string, content: string) => {
+          expect(leaseReleased).toBe(false);
+          await mkdir(`${root}/Literature`, { recursive: true });
+          await writeFile(`${root}/${path}`, content);
+          return makeFile(path);
+        },
+      );
+      Object.assign(app.vault, {
+        adapter: Object.assign(Object.create(FileSystemAdapter.prototype), {
+          getFullPath: (path: string) => `${root}/${path}`,
+          reconcileInternalFile: async () => {},
+        }),
+        getFileByPath: (path: string) => makeFile(path),
+      });
+      deps.app = app;
+      const fallbackService = cleanup.use(
+        new ExcerptImageService({
+          render: async () => {
+            throw new Error("PDF unavailable");
+          },
+          read: async () => corruptPng("truncated"),
+        }),
+      );
+      const resolver = {
+        resolve: vi.fn(
+          async (request: ExcerptRequest): Promise<ExcerptOutcome> => {
+            expect(leaseReleased).toBe(false);
+            if (mode === "corrupt-fallback")
+              return fallbackService.resolve(request);
+            if (mode === "partial" && request.annotation.type === "image")
+              throw new Error("Image renderer failed");
+            if (
+              mode === "unavailable" ||
+              mode === "unused" ||
+              mode === "collected"
+            )
+              return { kind: "unavailable" };
+            return availableOutcome({
+              bytes: redPng,
+              format: PNG_FORMAT,
+              provenance: mode === "fallback" ? "zotero" : "rendered",
+              freshness:
+                mode === "fallback"
+                  ? "uncertain"
+                  : mode === "unchecked"
+                    ? "unchecked"
+                    : "checked",
+            });
+          },
+        ),
+        operation() {
+          return {
+            resolve: this.resolve,
+            [Symbol.asyncDispose]: async () => {},
+          };
+        },
+      };
+      deps.excerptImages = createExcerptPreparation({
+        app: app as unknown as App,
+        resolver,
+        paths: deps.zoteroPref,
+      });
+      if (mode === "write-failure")
+        await writeFile(`${root}/Images`, "occupied");
+      const engine = new TemplateEngine();
+      engine.define(
+        "note",
+        mode === "unused"
+          ? "<% zt.countRender() %>Text only"
+          : `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>End of note`,
+      );
+      let runs = 0;
+      deps.template = {
+        ...makeTemplate(),
+        render: (name, data) =>
+          engine.render(name, {
+            ...data,
+            countRender: () => {
+              runs++;
+            },
+          }),
+      };
+      const feature = createNoteFeature(deps);
+      const notices: ExcerptSummary[] = [];
+      const collected: ExcerptSummary[] = [];
+      feature.on("excerpt-images-reported", (summary) => notices.push(summary));
+      const result = await feature.createNote(
+        makeItem({
+          key: "ROOT1234",
+          indexedKey: "ROOT1234",
+          title: "Paper",
+          citationKey: "paper2026",
+        }),
+        mode === "collected"
+          ? { reportExcerpts: (summary) => collected.push(summary) }
+          : undefined,
+      );
+      if (mode === "collected") {
+        expect(notices).toEqual([]);
+        expect(collected).toEqual([
+          { zotero: 0, unchecked: 0, unavailable: 2 },
+        ]);
+        feature.reportExcerptImages(collected[0]!);
+      }
+      expect(result.outcome).toBe("created");
+      expect(leaseReleased).toBe(true);
+      expect(runs).toBe(1);
+      const markdown = await readFile(`${root}/Literature/Paper.md`, "utf8");
+      expect(markdown).toContain(
+        mode === "unused" ? "Text only" : "End of note",
+      );
+      if (mode === "partial") {
+        expect(markdown.split("![[Images/zotlit-excerpt-")).toHaveLength(2);
+        expect(markdown).toContain(m.excerpt_image_unavailable());
+        expect(await readdir(`${root}/Images`)).toHaveLength(1);
+      } else if (
+        refreshOperation ||
+        [
+          "valid",
+          "fallback",
+          "unchecked",
+          "refresh",
+          "overwrite",
+          "retain",
+          "retain-disabled",
+          "retain-throw",
+          "retain-write",
+        ].includes(mode)
+      ) {
+        expect(markdown.split("[[Images/zotlit-excerpt-")).toHaveLength(3);
+        const files = await readdir(`${root}/Images`);
+        expect(files).toHaveLength(2);
+        for (const filename of files)
+          expect(await readFile(`${root}/Images/${filename}`)).toEqual(redPng);
+      } else {
+        expect(markdown).not.toContain("![[");
+        expect(markdown).not.toContain("![");
+        if (mode !== "unused") {
+          expect(markdown).toContain(
+            mode === "disabled"
+              ? m.excerpt_image_import_disabled()
+              : m.excerpt_image_unavailable(),
+          );
+          expect(markdown).toContain(
+            "file:///zotero/storage/RGRPDF24/paper.pdf#page=1&zt-annotation=",
+          );
+        }
+      }
+      if (
+        refreshOperation ||
+        [
+          "valid",
+          "unused",
+          "refresh",
+          "overwrite",
+          "retain",
+          "retain-disabled",
+          "retain-throw",
+          "retain-write",
+        ].includes(mode)
+      )
+        expect(notices).toEqual([]);
+      else
+        expect(notices).toEqual([
+          {
+            zotero: mode === "fallback" ? 2 : 0,
+            unchecked: mode === "unchecked" ? 2 : 0,
+            unavailable:
+              mode === "partial"
+                ? 1
+                : [
+                      "disabled",
+                      "unavailable",
+                      "corrupt-fallback",
+                      "write-failure",
+                      "collected",
+                    ].includes(mode)
+                  ? 2
+                  : 0,
+          },
+        ]);
+      expect(resolver.resolve).toHaveBeenCalledTimes(
+        mode === "disabled" ? 0 : 2,
+      );
+      if (mode !== "disabled")
+        expect(
+          resolver.resolve.mock.calls.map(([request]) => ({
+            key: request.annotation.key,
+            type: request.annotation.type,
+            parent: request.attachmentKey,
+            source: request.source.kind,
+            pdf: request.pdfPath,
+          })),
+        ).toEqual([
+          {
+            key: "FDRFQ7C2",
+            type: "image",
+            parent: "RGRPDF24",
+            source: "zotero-db",
+            pdf: "/zotero/storage/RGRPDF24/paper.pdf",
+          },
+          {
+            key: "TYY6Z6ZF",
+            type: "ink",
+            parent: "RGRPDF24",
+            source: "zotero-db",
+            pdf: "/zotero/storage/RGRPDF24/paper.pdf",
+          },
+        ]);
+      if (mode === "disabled")
+        expect(await readdir(root)).toEqual(["Literature"]);
+      if (
+        refreshOperation ||
+        [
+          "refresh",
+          "overwrite",
+          "retain",
+          "retain-disabled",
+          "retain-throw",
+          "retain-write",
+        ].includes(mode)
+      ) {
+        const file = makeFile("Literature/Paper.md");
+        const priorAssets = await readdir(`${root}/Images`);
+        const original = `User introduction\n${formatManagedRegion(markdown)}\nUser conclusion`;
+        let current =
+          mode === "retain-stale"
+            ? `New user paragraph before the cached offsets\n${original}`
+            : original;
+        const otherNote = `${root}/Literature/Other.md`;
+        await writeFile(otherNote, original);
+        const retainedAssets: string[] = [];
+        if (mode === "retain-replaced") {
+          for (const [request] of resolver.resolve.mock.calls) {
+            const save = (bytes: Uint8Array) =>
+              materializeExcerpt({
+                app: app as unknown as App,
+                notePath: file.path,
+                settings: deps.settings.current!,
+                request,
+                outcome: availableOutcome({
+                  bytes,
+                  format: PNG_FORMAT,
+                  provenance: "rendered",
+                  freshness: "checked",
+                }),
+              });
+            const oldAsset = await save(redPng),
+              newAsset = await save(bluePng);
+            if (oldAsset.kind !== "saved" || newAsset.kind !== "saved")
+              throw new Error("Fixture asset creation failed");
+            current = current.replace(oldAsset.path, newAsset.path);
+            retainedAssets.push(newAsset.path.slice("Images/".length));
+          }
+        } else retainedAssets.push(...priorAssets);
+        Object.assign(app.vault, {
+          read: async () => current,
+          process: async (
+            _file: TFile,
+            transform: (content: string) => string,
+          ) => {
+            current = transform(current);
+            await writeFile(`${root}/${file.path}`, current);
+            return current;
+          },
+        });
+        Object.assign(app.metadataCache, {
+          getFileCache: () => ({
+            [mode === "retain-link" ? "links" : "embeds"]: priorAssets.map(
+              (name) => {
+                const link = `Images/${name}`;
+                const syntax = `${mode === "retain-link" ? "" : "!"}[[${link}]]`;
+                const offset = original.indexOf(syntax);
+                return {
+                  link,
+                  original: syntax,
+                  position: {
+                    start: { offset },
+                    end: { offset: offset + syntax.length },
+                  },
+                };
+              },
+            ),
+          }),
+          getFirstLinkpathDest: (path: string) => makeFile(path),
+        });
+        vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+          key: "ROOT1234",
+          libraryID: 1,
+        });
+        vi.mocked(getItemsByKey).mockReturnValue([
+          makeItem({
+            key: "ROOT1234",
+            indexedKey: "ROOT1234",
+            title: "Paper",
+            citationKey: "paper2026",
+          }),
+        ]);
+        engine.define(
+          "content",
+          `<% zt.countRender() %><% for (const a of zt.annotations) { %><%= ${mode === "retain-link" ? "a.imgLink()" : "embed(a.imgLink)"} %>\n<% } %>`,
+        );
+        resolver.resolve.mockImplementation(async () =>
+          mode.startsWith("retain") || mode.startsWith("reject")
+            ? { kind: "unavailable" }
+            : availableOutcome({
+                bytes: bluePng,
+                format: PNG_FORMAT,
+                provenance: "rendered",
+                freshness: "checked",
+              }),
+        );
+        if (mode === "retain-corrupt-fallback")
+          resolver.resolve.mockImplementation((request) =>
+            fallbackService.resolve(request),
+          );
+        if (mode === "retain-disabled")
+          deps.settings.update({ "attachment.import": false });
+        if (mode === "retain-throw")
+          resolver.resolve.mockRejectedValue(new Error("Resolver failed"));
+        if (mode === "retain-write")
+          resolver.resolve.mockResolvedValue(
+            availableOutcome({
+              bytes: bluePng,
+              format: PNG_FORMAT,
+              provenance: "rendered",
+              freshness: "checked",
+            }),
+          );
+        if (mode.startsWith("reject"))
+          for (const name of priorAssets)
+            await writeFile(
+              `${root}/Images/${name}`,
+              corruptPng(mode === "reject-idat" ? "idat" : "truncated"),
+            );
+        if (mode === "retain-write")
+          Object.assign((app as unknown as App).vault.adapter, {
+            getFullPath: (path: string) => {
+              if (
+                path.endsWith(".png") &&
+                !priorAssets.some((name) => path.endsWith(name))
+              )
+                throw new Error("Destination write failed");
+              return `${root}/${path}`;
+            },
+          });
+        leaseReleased = false;
+        if (mode === "overwrite") await feature.overwriteNote(file, "ROOT1234");
+        else await feature.updateNote(file, { indexedKey: "ROOT1234" });
+        expect(runs).toBe(2);
+        expect(await readFile(otherNote, "utf8")).toBe(original);
+        for (const name of priorAssets)
+          expect(await readFile(`${root}/Images/${name}`)).toEqual(
+            mode.startsWith("reject")
+              ? corruptPng(mode === "reject-idat" ? "idat" : "truncated")
+              : redPng,
+          );
+        if (mode !== "overwrite") {
+          expect(current).toContain("User introduction");
+          expect(current).toContain("User conclusion");
+        }
+        if (mode.startsWith("retain")) {
+          for (const name of retainedAssets) expect(current).toContain(name);
+          if (mode === "retain-replaced")
+            for (const name of priorAssets) expect(current).not.toContain(name);
+          expect(notices).toEqual([
+            { zotero: 0, unchecked: 0, unavailable: 0, notRefreshed: 2 },
+          ]);
+        } else if (mode.startsWith("reject")) {
+          expect(current).toContain(m.excerpt_image_unavailable());
+          expect(current).toContain(
+            "file:///zotero/storage/RGRPDF24/paper.pdf",
+          );
+          expect(current).not.toContain("zotlit-excerpt-");
+          expect(notices).toEqual([
+            { zotero: 0, unchecked: 0, unavailable: 2 },
+          ]);
+        } else {
+          for (const name of priorAssets) expect(current).not.toContain(name);
+          expect(await readdir(`${root}/Images`)).toHaveLength(4);
+          expect(notices).toEqual([]);
+        }
+      }
+    },
+  );
+
   it("resolves note helpers by item key, then filename fallback", async () => {
     const root = makeItem({
       itemID: 1,
@@ -850,6 +1350,9 @@ describe("createNote", () => {
       disk.add(path);
       return makeFile(path);
     });
+    const document = makeDocumentTemplate({
+      filename: `Root${filenameSuffix()}`,
+    });
 
     const deps: SyncRenderDeps = {
       app: {
@@ -860,6 +1363,7 @@ describe("createNote", () => {
           getRoot: () => root,
           createFolder: vi.fn(),
           create,
+          read: async () => "",
           process: vi.fn(async () => ""),
         },
         fileManager: {
@@ -870,8 +1374,7 @@ describe("createNote", () => {
       },
       template: {
         ...makeTemplate(),
-        getLiteratureNoteTemplate: () =>
-          makeDocumentTemplate({ filename: `Root${filenameSuffix()}` }),
+        getLiteratureNoteTemplate: () => document,
       },
       db: makeDb(),
       noteIndex: {
@@ -912,6 +1415,7 @@ describe("createNote", () => {
     expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
     expect(update).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(2);
+    expect(document.renderForCreate).toHaveBeenCalledTimes(1);
   });
 
   it("awaits noteIndex.whenIndexed (not just ready) before writing the note", async () => {
@@ -1824,6 +2328,76 @@ describe("createNote", () => {
       },
     });
   });
+
+  it("runs the created note and its Child Note import under one outcome scope", async () => {
+    const root = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: "root2024",
+    });
+    vi.mocked(fetchNoteContext).mockImplementation((_client, item, options) =>
+      stubNoteContext(item, [], options.resolvers),
+    );
+    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    await using probe = excerptReuseProbe();
+    const deps: SyncRenderDeps = {
+      app: makeApp(),
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      excerptImages: (options) => {
+        excerptScopes.push(options.outcomes);
+        return {
+          annotationImageLink: () => null,
+          // Runs after the Child Note import prepared, so this resolution is the
+          // batch's second one and only the retention can answer it.
+          prepare: async () => {
+            await probe.resolve(options.outcomes);
+          },
+          summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+        };
+      },
+      noteImport: {
+        prepare: async (options) => {
+          importScopes.push(options.outcomes);
+          await probe.resolve(options.outcomes);
+          return {
+            resolveChildNote: () => ({
+              key: "",
+              indexedKey: "",
+              title: null,
+              noteLink: () => "",
+            }),
+            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+          };
+        },
+      },
+    };
+
+    const result = await createNoteFeature(deps).createNote(root);
+
+    expect(result.outcome).toBe("created");
+    expect(excerptScopes).toHaveLength(1);
+    // The Child Notes this note's template imports inherit the batch scope, so
+    // the note's own resolution reuses what the import's rendered.
+    expect(importScopes[0]).toBe(excerptScopes[0]);
+    expect(probe.renders()).toBe(1);
+    // The batch is over once the note and its imports settle: a later request
+    // through that scope renders again.
+    await probe.resolve(excerptScopes[0]);
+    expect(probe.renders()).toBe(2);
+  });
 });
 
 describe("overwriteNote", () => {
@@ -1945,6 +2519,7 @@ describe("overwriteNote", () => {
             processedContent = cb(originalContent);
             return processedContent;
           }),
+          read: async () => originalContent,
         },
         fileManager: {
           generateMarkdownLink: () => "",
@@ -2063,6 +2638,7 @@ function makeUpdateHarness(options: {
         createFolder: vi.fn(),
         create: vi.fn(),
         process: processMock,
+        read: async () => content,
       },
       fileManager: {
         generateMarkdownLink: () => "",
@@ -2135,6 +2711,58 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 }
 
 describe("updateNote", () => {
+  it.each(["update", "overwrite"] as const)(
+    "waits for Child Note outcomes after an early attachment failure (%s)",
+    async (operation) => {
+      const harness = makeUpdateHarness({
+        content: formatManagedRegion("OLD"),
+      });
+      stubIndexedKeyUpdate(updateContext());
+      using _database = {
+        [Symbol.dispose]: () => harness.deps.db.client.$client.close(),
+      };
+      const failed = Promise.withResolvers<void>();
+      const finishChild = Promise.withResolvers<void>();
+      const copyError = new Error("attachment copy failed");
+      harness.deps.attachmentImport = {
+        prepare: async () => ({
+          ...(await blockedAttachmentImport.prepare()),
+          flush: async () => {
+            failed.resolve();
+            throw copyError;
+          },
+        }),
+      };
+      const prepare = harness.deps.noteImport.prepare;
+      harness.deps.noteImport.prepare = async (options) => ({
+        ...(await prepare(options)),
+        flush: async (report) => {
+          await finishChild.promise;
+          report?.({ zotero: 0, unchecked: 0, unavailable: 1 });
+          return { created: 1, skipped: 0, failed: 0 };
+        },
+      });
+      const feature = createNoteFeature(harness.deps);
+      const report = vi.fn();
+      feature.on("excerpt-images-reported", report);
+      const file = makeFile("Literature/Test.md");
+      const pending =
+        operation === "update"
+          ? feature.updateNote(file, { indexedKey: "ABC12345", scope: "full" })
+          : feature.overwriteNote(file, "ABC12345");
+      const rejected = expect(pending).rejects.toBe(copyError);
+      await failed.promise;
+      expect(report).not.toHaveBeenCalled();
+      finishChild.resolve();
+      await rejected;
+      expect(report).toHaveBeenCalledExactlyOnceWith({
+        zotero: 0,
+        unchecked: 0,
+        unavailable: 1,
+      });
+    },
+  );
+
   it.each(["full", "metadata"] as const)(
     "preserves a replacement file when the session changes during %s preparation",
     async (scope) => {
@@ -3688,6 +4316,76 @@ describe("writeNoteUpdate", () => {
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
   });
 
+  it("shares one outcome scope with the Child Note import and releases it after the update", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    await using probe = excerptReuseProbe();
+    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    const importScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    harness.deps.excerptImages = (options) => {
+      excerptScopes.push(options.outcomes);
+      return {
+        annotationImageLink: () => null,
+        // Runs after the Child Note import prepared, so this resolution is the
+        // batch's second one and only the retention can answer it.
+        prepare: async () => {
+          await probe.resolve(options.outcomes);
+        },
+        summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+      };
+    };
+    const prepare = harness.deps.noteImport.prepare;
+    harness.deps.noteImport.prepare = async (options) => {
+      importScopes.push(options.outcomes);
+      await probe.resolve(options.outcomes);
+      return await prepare(options);
+    };
+
+    await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Literature/Root.md"),
+      writeOptions("full"),
+    );
+
+    expect(excerptScopes).toHaveLength(1);
+    expect(excerptScopes[0]).toBeDefined();
+    // The Child Notes this update imports inherit the batch scope, so the
+    // update's second resolution reuses what the import's first one rendered.
+    expect(importScopes[0]).toBe(excerptScopes[0]);
+    expect(probe.renders()).toBe(1);
+    // The update released what it retained: a later request through that scope
+    // renders again rather than reusing.
+    await probe.resolve(excerptScopes[0]);
+    expect(probe.renders()).toBe(2);
+  });
+
+  it("leaves a caller's batch scope open for the rest of its run", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    const outcomes = new ExcerptOutcomeScope();
+    await using probe = excerptReuseProbe();
+    const excerptScopes: (ExcerptOutcomeScope | undefined)[] = [];
+    harness.deps.excerptImages = (options) => {
+      excerptScopes.push(options.outcomes);
+      return {
+        annotationImageLink: () => null,
+        prepare: async () => {
+          await probe.resolve(options.outcomes);
+        },
+        summary: () => ({ zotero: 0, unchecked: 0, unavailable: 0 }),
+      };
+    };
+
+    await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Literature/Root.md"),
+      { ...writeOptions("full"), outcomes },
+    );
+
+    expect(excerptScopes).toEqual([outcomes]);
+    // The caller's scope outlives the update: it still answers a repeat.
+    await probe.resolve(outcomes);
+    expect(probe.renders()).toBe(1);
+  });
+
   it("honors scope 'metadata' by leaving the body untouched", async () => {
     vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
 
@@ -4507,6 +5205,7 @@ interface MockNoteApp {
     createFolder(path: string): Promise<TFolder>;
     create: Mock<(path: string, content: string) => Promise<TFile>>;
     process(): Promise<string>;
+    read(file: TFile): Promise<string>;
   };
   fileManager: {
     links: { path: string; sourcePath: string; alias: string | undefined }[];
@@ -4535,6 +5234,7 @@ function makeApp(): MockNoteApp {
     },
     vault: {
       contentByPath,
+      read: async (file: TFile) => contentByPath.get(file.path) ?? "",
       getAbstractFileByPath: (path: string) =>
         path === "Literature" ? literature : (filesByPath.get(path) ?? null),
       getRoot: () => root,

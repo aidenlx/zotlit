@@ -132,9 +132,13 @@ export const zoteroAttachmentReader: AttachmentReader<ZoteroOpenableAttachment> 
  * `file:`-prefixed path `lstat` finds nothing at — so that `null` is the one
  * signal a Zotero library moving or deleting an Attachment between the read
  * that offered it and the click needs to be caught by.
+ *
+ * @param onOpened runs once the file is on screen, and only then — a missing
+ * file leaves it unrun, so a caller can hang follow-up UI off a real open.
  */
 export function createObsidianAttachmentReader(
   app: App,
+  { onOpened }: { onOpened?: () => void } = {},
 ): AttachmentReader<ObsidianOpenableAttachment> {
   return {
     icon: "file-text",
@@ -148,7 +152,13 @@ export function createObsidianAttachmentReader(
         new BaseNotice(m.notice_pdf_file_missing());
         return;
       }
-      await app.workspace.getLeaf(pane).openFile(file);
+      // Obsidian's PDF view reads `#page=N` and the rest of its subpath
+      // grammar off `eState.subpath`; an absent subpath opens at the start.
+      const leaf = app.workspace.getLeaf(pane);
+      await (attachment.subpath
+        ? leaf.openFile(file, { eState: { subpath: attachment.subpath } })
+        : leaf.openFile(file));
+      onOpened?.();
     },
   };
 }

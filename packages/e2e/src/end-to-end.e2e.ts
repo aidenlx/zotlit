@@ -11,7 +11,15 @@
 // open. src/paired-run.e2e.ts is the suite that runs in that case.
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -23,6 +31,8 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 import {
+  ANNOTATIONS,
+  ATTACHMENTS,
   COLLECTIONS,
   findScopeCase,
   getFixtureLayout,
@@ -36,6 +46,14 @@ import {
 import type { LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyAnnotationDrag } from "./annotation-drag.ts";
+import { verifyAnnotationInsert } from "./annotation-insert.ts";
+import {
+  verifyMultiPdfExcerptBatch,
+  verifyReaderBackedExcerpts,
+  verifySavedEditDisplay,
+} from "./excerpt-acceptance.ts";
+import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import {
   cli,
   cliCommand,
@@ -53,9 +71,8 @@ const vaultScriptPath = join(
   "obsidian-vault.ts",
 );
 // Distinct from the per-worktree dev vault (`getDevVaultDir`) and the raw
-// Fixture Vault (`getFixtureLayout(...).vaultDir`) — see
-// policies/scratch-artifacts.md.
-const e2eVaultPath = join(workspaceRoot, "tmp", "e2e-fixture-vault");
+// Fixture Vault (`getFixtureLayout(...).vaultDir`) — see AGENTS.md → Working files.
+const e2eVaultPath = join(workspaceRoot, ".scratch", "e2e-fixture-vault");
 const execFileAsync = promisify(execFile);
 
 function runVaultScript(args: string[]) {
@@ -72,6 +89,24 @@ const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
 const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
 const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
 const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
+const annotationAttachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
+/** Every Fixture Annotation hanging off that attachment. */
+const attachmentAnnotations = ANNOTATIONS.filter(
+  ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
+);
+const annotationKeys = attachmentAnnotations.map(({ key }) => key);
+/** The tag vocabulary those Annotations carry, which is what the tag Chooser lists. */
+const attachmentTags = [
+  ...new Set(
+    attachmentAnnotations.flatMap(
+      ({ tags }) => tags?.map(({ name }) => name) ?? [],
+    ),
+  ),
+].sort();
+const annotationKeysByPage = Map.groupBy(
+  attachmentAnnotations,
+  ({ position }) => position.pageIndex,
+);
 
 async function isObsidianReachable(): Promise<boolean> {
   const result = await runVaultScript(["status"]).catch(() => undefined);
@@ -102,8 +137,12 @@ if (reachable && pairedZotero) {
   );
 }
 const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
+const settingsContent = "app.setting.containerEl";
 
-async function openProfilesSettings(vaultId: string, pageName: string) {
+async function openProfilesSettings(
+  vaultId: string,
+  pageId: "settings_page_profiles" | "settings_page_advanced",
+) {
   await obEval(
     vaultId,
     "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true",
@@ -111,7 +150,7 @@ async function openProfilesSettings(vaultId: string, pageName: string) {
   await obEval(vaultId, "app.setting.openTabById('zotlit');true");
   await obEval(
     vaultId,
-    `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:[${JSON.stringify(pageName)}]});true`,
+    `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:[${JSON.stringify(pageId)}]});true`,
   );
 }
 
@@ -169,6 +208,8 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     document: "zotlit-profile.articles.md",
   };
   const bookMatch = { and: ['itemType == "book"', 'library == "personal"'] };
+  const activeWorkbenchContent =
+    "app.workspace.activeLeaf?.view?.getViewType()==='zotlit-template-workbench'?app.workspace.activeLeaf.view.contentEl:null";
 
   function conditionReady({
     row = 0,
@@ -189,7 +230,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const valueProperty = kind === "library" ? "textContent" : "value";
     return obEvalUntil(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-template-workbench');var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
+      `(function(){var editor=${activeWorkbenchContent};var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
@@ -197,7 +238,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   async function addLibraryCondition(selector: string): Promise<void> {
     await obEval(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-template-workbench');Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
     expect(
       await conditionReady({
@@ -209,7 +250,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var row=Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -221,33 +262,33 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
+      `(function(){var row=Array.from((${activeWorkbenchContent}).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
     );
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};var row=Array.from(editor.querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new editor.ownerDocument.defaultView.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
     );
   }
 
   async function openMatchEditor(): Promise<void> {
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openProfilesSettings(vaultId, "settings_page_profiles");
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_action())});if(!button||button.disabled)return false;button.click();return true;})()`,
+        `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;button.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var editor=document.querySelector('.zt-template-workbench');return String(!!editor?.querySelector('[data-part=fieldset]')&&!document.querySelector('.modal.mod-settings'));})()`,
+        `(function(){var editor=${activeWorkbenchContent};var tab=Array.from(editor?.querySelectorAll('[role=tab]')??[]).find(tab=>tab.textContent.trim()===${JSON.stringify(m.workbench_tab_match())});tab?.click();return String(!!editor?.querySelector('[data-part=fieldset]')&&!editor?.ownerDocument.querySelector('.modal.mod-settings'));})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-template-workbench');if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
   }
 
@@ -261,7 +302,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   function clickTemplateCustomize() {
     return obEvalUntil(
       vaultId,
-      `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_template_customize())});if(!button||button.disabled)return false;button.click();return true;})()`,
+      `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_edit())});if(!button||button.disabled)return false;button.click();return true;})()`,
       { expected: "true" },
     );
   }
@@ -274,7 +315,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openProfilesSettings(vaultId, "settings_page_profiles");
   }
 
   /** Hand-written Match trees exercise the same document boundary as external editors. */
@@ -307,28 +348,32 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     item: { title: string },
     targetVaultId = vaultId,
   ) {
+    await obEval(
+      targetVaultId,
+      "app.workspace.detachLeavesOfType('zotlit-template-workbench');true",
+    );
     expect(
       await obEvalUntil(
         targetVaultId,
-        "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+        "(function(){var command=app.commands.commands['zotlit:note-quick-switcher'];if(!command)return false;command.callback();return true;})()",
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         targetVaultId,
-        "String(!!document.querySelector('.prompt input'))",
+        "String(!!activeDocument.querySelector('.prompt input'))",
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       targetVaultId,
-      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(targetVaultId, item.title);
     await obEval(
       targetVaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
   }
 
@@ -349,6 +394,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     // to the Fixture profile and database, and confirms the plugin loaded.
     const created = await runVaultScript(["create", e2eVaultPath]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    // A menu is an OS menu, with no DOM to measure, while Obsidian's "Native
+    // menus" setting stands. This vault is the suite's own and is purged in
+    // `afterAll`, so the setting is turned off here rather than worked around
+    // in the one test that measures a menu.
+    await obEval(vaultId, "app.vault.setConfig('nativeMenus',false);true");
     const serverPort = await availableLoopbackPort();
     await obEval(
       vaultId,
@@ -386,9 +436,468 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     }
   }, 120000);
 
+  it("shows the same Fixture Annotations in both surfaces with Zotero closed", async () => {
+    const layout = await obEval(
+      vaultId,
+      "JSON.stringify(app.workspace.getLayout())",
+    );
+    try {
+      await obEval(
+        vaultId,
+        `(async()=>{const file=app.vault.getFileByPath(${JSON.stringify(annotationAttachment.path)});const leaf=app.workspace.getLeaf('tab');await leaf.openFile(file);app.workspace.setActiveLeaf(leaf,{focus:true});app.commands.executeCommandById('zotlit:open-annot-view');app.commands.executeCommandById('zotlit:annot-view-follow-active-tab');return true;})()`,
+      );
+      const expected = [...annotationKeys].sort();
+      const readAnnotations = `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.read(${JSON.stringify(annotationAttachment.key)});return JSON.stringify({source:list?.source.kind??null,keys:(list?.annotations??[]).map(({key})=>key).sort()});})()`;
+      expect(
+        await obEvalUntil(vaultId, readAnnotations, {
+          expected: JSON.stringify({ source: "zotero-db", keys: expected }),
+        }),
+      ).toBe(true);
+      expect(JSON.parse(await obEval(vaultId, readAnnotations))).toEqual({
+        source: "zotero-db",
+        keys: expected,
+      });
+      const visibleCards = `JSON.stringify((()=>{const annotationView=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view;const cards=Array.from(annotationView?.containerEl.querySelectorAll('.zt-annot-card[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(Boolean);return [...new Set(cards)].sort();})())`;
+      const cardsReady = await obEvalUntil(vaultId, visibleCards, {
+        expected: JSON.stringify(expected),
+      });
+      if (!cardsReady) {
+        const state = await obEval(
+          vaultId,
+          `JSON.stringify((()=>{const services=app.plugins.plugins.zotlit.services;const leaves=app.workspace.getLeavesOfType('zotero-annotation-view');const active=app.workspace.getActiveFile();const full=active?app.vault.adapter.getFullPath(active.path):null;const session=active?services.pdfAnnotationEditor.sessionForPath(active.path):null;return {count:leaves.length,snapshot:leaves[0]?.view.snapshot??null,active:active?.path??null,session:session?{filePath:session.filePath,target:session.target}:null,resolution:full?services.attachmentResolver.resolve(full):null,fullPath:full,exists:full?require('fs').existsSync(full):false,profileDir:services.zoteroPref.resolvedProfileDir,dataDir:services.zoteroPref.dataDir};})())`,
+        );
+        throw new Error(`Annotation cards did not render: ${state}`);
+      }
+      expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      // The header block is one press target however much it reports, and the
+      // pane names its controls with `aria-label` alone. Both are shapes only a
+      // rendered view has: the focus stops are what the DOM ended up with, and
+      // a `title` anywhere in the view is the hover tooltip Obsidian would draw
+      // over its own.
+      const headerChrome = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const block=root?.querySelector('.zt-annot-header')?.parentElement??null;return {focusable:block?block.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), a[href], input').length:-1,titled:root?root.querySelectorAll('[title]').length:-1};})())`;
+      expect(await obEval(vaultId, headerChrome)).toBe(
+        JSON.stringify({ focusable: 1, titled: 0 }),
+      );
+      // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
+      // positioning — which only a running Obsidian has. A popup that collapsed
+      // still holds its rows in the DOM, so what tells is whether its own box
+      // is still around them.
+      //
+      // The tag Chooser is named by the search field it holds, never by DOM
+      // order: the filter bar draws the colour Chooser first whenever the
+      // palette has a colour, and every Fixture Annotation under this
+      // attachment carries one. The search field is the difference between the
+      // two — the colour Chooser has none — and the trigger is then the button
+      // whose popover target is this popup, rather than whichever trigger comes
+      // first.
+      const tagPopup = `(()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;return Array.from(root?.querySelectorAll('.zt-chooser')??[]).find(p=>p.querySelector('input[role="combobox"]'))??null;})()`;
+      await obEval(
+        vaultId,
+        `(function(){const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=${tagPopup};if(!popup)throw new Error('No tag Chooser in the Annotation View');if(!popup.matches(':popover-open'))root.querySelector('[popovertarget="'+popup.id+'"]').click();return true;})()`,
+      );
+      // `menuChrome` is the computed-style half of the proof. The popup wears no
+      // `.menu` class, so its chrome can only come from Obsidian's `--menu-*`
+      // variables. A throwaway sibling declares the same seven variables and is
+      // measured beside it: equal computed values mean the popup reads them, in
+      // whatever units the engine resolved, under whatever theme is loaded. The
+      // sibling is also checked against the initial values, because an
+      // undefined variable would leave both boxes bare and make equality say
+      // nothing.
+      //
+      // The shadow is the one read compared by suffix. Tailwind's `shadow-()`
+      // utility composes its ring and inset placeholders ahead of the value, so
+      // the popup carries four transparent stops in front of the three
+      // `--menu-shadow` supplies.
+      //
+      // #1191 asks for one assertion, and this scenario carries three. The
+      // chrome read is kept here rather than left to the development loop
+      // because it is the one place ADR 0044's variable contract is held: the
+      // popup wears no `.menu` class, so nothing else would notice a theme
+      // hook that stopped reading those variables. The closed state below is
+      // kept for the same reason — only a running Obsidian has the user-agent
+      // rule it depends on. `rows` names the vocabulary, which is what proves
+      // the popup under measurement is the tag one.
+      const tagChooserBox = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,rows:[],rowsInsidePopup:false,menuChrome:false};const box=popup.getBoundingClientRect();const rows=Array.from(popup.querySelectorAll('[role="option"]'));const probe=popup.parentElement.appendChild(document.createElement('div'));probe.style.cssText='position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);corner-shape:var(--menu-corner-shape);padding:var(--menu-padding);box-shadow:var(--menu-shadow)';const got=getComputedStyle(popup),want=getComputedStyle(probe);const reads=['backgroundColor','borderTopWidth','borderTopColor','borderTopLeftRadius','cornerShape','paddingTop'];const chrome=reads.every(name=>got[name]===want[name])&&got.boxShadow.endsWith(want.boxShadow)&&want.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(want.borderTopWidth)>0&&parseFloat(want.borderTopLeftRadius)>0&&parseFloat(want.paddingTop)>0&&want.cornerShape!==''&&want.boxShadow!=='none';probe.remove();return{open:popup.matches(':popover-open'),rows:rows.map(row=>row.textContent).sort(),rowsInsidePopup:rows.length>0&&rows.every(row=>{const r=row.getBoundingClientRect();return r.height>0&&r.top>=box.top&&r.bottom<=box.bottom&&r.left>=box.left&&r.right<=box.right;}),menuChrome:chrome};})())`;
+      const tagChooserClosed = `JSON.stringify((()=>{const popup=${tagPopup};if(!popup)return{open:false,hidden:false};return{open:popup.matches(':popover-open'),hidden:!popup.checkVisibility()&&popup.getBoundingClientRect().height===0};})())`;
+      expect(
+        await obEvalUntil(vaultId, tagChooserBox, {
+          expected: JSON.stringify({
+            open: true,
+            rows: attachmentTags,
+            rowsInsidePopup: true,
+            menuChrome: true,
+          }),
+        }),
+      ).toBe(true);
+      await obEval(
+        vaultId,
+        `(function(){const popup=${tagPopup};popup?.hidePopover();return true;})()`,
+      );
+      // A closed popover is hidden by the user-agent rule
+      // `[popover]:not(:popover-open) { display: none }`, which any
+      // unconditional author-origin `display` outranks. The popup then keeps
+      // painting after it closes and the view behind draws over it, which
+      // reads as a popup that will not close and has lost its background.
+      // Only a running Obsidian has that user-agent rule, so this is the one
+      // place the closed state can be proven.
+      expect(
+        await obEvalUntil(vaultId, tagChooserClosed, {
+          expected: JSON.stringify({ open: false, hidden: true }),
+        }),
+      ).toBe(true);
+      for (const [pageIndex, annotations] of annotationKeysByPage) {
+        const pageKeys = annotations.map(({ key }) => key).sort();
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `(function(){const pdfView=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(annotationAttachment.path)})?.view;const page=pdfView?.containerEl.querySelector('.page[data-page-number="${pageIndex + 1}"]');page?.scrollIntoView({block:'center'});const marks=Array.from(pdfView?.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key]')??[],el=>el.getAttribute('data-zotero-annotation-key')).filter(key=>${JSON.stringify(pageKeys)}.includes(key));return JSON.stringify([...new Set(marks)].sort());})()`,
+            { expected: JSON.stringify(pageKeys) },
+          ),
+        ).toBe(true);
+      }
+      expect(
+        await obEval(
+          vaultId,
+          `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;const text=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.textContent??'';const labels=['Zotero DB','Local API','database source'];return JSON.stringify({capability:repository.capabilityFor(${JSON.stringify(annotationAttachment.key)}),sourceLabels:labels.some(label=>text.toLowerCase().includes(label.toLowerCase()))});})()`,
+        ),
+      ).toBe(
+        JSON.stringify({
+          capability: {
+            kind: "read-only",
+            reason: "zotero-unavailable",
+          },
+          sourceLabels: false,
+        }),
+      );
+    } finally {
+      await obEval(
+        vaultId,
+        `(async()=>{await app.workspace.changeLayout(JSON.parse(${JSON.stringify(layout)}));return true;})()`,
+      );
+    }
+  }, 120000);
+
+  it("renders the deterministic PDF matrix and reuses its cache", async () => {
+    await verifyExcerptRendering(vaultId);
+  }, 120000);
+
+  // The reader-backed path against the Fixture's own Attachment: its
+  // Annotations, its Item's literature note, and Obsidian's PDF reader holding
+  // the same file the excerpt resolves from.
+  it("crops from an open reader's document, reuses it for a note import, and falls back when it closes", async () => {
+    await verifyReaderBackedExcerpts(vaultId);
+  }, 180000);
+
+  // The saved-edit case's write only lands in a Paired Run, and this is not one.
+  // What every run can show is the subject that case asks about: the repository
+  // indexes its verified database sources by Attachment, so an Annotation's own
+  // key answers `read-only`/`server-changed` wherever the Attachment it belongs
+  // to is writable — the answer the case used to skip on. The capability itself
+  // is stubbed here, so the key the case asks with is the whole observation.
+  it("asks the Fixture Attachment's Capability, not its Annotation's, before a saved edit", async () => {
+    await obEval(
+      vaultId,
+      `(()=>{
+        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+        app.__zotlitCapabilitySubjects=[];
+        repository.capabilityFor=key=>{app.__zotlitCapabilitySubjects.push(key);return {kind:'read-only',reason:'stubbed'};};
+        return true;
+      })()`,
+    );
+    const skips: string[] = [];
+    let asked: string[] = [];
+    try {
+      await verifySavedEditDisplay(vaultId, {
+        skip: (note) => void skips.push(note ?? ""),
+      });
+      asked = JSON.parse(
+        await obEval(vaultId, "JSON.stringify(app.__zotlitCapabilitySubjects)"),
+      ) as string[];
+    } finally {
+      await obEval(
+        vaultId,
+        `(()=>{
+          const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+          delete repository.capabilityFor;
+          delete app.__zotlitCapabilitySubjects;
+          return true;
+        })()`,
+      );
+    }
+    expect(
+      skips,
+      "a non-writable Attachment stops the saved-edit case before its assertions",
+    ).toHaveLength(1);
+    expect(
+      asked,
+      "the Capability is the Attachment's: an Annotation's key answers read-only/server-changed for every writable Attachment",
+    ).toEqual([annotationAttachment.key]);
+  }, 120000);
+
+  // #1184's multi-PDF batch: several of the Fixture's own PDFs, each asked for
+  // its own excerpts, cold and then warm. The Node harness behind the
+  // measurements record models PDF work; this case is the app's own answer.
+  it("measures a multi-PDF excerpt batch cold and warm", async () => {
+    const fixture = getFixtureLayout(getFixtureRoot(workspaceRoot));
+    const rougier = join(e2eVaultPath, "attachments/rougier-2014.pdf");
+    const generated = join(
+      e2eVaultPath,
+      "attachments/excerpt-acceptance/excerpt-rendering.pdf",
+    );
+    const researchInterfaces = join(
+      fixture.dataDir,
+      "storage/CNPDF26A/research-interfaces.pdf",
+    );
+    const sakimas = join(fixture.dataDir, "storage/PDFSTR22/sakimas-song.pdf");
+    // Four of the Fixture's PDFs, two excerpts each, grouped so the second of
+    // each pair is a repeated same-PDF excerpt: what one resident document
+    // serves. The rects are inside every page the Fixture ships.
+    await verifyMultiPdfExcerptBatch(vaultId, [
+      {
+        attachmentKey: "RGRPDF24",
+        pdfPath: rougier,
+        pageIndex: 0,
+        rect: [58, 538, 211, 578],
+      },
+      {
+        attachmentKey: "RGRPDF24",
+        pdfPath: rougier,
+        pageIndex: 0,
+        rect: [265.833, 611.202, 374.503, 620.019],
+      },
+      {
+        attachmentKey: "EXCERPT1",
+        pdfPath: generated,
+        pageIndex: 0,
+        rect: [70, 90, 190, 200],
+      },
+      {
+        attachmentKey: "EXCERPT1",
+        pdfPath: generated,
+        pageIndex: 4,
+        rect: [50, 350, 400, 740],
+      },
+      {
+        attachmentKey: "PDFSTR22",
+        pdfPath: sakimas,
+        pageIndex: 0,
+        rect: [80, 80, 280, 200],
+      },
+      {
+        attachmentKey: "PDFSTR22",
+        pdfPath: sakimas,
+        pageIndex: 1,
+        rect: [80, 80, 280, 200],
+      },
+      {
+        attachmentKey: "CNPDF26A",
+        pdfPath: researchInterfaces,
+        pageIndex: 0,
+        rect: [72, 96, 300, 200],
+      },
+      {
+        attachmentKey: "CNPDF26A",
+        pdfPath: researchInterfaces,
+        pageIndex: 1,
+        rect: [72, 96, 300, 200],
+      },
+    ]);
+  }, 180000);
+
+  it.each(["main", "popout"] as const)(
+    "inserts a captured annotation safely in a %s editor",
+    async (host) => {
+      await verifyAnnotationInsert(vaultId, host);
+    },
+    120000,
+  );
+
+  it.each([
+    ["main", "main"],
+    ["main", "popout"],
+    ["popout", "main"],
+    ["popout", "popout"],
+  ] as const)(
+    "drags a captured annotation from a %s view into a %s editor",
+    async (sourceHost, targetHost) => {
+      await verifyAnnotationDrag(vaultId, sourceHost, targetHost);
+    },
+    120000,
+  );
+
+  it("creates durable image and ink excerpts with PDF readers closed", async () => {
+    const parent = join(workspaceRoot, "tmp");
+    await mkdir(parent, { recursive: true });
+    const path = await mkdtemp(join(parent, "e2e-excerpt-note-vault-"));
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await runVaultScript(["remove", path, "--purge"]);
+    });
+    const opened = await runVaultScript([
+      "open",
+      path,
+      "--vault-case",
+      "fresh",
+    ]);
+    const id = opened.stdout.trim().split("\n")[0]!.trim();
+    // This suite skips when its Fixture has a live Zotero process.
+    expect(
+      await obEval(
+        id,
+        "(()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();return String(app.workspace.getLeavesOfType('pdf').length);})()",
+      ),
+    ).toBe("0");
+    const result = await createFixtureNote(id, 46);
+    expect(result.outcome).toBe("created");
+    if (result.outcome !== "created")
+      throw new Error("Excerpt note was not created");
+    const markdown = await readFile(join(path, result.path), "utf8");
+    const files: string[] = JSON.parse(
+      await obEval(
+        id,
+        "JSON.stringify(app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).map(f=>f.path))",
+      ),
+    );
+    expect(files).toHaveLength(3);
+    const targets = new Set(
+      markdown
+        .split("![[")
+        .slice(1)
+        .map((part) => part.split("]]")[0]!)
+        .filter((target) => target.startsWith("zotlit-excerpt-")),
+    );
+    expect(targets).toEqual(
+      new Set(files.map((file) => file.split("/").at(-1)!)),
+    );
+    const initialImages = new Map<string, Buffer>();
+    for (const file of files) {
+      const bytes = await readFile(join(path, file));
+      initialImages.set(file, bytes);
+      // ADR 0053: a newly generated Excerpt Image is lossless WebP, so the
+      // durable asset is a RIFF/WEBP container carrying the VP8L chunk.
+      expect(bytes.subarray(0, 4).toString("latin1")).toBe("RIFF");
+      expect(bytes.subarray(8, 12).toString("latin1")).toBe("WEBP");
+      expect(bytes.includes("VP8L", 12, "latin1")).toBe(true);
+      expect(bytes.length).toBeGreaterThan(1000);
+    }
+    expect(
+      JSON.parse(
+        await obEval(
+          id,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(result.path)});if(!file)throw new Error('Created note missing');const updated=await services.noteFeature.overwriteNote(file,${JSON.stringify(result.indexedKey)});return JSON.stringify({diagnostic:updated.diagnostic??null});})()`,
+        ),
+      ),
+    ).toEqual({ diagnostic: null });
+    const overwritten = await readFile(join(path, result.path), "utf8");
+    expect(overwritten).toContain("zotlit-excerpt-");
+    for (const [file, initial] of initialImages)
+      expect(await readFile(join(path, file))).toEqual(initial);
+
+    const frozenImport = JSON.parse(
+      await obEval(
+        id,
+        `(async()=>{const result=await app.plugins.plugins.zotlit.services.batchImport.runBatchImport('note',[13]);return JSON.stringify(result);})()`,
+      ),
+    ) as { outcome: string; write?: string };
+    expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
+    expect(
+      await obEvalUntil(
+        id,
+        "String(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA').length)",
+        { expected: "1" },
+      ),
+    ).toBe(true);
+    const importedPath = await obEval(
+      id,
+      "app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0].path",
+    );
+    const frozenMarkdown = await readFile(join(path, importedPath), "utf8");
+    expect(frozenMarkdown).toContain("Saved snapshot");
+    expect(frozenMarkdown).not.toContain("zotlit-excerpt-");
+    const frozenTargets = frozenMarkdown
+      .split("![[")
+      .slice(1)
+      .map((part) => part.split("]]", 1)[0]!);
+    expect(frozenTargets).toHaveLength(3);
+    const frozenBytes = await Promise.all(
+      frozenTargets.map((target) => readFile(join(path, target))),
+    );
+
+    const liveImport = JSON.parse(
+      await obEval(
+        id,
+        `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+      ),
+    ) as { outcome: string };
+    expect(liveImport).toEqual({ outcome: "overwritten" });
+    const liveMarkdown = await readFile(join(path, importedPath), "utf8");
+    expect(liveMarkdown).toContain("Saved snapshot");
+    expect(liveMarkdown.match(/zotlit-excerpt-/g)).toHaveLength(2);
+    const liveTargets = liveMarkdown
+      .split("![[")
+      .slice(1)
+      .map((part) => part.split("]]", 1)[0]!);
+    expect(liveTargets).toHaveLength(3);
+    const liveBytes = await Promise.all(
+      liveTargets.map((target) => readFile(join(path, target))),
+    );
+    expect(
+      liveBytes.some((bytes) =>
+        frozenBytes.every((frozen) => !bytes.equals(frozen)),
+      ),
+    ).toBe(true);
+
+    await obEval(
+      id,
+      `(()=>{const feature=app.plugins.plugins.zotlit.services.noteFeature;window.__zotlitExcerptReports=[];window.__zotlitExcerptReportOff=feature.on('excerpt-images-reported',summary=>window.__zotlitExcerptReports.push(summary));return true;})()`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        id,
+        `(()=>{window.__zotlitExcerptReportOff?.();delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return true;})()`,
+      );
+    });
+    const sourcePdf = join(path, "attachments/rougier-2014.pdf");
+    const unavailablePdf = `${sourcePdf}.unavailable`;
+    await rename(sourcePdf, unavailablePdf);
+    try {
+      expect(
+        JSON.parse(
+          await obEval(
+            id,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+          ),
+        ),
+      ).toEqual({ outcome: "overwritten" });
+    } finally {
+      await rename(unavailablePdf, sourcePdf);
+    }
+    const pooledReports = JSON.parse(
+      await obEval(
+        id,
+        `JSON.stringify((()=>{window.__zotlitExcerptReportOff?.();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
+      ),
+    ) as { zotero: number; unchecked: number; unavailable: number }[];
+    expect(pooledReports).toEqual([
+      { zotero: 0, unchecked: 2, unavailable: 0 },
+    ]);
+    expect(
+      JSON.parse(
+        await obEval(
+          id,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+        ),
+      ),
+    ).toEqual({ outcome: "overwritten" });
+
+    expect(
+      await obEval(id, "String(app.workspace.getLeavesOfType('pdf').length)"),
+    ).toBe("0");
+  });
+
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
-    const freshPath = join(workspaceRoot, "tmp", "e2e-first-note-vault");
+    const freshPath = join(workspaceRoot, ".scratch", "e2e-first-note-vault");
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await runVaultScript(["remove", freshPath, "--purge"]);
@@ -400,6 +909,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       "fresh",
     ]);
     const freshId = created.stdout.trim().split("\n")[0]!.trim();
+    await obEval(
+      freshId,
+      "app.saveLocalStorage('zotlit-profile-customization','native');true",
+    );
     expect(
       await obEval(
         freshId,
@@ -423,17 +936,18 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     );
     const before = await readFile(join(freshPath, note.path!), "utf-8");
     expect(before).toContain("[!note]");
-    expect(before.split("[!note]").length - 1).toBe(7);
+    expect(before.split("[!note]").length - 1).toBe(annotationKeys.length);
     expect(
       await obEval(
         freshId,
         "app.commands.executeCommandById('zotlit:customize-note-template')",
       ),
     ).toBe("true");
-    const editor = `app.workspace.getLeavesOfType('zotlit-template-workbench').find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})?.view`;
+    const editor = `(function(){var leaves=app.workspace.getLeavesOfType('zotlit-template-workbench');return (leaves.find(leaf=>leaf.view.originatingNote?.path===${JSON.stringify(note.path)})??leaves[0])?.view;})()`;
     expect(
       await obEvalUntil(freshId, `String(!!(${editor})?.file)`, {
         expected: "true",
+        tries: 80,
       }),
     ).toBe(true);
     expect(
@@ -498,7 +1012,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     );
     await obEval(
       freshId,
-      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.leaf.getContainer().focus();return true;})()`,
+      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.contentEl.ownerDocument.defaultView.focus();app.workspace.setActiveLeaf(view.leaf,{focus:true});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -530,7 +1044,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
             "[!quote]",
           ).length -
             1 ===
-          7,
+          annotationKeys.length,
       ),
     ).toBe(true);
     const after = await readFile(join(freshPath, note.path!), "utf-8");
@@ -621,7 +1135,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(preselected).not.toContain(booksProfile.label);
     await obEval(
       vaultId,
-      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=activeDocument.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     const selected = await selectSuggestion(vaultId, booksNotePath);
     expect(selected).toContain(booksProfile.label);
@@ -629,7 +1143,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(selected).toContain(booksNotePath);
     await obEval(
       vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
     expect(
       await waitFor(async () =>
@@ -715,20 +1229,20 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
+        `String(Array.from(activeDocument.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
-    // remaining group items (8, 9, 10) are created under Default, the batch's
+    // remaining group items (8, 9, 10, 79) are created under Default, the batch's
     // fallback: the Books choice made in the citekey picker stayed with that
     // operation.
     const defaultCount =
       ITEMS.filter(({ libraryID }) => libraryID === 1).length + 1;
     const summary = await obEval(
       vaultId,
-      "document.querySelector('.modal').textContent",
+      "activeDocument.querySelector('.modal').textContent",
     );
     for (const [label, count] of [
       [m.settings_profile_default_name(), defaultCount],
@@ -739,7 +1253,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       expect((await notices.read()).join("\n")).toContain(updated);
     }
     const created = m.batch_profile_created({
-      count: 3,
+      count: 4,
       label: m.settings_profile_default_name(),
     });
     expect(summary).toContain(created);
@@ -817,11 +1331,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await addLibraryCondition("personal");
     await saveMatch(bookMatch);
-    const description = `${booksProfile.document}${m.settings_profile_match_status({ state: "evaluable" })}`;
+    const description = m.settings_profile_match_status({ state: "evaluable" });
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent===${JSON.stringify(description)}))`,
+        `String(Array.from((${settingsContent}).querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(description)})))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -836,7 +1350,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
+      await obEval(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt'))",
+      ),
     ).toBe("false");
     expect(await notices.read()).toContain(
       m.notice_created_note_from_match({
@@ -870,7 +1387,10 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       ),
     ).toBe(true);
     expect(
-      await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
+      await obEval(
+        vaultId,
+        "String(!!activeDocument.querySelector('.prompt'))",
+      ),
     ).toBe("false");
     expect(await notices.read()).toContain(
       m.notice_created_note_from_match({
@@ -895,7 +1415,9 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       ({ libraryID }) => libraryID === labItem.libraryID,
     )!;
     const creating = [bookItem, sharedItem, preprintItem, labItem];
-    for (const item of [sharedItem, preprintItem, labItem]) {
+    const booksProfileTargetExists =
+      (await indexedNote(vaultId, booksProfileTargetItem.itemID)).path !== null;
+    for (const item of creating) {
       const note = await indexedNote(vaultId, item.itemID);
       if (note.path)
         await cli([`vault=${vaultId}`, "delete", `path=${note.path}`]);
@@ -954,7 +1476,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
+        `String(Array.from(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -964,7 +1486,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const labPath = `books/books-${labItem.citationKey}.md`;
     const confirmation = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       bookPath,
@@ -981,13 +1503,13 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       expect(
         await obEval(
           vaultId,
-          `String(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-profile-choice-scope=${scope}]').length)`,
+          `String(Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-profile-choice-scope=${scope}]').length)`,
         ),
       ).toBe("1");
     expect(confirmation).not.toContain(m.batch_profile_recovery_help());
     await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]').click();true",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]').click();true",
     );
     const candidate = await selectSuggestion(
       vaultId,
@@ -998,23 +1520,23 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(candidate).toContain(articlesProfile.label);
     await obEval(
       vaultId,
-      `(function(){var input=Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var input=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     await selectSuggestion(vaultId, preprintPath);
     await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]')?.getAttribute('aria-label')===${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))})`,
+        `String(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]')?.getAttribute('aria-label')===${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))})`,
         { expected: "true" },
       ),
     ).toBe(true);
     const chosen = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       bookPath,
@@ -1033,18 +1555,23 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
+        `String(Array.from(Array.from(activeDocument.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
     const summary = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      "Array.from(activeDocument.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       m.batch_profile_created({ count: 3, label: booksProfile.label }),
-      m.batch_profile_created({ count: 1, label: articlesProfile.label }),
-      m.batch_profile_updated({ count: 1, label: booksProfile.label }),
+      m.batch_profile_created({
+        count: booksProfileTargetExists ? 1 : 2,
+        label: articlesProfile.label,
+      }),
+      ...(booksProfileTargetExists
+        ? [m.batch_profile_updated({ count: 1, label: booksProfile.label })]
+        : []),
       m.batch_profile_updated({
         count: 1,
         label: m.settings_profile_default_name(),
@@ -1120,7 +1647,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var operator=document.querySelector('.zt-template-workbench [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var editor=${activeWorkbenchContent};var operator=editor.querySelector('[data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -1142,12 +1669,16 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(fallback).toContain(`literatures/${childItem.citationKey}.md`);
     await obEval(
       vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
+      "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
     );
     expect(
-      await obEvalUntil(vaultId, "String(!document.querySelector('.prompt'))", {
-        expected: "true",
-      }),
+      await obEvalUntil(
+        vaultId,
+        "String(!activeDocument.querySelector('.prompt'))",
+        {
+          expected: "true",
+        },
+      ),
     ).toBe(true);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
     await writeMatch(booksProfile, bookMatch);
@@ -1162,32 +1693,45 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     const exterior = "My discussion stays outside the managed region.";
     await obEval(
       vaultId,
-      `(async function(){app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
+      `(async function(){app.workspace.detachLeavesOfType('zotlit-template-workbench');app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
     );
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openProfilesSettings(vaultId, "settings_page_profiles");
+    const profileNoteCount = Number(
+      await obEval(
+        vaultId,
+        `String(app.vault.getMarkdownFiles().filter(file=>String(app.metadataCache.getFileCache(file)?.frontmatter?.['zotlit-profile']??'').startsWith(${JSON.stringify(`${booksProfile.label} (`)})).length)`,
+      ),
+    );
+    expect(profileNoteCount).toBeGreaterThan(0);
     const beforeMove = await readFile(
       join(e2eVaultPath, booksNotePath),
       "utf-8",
     );
-    // The list's own delete icon is the last control on the row, after the
-    // row's edit, duplicate, and share icons; Obsidian labels it itself.
+    // Profile management lives in the row's More actions menu.
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&row.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('.clickable-icon')).at(-1);if(!button)return false;button.click();return true;})()`,
+        `(function(){var settings=${settingsContent};var row=Array.from(settings.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)});var button=row&&(Array.from(row.querySelectorAll('button')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(m.workbench_more_actions())})??row.querySelector('.extra-setting-button'));if(!button)return false;button.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
-        "String(!!document.querySelector('input[name=\"zotlit-delete-profile-target\"]:checked'))",
+        `(function(){var doc=(${settingsContent}).ownerDocument;var title=Array.from(doc.querySelectorAll('.menu-item-title')).find(title=>title.textContent.trim()===${JSON.stringify(m.settings_profile_delete())});var item=title?.closest('.menu-item');if(!item)return false;item.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!!(${settingsContent}).ownerDocument.querySelector('input[name="zotlit-delete-profile-target"]:checked'))`,
         { expected: "true" },
       ),
     ).toBe(true);
     const target = await obEval(
       vaultId,
-      "document.querySelector('input[name=\"zotlit-delete-profile-target\"]:checked').closest('label').textContent",
+      `(${settingsContent}).ownerDocument.querySelector('input[name="zotlit-delete-profile-target"]:checked').closest('label').textContent`,
     );
     const movedPath = `literatures/${booksNotePath.slice(booksNotePath.lastIndexOf("/") + 1)}`;
     expect(target).toContain(m.settings_profile_default_name());
@@ -1195,26 +1739,27 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     expect(
       await obEval(
         vaultId,
-        `(function(){var label=Array.from(document.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;checkbox.click();return checkbox.checked;})()`,
+        `(function(){var doc=(${settingsContent}).ownerDocument;var label=Array.from(doc.querySelectorAll('.modal label')).find(label=>label.textContent===${JSON.stringify(m.settings_profile_delete_move_files({ folder: "literatures/" }))});var checkbox=label?.querySelector('input[type=checkbox]');if(!checkbox||checkbox.checked)return false;checkbox.click();return checkbox.checked;})()`,
       ),
     ).toBe("true");
     const deletionDialog = await obEval(
       vaultId,
-      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
+      `Array.from((${settingsContent}).ownerDocument.querySelectorAll('.modal')).at(-1).textContent`,
     );
     expect(deletionDialog).toContain(
-      m.settings_profile_delete_literature_count({ count: 1 }),
+      m.settings_profile_delete_literature_count({ count: profileNoteCount }),
     );
     expect(deletionDialog).toContain(
       m.settings_profile_delete_imported_count({ count: 0 }),
     );
     expect(deletionDialog).toContain(
-      m.settings_profile_delete_move_confirm({ count: 1 }),
+      m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
     );
     expect(
       await clickModalButton(
         vaultId,
-        m.settings_profile_delete_move_confirm({ count: 1 }),
+        m.settings_profile_delete_move_confirm({ count: profileNoteCount }),
+        `(${settingsContent}).ownerDocument`,
       ),
       deletionDialog,
     ).toBe(true);
@@ -1330,11 +1875,11 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       });
       expect(liveUpdate.status).toBe(200);
 
-      await openProfilesSettings(vaultId, m.settings_page_advanced());
+      await openProfilesSettings(vaultId, "settings_page_advanced");
       expect(
         await obEval(
           vaultId,
-          `(function(){var names=Array.from(document.querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+          `(function(){var names=Array.from((${settingsContent}).querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
         ),
       ).toBe("true");
 
@@ -1572,7 +2117,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     });
 
     it("disconnects from the settings row and refuses the next request with 401", async () => {
-      await openProfilesSettings(vaultId, m.settings_page_advanced());
+      await openProfilesSettings(vaultId, "settings_page_advanced");
       expect(
         await obEvalUntil(
           vaultId,
@@ -1648,6 +2193,74 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         await obEval(vaultId, "app.setting.close();true");
       }
     });
+  });
+
+  // A geometry assertion, not a DOM one: the menu this replaced put every entry
+  // in the DOM inside a popup collapsed onto its own border, so counting
+  // entries passed while the menu read as empty on screen.
+  //
+  // @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+  it("renders the Follow Mode entries inside the popup's own box", async () => {
+    const trigger = `app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.contentEl.querySelector('button[aria-label=${JSON.stringify(m.annot_view_mode_active_tab())}]')`;
+    const popup =
+      "app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc.querySelector('.menu')";
+
+    await obEval(
+      vaultId,
+      "(async function(){var type='zotero-annotation-view';var leaf=app.workspace.getLeavesOfType(type)[0];if(!leaf){leaf=app.workspace.getRightLeaf(false);await leaf.setViewState({type:type,active:true});}app.workspace.revealLeaf(leaf);return true;})()",
+    );
+    expect(
+      await obEvalUntil(vaultId, `String(!!${trigger})`, { expected: "true" }),
+    ).toBe(true);
+    await obEval(vaultId, `(function(){${trigger}.click();return true;})()`);
+    expect(
+      await obEvalUntil(vaultId, `String(!!${popup})`, { expected: "true" }),
+    ).toBe(true);
+
+    const report = JSON.parse(
+      await obEval(
+        vaultId,
+        `(function(){var popup=${popup};var box=popup.getBoundingClientRect();var anchor=${trigger}.getBoundingClientRect();var items=Array.from(popup.querySelectorAll('.menu-item'));return JSON.stringify({labels:items.map(function(item){return item.textContent.trim();}),covered:items.filter(function(item){var rect=item.getBoundingClientRect();return rect.height>0&&rect.top>=box.top-1&&rect.bottom<=box.bottom+1;}).length,belowTriggerBy:Math.round(box.top-anchor.bottom),overlapsTriggerX:box.left<anchor.right&&box.right>anchor.left});})()`,
+      ),
+    ) as {
+      labels: string[];
+      covered: number;
+      belowTriggerBy: number;
+      overlapsTriggerX: boolean;
+    };
+
+    // The two modes lead, always in this order. The pin's row is followed by a
+    // reason line whenever this vault has nothing to pin, so what comes after
+    // them is asserted by presence rather than by position.
+    expect(report.labels.slice(0, 2)).toEqual([
+      m.annot_view_mode_active_tab(),
+      m.annot_view_mode_zotero_reader(),
+    ]);
+    expect(report.labels).toContain(m.annot_view_pin_choose_item());
+    // The assertion this test exists for: every entry the menu holds sits
+    // inside the box the menu draws, so none is clipped out of sight.
+    expect(report.covered).toBe(report.labels.length);
+    // And it hangs off the button that opened it, rather than off a pointer
+    // position the button never supplied. Which of the button's edges it lines
+    // up with is Obsidian's call — it right-aligns a menu that would otherwise
+    // overflow — so the assertion is that the two overlap at all.
+    expect(report.belowTriggerBy).toBe(2);
+    expect(report.overlapsTriggerX).toBe(true);
+
+    // A second press closes it. The press is itself what dismisses an open
+    // menu, so a trigger that does not check for that reopens the menu it just
+    // closed and the menu never appears to shut.
+    await obEval(vaultId, `(function(){${trigger}.click();return true;})()`);
+    expect(
+      await obEvalUntil(vaultId, `String(${popup}===null)`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+
+    await obEval(
+      vaultId,
+      "(function(){var doc=app.workspace.getLeavesOfType('zotero-annotation-view')[0].view.contentEl.doc;doc.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));app.workspace.detachLeavesOfType('zotero-annotation-view');return true;})()",
+    );
   });
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
@@ -1739,7 +2352,7 @@ interface LibraryScopeReport {
 describe.skipIf(!reachable || pairedZotero !== null)(
   "Fresh destination flow",
   () => {
-    const vaultPath = join(workspaceRoot, "tmp", "e2e-destination-vault");
+    const vaultPath = join(workspaceRoot, ".scratch", "e2e-destination-vault");
     let vaultId = "";
     let m: typeof import("@obsidian-messages");
 
@@ -1802,11 +2415,11 @@ describe.skipIf(!reachable || pairedZotero !== null)(
           vaultId,
           `(async function(){var leaf=app.workspace.getLeavesOfType('markdown').find(leaf=>leaf.view.file?.path===${JSON.stringify(first.path)});await app.workspace.revealLeaf(leaf);leaf.getContainer().focus();return true;})()`,
         );
-        await openProfilesSettings(vaultId, m.settings_page_profiles());
+        await openProfilesSettings(vaultId, "settings_page_profiles");
         expect(
           await obEvalUntil(
             vaultId,
-            `(function(){var button=Array.from(document.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
+            `(function(){var settings=${settingsContent};var button=Array.from(settings.querySelectorAll('[aria-label],button')).find(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_add())}||el.textContent.trim()===${JSON.stringify(m.settings_profile_add())});if(!button||button.disabled)return false;button.click();return true;})()`,
             { expected: "true" },
           ),
         ).toBe(true);
@@ -1827,9 +2440,11 @@ describe.skipIf(!reachable || pairedZotero !== null)(
         ),
       ).toBe("0");
       expect(
-        (await readdir(vaultPath, { recursive: true })).filter(
-          (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
-        ),
+        (await readdir(vaultPath, { recursive: true }))
+          .filter(
+            (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
+          )
+          .map((path) => path.replaceAll("\\", "/")),
       ).toEqual(["templates/zotlit-profile.default.md"]);
 
       await openAdd();
@@ -1899,25 +2514,25 @@ describe.skipIf(!reachable || pairedZotero !== null)(
       expect(
         await obEvalUntil(
           vaultId,
-          "String(!!document.querySelector('.prompt input'))",
+          "String(!!activeDocument.querySelector('.prompt input'))",
           { expected: "true" },
         ),
       ).toBe(true);
       await obEval(
         vaultId,
-        "(function(){var input=document.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
+        "(function(){var input=activeDocument.querySelector('.prompt input');input.value='Thinking, fast and slow';input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()",
       );
       await selectSuggestion(vaultId, "Thinking, fast and slow");
       await obEval(
         vaultId,
-        "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+        "activeDocument.querySelector('.prompt input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
       );
       const choice = await selectSuggestion(vaultId, "books/Kahneman2011.md");
       expect(choice).toContain("Books");
       expect(choice).toContain("books/Kahneman2011.md");
       await obEval(
         vaultId,
-        "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+        "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new activeWindow.KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
       );
       expect(
         await waitFor(async () =>
@@ -2058,20 +2673,24 @@ async function selectSuggestion(
   expect(
     await obEvalUntil(
       vaultId,
-      `(function(){var prompt=Array.from(document.querySelectorAll('.prompt')).at(-1);var row=Array.from(prompt?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
+      `(function(){var prompt=Array.from(activeDocument.querySelectorAll('.prompt')).at(-1);var row=Array.from(prompt?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new activeWindow.MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
       { expected: "true" },
     ),
   ).toBe(true);
   return obEval(
     vaultId,
-    "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
+    "Array.from(activeDocument.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
   );
 }
 
-function clickModalButton(vaultId: string, label: string): Promise<boolean> {
+function clickModalButton(
+  vaultId: string,
+  label: string,
+  documentExpression = "activeDocument",
+): Promise<boolean> {
   return obEvalUntil(
     vaultId,
-    `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
+    `(function(){var doc=${documentExpression};var modal=Array.from(doc.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
     { expected: "true" },
   );
 }
@@ -2080,7 +2699,7 @@ function clickModalButton(vaultId: string, label: string): Promise<boolean> {
 async function observeNotices(vaultId: string) {
   await obEval(
     vaultId,
-    "(function(){var previous=new Set(document.querySelectorAll('.notice'));var values=new Map();var observer=new MutationObserver(()=>{for(var element of document.querySelectorAll('.notice'))if(!previous.has(element))values.set(element,element.textContent);});observer.observe(document.body,{childList:true,subtree:true});window.zotlitE2ENotices={observer,values};return true;})()",
+    "(function(){var doc=activeDocument;var previous=new Set(doc.querySelectorAll('.notice'));var values=new Map();var observer=new MutationObserver(()=>{for(var element of doc.querySelectorAll('.notice'))if(!previous.has(element))values.set(element,element.textContent);});observer.observe(doc.body,{childList:true,subtree:true});window.zotlitE2ENotices={observer,values};return true;})()",
   );
   return {
     async read(): Promise<string[]> {

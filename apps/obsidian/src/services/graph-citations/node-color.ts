@@ -95,7 +95,7 @@ export function readThemeColor(role: ThemeColorRole): GraphColor | null {
   const stated = getComputedStyle(document.body).getPropertyValue(
     role.property,
   );
-  const probe = document.body.appendChild(document.createElement("div"));
+  const probe = document.body.appendChild(createDiv());
   const value = stated.trim() ? role.property : role.fallback;
   probe.style.color = value.startsWith("--") ? `var(${value})` : value;
   const { color, opacity } = getComputedStyle(probe);

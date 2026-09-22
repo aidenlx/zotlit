@@ -18,8 +18,8 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
-import type { MarkTool } from "./creation-toolbar";
 import { markPopupControl } from "./mark-popup";
+import type { AnnotationTool, MarkTool } from "./tools";
 
 /** What a pressed control of the create-mode row asks for. */
 export type CreatePopupAction =
@@ -50,7 +50,7 @@ export interface CreatePopupControl {
 export interface CreatePopupRowInput {
   /** The armed tool, which a colour commits with; highlight where none is. */
   armed: MarkTool | null;
-  colors: Readonly<Record<MarkTool, string>>;
+  colors: Readonly<Record<AnnotationTool, string>>;
   /** What this Attachment's Annotations may be edited to right now. */
   capability: EditingCapability;
   /** What the create in flight, if any, left on the selection. */
@@ -165,6 +165,14 @@ export interface CommentSheetProps {
   onSave: (comment: string) => void;
   /** Steps back one level, leaving the selection and the row standing. */
   onCancel: () => void;
+  /** The caller binds Mod+Enter through its owning native Scope. */
+  nativeSubmit?: boolean;
+  /**
+   * Why the Editing Capability refuses the write, or `null` while it takes
+   * one. The sheet reads the refusal off the reason rather than off a second
+   * flag, so the two can never disagree.
+   */
+  blocked?: string | null;
 }
 
 /**
@@ -176,7 +184,13 @@ export interface CommentSheetProps {
  */
 export function renderCommentSheet(
   sheet: HTMLElement,
-  { value, onSave, onCancel }: CommentSheetProps,
+  {
+    value,
+    onSave,
+    onCancel,
+    nativeSubmit = false,
+    blocked = null,
+  }: CommentSheetProps,
 ): HTMLTextAreaElement {
   sheet.empty();
   sheet.addClass(themeHook.pdfCommentSheet);
@@ -189,19 +203,27 @@ export function renderCommentSheet(
     },
   });
   editor.value = value;
-  sheet.createDiv({
-    cls: ["zt:text-xs", "zt:text-muted"],
-    text: m.pdf_create_popup_comment_hint(),
-  });
+  editor.readOnly = blocked !== null;
+  if (!nativeSubmit)
+    sheet.createDiv({
+      cls: ["zt:text-xs", "zt:text-muted-foreground"],
+      text: blocked ?? m.pdf_create_popup_comment_hint(),
+    });
   editor.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
       onCancel();
       return;
     }
-    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+    if (
+      nativeSubmit ||
+      event.key !== "Enter" ||
+      !(event.metaKey || event.ctrlKey)
+    ) {
+      return;
+    }
     event.preventDefault();
-    onSave(editor.value);
+    if (!editor.readOnly) onSave(editor.value);
   });
   return editor;
 }

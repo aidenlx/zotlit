@@ -21,7 +21,7 @@ The e2e vault's plugin bundle comes from `@zotlit/obsidian`'s dev build (`build:
 
 Two suites.
 
-`src/end-to-end.e2e.ts` builds and registers a dedicated vault for the End-to-end Run under `tmp/e2e-fixture-vault`, drives it over the Obsidian CLI, and tears the vault down afterward. See the [Fixture guide](../../docs/fixture.md) for the complete workflow.
+`src/end-to-end.e2e.ts` builds and registers a dedicated vault for the End-to-end Run under `.scratch/e2e-fixture-vault`, drives it over the Obsidian CLI, and tears the vault down afterward. See the [Fixture guide](../../docs/fixture.md) for the complete workflow.
 
 `src/paired-run.e2e.ts` attaches to a Paired Run that is already up — Paired Zotero serving its Local API, and the Development Vault that run opened. It never rebuilds the Fixture: a rebuild pulls `zotero.sqlite` out from under the Paired Zotero holding it open. `src/paired-zotero.ts` carries its probes, its Local API client, and its RDP levers.
 

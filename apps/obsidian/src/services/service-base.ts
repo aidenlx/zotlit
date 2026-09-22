@@ -17,6 +17,7 @@
  */
 export abstract class Service<TReady = void> implements AsyncDisposable {
   #disposables?: AsyncDisposableStack;
+  #disposal?: Promise<void>;
   #disposed = false;
 
   /** Resolves when startup finished, or rejects with the startup failure. */
@@ -39,7 +40,11 @@ export abstract class Service<TReady = void> implements AsyncDisposable {
     this.#disposables = stack;
   }
 
-  async [Symbol.asyncDispose](): Promise<void> {
+  [Symbol.asyncDispose](): Promise<void> {
+    return (this.#disposal ??= this.#dispose());
+  }
+
+  async #dispose(): Promise<void> {
     // Wait for an in-flight #load() to finish before flipping #disposed.
     // Flipping early would race with a successful commit() at the tail of
     // #load() and turn a normal load completion into a spurious

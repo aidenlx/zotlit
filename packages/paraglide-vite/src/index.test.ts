@@ -16,7 +16,7 @@ import { expect, onTestFinished, test } from "vitest";
 import { generateParaglide, paraglideVitePlugin } from "./index.js";
 
 async function fixture(prefix = "paraglide-") {
-  const scratch = resolve(import.meta.dirname, "../../../tmp");
+  const scratch = resolve(import.meta.dirname, "../../../.scratch");
   await mkdir(scratch, { recursive: true });
   const root = await mkdtemp(join(scratch, prefix));
   onTestFinished(() => rm(root, { recursive: true, force: true }));

@@ -21,6 +21,12 @@ import type {
   AttachmentResolution,
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
+import { defaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
+import type { SettingsService } from "@/services/settings/service";
+
+import { resolveToolColors } from "./tools";
+import type { AnnotationToolColors, ToolColorStore } from "./tools";
 
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
@@ -136,7 +142,7 @@ export interface FakePageView {
  */
 export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
   return {
-    div: document.createElement("div"),
+    div: createDiv(),
     viewport: viewport({ scale: 1.5 }),
     pdfPage: {
       view: [0, 0, 612, 792],
@@ -151,7 +157,7 @@ export function pageView(content: unknown = GLYPH_CONTENT): FakePageView {
 
 /** The viewer child, its toolbar slot, and the page renders it dispatches. */
 export function pdfReader(page = pageView()) {
-  const toolbarRightEl = document.createElement("div");
+  const toolbarRightEl = createDiv();
   const listeners: ((event: unknown) => void)[] = [];
   const child: Record<string, unknown> = {
     // `on` and `off` read the event bus through this, and Obsidian's `unload`
@@ -273,15 +279,27 @@ export function annotationReads(
   capability: EditingCapability = { kind: "writable" },
 ) {
   const emitter = createNanoEvents<AnnotationRepositoryEvents>();
+  const databaseSource = {
+    kind: "zotero-db" as const,
+    database: { userID: null, localUserKey: null, serverID: null },
+    libraryID: 1,
+    libraryRevision: 0,
+  };
   let list: AnnotationList = {
-    source: { kind: "zotero-db" },
+    source: databaseSource,
     annotations: records,
   };
   let current = capability;
   return {
     read: vi.fn(() => Promise.resolve(list)),
+    refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
     mutationFor: vi.fn((): MutationState => IDLE),
+    commentDraftFor: vi.fn(() => null),
+    editComment: vi.fn(() => null),
+    submitComment: vi.fn(() => Promise.resolve(IDLE)),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
     createAnnotation: vi.fn(() =>
@@ -302,23 +320,55 @@ export function annotationReads(
     },
     /** What a dropped Zotero DB partition does: a whole new list, announced. */
     replace(attachmentKey: string, next: readonly AnnotationRecord[]): void {
-      list = { source: { kind: "zotero-db" }, annotations: next };
+      list = { source: databaseSource, annotations: next };
       emitter.emit("annotations-changed", attachmentKey);
     },
   };
 }
 
-/** The two gestures the Editing Capability affordance hands to its UI seam. */
+/** The blocked-edit gesture the PDF reader hands to its UI seam. */
 export function capabilityGestures() {
   return {
-    showEditingCapability: vi.fn(),
     reportBlockedGesture: vi.fn(),
+    allowEditing: vi.fn(),
   };
 }
 
 /** The one gesture the Mark Popup hands to its UI seam. */
 export function markGestures() {
   return { revealAnnotation: vi.fn() };
+}
+
+/**
+ * The settings the reader keeps each tool's colour in: the shipped defaults,
+ * with a write held in memory the way a save holds it on disk.
+ */
+export function readerSettings(): Pick<SettingsService, "current" | "update"> {
+  let current: Settings = { ...defaults };
+  return {
+    get current() {
+      return current;
+    },
+    update: (patchOrUpdater) => {
+      const patch =
+        typeof patchOrUpdater === "function"
+          ? patchOrUpdater(current)
+          : patchOrUpdater;
+      current = { ...current, ...patch } as Settings;
+      return current;
+    },
+  };
+}
+
+/** Each tool's colour, held the way the settings-backed store holds it. */
+export function toolColors(): ToolColorStore {
+  let stored: AnnotationToolColors = {};
+  return {
+    current: () => resolveToolColors(stored),
+    set: (tool, color) => {
+      stored = { ...stored, [tool]: color };
+    },
+  };
 }
 
 /** The ids of the probes that failed, in the order they were recorded. */

@@ -94,7 +94,7 @@ export function NativeMarkdown({
       for (const range of ranges) {
         const offsets = [];
         for (const end of [range.from, range.to]) {
-          const probe = document.createElement("div");
+          const probe = createDiv();
           probe.dataset["zotlitDraft"] = "";
           await MarkdownRenderer.render(
             app,

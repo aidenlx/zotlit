@@ -736,6 +736,72 @@ exports[`parseNote over the default Profile > renders the note for conferencePap
       "tagName": "div",
       "type": "element",
     },
+    {
+      "type": "text",
+      "value": "
+",
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Page 1",
+                },
+              ],
+              "properties": {
+                "className": [
+                  "callout-title-text",
+                ],
+              },
+              "tagName": "div",
+              "type": "element",
+            },
+          ],
+          "properties": {
+            "className": [
+              "callout-title",
+            ],
+          },
+          "tagName": "div",
+          "type": "element",
+        },
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "type": "text",
+                  "value": "A reproducible interface makes its inputs and outputs inspectable.",
+                },
+              ],
+              "properties": {},
+              "tagName": "p",
+              "type": "element",
+            },
+          ],
+          "properties": {
+            "className": [
+              "callout-content",
+            ],
+          },
+          "tagName": "div",
+          "type": "element",
+        },
+      ],
+      "properties": {
+        "className": [
+          "callout",
+        ],
+        "data-callout": "note",
+        "data-collapsible": "false",
+      },
+      "tagName": "div",
+      "type": "element",
+    },
   ],
   "type": "root",
 }

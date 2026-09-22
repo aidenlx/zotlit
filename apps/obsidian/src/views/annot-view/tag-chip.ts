@@ -8,14 +8,14 @@ import { tv } from "@/lib/tw";
  * class (unlayered — forces `!important`, and only styles `a.tag`).
  * - `state` — resting native tag (with `--tag-*-hover`), `selected` (vault accent,
  *   signalling an active filter), or `disabled` (zero-hit: dimmed, non-interactive).
- * - `density` — orthogonal to color: `dense` for the drawer cloud (~11px), else the
- *   tag's own padding/size.
+ * - `density` — orthogonal to color: `dense` for the drawer cloud, else the tag's
+ *   own padding. Both take the view's own `text-xs` step rather than
+ *   `--tag-size`: the chip is filter-bar chrome, and the count and the
+ *   vocabulary trigger beside it are on that step.
  * - `truncate` — clips a long name so the bar's first chip fits one line.
- * - `ring` — the card chip adds an accent ring when selected (compound with `state`)
- *   to echo the card's own selected outline; the bar/drawer chips stay flat.
  */
 export const tagChipVariants = tv({
-  base: "zt:rounded-(--tag-radius) zt:border-(length:--tag-border-width) zt:leading-none zt:font-(--tag-weight) zt:motion-safe:transition-colors",
+  base: "zt:rounded-(--tag-radius) zt:border-(length:--tag-border-width) zt:font-(--tag-weight) zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:motion-safe:transition-colors",
   variants: {
     state: {
       resting:
@@ -26,26 +26,17 @@ export const tagChipVariants = tv({
         "zt:cursor-default zt:border-(--tag-border-color) zt:bg-(--tag-background) zt:text-(color:--tag-color) zt:opacity-40",
     },
     density: {
-      comfortable:
-        "zt:px-(--tag-padding-x) zt:py-(--tag-padding-y) zt:text-(length:--tag-size)",
-      dense: "zt:px-2 zt:py-px zt:text-[11px]",
+      comfortable: "zt:px-(--tag-padding-x) zt:py-(--tag-padding-y) zt:text-xs",
+      dense: "zt:px-2 zt:py-px zt:text-xs",
     },
     truncate: {
       true: "zt:min-w-0 zt:shrink",
       false: "zt:shrink-0",
     },
-    ring: {
-      true: "",
-      false: "",
-    },
   },
-  compoundVariants: [
-    { state: "selected", ring: true, class: "zt:ring-1 zt:ring-primary" },
-  ],
   defaultVariants: {
     state: "resting",
     density: "comfortable",
     truncate: false,
-    ring: false,
   },
 });

@@ -116,6 +116,48 @@
               "value": null
             }
           }
+        },
+        {
+          "key": "CNPVL26A",
+          "indexedKey": "CNPVL26A",
+          "libraryID": 1,
+          "type": "highlight",
+          "text": "A reproducible interface makes its inputs and outputs inspectable.",
+          "commentHtml": null,
+          "colorHex": "#ffd400",
+          "colorName": "yellow",
+          "pageLabel": "1",
+          "page": 1,
+          "authorName": null,
+          "isExternal": false,
+          "dateAdded": "2025-01-03T11:30:00Z",
+          "dateModified": "2025-01-03T11:30:00Z",
+          "tags": [],
+          "imgLink": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          },
+          "backlink": "zotero://open/library/items/CNPVLT26?annotation=CNPVL26A&page=1",
+          "comment": null,
+          "parentItem": {
+            "$ref": "zt"
+          },
+          "parentAttachment": {
+            "key": "CNPVLT26",
+            "indexedKey": "CNPVLT26",
+            "filename": "research-interfaces.pdf",
+            "contentType": "application/pdf",
+            "linkMode": "linked_file",
+            "backlink": "zotero://open/library/items/CNPVLT26",
+            "filePath": null,
+            "fileLink": {
+              "$helper": "fileLink",
+              "signature": "(alias?: string, subpath?: string) => string | null",
+              "value": null
+            }
+          }
         }
       ],
       "attachments": [
@@ -126,6 +168,20 @@
           "contentType": "application/pdf",
           "linkMode": "imported_file",
           "backlink": "zotero://open/library/items/CNPDF26A",
+          "filePath": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          }
+        },
+        {
+          "key": "CNPVLT26",
+          "indexedKey": "CNPVLT26",
+          "filename": "research-interfaces.pdf",
+          "contentType": "application/pdf",
+          "linkMode": "linked_file",
+          "backlink": "zotero://open/library/items/CNPVLT26",
           "filePath": null,
           "fileLink": {
             "$helper": "fileLink",
@@ -373,6 +429,126 @@
           }
         },
         "citation": null
+      },
+      {
+        "key": "CNPVL26A",
+        "indexedKey": "CNPVL26A",
+        "libraryID": 1,
+        "type": "highlight",
+        "text": "A reproducible interface makes its inputs and outputs inspectable.",
+        "commentHtml": null,
+        "colorHex": "#ffd400",
+        "colorName": "yellow",
+        "pageLabel": "1",
+        "page": 1,
+        "authorName": null,
+        "isExternal": false,
+        "dateAdded": "2025-01-03T11:30:00Z",
+        "dateModified": "2025-01-03T11:30:00Z",
+        "tags": [],
+        "imgLink": null,
+        "fileLink": {
+          "$helper": "fileLink",
+          "signature": "(alias?: string, subpath?: string) => string | null",
+          "value": null
+        },
+        "backlink": "zotero://open/library/items/CNPVLT26?annotation=CNPVL26A&page=1",
+        "comment": null,
+        "parentItem": {
+          "title": "Designing reproducible research interfaces",
+          "date": {
+            "kind": "text",
+            "value": null,
+            "text": "2026",
+            "year": 2026,
+            "month": null,
+            "day": null,
+            "raw": "2026"
+          },
+          "citationKey": "riveraResearchInterfaces2026",
+          "publicationTitle": "Proceedings of the Open Research Conference",
+          "key": "CNPF226A",
+          "groupID": null,
+          "libraryID": 1,
+          "indexedKey": "CNPF226A",
+          "itemType": "conferencePaper",
+          "dateAdded": "2025-01-03T12:00:00Z",
+          "dateModified": "2025-01-03T12:00:00Z",
+          "creators": [
+            {
+              "family": "Rivera",
+              "given": "Mara",
+              "literal": null,
+              "role": "author",
+              "fullName": "Mara Rivera"
+            },
+            {
+              "family": "Chen",
+              "given": "Tao",
+              "literal": null,
+              "role": "author",
+              "fullName": "Tao Chen"
+            }
+          ],
+          "primaryCreatorType": "author",
+          "tags": [],
+          "abstract": null,
+          "containerTitle": "Proceedings of the Open Research Conference",
+          "citekey": "riveraResearchInterfaces2026",
+          "shortTitle": null,
+          "DOI": null,
+          "url": null,
+          "ISBN": null,
+          "ISSN": null,
+          "volume": null,
+          "issue": null,
+          "pages": null,
+          "publisher": null,
+          "place": null,
+          "edition": null,
+          "language": null,
+          "extra": null,
+          "notePath": null,
+          "noteLink": {
+            "$helper": "noteLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          },
+          "backlink": "zotero://select/library/items/CNPF226A",
+          "weblink": null,
+          "authors": [
+            {
+              "family": "Rivera",
+              "given": "Mara",
+              "literal": null,
+              "role": "author",
+              "fullName": "Mara Rivera"
+            },
+            {
+              "family": "Chen",
+              "given": "Tao",
+              "literal": null,
+              "role": "author",
+              "fullName": "Tao Chen"
+            }
+          ],
+          "authorsShort": "Rivera & Chen"
+        },
+        "parentAttachment": {
+          "key": "CNPVLT26",
+          "indexedKey": "CNPVLT26",
+          "filename": "research-interfaces.pdf",
+          "contentType": "application/pdf",
+          "linkMode": "linked_file",
+          "backlink": "zotero://open/library/items/CNPVLT26",
+          "filePath": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          }
+        },
+        "citation": null
       }
     ]
   },
@@ -420,8 +596,30 @@
         },
         {
           "path": [
+            "annotations",
+            1
+          ],
+          "value": "A reproducible interface makes its inputs and outputs inspectable."
+        },
+        {
+          "path": [
+            "annotations",
+            1,
+            "parentAttachment"
+          ],
+          "value": "research-interfaces.pdf"
+        },
+        {
+          "path": [
             "attachments",
             0
+          ],
+          "value": "research-interfaces.pdf"
+        },
+        {
+          "path": [
+            "attachments",
+            1
           ],
           "value": "research-interfaces.pdf"
         },
@@ -475,6 +673,22 @@
             "dateModified"
           ],
           "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "annotations",
+            1,
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "annotations",
+            1,
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
         }
       ],
       "graphReferences": [
@@ -482,6 +696,14 @@
           "path": [
             "annotations",
             0,
+            "parentItem"
+          ],
+          "target": []
+        },
+        {
+          "path": [
+            "annotations",
+            1,
             "parentItem"
           ],
           "target": []
@@ -636,6 +858,94 @@
           }
         ],
         "graphReferences": []
+      },
+      {
+        "stringCoercions": [
+          {
+            "path": [],
+            "value": "A reproducible interface makes its inputs and outputs inspectable."
+          },
+          {
+            "path": [
+              "parentItem"
+            ],
+            "value": "Designing reproducible research interfaces"
+          },
+          {
+            "path": [
+              "parentItem",
+              "date"
+            ],
+            "value": "2026"
+          },
+          {
+            "path": [
+              "parentItem",
+              "creators",
+              0
+            ],
+            "value": "Mara Rivera"
+          },
+          {
+            "path": [
+              "parentItem",
+              "creators",
+              1
+            ],
+            "value": "Tao Chen"
+          },
+          {
+            "path": [
+              "parentItem",
+              "authors",
+              0
+            ],
+            "value": "Mara Rivera"
+          },
+          {
+            "path": [
+              "parentItem",
+              "authors",
+              1
+            ],
+            "value": "Tao Chen"
+          },
+          {
+            "path": [
+              "parentAttachment"
+            ],
+            "value": "research-interfaces.pdf"
+          }
+        ],
+        "temporalValues": [
+          {
+            "path": [
+              "dateAdded"
+            ],
+            "type": "Temporal.Instant"
+          },
+          {
+            "path": [
+              "dateModified"
+            ],
+            "type": "Temporal.Instant"
+          },
+          {
+            "path": [
+              "parentItem",
+              "dateAdded"
+            ],
+            "type": "Temporal.Instant"
+          },
+          {
+            "path": [
+              "parentItem",
+              "dateModified"
+            ],
+            "type": "Temporal.Instant"
+          }
+        ],
+        "graphReferences": []
       }
     ]
   },
@@ -653,11 +963,31 @@
       "reason": "The Attachment has no permitted vault-relative target."
     },
     {
+      "path": "zt.annotations[1].fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "zt.annotations[1].parentAttachment.filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "zt.annotations[1].parentAttachment.fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
       "path": "zt.attachments[0].filePath",
       "reason": "Attachment paths are not included in Item Snapshots."
     },
     {
       "path": "zt.attachments[0].fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "zt.attachments[1].filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "zt.attachments[1].fileLink",
       "reason": "The Attachment has no permitted vault-relative target."
     },
     {
@@ -679,7 +1009,23 @@
     {
       "path": "annotations[0].zt.parentAttachment.fileLink",
       "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "annotations[1].zt.fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "annotations[1].zt.parentItem.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
+    },
+    {
+      "path": "annotations[1].zt.parentAttachment.filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "annotations[1].zt.parentAttachment.fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
     }
   ],
-  "revision": "a41bdf02772720f5339a3859dcb545cfcb0011ae5331ab1a7565f86edde6244e"
+  "revision": "9b591ec234cfd5d4a809884df86c5f80c218bc012eace9a8c4b26afd357370a0"
 }

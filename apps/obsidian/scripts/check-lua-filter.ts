@@ -39,7 +39,7 @@ const filterDir = join(packageRoot, "src/services/pandoc/filter");
 const pandocBin = process.env.PANDOC_BIN ?? "pandoc";
 
 /** Fixtures live in the workspace tree, so a failed run leaves them to read. */
-const workspaceRoot = join(packageRoot, "tmp/lua-filter");
+const workspaceRoot = join(packageRoot, ".scratch/lua-filter");
 
 const REFERENCES = [
   {

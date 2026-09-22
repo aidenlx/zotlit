@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ZOTERO_DB_READ_PARENT_DIRNAME } from "@/lib/constants";
@@ -40,15 +41,17 @@ describe("read-source", () => {
     ).toMatch(/[?&]mode=ro&immutable=1$/);
   });
 
-  it("opens immutable reads against the source path", async () => {
+  it("opens immutable reads against an owned verified main-file snapshot", async () => {
     const source = join(dir, "zotero.sqlite");
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec("CREATE TABLE fixture (value TEXT NOT NULL)");
     await using prepared = await prepareRead("immutable", source);
 
     expect(prepared).toMatchObject({
-      path: source,
       uriOptions: { mode: "ro", immutable: true },
       effectiveMode: "immutable",
     });
+    expect(prepared.path).not.toBe(source);
   });
 
   it("reports a stale-WAL reason for a non-empty WAL", async () => {
@@ -73,8 +76,14 @@ describe("read-source", () => {
 
   it("warns when a deliberately configured immutable read skips a WAL", async () => {
     const source = join(dir, "zotero.sqlite");
-    await writeFile(source, "main");
-    await writeFile(`${source}-wal`, "wal");
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA wal_autocheckpoint = 0;
+      CREATE TABLE fixture (value TEXT NOT NULL);
+      PRAGMA wal_checkpoint(TRUNCATE);
+      INSERT INTO fixture VALUES ('committed in WAL');
+    `);
 
     await using prepared = await prepareRead("immutable", source);
 
@@ -84,10 +93,16 @@ describe("read-source", () => {
 
   it("copies the main database and WAL into an owned temp dir", async () => {
     const source = join(dir, "zotero.sqlite");
-    const main = Buffer.alloc(100, 1);
-    const wal = Buffer.alloc(32, 2);
-    await writeFile(source, main);
-    await writeFile(`${source}-wal`, wal);
+    using sqlite = new DatabaseSync(source);
+    sqlite.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA wal_autocheckpoint = 0;
+      CREATE TABLE entries (value TEXT NOT NULL);
+      PRAGMA wal_checkpoint(TRUNCATE);
+      INSERT INTO entries VALUES ('committed');
+    `);
+    const main = await readFile(source);
+    const wal = await readFile(`${source}-wal`);
 
     const preparedPath = await (async () => {
       await using prepared = await prepareRead("copy", source);
@@ -964,9 +979,12 @@ function fingerprint(
       dev: 1n,
       ino: 2n,
       size: main.size ?? 1n,
-      header: Buffer.alloc(100),
+      mtimeNs: 3n,
+      ctimeNs: 4n,
+      digest: "main",
     },
     wal: { state: "absent" },
+    journal: { state: "absent" },
   };
 }
 

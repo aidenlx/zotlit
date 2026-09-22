@@ -46,6 +46,10 @@ import {
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
+  EXCERPT_RENDERING_PDFS,
+  EXCERPT_RENDERING_VAULT_DIR,
+  FIXTURE_LOCAL_API_SERVER_ID,
+  FIXTURE_LOCAL_API_WRITE_KEY,
   FIXTURE_PARTIAL_NAME,
   getFixtureLayout,
   INSTALLED_STYLES,
@@ -86,13 +90,14 @@ const ROUGIER_ANNOTATION_KEYS = [
   "HRK7BG32",
   "K3JRFLFQ",
   "PUPR5FG5",
+  "Q8ZR4TDH",
   "C94NJNYG",
   "FDRFQ7C2",
 ] as const;
 
 beforeAll(async () => {
-  // Workspace scratch, not the system temp dir — see policies/scratch-artifacts.md.
-  const scratch = join(await getWorkspaceRoot(import.meta.dirname), "tmp");
+  // Workspace scratch, not the system temp dir — see AGENTS.md → Working files.
+  const scratch = join(await getWorkspaceRoot(import.meta.dirname), ".scratch");
   await mkdir(scratch, { recursive: true });
   layout = getFixtureLayout(await mkdtemp(join(scratch, "fixture-test-")));
   fixture.defer(() => rm(layout.root, { recursive: true, force: true }));
@@ -381,6 +386,34 @@ describe("the generated Zotero database", () => {
         title: "Research interfaces conference paper",
         url: null,
       },
+      {
+        key: "CNPVLT26",
+        path: join(layout.vaultDir, "attachments", "research-interfaces.pdf"),
+        charsetID: null,
+        title: "Research interfaces conference paper (linked copy)",
+        url: null,
+      },
+      {
+        key: "SNAP2345",
+        path: "storage:snapshot.png",
+        charsetID: null,
+        title: "Live image excerpt snapshot",
+        url: null,
+      },
+      {
+        key: "SNAP3456",
+        path: "storage:snapshot.png",
+        charsetID: null,
+        title: "Live ink excerpt snapshot",
+        url: null,
+      },
+      {
+        key: "FRZN2345",
+        path: "storage:snapshot.png",
+        charsetID: null,
+        title: "Frozen excerpt snapshot",
+        url: null,
+      },
     ]);
   });
 
@@ -588,6 +621,35 @@ describe("the generated Zotero database", () => {
     );
   });
 
+  it("copies deterministic excerpt-rendering inputs into the Fixture Vault", async () => {
+    const inputs = await Promise.all(
+      EXCERPT_RENDERING_PDFS.map(async ({ asset, outcome, sha256 }) => {
+        const filename = asset.split("/").at(-1)!;
+        const source = await readFile(join(ASSET_DIR, asset));
+        const copy = await readFile(
+          join(layout.vaultDir, EXCERPT_RENDERING_VAULT_DIR, filename),
+        );
+        return {
+          asset,
+          outcome,
+          sha256: createHash("sha256").update(source).digest("hex"),
+          sameBytes: source.equals(copy),
+          declaredSha256: sha256,
+        };
+      }),
+    );
+
+    expect(inputs).toEqual(
+      EXCERPT_RENDERING_PDFS.map(({ asset, outcome, sha256 }) => ({
+        asset,
+        outcome,
+        sha256,
+        sameBytes: true,
+        declaredSha256: sha256,
+      })),
+    );
+  });
+
   it("places a linked literature PDF inside the Fixture Vault", async () => {
     using db = openClient();
     const article = indexedItems(db, 1).find(({ key }) => key === "RUGIER24");
@@ -621,6 +683,33 @@ describe("the generated Zotero database", () => {
     expect(createHash("sha256").update(pdf).digest("hex")).toBe(
       "95b6714aa1ce1e058475c9a807fa85e058bdaa5c3261e792dc5e8dfd9ae83ad6",
     );
+  });
+
+  it("carries untagged Annotations in both a vault PDF and a Zotero-storage PDF", async () => {
+    using db = openClient();
+    const storage = getAttachmentsByParents(db, [60]).find(
+      ({ key }) => key === "CNPDF26A",
+    )!;
+    const vault = getAttachmentsByParents(db, [60]).find(
+      ({ key }) => key === "CNPVLT26",
+    )!;
+
+    expect(storage).toMatchObject({
+      linkMode: 0,
+      path: "storage:research-interfaces.pdf",
+    });
+    expect(vault).toMatchObject({
+      linkMode: 2,
+      path: join(layout.vaultDir, "attachments", "research-interfaces.pdf"),
+    });
+
+    const annotations = getAnnotationsByKey(db, ["CNPAN26A", "CNPVL26A"], 1);
+    expect(
+      annotations.map(({ parentKey, tags }) => [parentKey, [...tags]]),
+    ).toEqual([
+      ["CNPDF26A", []],
+      ["CNPVLT26", []],
+    ]);
   });
 
   it("targets the Development Vault during Paired Run preparation", async () => {
@@ -757,6 +846,13 @@ describe("the generated Zotero database", () => {
         pageLabel: "1",
       },
       {
+        key: "Q8ZR4TDH",
+        type: 1,
+        text: "There are so many different ways to represent the same data: scatter plots, linear plots, bar plots, and pie charts, to name just a few.",
+        comment: null,
+        pageLabel: "1",
+      },
+      {
         key: "C94NJNYG",
         type: 2,
         text: null,
@@ -771,6 +867,21 @@ describe("the generated Zotero database", () => {
         pageLabel: "2",
       },
     ]);
+
+    expect(
+      Object.fromEntries(
+        annotations.map(({ key, tags }) => [key, [...tags].sort()]),
+      ),
+    ).toEqual({
+      TYY6Z6ZF: [],
+      "4PE492KU": [],
+      HRK7BG32: ["figure"],
+      K3JRFLFQ: ["methodology", "visualization"],
+      PUPR5FG5: ["visualization"],
+      Q8ZR4TDH: [],
+      C94NJNYG: ["methodology"],
+      FDRFQ7C2: ["figure"],
+    });
 
     expect(
       Object.fromEntries(
@@ -789,6 +900,7 @@ describe("the generated Zotero database", () => {
       HRK7BG32: "text",
       K3JRFLFQ: "rects",
       PUPR5FG5: "rects",
+      Q8ZR4TDH: "rects",
       C94NJNYG: "rects",
       FDRFQ7C2: "rects",
     });
@@ -868,14 +980,37 @@ describe("the generated Zotero database", () => {
     using db = openClient();
 
     expect(getLibraries(db)).toEqual([
-      { libraryID: 1, type: "user", groupID: null, name: null },
-      { libraryID: 2, type: "group", groupID: 4200309, name: "Shared Reading" },
-      { libraryID: 3, type: "group", groupID: 118, name: "Lab Archive" },
+      {
+        libraryID: 1,
+        type: "user",
+        groupID: null,
+        name: null,
+        version: 0,
+        clientVersion: 0,
+      },
+      {
+        libraryID: 2,
+        type: "group",
+        groupID: 4200309,
+        name: "Shared Reading",
+        version: 0,
+        clientVersion: 0,
+      },
+      {
+        libraryID: 3,
+        type: "group",
+        groupID: 118,
+        name: "Lab Archive",
+        version: 0,
+        clientVersion: 0,
+      },
       {
         libraryID: 4,
         type: "group",
         groupID: 990117,
         name: "Consortium Reading Room",
+        version: 0,
+        clientVersion: 0,
       },
     ]);
 
@@ -1556,14 +1691,15 @@ describe("the generated Obsidian vault", () => {
     }
   });
 
-  it("links every present Attachment from its generated Literature Note", async () => {
+  it("links every present regular-item Attachment from its generated Literature Note", async () => {
     using db = openClient();
     const attachments = getAttachmentsByParents(db, ATTACHMENT_PARENT_IDS);
 
     for (const attachment of attachments) {
       const parent = ITEMS.find(
         ({ itemID }) => itemID === attachment.parentItemID,
-      )!;
+      );
+      if (!parent) continue;
       const note = await readFile(
         join(
           layout.vaultDir,
@@ -1666,7 +1802,11 @@ describe("the generated Obsidian vault", () => {
       await mkdtemp(join(dirname(layout.root), "fixture-test-local-api-")),
     );
     fixture.defer(() => rm(apiLayout.root, { recursive: true, force: true }));
-    await buildFixture(apiLayout, { localApi: true, zoteroHttpPort: 54_323 });
+    await buildFixture(apiLayout, {
+      localApi: true,
+      zoteroHttpPort: 54_323,
+      grantLocalApiWrites: true,
+    });
 
     const prefs = await readFile(
       join(apiLayout.profileDir, "prefs.js"),
@@ -1679,6 +1819,48 @@ describe("the generated Obsidian vault", () => {
     expect(prefs).toContain(
       'user_pref("extensions.zotero.httpServer.port", 54323);',
     );
+
+    using db = new DatabaseSync(apiLayout.databasePath);
+    expect(
+      db
+        .prepare(
+          "select value from settings where setting = 'localAPI' and key = 'serverID'",
+        )
+        .get()?.value,
+    ).toBe(FIXTURE_LOCAL_API_SERVER_ID);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(apiLayout.profileDir, "localAPIKeys.json"),
+          "utf-8",
+        ),
+      ),
+    ).toMatchObject({
+      keys: [
+        {
+          key: FIXTURE_LOCAL_API_WRITE_KEY,
+          appName: "ZotLit Fixture",
+          remember: true,
+        },
+      ],
+    });
+  });
+
+  it("leaves Local API writes ungranted for an authorization trial", async () => {
+    const apiLayout = getFixtureLayout(
+      await mkdtemp(
+        join(dirname(layout.root), "fixture-test-local-api-prompt-"),
+      ),
+    );
+    fixture.defer(() => rm(apiLayout.root, { recursive: true, force: true }));
+    await buildFixture(apiLayout, {
+      localApi: true,
+      grantLocalApiWrites: false,
+    });
+
+    await expect(
+      readFile(join(apiLayout.profileDir, "localAPIKeys.json"), "utf-8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("keeps the shipped network-port defaults without port overrides", async () => {

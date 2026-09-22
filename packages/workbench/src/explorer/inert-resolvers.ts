@@ -3,6 +3,7 @@
 import type {
   Annotation,
   Attachment,
+  AnnotationFileLinkAnchor,
   FallibleTemplateLink,
   Item,
   NoteResolvers,
@@ -86,7 +87,7 @@ export interface InertNoteResolverDeps<
   attachmentAbsPath: (attachment: Attachment) => string | null;
   attachmentFileLink: (
     attachment: Attachment,
-    page?: number | null,
+    anchor?: AnnotationFileLinkAnchor,
   ) => FallibleTemplateLink;
   annotationCachePath: (annotation: Annotation) => string | null;
   commentToMarkdown: (html: string) => string;

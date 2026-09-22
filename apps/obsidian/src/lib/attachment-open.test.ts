@@ -160,6 +160,29 @@ describe("createObsidianAttachmentReader", () => {
     expect(openFile).toHaveBeenCalledWith(file);
   });
 
+  it("lands on the page a subpath names", async () => {
+    const absolutePath = join(dir, "Doe 2024.pdf");
+    await writeFile(absolutePath, "");
+    const file = new TFile();
+    const { app, openFile } = fakeApp(() => file);
+    const reader = createObsidianAttachmentReader(app);
+
+    await reader.open(
+      {
+        indexedKey: "ATCH2345",
+        label: "Doe 2024.pdf",
+        openPath: "papers/Doe 2024.pdf",
+        absolutePath,
+        subpath: "#page=7",
+      },
+      false,
+    );
+
+    expect(openFile).toHaveBeenCalledWith(file, {
+      eState: { subpath: "#page=7" },
+    });
+  });
+
   it("does not open when Obsidian resolves no file for the open path — the missing-file signal, whether the path never existed or Zotero moved it away since the read", async () => {
     const absolutePath = join(dir, "Doe 2024.pdf");
     await writeFile(absolutePath, "");
@@ -175,5 +198,45 @@ describe("createObsidianAttachmentReader", () => {
     await reader.open(attachment, false);
 
     expect(openFile).not.toHaveBeenCalled();
+  });
+
+  it("runs onOpened once the file is on screen", async () => {
+    const absolutePath = join(dir, "Doe 2024.pdf");
+    await writeFile(absolutePath, "");
+    const { app } = fakeApp(() => new TFile());
+    const onOpened = vi.fn();
+    const reader = createObsidianAttachmentReader(app, { onOpened });
+
+    await reader.open(
+      {
+        indexedKey: "ATCH2345",
+        label: "Doe 2024.pdf",
+        openPath: "papers/Doe 2024.pdf",
+        absolutePath,
+      } satisfies ObsidianOpenableAttachment,
+      false,
+    );
+
+    expect(onOpened).toHaveBeenCalledOnce();
+  });
+
+  it("leaves onOpened unrun when no file resolves, so follow-up UI never answers a failed open", async () => {
+    const absolutePath = join(dir, "Doe 2024.pdf");
+    await writeFile(absolutePath, "");
+    const { app } = fakeApp(() => null);
+    const onOpened = vi.fn();
+    const reader = createObsidianAttachmentReader(app, { onOpened });
+
+    await reader.open(
+      {
+        indexedKey: "ATCH2345",
+        label: "Doe 2024.pdf",
+        openPath: "papers/Doe 2024.pdf",
+        absolutePath,
+      } satisfies ObsidianOpenableAttachment,
+      false,
+    );
+
+    expect(onOpened).not.toHaveBeenCalled();
   });
 });

@@ -75,8 +75,8 @@ export async function verifySavedSources(
   stack.defer(deps.onChange(() => wake.resolve()));
   const deadline = Promise.withResolvers<void>();
   stack.adopt(
-    setTimeout(() => deadline.resolve(), timeoutMs),
-    clearTimeout,
+    window.setTimeout(() => deadline.resolve(), timeoutMs),
+    (timer) => window.clearTimeout(timer),
   );
   let timedOut = false;
   void deadline.promise.then(() => {

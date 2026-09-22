@@ -20,9 +20,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Scratch artifacts: probe scripts, experiments, and fixture workspaces all live
-# in a workspace tmp/ (see policies/scratch-artifacts.md).
-tmp/
+# Scratch material: probe scripts, experiments, and generated fixture trees all
+# live in a workspace .scratch/ (see AGENTS.md → Working files).
+.scratch/
 
 # Misc
 .DS_Store
@@ -44,3 +44,5 @@ project.inlang/*
 .vercel
 
 .pi
+
+.humanlayer

@@ -1,3 +1,4 @@
+import { basename, dirname, join } from "node:path/posix";
 import type { TFile } from "obsidian";
 
 import {
@@ -50,6 +51,13 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
+import type {
+  ExcerptSummary,
+  PreparedExcerpts,
+} from "@/services/excerpt-image/prepare";
 import type { NoteImport } from "@/services/note-import/service";
 import {
   itemKeyFromFrontmatter,
@@ -80,6 +88,8 @@ import type {
   ManagedFrontmatterPreparationFailure,
   PreparedManagedFrontmatter,
 } from "./frontmatter";
+import { prepareAnnotationInsert } from "./insert-annotation";
+import type { AnnotationInsertOptions } from "./insert-annotation";
 
 const logger = getLogger("note-feature");
 
@@ -214,7 +224,9 @@ export interface ProfilePreview {
 
 export interface PreparedCreationProfile extends ProfilePreview {
   /** Re-enters the create gate; the preview holds no database lease. */
-  create: () => Promise<CreateNoteResult>;
+  create: (
+    options?: Pick<CreateNoteOptions, "reportExcerpts" | "outcomes">,
+  ) => Promise<CreateNoteResult>;
 }
 
 export interface ProfileNotePreview {
@@ -257,9 +269,17 @@ const MAX_CREATE_RETRIES = 5;
 
 /** Per-batch memos threaded through a multi-item create run. */
 export interface CreateNoteOptions {
+  /** A batch collects used outcomes here and reports once when the run settles. */
+  reportExcerpts?: (summary: ExcerptSummary) => void;
   collectionCache?: CollectionCache;
   tagMemo?: TagMemo;
   groupIdMemo?: GroupIDMemo;
+  /**
+   * The initiating batch's retained outcomes. Omitted, this create opens its
+   * own scope for the note it writes and the Child Notes its template imports,
+   * then releases it once they settle.
+   */
+  outcomes?: ExcerptOutcomeScope;
   /**
    * The batch supplies the once-resolved account username; a single-item create
    * resolves it from its own lease when omitted.
@@ -283,6 +303,7 @@ interface CreateNoteInternalOptions extends CreateNoteOptions {
  * `client` plus the run's shared memos, so no per-item lease re-acquisition.
  */
 export interface WriteNoteUpdateOptions {
+  reportExcerpts?: (summary: ExcerptSummary) => void;
   client: NodeDatabaseClient;
   item: Item;
   tagMemo: TagMemo;
@@ -294,10 +315,16 @@ export interface WriteNoteUpdateOptions {
   username: string | null;
   /** Headless explicit Profile. A different stamp is refused. */
   profile?: ProfileSelector;
+  /**
+   * The initiating batch's retained outcomes, shared with every other note the
+   * batch writes and the Child Notes this update imports.
+   */
+  outcomes?: ExcerptOutcomeScope;
 }
 
 /** Events the bound note feature emits; a UI subscriber owns any rendering. */
 export interface NoteFeatureEvents {
+  "excerpt-images-reported": (summary: ExcerptSummary) => void;
   /**
    * A legacy settings-held frontmatter expression failed during a write; the
    * write completed with those keys skipped.
@@ -316,6 +343,7 @@ type OpsContext = NoteFeatureDeps & { events: Emitter<NoteFeatureEvents> };
  * Consumers hold this object; the collaborators stay behind the seam.
  */
 export interface NoteFeature {
+  reportExcerptImages(summary: ExcerptSummary): void;
   /**
    * Settles when templates and the note index are usable. Single-item methods
    * gate internally; batch runners await this once per run before a
@@ -364,7 +392,11 @@ export interface NoteFeature {
   /** Imported Notes currently materialized for one Zotero item. */
   getImportedNotesForItem(indexedKey: string): Promise<TFile[]>;
   /** @see overwriteNote */
-  overwriteNote(file: TFile, indexedKey: string): Promise<UpdateResult>;
+  overwriteNote(
+    file: TFile,
+    indexedKey: string,
+    options?: { outcomes?: ExcerptOutcomeScope },
+  ): Promise<UpdateResult>;
   /** @see writeNoteUpdate */
   writeNoteUpdate(
     file: TFile,
@@ -384,6 +416,9 @@ export interface NoteFeature {
   ): string | null;
   /** @see renderAnnotationCitation */
   renderAnnotationCitation(annotationItemId: number): string | null;
+  prepareAnnotationInsert(
+    options: AnnotationInsertOptions,
+  ): ReturnType<typeof prepareAnnotationInsert>;
   /** Subscribe to {@link NoteFeatureEvents}; returns an unsubscribe. */
   on<K extends keyof NoteFeatureEvents>(
     event: K,
@@ -464,6 +499,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
   };
 
   return {
+    reportExcerptImages: (summary) =>
+      events.emit("excerpt-images-reported", summary),
     ready: Promise.all([
       deps.template.ready,
       deps.noteIndex.ready,
@@ -487,13 +524,15 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     getImportedNotesForItem: (indexedKey) =>
       getImportedNotesForItem(ctx, indexedKey),
-    overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
+    overwriteNote: (file, indexedKey, options) =>
+      overwriteNote(ctx, file, { ...options, indexedKey }),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
     renderCitation: (items, variant) => renderCitation(ctx, items, variant),
     renderAnnotation: (annotationItemId, options) =>
       renderAnnotation(ctx, annotationItemId, options),
     renderAnnotationCitation: (annotationItemId) =>
       renderAnnotationCitation(ctx, annotationItemId),
+    prepareAnnotationInsert: (options) => prepareAnnotationInsert(ctx, options),
     on: (event, cb) => events.on(event, cb),
   };
 }
@@ -619,7 +658,8 @@ async function prepareCreationProfiles(
     return {
       ...profilePreview(profile, preparedPath?.path),
       unavailable,
-      create: () => options.create(item, { profile: selector, preparedPath }),
+      create: (reporting) =>
+        options.create(item, { ...reporting, profile: selector, preparedPath }),
     };
   });
 }
@@ -846,52 +886,55 @@ async function createNote(
       document,
     });
 
-  for (let attempt = 0; ; attempt++) {
-    let fileCreated = false;
-    try {
-      return await writeNewNote(ctx, item, {
-        client: lease.client,
-        tagMemo,
-        collectionCache,
-        path,
-        settings: profile.settings,
-        profile,
-        document,
-        groupIdMemo: options.groupIdMemo,
-        username,
-        onFileCreated: (created) => {
-          fileCreated = true;
-          options.onFileCreated?.(created);
-        },
-      });
-    } catch (error) {
-      if (
-        fileCreated ||
-        !isFileExistsError(error) ||
-        !canSuffix ||
-        attempt >= MAX_CREATE_RETRIES
-      ) {
-        throw error;
+  const parentFolder = dirname(path);
+  return await writeNewNote(ctx, item, {
+    client: lease.client,
+    tagMemo,
+    collectionCache,
+    path,
+    settings: profile.settings,
+    profile,
+    document,
+    groupIdMemo: options.groupIdMemo,
+    username,
+    onFileCreated: options.onFileCreated,
+    reportExcerpts: options.reportExcerpts,
+    outcomes: options.outcomes,
+    createFile: async (content) => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await ensureParentFolder(ctx.app, path);
+          return await ctx.app.vault.create(path, content);
+        } catch (error) {
+          if (
+            !isFileExistsError(error) ||
+            !canSuffix ||
+            attempt >= MAX_CREATE_RETRIES
+          )
+            throw error;
+          logger.debug("Filename collided on create; retrying with suffix", {
+            path,
+            attempt,
+            itemKey: item.indexedKey,
+          });
+          ({ path, canSuffix } = resolveNotePath(ctx, item, {
+            itemTags,
+            itemCollections,
+            settings: profile.settings,
+            forceSuffix: true,
+            document,
+          }));
+          // Prepared relative links belong to the original parent folder.
+          path = join(parentFolder, basename(path));
+        }
       }
-      logger.debug("Filename collided on create; retrying with suffix", {
-        path,
-        attempt,
-        itemKey: item.indexedKey,
-      });
-      ({ path, canSuffix } = resolveNotePath(ctx, item, {
-        itemTags,
-        itemCollections,
-        settings: profile.settings,
-        forceSuffix: true,
-        document,
-      }));
-    }
-  }
+    },
+  });
 }
 
 /**
- * Inner write step for {@link createNote}, which handles path resolution and
- * collision retries before calling here.
+ * Prepare and render once; the supplied create boundary retries filename
+ * collisions with these same composed bytes.
  *
  * @throws an Obsidian vault error (e.g. a file already exists at `path`).
  */
@@ -909,10 +952,25 @@ async function writeNewNote(
     groupIdMemo?: GroupIDMemo;
     username: string | null;
     onFileCreated?: (file: TFile) => void;
+    createFile: (content: string) => Promise<TFile>;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+    /** The batch's retained outcomes, or omitted for this note's own scope. */
+    outcomes?: ExcerptOutcomeScope;
   },
 ): Promise<CreateNoteResult> {
   const { tagMemo, collectionCache, path, settings } = options;
   await ensureParentFolder(ctx.app, path);
+  await using stack = new AsyncDisposableStack();
+  // One created note is one initiating batch: its own excerpts and the Child
+  // Notes its template imports share this retention until both settle.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+
+  const excerptImages = ctx.excerptImages?.({
+    client: options.client,
+    notePath: path,
+    settings,
+    outcomes,
+  });
 
   const attachmentImport = await ctx.attachmentImport.prepare(path);
   const noteImport = await ctx.noteImport.prepare({
@@ -921,12 +979,14 @@ async function writeNewNote(
     settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo,
+    outcomes,
   });
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport,
     noteImport,
     settings,
     sourcePath: path,
+    excerptImages,
   });
   const context = fetchNoteContext(options.client, item, {
     resolvers,
@@ -935,6 +995,7 @@ async function writeNewNote(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
+  await excerptImages?.prepare();
   const composed = composeLiteratureNote(ctx, {
     context,
     itemKey: item.indexedKey,
@@ -951,11 +1012,18 @@ async function writeNewNote(
     };
   }
 
-  const file = await ctx.app.vault.create(path, composed.content);
+  const file = await options.createFile(composed.content);
   options.onFileCreated?.(file);
+  using excerptReports = collectNoteExcerpts(ctx, {
+    ...options,
+    excerptImages,
+  });
   await attachmentImport.flush();
-  await noteImport.flush();
-  logger.debug("Created literature note", { path, itemKey: item.indexedKey });
+  await noteImport.flush(excerptReports.add);
+  logger.debug("Created literature note", {
+    path: file.path,
+    itemKey: item.indexedKey,
+  });
   return { outcome: "created", file };
 }
 
@@ -967,6 +1035,12 @@ async function updateNote(
     scope?: UpdateScope;
     profile?: ProfileSelector;
     beforeWrite?: () => void;
+    /**
+     * The initiating batch's retained outcomes. Omitted, this update opens its
+     * own scope for the note it writes and the Child Notes its template
+     * imports, then releases it once they settle.
+     */
+    outcomes?: ExcerptOutcomeScope;
   },
 ): Promise<UpdateResult> {
   const { indexedKey, scope = "full" } = options;
@@ -1007,13 +1081,25 @@ async function updateNote(
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
-  const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
-    client: lease.client,
-    attachmentImport,
-    sourcePath: file.path,
-    settings: profile.settings,
-  });
-  return applyManagedUpdate(ctx, file, {
+  await using stack = new AsyncDisposableStack();
+  // One initiating batch: this note's own excerpts and the Child Notes it
+  // imports share one retention until both settle.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+  const { context, noteImport, excerptImages } = await contextForIndexedKey(
+    ctx,
+    indexedKey,
+    {
+      client: lease.client,
+      attachmentImport,
+      sourcePath: file.path,
+      settings: profile.settings,
+      previousNote: scope === "full" ? file : undefined,
+      outcomes,
+    },
+  );
+  // Awaited inside the retention's scope: returning the pending update would
+  // release it before the Child Note imports resolved their excerpts.
+  return await applyManagedUpdate(ctx, file, {
     context,
     attachmentImport,
     noteImport,
@@ -1022,6 +1108,7 @@ async function updateNote(
     profile,
     document,
     beforeWrite: options.beforeWrite,
+    excerptImages,
   });
 }
 
@@ -1298,18 +1385,34 @@ async function writeNoteUpdate(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
+  await using stack = new AsyncDisposableStack();
+  // Without a batch above it, this update is its own initiating batch: its own
+  // excerpts and the Child Notes it imports share this retention.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
   const noteImport = await ctx.noteImport.prepare({
     client: options.client,
     sourcePath: file.path,
     settings: profile.settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
+    outcomes,
   });
+  const excerptImages =
+    options.scope !== "metadata"
+      ? ctx.excerptImages?.({
+          client: options.client,
+          notePath: file.path,
+          settings: profile.settings,
+          previousNote: file,
+          outcomes,
+        })
+      : undefined;
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport,
     noteImport,
     settings: profile.settings,
     sourcePath: file.path,
+    excerptImages,
   });
   const context = fetchNoteContext(options.client, options.item, {
     resolvers,
@@ -1318,14 +1421,18 @@ async function writeNoteUpdate(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
-  return applyManagedUpdate(ctx, file, {
+  // Awaited inside the scope: returning the pending update would release the
+  // retention before its Child Note imports resolved their excerpts.
+  return await applyManagedUpdate(ctx, file, {
     context,
     attachmentImport,
     noteImport,
     itemKey: options.item.indexedKey,
+    reportExcerpts: options.reportExcerpts,
     scope: options.scope ?? "full",
     profile,
     document,
+    excerptImages,
   });
 }
 
@@ -1349,18 +1456,11 @@ async function applyManagedUpdate(
     profile: ResolvedProfile;
     document: ResolvedLiteratureNoteTemplate | undefined;
     beforeWrite?: () => void;
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
   },
 ): Promise<UpdateResult> {
-  const {
-    context,
-    attachmentImport,
-    noteImport,
-    itemKey,
-    scope,
-    profile,
-    document,
-    beforeWrite,
-  } = input;
+  const { context, itemKey, scope, profile, document, beforeWrite } = input;
   const prepared = prepareFrontmatter({
     context,
     itemKey,
@@ -1369,6 +1469,7 @@ async function applyManagedUpdate(
   });
   if ("diagnostic" in prepared)
     return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  await input.excerptImages?.prepare();
   const result =
     scope === "full"
       ? document
@@ -1388,7 +1489,7 @@ async function applyManagedUpdate(
     beforeWrite,
   });
 
-  await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  await flushNoteImports(ctx, input);
 
   logger.debug("Updated literature note", {
     path: file.path,
@@ -1435,16 +1536,16 @@ async function replaceManagedBody(
   },
 ): Promise<UpdateResult> {
   const { context, itemKey, renderRegion } = input;
+  const original = await ctx.app.vault.read(file);
+  if (!replaceManagedRegion(original, () => "").replaced) return NO_BODY_UPDATE;
+  const region = renderRegion
+    ? renderRegion()
+    : ctx.template.render("content", context);
   let replaced = false;
   let duplicateCount = 0;
   await ctx.app.vault.process(file, (content) => {
     input.beforeWrite?.();
-    // replaceManagedRegion only invokes the provider when a region exists,
-    // so rendering `content` — and the attachment imports its lazy imgLink
-    // closures queue as a side effect — is skipped when there is no region.
-    const result = replaceManagedRegion(content, () =>
-      renderRegion ? renderRegion() : ctx.template.render("content", context),
-    );
+    const result = replaceManagedRegion(content, () => region);
     replaced = result.replaced;
     duplicateCount = result.duplicateCount;
     return result.content;
@@ -1460,11 +1561,24 @@ async function replaceManagedBody(
   return { bodyUpdated: replaced, duplicateRegionCount: duplicateCount };
 }
 
+/** What an overwrite writes, and the batch above it when there is one. */
+interface OverwriteNoteOptions {
+  /** The Indexed Key of the Zotero item the note is stamped for. */
+  indexedKey: string;
+  /**
+   * The initiating batch's retained outcomes. Omitted, this overwrite opens its
+   * own scope for the note it writes and the Child Notes its template imports,
+   * then releases it once they settle.
+   */
+  outcomes?: ExcerptOutcomeScope;
+}
+
 async function overwriteNote(
   ctx: OpsContext,
   file: TFile,
-  indexedKey: string,
+  options: OverwriteNoteOptions,
 ): Promise<UpdateResult> {
+  const { indexedKey } = options;
   // Settle readiness and prepare the attachment handle before pinning the
   // client, so the lease (an auto-refresh gate) spans only the DB reads, the
   // vault writes, and the child-note import flush — not the warm-up awaits.
@@ -1486,12 +1600,22 @@ async function overwriteNote(
   }
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
-  const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
-    client: lease.client,
-    attachmentImport,
-    sourcePath: file.path,
-    settings: profile.settings,
-  });
+  await using stack = new AsyncDisposableStack();
+  // One initiating batch: this note's own excerpts and the Child Notes it
+  // imports share one retention until both settle.
+  const outcomes = resolveOutcomeScope(options.outcomes, stack);
+  const { context, noteImport, excerptImages } = await contextForIndexedKey(
+    ctx,
+    indexedKey,
+    {
+      client: lease.client,
+      attachmentImport,
+      sourcePath: file.path,
+      settings: profile.settings,
+      previousNote: file,
+      outcomes,
+    },
+  );
   const prepared = prepareFrontmatter({
     context,
     itemKey: indexedKey,
@@ -1500,6 +1624,7 @@ async function overwriteNote(
   });
   if ("diagnostic" in prepared)
     return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  await excerptImages?.prepare();
   // The body renders before either write, so a render that raises — a call to
   // a Shared Partial the vault holds no document for — leaves the note whole.
   const body = document
@@ -1516,12 +1641,46 @@ async function overwriteNote(
     return `${prefix}${body}`;
   });
 
-  await Promise.all([attachmentImport.flush(), noteImport.flush()]);
+  await flushNoteImports(ctx, { attachmentImport, noteImport, excerptImages });
   logger.info("Overwrote literature note", {
     path: file.path,
     itemKey: indexedKey,
   });
   return { bodyUpdated: true, duplicateRegionCount: 0 };
+}
+
+function collectNoteExcerpts(
+  ctx: OpsContext,
+  input: {
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+) {
+  const reports = collectExcerptSummary(
+    input.reportExcerpts ??
+      ((summary) => ctx.events.emit("excerpt-images-reported", summary)),
+  );
+  const summary = input.excerptImages?.summary();
+  if (summary) reports.add(summary);
+  return reports;
+}
+
+async function flushNoteImports(
+  ctx: OpsContext,
+  input: {
+    attachmentImport: Pick<AttachmentImport, "flush">;
+    noteImport: Pick<NoteImport, "flush">;
+    excerptImages?: PreparedExcerpts;
+    reportExcerpts?: (summary: ExcerptSummary) => void;
+  },
+): Promise<void> {
+  using reports = collectNoteExcerpts(ctx, input);
+  const flushes = await Promise.allSettled([
+    input.attachmentImport.flush(),
+    input.noteImport.flush(reports.add),
+  ]);
+  for (const result of flushes)
+    if (result.status === "rejected") throw result.reason;
 }
 
 /**
@@ -1652,8 +1811,15 @@ async function contextForIndexedKey(
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     sourcePath: string;
     settings: Readonly<Settings>;
+    previousNote?: TFile;
+    /** The initiating batch's retained outcomes, shared with its Child Notes. */
+    outcomes?: ExcerptOutcomeScope;
   },
-): Promise<{ context: NoteTemplateContext; noteImport: NoteImport }> {
+): Promise<{
+  context: NoteTemplateContext;
+  noteImport: NoteImport;
+  excerptImages?: PreparedExcerpts;
+}> {
   const { client, sourcePath, settings } = options;
   const parsed = resolveIndexedKeyLibrary(client, indexedKey);
   if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
@@ -1664,12 +1830,23 @@ async function contextForIndexedKey(
     client,
     sourcePath,
     settings,
+    outcomes: options.outcomes,
   });
+  const excerptImages = options.previousNote
+    ? ctx.excerptImages?.({
+        client,
+        notePath: sourcePath,
+        settings,
+        previousNote: options.previousNote,
+        outcomes: options.outcomes,
+      })
+    : undefined;
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport: options.attachmentImport,
     noteImport,
     settings,
     sourcePath,
+    excerptImages,
   });
   const context = fetchNoteContext(client, item, {
     resolvers,
@@ -1677,7 +1854,7 @@ async function contextForIndexedKey(
     collectionCache: new CollectionCache(),
     username: getZoteroIdentity(client).username,
   });
-  return { context, noteImport };
+  return { context, noteImport, excerptImages };
 }
 
 /** Write one already-prepared Managed Frontmatter patch into the note's

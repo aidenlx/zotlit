@@ -1,43 +1,33 @@
-import { useContext, useMemo, useState } from "react";
+import type { IconName } from "obsidian";
+import {
+  useContext,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { RefObject } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
-import { IconButton } from "@/components/obsidian/icon-button";
-import { Menu } from "@/components/obsidian/menu";
 import { SearchInput } from "@/components/obsidian/search-input";
-import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
-import type { AnnotActions } from "./actions";
 import { Annotation } from "./Annotation";
-import { CapabilitySlot } from "./capability-slot";
-import { uncertainCard } from "./card-conflict";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
-import {
-  annotViewBody,
-  attachmentLine,
-  conditionLines,
-  followModeIcon,
-  followModeLabel,
-  followModeMenu,
-  identityLabel,
-  sourceTooltip,
-} from "./presentation";
+import { annotViewBody, headerShape } from "./presentation";
 import type {
   AnnotViewBody,
-  AttachmentLine as AttachmentSlot,
   EmptyStateAction,
-  FollowMenuAction,
-  FollowMenuEntry,
+  HeaderShape,
 } from "./presentation";
 import {
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
   useSetFilterQuery,
-  useSetSelectedAttachmentKey,
   useToggleSearchOpen,
 } from "./store";
 
@@ -47,24 +37,34 @@ import {
  * selector that builds one on every call never settles. So each is built from
  * the slices it depends on and held while those are unchanged.
  */
-function useFollowMenu(): FollowMenuEntry[] {
-  const followMode = useAnnotStore((s) => s.followMode);
-  const pinnable = useAnnotStore((s) => s.pinnable);
-  const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
-  return useMemo(
-    () => followModeMenu({ followMode, pinnable, selectedAttachmentKey }),
-    [followMode, pinnable, selectedAttachmentKey],
-  );
-}
-
-function useAttachmentSlot(): AttachmentSlot {
+function useHeaderShape(): HeaderShape {
   const attachments = useAnnotStore((s) => s.attachments);
   const selectedAttachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
   const attachmentLock = useAnnotStore((s) => s.attachmentLock);
+  const capability = useAnnotStore((s) => s.capability);
+  const followMode = useAnnotStore((s) => s.followMode);
+  const itemDisplay = useAnnotStore((s) => s.itemDisplay);
+  const zoteroReaderClosed = useAnnotStore((s) => s.zoteroReaderClosed);
   return useMemo(
     () =>
-      attachmentLine({ attachments, selectedAttachmentKey, attachmentLock }),
-    [attachments, selectedAttachmentKey, attachmentLock],
+      headerShape({
+        attachments,
+        selectedAttachmentKey,
+        attachmentLock,
+        capability,
+        followMode,
+        itemDisplay,
+        zoteroReaderClosed,
+      }),
+    [
+      attachments,
+      selectedAttachmentKey,
+      attachmentLock,
+      capability,
+      followMode,
+      itemDisplay,
+      zoteroReaderClosed,
+    ],
   );
 }
 
@@ -87,42 +87,35 @@ function useBody(): AnnotViewBody {
   );
 }
 
-function useConditionLines(): string[] {
-  const annotationSource = useAnnotStore((s) => s.annotationSource);
-  const attachments = useAnnotStore((s) => s.attachments);
-  const followMode = useAnnotStore((s) => s.followMode);
-  const zoteroReaderClosed = useAnnotStore((s) => s.zoteroReaderClosed);
-  return useMemo(
-    () =>
-      conditionLines({
-        annotationSource,
-        attachments,
-        followMode,
-        zoteroReaderClosed,
-      }),
-    [annotationSource, attachments, followMode, zoteroReaderClosed],
-  );
-}
-
 export function AnnotView() {
   const searchOpen = useAnnotStore((s) => s.searchOpen);
   const body = useBody();
+  /**
+   * Collapse is this view's own display state rather than part of the filter:
+   * nothing outside the pane reads it and nothing persists it, so it stays
+   * here and reaches the control row as a prop.
+   */
   const [collapsed, setCollapsed] = useState(true);
+  const searchBarId = useId();
+  /** Where Escape in the search bar sends focus, the button that opened it. */
+  const searchButtonRef = useRef<HTMLDivElement>(null);
 
   const hasItem = body.kind === "list" || body.kind === "loading";
 
   return (
     <div className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
-      <Toolbar
-        hasItem={hasItem}
-        collapsed={collapsed}
-        onToggleCollapsed={() => setCollapsed((c) => !c)}
-      />
-      <ItemIdentityLabel />
-      <AttachmentLine />
-      <ConditionLines />
-      {hasItem && searchOpen && <SearchRow />}
-      {hasItem && <FilterBar />}
+      <AnnotHeader />
+      {hasItem && (
+        <FilterBar
+          searchBarId={searchBarId}
+          searchButtonRef={searchButtonRef}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((c) => !c)}
+        />
+      )}
+      {hasItem && searchOpen && (
+        <SearchRow id={searchBarId} searchButtonRef={searchButtonRef} />
+      )}
       {body.kind === "list" ? (
         <AnnotList collapsed={collapsed} />
       ) : body.kind === "loading" ? (
@@ -136,210 +129,114 @@ export function AnnotView() {
   );
 }
 
-interface ToolbarProps {
-  hasItem: boolean;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
-}
-
-/** `[mode ▾] [capability slot] [collapse/expand] [search]`. */
-function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
-  const searchOpen = useAnnotStore((s) => s.searchOpen);
-  const toggleSearchOpen = useToggleSearchOpen();
-
-  return (
-    <SidebarToolbar className="zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
-      <SidebarToolbar.Actions className="zt:@sm:w-auto zt:@sm:shrink-0">
-        <FollowModeMenu />
-        <CapabilitySlot />
-        {hasItem && (
-          <>
-            <IconButton
-              icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
-              onClick={onToggleCollapsed}
-              {...tooltipAttrs(
-                collapsed
-                  ? m.annot_view_expand_tooltip()
-                  : m.annot_view_collapse_tooltip(),
-              )}
-            />
-            <IconButton
-              icon="search"
-              active={searchOpen}
-              onClick={toggleSearchOpen}
-              {...tooltipAttrs(m.annot_view_search_tooltip())}
-            />
-          </>
-        )}
-      </SidebarToolbar.Actions>
-    </SidebarToolbar>
-  );
-}
-
-/** Runs one entry of the Follow Mode menu against the view's actions. */
-function runMenuAction(actions: AnnotActions, action: FollowMenuAction): void {
-  switch (action) {
-    case "pin-current-item":
-      actions.onPinCurrentItem();
-      return;
-    case "unpin":
-      actions.onUnpin();
-      return;
-    case "choose-item":
-      actions.onPinItem();
-  }
-}
-
 /**
- * The one button that changes the Follow Mode, beside the native pane menu and
- * the five commands. Nothing else writes the mode, and the entries it renders
- * are the ones the pane menu renders.
+ * The header block: one press target opening one grouped menu, in the two
+ * shapes `headerShape` leaves it. Everything it reports — the mode, the
+ * Attachment count, the read-only state, a closed reader — is inert text
+ * inside that one target, so the block takes one hover shape and one focus
+ * stop however much it has to say.
  *
- * @see apps/obsidian/docs/adr/0041-the-annotation-view-changes-its-follow-mode-only-on-a-user-gesture.md
+ * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
  */
-function FollowModeMenu() {
+function AnnotHeader() {
   const actions = useContext(AnnotActionsContext);
-  const followMode = useAnnotStore((s) => s.followMode);
-  const entries = useFollowMenu();
-  const modes = entries.filter((entry) => entry.kind === "mode");
-  const actionEntries = entries.filter((entry) => entry.kind === "action");
+  const shape = useHeaderShape();
+  const labelId = useId();
 
   return (
-    <Menu.Root>
-      <Menu.Trigger
-        className="clickable-icon zt:flex zt:items-center zt:gap-0.5"
-        {...tooltipAttrs(followModeLabel(followMode))}
+    <div className="zt:px-2 zt:pt-2">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-labelledby={labelId}
+        onClick={(evt) => actions.onHeaderMenu(evt)}
+        className="zt-annot-header zt:inline-flex zt:max-w-full zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
       >
-        <Icon name={followModeIcon(followMode)} />
-        <Icon name="chevron-down" size={12} />
-      </Menu.Trigger>
-      <Menu.Content>
-        <Menu.RadioGroup
-          value={followMode}
-          onValueChange={(next) => {
-            const select = modes.find((entry) => entry.mode === next)?.select;
-            if (select) actions.onSetFollowMode(select);
-          }}
-        >
-          {modes.map((entry) => (
-            <Menu.RadioItem key={entry.mode} value={entry.mode}>
-              {entry.label}
-            </Menu.RadioItem>
-          ))}
-        </Menu.RadioGroup>
-        <Menu.Separator />
-        <Menu.Group>
-          {actionEntries.map((entry) => (
-            <Menu.Item
-              key={entry.action}
-              icon={entry.icon}
-              disabled={entry.reason !== null}
-              reason={entry.reason ?? undefined}
-              onClick={() => runMenuAction(actions, entry.action)}
-            >
-              {entry.label}
-            </Menu.Item>
-          ))}
-        </Menu.Group>
-      </Menu.Content>
-    </Menu.Root>
-  );
-}
-
-/**
- * The Item's title and creators, shown only where nothing else on screen names
- * the Item — so never while the view follows the active tab.
- */
-function ItemIdentityLabel() {
-  const label = useAnnotStore(identityLabel);
-  if (label === null) return null;
-
-  return (
-    <div className="zt:truncate zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground">
-      {label}
+        {/* The name the block promises assistive technology, held apart from
+            the words on screen: an `aria-label` would reach the pointer too,
+            and Obsidian would draw the whole sentence as a hover tooltip.
+            @see apps/obsidian/policies/tooltips.md */}
+        <span id={labelId} className="zt:sr-only">
+          {shape.label}
+        </span>
+        <span className="zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5">
+          {shape.kind === "masthead" ? (
+            <Masthead shape={shape} />
+          ) : (
+            <StatusBar shape={shape} />
+          )}
+        </span>
+        {/* The chevron belongs to the block, not to any word in it: its own
+            inline-end lane beside the text, so it stays by the words however
+            wide the pane grows, and no wrapped byline segment runs under it. */}
+        <ChromeIcon name="chevron-down" />
+      </button>
     </div>
   );
 }
 
-/**
- * The Attachment on screen: a picker while the choice is the user's, and a
- * control disabled in place, with the reason, while a reader holds it.
- */
-function AttachmentLine() {
-  const line = useAttachmentSlot();
-  const setAttachmentKey = useSetSelectedAttachmentKey();
-
-  if (line.kind === "hidden") return null;
-  if (line.kind === "locked") {
-    return (
-      <div className="zt:px-3 zt:pb-1">
-        <div
-          className="clickable-icon zt:flex zt:w-full zt:items-center zt:text-xs"
-          aria-disabled="true"
-          {...tooltipAttrs(line.reason)}
-        >
-          <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
-            {line.label}
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  const selected = line.options.find(
-    (option) => option.key === line.selectedKey,
-  );
+/** The Item over its byline, with the Follow Mode carried by its glyph alone. */
+function Masthead({
+  shape,
+}: {
+  shape: Extract<HeaderShape, { kind: "masthead" }>;
+}) {
   return (
-    <div className="zt:px-3 zt:pb-1">
-      <Menu.Root>
-        <Menu.Trigger
-          className="clickable-icon zt:flex zt:w-full zt:items-center zt:gap-1 zt:text-xs"
-          {...tooltipAttrs(m.annot_view_attachment_tooltip())}
-        >
-          <span className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-left">
-            {selected?.label}
-          </span>
-          <Icon name="chevron-down" size={12} />
-        </Menu.Trigger>
-        <Menu.Content>
-          <Menu.RadioGroup
-            value={line.selectedKey}
-            onValueChange={setAttachmentKey}
-          >
-            {line.options.map((option) => (
-              <Menu.RadioItem key={option.key} value={option.key}>
-                {option.label}
-              </Menu.RadioItem>
-            ))}
-          </Menu.RadioGroup>
-        </Menu.Content>
-      </Menu.Root>
-    </div>
+    <>
+      <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1">
+        <ChromeIcon name={shape.modeIcon} />
+        <span className="zt:min-w-0 zt:text-sm zt:font-semibold zt:text-balance">
+          {shape.title}
+        </span>
+      </span>
+      {shape.byline.length > 0 && <Byline segments={shape.byline} />}
+    </>
+  );
+}
+
+/** The Follow Mode in full, with whatever the pane has to report after it. */
+function StatusBar({
+  shape,
+}: {
+  shape: Extract<HeaderShape, { kind: "status-bar" }>;
+}) {
+  return (
+    <span className="zt:flex zt:min-w-0 zt:items-center zt:gap-1">
+      <ChromeIcon name={shape.modeIcon} />
+      <Byline segments={[shape.modeLabel, ...shape.indicators]} />
+    </span>
   );
 }
 
 /**
- * What the list on screen cannot say for itself: its reader, and its source.
- *
- * The region is the source region as well, so it stands while a source is known
- * even where that source draws no line — under the Zotero Local API the words
- * "From Zotero" live in this tooltip alone.
+ * A glyph in the header's chrome: the mode's own icon and the block's
+ * chevron, at the `--icon-xs` Obsidian sets beside its own 13px text, in the
+ * byline's ink.
  */
-function ConditionLines() {
-  const lines = useConditionLines();
-  const annotationSource = useAnnotStore((s) => s.annotationSource);
-  const tooltip = sourceTooltip({ annotationSource });
-  if (lines.length === 0 && tooltip === null) return null;
-
+function ChromeIcon({ name }: { name: IconName }) {
   return (
-    <div
-      className="zt:flex zt:flex-col zt:gap-0.5 zt:px-3 zt:pb-1 zt:text-xs zt:text-muted-foreground"
-      {...(tooltip === null ? {} : tooltipAttrs(tooltip))}
-    >
-      {lines.map((line) => (
-        <div key={line}>{line}</div>
+    <Icon
+      name={name}
+      size="var(--icon-xs)"
+      className="zt:shrink-0 zt:text-muted-foreground"
+    />
+  );
+}
+
+/**
+ * One line of quiet chrome, its segments divided by a separator each carries
+ * after itself — the last suppressed, so no separator can begin a wrapped line.
+ */
+function Byline({ segments }: { segments: string[] }) {
+  return (
+    <span className="zt:min-w-0 zt:text-xs zt:text-muted-foreground zt:tabular-nums">
+      {segments.map((segment, index) => (
+        <span key={segment}>
+          {segment}
+          {index < segments.length - 1 && " · "}
+        </span>
       ))}
-    </div>
+    </span>
   );
 }
 
@@ -352,11 +249,10 @@ function EmptyPane({
 }) {
   const actions = useContext(AnnotActionsContext);
   return (
-    <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
+    <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
       <div>{message}</div>
       {action && (
         <button
-          className="zt:underline"
           onClick={() =>
             action.action === "enable-live-updates"
               ? actions.onEnableLiveUpdates()
@@ -370,16 +266,57 @@ function EmptyPane({
   );
 }
 
-function SearchRow() {
+/**
+ * The search bar, revealed under the control row by the search toggle that
+ * names it. Escape leaves it exactly as the toggle does — closed, with the
+ * query cleared — and sends focus back to the button that opened it, so the
+ * keyboard never lands nowhere. The press stops there: Obsidian's own Escape
+ * would otherwise act on the pane behind it.
+ *
+ * The field takes `type="text"` for that: a `search` input keeps the browser's
+ * own Escape-to-clear while it holds a query, and this surface would never see
+ * the key.
+ */
+function SearchRow({
+  id,
+  searchButtonRef,
+}: {
+  id: string;
+  searchButtonRef: RefObject<HTMLDivElement | null>;
+}) {
   const filterQuery = useAnnotStore((s) => s.filterQuery);
   const setFilterQuery = useSetFilterQuery();
+  const toggleSearchOpen = useToggleSearchOpen();
+  // Preact renders `autoFocus` as the HTML attribute, which only acts at page
+  // load; a field the toggle reveals is focused by hand once it is mounted. A
+  // layout effect runs at commit, where a passive effect waits for a frame the
+  // window may not paint.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+  useLayoutEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   return (
-    <div className="zt:px-3 zt:pb-1">
+    <div id={id} className="zt:px-2 zt:pt-1">
+      {/* The field's own name, in the words the toggle that reveals it carries:
+          a placeholder is not a name, and no visible label has room in a row
+          this dense. */}
+      <label htmlFor={inputId} className="zt:sr-only">
+        {m.annot_view_search_tooltip()}
+      </label>
       <SearchInput
+        id={inputId}
+        ref={inputRef}
         value={filterQuery}
         onChange={setFilterQuery}
-        autoFocus
+        type="text"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          toggleSearchOpen();
+          searchButtonRef.current?.focus();
+        }}
         placeholder={m.annot_view_search_placeholder()}
         clearLabel={m.annot_view_clear_search()}
       />
@@ -399,82 +336,25 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
 
   if (isFilterActive(filter) && filtered.length === 0) {
     return (
-      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-1 zt:p-2">
+      <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-4 zt:p-2">
         <div>{m.annot_view_filter_no_match()}</div>
-        <button className="zt:underline" onClick={clearFilters}>
-          {m.annot_view_clear_filters()}
-        </button>
+        <button onClick={clearFilters}>{m.annot_view_clear_filters()}</button>
       </div>
     );
   }
 
   return (
-    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:pt-3 zt:pb-8 zt:text-xs">
-      <div className="zt:columns-1 zt:gap-2 zt:@md:columns-2 zt:@md:gap-3 zt:@2xl:columns-3 zt:@4xl:columns-4">
-        <UncertainCreateCards />
+    // A grid, never `columns`: a masonry column reads down its own length, so
+    // the page order the reader is scanning breaks the moment the pane widens.
+    // The tracks answer to the scroll box's own width through the container
+    // query on it, and `items-start` keeps each card the height of its own
+    // content rather than its row's.
+    <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3">
+      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
         {filtered.map((annot) => (
           <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
         ))}
       </div>
     </div>
   );
-}
-
-/**
- * The creates on this Attachment whose answer was lost, each as a badged card
- * carrying what it asked Zotero for. They stand above the list because they
- * have no Sort Index to place them by: Zotero never confirmed them.
- *
- * Nothing retries on its own — both verbs are the user's — and the cards are
- * in memory only, so a reload drops them and the re-read shows whichever
- * Annotations did land.
- *
- * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
- */
-function UncertainCreateCards() {
-  const actions = useContext(AnnotActionsContext);
-  const creates = useAnnotStore((s) => s.uncertainCreates);
-
-  return creates.map((create) => {
-    const card = uncertainCard(create.state, Temporal.Now.instant());
-    return (
-      <div
-        key={create.writeToken}
-        className="zt-annot-card zt:mb-2 zt:flex zt:break-inside-avoid zt:flex-col zt:gap-1 zt:overflow-hidden zt:rounded-sm zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2 zt:py-1.5 zt:@md:mb-3"
-      >
-        <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
-          <Icon name="alert-triangle" size={14} />
-          {card.title}
-        </div>
-        <div className="zt:text-muted-foreground">{card.detail}</div>
-        {create.draft.text !== "" && (
-          <blockquote
-            className="zt:border-l-2 zt:border-l-(--zt-annot-color) zt:pl-2 zt:leading-tight"
-            style={
-              { "--zt-annot-color": create.draft.color } as React.CSSProperties
-            }
-          >
-            {create.draft.text}
-          </blockquote>
-        )}
-        <div className="zt:flex zt:gap-2">
-          {card.actions.map((action) => (
-            <button
-              key={action.kind}
-              className="zt:underline"
-              aria-disabled={action.disabled || undefined}
-              disabled={action.disabled}
-              onClick={() =>
-                action.kind === "retry"
-                  ? actions.onRetryCreate(create.writeToken)
-                  : actions.onDiscardCreate(create.writeToken)
-              }
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  });
 }

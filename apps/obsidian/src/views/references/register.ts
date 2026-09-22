@@ -47,17 +47,13 @@ export function registerReferencesView(
     pandocEngine: deps.pandocEngine,
     bibliographyRender: deps.bibliographyRender,
     openSettings: () => {
-      revealSetting(
-        plugin.app,
-        plugin.manifest.id,
-        m.settings_citation_engine_name(),
-      );
+      revealSetting(plugin.app, plugin.manifest.id, "settings_citation_engine");
     },
     openStyleSettings: () => {
       revealSetting(
         plugin.app,
         plugin.manifest.id,
-        m.settings_citation_references_style_name(),
+        "settings_citation_references_style",
       );
     },
   };

@@ -496,11 +496,13 @@ Open this page from <SettingsPath page={m.settings_page_attachments()} />.
   <UiLabel name={m.settings_attachment_import_name()} /> is on.
 </Callout>
 
+Generated [excerpt images](/docs/concepts/excerpt-images) require <UiLabel name={m.settings_attachment_import_name()} />. When it is off, ZotLit creates no new excerpt files for notes. It keeps a verified existing image when possible; otherwise it writes an unavailable-image explanation and source link. The annotation view and its device cache work independently of this setting.
+
 ### Approved folders
 
 The folders ZotLit may copy attachments from, beyond Zotero's own storage folder, its annotation cache, and the linked-attachment base folder you set in Zotero. This setting protects imports of Zotero linked files. A linked file stays in an external folder instead of being copied into Zotero storage. See [Zotero's guide to linked files](https://www.zotero.org/support/attaching_files#adding_linked_files).
 
-This approval applies to imported content such as annotation images and images embedded in Child Notes. The ordinary attachment links in a Literature Note point to the original files and do not copy them.
+This approval applies to copied content such as images embedded in Child Notes. The ordinary attachment links in a Literature Note point to the original files and do not copy them.
 
 When imported content is outside all approved locations, ZotLit uses a `file://` URI. A notice reports how many files it skipped, lists the unapproved source folders, and links to ZotLit settings.
 
@@ -596,10 +598,11 @@ Both actions are disabled while <UiLabel name={m.settings_log_to_file_name()} />
 
 ### Recovery [#recovery]
 
-| Label                                                     | Key  | Control                                                            | Default | Dependency | Storage |
-| --------------------------------------------------------- | ---- | ------------------------------------------------------------------ | ------- | ---------- | ------- |
-| <UiLabel name={m.settings_citation_index_reset_name()} /> | None | <UiLabel name={m.settings_citation_index_reset_action()} /> action | None    | None       | None    |
-| <UiLabel name={m.settings_language_pack_reset_name()} />  | None | <UiLabel name={m.settings_language_pack_reset_action()} /> action  | None    | None       | None    |
+| Label                                                     | Key  | Control                                                            | Default | Dependency | Storage              |
+| --------------------------------------------------------- | ---- | ------------------------------------------------------------------ | ------- | ---------- | -------------------- |
+| <UiLabel name={m.settings_citation_index_reset_name()} /> | None | <UiLabel name={m.settings_citation_index_reset_action()} /> action | None    | None       | None                 |
+| <UiLabel name={m.settings_language_pack_reset_name()} />  | None | <UiLabel name={m.settings_language_pack_reset_action()} /> action  | None    | None       | None                 |
+| <UiLabel name={m.settings_excerpt_cache_clear_name()} />  | None | <UiLabel name={m.settings_excerpt_cache_clear_action()} /> action  | None    | None       | Per device and vault |
 
 <UiLabel name={m.settings_citation_index_reset_name()} /> clears the stored
 citation key scans and reads your notes again. ZotLit keeps a scan per note so
@@ -613,6 +616,15 @@ language packs stored on this device and forgets whether ZotLit already offered
 them. The pack loaded at startup stays in place until you restart Obsidian,
 after which ZotLit offers to install it again. Use it when translated text looks
 wrong or outdated.
+
+#### Excerpt image cache [#excerpt-image-cache]
+
+<UiLabel name={m.settings_excerpt_cache_clear_name()} /> removes ZotLit's cached
+excerpt images for this vault on this device. Select
+<UiLabel name={m.settings_excerpt_cache_clear_action()} /> in the confirmation
+to clear it. Saved note images and Zotero's image cache remain unchanged.
+
+The cache survives restarts and has a 256 MiB limit. ZotLit removes the least recently used entries when it needs space. Cleared images are generated again when requested. See [Cache and freshness](/docs/concepts/excerpt-images#freshness) for the PDF file checks and their limits.
 
 ## Where settings moved [#moved]
 

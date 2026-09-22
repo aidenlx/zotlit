@@ -14,6 +14,13 @@ import { getLogger } from "@/lib/log";
 const logger = getLogger("pdf-annotation-editor");
 
 /**
+ * Obsidian's own view type for a PDF, in the vault and outside it alike. Public
+ * API, unlike the members below; it lives here because every module that reads
+ * this reader needs the same spelling of it.
+ */
+export const PDF_VIEW_TYPE = "pdf";
+
+/**
  * The eleven private members ZotLit reads inside Obsidian's PDF reader, as the
  * seam re-verification numbers them. Each is guarded structurally once per
  * binding, so an Obsidian upgrade is re-verified in this one place.

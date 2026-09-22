@@ -1,20 +1,33 @@
 // Minimal Obsidian CLI client for the e2e suite. Mirrors the `=> `-prefixed
-// output convention and the "no timeout — bounded polling is the caller's
-// job" caveat documented for `obEval` in
+// output convention and bounded polling documented for `obEval` in
 // packages/scripts/scripts/obsidian-vault.ts, whose own header carries the
-// routing and transport background. Not importing that script directly: it has
-// no public exports, it's a script, not a library.
+// routing and transport background. The call itself comes from
+// `@zotlit/scripts/obsidian-cli`, the same bounded client the scripts use, so
+// one unanswered call cannot strand a run.
 
-import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+import { createObsidianCall } from "@zotlit/scripts/obsidian-cli";
 
-/** The Obsidian CLI always exits 0 — failures come back only as output text. */
-export async function cli(args: string[]): Promise<string> {
-  const result = await execFileAsync("obsidian", args, { windowsHide: true });
-  return `${result.stdout}${result.stderr}`.trim();
+const CLI_TIMEOUT_MS = 15_000;
+
+const boundedCall = createObsidianCall({ timeoutMs: CLI_TIMEOUT_MS });
+
+/**
+ * The Obsidian CLI always exits 0 — failures come back only as output text.
+ *
+ * A single `eval` can hang while its window keeps answering every other call,
+ * and the CLI process then outlives SIGTERM. Unbounded, that stalled one test
+ * per run until Vitest's own timeout, on a different test each run. The
+ * bounded call turns it into a named failure in {@link CLI_TIMEOUT_MS}.
+ *
+ * `timeoutMs` raises that deadline for one call; the bound itself stays, so a
+ * longer measurement is still answered or reported unreachable.
+ */
+export function cli(args: string[], timeoutMs?: number): Promise<string> {
+  const call =
+    timeoutMs === undefined ? boundedCall : createObsidianCall({ timeoutMs });
+  return call(args);
 }
 
 /**
@@ -33,11 +46,22 @@ function parseReply(text: string): string {
 
 /**
  * Run JavaScript in `vaultId`'s window. `vault=<id>` must be the first argv
- * token. No timeout on the reply, so every caller bounds its own wait with
- * {@link waitFor}.
+ * token. The process timeout bounds a missing reply; callers use
+ * {@link waitFor} when they need to poll application state.
+ *
+ * `timeoutMs` is for a call that is one measurement rather than one question —
+ * a batch the app answers when it has done the work — where the default
+ * deadline would report a loaded machine as a failed measurement.
  */
-export async function obEval(vaultId: string, code: string): Promise<string> {
-  const text = await cli([`vault=${vaultId}`, "eval", `code=${code}`]);
+export async function obEval(
+  vaultId: string,
+  code: string,
+  timeoutMs?: number,
+): Promise<string> {
+  const text = await cli(
+    [`vault=${vaultId}`, "eval", `code=${code}`],
+    timeoutMs,
+  );
   if (text === "") return "";
   return parseReply(text);
 }
@@ -74,6 +98,11 @@ export async function waitFor(
  * mirrors the `.catch(() => "")` around the "loaded" check in
  * obsidian-vault.ts's own `create()` — so a failed parse here means "not
  * ready yet", not "give up".
+ *
+ * An unanswered call counts as "not ready yet" too. The stall is per call,
+ * not per window: a traced run showed one `navigateToSearchResult` never
+ * answer while the identical call on the same vault answered in 12 ms right
+ * afterwards. So the deadline ends the call, and the next try goes on.
  */
 export async function obEvalUntil(
   vaultId: string,

@@ -7,6 +7,7 @@ import {
   formatIndexedKey,
   isItemKey,
   parseAnnotationPosition,
+  tagTypeToName,
 } from "@zotlit/db";
 import type {
   AnnotationPosition,
@@ -160,16 +161,14 @@ export interface LocalApiAnnotation {
   parentKey: string;
   /** Zotero's printed-page label, as Zotero stored it. */
   pageLabel: string | null;
-  /**
-   * When Zotero first stored this Annotation, in ISO 8601 UTC. It never moves
-   * afterwards, which is what makes it the window an Uncertain Create is
-   * matched inside. `null` for an answer that named none.
-   *
-   * @see apps/obsidian/docs/adr/0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md
-   */
+  /** When Zotero first stored this Annotation, or `null` where it named none. */
   dateAdded: string | null;
+  dateModified?: string | null;
+  authorName?: string | null;
+  isExternal?: boolean | null;
   /** The Annotation's Zotero tags, by name, in the order Zotero answered them. */
   tags: string[];
+  tagDetails?: { name: string; type: "manual" | "auto" | "unknown" }[];
 }
 
 /**
@@ -289,7 +288,9 @@ export function readAnnotationItem(
 }
 
 /**
- * The bare item key one create answered, or why its answer cannot be believed.
+ * The complete Annotation one create answered, or why its answer cannot be
+ * believed. The full record remains usable if a later collection refresh
+ * cannot reach Zotero.
  *
  * A `200` still carries object-level outcomes, so the body is read object by
  * object: any entry under `failed` fails the create, and the one object that
@@ -302,7 +303,7 @@ export function readAnnotationItem(
 export function readCreateResult(
   body: string,
   expected: { parentKey: string; type: ResolvedAnnotationTypeName },
-): LocalApiResult<string> {
+): LocalApiResult<LocalApiAnnotation> {
   const parsed = v.safeParse(createResultSchema, parseJson(body));
   if (!parsed.success) {
     return { failure: invalid(`create result: ${issueOf(parsed.issues)}`) };
@@ -324,17 +325,14 @@ export function readCreateResult(
   if (!isItemKey(key) || created.key !== key || created.data.key !== key) {
     return { failure: invalid(`create answered key ${created.key}`) };
   }
-  if (created.data.parentItem !== expected.parentKey) {
+  const annotation = toAnnotation(created, expected.parentKey);
+  if ("failure" in annotation) return annotation;
+  if (annotation.value.type !== expected.type) {
     return {
-      failure: invalid(`create answered parent ${created.data.parentItem}`),
+      failure: invalid(`create answered ${annotation.value.type}`),
     };
   }
-  if (created.data.annotationType !== expected.type) {
-    return {
-      failure: invalid(`create answered ${created.data.annotationType}`),
-    };
-  }
-  return { value: key };
+  return annotation;
 }
 
 /** The library route one Indexed Key names — `users/0`, or one group's. */
@@ -386,8 +384,12 @@ export function readGrant(body: string): LocalApiResult<AuthorizationGrant> {
  * @see https://github.com/zotero/zotero/blob/22f08d1ceddc8bad5718b3bc6eee9d3ae5dccc2c/chrome/content/zotero/xpcom/server/server_localAPI.js#L388-L410
  */
 export function totalResults(headers: Headers): number | null {
-  const total = Number(headers.get("total-results"));
-  return Number.isSafeInteger(total) && total >= 0 ? total : null;
+  const value = headers.get("total-results");
+  if (value === null || value.length === 0) return null;
+  const total = Number(value);
+  return Number.isSafeInteger(total) && total >= 0 && String(total) === value
+    ? total
+    : null;
 }
 
 /** Whether `value` is Zotero's 12-character server id. */
@@ -423,10 +425,14 @@ const itemSchema = v.object({
     annotationPosition: v.string(),
     annotationPageLabel: v.optional(v.string()),
     // Zotero writes `dateAdded` for every stored object, but an answer that
-    // omits it is still a believable Annotation: only the Uncertain Create
-    // reconciliation reads it, and it answers "no match" without one.
+    // omits it is still a believable Annotation.
     dateAdded: v.optional(v.string()),
-    tags: v.optional(v.array(v.object({ tag: v.string() }))),
+    dateModified: v.optional(v.string()),
+    annotationAuthorName: v.optional(v.string()),
+    annotationIsExternal: v.optional(v.boolean()),
+    tags: v.optional(
+      v.array(v.object({ tag: v.string(), type: v.optional(v.number(), 0) })),
+    ),
   }),
 });
 
@@ -442,17 +448,7 @@ const itemPageSchema = v.array(itemSchema);
  * unreadable answer over a field the caller never looks at.
  */
 const createResultSchema = v.object({
-  successful: v.record(
-    v.string(),
-    v.object({
-      key: v.string(),
-      data: v.object({
-        key: v.string(),
-        parentItem: v.string(),
-        annotationType: v.picklist(ANNOTATION_TYPES),
-      }),
-    }),
-  ),
+  successful: v.record(v.string(), itemSchema),
   success: v.record(v.string(), v.string()),
   failed: v.record(
     v.string(),
@@ -513,7 +509,17 @@ function toAnnotation(
       parentKey: parent,
       pageLabel: emptyToNull(data.annotationPageLabel),
       dateAdded: emptyToNull(data.dateAdded),
+      dateModified: emptyToNull(data.dateModified),
+      authorName: emptyToNull(data.annotationAuthorName),
+      isExternal: data.annotationIsExternal ?? null,
       tags: (data.tags ?? []).map((entry) => entry.tag),
+      tagDetails: (data.tags ?? []).map((entry) => ({
+        name: entry.tag,
+        type:
+          entry.type === 0 || entry.type === 1
+            ? tagTypeToName(entry.type)
+            : "unknown",
+      })),
     },
   };
 }

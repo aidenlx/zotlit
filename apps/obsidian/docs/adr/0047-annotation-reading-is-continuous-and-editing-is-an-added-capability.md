@@ -1,0 +1,15 @@
+# Annotation reading is continuous and editing is an added capability
+
+Zotero is the source of truth for Annotation existence and saved content. The Annotation View and PDF reader present one annotation collection that works from local Zotero data with Zotero closed, including on a cold start. The database supplies standalone reads; the native Local API supplies live reads and writes when available. Both are internal paths for the same collection. This keeps reading available without making users manage data sources or a background Zotero process.
+
+Both surfaces consume the repository's published result. Refresh keeps the current content and interaction state until a complete replacement is ready. An older read cannot undo an acknowledged write.
+
+The repository prefers the native API for live reads. If it becomes unavailable, the current result stays visible while a database replacement is prepared. That replacement must belong to the same Zotero database and Library and cover acknowledged API writes. A failed refresh keeps the held result. Selecting another Zotero database establishes a separate collection and write authority.
+
+Core annotation reading, editing, and refresh work with the database and native Local API alone. Revalidate visible attachments when an Obsidian window gains focus, when an annotation surface becomes active, on explicit Refresh, and after ZotLit writes. The repository owns this operation and shares one refresh between surfaces showing the same Attachment. The current result stays visible during revalidation. The optional ZotLit Companion supplies notifications for prompt updates when data changes in Zotero. This keeps the core path event-driven; users who need ongoing external updates use the Companion. A successful API write is confirmed through the API without requiring a database snapshot to catch up first.
+
+Editing is an added capability, separate from reading. The Annotation View offers **Allow editing** only when the Zotero Local API is available and authorization is needed. Both annotation surfaces disable mutations until editing is available; reading actions, including copy and navigation, remain available. Disabled editing controls give a short reason, and settings provide setup guidance. Ordinary reading stays quiet during startup checks and connection failures, with no source label, permission warning, or capability spinner. A user-requested authorization has its own visible waiting state, shared with settings. [ADR 0038](0038-write-authorization-starts-only-from-a-user-gesture.md) defines this explicit authorization flow.
+
+This amends the source presentation in [ADR 0034](0034-the-annotation-source-is-atomic-per-attachment.md) and the always-present capability indicator in [ADR 0042](0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md). Snapshot acquisition, revision checks, and refresh wiring implement this contract. Draft and write behavior is recorded in [ADR 0048](0048-annotation-drafts-and-pending-writes-stay-in-memory.md).
+
+Implementation and acceptance criteria are specified in [Spec #1157](https://github.com/aidenlx/zotlit/issues/1157).

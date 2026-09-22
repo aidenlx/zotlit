@@ -36,7 +36,7 @@ Every style is a `zt:`-prefixed utility on the element that needs it; a styleshe
 
 ## Quick decision tree
 
-1. **A native component exists** → the React wrapper from `src/components/obsidian/`, or the imperative `obsidian` class in DOM-built UI (see **Native components**).
+1. **A native component exists** → the React wrapper from `src/components/obsidian/`, or the imperative `obsidian` class in DOM-built UI (see **Native components**). **A control that draws its own appearance is the exception** — a chip whose whole look is the caller's utilities, where the wrapper's supply, Obsidian's button box and its `mod-*` variants, is exactly what the chip takes back off. Build the bare element and record there why the wrapper would add nothing; `src/components/chooser.tsx`'s `Trigger` is the recorded case.
 2. **The value is only known at runtime** → the declaration stays in the class list and `style` carries the datum alone (see **Runtime values**).
 3. **Color** → a semantic token (`zt:text-muted`, `zt:bg-background`, `zt:text-accent-foreground`), never a raw palette one. For an RGB overlay, pair the `-rgb` variant: `rgba(var(--color-red-rgb), 0.2)`.
 4. **Spacing / size** → Tailwind's default scale (`zt:gap-2`, `zt:p-3`). Obsidian's `--size-4-N` are fixed 4px multiples no theme overrides, so they map 1:1.

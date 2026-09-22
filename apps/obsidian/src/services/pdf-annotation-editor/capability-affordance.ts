@@ -1,20 +1,17 @@
 // The Editing Capability inside Obsidian's PDF reader: what its toolbar draws,
 // and which keystroke counts as an edit gesture the block has to answer for.
 //
-// The node is a bare `clickable-icon` with layout utilities and no `.zt-root`,
-// so no preflight reaches Obsidian's own toolbar, and the whole surface is
-// vanilla DOM — the Annotation View renders the same copy table in Preact.
+// The status uses layout utilities without `.zt-root`, so preflight stays
+// outside Obsidian's toolbar. The Annotation View renders the same copy in Preact.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
-import { setIcon, setTooltip } from "obsidian";
+import { setIcon } from "obsidian";
 
 import { themeHook } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 
-import { renderIconButton } from "./icon-button";
-
-/** Layout only; Obsidian's `clickable-icon` owns the rest of the look. */
+/** Aligns the status icon and text within the native toolbar. */
 const LAYOUT_CLASSES = ["zt:flex", "zt:items-center", "zt:gap-1"];
 
 /**
@@ -42,55 +39,67 @@ export interface CapabilityAffordanceProps {
   capability: EditingCapability;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
-  /** The click: a Capability Probe, then the "Zotero editing" settings row. */
-  onActivate: () => void;
 }
 
 /**
- * Draws the affordance into the reader's right toolbar slot, building its node
- * on the first call and rewriting the contents on every call after — so a
- * caller redraws by calling again, once per capability change and once a second
- * while a cooldown counts down.
+ * Draws the pending-authorization status into the reader's right toolbar slot,
+ * building its node on the first call and rewriting the contents on every call
+ * after. Removes it when normal editing controls are available.
  *
  * @param slot the reader's right toolbar slot.
  * @returns the node it drew, so a caller can read back what is on screen.
  */
 export function renderCapabilityAffordance(
   slot: HTMLElement,
-  { capability, now, onActivate }: CapabilityAffordanceProps,
-): HTMLElement {
-  const { icon, tone, tooltip, spinning, countdown } =
-    editingCapabilityAffordance(capability, now);
-  // The button is built with the state it is about to show, and redrawn by
-  // rebuilding its contents: `setIcon` replaces the node's children, so the
-  // countdown is appended after it rather than patched.
+  { capability, now }: CapabilityAffordanceProps,
+): HTMLElement | null {
+  // Authorization is offered in the Annotation View and settings.
+  const affordance =
+    capability.kind === "authorizing" || capability.kind === "cooldown"
+      ? editingCapabilityAffordance(capability, now)
+      : null;
+  if (affordance === null) {
+    removeCapabilityAffordance(slot);
+    return null;
+  }
+  const { icon, tone, label, spinning, countdown } = affordance;
+  // The status is built with the state it is about to show, and redrawn by
+  // replacing the text beside Obsidian's icon.
   const held = affordanceIn(slot);
   const node =
     held ??
-    renderIconButton(
-      slot,
-      {
-        icon,
-        tooltip,
-        cls: [themeHook.pdfCapability, ...LAYOUT_CLASSES],
-      },
-      onActivate,
-    );
-
+    slot.createDiv({
+      cls: [
+        themeHook.pdfCapability,
+        ...LAYOUT_CLASSES,
+        "zt:text-muted-foreground",
+      ],
+      attr: { role: "status" },
+    });
+  if (!held) setIcon(node, icon);
   node.dataset.ztCapabilityTone = tone;
   node.classList.toggle("mod-warning", tone === "warning");
   if (spinning) node.setAttribute("aria-busy", "true");
   else node.removeAttribute("aria-busy");
 
   if (held) {
-    setTooltip(node, tooltip);
+    node
+      .querySelectorAll(
+        "[data-zt-capability-label], [data-zt-capability-countdown]",
+      )
+      .forEach((child) => child.remove());
     setIcon(node, icon);
   }
   if (spinning) node.querySelector("svg")?.classList.add("zt:animate-spin");
+  node.createSpan({
+    text: label,
+    attr: { "data-zt-capability-label": "" },
+  });
   if (countdown !== null) {
     node.createSpan({
       cls: "zt:text-xs zt:tabular-nums",
       text: String(countdown),
+      attr: { "data-zt-capability-countdown": "" },
     });
   }
   return node;
