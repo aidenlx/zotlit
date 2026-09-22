@@ -79,16 +79,12 @@
 }
 
 /* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
-   no utility can quiet it. The page label is a row of chrome that happens to
-   open Zotero: it takes the row's own muted ink, and the underline arrives on
-   hover as the theme's own link hover does. */
+   no utility can quiet it. The page chip is a row of chrome that happens to
+   open Zotero: it keeps the ink its utilities set, and its hover is the ring
+   of its own colour rather than the theme's link underline. */
 .zt-root a.zt-annot-page-link {
-  color: var(--text-muted);
+  color: inherit;
   text-decoration-line: none;
-}
-.zt-root a.zt-annot-page-link:hover {
-  color: var(--text-normal);
-  text-decoration-line: var(--link-decoration-hover);
 }
 
 /* The header block is one `<button>`, and Obsidian's own `button` rules are

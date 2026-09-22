@@ -2279,7 +2279,6 @@
   "annot_view_menu_delete": "删除标注",
   "annot_view_menu_insert": "插入到笔记",
   "annot_view_insert_no_note": "请先打开一篇笔记，再插入标注。",
-  "annot_view_card_show_in_reader": "在阅读器中显示",
   "annot_view_card_image_alt": "第{page}页的标注图像",
   "annot_view_card_image_alt_no_page": "标注图像",
   "annot_view_image_unavailable": "图像不可用",
