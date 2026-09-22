@@ -84,7 +84,7 @@ export function FilterBar({
     // The row's leading edge is the header button's: both sit in the same 8px
     // inline padding and both pull their first glyph 6px in, so the glyphs
     // share one edge.
-    <div className="zt:flex zt:shrink-0 zt:items-center zt:px-2 zt:pt-1 zt:text-sm">
+    <div className="zt:flex zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-y-1 zt:px-2 zt:pt-1 zt:text-sm">
       {swatchColors.length >= 1 && (
         <ColorChooser
           colors={swatchColors}
@@ -140,13 +140,15 @@ export function FilterBar({
 
 /**
  * The shape both Choosers hang under: Obsidian's own `clickable-icon` box, a
- * 16px glyph in 4px by 6px of padding, with the disclosure arrow after it.
+ * 16px glyph in 4px by 6px of padding, its parts on the 4px gap a text-icon
+ * button keeps, with the disclosure arrow after them. The box can shrink, so
+ * a tag name gives way before the count and the verbs after it are clipped.
  * The Chooser's stylesheet rolls its trigger back to the plugin's own layers,
  * which discards that box along with Obsidian's button rules, so the box is
  * drawn again here in utilities.
  */
 const filterTrigger =
-  "clickable-icon zt:inline-flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
+  "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
 
 /**
  * The trigger's disclosure arrow, at the `--icon-xs` Obsidian gives the
@@ -422,7 +424,7 @@ function TagChooser({
         {/* The full name is in the accessible name and in the list; the
             trigger spends a bounded share of the row on it. */}
         {shown.map((name) => (
-          <span key={name} className="zt:max-w-32 zt:truncate">
+          <span key={name} className="zt:max-w-32 zt:min-w-0 zt:truncate">
             {name}
           </span>
         ))}

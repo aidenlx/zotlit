@@ -474,7 +474,10 @@ function Popup({ className, style, ref, ...rest }: ChooserPopupProps) {
       className={cn(
         themeHook.chooser,
         "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
-        "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:p-(--menu-padding) zt:text-foreground zt:shadow-(--menu-shadow)",
+        // No padding of its own: the search field runs edge to edge over its
+        // rule, and the list carries the inset, as Obsidian's Bases toolbar
+        // menus are built.
+        "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
         "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
         "zt:[position-anchor:var(--zt-chooser-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
         className,
@@ -518,7 +521,10 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
       aria-expanded={open}
       aria-controls={listId}
       aria-activedescendant={activeOptionId ?? undefined}
-      className="zt:mb-1 zt:shrink-0"
+      // The flat field a Bases toolbar menu opens with, drawn in `chooser.css`:
+      // Obsidian rounds the container and boxes the input unlayered, where no
+      // utility reaches either.
+      className="zt:shrink-0"
       value={query}
       onChange={setQuery}
       placeholder={placeholder}
@@ -643,7 +649,10 @@ function List<Row extends ChooserRow>({
         aria-multiselectable
         aria-activedescendant={activeOptionId ?? undefined}
         {...rest}
-        className={cn("zt:min-h-0 zt:flex-1 zt:overflow-y-auto", className)}
+        className={cn(
+          "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-1.5",
+          className,
+        )}
       >
         <ChooserListContext value={list}>
           {sections.map((section, index) => (
@@ -661,7 +670,7 @@ function List<Row extends ChooserRow>({
                 >
                   <div
                     id={`${listId}-group-${section.groupIndex}`}
-                    className="zt:px-2 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
+                    className="zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
                   >
                     {section.label}
                   </div>
@@ -729,7 +738,9 @@ function useRowSlot(value: string) {
 /** The box an entry and an action are both drawn in. */
 const rowBox = (disabled: boolean, className?: string) =>
   cn(
-    "zt:flex zt:cursor-clickable zt:items-center zt:gap-1.5 zt:rounded-sm zt:px-2 zt:py-1 zt:text-sm",
+    // The row a Bases toolbar menu draws: 4px of padding, 6px before the
+    // mark, an 8px gap between the mark and the name.
+    "zt:flex zt:cursor-clickable zt:items-center zt:gap-2 zt:rounded-sm zt:py-1 zt:ps-1.5 zt:pe-1 zt:text-sm",
     disabled ? "zt:text-muted-foreground" : "zt:hover:bg-muted",
     "zt:data-highlighted:bg-muted",
     className,
