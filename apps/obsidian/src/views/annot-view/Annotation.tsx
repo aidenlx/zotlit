@@ -684,9 +684,10 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
       className={cn(
         // The edge is the excerpt's own: a rendered page is white on a white
         // card in the light scheme, and the hairline is what tells where the
-        // image stops. The crop follows the reading direction.
-        "zt:w-full zt:object-contain zt:object-left zt:ring-1 zt:ring-foreground/10 zt:ring-inset zt:rtl:object-right",
-        collapsed && "zt:max-h-20",
+        // image stops. The collapsed image keeps its own aspect ratio inside
+        // the height cap, so the box it wears the ring on is the picture's.
+        "zt:max-w-full zt:ring-1 zt:ring-foreground/10 zt:ring-inset",
+        collapsed ? "zt:max-h-20" : "zt:w-full",
       )}
       src={url}
       onError={() => {
