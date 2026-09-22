@@ -176,14 +176,21 @@ export function commentEditorControls(
   else if (draft?.state.kind === "failed") {
     const { failure } = draft.state;
     hint =
+      // A refused write and a refused editor are one state, so they say one
+      // thing: the capability's own sentence, as the blocked case below says it.
       failure.kind === "unauthorized"
-        ? m.annot_view_comment_unauthorized()
+        ? (capabilityBlock(capability, now)?.reason ??
+          writeFailureMessage(failure, now))
         : failure.kind === "unknown-outcome" || failure.kind === "unreachable"
           ? m.annot_view_comment_unconfirmed()
           : writeFailureMessage(failure, now);
-  } else if (!available) hint = m.annot_view_comment_paused();
+  }
+  // The capability's own sentence, which names the state and the gesture that
+  // ends it. A line of its own here could only restate it more vaguely.
+  else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
   else if (oneTime) hint = m.annot_view_comment_one_time();
-  else if (manual) hint = m.annot_view_comment_resume();
+  // A draft waiting on a manual save says so with its Save comment button.
+  // A sentence restating the button is one line the card does not need.
   return {
     readOnly: !available,
     saveDisabled: !available || pending,
@@ -249,10 +256,6 @@ export function heldCommentDraft(
     draft,
     now,
   );
-  // The capability standing in the way is the nearer answer to "why is this
-  // still here", and it is the one the panel's own verbs act on: a generic
-  // "editing paused" beside an "Allow editing" button says less than the
-  // capability's own sentence does.
   const block = capabilityBlock(capability, now);
   // An automatic save is already on its way, so the card waits for it rather
   // than asking the user to do what the plugin is about to do.

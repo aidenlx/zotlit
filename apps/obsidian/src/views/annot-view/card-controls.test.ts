@@ -244,15 +244,35 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     readOnly: true,
     saveDisabled: true,
     manual: true,
-    hint: m.annot_view_comment_paused(),
+    hint: editingCapabilityCopy(
+      { kind: "read-only", reason: "zotero-unavailable" },
+      NOW,
+    ).detail,
   });
+  // A draft waiting on a manual save states nothing: its button does.
   expect(
     commentEditorControls(
       { kind: "writable" },
       { ...draft, manualSave: true },
       NOW,
+    ),
+  ).toEqual({
+    readOnly: false,
+    saveDisabled: false,
+    manual: true,
+    hint: null,
+  });
+  // A refused write answers in the capability's own words.
+  expect(
+    commentEditorControls(
+      { kind: "authorization-required" },
+      {
+        ...draft,
+        state: { kind: "failed", failure: { kind: "unauthorized" } },
+      },
+      NOW,
     ).hint,
-  ).toBe(m.annot_view_comment_resume());
+  ).toBe(m.capability_authorization_required_detail());
 });
 
 describe("the held-draft panel", () => {

@@ -23,7 +23,7 @@ import type {
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
 import { writeFailureReason } from "@/services/annotation-repository/write";
-import { editingLive } from "@/views/annot-view/card-controls";
+import { capabilityBlock, editingLive } from "@/views/annot-view/card-controls";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import {
@@ -392,7 +392,8 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (!this.#commenting) return;
     const editor = renderCommentSheet(column.createDiv(), {
       value: this.#comment,
-      readOnly: !editingLive(this.#capability()),
+      blocked:
+        capabilityBlock(this.#capability(), this.#deps.now())?.reason ?? null,
       onSave: (comment) => {
         this.#comment = comment;
         const tool = this.#armed ?? "highlight";
