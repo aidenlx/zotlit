@@ -68,7 +68,7 @@
     "@lezer/common": "catalog:",
     "@lezer/highlight": "catalog:",
     "@lezer/lr": "catalog:",
-    "@lezer/markdown": "1.7.2",
+    "@lezer/markdown": "catalog:",
     "@zotlit/db": "workspace:*",
     "@zotlit/filter-expression": "workspace:*",
     "@zotlit/templates": "workspace:*",

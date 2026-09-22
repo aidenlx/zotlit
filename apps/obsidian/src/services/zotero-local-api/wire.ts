@@ -7,6 +7,7 @@ import {
   formatIndexedKey,
   isItemKey,
   parseAnnotationPosition,
+  tagTypeToName,
 } from "@zotlit/db";
 import type {
   AnnotationPosition,
@@ -162,8 +163,12 @@ export interface LocalApiAnnotation {
   pageLabel: string | null;
   /** When Zotero first stored this Annotation, or `null` where it named none. */
   dateAdded: string | null;
+  dateModified?: string | null;
+  authorName?: string | null;
+  isExternal?: boolean | null;
   /** The Annotation's Zotero tags, by name, in the order Zotero answered them. */
   tags: string[];
+  tagDetails?: { name: string; type: "manual" | "auto" | "unknown" }[];
 }
 
 /**
@@ -422,7 +427,12 @@ const itemSchema = v.object({
     // Zotero writes `dateAdded` for every stored object, but an answer that
     // omits it is still a believable Annotation.
     dateAdded: v.optional(v.string()),
-    tags: v.optional(v.array(v.object({ tag: v.string() }))),
+    dateModified: v.optional(v.string()),
+    annotationAuthorName: v.optional(v.string()),
+    annotationIsExternal: v.optional(v.boolean()),
+    tags: v.optional(
+      v.array(v.object({ tag: v.string(), type: v.optional(v.number(), 0) })),
+    ),
   }),
 });
 
@@ -499,7 +509,17 @@ function toAnnotation(
       parentKey: parent,
       pageLabel: emptyToNull(data.annotationPageLabel),
       dateAdded: emptyToNull(data.dateAdded),
+      dateModified: emptyToNull(data.dateModified),
+      authorName: emptyToNull(data.annotationAuthorName),
+      isExternal: data.annotationIsExternal ?? null,
       tags: (data.tags ?? []).map((entry) => entry.tag),
+      tagDetails: (data.tags ?? []).map((entry) => ({
+        name: entry.tag,
+        type:
+          entry.type === 0 || entry.type === 1
+            ? tagTypeToName(entry.type)
+            : "unknown",
+      })),
     },
   };
 }

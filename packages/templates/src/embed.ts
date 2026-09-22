@@ -1,7 +1,10 @@
 // Markdown-embed helper: prefixes `!` to a lazy link helper's output.
 
 /** A lazy link helper — `link()` renders it; `alias` / `subpath` override the display text or append a `#`-fragment. */
-type LinkHelper = (alias?: string, subpath?: string) => string;
+type LinkHelper = ((alias?: string, subpath?: string) => string) & {
+  /** Prepared excerpt helpers can render unavailable text instead of an embed. */
+  renderEmbed?: (alias?: string, subpath?: string) => string;
+};
 
 /**
  * Render `link` as a Markdown embed by prefixing `!` (so `[...]` becomes
@@ -17,6 +20,7 @@ export function embed(
   subpath?: string,
 ): string {
   if (!link) return "";
+  if (link.renderEmbed) return link.renderEmbed(alias, subpath);
   const rendered = link(alias, subpath);
   return rendered ? `!${rendered}` : "";
 }

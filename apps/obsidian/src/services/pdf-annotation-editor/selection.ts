@@ -28,7 +28,9 @@ import { conflictPanel } from "@/views/annot-view/card-conflict";
 import {
   commentEditorControls,
   editingLive,
+  heldCommentDraft,
 } from "@/views/annot-view/card-controls";
+import type { HeldDraftAction } from "@/views/annot-view/card-controls";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import { renderCommentSheet } from "./create-popup";
@@ -83,6 +85,12 @@ export interface MarkGestures {
    * says why, once per reason per capability episode.
    */
   reportBlockedGesture: () => void;
+  /**
+   * Ask Zotero for editing again, from the held-draft panel's "Allow editing".
+   * A button answers every press, so it does not go through the blocked-gesture
+   * notice, which speaks once per reason per episode.
+   */
+  allowEditing: () => void;
 }
 
 export interface MarkSelectionDeps {
@@ -477,8 +485,15 @@ export class MarkSelection implements Disposable {
       }),
       (id, node) => this.#activate(id, node, annotation),
     );
-    const draft = this.#deps.annotations.commentDraftFor(annotation.key);
-    if (draft && draft.state.kind !== "conflict") {
+    // The popup announces a held draft on the same rule the card does, and
+    // carries the same verbs: the two surfaces reach one shared draft, so a
+    // decision offered on one is offered on the other.
+    const held = heldCommentDraft(
+      this.#capability(),
+      this.#deps.annotations.commentDraftFor(annotation.key),
+      this.#deps.now(),
+    );
+    if (held) {
       const preview = column.createDiv({
         cls: ["zt-pdf-comment-sheet", "zt:mt-2"],
       });
@@ -488,14 +503,28 @@ export class MarkSelection implements Disposable {
       });
       preview.createDiv({
         cls: "zt:whitespace-pre-wrap zt:break-words zt:select-text",
-        text: draft.text,
+        text: held.text,
       });
-      preview.createDiv({
-        cls: "zt:text-xs zt:text-muted-foreground",
-        attr: { role: "status" },
-        text: commentEditorControls(this.#capability(), draft, this.#deps.now())
-          .hint,
+      if (held.reason !== null) {
+        preview.createDiv({
+          cls: "zt:text-xs zt:text-muted-foreground",
+          attr: { role: "status" },
+          text: held.reason,
+        });
+      }
+      const verbs = preview.createDiv({
+        cls: ["zt:flex", "zt:flex-wrap", "zt:gap-2", "zt:mt-2"],
       });
+      for (const action of held.actions) {
+        const button = verbs.createEl("button", {
+          ...(action.primary && { cls: "mod-cta" }),
+          text: action.label,
+        });
+        button.disabled = !action.enabled;
+        button.addEventListener("click", () => {
+          this.#runHeldDraftAction(action.kind, annotation);
+        });
+      }
     }
     if (
       mutation.kind === "conflict" &&
@@ -504,6 +533,21 @@ export class MarkSelection implements Disposable {
     ) {
       this.#renderCommentConflict(column, annotation, mutation.conflict);
     }
+  }
+
+  /** One verb from the held-draft panel, which both surfaces offer. */
+  #runHeldDraftAction(
+    kind: HeldDraftAction["kind"],
+    annotation: AnnotationRecord,
+  ): void {
+    if (kind === "save") {
+      this.#write(this.#deps.annotations.submitComment(annotation.key));
+    } else if (kind === "allow-editing") {
+      this.#deps.gestures.allowEditing();
+    } else {
+      this.#deps.annotations.discardCommentDraft(annotation.key);
+    }
+    this.#popup?.refresh();
   }
 
   #renderCommentEditor(
@@ -592,7 +636,7 @@ export class MarkSelection implements Disposable {
     const status = editor.parentElement?.querySelector<HTMLElement>(
       "[data-comment-status]",
     );
-    if (status) status.textContent = controls.hint;
+    if (status) status.textContent = controls.hint ?? "";
     const save = editor.parentElement?.querySelector<HTMLButtonElement>(
       "[data-comment-save]",
     );

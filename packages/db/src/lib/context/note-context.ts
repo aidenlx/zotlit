@@ -136,6 +136,38 @@ interface ParentBundle {
   parentItem: TemplateParentItemData | null;
 }
 
+/** Parent facts for a captured Annotation that may precede its SQLite row. */
+export function fetchAnnotationParentContext(
+  client: NodeDatabaseClient,
+  attachment: Attachment,
+  resolvers: AnnotationResolvers,
+): Pick<ParentBundle, "parentItem" | "tplAttachment"> {
+  const item = getItemsByID(client, [attachment.parentItemID])[0];
+  let parentItem: TemplateParentItemData | null = null;
+  if (item) {
+    const tags = resolveItemTagsByIDs(client, [item.itemID], new Map());
+    const baseData = itemToTemplateBaseData({
+      item,
+      tags: tags.get(item.itemID) ?? [],
+    });
+    parentItem = withItemPreview({
+      ...baseData,
+      notePath: null,
+      noteLink: () => null,
+      ...resolveItemCore({
+        item,
+        baseData,
+        username: getZoteroIdentity(client).username,
+        authorsShort: resolvers.authorsShort,
+      }),
+    });
+  }
+  return {
+    parentItem,
+    tplAttachment: resolveTemplateAttachment(attachment, resolvers),
+  };
+}
+
 /**
  * Resolve already-fetched {@link Annotation}s to their {@link TemplateAnnotation}s,
  * keyed by annotation key. Annotations sharing a parent PDF read its attachment

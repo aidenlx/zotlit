@@ -10,17 +10,20 @@ import {
   parseAnnotationPosition,
   parseIndexedKey,
   resolveIndexedKeyLibrary,
+  tagTypeToName,
 } from "@zotlit/db";
 import type {
   Annotation,
   AnnotationPosition,
   ResolvedAnnotationTypeName,
+  TemplateTag,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
+import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import type { Held, QueryClientService } from "@/services/query-client/service";
 import { Service } from "@/services/service-base";
 import type {
@@ -137,6 +140,14 @@ export interface AnnotationRecord {
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
    */
   version: number | null;
+  /** Source facts used by annotation templates; absent facts stay unknown. */
+  templateMetadata?: {
+    dateAdded: string | null;
+    dateModified: string | null;
+    authorName: string | null;
+    isExternal: boolean | null;
+    tags?: readonly Pick<TemplateTag, "name" | "type">[];
+  };
 }
 
 /** One Attachment's Annotations, beside the source that answered for them. */
@@ -221,6 +232,27 @@ export interface AnnotationRepositoryEvents {
    */
   "annotations-changed": (attachmentKey: string) => void;
   /**
+   * One Annotation's pixels moved: its geometry or its ink appearance decides
+   * what an Excerpt Image crops and paints, while a comment, a tag, or a label
+   * leaves the pixels as they were and says nothing here.
+   *
+   * A display holding an image of the previous pixels replaces it against this
+   * record. A write this repository confirmed answers with the record Zotero
+   * holds, so a consumer needs no list re-read to know the new pixels; an edit
+   * saved in Zotero itself is what a later read, compared against the list that
+   * stood before it — or, for the first read of a session, against the image
+   * this device persists for the Annotation — finds and announces here.
+   *
+   * @param record the saved Annotation, whose `parentKey` names its Attachment.
+   * @param source the Annotation Source the record was read or written through,
+   *   which is what a consumer needs to resolve the record's files again.
+   * @see apps/obsidian/docs/adr/0055-reader-edits-revalidate-excerpt-images.md
+   */
+  "excerpt-pixels-changed": (
+    record: AnnotationRecord,
+    source: AnnotationSource,
+  ) => void;
+  /**
    * What a surface may do to an Attachment's Annotations moved. Every consumer
    * re-reads {@link AnnotationRepository.capabilityFor}; no record set is
    * affected, so nothing re-reads a list for this.
@@ -280,6 +312,21 @@ export interface AnnotationRepositoryDeps {
    * @default a fresh 32-character token per create
    */
   writeToken?: () => string;
+  /**
+   * The canonical pixel fingerprint of the Excerpt Image this device persists
+   * for one Annotation — the display's own stored-outcome read — or `null`
+   * where this device holds none.
+   *
+   * A session's first read of an Attachment has no list that stood before it,
+   * so this is the baseline it is compared against instead: an edit saved in
+   * Zotero while ZotLit was not running still announces the Annotation whose
+   * pixels the image this device carries was made from. An Annotation it never
+   * cached answers `null`, which says nothing and leaves it on demand.
+   */
+  persistedExcerpt?: (
+    annotation: AnnotationRecord,
+    source: AnnotationSource,
+  ) => Promise<string | null>;
 }
 
 /** One Annotation, beside the held list a write reads and replaces it in. */
@@ -342,7 +389,8 @@ export class LocalApiReadFailed extends Error {
  * and the Zotero Local API partition whenever that source moves — a Freshness
  * Signal, another Zotero database, a capability that changed. Every Attachment
  * the drop concerns is announced through `annotations-changed`, which is the
- * only signal that a list was superseded.
+ * only signal that a list was superseded, and read again here, so the pixels
+ * such a change moved are announced even with no surface mounted to ask.
  *
  * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
  * @see docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md
@@ -388,6 +436,11 @@ export class AnnotationRepository extends Service<void> {
   /** Gives each database acquisition a separate query-cache generation. */
   #databaseGeneration = 0;
   readonly #writeToken;
+  /**
+   * The pixels this device's persisted Excerpt Image of one Annotation was made
+   * from, which is the baseline a session's first read is compared against.
+   */
+  readonly #persistedExcerpt;
 
   ready: Promise<void>;
 
@@ -397,6 +450,7 @@ export class AnnotationRepository extends Service<void> {
     localApi,
     now = () => Temporal.Now.instant(),
     writeToken = newWriteToken,
+    persistedExcerpt,
   }: AnnotationRepositoryDeps) {
     super();
     this.#db = db;
@@ -404,6 +458,7 @@ export class AnnotationRepository extends Service<void> {
     this.#localApi = localApi;
     this.#now = now;
     this.#writeToken = writeToken;
+    this.#persistedExcerpt = persistedExcerpt;
     this.ready = this.#load();
   }
 
@@ -422,12 +477,14 @@ export class AnnotationRepository extends Service<void> {
       ) {
         this.#confirmedWrites.delete(attachmentKey);
       }
+      const superseded = this.#publishedLists.get(attachmentKey);
       this.#publishedLists.set(attachmentKey, candidate);
       this.#publishedStatuses.set(
         attachmentKey,
         this.#queries.peek<AnnotationList>(queryKey)?.status ?? "fresh",
       );
       this.#reconcilePublishedDrafts(queryKey, attachmentKey, candidate);
+      await this.#announceReadPixels(superseded, candidate);
       return candidate;
     }
     const published = this.#published(attachmentKey)?.value;
@@ -564,7 +621,11 @@ export class AnnotationRepository extends Service<void> {
       ? {
           ...standing,
           ...(text !== undefined && { text }),
+          // A new keystroke clears the last failure; re-sending the same
+          // text does not, so the reason stays on the card until the user
+          // writes something else or saves again.
           ...(text !== undefined &&
+            text !== standing.text &&
             standing.state.kind === "failed" && {
               state: { kind: "editing" } as const,
             }),
@@ -594,20 +655,24 @@ export class AnnotationRepository extends Service<void> {
   ): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
     if (!draft) return Promise.resolve(IDLE);
-    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
     const id = commentDraftID(draft.serverID, annotationKey);
     const save = this.#commentSave(id);
     this.#clearCommentTimers(save);
     if (draft.state.kind === "conflict") {
       return Promise.resolve(this.mutationFor(annotationKey));
     }
+    // A draft holding what Zotero already has is not a draft: it is dropped
+    // ahead of every other answer, so an editor the user opened and closed
+    // without typing leaves nothing behind for a card to announce. Manual-save
+    // mode does not hold it either — there is nothing there to save.
+    if (!save.inFlight && sameComment(draft.text, draft.baseline)) {
+      this.#dropCommentDraft(annotationKey);
+      return Promise.resolve(IDLE);
+    }
+    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
     if (save.inFlight) {
       save.queued = draft.text !== save.submittedText;
       return save.inFlight;
-    }
-    if (sameComment(draft.text, draft.baseline)) {
-      this.#dropCommentDraft(annotationKey);
-      return Promise.resolve(IDLE);
     }
     const capability = this.capabilityFor(draft.attachmentKey);
     if (capability.kind !== "writable")
@@ -1158,8 +1223,97 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
+    this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * Announce a saved record whose pixels moved, so an Excerpt Image made from
+   * the record that stood before it is replaced rather than shown.
+   *
+   * The comparison is the canonical pixel fingerprint, so a re-read that
+   * answers the same pixels — Zotero echoes a colour the user picked — is not a
+   * change at all.
+   */
+  #announcePixels(
+    before: AnnotationRecord,
+    applied: ConfirmedWrite,
+    source: AnnotationSource,
+  ): void {
+    if (applied.kind !== "record") return;
+    if (excerptFingerprint(before) === excerptFingerprint(applied.record))
+      return;
+    this.#emitter.emit("excerpt-pixels-changed", applied.record, source);
+  }
+
+  /**
+   * Announce every Annotation a read found moved, so an Excerpt Image made from
+   * the record that stood before it is replaced rather than shown.
+   *
+   * An edit saved in Zotero itself — a crop resize, an ink colour — reaches this
+   * repository through freshness invalidation and the read after it, where no
+   * write of its own says so, and this is where that read's movement is found.
+   * The comparison is the canonical pixel fingerprint against the list that
+   * stood before the read answered, so a read that answers the same pixels — a
+   * source switch, or Zotero echoing a colour the user picked — says nothing,
+   * and a second read of a list already published says nothing either.
+   *
+   * The first read of a session has no such list: what stands before it then is
+   * the image this device persists for the Annotation, which is what the read is
+   * compared against instead. An Annotation this device never cached has no
+   * baseline and says nothing here, exactly as it is replaced nowhere: whether an
+   * image is held is the consumer's own stored-outcome gate to answer, and a
+   * record nothing stands for stays on demand.
+   */
+  async #announceReadPixels(
+    superseded: AnnotationList | undefined,
+    candidate: AnnotationList,
+  ): Promise<void> {
+    const stood = superseded
+      ? fingerprintMap(superseded)
+      : await this.#persistedFingerprints(candidate);
+    for (const record of candidate.annotations) {
+      const fingerprint = stood.get(record.key);
+      if (
+        fingerprint === undefined ||
+        fingerprint === excerptFingerprint(record)
+      )
+        continue;
+      this.#emitter.emit("excerpt-pixels-changed", record, candidate.source);
+    }
+  }
+
+  /**
+   * The pixels this device's persisted Excerpt Image of each of one Attachment's
+   * Annotations was made from, as the baseline a session's first read is
+   * compared against. An Annotation this device never cached answers nothing, so
+   * it stays on demand.
+   */
+  async #persistedFingerprints(
+    candidate: AnnotationList,
+  ): Promise<ReadonlyMap<string, string>> {
+    const persisted = this.#persistedExcerpt;
+    if (!persisted) return new Map();
+    const stood = await Promise.all(
+      candidate.annotations.map(async (record) => {
+        const fingerprint = await persisted(record, candidate.source).catch(
+          (error: unknown) => {
+            logger.debug("A persisted excerpt could not be read", {
+              annotationKey: record.key,
+              error,
+            });
+            return null;
+          },
+        );
+        return [record.key, fingerprint] as const;
+      }),
+    );
+    return new Map(
+      stood.filter(
+        (entry): entry is readonly [string, string] => entry[1] !== null,
+      ),
+    );
   }
 
   #writeBlocked(attachmentKey: string): WriteFailure | null {
@@ -1697,6 +1851,7 @@ export class AnnotationRepository extends Service<void> {
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
     }
+    this.#rereadSuperseded(held);
   }
 
   /**
@@ -1727,6 +1882,34 @@ export class AnnotationRepository extends Service<void> {
     });
     for (const attachmentKey of held) {
       this.#emitter.emit("annotations-changed", attachmentKey);
+    }
+    this.#rereadSuperseded(held);
+  }
+
+  /**
+   * Read every Attachment a source change superseded again, so the movement it
+   * carried is found and announced whether or not a surface is mounted to ask:
+   * an edit saved in Zotero itself reaches the repository through this change
+   * and the read after it, and a device that holds an Excerpt Image of the
+   * Annotation must replace it with no Annotation View, reader, or binding on
+   * screen. The lists this repository still stands for are read too, because a
+   * Held Read the query client collected leaves the standing list behind.
+   *
+   * Whether this device holds an image for an Annotation is not this
+   * repository's to know: the consumer resolves that against its own store, so
+   * one this device never cached stays on demand.
+   */
+  #rereadSuperseded(announced: readonly string[]): void {
+    for (const attachmentKey of new Set([
+      ...announced,
+      ...this.#publishedLists.keys(),
+    ])) {
+      void this.read(attachmentKey).catch((error: unknown) => {
+        logger.debug("A superseded Attachment was not read again", {
+          attachmentKey,
+          error,
+        });
+      });
     }
   }
 
@@ -1842,6 +2025,13 @@ function databaseSourcesEqual(
 
 function commentDraftID(serverID: string, annotationKey: string): string {
   return `${serverID}\0${annotationKey}`;
+}
+
+/** One list's canonical pixel fingerprints, by Indexed Key. */
+function fingerprintMap(list: AnnotationList): ReadonlyMap<string, string> {
+  return new Map(
+    list.annotations.map((record) => [record.key, excerptFingerprint(record)]),
+  );
 }
 
 function sameComment(a: string | null, b: string | null): boolean {
@@ -1983,6 +2173,16 @@ function toRecord(
     tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
+    templateMetadata: {
+      dateAdded: annotation.dateAdded.toString(),
+      dateModified: annotation.dateModified.toString(),
+      authorName: annotation.authorName,
+      isExternal: annotation.isExternal,
+      tags: annotation.tagDetails?.map(({ name, type }) => ({
+        name,
+        type: tagTypeToName(type),
+      })),
+    },
   };
 }
 
@@ -1998,6 +2198,11 @@ function fromLocalApi({
   tags,
   position,
   version,
+  dateAdded,
+  dateModified,
+  authorName,
+  isExternal,
+  tagDetails,
 }: LocalApiAnnotation): AnnotationRecord {
   return {
     key,
@@ -2010,5 +2215,12 @@ function fromLocalApi({
     tags,
     position,
     version,
+    templateMetadata: {
+      dateAdded,
+      dateModified: dateModified ?? null,
+      authorName: authorName ?? null,
+      isExternal: isExternal ?? null,
+      tags: tagDetails,
+    },
   };
 }

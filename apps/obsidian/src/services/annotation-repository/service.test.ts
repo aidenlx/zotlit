@@ -7,6 +7,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { AbortError } from "@/lib/abort-error";
 import type { DatabaseEvents } from "@/services/database/service";
+import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import { QueryClientService } from "@/services/query-client/service";
 import {
   annotationItem,
@@ -33,7 +34,7 @@ import type {
 } from "@/services/zotero-local-api/__fixtures__";
 
 import { AnnotationRepository } from "./service";
-import type { AnnotationList } from "./service";
+import type { AnnotationList, AnnotationRepositoryDeps } from "./service";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -141,6 +142,13 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
       rects: [[398.804, 685.107, 560.804, 702.107]],
     },
     version: 0,
+    templateMetadata: {
+      dateAdded: "2026-08-23T16:18:18Z",
+      dateModified: "2026-08-23T16:19:07Z",
+      authorName: null,
+      isExternal: false,
+      tags: [],
+    },
   });
 });
 
@@ -168,6 +176,23 @@ it("narrows each position by the content type of the attachment that holds it", 
   // skipped the join back to the attachment would read this as an unknown shape.
   expect(epub?.annotations.map(({ position }) => position)).toEqual([
     { kind: "epub-cfi", value: "epubcfi(/6/4!/4/2)" },
+  ]);
+});
+
+it("converts raw database tag types for annotation template metadata", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, client } = await setup(stack);
+  client.$client.exec(`
+    insert into tags (tagID, name) values (991, 'hand-added'), (992, 'translator');
+    insert into itemTags (itemID, tagID, type) values (49, 991, 0), (49, 992, 1);
+  `);
+  const list = await repository.read("RGRPDF24");
+  expect(
+    list?.annotations.find(({ key }) => key === "FDRFQ7C2")?.templateMetadata
+      ?.tags,
+  ).toEqual([
+    { name: "hand-added", type: "manual" },
+    { name: "translator", type: "auto" },
   ]);
 });
 
@@ -308,9 +333,19 @@ it("draws the same mark from either source, the object version apart", async () 
   // Each source carries its own committed revision, so compare the visible
   // Annotation data independently from that handoff metadata.
   expect(
-    fromLocalApi?.annotations.map((record) => ({ ...record, version: null })),
+    fromLocalApi?.annotations.map(
+      ({ templateMetadata: _metadata, ...record }) => ({
+        ...record,
+        version: null,
+      }),
+    ),
   ).toEqual(
-    fromDatabase?.annotations.map((record) => ({ ...record, version: null })),
+    fromDatabase?.annotations.map(
+      ({ templateMetadata: _metadata, ...record }) => ({
+        ...record,
+        version: null,
+      }),
+    ),
   );
   expect(fromDatabase?.annotations.map(({ version }) => version)).toEqual([
     0, 0, 0, 0, 29, 0, 0,
@@ -1623,6 +1658,220 @@ it("recolours an ink annotation like any other", async () => {
   );
 });
 
+it("announces the pixels a saved recolour moved, off the record Zotero answered with", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    item: () =>
+      annotationItem(afterWrite("TYY6Z6ZF", { color: "#2ea8e5", version: 17 })),
+  });
+  const announced: Array<[string, string | null]> = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push([record.key, record.color]),
+    ),
+  );
+
+  await repository.patchColor("TYY6Z6ZF", "#2EA8E5");
+
+  expect(announced).toEqual([["TYY6Z6ZF", "#2ea8e5"]]);
+});
+
+it("says nothing for a saved write that left the pixels alone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    item: ({ url }) =>
+      annotationItem(
+        // A comment on an ink stroke, and a colour on a highlight: neither is a
+        // pixel of the image ZotLit renders for this Annotation.
+        url.pathname.endsWith("TYY6Z6ZF")
+          ? afterWrite("TYY6Z6ZF", { comment: "Saved" })
+          : afterWrite("PUPR5FG5", { color: "#5fb236" }),
+      ),
+  });
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push(record.key),
+    ),
+  );
+
+  await repository.patchComment("TYY6Z6ZF", "Saved");
+  await repository.patchColor("PUPR5FG5", "#5FB236");
+
+  expect(announced).toEqual([]);
+});
+
+it("announces nothing while a write is still in flight", async () => {
+  await using stack = new AsyncDisposableStack();
+  const reread = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const { repository } = await writable(stack, {
+    item: async () => {
+      reread.resolve();
+      await release.promise;
+      return annotationItem(afterWrite("TYY6Z6ZF", { color: "#2ea8e5" }));
+    },
+  });
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push(record.key),
+    ),
+  );
+
+  const saved = repository.patchColor("TYY6Z6ZF", "#2EA8E5");
+  // Zotero has taken the write; the record it answers with has not landed, so
+  // the pixels a card paints are still the saved ones it was showing.
+  await reread.promise;
+  expect(announced).toEqual([]);
+
+  release.resolve();
+  await saved;
+  expect(announced).toEqual(["TYY6Z6ZF"]);
+});
+
+it("announces the pixels a read found moved, where no write of its own said so", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering: readonly WireAnnotation[] = ROUGIER_ANNOTATIONS;
+  const { repository, serverEvents } = await setup(stack, {
+    children: () => annotationPage(answering),
+  });
+  const announced: Array<[string, string | null, string]> = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record, source) =>
+      announced.push([record.key, record.color, source.kind]),
+    ),
+  );
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+
+  // The switch to the Local API answered the same pixels as the database did,
+  // so the read that published them said nothing.
+  expect(announced).toEqual([]);
+
+  // Zotero saved an ink recolour and a crop resize of its own: both reach this
+  // repository through the Freshness Signal and the read after it, and neither
+  // is a write this repository made. A comment that moved with them is not a
+  // pixel input and says nothing.
+  answering = ROUGIER_ANNOTATIONS.map((record) =>
+    record.key === "TYY6Z6ZF"
+      ? { ...record, color: "#2ea8e5" }
+      : record.key === "FDRFQ7C2"
+        ? {
+            ...record,
+            position: { pageIndex: 1, rects: [[10, 20, 30, 40]] },
+          }
+        : record.key === "HRK7BG32"
+          ? { ...record, comment: "Edited in Zotero" }
+          : record,
+  );
+  const changed = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await changed;
+  const refreshed = await repository.read("RGRPDF24");
+
+  expect(colorOf(refreshed, "TYY6Z6ZF")).toBe("#2ea8e5");
+  expect(
+    refreshed?.annotations.find(({ key }) => key === "FDRFQ7C2")?.position,
+  ).toEqual({ kind: "pdf-rects", pageIndex: 1, rects: [[10, 20, 30, 40]] });
+  // The two Annotations whose pixels moved, in the Attachment's reading order,
+  // and only those: the five the read answered unchanged said nothing.
+  expect(announced).toEqual([
+    ["TYY6Z6ZF", "#2ea8e5", "zotero-local-api"],
+    ["FDRFQ7C2", "#ffd400", "zotero-local-api"],
+  ]);
+
+  // What stands now is the baseline the next read is compared against, so a
+  // surface re-reading the Attachment is not asked to replace anything again.
+  await repository.read("RGRPDF24");
+  expect(announced).toEqual([
+    ["TYY6Z6ZF", "#2ea8e5", "zotero-local-api"],
+    ["FDRFQ7C2", "#ffd400", "zotero-local-api"],
+  ]);
+});
+
+it("finds a source change's moved pixels with no mounted consumer to ask", async () => {
+  await using stack = new AsyncDisposableStack();
+  let answering: readonly WireAnnotation[] = ROUGIER_ANNOTATIONS;
+  const { repository, serverEvents } = await setup(stack, {
+    children: () => annotationPage(answering),
+  });
+  const announced: Array<[string, string | null]> = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push([record.key, record.color]),
+    ),
+  );
+  await switchToLocalApi(repository);
+  await repository.read("RGRPDF24");
+
+  // A source change that answers the same pixels says nothing: what is announced
+  // is movement, not the change itself.
+  const unchanged = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await unchanged;
+  await repository.read("RGRPDF24");
+  expect(announced).toEqual([]);
+
+  // Zotero saved an ink recolour while nothing showed the Attachment at all: no
+  // Annotation View, reader, or binding asks again, so the read the repository
+  // runs itself after the change is the one that finds the pixels that moved.
+  // The consumer's stored-outcome gate is what decides which of them this device
+  // actually holds an image for.
+  answering = ROUGIER_ANNOTATIONS.map((record) =>
+    record.key === "TYY6Z6ZF" ? { ...record, color: "#2ea8e5" } : record,
+  );
+  const moved = nextChange(repository);
+  freshnessSignal(serverEvents);
+  await moved;
+  await vi.waitFor(() => expect(announced).toEqual([["TYY6Z6ZF", "#2ea8e5"]]));
+});
+
+it("compares a session's first read against the image this device persists", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, client } = await setup(stack, undefined, {
+    /**
+     * The pixels this device's persisted Excerpt Images were made from. The two
+     * ink strokes and the text Annotation are the ones it holds an image for.
+     */
+    persistedExcerpt: async (annotation) => {
+      switch (annotation.key) {
+        // The image this device last displayed, from the colour this ink stroke
+        // held before the edit Zotero saved while ZotLit was not running.
+        case "TYY6Z6ZF":
+          return excerptFingerprint({ ...annotation, color: "#5fb236" });
+        // An image made from the pixels this read answers: nothing moved.
+        case "HRK7BG32":
+          return excerptFingerprint(annotation);
+        // Every other Annotation this device never cached stays on demand.
+        default:
+          return null;
+      }
+    },
+  });
+  const announced: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push(record.key),
+    ),
+  );
+  client.$client.exec(
+    "update itemAnnotations set color = '#2ea8e5' where itemID = 55",
+  );
+
+  // The first read of the session: no list stood before it, so the image this
+  // device persists for the Annotation is the baseline it is compared against.
+  const list = await repository.read("RGRPDF24");
+
+  expect(colorOf(list, "TYY6Z6ZF")).toBe("#2ea8e5");
+  expect(announced).toEqual(["TYY6Z6ZF"]);
+
+  // The list that read published is the baseline from here on, so a second read
+  // of a record already announced says nothing again.
+  await repository.read("RGRPDF24");
+  expect(announced).toEqual(["TYY6Z6ZF"]);
+});
+
 it("re-reads the annotation after the 204, and writes again off that version", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(stack, {
@@ -2589,9 +2838,12 @@ async function setup(
     writeToken?: () => string;
     /** The repository's own clock, which the `dateAdded` window is read against. */
     repositoryNow?: () => Temporal.Instant;
+    /** What this device's persisted Excerpt Images were made from, by Annotation. */
+    persistedExcerpt?: AnnotationRepositoryDeps["persistedExcerpt"];
   } = {},
 ) {
-  const { writeToken, repositoryNow, ...clientOptions } = options;
+  const { writeToken, repositoryNow, persistedExcerpt, ...clientOptions } =
+    options;
   const client = createClient(":memory:");
   stack.defer(() => client.$client.close());
   createFixtureSchema(client.$client);
@@ -2631,6 +2883,7 @@ async function setup(
     localApi,
     now: repositoryNow ?? (() => NOW),
     writeToken,
+    persistedExcerpt,
   });
   stack.use(repository);
   await repository.ready;
@@ -2663,3 +2916,27 @@ function nextChange(
     });
   });
 }
+
+it("drops a comment draft holding what Zotero already has", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack);
+  const sent = requests.length;
+
+  // Opening the editor starts a draft before any typing. Closing it asks for
+  // the submit, and an untouched draft leaves nothing behind for a card to
+  // announce as unsaved.
+  expect(repository.editComment("PUPR5FG5")).not.toBeNull();
+  await repository.submitComment("PUPR5FG5", { automatic: true });
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+
+  // Typing and undoing it back to Zotero's own text says the same thing.
+  repository.editComment("PUPR5FG5", "Second thoughts");
+  repository.editComment("PUPR5FG5", "");
+  await repository.submitComment("PUPR5FG5", { automatic: true });
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+
+  // Neither close wrote to Zotero.
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(0);
+});

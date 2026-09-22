@@ -12,13 +12,15 @@ import {
   getLibraryByGroupID,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
-import type { Library } from "@zotlit/db";
+import type { Item, Library } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
+import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
   AvailableLibrary,
   LibrarySelector,
@@ -34,6 +36,7 @@ import type {
 } from "@/views/batch-modal";
 
 import type {
+  CreateNoteOptions,
   CreateNoteResult,
   CreationProfileSelection,
   PreparedCreationProfile,
@@ -250,6 +253,135 @@ describe("batchCreateOutcome", () => {
       });
     }
   });
+});
+
+it.each([false, true])(
+  "reports affected creations once per batch (prepared Profiles: %s)",
+  async (prepared) => {
+    const deps = makeDeps();
+    const report = vi.fn();
+    deps.noteFeature.reportExcerptImages = report;
+    const summaries = [
+      { zotero: 1, unchecked: 0, unavailable: 1 },
+      { zotero: 0, unchecked: 1, unavailable: 2 },
+    ];
+    const create = async (
+      id: number,
+      options?: Pick<CreateNoteOptions, "reportExcerpts">,
+    ): Promise<CreateNoteResult> => {
+      expect(options?.reportExcerpts).toBeTypeOf("function");
+      options!.reportExcerpts!(summaries[id - 1]!);
+      expect(report).not.toHaveBeenCalled();
+      return {
+        outcome: "created",
+        file: { path: `Literature/Item ${id}.md` } as TFile,
+      };
+    };
+    deps.noteFeature.createNote = (item, options) =>
+      create(item.itemID, options);
+    if (prepared) {
+      deps.profile = profileReader({
+        ...defaults,
+        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+      });
+      deps.noteFeature.prepareBatchCreationProfiles = async (items) =>
+        new Map(
+          items.map((item) => [
+            item.itemID,
+            [
+              {
+                selector: "default",
+                label: undefined,
+                folder: "Literature",
+                citationStyle: null,
+                document: undefined,
+                path: `Literature/Item ${item.itemID}.md`,
+                create: (options) => create(item.itemID, options),
+              },
+            ],
+          ]),
+        );
+    }
+    itemsIn(
+      new Map([
+        [1, USER_LIBRARY_ID],
+        [2, USER_LIBRARY_ID],
+      ]),
+    );
+    vi.mocked(getItemsByID).mockImplementation((_client, ids) =>
+      ids.map((id) => ({ itemID: id, indexedKey: `ITEM${id}` }) as Item),
+    );
+    await runBatchUpdate(deps, [1, 2]);
+    await classifyLastModal();
+    const result = await openedModals.at(-1)!.onRun({
+      onItemSettled: () => {
+        expect(report).not.toHaveBeenCalled();
+      },
+      signal: new AbortController().signal,
+    });
+    expect(result).toMatchObject({ created: 2, failed: 0 });
+    expect(report).toHaveBeenCalledExactlyOnceWith({
+      zotero: 1,
+      unchecked: 1,
+      unavailable: 3,
+    });
+  },
+);
+
+it("runs every row of one update batch under one outcome scope, released after the run", async () => {
+  const deps = makeDeps();
+  await using probe = excerptReuseProbe();
+  const scopes: (ExcerptOutcomeScope | undefined)[] = [];
+  // Each row resolves the probe's excerpt in turn, so the second resolution
+  // cannot be merged into the first one's in-flight request: only the run's own
+  // retention can answer it.
+  let resolutions: Promise<unknown> = Promise.resolve();
+  const resolveThrough = (outcomes: ExcerptOutcomeScope | undefined) => {
+    scopes.push(outcomes);
+    resolutions = resolutions.then(() => probe.resolve(outcomes));
+    return resolutions;
+  };
+  deps.noteFeature.writeNoteUpdate = async (_file, options) => {
+    await resolveThrough(options.outcomes);
+    return { bodyUpdated: true, duplicateRegionCount: 0 };
+  };
+  deps.noteFeature.createNote = async (_item, options) => {
+    await resolveThrough(options?.outcomes);
+    return { outcome: "created", file: { path: "Literature/New.md" } as TFile };
+  };
+  deps.noteIndex.getNotesByItemKey = (key) =>
+    key === "ITEM1" ? [{ path: "Literature/Item1.md" } as TFile] : [];
+  itemsIn(
+    new Map([
+      [1, USER_LIBRARY_ID],
+      [2, USER_LIBRARY_ID],
+    ]),
+  );
+  vi.mocked(getItemsByID).mockImplementation((_client, itemIDs) =>
+    itemIDs.map((itemID) => ({ itemID, indexedKey: `ITEM${itemID}` }) as Item),
+  );
+
+  await runBatchUpdate(deps, [1, 2]);
+  const modal = openedModals.at(-1)!;
+  await modal.onClassify({
+    onProgress: vi.fn(),
+    signal: new AbortController().signal,
+  });
+  const result = await modal.onRun({
+    onItemSettled: vi.fn(),
+    signal: new AbortController().signal,
+  });
+
+  expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
+  // One run is one batch: both rows' notes share one scope, and the second one
+  // reuses the outcome the first produced instead of rendering it again.
+  expect(scopes).toHaveLength(2);
+  expect(scopes[1]).toBe(scopes[0]);
+  expect(probe.renders()).toBe(1);
+  // The run released what it retained, so a later note driven through the same
+  // scope renders again rather than reusing.
+  await probe.resolve(scopes[0]);
+  expect(probe.renders()).toBe(2);
 });
 
 it("classifies conflicting Companion Profiles as kept rows before any write or picker", async () => {

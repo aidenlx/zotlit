@@ -91,6 +91,8 @@ interface ChooserState {
   /** The row box, which a page step measures itself against. */
   listRef: RefObject<HTMLDivElement | null>;
   publishRows: (rows: readonly ChooserRow[]) => void;
+  /** Puts the highlight on a row, as a click on it asks. */
+  highlightRow: (index: number) => void;
   /** The `id` of the row at an index, for `aria-activedescendant`. */
   optionId: (index: number) => string;
   /**
@@ -196,11 +198,23 @@ export interface ChooserProps {
 
 export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const app = useObsidianApp();
-  const [query, setQuery] = useState("");
+  const [query, setQueryState] = useState("");
   const [open, setOpen] = useState(false);
   const [popupId] = useState(() => `zt-chooser-${(chooserSequence += 1)}`);
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
-  const [highlight, setHighlight] = useState(0);
+  // No row is highlighted until a key names one or a row is clicked: a popup
+  // that opened with its first row darkened told a pointer user it was chosen.
+  const [highlight, setHighlight] = useState(-1);
+
+  /**
+   * A query hands the highlight to the first match, so Enter takes what the
+   * user typed toward, and an emptied query takes the highlight away again.
+   * The rows that publish after this re-home it from there.
+   */
+  const setQuery = useCallback((next: string) => {
+    setQueryState(next);
+    setHighlight(next.length > 0 ? 0 : -1);
+  }, []);
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => popupRef.current?.hidePopover(), []);
@@ -316,7 +330,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
    */
   useLayoutEffect(() => {
     if (!open) return;
-    setHighlight(0);
+    setHighlight(-1);
     const field = popupRef.current?.querySelector<HTMLElement>("input");
     (field ?? listRef.current)?.focus();
     app.keymap.pushScope(scope);
@@ -338,6 +352,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       listId: `${popupId}-list`,
       listRef,
       publishRows,
+      highlightRow: setHighlight,
       optionId,
       active,
       activeOptionId: active < 0 ? null : optionId(active),
@@ -346,6 +361,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       value,
       onValueChange,
       query,
+      setQuery,
       open,
       popupId,
       close,
@@ -474,7 +490,10 @@ function Popup({ className, style, ref, ...rest }: ChooserPopupProps) {
       className={cn(
         themeHook.chooser,
         "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
-        "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:p-(--menu-padding) zt:text-foreground zt:shadow-(--menu-shadow)",
+        // No padding of its own: the search field runs edge to edge over its
+        // rule, and the list carries the inset, as Obsidian's Bases toolbar
+        // menus are built.
+        "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:text-foreground zt:shadow-(--menu-shadow)",
         "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
         "zt:[position-anchor:var(--zt-chooser-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
         className,
@@ -518,7 +537,10 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
       aria-expanded={open}
       aria-controls={listId}
       aria-activedescendant={activeOptionId ?? undefined}
-      className="zt:mb-1 zt:shrink-0"
+      // The flat field a Bases toolbar menu opens with, drawn in `chooser.css`:
+      // Obsidian rounds the container and boxes the input unlayered, where no
+      // utility reaches either.
+      className="zt:shrink-0"
       value={query}
       onChange={setQuery}
       placeholder={placeholder}
@@ -643,7 +665,10 @@ function List<Row extends ChooserRow>({
         aria-multiselectable
         aria-activedescendant={activeOptionId ?? undefined}
         {...rest}
-        className={cn("zt:min-h-0 zt:flex-1 zt:overflow-y-auto", className)}
+        className={cn(
+          "zt:min-h-0 zt:flex-1 zt:overflow-y-auto zt:p-1.5",
+          className,
+        )}
       >
         <ChooserListContext value={list}>
           {sections.map((section, index) => (
@@ -661,7 +686,7 @@ function List<Row extends ChooserRow>({
                 >
                   <div
                     id={`${listId}-group-${section.groupIndex}`}
-                    className="zt:px-2 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
+                    className="zt:ps-1.5 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
                   >
                     {section.label}
                   </div>
@@ -703,7 +728,7 @@ function Separator() {
  * refuses and a row Enter refuses are the same row.
  */
 function useRowSlot(value: string) {
-  const { selected, onValueChange, close } = useChooser();
+  const { selected, onValueChange, close, highlightRow } = useChooser();
   const { indexOf, rows, active, optionId } = useChooserList();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -720,16 +745,31 @@ function useRowSlot(value: string) {
     id: index < 0 ? undefined : optionId(index),
     highlighted,
     disabled: row?.disabled ?? false,
-    /** A click on the row, decided exactly as Enter on the highlight is. */
-    activate: () =>
-      runActivation(activatedRow(row, selected), close, onValueChange),
+    /**
+     * A click on the row, decided exactly as Enter on the highlight is. It
+     * moves the highlight onto the row first, as a click in Obsidian's own
+     * Bases toolbar menu does, so the arrow keys carry on from the row that
+     * was just ticked. The pointer merely passing over a row moves nothing:
+     * the highlight is the keyboard's mark and stays where a key or a click
+     * put it while the pointer wanders in and out of the popup, and what the
+     * pointer rests on is drawn by the row's own hover tint.
+     */
+    activate: () => {
+      if (index >= 0) highlightRow(index);
+      runActivation(activatedRow(row, selected), close, onValueChange);
+    },
   };
 }
 
 /** The box an entry and an action are both drawn in. */
 const rowBox = (disabled: boolean, className?: string) =>
   cn(
-    "zt:flex zt:cursor-clickable zt:items-center zt:gap-1.5 zt:rounded-sm zt:px-2 zt:py-1 zt:text-sm",
+    // The row a Bases toolbar menu draws: 4px of padding, 6px before the
+    // mark, an 8px gap between the mark and the name.
+    "zt:flex zt:cursor-clickable zt:items-center zt:gap-2 zt:rounded-sm zt:py-1 zt:ps-1.5 zt:pe-1 zt:text-sm",
+    // Two tints on one row box: the pointer's, which is the platform's hover
+    // state and leaves with the pointer, and the highlight's, which is row
+    // state and stays put until a key or a click moves it.
     disabled ? "zt:text-muted-foreground" : "zt:hover:bg-muted",
     "zt:data-highlighted:bg-muted",
     className,

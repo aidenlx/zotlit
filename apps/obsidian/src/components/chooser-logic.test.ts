@@ -235,9 +235,18 @@ it("highlights no row while the list is empty", () => {
   expect(clampedHighlight(0, 0)).toBe(-1);
 });
 
-it("moves from the first row when nothing is highlighted yet", () => {
-  expect(movedHighlight(-1, "next", LIST)).toBe(1);
+it("steps onto an end of the list when nothing is highlighted yet", () => {
+  // Nothing is highlighted until a key or a click asks: Down takes the
+  // first row, Up the last, so the first key lands where the eye expects.
+  expect(movedHighlight(-1, "next", LIST)).toBe(0);
   expect(movedHighlight(-1, "previous", LIST)).toBe(5);
+  expect(movedHighlight(-1, "page-down", LIST)).toBe(0);
+  expect(movedHighlight(-1, "last", LIST)).toBe(5);
+});
+
+it("keeps no highlight as no highlight when the list is not empty", () => {
+  // A pointer user sees no row darkened until a click or a key names one.
+  expect(clampedHighlight(-1, 3)).toBe(-1);
 });
 
 it("brings a highlight past the end of a shrunken list back to its last row", () => {
@@ -251,7 +260,10 @@ it("keeps the highlight on its own row when the list is rebuilt around it", () =
 
 it("takes the highlight back to the first row when its row is gone", () => {
   expect(rehomedHighlight("review", ROWS.slice(0, 2))).toBe(0);
-  expect(rehomedHighlight(null, ROWS)).toBe(0);
+});
+
+it("leaves the highlight off when none was held", () => {
+  expect(rehomedHighlight(null, ROWS)).toBe(-1);
 });
 
 it("highlights no row when the rebuilt list is empty", () => {

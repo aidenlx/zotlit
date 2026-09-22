@@ -69,19 +69,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@zotlit/db/contract/ir.runtime.json": fullContractIRPath,
-        // Base UI's React 17 fallback is CommonJS, and its `require("react")`
-        // pulls a second Preact core into the bundle; see the module below.
-        "use-sync-external-store/shim/with-selector": resolve(
-          import.meta.dirname,
-          "src/lib/preact/sync-external-store.ts",
-        ),
-        "use-sync-external-store/shim": resolve(
-          import.meta.dirname,
-          "src/lib/preact/sync-external-store.ts",
-        ),
       },
       conditions: ["module", "node", "development|production"],
-      dedupe: ["preact", "preact/compat", "preact/hooks", "preact/jsx-runtime"],
       tsconfigPaths: true,
     },
     define: {

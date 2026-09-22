@@ -27,16 +27,6 @@ export default defineConfig({
       // The published `obsidian` package is types-only; redirect runtime
       // imports to our local mock so tests can `import { ... } from "obsidian"`.
       obsidian: resolve(packageRoot, "__mocks__/obsidian.ts"),
-      // The same alias the bundle takes, so the runner resolves Preact exactly
-      // as the shipped plugin does; `sync-external-store.ts` says why.
-      "use-sync-external-store/shim/with-selector": resolve(
-        packageRoot,
-        "src/lib/preact/sync-external-store.ts",
-      ),
-      "use-sync-external-store/shim": resolve(
-        packageRoot,
-        "src/lib/preact/sync-external-store.ts",
-      ),
     },
     tsconfigPaths: true,
   },

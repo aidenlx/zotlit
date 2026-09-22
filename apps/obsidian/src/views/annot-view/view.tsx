@@ -27,21 +27,25 @@ import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { AppContext } from "@/lib/app-context";
-import { registerMigratingWindowEvent } from "@/lib/disposables";
+import {
+  registerKeymap,
+  registerMigratingWindowEvent,
+} from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
+import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type {
   AnnotationRecord,
   AnnotationRepository,
+  AnnotationSource,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
-import type {
-  AttachmentImport,
-  AttachmentImportService,
-} from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
+import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
+import { savedExcerptRequest } from "@/services/excerpt-image/request";
+import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type {
@@ -51,6 +55,7 @@ import type {
 import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
+import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
@@ -62,13 +67,10 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
-import { CapabilitySlotContext } from "./capability-slot";
-import { CapabilityAffordance } from "./CapabilityAffordance";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler, createInsertHandler } from "./drag-insert";
-import type { DragInsertDeps } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
 import { buildPaneMenu } from "./pane-menu";
@@ -141,13 +143,17 @@ export interface AnnotViewDeps {
   >;
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
-  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
+  /** The plugin's live display surface for Excerpt Images. */
+  excerptDisplay: Pick<
+    ExcerptDisplayService,
+    "open" | "refresh" | "revalidate"
+  >;
   noteFeature: Pick<
     NoteFeature,
-    "renderAnnotation" | "renderAnnotationCitation"
+    "renderAnnotationCitation" | "prepareAnnotationInsert"
   >;
   noteIndex: Pick<NoteIndex, "getNotesByItemKey">;
-  attachmentImport: Pick<AttachmentImportService, "prepare">;
   itemLookup: Pick<ItemLookup, "search">;
   settings: SettingsService;
 }
@@ -167,11 +173,6 @@ export class AnnotationView extends ItemView {
   /** What the attachment choice and the saved filter are remembered against. */
   #memoryKey: string | null = null;
   #itemKey: string | null = null;
-  #importHandle: AttachmentImport | null = null;
-  /** Note path the standing (or in-flight) import handle was prepared for. */
-  #importHandlePath: string | null = null;
-  /** Monotonic prepare token, so a slow prepare cannot overwrite a newer one. */
-  #importHandleGen = 0;
   /** Counts the annotation reads, so a slower one never lands after a later one. */
   #reads = 0;
   #reading = Promise.resolve();
@@ -251,7 +252,11 @@ export class AnnotationView extends ItemView {
     if (source !== "more-options") return;
     const actions = this.#actions;
     if (!actions) return;
-    buildPaneMenu(menu, { state: this.snapshot, actions });
+    buildPaneMenu(menu, {
+      state: this.snapshot,
+      actions,
+      now: Temporal.Now.instant(),
+    });
   }
 
   protected override async onOpen(): Promise<void> {
@@ -262,22 +267,30 @@ export class AnnotationView extends ItemView {
     });
     this.register(() => this.#zoteroReader?.[Symbol.dispose]());
 
-    // One bundle behind both routes into a note: the drag, and the overflow
-    // menu's insert.
-    const insertDeps: DragInsertDeps = {
+    const insertDeps: Parameters<typeof createInsertHandler>[0] = {
       app: this.#deps.app,
       noteFeature: this.#deps.noteFeature,
       notify: (message) => void new BaseNotice(message),
-      getImportHandle: () => this.#importHandle,
-      resolveAnnotationID: (indexedKey) =>
-        this.#resolveAnnotationID(indexedKey),
-      onSettled: () => this.#syncImportHandle(),
+      snapshot: (annotation) => {
+        const state = this.#store.getState();
+        return {
+          source: state.annotations?.includes(annotation)
+            ? state.annotationSource
+            : null,
+          sourceScope: state.annotationSourceScope,
+        };
+      },
     };
+    const insert = createInsertHandler(insertDeps);
+    const drag = createDragInsertHandler(insertDeps);
+    this.register(insert.cancel);
+    this.register(drag.cancel);
 
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       scope: this.scope,
-      getDataDir: () => this.#deps.zoteroPref.dataDir,
+      excerptDisplay: this.#deps.excerptDisplay,
+      excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: this.#deps.annotations,
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
@@ -293,6 +306,9 @@ export class AnnotationView extends ItemView {
         const attachmentKey = this.#store.getState().selectedAttachmentKey;
         if (attachmentKey === null) return;
         await this.#deps.annotations.refresh(attachmentKey);
+        await this.#reading;
+        if (this.#store.getState().selectedAttachmentKey === attachmentKey)
+          this.#deps.excerptDisplay.refresh();
       },
       noteFeature: this.#deps.noteFeature,
       onSetFollowMode: (mode) => this.#setFollowMode(mode),
@@ -300,9 +316,12 @@ export class AnnotationView extends ItemView {
       onPinItem: () => this.#pickItemToPin(),
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
+      onAllowEditing: () => this.#deps.showEditingCapability(),
       onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
-      onDragStart: createDragInsertHandler(insertDeps),
-      insertAnnotation: createInsertHandler(insertDeps),
+      onDragStart: drag,
+      insertAnnotation: (annotation) => {
+        void insert(annotation);
+      },
       renderComment: createCommentRenderer({
         app: this.#deps.app,
         component: this,
@@ -328,16 +347,7 @@ export class AnnotationView extends ItemView {
       <AppContext value={this.app}>
         <AnnotStoreProvider value={this.#store}>
           <AnnotActionsContext value={this.#actions}>
-            <CapabilitySlotContext
-              value={
-                <CapabilityAffordance
-                  capabilities={this.#deps.annotations}
-                  onActivate={this.#deps.showEditingCapability}
-                />
-              }
-            >
-              <AnnotView />
-            </CapabilitySlotContext>
+            <AnnotView />
           </AnnotActionsContext>
         </AnnotStoreProvider>
       </AppContext>,
@@ -359,12 +369,7 @@ export class AnnotationView extends ItemView {
         }
         if (this.#followMode === "active-tab") {
           this.#reload();
-          return;
         }
-        // The other modes keep the same item across tab switches, so no reload
-        // runs to refresh the drag-insert handle. Sync it here so it tracks
-        // the note a drag would land in.
-        this.#syncImportHandle();
       }),
     );
 
@@ -405,6 +410,24 @@ export class AnnotationView extends ItemView {
         this.#applySelection(selected);
       }),
     );
+
+    // Escape clears a selection this view drives. One typed into a field goes
+    // on to the field. Otherwise Obsidian moves focus to the last navigable
+    // leaf: right from the sidebar, but in the main area that switches the tab
+    // away from this view, so the key stops here.
+    const escape = registerKeymap(this.scope, [], "Escape", (event) => {
+      if (inTextEntry(event.target)) return;
+      const session = this.#boundPdfSession();
+      if (session && session.selected.length > 0) {
+        session.setSelectedAnnotations([]);
+        return false;
+      }
+      const { leftSplit, rightSplit } = this.#deps.app.workspace;
+      const root = this.leaf.getRoot();
+      if (root === leftSplit || root === rightSplit) return;
+      return false;
+    });
+    this.register(() => escape[Symbol.dispose]());
 
     this.register(
       this.#deps.liveUpdate.on("available", (available) => {
@@ -639,6 +662,12 @@ export class AnnotationView extends ItemView {
     this.#leafSession?.();
     this.#leafSession = null;
     const session = filePath && this.#deps.pdfReaders.sessionForPath(filePath);
+    // Under Active Tab the selection is the followed PDF's own: with no PDF
+    // bound, there is none to show.
+    if (this.#followMode === "active-tab")
+      this.#store.setState({
+        selectedAnnotationKeys: session ? session.selected : [],
+      });
     if (!session) return;
     const stack = new DisposableStack();
     stack.defer(session.on("target-changed", () => this.#reload()));
@@ -707,10 +736,8 @@ export class AnnotationView extends ItemView {
       itemKey,
       attachmentLock: lock,
       pinnable: itemKey,
-      itemDisplayLabel: this.#resolveDisplayLabel(target),
+      itemDisplay: this.#resolveItemSummary(target),
     });
-
-    this.#syncImportHandle();
 
     try {
       const client = db.client;
@@ -736,6 +763,7 @@ export class AnnotationView extends ItemView {
           selectedAttachmentKey: null,
           annotations: null,
           annotationSource: null,
+          annotationSourceScope: null,
         });
         return;
       }
@@ -804,6 +832,7 @@ export class AnnotationView extends ItemView {
   ): void {
     const read = ++this.#reads;
     const memoryKey = this.#memoryKey;
+    const sourceScope = this.#deps.zoteroPref.dataDir;
     this.#reading = this.#deps.annotations
       .read(attachmentKey)
       .then((list) => {
@@ -811,7 +840,12 @@ export class AnnotationView extends ItemView {
         // moved on leaves this answer where it fell. A null answer is a read
         // an invalidation cancelled; the same invalidation announces the
         // change this view re-reads on, so the list is not left waiting.
-        if (read !== this.#reads || list === null) return;
+        if (
+          read !== this.#reads ||
+          list === null ||
+          sourceScope !== this.#deps.zoteroPref.dataDir
+        )
+          return;
         const commentDrafts = new Map(
           list.annotations.flatMap((annotation) => {
             const draft = this.#deps.annotations.commentDraftFor(
@@ -823,6 +857,7 @@ export class AnnotationView extends ItemView {
         this.#store.setState({
           annotations: list.annotations,
           annotationSource: list.source,
+          annotationSourceScope: sourceScope,
           commentDrafts,
         });
         if (!restoreFilter || memoryKey === null) return;
@@ -866,6 +901,19 @@ export class AnnotationView extends ItemView {
     });
   }
 
+  /** The file inputs one record on screen resolves through ({@link savedExcerptRequest}). */
+  #excerptRequest(input: {
+    annotation: AnnotationRecord;
+    source: AnnotationSource | null;
+    sourceScope: string | null;
+  }): ExcerptRequest | null {
+    return savedExcerptRequest({
+      ...input,
+      db: this.#deps.db,
+      paths: this.#deps.zoteroPref,
+    });
+  }
+
   /**
    * What one card's editing verbs may do, for the native overflow menu, which
    * is built outside React and so reads the store itself.
@@ -884,7 +932,7 @@ export class AnnotationView extends ItemView {
    * The identity block names the Item only where nothing else on screen does:
    * Active Tab always has the note or the PDF in front of the user.
    */
-  #resolveDisplayLabel(target: LoadTarget): string | null {
+  #resolveItemSummary(target: LoadTarget): ItemSummary | null {
     if (this.#followMode === "active-tab" || target.itemKey === null) {
       return null;
     }
@@ -893,7 +941,7 @@ export class AnnotationView extends ItemView {
         target.key,
       ])[0];
       if (!item || isChildItemFields(item.fields)) return null;
-      return itemSummary(item, item.fields).formatted;
+      return itemSummary(item, item.fields);
     } catch {
       return null;
     }
@@ -914,7 +962,12 @@ export class AnnotationView extends ItemView {
   /** Mirror the reader's selection and bring its first card into view. */
   #applySelection(selected: readonly string[]): void {
     this.#store.setState({ selectedAnnotationKeys: selected });
-    for (const key of selected) {
+    this.#scrollToCard(selected);
+  }
+
+  /** Bring the first of these cards the list holds into view. */
+  #scrollToCard(keys: readonly string[]): void {
+    for (const key of keys) {
       const el = this.contentEl.querySelector(
         `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
       );
@@ -928,7 +981,8 @@ export class AnnotationView extends ItemView {
   /**
    * Bring one Annotation's card forward, from the Mark Popup in the PDF reader.
    * A card the list on screen does not hold is left alone: the Follow Mode is
-   * the user's, and a reveal is not one of the gestures that changes it.
+   * the user's, and a reveal is not one of the gestures that changes it. The
+   * card is selected only through a bound Obsidian PDF reader.
    *
    * @param comment whether the card's comment editor takes the caret, which is
    *   the popup's answer to anything that needs typing.
@@ -942,24 +996,30 @@ export class AnnotationView extends ItemView {
       .getState()
       .annotations?.some((record) => record.key === annotationKey);
     if (held !== true) return;
-    this.#applySelection([annotationKey]);
+    this.#boundPdfSession()?.setSelectedAnnotations([annotationKey]);
+    this.#scrollToCard([annotationKey]);
     if (comment) this.#store.setState({ editingCommentKey: annotationKey });
   }
 
   /**
-   * A card was activated: the reader this view follows takes the selection and
-   * moves to the mark. Only an Obsidian PDF view can be moved from here —
-   * Zotero owns every gesture on its own reader — so under every other mode
-   * the view holds the selection itself.
+   * A card was activated: the Obsidian PDF reader this view follows takes the
+   * selection and moves to the mark. A selection means nothing without a
+   * reader to show it in, so with no PDF bound the card takes none.
    */
   #selectAnnotation(annotationKey: string): void {
+    const session = this.#boundPdfSession();
+    if (!session) return;
+    session.setSelectedAnnotations([annotationKey]);
+    session.navigateToAnnotation(annotationKey);
+  }
+
+  /**
+   * The followed reader, while it is an Obsidian PDF view: the one reader this
+   * view can select in. Zotero owns every gesture on its own reader.
+   */
+  #boundPdfSession(): ReaderSession | null {
     const session = this.#followedSession();
-    if (session?.source === "obsidian-pdf") {
-      session.setSelectedAnnotations([annotationKey]);
-      session.navigateToAnnotation(annotationKey);
-      return;
-    }
-    this.#applySelection([annotationKey]);
+    return session?.source === "obsidian-pdf" ? session : null;
   }
 
   /** The reader this view's Follow Mode is driven by, while one answers. */
@@ -1037,88 +1097,20 @@ export class AnnotationView extends ItemView {
     this.#store.setState({
       ...INITIAL_FILTER_STATE,
       itemKey: null,
-      itemDisplayLabel: null,
+      itemDisplay: null,
       attachments: null,
       selectedAttachmentKey: null,
       attachmentLock: null,
       pinnable: null,
       annotations: null,
       annotationSource: null,
+      annotationSourceScope: null,
       commentDrafts: new Map(),
       editingCommentKey: null,
       selectedAnnotationKeys: [],
     });
     this.#itemKey = null;
     this.#memoryKey = null;
-    this.#dropImportHandle();
-  }
-
-  /**
-   * Point the drag-insert import handle at the active note, in every follow
-   * mode. The handle is the active note's, not the loaded item's, so it tracks
-   * the active file rather than the load target.
-   */
-  #syncImportHandle(): void {
-    if (this.#memoryKey === null) return;
-    const activeFile = this.#deps.app.workspace.getActiveFile();
-    if (activeFile) this.#prepareImportHandle(activeFile.path);
-    else this.#dropImportHandle();
-  }
-
-  #dropImportHandle(): void {
-    this.#importHandleGen++;
-    this.#importHandle = null;
-    this.#importHandlePath = null;
-    this.#syncDragTarget();
-  }
-
-  /** Mirror the handle's state into the store so cards can disable the drag. */
-  #syncDragTarget(): void {
-    this.#store.setState({
-      dragTarget: this.#importHandle
-        ? "ready"
-        : this.#importHandlePath
-          ? "preparing"
-          : "none",
-    });
-  }
-
-  /**
-   * Prepare a fresh attachment-import handle for the active note so drag-insert
-   * can resolve image embeds synchronously and `flush()` them on drop.
-   *
-   * `prepare()` is async (settings, folder probe, root canonicalization), and
-   * this runs after every drag, drop-induced note change, and leaf activation
-   * — including the click that starts a drag. A handle already prepared for
-   * this same note keeps serving `dragstart` until the fresh one lands, so a
-   * drag inside that window renders through the template instead of taking
-   * the plain-text fallback. A handle for another note is dropped at once: it
-   * would resolve links and copy excerpts relative to the wrong note.
-   */
-  #prepareImportHandle(notePath: string): void {
-    const gen = ++this.#importHandleGen;
-    if (this.#importHandlePath !== notePath) {
-      this.#importHandle = null;
-      this.#importHandlePath = notePath;
-      this.#syncDragTarget();
-    }
-    void this.#deps.attachmentImport
-      .prepare(notePath)
-      .then((handle) => {
-        // A newer prepare (or a drop of the handle) superseded this one.
-        if (gen !== this.#importHandleGen) {
-          logger.debug("Skipped stale attachment import handle", { notePath });
-          return;
-        }
-        this.#importHandle = handle;
-        this.#syncDragTarget();
-      })
-      .catch((error) => {
-        logger.warn("Failed to prepare attachment import for drag-insert", {
-          notePath,
-          error,
-        });
-      });
   }
 
   #loadAttachmentSelection(memoryKey: string): string | null {

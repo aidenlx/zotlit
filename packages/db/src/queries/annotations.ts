@@ -20,7 +20,7 @@ const annotationFindOptions = {
       },
       with: {
         itemTags: {
-          columns: {},
+          columns: { type: true },
           with: { tag: { columns: { name: true } } },
         },
       },
@@ -192,6 +192,10 @@ function toAnnotation(
     color: row.color,
     pageLabel: row.pageLabel,
     tags: row.item.itemTags.map((it) => it.tag.name),
+    tagDetails: row.item.itemTags.map((it) => ({
+      name: it.tag.name,
+      type: it.type,
+    })),
     sortIndex: row.sortIndex,
     position: row.position,
     authorName: row.authorName,

@@ -367,7 +367,11 @@ function startDevelopmentSession({
   const stop = (signal: NodeJS.Signals): void => {
     stopping = true;
     for (const watcher of processes) {
-      if (watcher.child.exitCode === null && !watcher.child.killed) {
+      if (
+        watcher.child.pid !== undefined &&
+        watcher.child.exitCode === null &&
+        !watcher.child.killed
+      ) {
         watcher.child.kill(signal);
       }
     }
@@ -406,13 +410,27 @@ function spawnWatcher(
   args: string[],
   { cwd, env }: { cwd: string; env: NodeJS.ProcessEnv },
 ): { name: string; child: ManagedProcess } {
+  const launch = getWatcherCommand(args);
   return {
     name,
-    child: spawn("pnpm", args, {
+    child: spawn(launch.command, launch.args, {
       cwd,
       env,
       stdio: ["ignore", "pipe", "pipe"],
     }),
+  };
+}
+
+/** Directly spawning the pnpm.cmd shim fails with ENOENT on Windows. */
+export function getWatcherCommand(
+  args: string[],
+  options: { platform?: NodeJS.Platform; comspec?: string } = {},
+): { command: string; args: string[] } {
+  const platform = options.platform ?? process.platform;
+  if (platform !== "win32") return { command: "pnpm", args };
+  return {
+    command: options.comspec ?? process.env.ComSpec ?? "cmd.exe",
+    args: ["/d", "/s", "/c", "pnpm", ...args],
   };
 }
 

@@ -4,6 +4,10 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import {
+  captionIcon,
+  selectionControl,
+} from "@/components/obsidian/selection-control";
 import { themeHook } from "@/lib/theme-hooks";
 import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
@@ -55,25 +59,6 @@ export const originatingNoteNotice = {
   note: "zt:min-w-0 zt:max-w-full zt:font-medium zt:text-foreground zt:[overflow-wrap:anywhere]",
   button: cn(templateWorkbenchButton, "zt:shrink-0"),
 } as const;
-/** Icons beside 12 px regular text carry the same optical weight. */
-const captionIcon = "zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]";
-/** Every choose control shares the flat `clickable-icon` surface; `kind` sets its shape. */
-export const selectionControl = tv({
-  base: "clickable-icon",
-  variants: {
-    kind: {
-      /** An icon-only action that sits beside a text trigger. */
-      icon: cn("zt:shrink-0", captionIcon),
-      /** A borderless text-and-icon control, subordinate to the result it changes. */
-      trigger: cn(
-        "zt-workbench-trigger zt:max-w-full zt:min-w-0 zt:gap-1.5 zt:text-start zt:leading-normal zt:[&_svg]:shrink-0",
-        captionIcon,
-      ),
-      /** A choice fills one row of the list that owns the corners around it. */
-      option: "zt-workbench-option zt:min-w-0 zt:[--clickable-icon-radius:0px]",
-    },
-  },
-});
 /**
  * A control that hands its own box to the content inside it. `.clickable-icon`
  * and `button` are styled unlayered, so their padding, centering, wrapping and

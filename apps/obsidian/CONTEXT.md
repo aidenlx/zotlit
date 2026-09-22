@@ -268,6 +268,18 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 
 ### Annotation view
 
+**Annotation View** _(Obsidian)_:
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act.
+_Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
+
+**Annotation Filter**:
+The three ways an Annotation View narrows the cards it shows — by highlight colour, by tag, and by search text — combined so a card must satisfy every active one. Clearing it shows every Annotation of the Attachment again.
+_Avoid_: filter bar (the control, not the rule), tag panel, query (the search text alone)
+
+**No Match**:
+The Annotation View state in which the Attachment has Annotations but the Annotation Filter excludes all of them. It is about the filter alone: neither an empty Attachment nor an unanswered Follow Mode is a No Match.
+_Avoid_: empty state (that is no Attachment or no Annotations), no results
+
 **Annotation Card** _(Obsidian)_:
 One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips. A deliberately dense surface: prose inside it renders compact.
 _Avoid_: annotation item, annotation row
@@ -277,7 +289,7 @@ The quoted region of an Annotation Card showing the Annotation's live text (with
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
 **Excerpt Image**:
-The PNG Zotero renders for an image or ink Annotation, stored under its data directory cache by Annotation key. It appears only after a Zotero UI trigger (the Reader, or the attachment's Annotations pane) and Zotero deletes it on a position change, an ink colour change, or deletion. The Excerpt Block displays it; ZotLit renders none of its own yet.
+The raster image representation of an image or ink Annotation's PDF region, including its ink strokes where applicable. A ZotLit Excerpt Image and a Zotero Excerpt Image have separate ownership; an image embedded in a Child Note belongs to that note's frozen snapshot.
 _Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annotation)
 
 **Reader Session**:

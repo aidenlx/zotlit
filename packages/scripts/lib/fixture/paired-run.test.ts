@@ -5,6 +5,7 @@ import {
   createNodePairedRunPorts,
   findPairedZoteroProcesses,
   findWindowsPairedZoteroProcesses,
+  getWatcherCommand,
 } from "./paired-run-node.ts";
 import type {
   DevelopmentSession,
@@ -38,6 +39,20 @@ function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
     ...overrides,
   };
 }
+
+it("launches pnpm watchers through the Windows command processor", () => {
+  const args = ["--filter", "@zotlit/obsidian", "dev"];
+  expect(
+    getWatcherCommand(args, { platform: "win32", comspec: "cmd.exe" }),
+  ).toEqual({
+    command: "cmd.exe",
+    args: ["/d", "/s", "/c", "pnpm", ...args],
+  });
+  expect(getWatcherCommand(args, { platform: "darwin" })).toEqual({
+    command: "pnpm",
+    args,
+  });
+});
 
 describe("Paired Run", () => {
   it("allocates distinct free ports for Live Updates and Zotero HTTP", async () => {

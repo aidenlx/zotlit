@@ -9,6 +9,17 @@ import { managedRegionTransform, MARKER_END, MARKER_START } from "./obsidian";
 const wrapContent = managedRegionTransform("content");
 
 describe("TemplateEngine", () => {
+  it("lets a prepared unavailable excerpt render text through embed", () => {
+    const engine = new TemplateEngine();
+    engine.define("note", "<%= embed(zt.imgLink) %>");
+    const imgLink = Object.assign(() => "Unused ordinary link", {
+      renderEmbed: () =>
+        "Excerpt image unavailable. [Source](zotero://open/library/items/RGRPDF24)",
+    });
+    expect(engine.render("note", { imgLink })).toBe(
+      "Excerpt image unavailable. [Source](zotero://open/library/items/RGRPDF24)",
+    );
+  });
   it("renders templates registered by name", () => {
     const engine = new TemplateEngine();
     engine.define("note", "# <%= zt.title %>");

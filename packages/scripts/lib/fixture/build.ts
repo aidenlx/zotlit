@@ -40,6 +40,8 @@ import {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
+  EXCERPT_RENDERING_PDFS,
+  EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
   findVaultCase,
   FIXTURE_ITEM_TYPES,
@@ -79,6 +81,9 @@ export {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   DEFAULT_VAULT_CASE,
+  EXCERPT_RENDERING_CASES,
+  EXCERPT_RENDERING_PDFS,
+  EXCERPT_RENDERING_VAULT_DIR,
   findScopeCase,
   findVaultCase,
   FIXTURE_ITEM_TYPES,
@@ -114,6 +119,8 @@ export type {
   FixtureAttachment,
   FixtureCollection,
   FixtureCreator,
+  FixtureExcerptCase,
+  FixtureExcerptPdf,
   FixtureItem,
   FixtureLibrary,
   FixtureNote,
@@ -213,6 +220,7 @@ export async function buildFixture(
   await writePrefs(layout, options);
   await writeLocalApiAuthorizations(layout, options);
   await writeVault(layout, options);
+  await writeExcerptAcceptanceFiles(layout);
 }
 
 /** Rewrite only the saved Library Scope of an already-built vault. */
@@ -293,6 +301,18 @@ async function writeAttachmentFiles(layout: FixtureLayout): Promise<void> {
     await mkdir(dirname(destination), { recursive: true });
     await cp(join(ASSET_DIR, attachment.sourceAsset), destination);
   }
+}
+
+async function writeExcerptAcceptanceFiles(
+  layout: FixtureLayout,
+): Promise<void> {
+  const destination = join(layout.vaultDir, EXCERPT_RENDERING_VAULT_DIR);
+  await mkdir(destination, { recursive: true });
+  for (const { asset } of EXCERPT_RENDERING_PDFS)
+    await cp(
+      join(ASSET_DIR, asset),
+      join(destination, asset.split("/").at(-1)!),
+    );
 }
 
 async function writeAnnotationCacheFiles(layout: FixtureLayout): Promise<void> {

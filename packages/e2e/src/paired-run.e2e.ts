@@ -28,6 +28,12 @@ import {
 import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
+import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
+import {
+  verifyExcerptRendering,
+  verifyZoteroExcerptParity,
+} from "./excerpt-rendering.ts";
 import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
 import {
   authorizationCount,
@@ -748,6 +754,19 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     }, 120000);
   });
 
+  describe.skipIf(!debuggerPort || !vaultId)(
+    "excerpt rendering with readers closed",
+    () => {
+      it("renders the deterministic matrix with Zotero open and no reader", async () => {
+        using rdp = await openZoteroRdp(debuggerPort!);
+        expect(await rdp.json<number>("Zotero.Reader._readers.length")).toBe(0);
+        await verifyExcerptRendering(vaultId!);
+        await verifyZoteroExcerptParity(vaultId!);
+        expect(await rdp.json<number>("Zotero.Reader._readers.length")).toBe(0);
+      }, 120000);
+    },
+  );
+
   // ── ZotLit's surfaces ─────────────────────────────────────────────────────
   // Tier 1's shape applied to the plugin: the prompt answers Always Allow for
   // the whole block, so no test here is about the dialog. Every ZotLit write is
@@ -966,6 +985,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
       }, 120000);
 
+      // The one place a confirmed write can land: the Local API is serving
+      // this Attachment, so a saved colour edit really moves the pixels the
+      // card paints, and the card's own publication of them is observable.
+      it("keeps painting through a saved edit, then publishes the edited pixels", async (context) => {
+        await verifySavedEditDisplay(vaultId!, context);
+      }, 120000);
+
       it("saves a comment from a pop-out card's native Scope", async () => {
         const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)`;
         const readerPdf = `app.workspace.getLeavesOfType('pdf').find(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]'))?.view.containerEl`;
@@ -1051,6 +1077,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           ),
         ).toBe(true);
+      }, 120000);
+
+      it("recovers an unchanged unavailable ink card through the actual Refresh gesture", async () => {
+        await verifyExcerptRefresh(vaultId!);
       }, 120000);
 
       it("refreshes external comments by focus and manual action without the Companion", async () => {
@@ -1371,6 +1401,136 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           card: retained,
           mark: retained,
         });
+      }, 120000);
+
+      it("updates one managed note to a new immutable excerpt version", async () => {
+        const vaultPath = getDevVaultDir(pairedWorkspaceRoot);
+        const legacySource = join(
+          reach!.layout.dataDir,
+          "cache",
+          "library",
+          "FDRFQ7C2.png",
+        );
+        const notePaths = await obJson<{
+          literature: string;
+          imported: string;
+          live: boolean;
+          assets: string[];
+        }>(
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.noteIndex.whenIndexed();const literature=services.noteIndex.getNotesByItemKey('RUGIER24')[0];const imported=services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0];if(!literature||!imported)throw new Error('Managed acceptance notes missing');return JSON.stringify({literature:literature.path,imported:imported.path,live:services.settings.current['note.default-profile'].bindings['note.import-annotations-as-template'],assets:app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')).map(file=>file.path)});})()`,
+        );
+        const originalLiterature = await readFile(
+          join(vaultPath, notePaths.literature),
+          "utf8",
+        );
+        const originalImported = await readFile(
+          join(vaultPath, notePaths.imported),
+          "utf8",
+        );
+        const originalInk = await obJson<{ color: string }>(
+          `(async()=>{const list=await app.plugins.plugins.zotlit.services.annotationRepository.read('RGRPDF24');const annotation=list?.annotations.find(value=>value.key==='TYY6Z6ZF');if(!annotation)throw new Error('Ink annotation missing');return JSON.stringify({color:annotation.color});})()`,
+        );
+        await using restore = new AsyncDisposableStack();
+        restore.defer(async () => {
+          await obEval(
+            vaultId!,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;await services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(originalInk.color)});await services.db.refresh();services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':${JSON.stringify(notePaths.live)}});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(literature)await app.vault.modify(literature,${JSON.stringify(originalLiterature)});if(imported)await app.vault.modify(imported,${JSON.stringify(originalImported)});const keep=new Set(${JSON.stringify(notePaths.assets)});for(const file of app.vault.getFiles().filter(file=>file.name.startsWith('zotlit-excerpt-')))if(!keep.has(file.path))await app.vault.delete(file);return true;})()`,
+          );
+          expect(
+            await waitFor(
+              async () =>
+                (await annotationColor(api, serverID, "TYY6Z6ZF")) ===
+                originalInk.color,
+            ),
+          ).toBe(true);
+        });
+
+        const prepared = await obJson<{
+          legacyUrl: string;
+          literature: { diagnostic: unknown };
+          imported: unknown;
+        }>(
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const literature=app.vault.getFileByPath(${JSON.stringify(notePaths.literature)});const imported=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!literature||!imported)throw new Error('Managed acceptance notes missing');const legacyUrl=require('url').pathToFileURL(${JSON.stringify(legacySource)}).href;await app.vault.modify(literature,(await app.vault.read(literature))+${JSON.stringify("\n\n![Legacy excerpt](")}+legacyUrl+${JSON.stringify(")\n")});const literatureResult=await services.noteFeature.updateNote(literature,{indexedKey:'RUGIER24',scope:'full'});const importedResult=await services.batchImport.reimportNoteByKey('NNNNAAAA',imported);return JSON.stringify({legacyUrl,literature:{diagnostic:literatureResult.diagnostic??null},imported:importedResult});})()`,
+        );
+        expect(prepared.literature).toEqual({ diagnostic: null });
+        expect(prepared.imported).toEqual({ outcome: "overwritten" });
+
+        const literatureBefore = await readFile(
+          join(vaultPath, notePaths.literature),
+          "utf8",
+        );
+        const importedBefore = await readFile(
+          join(vaultPath, notePaths.imported),
+          "utf8",
+        );
+        expect(literatureBefore).toContain(prepared.legacyUrl);
+        expect(importedBefore).toContain("zotlit-excerpt-");
+        const excerptTargets = (markdown: string) =>
+          markdown
+            .split("![[")
+            .slice(1)
+            .map((part) => part.split("]]", 1)[0]!)
+            .filter((target) => target.includes("zotlit-excerpt-"));
+        const beforeTargets = excerptTargets(importedBefore);
+        expect(beforeTargets).toHaveLength(2);
+        const beforeBytes = new Map(
+          await Promise.all(
+            beforeTargets.map(
+              async (target) =>
+                [target, await readFile(join(vaultPath, target))] as const,
+            ),
+          ),
+        );
+        const legacyBytes = await readFile(legacySource);
+
+        const changedColor = "#d12f2f";
+        expect(
+          await obJson<{ kind: string }>(
+            `(async()=>JSON.stringify(await app.plugins.plugins.zotlit.services.annotationRepository.patchColor('TYY6Z6ZF',${JSON.stringify(changedColor)})))()`,
+          ),
+        ).toMatchObject({ kind: "idle" });
+        expect(
+          await waitFor(
+            async () =>
+              (await annotationColor(api, serverID, "TYY6Z6ZF")) ===
+              changedColor,
+          ),
+        ).toBe(true);
+        await obEval(
+          vaultId!,
+          "(async()=>{await app.plugins.plugins.zotlit.services.db.refresh();return true;})()",
+        );
+        expect(
+          await obJson<unknown>(
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(notePaths.imported)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+          ),
+        ).toEqual({ outcome: "overwritten" });
+
+        const literatureAfter = await readFile(
+          join(vaultPath, notePaths.literature),
+          "utf8",
+        );
+        const importedAfter = await readFile(
+          join(vaultPath, notePaths.imported),
+          "utf8",
+        );
+        expect(literatureAfter).toBe(literatureBefore);
+        expect(literatureAfter).toContain(prepared.legacyUrl);
+        expect(await readFile(legacySource)).toEqual(legacyBytes);
+        const afterTargets = excerptTargets(importedAfter);
+        const retired = beforeTargets.filter(
+          (target) => !afterTargets.includes(target),
+        );
+        const created = afterTargets.filter(
+          (target) => !beforeTargets.includes(target),
+        );
+        expect(retired).toHaveLength(1);
+        expect(created).toHaveLength(1);
+        expect(await readFile(join(vaultPath, created[0]!))).not.toEqual(
+          beforeBytes.get(retired[0]!),
+        );
+        for (const [target, bytes] of beforeBytes)
+          expect(await readFile(join(vaultPath, target))).toEqual(bytes);
       }, 120000);
 
       // Last in this block, so it covers every write above: ZotLit writes

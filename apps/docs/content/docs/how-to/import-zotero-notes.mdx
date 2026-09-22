@@ -224,9 +224,10 @@ By default, annotation paragraphs in imported notes keep the HTML that Zotero in
 Turn on <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_annotations_template_name()} /> for the Default profile, or set `importAnnotationsAsTemplate` in a profile document. ZotLit renders those paragraphs through the Annotation Section of that profile, producing the same rich callouts used in literature notes.
 
 <Callout type="warn" title="Replace on refresh">
-  With this setting on, each annotation's text, comment, color, page, and image
-  are taken fresh from Zotero. Edits you made to that paragraph inside the
-  imported note are replaced. This is why the setting is off by default.
+  With this setting on, each annotation's text, comment, color, and page come
+  from its saved Zotero data. Image and ink excerpts are prepared during import.
+  Edits you made to that paragraph inside the imported note are replaced. This
+  is why the setting is off by default.
 </Callout>
 
 ### What is rendered
@@ -238,7 +239,15 @@ Only paragraphs that still match the original Zotero structure are rendered from
 - The paragraph is nested inside a list item, blockquote, or table cell.
 - The annotation was deleted in Zotero and can no longer be fetched.
 
-Highlight, underline, and image annotations are eligible for template rendering. Note and text annotations (which carry no excerpt) are kept as Zotero inserted them.
+Highlight, underline, image, and ink annotations are eligible for template rendering. Note and text annotations (which carry no excerpt) are kept as Zotero inserted them.
+
+Image and ink paragraphs use [live excerpt images](/docs/concepts/excerpt-images) with both PDF readers closed. Ordinary embedded images keep the snapshots stored in the Child Note. A paragraph converted through the annotation template does not also copy its stored snapshot.
+
+Re-import selects a new image version only for that Imported Note. Other notes and older image files stay unchanged. A failed refresh keeps a verified previous image when available; otherwise it writes an explanation and source link. Other content and notes can still import if an image fails.
+
+With <UiLabel name={m.settings_attachment_import_name()} /> off, live excerpts create no new image files. The import summary counts only images requested by the template and combines the results for a batch.
+
+The existing re-import rules still apply. Batch import skips notes whose Zotero modification time has not changed, even if a live annotation changed. Use the single-note re-import command to refresh such a note. With a missing annotation or blank annotation template, ZotLit converts the stored paragraph as ordinary note content.
 
 <Callout type="warn" title="Text after the citation">
   Text you add after the citation mark (the comment slot) is not protected.

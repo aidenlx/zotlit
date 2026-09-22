@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Attachment } from "@zotlit/db";
+import type { Annotation, Attachment } from "@zotlit/db";
 import { USER_LIBRARY_ID } from "@zotlit/db";
 
 import type {
@@ -118,6 +118,21 @@ describe("attachmentFileLink", () => {
 });
 
 describe("buildAnnotationResolvers", () => {
+  it("uses a prepared excerpt helper without queuing a cache copy", () => {
+    const annotation = { key: "FDRFQ7C2", type: 3 } as Annotation;
+    const helper = () =>
+      "Excerpt image unavailable. [Zotero](zotero://open/library/items/RGRPDF24)";
+    const prepared = vi.fn(() => helper);
+    const resolveLink = vi.fn();
+    const resolvers = buildAnnotationResolvers({
+      zoteroPref: ctx,
+      attachmentImport: { decide: blockedDecide, resolveLink },
+      annotationImageLink: prepared,
+    });
+    expect(resolvers.annotationImageLink(annotation)?.()).toBe(helper());
+    expect(prepared).toHaveBeenCalledWith(annotation);
+    expect(resolveLink).not.toHaveBeenCalled();
+  });
   it("resolves no filePath/fileLink for a malformed row and attempts no copy", () => {
     const resolveLink = vi.fn();
     const resolvers = buildAnnotationResolvers({

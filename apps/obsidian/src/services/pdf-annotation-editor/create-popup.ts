@@ -167,7 +167,12 @@ export interface CommentSheetProps {
   onCancel: () => void;
   /** The caller binds Mod+Enter through its owning native Scope. */
   nativeSubmit?: boolean;
-  readOnly?: boolean;
+  /**
+   * Why the Editing Capability refuses the write, or `null` while it takes
+   * one. The sheet reads the refusal off the reason rather than off a second
+   * flag, so the two can never disagree.
+   */
+  blocked?: string | null;
 }
 
 /**
@@ -184,7 +189,7 @@ export function renderCommentSheet(
     onSave,
     onCancel,
     nativeSubmit = false,
-    readOnly = false,
+    blocked = null,
   }: CommentSheetProps,
 ): HTMLTextAreaElement {
   sheet.empty();
@@ -198,13 +203,11 @@ export function renderCommentSheet(
     },
   });
   editor.value = value;
-  editor.readOnly = readOnly;
+  editor.readOnly = blocked !== null;
   if (!nativeSubmit)
     sheet.createDiv({
       cls: ["zt:text-xs", "zt:text-muted-foreground"],
-      text: readOnly
-        ? m.annot_view_comment_paused()
-        : m.pdf_create_popup_comment_hint(),
+      text: blocked ?? m.pdf_create_popup_comment_hint(),
     });
   editor.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {

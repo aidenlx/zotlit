@@ -46,6 +46,8 @@ import {
   BUILD_TIMESTAMP,
   buildFixture,
   COLLECTIONS,
+  EXCERPT_RENDERING_PDFS,
+  EXCERPT_RENDERING_VAULT_DIR,
   FIXTURE_LOCAL_API_SERVER_ID,
   FIXTURE_LOCAL_API_WRITE_KEY,
   FIXTURE_PARTIAL_NAME,
@@ -391,6 +393,27 @@ describe("the generated Zotero database", () => {
         title: "Research interfaces conference paper (linked copy)",
         url: null,
       },
+      {
+        key: "SNAP2345",
+        path: "storage:snapshot.png",
+        charsetID: null,
+        title: "Live image excerpt snapshot",
+        url: null,
+      },
+      {
+        key: "SNAP3456",
+        path: "storage:snapshot.png",
+        charsetID: null,
+        title: "Live ink excerpt snapshot",
+        url: null,
+      },
+      {
+        key: "FRZN2345",
+        path: "storage:snapshot.png",
+        charsetID: null,
+        title: "Frozen excerpt snapshot",
+        url: null,
+      },
     ]);
   });
 
@@ -594,6 +617,35 @@ describe("the generated Zotero database", () => {
         asset,
         startsWithPdfHeader: true,
         sha256,
+      })),
+    );
+  });
+
+  it("copies deterministic excerpt-rendering inputs into the Fixture Vault", async () => {
+    const inputs = await Promise.all(
+      EXCERPT_RENDERING_PDFS.map(async ({ asset, outcome, sha256 }) => {
+        const filename = asset.split("/").at(-1)!;
+        const source = await readFile(join(ASSET_DIR, asset));
+        const copy = await readFile(
+          join(layout.vaultDir, EXCERPT_RENDERING_VAULT_DIR, filename),
+        );
+        return {
+          asset,
+          outcome,
+          sha256: createHash("sha256").update(source).digest("hex"),
+          sameBytes: source.equals(copy),
+          declaredSha256: sha256,
+        };
+      }),
+    );
+
+    expect(inputs).toEqual(
+      EXCERPT_RENDERING_PDFS.map(({ asset, outcome, sha256 }) => ({
+        asset,
+        outcome,
+        sha256,
+        sameBytes: true,
+        declaredSha256: sha256,
       })),
     );
   });
@@ -1639,14 +1691,15 @@ describe("the generated Obsidian vault", () => {
     }
   });
 
-  it("links every present Attachment from its generated Literature Note", async () => {
+  it("links every present regular-item Attachment from its generated Literature Note", async () => {
     using db = openClient();
     const attachments = getAttachmentsByParents(db, ATTACHMENT_PARENT_IDS);
 
     for (const attachment of attachments) {
       const parent = ITEMS.find(
         ({ itemID }) => itemID === attachment.parentItemID,
-      )!;
+      );
+      if (!parent) continue;
       const note = await readFile(
         join(
           layout.vaultDir,

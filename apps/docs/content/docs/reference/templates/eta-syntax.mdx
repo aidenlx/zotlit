@@ -198,6 +198,8 @@ Signature: `embed(link, alias?, subpath?)`
 | `zt.imgLink` renders `"[[excerpt.png]]"` | `"![[excerpt.png]]"` |
 | `zt.imgLink` is `null`                   | `""`                 |
 
+For image and ink annotations, `embed(zt.imgLink)` uses the prepared note image or returns an unavailable-image explanation and source link. It preserves that fallback text without adding `!`. Image preparation runs before the template, so the template executes once per render. Preview rendering creates no vault image files.
+
 ## `pandocCite()`: Pandoc Citation source [#pandoc-cite]
 
 Formats a Citation Item array as Pandoc Citation source. Pass `zt.citations` directly to the helper.
@@ -327,7 +329,7 @@ linkHelper(alias?, subpath?)
 | `note.noteLink()` | each `zt.notes[]` entry       | none                          | Link to the child note                                                         |
 | `a.fileLink()`    | each `zt.attachments[]` entry | none                          | Attachment file link                                                           |
 | `zt.fileLink()`   | annotation context            | `#page=N&zt-annotation=<key>` | Attachment link anchored to the annotation's page and to the annotation itself |
-| `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, or `null`                                                  |
+| `zt.imgLink()`    | annotation context            | none                          | Excerpt-image link, unavailable-image explanation and source link, or `null`   |
 
 ```eta
 <%= zt.attachments[0].fileLink() %>
@@ -335,7 +337,7 @@ linkHelper(alias?, subpath?)
 <%= zt.noteLink("See notes", "#Summary") %>
 ```
 
-`zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types without a cached image (everything except `image` and `ink`).
+`zt.noteLink()` returns `null` when the literature note path is unresolvable (collision, recursive resolution, or template error). `zt.imgLink` is `null` for annotation types other than `image` and `ink`. An unavailable image uses the [excerpt fallback](/docs/concepts/excerpt-images#import-outcomes).
 
 ## Template document naming [#template-document-naming]
 
