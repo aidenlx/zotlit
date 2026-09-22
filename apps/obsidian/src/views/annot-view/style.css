@@ -87,11 +87,15 @@
   text-decoration-line: none;
 }
 
-/* The page is a locator in the 22px chip the row's verbs share, one step
-   under the card's 12px so the chip reads as the verbs' size rather than as a
-   line of the excerpt. 11px is the floor the design test holds chrome to. */
+/* The page is a locator in the chip beside the row's verbs, one step under
+   the card's 12px so the chip reads as the verbs' size rather than as a line
+   of the excerpt. 11px is the floor the design test holds chrome to. In the
+   monospace face the no-break space between "p." and the number is a whole
+   cell, which reads as a gap; the word-spacing takes it back to a hair. */
 .zt-annot-page-chip {
   font-size: 11px;
+  letter-spacing: -0.02em;
+  word-spacing: -0.5ch;
 }
 
 /* The header block is one `<button>`, and Obsidian's own `button` rules are
