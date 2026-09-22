@@ -3,7 +3,11 @@ import { expect, it } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { EditingCapability } from "./capability";
-import { editingCapabilityCopy, secondsUntil } from "./capability-copy";
+import {
+  editingCapabilityAffordance,
+  editingCapabilityCopy,
+  secondsUntil,
+} from "./capability-copy";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -154,4 +158,40 @@ it("counts a cooldown down in whole seconds, and never past zero", () => {
   // the wait is over.
   expect(secondsUntil(NOW.add({ milliseconds: 1200 }), NOW)).toBe(2);
   expect(secondsUntil(NOW.subtract({ seconds: 10 }), NOW)).toBe(0);
+});
+
+it("keeps reading quiet until authorization can be requested", () => {
+  expect(editingCapabilityAffordance({ kind: "writable" }, NOW)).toBeNull();
+  for (const reason of READ_ONLY_REASONS) {
+    expect(
+      editingCapabilityAffordance({ kind: "read-only", reason }, NOW),
+    ).toBeNull();
+  }
+  expect(
+    editingCapabilityAffordance({ kind: "authorization-required" }, NOW),
+  ).toMatchObject({
+    label: m.capability_enable_editing(),
+    disabled: false,
+  });
+  expect(
+    editingCapabilityAffordance({ kind: "authorizing" }, NOW),
+  ).toMatchObject({
+    label: m.capability_authorizing(),
+    disabled: true,
+    spinning: true,
+  });
+});
+
+it("counts down the enable-editing action until the capability changes", () => {
+  const retryAfter = NOW.add({ seconds: 3 });
+  expect(
+    [0, 1, 2, 3].map(
+      (elapsed) =>
+        editingCapabilityAffordance(
+          { kind: "cooldown", retryAfter },
+          NOW.add({ seconds: elapsed }),
+        )?.countdown,
+    ),
+  ).toEqual([3, 2, 1, 0]);
+  expect(editingCapabilityAffordance({ kind: "writable" }, NOW)).toBeNull();
 });

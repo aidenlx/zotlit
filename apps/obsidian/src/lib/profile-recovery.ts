@@ -45,7 +45,7 @@ export function renderProfileRecovery(
   container.querySelector("[data-profile-recovery]")?.remove();
   if (!options.path) return;
   const path = options.path;
-  const button = container.ownerDocument.createElement("button");
+  const button = container.ownerDocument.win.createEl("button");
   button.type = "button";
   button.dataset["profileRecovery"] = path;
   button.textContent = m.profile_switch_recovery();

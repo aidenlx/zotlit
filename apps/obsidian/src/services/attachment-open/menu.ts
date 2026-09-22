@@ -3,15 +3,12 @@
 import { TFile } from "obsidian";
 import type { Plugin } from "obsidian";
 
-import {
-  createObsidianAttachmentReader,
-  openAttachments,
-} from "@/lib/attachment-open";
+import { openAttachments } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 
 import type { AttachmentOpenDeps } from "./actions";
-import { resolveLiteratureNoteAttachments } from "./actions";
+import { createPdfReader, resolveLiteratureNoteAttachments } from "./actions";
 
 /**
  * Register the `open-pdf` entry on a Literature Note's file menu. A pointer
@@ -51,7 +48,7 @@ export function registerAttachmentOpenFileMenu(
                 indexedKey,
               );
               openAttachments(attachments, {
-                reader: createObsidianAttachmentReader(deps.app),
+                reader: createPdfReader(deps),
                 event: evt,
                 anchor,
               });

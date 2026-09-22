@@ -19,13 +19,15 @@
 }
 
 /*
- * The selected mark keeps its own colour and gains a ring in the accent colour,
- * so a stack of overlapping marks says which one the popup is acting on. The
- * ring is a CSS filter rather than a stroke, because a stroke is what an
- * underline and an ink path are already drawn with.
+ * The selected mark keeps its own colour; a separate outline, traced round
+ * the merged silhouette of its own rects, says which one the popup is
+ * acting on. `non-scaling-stroke` is set in render.ts, so this width stays a
+ * true hairline at every zoom step rather than fattening or thinning with
+ * the overlay's `viewBox` scale.
  */
-:where(.zt-pdf-annotation-mark.is-selected) {
-  filter: drop-shadow(0 0 2px var(--text-accent));
+:where(.zt-pdf-annotation-selection-outline) {
+  stroke: var(--text-accent);
+  stroke-width: 1px;
 }
 
 /* Zotero's highlight reads as ink on paper in either theme. */
@@ -49,17 +51,26 @@
   width: fit-content;
 }
 
-/* The note's folded corner shows the paper through the sticky note. */
-:where(.zt-pdf-annotation-note-fold) {
-  fill: var(--background-primary);
-  opacity: 0.55;
+/*
+ * The note glyph's stroke weight, set on the group so both the body and the
+ * crease inherit it — `non-scaling-stroke` is set in render.ts, so this width
+ * stays a true hairline at every zoom step.
+ */
+:where(.zt-pdf-annotation-note-icon) {
+  stroke-width: 1.4px;
+}
+
+/* The glyph's body reads as a tinted fill under its own stroke, rather than
+   a solid coloured blob. */
+:where(.zt-pdf-annotation-note-fill) {
+  fill-opacity: 0.22;
 }
 
 /*
  * The Creation Toolbar sits in Obsidian's own right toolbar slot, so it takes
- * that toolbar's rhythm rather than setting one of its own. A swatch keeps its
- * Annotation colour when it is pressed, which `clickable-icon.is-active` would
- * otherwise repaint in the accent colour.
+ * that toolbar's rhythm rather than setting one of its own. An armed tool keeps
+ * its Annotation colour, which `clickable-icon.is-active` would otherwise
+ * repaint in the accent colour.
  */
 :where(.zt-pdf-creation-toolbar) {
   display: flex;
@@ -71,15 +82,78 @@
   background-color: var(--background-modifier-hover);
 }
 
+/*
+ * One tool is one split button: the toggle that arms it, and the chevron that
+ * opens its colours. The seat is what reads as the button — it owns the shape
+ * and the armed fill — and each half owns its own hover, so the pair fills as
+ * one control and answers the pointer in two places.
+ *
+ * Obsidian states `border-radius`, `padding` and `--icon-size` on
+ * `.clickable-icon` itself, outside any cascade layer, so a utility class
+ * cannot reach them and these longhands answer it here instead.
+ */
+:where(.zt-pdf-tool) {
+  border-radius: var(--clickable-icon-radius);
+  overflow: hidden;
+}
+
+:where(.zt-pdf-tool.is-active) {
+  background-color: var(--background-modifier-active-hover);
+}
+
+/* The seat carries the corners, so the halves meet square and flush. */
+:where(.zt-pdf-tool) > .clickable-icon {
+  border-radius: 0;
+}
+
+/* The armed tool's own colour stays on its toggle, through the inline style. */
+:where(.zt-pdf-tool.is-active) > .clickable-icon {
+  color: var(--icon-color-active);
+}
+
+/*
+ * Obsidian holds an active `clickable-icon` at its active fill under the
+ * pointer, rather than lighting it further. The seat carries that fill here, so
+ * the half under the pointer stands aside and lets the seat show through — the
+ * armed tool answers the way every other active icon in the app does.
+ */
+:where(.zt-pdf-tool.is-active) > .clickable-icon:hover {
+  background-color: transparent;
+}
+
+/* Halved where the two meet, which is what makes the pair read as compact. */
+:where(.zt-pdf-tool) > .clickable-icon:first-child {
+  padding-inline-end: var(--size-2-1);
+}
+
+:where(.zt-pdf-tool) > .clickable-icon:last-child {
+  padding-inline-start: var(--size-2-1);
+  /* The chevron names a menu rather than a colour, so it reads one step down. */
+  --icon-size: var(--icon-xs);
+}
+
 /* The comment sheet is an editor, so it is as wide as one rather than as wide
    as the row of verbs above it. */
 :where(.zt-pdf-comment-sheet) {
   display: flex;
   flex-direction: column;
   gap: var(--size-2-1);
-  width: 15em;
+  inline-size: 20em;
+  max-inline-size: calc(100vw - var(--size-4-4));
 }
 
 :where(.zt-pdf-comment-sheet textarea) {
   font-size: var(--font-ui-small);
+}
+
+/* The native toolbar uses one fixed row. Let our tools and permission status
+   wrap within the reader when the pane cannot fit all toolbar groups. */
+.pdf-toolbar:has(> .pdf-toolbar-right > .zt-pdf-creation-toolbar) {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+.pdf-toolbar-right:has(> .zt-pdf-creation-toolbar) {
+  max-inline-size: 100%;
+  min-inline-size: 0;
 }

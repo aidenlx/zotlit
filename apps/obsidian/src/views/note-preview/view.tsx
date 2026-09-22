@@ -44,6 +44,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
@@ -68,7 +69,6 @@ import {
   templateWorkbenchButton,
   templateWorkbenchTheme,
   selectionBar,
-  selectionControl,
   selectionHint,
 } from "@/views/template-workbench/theme";
 import type {

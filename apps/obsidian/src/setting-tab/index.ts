@@ -44,6 +44,7 @@ import {
   profilesPage,
   setProfileControlValue,
 } from "./profiles";
+import { readerPageItems } from "./reader";
 import { resourcesGroup } from "./resources";
 import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
 import { zoteroPageItems } from "./zotero";
@@ -62,6 +63,8 @@ export interface ZotLitSettingTabOptions {
   customize: CustomizeAction;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
+  excerptImage: SettingTabContext["excerptImage"];
+  excerptDisplay: SettingTabContext["excerptDisplay"];
   annotations: AnnotationCapabilityActions;
   writeAuthorization: WriteAuthorizationActions;
   template: TemplateService;
@@ -83,6 +86,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #customize: CustomizeAction;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
+  readonly #excerptImage: SettingTabContext["excerptImage"];
+  readonly #excerptDisplay: SettingTabContext["excerptDisplay"];
   readonly #annotations: AnnotationCapabilityActions;
   readonly #writeAuthorization: WriteAuthorizationActions;
   readonly #profile: ProfileService;
@@ -104,6 +109,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
     customize,
     attachmentImport,
     citationIndex,
+    excerptImage,
+    excerptDisplay,
     annotations,
     writeAuthorization,
     template,
@@ -131,6 +138,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#customize = customize;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
+    this.#excerptImage = excerptImage;
+    this.#excerptDisplay = excerptDisplay;
     this.#annotations = annotations;
     this.#writeAuthorization = writeAuthorization;
     this.#template = template;
@@ -240,6 +249,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
       customize: this.#customize,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
+      excerptImage: this.#excerptImage,
+      excerptDisplay: this.#excerptDisplay,
       annotations: this.#annotations,
       writeAuthorization: this.#writeAuthorization,
       template: this.#template,
@@ -295,6 +306,13 @@ export class ZotLitSettingTab extends PluginSettingTab {
             name: m.settings_page_attachments(),
             desc: m.settings_page_attachments_desc(),
             items: attachmentPageItems(ctx),
+          },
+          {
+            type: "page",
+            id: "settings_page_reader",
+            name: m.settings_page_reader(),
+            desc: m.settings_page_reader_desc(),
+            items: readerPageItems(),
           },
           {
             type: "page",

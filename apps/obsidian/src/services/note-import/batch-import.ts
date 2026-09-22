@@ -37,6 +37,8 @@ import {
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import type { DatabaseService } from "@/services/database/service";
+import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type {
   NoteFeature,
@@ -72,7 +74,10 @@ const IMPORT_CONCURRENCY = 16;
 
 export interface NoteImportDeps {
   profile: ProfileReader;
-  noteFeature: Pick<NoteFeature, "resolveCreationProfile">;
+  noteFeature: Pick<
+    NoteFeature,
+    "resolveCreationProfile" | "reportExcerptImages"
+  >;
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
   db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
@@ -728,10 +733,12 @@ async function importOne(
   const memo: GroupIDMemo = new Map();
   const note = getNoteByItemID(lease.client, ref.itemID, { memo });
   if (!note) return "skipped";
-  return deps.noteImport.importNote(note, {
+  using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
+  return await deps.noteImport.importNote(note, {
     client: lease.client,
     settings,
     groupIdMemo: memo,
+    reportExcerpts: excerpts.add,
     ...(targetFile ? { targetFile } : {}),
   });
 }
@@ -765,6 +772,10 @@ async function executeImportRun(
   const memo: GroupIDMemo = new Map();
   const tagMemo: TagMemo = new Map();
   const attachmentFolderCache = new Map<string, string>();
+  using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
+  // One run is one initiating batch: every note it writes reuses one retention,
+  // released as soon as the run's last admitted consumer settles.
+  await using outcomes = new ExcerptOutcomeScope();
 
   const result = await runBatchWrite({
     db: deps.db,
@@ -785,6 +796,8 @@ async function executeImportRun(
         groupIdMemo: memo,
         tagMemo,
         attachmentFolderCache,
+        reportExcerpts: excerpts.add,
+        outcomes,
         ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
       };
       const outcome = task.profilePlan
@@ -891,11 +904,13 @@ async function reimportNoteByKey(
   if (!note) return { outcome: "not-found" };
 
   const settings = await deps.settings.loaded;
+  using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
   const writeOutcome = await deps.noteImport.importNote(note, {
     client: lease.client,
     settings,
     groupIdMemo,
     targetFile,
+    reportExcerpts: excerpts.add,
   });
   return { outcome: writeOutcome };
 }

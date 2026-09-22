@@ -13,6 +13,7 @@ import type {
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
+import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { ItemLookup } from "@/services/item-lookup/service";
@@ -24,7 +25,6 @@ import {
 import {
   templateWorkbenchButton,
   selectionBar,
-  selectionControl,
   selectionHint,
 } from "@/views/template-workbench/theme";
 

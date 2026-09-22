@@ -476,6 +476,26 @@ it("drops the Remembered Authorization when the settings row forgets it", async 
   expect(await client.remembered()).toBe(false);
 });
 
+it("disables editing when a remembered grant was removed outside ZotLit", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { client, credentials, requests } = await setup(
+    stack,
+    {},
+    { key: "5ixBzUhQfLu8i8RIhU6OEzENW4pAITLf" },
+  );
+  await client.probe();
+  await credentials.forget();
+  const sent = requests.length;
+  expect(
+    await client.authorizedSend(ITEM_PATH, {
+      library: PERSONAL,
+      method: "PATCH",
+    }),
+  ).toEqual({ failure: { kind: "unauthorized" } });
+  expect(capabilityInput(client).authorized).toBe(false);
+  expect(requests.slice(sent)).toEqual([]);
+});
+
 function read<T>(result: { value: T } | { failure: unknown }): T {
   if ("failure" in result) {
     throw new Error(`Expected a reply, got ${JSON.stringify(result.failure)}`);

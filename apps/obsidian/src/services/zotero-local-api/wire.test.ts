@@ -29,10 +29,18 @@ async function body(answer: Response): Promise<string> {
   return await answer.text();
 }
 
-it("answers the key Zotero generated", async () => {
+it("answers the complete Annotation Zotero created", async () => {
   const result = readCreateResult(await body(createAccepted(MADE)), EXPECTED);
 
-  expect(result).toEqual({ value: "MADE2345" });
+  expect(result).toMatchObject({
+    value: {
+      key: "MADE2345",
+      parentKey: "RGRPDF24",
+      type: "highlight",
+      color: "#2ea8e5",
+      version: 42,
+    },
+  });
 });
 
 it("fails the create on any entry Zotero refused, even under a 200", async () => {

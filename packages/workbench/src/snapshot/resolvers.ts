@@ -1,5 +1,6 @@
 // Redacting Zotero resolvers and validation for permitted vault targets.
 
+import { formatAnnotationFragment } from "@zotlit/db";
 import type { Attachment, Item, NoteResolvers, TemplateLink } from "@zotlit/db";
 
 import type { SnapshotProvenance, SnapshotVaultTargets } from "./types";
@@ -62,11 +63,11 @@ export function snapshotResolvers(
     annotation: {
       authorsShort,
       filePath: () => null,
-      fileLink: (attachment, page) =>
+      fileLink: (attachment, anchor) =>
         targetLink(
           targets.attachments?.[attachment.indexedKey],
           attachmentAlias(attachment),
-          page == null ? undefined : `page=${page}`,
+          formatAnnotationFragment(anchor ?? {}) || undefined,
         ) ?? (() => null),
       annotationImageLink: (annotation) => {
         if (annotation.type !== 3 && annotation.type !== 4) return null;

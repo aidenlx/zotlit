@@ -19,7 +19,12 @@ vi.mock("./profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
 }));
 
-vi.mock("@/services/attachment-open/actions", () => ({
+// `createPdfReader` stays real, so the chord still exercises the reader the
+// plugin builds; only the database lookup behind it is stubbed.
+vi.mock("@/services/attachment-open/actions", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/services/attachment-open/actions")
+  >()),
   resolveLiteratureNoteAttachments: vi.fn(),
 }));
 

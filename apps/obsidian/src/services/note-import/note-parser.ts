@@ -188,6 +188,19 @@ export function parseNote(
   return td.turndown(schema.container);
 }
 
+/** Select the same live paragraphs as the final conversion, without executing templates. */
+export function noteAnnotationKeys(html: string): string[] {
+  const root = new DOMParser().parseFromString(html, "text/html");
+  const schema = parseNoteSchema(root);
+  return schema.supported
+    ? distinct(
+        [...findAnnotationParagraphs(schema.container)].map(
+          (p) => p.annotationKey,
+        ),
+      )
+    : [];
+}
+
 /**
  * Prepass replacing each clean single-annotation paragraph with a callout
  * sentinel carrying the template-rendered Markdown. Runs before the Turndown is

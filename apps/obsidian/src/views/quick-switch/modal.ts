@@ -1,13 +1,12 @@
 import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { PaneType, TFile } from "obsidian";
 
-import {
-  createObsidianAttachmentReader,
-  openAttachments,
-  withFixedPane,
-} from "@/lib/attachment-open";
+import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
-import { resolveLiteratureNoteAttachments } from "@/services/attachment-open/actions";
+import {
+  createPdfReader,
+  resolveLiteratureNoteAttachments,
+} from "@/services/attachment-open/actions";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
@@ -98,10 +97,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       hit.item.indexedKey,
     );
     openAttachments(attachments, {
-      reader: withFixedPane(
-        createObsidianAttachmentReader(this.#deps.app),
-        pane,
-      ),
+      reader: withFixedPane(createPdfReader(this.#deps), pane),
       app: this.#deps.app,
     });
   }

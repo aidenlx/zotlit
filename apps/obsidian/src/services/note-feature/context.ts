@@ -22,6 +22,11 @@ import type {
   AttachmentImportService,
 } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
+import type {
+  ExcerptPreparation,
+  PreparedExcerpts,
+} from "@/services/excerpt-image/prepare";
+import type { prepareSingleExcerpt } from "@/services/excerpt-image/prepare-single";
 import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { getProfileBinding } from "@/services/profile/bindings";
@@ -41,7 +46,12 @@ const logger = getLogger("note-feature");
 interface NoteVaultApp {
   vault: Pick<
     Vault,
-    "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
+    | "getAbstractFileByPath"
+    | "getRoot"
+    | "createFolder"
+    | "create"
+    | "process"
+    | "read"
   >;
   fileManager: Pick<
     FileManager,
@@ -89,6 +99,13 @@ export interface NoteFeatureDeps {
   settings: Pick<SettingsService, "current" | "loaded" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   noteImport: Pick<NoteImporter, "prepare">;
+  excerptImages?: ExcerptPreparation;
+  singleExcerpt?: (
+    options: Omit<
+      Parameters<typeof prepareSingleExcerpt>[0],
+      "app" | "resolver"
+    >,
+  ) => ReturnType<typeof prepareSingleExcerpt>;
 }
 
 /**
@@ -167,6 +184,7 @@ export function buildNoteResolvers(
     noteImport: Pick<NoteImport, "resolveChildNote">;
     settings: ProfileBindingSettings | null;
     sourcePath: string;
+    excerptImages?: PreparedExcerpts;
   },
 ): NoteResolvers {
   const resolvingFallback = new Set<string>();
@@ -180,6 +198,7 @@ export function buildNoteResolvers(
     annotation: buildAnnotationResolvers({
       zoteroPref: ctx.zoteroPref,
       attachmentImport: options.attachmentImport,
+      annotationImageLink: options.excerptImages?.annotationImageLink,
     }),
     item: {
       authorsShort: creatorSummary,

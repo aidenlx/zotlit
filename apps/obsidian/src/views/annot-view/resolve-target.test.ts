@@ -9,6 +9,8 @@ import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
 
 const GROUP_LIBRARY: Library = {
   libraryID: 42,
+  version: 0,
+  clientVersion: null,
   type: "group",
   groupID: 7,
   name: "Shared",

@@ -15,7 +15,7 @@ import type {
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  */
 export type EditingCapability =
-  | { kind: "writable" }
+  | { kind: "writable"; oneTime?: boolean }
   | { kind: "authorization-required" }
   | { kind: "authorizing" }
   | { kind: "cooldown"; retryAfter: Temporal.Instant }
@@ -70,7 +70,8 @@ export function editingCapabilityOf(
   if (writes.authorizing) return { kind: "authorizing" };
   switch (state.kind) {
     case "available": {
-      if (state.authorized) return { kind: "writable" };
+      if (state.authorized)
+        return { kind: "writable", ...(writes.oneTime && { oneTime: true }) };
       const { cooldownUntil } = writes;
       return cooldownUntil !== null &&
         Temporal.Instant.compare(cooldownUntil, now()) > 0

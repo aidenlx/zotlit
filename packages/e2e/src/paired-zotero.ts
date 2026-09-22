@@ -332,7 +332,10 @@ const FIND_DIALOG = `(() => {
   const windows = Services.wm.getEnumerator(null);
   while (windows.hasMoreElements()) {
     const candidate = windows.getNext();
-    if (candidate.location && candidate.location.href === ${JSON.stringify(DIALOG_URL)}) {
+    const dialog = candidate.document?.getElementById("commonDialog");
+    if (candidate.location?.href === ${JSON.stringify(DIALOG_URL)}
+      && dialog?.defaultButton === "extra1"
+      && ["accept", "cancel", "extra1"].every(button => !dialog.getButton(button).hidden)) {
       return candidate;
     }
   }

@@ -55,7 +55,9 @@ export function editingCapabilityCopy(
       return {
         icon: "pencil",
         tone: "ready",
-        label: m.capability_writable(),
+        label: capability.oneTime
+          ? m.capability_one_time()
+          : m.capability_writable(),
         detail: null,
         spinning: false,
       };
@@ -93,18 +95,22 @@ export function editingCapabilityCopy(
 }
 
 /**
- * The always-present affordance, as both of its renderers draw it: the reader's
- * vanilla render function and the Annotation View's Preact component read this
- * one answer, so the two surfaces cannot drift apart.
+ * The enable-editing affordance, as the reader's vanilla render function draws
+ * it. A writable capability returns `null`, because the ordinary editing
+ * controls take its place. The Annotation View reads {@link
+ * editingCapabilityCopy} straight, in a row of its header menu.
  *
  * @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
  */
 export interface CapabilityAffordance {
+  disabled: boolean;
   /** The Obsidian icon, from the one icon map. */
   icon: string;
   tone: CapabilityTone;
   /** The accessible name, which Obsidian also renders as the hover tooltip. */
   tooltip: string;
+  /** The action label shown beside the icon. */
+  label: string;
   /** Whether the icon turns, because ZotLit or Zotero is working. */
   spinning: boolean;
   /** Whole seconds left of a cooldown, or null while nothing counts down. */
@@ -112,7 +118,7 @@ export interface CapabilityAffordance {
 }
 
 /**
- * What the affordance shows for one Editing Capability.
+ * What the affordance shows while one Editing Capability is unavailable.
  *
  * The tooltip carries the whole of the copy table's answer, because the
  * affordance is one icon with nowhere else to put the detail; a surface that
@@ -125,14 +131,21 @@ export interface CapabilityAffordance {
 export function editingCapabilityAffordance(
   capability: EditingCapability,
   now: Temporal.Instant,
-): CapabilityAffordance {
+): CapabilityAffordance | null {
+  if (capability.kind === "writable" || capability.kind === "read-only")
+    return null;
   const { icon, tone, label, detail, spinning } = editingCapabilityCopy(
     capability,
     now,
   );
   return {
+    disabled: capability.kind !== "authorization-required",
     icon,
     tone,
+    label:
+      capability.kind === "authorization-required"
+        ? m.capability_enable_editing()
+        : label,
     tooltip:
       detail === null
         ? label

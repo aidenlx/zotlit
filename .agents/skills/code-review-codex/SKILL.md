@@ -18,7 +18,7 @@ One `codex exec review` per axis, both started in the background so they run in 
 
 ```bash
 codex exec review -m gpt-6-astra -c model_reasoning_effort="xhigh" \
-  --title "Standards" -o tmp/review-standards.md "<brief>"
+  --title "Standards" -o .scratch/review-standards.md "<brief>"
 ```
 
 Each brief is the matching sub-agent brief from `code-review` step 4, plus two lines Codex needs:
@@ -42,7 +42,7 @@ Verified on `codex-cli 0.153.4`. Check `codex exec review --help` when the versi
 | --- | --- |
 | GPT-6 | `-m gpt-6-astra` |
 | Deep reasoning | `-c model_reasoning_effort="xhigh"` — overrides the `low` default in `~/.codex/config.toml` |
-| Report to a file | `-o <path>` (workspace `tmp/`) |
+| Report to a file | `-o <path>` (workspace `.scratch/`) |
 | Event stream | `--json` |
 
 Gotchas the CLI help states softly:

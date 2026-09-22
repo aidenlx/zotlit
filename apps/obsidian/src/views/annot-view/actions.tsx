@@ -1,13 +1,15 @@
-import { Menu, Platform } from "obsidian";
+import { Menu } from "obsidian";
 import type { App } from "obsidian";
 import { createContext } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
-import { resolveAnnotCachePath } from "@zotlit/db/path";
 
+import { buildColorMenu } from "@/lib/annotation-colors";
+import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
+import type { MenuAlign } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type {
@@ -15,17 +17,24 @@ import type {
   AnnotationRepository,
   MutationState,
 } from "@/services/annotation-repository/service";
-import {
-  writeFailureMessage,
-  writeFailureReason,
-} from "@/services/annotation-repository/write";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
+import type {
+  ExcerptDisplayDemand,
+  ExcerptDisplayService,
+  ExcerptImageDisplay,
+} from "@/services/excerpt-image/display";
+import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
-import type { CardControl } from "./card-controls";
+import { chooseAttachment } from "./attachment-suggester";
+import type { CardBlock, CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
-import type { FollowMode } from "./store";
+import type { ExcerptImageTarget } from "./excerpt-image-state";
+import { buildHeaderMenu } from "./menus";
+import { attachmentLine, headerMenu } from "./presentation";
+import type { AnnotState, FollowMode } from "./store";
 
 export interface AnnotActions {
   /** Open a card's overflow menu, from the control that carries it. */
@@ -33,11 +42,21 @@ export interface AnnotActions {
     evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
     annot: AnnotationRecord,
   ): void;
-  /** The same entries, from a right-click anywhere on the card's header. */
-  onCardContextMenu(
-    evt: MouseEvent<HTMLElement>,
-    annot: AnnotationRecord,
-  ): void;
+  /** Open the header block's one grouped menu, from the block itself. */
+  onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
+  /** Choose another Attachment of the Item on screen, in a suggester. */
+  onChooseAttachment(): void;
+  /** Ask Zotero for write authorization, from the header menu. */
+  onAllowEditing(): void;
+  /**
+   * Say why the verb just pressed could not act, in an Obsidian notice. A
+   * blocked verb keeps its press and spends it here instead of on the write.
+   * The notice reads the capability at the press, so it offers the one gesture
+   * that could change it where there is one.
+   */
+  onBlockedPress(block: CardBlock): void;
+  /** Open Zotero's eight swatches from a card's palette control. */
+  onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
   onRefresh(): void;
   /** Follow the active tab or the Zotero reader, from a user gesture. */
@@ -60,7 +79,19 @@ export interface AnnotActions {
   /** Recolour one Annotation in Zotero, from a swatch in the card's menu. */
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
-  onSaveComment(annot: AnnotationRecord, comment: string): void;
+  onSaveComment(
+    annot: AnnotationRecord,
+    comment: string,
+    automatic?: boolean,
+  ): void;
+  onOpenComment(annot: AnnotationRecord): void;
+  onEditComment(annot: AnnotationRecord, comment: string): void;
+  /**
+   * Drop held text Zotero never took, from the card's "Discard". Zotero's own
+   * comment stands as it is, so the card behind the panel already shows what
+   * the discard leaves.
+   */
+  onDiscardComment(annot: AnnotationRecord): void;
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
   /**
@@ -71,15 +102,15 @@ export interface AnnotActions {
   /** Leave Zotero's copy as it stands, from the conflicted card's "Discard". */
   onDiscardConflict(annot: AnnotationRecord): void;
   /**
-   * Send one Uncertain Create again on its original write token, from the
-   * badged card's "Try again".
-   *
-   * @param writeToken the token the Uncertain Create carries.
+   * Open one card's demand on its Annotation's live Excerpt Image. The card
+   * states what it paints and releases the demand as it goes.
    */
-  onRetryCreate(writeToken: string): void;
-  /** Drop one Uncertain Create, from the badged card's "Discard". */
-  onDiscardCreate(writeToken: string): void;
-  getImgSrc(annot: AnnotationRecord): string;
+  openExcerptImage(): ExcerptDisplayDemand;
+  /**
+   * The request one card's target resolves, or `null` where nothing can: no
+   * Annotation Source, another Zotero data directory, or an unready database.
+   */
+  excerptImageRequest(target: ExcerptImageTarget): ExcerptRequest | null;
   getBacklink(annot: AnnotationRecord): string | undefined;
   /** Render a comment's Zotero HTML as Markdown; returns a disposer. */
   renderComment: CommentRenderer;
@@ -87,7 +118,9 @@ export interface AnnotActions {
 
 export interface AnnotActionDeps {
   app: App;
-  getDataDir: () => string;
+  /** The plugin's live display surface for Excerpt Images. */
+  excerptDisplay: Pick<ExcerptDisplayService, "open">;
+  excerptImageRequest: AnnotActions["excerptImageRequest"];
   /**
    * The one write path for an Annotation. Commands take Indexed Keys: the
    * repository holds the record a write stamps its precondition off.
@@ -95,12 +128,14 @@ export interface AnnotActionDeps {
   annotations: Pick<
     AnnotationRepository,
     | "deleteAnnotation"
+    | "discardCommentDraft"
     | "discardConflict"
-    | "discardCreate"
     | "patchColor"
-    | "patchComment"
-    | "retryCreate"
+    | "editComment"
+    | "commentDraftFor"
+    | "retryCommentDraft"
     | "retryWrite"
+    | "submitComment"
   >;
   /** The clock a failure notice reads a cooldown's remaining seconds against. */
   now?: () => Temporal.Instant;
@@ -119,32 +154,35 @@ export interface AnnotActionDeps {
    * @see apps/obsidian/docs/adr/0033-zotero-object-identity-is-the-indexed-key-server-id-is-source-data.md
    */
   resolveAnnotationID: (indexedKey: string) => number | null;
+  /**
+   * What the view is showing right now. A native menu is built at the moment
+   * the gesture opens it, so its entries are read then rather than subscribed
+   * to — the same reason {@link AnnotActionDeps.deleteControl} is a callback.
+   */
+  getState: () => AnnotState;
+  /** Show another Attachment of the Item on screen, from the picker. */
+  setSelectedAttachmentKey: (key: string) => void;
+  /** Add or drop one tag from the list filter, from a card's tag menu. */
+  toggleSelectedTag: (tag: string) => void;
   refresh: () => Promise<void>;
   noteFeature: Pick<NoteFeature, "renderAnnotationCitation">;
   /** Templated drag-insert handler built by the view (owns the import handle). */
   onDragStart: AnnotActions["onDragStart"];
+  /**
+   * Put one Annotation into the active note, from the overflow menu — the same
+   * Markdown the drag drops, on the route a keyboard reaches.
+   */
+  insertAnnotation: (annot: AnnotationRecord) => void;
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
+  onAllowEditing: AnnotActions["onAllowEditing"];
   onPinCurrentItem: AnnotActions["onPinCurrentItem"];
   onPinItem: AnnotActions["onPinItem"];
   onUnpin: AnnotActions["onUnpin"];
   onEnableLiveUpdates: AnnotActions["onEnableLiveUpdates"];
   onSelectAnnotation: AnnotActions["onSelectAnnotation"];
   onExploreAnnotation: (annotationKey: string) => void;
-}
-
-const IMG_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="140">' +
-    '<rect width="100%" height="100%" fill="rgba(128,128,128,0.18)"/>' +
-    '<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" ' +
-    'fill="gray" font-family="sans-serif" font-size="14">Image not cached</text>' +
-    "</svg>",
-)}`;
-
-function resourceUrl(absolutePath: string): string {
-  const encoded = encodeURI(absolutePath);
-  return `${Platform.resourcePathPrefix}${encoded.replace(/^\//, "")}?${Date.now()}`;
 }
 
 export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
@@ -167,31 +205,67 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
 
   const onSetColor = (annot: AnnotationRecord, color: string): void =>
     report(deps.annotations.patchColor(annot.key, color));
-  const onSaveComment = (annot: AnnotationRecord, comment: string): void =>
-    report(deps.annotations.patchComment(annot.key, comment));
+  const onEditComment = (annot: AnnotationRecord, comment: string): void => {
+    deps.annotations.editComment(annot.key, comment);
+  };
+  const onOpenComment = (annot: AnnotationRecord): void => {
+    deps.annotations.editComment(annot.key);
+  };
+  const onDiscardComment = (annot: AnnotationRecord): void => {
+    deps.annotations.discardCommentDraft(annot.key);
+  };
+  const onSaveComment = (
+    annot: AnnotationRecord,
+    comment: string,
+    automatic = false,
+  ): void => {
+    deps.annotations.editComment(annot.key, comment);
+    report(deps.annotations.submitComment(annot.key, { automatic }));
+  };
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
-  const onApplyAgain = (annot: AnnotationRecord): void =>
-    report(deps.annotations.retryWrite(annot.key));
-  const onDiscardConflict = (annot: AnnotationRecord): void =>
-    deps.annotations.discardConflict(annot.key);
   /**
-   * A retry that stays uncertain has already said so on its own badged card,
-   * and one that landed needs no notice: only a refusal is news.
+   * Nothing ZotLit holds can put a deleted Annotation back, so the erase asks
+   * once against the card the user can see.
+   *
+   * @see apps/obsidian/policies/ui-seams.md
    */
-  const onRetryCreate = (writeToken: string): void => {
-    void deps.annotations.retryCreate(writeToken).then((outcome) => {
-      if (outcome.kind !== "failed") return;
-      new BaseNotice(
-        m.pdf_create_failed({
-          reason: writeFailureReason(outcome.failure, now()),
-        }),
-      );
-    });
+  const confirmDeleteAnnotation = async (
+    annot: AnnotationRecord,
+  ): Promise<void> => {
+    const confirmed = await confirm(
+      {
+        title: m.annot_view_delete_confirm_title(),
+        content: m.annot_view_delete_confirm_content(),
+        action: m.annot_view_delete_confirm_action(),
+        destructive: true,
+      },
+      deps.app,
+    );
+    if (confirmed) onDeleteAnnotation(annot);
   };
-  const onDiscardCreate = (writeToken: string): void =>
-    deps.annotations.discardCreate(writeToken);
-
+  const commentConflict = (annotationKey: string): boolean => {
+    const mutation = deps.getState().mutations.get(annotationKey);
+    return (
+      mutation?.kind === "conflict" && mutation.conflict.write === "comment"
+    );
+  };
+  const onApplyAgain = (annot: AnnotationRecord): void =>
+    report(
+      commentConflict(annot.key) && deps.annotations.commentDraftFor(annot.key)
+        ? deps.annotations.retryCommentDraft(annot.key)
+        : deps.annotations.retryWrite(annot.key),
+    );
+  const onDiscardConflict = (annot: AnnotationRecord): void => {
+    if (
+      commentConflict(annot.key) &&
+      deps.annotations.commentDraftFor(annot.key)
+    ) {
+      deps.annotations.discardCommentDraft(annot.key);
+    } else {
+      deps.annotations.discardConflict(annot.key);
+    }
+  };
   // Every key on a record is an Indexed Key, so the library it names travels
   // with it: the Zotero URI and the cache path both want the bare key beside
   // the group the key already carries.
@@ -207,20 +281,33 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
   };
 
-  const getImgSrc = (annot: AnnotationRecord): string => {
-    const parsed = parseIndexedKey(annot.key);
-    const cachePath =
-      parsed &&
-      resolveAnnotCachePath(
-        { key: parsed.key, type: annot.type },
-        { dataDir: deps.getDataDir(), groupID: parsed.groupID },
-      );
-    return cachePath ? resourceUrl(cachePath) : IMG_PLACEHOLDER;
+  /**
+   * A menu opened from a control, anchored under the control itself — so it
+   * lands in the same place however the control was activated.
+   *
+   * @see apps/obsidian/docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md
+   */
+  const showMenu = (
+    evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
+    fill: (menu: Menu) => void,
+    align?: MenuAlign,
+  ): void => {
+    const menu = new Menu();
+    fill(menu);
+    showMenuAtButton(menu, evt.currentTarget, align);
   };
 
-  const buildMenu = (annot: AnnotationRecord): Menu => {
-    const menu = new Menu();
+  /**
+   * The Attachment picker the header menu opens. The choice it offers is the
+   * one `attachmentLine` decided, read at the moment the row was pressed.
+   */
+  const onChooseAttachment = (): void => {
+    const line = attachmentLine(deps.getState());
+    if (line.kind !== "picker") return;
+    chooseAttachment(deps.app, line.options, deps.setSelectedAttachmentKey);
+  };
 
+  const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
     const backlink = getBacklink(annot);
     if (backlink) {
       menu.addItem((item) => {
@@ -285,6 +372,19 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
 
     menu.addSeparator();
+    // The keyboard's route to what a drag does.
+    menu.addItem((item) => {
+      item
+        .setTitle(m.annot_view_menu_insert())
+        .setIcon("file-input")
+        .setDisabled(
+          !deps.app.workspace.activeEditor?.file ||
+            !deps.app.workspace.activeEditor.editor,
+        )
+        .onClick(() => deps.insertAnnotation(annot));
+    });
+
+    menu.addSeparator();
     menu.addItem((item) => {
       item
         .setTitle(m.template_data_explorer_menu_explore())
@@ -295,46 +395,78 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         });
     });
 
-    // A native MenuItem carries no tooltip, so a blocked delete says why in a
-    // label beside it rather than in one it cannot show.
-    // @see apps/obsidian/policies/tooltips.md
-    const control = deps.deleteControl(annot);
+    // Every entry here is a verb. A blocked write shows as a dimmed entry and
+    // says why once, in the header menu's capability row and in the notice a
+    // card verb raises, rather than in a label under each menu it blocks. A menu
+    // row is dimmed by either reason: the notice is reached from a card verb,
+    // and a menu cannot raise one.
+    const deleteControl = deps.deleteControl(annot);
     menu.addItem((item) => {
       item
         .setTitle(m.annot_view_menu_delete())
         .setIcon("trash-2")
-        .setDisabled(control.disabled)
-        .onClick(() => onDeleteAnnotation(annot));
+        .setWarning(true)
+        .setDisabled(deleteControl.disabled || deleteControl.blocked !== null)
+        .onClick(() => void confirmDeleteAnnotation(annot));
     });
-    if (control.disabled) {
-      menu.addItem((item) => item.setTitle(control.tooltip).setIsLabel(true));
-    }
-
-    return menu;
   };
 
   return {
     getBacklink,
-    getImgSrc,
+    openExcerptImage: () => deps.excerptDisplay.open(),
+    excerptImageRequest: deps.excerptImageRequest,
     onSetColor,
     onSaveComment,
+    onOpenComment,
+    onEditComment,
+    onDiscardComment,
     onDeleteAnnotation,
     onApplyAgain,
     onDiscardConflict,
-    onRetryCreate,
-    onDiscardCreate,
     onMoreOptions(evt, annot) {
-      // The overflow control anchors its menu under itself, so a keyboard
-      // activation lands there too.
-      showMenuAtButton(buildMenu(annot), evt.currentTarget, "end");
+      showMenu(evt, (menu) => fillCardMenu(menu, annot), "end");
     },
-    onCardContextMenu(evt, annot) {
-      // `MouseEvent` is shadowed by the React import above; `globalThis.` here
-      // is a type qualifier for the DOM type, not a runtime access, so the
-      // `window`/`activeWindow` popout-compatibility guidance doesn't apply.
-      // eslint-disable-next-line obsidianmd/no-global-this
-      const nativeEvent = evt.nativeEvent as globalThis.MouseEvent;
-      buildMenu(annot).showAtMouseEvent(nativeEvent);
+    onHeaderMenu(evt) {
+      showMenu(evt, (menu) =>
+        buildHeaderMenu(menu, {
+          groups: headerMenu(deps.getState(), now()),
+          actions: {
+            onSetFollowMode: deps.onSetFollowMode,
+            onPinCurrentItem: deps.onPinCurrentItem,
+            onPinItem: deps.onPinItem,
+            onUnpin: deps.onUnpin,
+            onChooseAttachment,
+            onAllowEditing: deps.onAllowEditing,
+          },
+        }),
+      );
+    },
+    onChooseAttachment,
+    onAllowEditing: deps.onAllowEditing,
+    onBlockedPress(block) {
+      if (block.action === null) {
+        new BaseNotice(block.reason);
+        return;
+      }
+      const notice = new BaseNotice(
+        BaseNotice.render((renderer) => {
+          renderer.setTitle(block.reason);
+          renderer.addAction((button) => {
+            button.setButtonText(m.capability_enable_editing()).onClick(() => {
+              notice.hide();
+              deps.onAllowEditing();
+            });
+          });
+        }),
+      );
+    },
+    onColorMenu(evt, annot) {
+      showMenu(evt, (menu) =>
+        buildColorMenu(menu, {
+          color: annot.color,
+          onSelect: (hex) => onSetColor(annot, hex),
+        }),
+      );
     },
     onDragStart: deps.onDragStart,
     renderComment: deps.renderComment,
@@ -354,9 +486,27 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
 }
 
+/** What a card outside a configured view shows: nothing, and no demand to make. */
+const NOOP_DISPLAY: ExcerptImageDisplay = {
+  image: null,
+  current: false,
+  status: "absent",
+};
+
+const NOOP_DEMAND: ExcerptDisplayDemand = {
+  demand: () => {},
+  release: () => {},
+  subscribe: () => () => {},
+  snapshot: () => NOOP_DISPLAY,
+};
+
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
-  onCardContextMenu: () => {},
+  onHeaderMenu: () => {},
+  onChooseAttachment: () => {},
+  onAllowEditing: () => {},
+  onBlockedPress: () => {},
+  onColorMenu: () => {},
   onDragStart: () => {},
   onSetFollowMode: () => {},
   onPinCurrentItem: () => {},
@@ -366,13 +516,15 @@ const NOOP_ACTIONS: AnnotActions = {
   onSelectAnnotation: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
+  onDiscardComment: () => {},
+  onOpenComment: () => {},
+  onEditComment: () => {},
   onDeleteAnnotation: () => {},
   onApplyAgain: () => {},
   onDiscardConflict: () => {},
-  onRetryCreate: () => {},
-  onDiscardCreate: () => {},
   onRefresh: () => {},
-  getImgSrc: () => IMG_PLACEHOLDER,
+  openExcerptImage: () => NOOP_DEMAND,
+  excerptImageRequest: () => null,
   getBacklink: () => undefined,
   renderComment: () => () => {},
 };

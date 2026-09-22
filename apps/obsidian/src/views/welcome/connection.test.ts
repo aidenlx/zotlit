@@ -64,7 +64,14 @@ describe("readConnectionStatus", () => {
 
   it("ready → connected with the item count of the one library", async () => {
     const loadLibraries = vi.fn((): Library[] => [
-      { libraryID: 1, type: "user", groupID: null, name: null },
+      {
+        libraryID: 1,
+        type: "user",
+        version: 0,
+        clientVersion: null,
+        groupID: null,
+        name: null,
+      },
     ]);
     const loadIndexSignature = vi.fn(
       (): IndexSignature => ({ count: 42, checksum: 0 }),
@@ -92,9 +99,30 @@ describe("readConnectionStatus", () => {
 
   it("totals every library the database holds, whatever the library scope is", async () => {
     const loadLibraries = vi.fn((): Library[] => [
-      { libraryID: 1, type: "user", groupID: null, name: null },
-      { libraryID: 2, type: "group", groupID: 99, name: "Shared Library" },
-      { libraryID: 3, type: "group", groupID: 100, name: "Reading Group" },
+      {
+        libraryID: 1,
+        type: "user",
+        version: 0,
+        clientVersion: null,
+        groupID: null,
+        name: null,
+      },
+      {
+        libraryID: 2,
+        type: "group",
+        version: 0,
+        clientVersion: null,
+        groupID: 99,
+        name: "Shared Library",
+      },
+      {
+        libraryID: 3,
+        type: "group",
+        version: 0,
+        clientVersion: null,
+        groupID: 100,
+        name: "Reading Group",
+      },
     ]);
     const counts = new Map([
       [1, 42],

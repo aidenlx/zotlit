@@ -114,15 +114,35 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
     stroke: "#ffd400",
     "stroke-width": "3",
   });
-  // The note's folded corner is drawn over its rounded body, and takes its
-  // paper colour from the stylesheet: `var()` never substitutes in an SVG
-  // presentation attribute, so a `fill` attribute here would render black.
+  // The note draws a glyph in lucide's idiom: a filled, stroked body with its
+  // bottom-right corner cut, and that fold's crease as an unfilled stroke,
+  // both mapped onto the stored rect by the group's own transform.
   const note = markIn(page, "C94NJNYG");
   expect(note.childNodes).toHaveLength(2);
+  // The rect is 22 x 22 page units, mapped from lucide's 24-unit grid; the
+  // top carries the same float noise `round()` elsewhere in this file exists
+  // to absorb.
+  expect(note.getAttribute("transform")).toBe(
+    `translate(566.901 171.60699999999997) scale(${22 / 24} ${22 / 24})`,
+  );
+  expect(note.getAttribute("stroke")).toBe("#ffd400");
+  expect([...note.classList].toSorted()).toEqual([
+    "zt-pdf-annotation-mark",
+    "zt-pdf-annotation-note-icon",
+  ]);
+  expect([...note.firstElementChild!.classList]).toEqual([
+    "zt-pdf-annotation-note-fill",
+  ]);
+  expect(note.firstElementChild!.getAttribute("fill")).toBe("#ffd400");
+  // The fold's stroke inherits from the group, not an attribute of its own:
+  // an SVG presentation attribute never substitutes `var()`, so a `stroke`
+  // attribute set through the stylesheet's accent variable would render
+  // black in either theme.
   expect([...note.lastElementChild!.classList]).toEqual([
-    "zt-pdf-annotation-note-fold",
+    "zt-pdf-annotation-note-crease",
   ]);
   expect(note.lastElementChild!.getAttribute("fill")).toBeNull();
+  expect(note.lastElementChild!.getAttribute("stroke")).toBeNull();
   // The free text is the comment, at the size Zotero stored.
   expect(markIn(page, "HRK7BG32").textContent).toBe(
     "Making figures is hard :(",
@@ -245,6 +265,69 @@ it("paints marks that take no pointer input, last in the page", () => {
     "zt-pdf-annotation-highlight",
     "zt-pdf-annotation-mark",
   ]);
+  // The selected mark's outline is appended last, above the mark itself, and
+  // hugs its own rect padded by the mark's own hairline gap rather than a
+  // presentation `stroke` — that comes from the stylesheet's accent colour.
+  expect(overlay.childElementCount).toBe(2);
+  const outline = overlay.lastElementChild!;
+  expect(outline.tagName).toBe("path");
+  expect([...outline.classList]).toEqual([
+    "zt-pdf-annotation-selection-outline",
+  ]);
+  expect(outline.getAttribute("d")).toBe(
+    "M 98.5 70.5 L 201.5 70.5 L 201.5 93.5 L 98.5 93.5 Z",
+  );
+  expect(outline.getAttribute("fill")).toBe("none");
+  expect(outline.getAttribute("stroke-linejoin")).toBe("round");
+  expect(outline.getAttribute("vector-effect")).toBe("non-scaling-stroke");
+  expect(outline.getAttribute("stroke")).toBeNull();
+});
+
+it("casts a selected ink stroke's own path under it, wider, rather than framing it in a box", () => {
+  const page = pageView();
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([
+      record("TYY6Z6ZF", "ink", {
+        pageIndex: 0,
+        width: 2,
+        // An L-shaped stroke: the box round it swallows the empty corner it
+        // turns, so a box outline would trace that corner and this does not.
+        paths: [[60, 700, 60, 660, 100, 660]],
+      }),
+    ]),
+    selected: new Set(["TYY6Z6ZF"]),
+  });
+
+  const overlay = overlayIn(page);
+  const casing = overlay.querySelector<SVGPathElement>(
+    `.${themeHook.pdfAnnotationSelectionOutline}`,
+  )!;
+  const stroke = markIn(page, "TYY6Z6ZF");
+
+  // The casing draws exactly what the pen draws, so it follows every turn the
+  // stroke takes and reaches nowhere the stroke does not.
+  expect(casing.getAttribute("d")).toBe(stroke.getAttribute("d"));
+  // Wider by the padding either side, and painted first so the pen covers its
+  // middle and leaves the accent showing as a band.
+  expect(casing.style.strokeWidth).toBe("5");
+  expect(stroke.getAttribute("stroke-width")).toBe("2");
+  expect(overlay.firstElementChild).toBe(casing);
+  expect(casing.compareDocumentPosition(stroke)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
+it("draws no outline for a mark the caller left unselected", () => {
+  const page = pageView();
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  expect(
+    overlayIn(page).querySelector(".zt-pdf-annotation-selection-outline"),
+  ).toBeNull();
 });
 
 it("leaves the page as it found it when the annotations are gone", () => {

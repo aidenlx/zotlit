@@ -775,7 +775,7 @@ async function createBridgeFixture(): Promise<
 > {
   await using stack = new AsyncDisposableStack();
   const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-  const scratch = join(workspaceRoot, "tmp");
+  const scratch = join(workspaceRoot, ".scratch");
   await mkdir(scratch, { recursive: true });
   const root = await mkdtemp(join(scratch, "local-bridge-test-"));
   stack.defer(() => rm(root, { recursive: true, force: true }));

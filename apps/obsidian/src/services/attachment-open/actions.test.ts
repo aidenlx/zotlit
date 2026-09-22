@@ -13,9 +13,12 @@ import {
   createObsidianAttachmentReader,
   openAttachments,
 } from "@/lib/attachment-open";
+import { defaults } from "@/services/settings/schema";
+import { activateAnnotView } from "@/views/annot-view/register";
 
 import {
   addAttachmentOpenActions,
+  createPdfReader,
   resolveLiteratureNoteAttachments,
 } from "./actions";
 import type { AttachmentOpenDeps, AttachmentOpenLookupDeps } from "./actions";
@@ -25,6 +28,10 @@ vi.mock("@zotlit/db", async (importOriginal) => ({
   resolveIndexedKeyLibrary: vi.fn(),
   getItemsByKey: vi.fn(),
   getAttachmentsByParents: vi.fn(),
+}));
+
+vi.mock("@/views/annot-view/register", () => ({
+  activateAnnotView: vi.fn(),
 }));
 
 vi.mock("@/lib/attachment-open", async (importOriginal) => ({
@@ -42,6 +49,7 @@ beforeEach(() => {
   vi.mocked(getAttachmentsByParents).mockReset();
   vi.mocked(openAttachments).mockReset();
   vi.mocked(createObsidianAttachmentReader).mockClear();
+  vi.mocked(activateAnnotView).mockClear();
 });
 
 function lookupDeps(
@@ -51,6 +59,7 @@ function lookupDeps(
     app: { vault: { adapter: { getBasePath: () => "/vault" } } },
     db: { state: "ready", client: {} },
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
+    settings: { current: defaults },
     ...overrides,
   } as unknown as AttachmentOpenLookupDeps;
 }
@@ -234,5 +243,47 @@ describe("open-pdf command", () => {
         app,
       }),
     );
+  });
+});
+
+describe("createPdfReader", () => {
+  /** The hook the reader hands back to its caller once a file is on screen. */
+  function onOpenedOf(deps: AttachmentOpenLookupDeps): () => void {
+    createPdfReader(deps);
+    const [, options] = vi.mocked(createObsidianAttachmentReader).mock
+      .calls[0]!;
+    const onOpened = options?.onOpened;
+    if (!onOpened) throw new Error("the reader was built with no onOpened");
+    return onOpened;
+  }
+
+  it("brings the annotation view forward beside the PDF by default", () => {
+    const deps = lookupDeps();
+
+    onOpenedOf(deps)();
+
+    expect(activateAnnotView).toHaveBeenCalledWith(deps.app);
+  });
+
+  it("leaves the sidebar alone once the user turns the reveal off", () => {
+    onOpenedOf(
+      lookupDeps({
+        settings: {
+          current: { ...defaults, "reader.focus-annot-view": false },
+        },
+      } as unknown as Partial<AttachmentOpenLookupDeps>),
+    )();
+
+    expect(activateAnnotView).not.toHaveBeenCalled();
+  });
+
+  it("reveals for a settings service that has not loaded yet, matching the default", () => {
+    onOpenedOf(
+      lookupDeps({
+        settings: { current: null },
+      } as unknown as Partial<AttachmentOpenLookupDeps>),
+    )();
+
+    expect(activateAnnotView).toHaveBeenCalledOnce();
   });
 });

@@ -1,0 +1,33 @@
+/* The popover invoker attribute only works on a `<button>`, and Obsidian's
+   `button` rules are unlayered, so they outrank every `zt:` utility the
+   trigger wears. This rule is unlayered too and outranks them in turn, and
+   `revert-layer` rolls the element back to the plugin's own layers — the
+   utilities on the trigger are what draws it, with the scoped preflight
+   underneath. The anchor name is one of those utilities — `anchor-name` is a
+   standard property, set from a layered `zt:` class — so rolling back to the
+   layered value is what keeps it.
+   @see https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button#popovertarget */
+.zt-root button.zt-chooser-trigger {
+  all: revert-layer;
+}
+
+/* The search field is the one a Bases toolbar menu opens with: a 4px lead,
+   a rule under it, no box of its own, at that menu's 28px, its glyph in the
+   faint ink. Obsidian rounds the container to a pill and draws the input's
+   border, shadow and fill, all unlayered, where no utility reaches them; a
+   rule under a pill-shaped box is what shows as a partial ring. */
+.zt-chooser {
+  --input-height: 28px;
+}
+.zt-chooser .search-input-container {
+  --search-icon-color: var(--text-faint);
+  margin-top: var(--size-4-1);
+  padding-bottom: var(--size-2-1);
+  border-radius: 0;
+  border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+.zt-chooser .search-input-container input {
+  border: 0;
+  box-shadow: none;
+  background-color: transparent;
+}

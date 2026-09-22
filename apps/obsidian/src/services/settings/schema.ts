@@ -13,6 +13,7 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
 } from "@/services/library-scope/scope";
+import { annotationToolColorsSchema } from "@/services/pdf-annotation-editor/tools";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -171,6 +172,18 @@ export const schema = v.object({
   "attachment.folder-path": v.nullable(v.string()),
   "attachment.import": v.boolean(),
 
+  "reader.focus-annot-view": v.boolean(),
+  /**
+   * Whether a clicked Attachment File Link opens in Obsidian's PDF view
+   * instead of the system handler — File Link Capture, ADR 0045.
+   */
+  "reader.open-file-links": v.boolean(),
+  /**
+   * The colour each PDF reader annotation tool draws in. Sparse, so a tool
+   * never recoloured follows Zotero's own default.
+   */
+  "reader.annotation-colors": annotationToolColorsSchema,
+
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
   "release.migration-pending": v.boolean(),
@@ -220,6 +233,9 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "zotero.library-scope": DEFAULT_LIBRARY_SCOPE,
   "attachment.folder-path": null,
   "attachment.import": true,
+  "reader.focus-annot-view": true,
+  "reader.open-file-links": true,
+  "reader.annotation-colors": {},
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

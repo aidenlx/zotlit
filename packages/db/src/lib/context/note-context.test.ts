@@ -38,10 +38,10 @@ const itemResolvers: TemplateItemResolvers = {
 
 const annotationResolvers: AnnotationResolvers = {
   filePath: (attachment) => `/abs/${attachment.key}`,
-  fileLink: (attachment, page) => (alias) =>
-    page == null
+  fileLink: (attachment, anchor) => (alias) =>
+    anchor?.page == null
       ? `[[${attachment.key}|${alias ?? attachment.key}]]`
-      : `[[${attachment.key}#page=${page}|${alias ?? attachment.key}]]`,
+      : `[[${attachment.key}#page=${anchor.page}|${alias ?? attachment.key}]]`,
   annotationImageLink: () => null,
   commentToMarkdown: (html) => `md(${html})`,
   authorsShort: (item) => `short:${item.key}`,

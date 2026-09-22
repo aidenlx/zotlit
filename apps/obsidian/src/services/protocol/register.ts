@@ -30,11 +30,7 @@ import {
 } from "@zotlit/protocol";
 import type { ProtocolAction } from "@zotlit/protocol";
 
-import {
-  createObsidianAttachmentReader,
-  openAttachments,
-  withFixedPane,
-} from "@/lib/attachment-open";
+import { openAttachments, withFixedPane } from "@/lib/attachment-open";
 import type { AttachmentReader } from "@/lib/attachment-open";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -45,7 +41,10 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import { toObsidianOpenable } from "@/services/attachment-open/actions";
+import {
+  createPdfReader,
+  toObsidianOpenable,
+} from "@/services/attachment-open/actions";
 import type { ObsidianOpenableAttachment } from "@/services/attachment-open/resolve";
 import type { LocalServerService } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
@@ -343,10 +342,7 @@ async function handleOpenAttachmentProtocol(
   const openable = toObsidianOpenable(attachments, deps);
 
   openAttachments(openable, {
-    reader: withPaneOverride(
-      createObsidianAttachmentReader(deps.app),
-      query.paneType,
-    ),
+    reader: withPaneOverride(createPdfReader(deps), query.paneType),
     app: deps.app,
   });
 }

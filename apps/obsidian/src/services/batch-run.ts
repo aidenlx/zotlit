@@ -1,6 +1,6 @@
 // Lease-pinned batch write runner over the concurrent classify/execute primitives.
 import { chunk } from "@std/collections/chunk";
-import pLimit from "p-limit";
+import PQueue from "p-queue";
 
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
@@ -79,12 +79,15 @@ export interface BatchRunTask {
 export type RunOutcome = "created" | "updated" | "skipped";
 
 /**
- * Concurrent pLimit + allSettled executor that owns the abort/settle/error
+ * Concurrent PQueue + allSettled executor that owns the abort/settle/error
  * contract between a modal's `onRun` callback and its shell. Each task returns
  * a {@link RunOutcome} (tallied into {@link BatchRunResult} and reported via
  * {@link BatchRunControls.onItemSettled}) or throws (reported as `"failed"`
  * with a formatted error message). Abort errors are suppressed from the
  * failure count; cancelled tasks are those that never ran.
+ *
+ * The queue never takes the caller's signal: cancellation stops queued tasks
+ * when they start and leaves admitted work running to its own completion.
  *
  * @param opts.onTaskFailed Optional per-failure callback (non-abort only),
  *   called after the task is reported as failed; use for structured logging.
@@ -104,7 +107,7 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
   haltOn?: (error: unknown) => boolean;
 }): Promise<BatchRunResult> {
   const { tasks, controls, concurrency, run, onTaskFailed, haltOn } = opts;
-  const limit = pLimit(concurrency);
+  const queue = new PQueue({ concurrency });
   const result: BatchRunResult = {
     created: 0,
     updated: 0,
@@ -115,7 +118,7 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
   let haltError: unknown;
   const settled = await Promise.allSettled(
     tasks.map((task) =>
-      limit(async () => {
+      queue.add(async () => {
         controls.signal.throwIfAborted();
         if (haltError !== undefined) throw new AbortError("halted");
         try {

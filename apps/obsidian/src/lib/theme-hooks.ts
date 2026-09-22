@@ -37,8 +37,27 @@ export const themeHook = {
   pdfAnnotationMark: "zt-pdf-annotation-mark",
   /** The filled rectangle of a highlight Annotation Mark, which blends with the page. */
   pdfAnnotationHighlight: "zt-pdf-annotation-highlight",
-  /** The folded corner of a note Annotation Mark, which takes the page's own colour. */
-  pdfAnnotationNoteFold: "zt-pdf-annotation-note-fold",
+  /**
+   * The ring traced round a selected Annotation Mark's own merged
+   * silhouette, in the accent colour — one hairline hugging the run's
+   * actual staircase shape, never a glow on every one of its rects.
+   */
+  pdfAnnotationSelectionOutline: "zt-pdf-annotation-selection-outline",
+  /**
+   * The `<g>` a note Annotation Mark draws its glyph into, stroked in the
+   * Annotation's own colour. Its `stroke-width` sets
+   * both {@link themeHook.pdfAnnotationNoteFill} and
+   * {@link themeHook.pdfAnnotationNoteCrease} through inheritance.
+   */
+  pdfAnnotationNoteIcon: "zt-pdf-annotation-note-icon",
+  /** The glyph's body path, filled at low alpha in the Annotation's own colour. */
+  pdfAnnotationNoteFill: "zt-pdf-annotation-note-fill",
+  /**
+   * The two segments that crease the glyph's folded bottom-right corner,
+   * stroked in the group's own colour and width. It is a pair of open lines
+   * rather than a closed shape, so `stroke` paints it and `fill` does not.
+   */
+  pdfAnnotationNoteCrease: "zt-pdf-annotation-note-crease",
   /**
    * The always-present Editing Capability affordance in the PDF reader's own
    * toolbar. `data-zt-capability-tone` names the state it is showing —
@@ -48,10 +67,19 @@ export const themeHook = {
   /**
    * The Creation Toolbar in the PDF reader's own right toolbar slot, which
    * also holds the Editing Capability affordance. Each control inside it
-   * carries `data-zt-tool` — `highlight`, `highlight-color`, `underline`,
-   * `underline-color`, or `visibility`.
+   * carries `data-zt-tool`. Each tool of its tool group is split in two — the
+   * toggle under the tool's own name and the chevron that opens its colours
+   * under `<tool>-color` — which today is `highlight`, `highlight-color`,
+   * `underline` and `underline-color`. `visibility` stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",
+  /**
+   * One tool of that toolbar: the toggle that arms it and the chevron that
+   * opens its colours, joined into a single split button. It carries Obsidian's
+   * own `is-active` while that tool is armed, so the pair fills as one control;
+   * the two halves stay separate controls and hover separately.
+   */
+  pdfTool: "zt-pdf-tool",
   /**
    * The Mark Popup, on Obsidian's own hover popover, in both of its modes.
    * Each control inside it carries `data-zt-verb` — `color`, `comment`,
@@ -63,19 +91,24 @@ export const themeHook = {
   pdfMarkPopup: "zt-pdf-mark-popup",
   /** The comment sheet the Mark Popup opens under its create-mode row. */
   pdfCommentSheet: "zt-pdf-comment-sheet",
-  /**
-   * The Editing Capability affordance in the Annotation View's toolbar, which
-   * shows the same states as {@link themeHook.pdfCapability} and carries the
-   * same `data-zt-capability-tone`.
-   */
-  annotCapability: "zt-annot-capability",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
+  /** The panel an Annotation Card shows over a comment draft Zotero has not taken. */
+  annotDraft: "zt-annot-draft",
   /**
-   * A menu ZotLit draws inside its own Preact surfaces, beside Obsidian's own
-   * `menu` class.
+   * The Chooser popup: the anchored popover a filtering multi-select opens,
+   * such as the Annotation View's tag filter. It is no Obsidian menu, so a
+   * theme reaching `.menu` never reaches it; it takes the same look from the
+   * `--menu-*` variables instead. `:popover-open` marks it while it stands.
    */
-  menu: "zt-menu",
+  chooser: "zt-chooser",
+  /**
+   * The control a Chooser hangs under, which is a `<button>` because that is
+   * what the popover invoker attribute takes. It carries `aria-expanded` and
+   * `data-open` while its popup stands, and its own Obsidian button styling is
+   * reverted, so what draws it is the caller's classes alone.
+   */
+  chooserTrigger: "zt-chooser-trigger",
 } as const;
 
 /**

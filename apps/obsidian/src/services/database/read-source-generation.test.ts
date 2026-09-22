@@ -3,6 +3,7 @@
 import {
   copyFile,
   mkdir,
+  readFile,
   rename,
   rm,
   stat,
@@ -50,7 +51,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 
 import { snapshotSource, sourceFingerprintsEqual } from "./read-source";
 
-it("ignores timestamp-only source changes", async () => {
+it("treats timestamp-only source changes as an exact-byte ABA signal", async () => {
   await using testDir = await createTestDir();
   const source = join(testDir.path, "zotero.sqlite");
   using _sqlite = createWalDatabase(source);
@@ -60,7 +61,7 @@ it("ignores timestamp-only source changes", async () => {
   await utimes(`${source}-wal`, 978_307_200, 978_307_200);
   const after = await snapshotSource(source);
 
-  expect(sourceFingerprintsEqual(before, after)).toBe(true);
+  expect(sourceFingerprintsEqual(before, after)).toBe(false);
 });
 
 it("detects a rollback-journal commit that keeps the main file size", async () => {
@@ -134,6 +135,38 @@ it("detects a same-size WAL generation reset", async () => {
   const after = await snapshotSource(source);
 
   expect((await stat(`${source}-wal`)).size).toBe(beforeSize);
+  expect(sourceFingerprintsEqual(before, after)).toBe(false);
+});
+
+it("detects a commit that reuses a rolled-back WAL tail", async () => {
+  await using testDir = await createTestDir();
+  const source = join(testDir.path, "zotero.sqlite");
+  using sqlite = new DatabaseSync(source);
+  sqlite.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA wal_autocheckpoint = 0;
+    PRAGMA cache_size = 1;
+    CREATE TABLE entries (id INTEGER PRIMARY KEY, value BLOB NOT NULL);
+    WITH RECURSIVE numbers(value) AS (
+      SELECT 1 UNION ALL SELECT value + 1 FROM numbers WHERE value < 81
+    )
+    INSERT INTO entries SELECT value, randomblob(4000) FROM numbers;
+    PRAGMA wal_checkpoint(TRUNCATE);
+    BEGIN;
+    UPDATE entries SET value = randomblob(4000);
+    ROLLBACK;
+  `);
+  const walPath = `${source}-wal`;
+  const before = await snapshotSource(source);
+  const beforeSize = (await stat(walPath)).size;
+  const beforeHeader = (await readFile(walPath)).subarray(0, 32);
+
+  sqlite.exec("UPDATE entries SET value = zeroblob(4000) WHERE id < 80");
+  const after = await snapshotSource(source);
+  const afterHeader = (await readFile(walPath)).subarray(0, 32);
+
+  expect((await stat(walPath)).size).toBe(beforeSize);
+  expect(afterHeader).toEqual(beforeHeader);
   expect(sourceFingerprintsEqual(before, after)).toBe(false);
 });
 

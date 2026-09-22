@@ -181,14 +181,14 @@ The citation template reads `zt.variant` to render two forms: the suggester inse
 
 ## Features with no direct equivalent [#no-equivalent]
 
-| Zotero Integration feature                       | Workaround in ZotLit                                        |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| `{% persist %}` (multiple blocks)                | Place personal content outside the single managed region    |
-| `isFirstImport` / `lastImportDate`               | Managed region re-renders all content each time             |
-| Annotation concatenation (`+` prefix)            | Merge text in Zotero's annotation editor                    |
-| `pdfannots2json` (external annotation extractor) | Use Zotero's built-in PDF reader                            |
-| Image DPI / format / quality / OCR settings      | ZotLit uses Zotero's cached annotation images               |
-| `runImport()` public API                         | Use [ZotLit protocol links](/docs/reference/protocol-links) |
+| Zotero Integration feature                       | Workaround in ZotLit                                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `{% persist %}` (multiple blocks)                | Place personal content outside the single managed region                                                      |
+| `isFirstImport` / `lastImportDate`               | Managed region re-renders all content each time                                                               |
+| Annotation concatenation (`+` prefix)            | Merge text in Zotero's annotation editor                                                                      |
+| `pdfannots2json` (external annotation extractor) | Use Zotero's built-in PDF reader                                                                              |
+| Image DPI / format / quality / OCR settings      | ZotLit generates [excerpt images](/docs/concepts/excerpt-images) on demand; these settings have no equivalent |
+| `runImport()` public API                         | Use [ZotLit protocol links](/docs/reference/protocol-links)                                                   |
 
 ## Features you gain [#features-you-gain]
 

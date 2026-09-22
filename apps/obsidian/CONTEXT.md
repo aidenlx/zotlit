@@ -268,16 +268,28 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 
 ### Annotation view
 
+**Annotation View** _(Obsidian)_:
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act.
+_Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
+
+**Annotation Filter**:
+The three ways an Annotation View narrows the cards it shows — by highlight colour, by tag, and by search text — combined so a card must satisfy every active one. Clearing it shows every Annotation of the Attachment again.
+_Avoid_: filter bar (the control, not the rule), tag panel, query (the search text alone)
+
+**No Match**:
+The Annotation View state in which the Attachment has Annotations but the Annotation Filter excludes all of them. It is about the filter alone: neither an empty Attachment nor an unanswered Follow Mode is a No Match.
+_Avoid_: empty state (that is no Attachment or no Annotations), no results
+
 **Annotation Card** _(Obsidian)_:
-One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips, all sourced from the Zotero DB at display time. A deliberately dense surface: prose inside it renders compact.
+One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips. A deliberately dense surface: prose inside it renders compact.
 _Avoid_: annotation item, annotation row
 
 **Excerpt Block**:
-The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note; the Excerpt Block always reflects the DB.
+The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note.
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
 **Excerpt Image**:
-The PNG Zotero renders for an image or ink Annotation, stored under its data directory cache by Annotation key. It appears only after a Zotero UI trigger (the Reader, or the attachment's Annotations pane) and Zotero deletes it on a position change, an ink colour change, or deletion. The Excerpt Block displays it; ZotLit renders none of its own yet.
+The raster image representation of an image or ink Annotation's PDF region, including its ink strokes where applicable. A ZotLit Excerpt Image and a Zotero Excerpt Image have separate ownership; an image embedded in a Child Note belongs to that note's frozen snapshot.
 _Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annotation)
 
 **Reader Session**:
@@ -288,12 +300,28 @@ _Avoid_: reader target, PDF reader target, annotation target
 An Attachment whose file is a PDF on this device, so Obsidian's PDF view can host a Reader Session for it. The reader decides the rule rather than the concept: Obsidian's view renders PDFs alone, which is what separates this from a Zotero-Openable Attachment, where any file the path names qualifies.
 _Avoid_: Openable Attachment (the Zotero-reader sense), Readable Attachment, reader target (see Reader Session)
 
+**Attachment File Link**:
+A Markdown link whose target is an Attachment's own file on this device, written as a `file://` URI. ZotLit writes one from the `fileLink` Template Helper on an Attachment and on an Annotation (which anchors it to `#page=N` and carries an Annotation Anchor), and from Attachment Import's fallback for a blocked source; a hand-written link of the same shape is one too. Names a device-local path, so it is valid only on the device that rendered it.
+_Avoid_: file link (ambiguous with a vault link), local link, attachment link (covers the Zotero deep link too)
+
+**File Link Capture**:
+Sending a clicked Attachment File Link to Obsidian's PDF view instead of the system handler, when the path resolves to an Obsidian-Openable Attachment. A link that resolves to nothing, or to an Attachment Obsidian cannot host, keeps the system handler, as does every link once the user turns Capture off.
+_Avoid_: link interception, file link handling, whitelisting (see Approved Attachment Root)
+
+**Annotation Anchor**:
+The part of an Attachment File Link, and of the ephemeral state an open carries, that names one Annotation by its Indexed Key — the `zt-annotation` key of the link's fragment. Obsidian reads the rest of that fragment and ignores this key, so the `#page=N` beside it still lands on its own.
+_Avoid_: annotation id (that is Obsidian's PDF-native one), annotation param, deep link, annotation target (see Reader Session)
+
+**Mark Landing**:
+Opening or re-aiming a Reader Session so the Annotation an Annotation Anchor names is the selected Annotation Mark, scrolled into view. An Anchor the Annotation reads cannot place lands on the page alone rather than reporting a failure.
+_Avoid_: navigate, reveal (that is the Annotation View's card), jump to annotation, annotation target (see Reader Session)
+
 **Annotation Source**:
-Where the plugin's Annotation reads for an Attachment come from at one moment: the Zotero Local API while Zotero answers, otherwise the Zotero DB. One source at a time for every Attachment; the two never join. A read result carries its source.
+The origin of one complete set of an Attachment's Annotation data: the Zotero database or the Zotero Local API. Both describe the same annotation collection.
 _Avoid_: fallback (that is the switch, not the source), primary/secondary source, merged source
 
 **Editing Capability**:
-What writes are possible for an Attachment's Annotations at one moment, and, when none are, the one reason: writable, authorization required, authorizing, cooldown, or read-only with its cause (Zotero unavailable, local API disabled, incompatible Zotero, invalid response, server changed, library read-only, probing). One value per Attachment; every editing control in the reader and the Annotation View follows it.
+Whether edits to an Attachment's Annotations can be committed to Zotero at present, including any authorization required. It is separate from whether the Annotations can be read.
 _Avoid_: degraded state (names the feeling, not the reason), fallback state, write mode, read-only mode (one of its values, not the whole)
 
 **Follow Mode**:
@@ -305,19 +333,19 @@ The painted region of one Annotation on a page of Obsidian's PDF reader. Paint, 
 _Avoid_: overlay element, highlight box, mark widget
 
 **Mark Popup**:
-The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover.
+The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
 **Creation Toolbar**:
 The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
-**Uncertain Create**:
-An Annotation creation whose response was lost after the request left ZotLit, so the Annotation may or may not exist in Zotero. Resolved by re-reading and matching stable fields, or by the user; never retried on its own.
-_Avoid_: pending create (a pending write has an outcome coming), orphaned write, lost write
+**Annotation Draft**:
+The shared unsaved comment for one Annotation, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
+_Avoid_: pending write (the draft has not been submitted), cached comment
 
 **Write Conflict**:
-A write the Zotero Local API refused because the Annotation changed in Zotero since ZotLit last read it, on the same Zotero Server ID. ZotLit re-reads, shows the fresh Annotation beside the user's input, and lets the user apply again or discard; a fresh value equal to the intended one is no conflict.
+A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
 **Sort Index**:
@@ -604,7 +632,7 @@ Zotero's own loopback HTTP API, which Zotero serves from its `httpServer.port` w
 _Avoid_: local API (ambiguous with the plugin's Local Server), Zotero server, Zotero HTTP server, connector API
 
 **Capability Probe**:
-One unkeyed request to the Zotero Local API root that tells ZotLit whether Zotero answers, whether its local API preference is on, and which Zotero Server ID it is. Its result selects the Annotation Source; a fresh probe is the only way out of a "Zotero unavailable" or "local API disabled" reading.
+A check of the Zotero Local API's availability and Zotero Server ID. It describes the connection available for live reads and edits.
 _Avoid_: ping, health check, handshake, api.ready (the Better BibTeX probe used by Pandoc export)
 
 **Write Authorization**:

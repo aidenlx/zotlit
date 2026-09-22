@@ -12,7 +12,7 @@ describe("generateSampleItems", () => {
   it("regenerates the four committed samples byte for byte", async () => {
     await using resources = new AsyncDisposableStack();
     const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-    const scratch = join(workspaceRoot, "tmp");
+    const scratch = join(workspaceRoot, ".scratch");
     await mkdir(scratch, { recursive: true });
     const fixtureRoot = await mkdtemp(join(scratch, "sample-items-test-"));
     resources.defer(() => rm(fixtureRoot, { recursive: true, force: true }));

@@ -30,7 +30,9 @@ Preact provides the UI runtime through `@preact/preset-vite` and its React compa
 
 View/modal state uses a zustand **vanilla store + React context, one per instance** — not the global `create()` hook, not signals. Follow `src/views/annot-view/store.ts`.
 
-Menus, popovers, and toggle groups inside a Preact tree are Base UI primitives dressed in Obsidian's own classes — `src/components/obsidian/menu.tsx` is the pattern. Placement stays with Base UI's positioner (`menu.css` says what that costs Obsidian's own `.menu` rules), and a host that can be popped out supplies its own window through `MenuContainerProvider`, because Base UI portals to the global `document.body` otherwise. Base UI is confined to the Annotation View ([ADR 0042](docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md)); the PDF reader's own surfaces are vanilla DOM on Obsidian's primitives, and no reader code imports it.
+Menus and popovers are Obsidian's own `Menu` and popover primitives, built imperatively and shown from the gesture that opens them — inside a Preact tree as much as in vanilla DOM. `src/views/annot-view` is the pattern: `presentation.ts` answers which entries exist, `menus.ts` fills a `Menu` from them, `actions.tsx` shows it, and the component calls the action; `pane-menu.ts` puts the same entries in the pane menu. A menu opened from a control is anchored under it with `showMenuAtButton` from `src/lib/menu.ts`, which keeps a keyboard-activated control and a popout host both correct; `showAtMouseEvent` is for a right-click. Obsidian owns placement, viewport clamping, theme, and chrome ([ADR 0044](docs/adr/0044-menus-and-popovers-are-obsidians-own-primitives.md)).
+
+The three surfaces inside Obsidian's PDF reader are vanilla DOM, and no reader code imports Preact ([ADR 0042](docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md)).
 
 ## Note feature
 

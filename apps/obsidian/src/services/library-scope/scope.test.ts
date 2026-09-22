@@ -18,18 +18,24 @@ import type { LibraryScope, ResolvedLibraryScope } from "./scope";
  */
 const MY_LIBRARY: Library = {
   libraryID: 1,
+  version: 0,
+  clientVersion: null,
   type: "user",
   groupID: null,
   name: null,
 };
 const GROUP_200: Library = {
   libraryID: 3,
+  version: 0,
+  clientVersion: null,
   type: "group",
   groupID: 200,
   name: "Shared B",
 };
 const GROUP_100: Library = {
   libraryID: 7,
+  version: 0,
+  clientVersion: null,
   type: "group",
   groupID: 100,
   name: "Shared A",

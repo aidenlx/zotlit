@@ -122,7 +122,7 @@ obsidian vault=<id> eval \
   code='app.plugins.plugins.zotlit.services.zoteroPref.dataDirOverride'
 ```
 
-Point the live plugin at the absolute `tmp/acceptance-fixture/zotero-data` path:
+Point the live plugin at the absolute `.scratch/acceptance-fixture/zotero-data` path:
 
 ```bash
 obsidian vault=<id> eval \

@@ -9,11 +9,35 @@ import type { IconName } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import type { CommentDraft } from "@/services/annotation-repository/service";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
+
+/**
+ * Why a verb cannot act while the Editing Capability stands in its way, and the
+ * one gesture that could change that — what the capability notice states.
+ */
+export interface CardBlock {
+  /** The capability's own sentence: its detail, or its label where it has none. */
+  reason: string;
+  /** The gesture the notice offers, or `null` where nothing the user does helps. */
+  action: "allow-editing" | null;
+}
 
 /** One header control: whether it runs, and what its tooltip says. */
 export interface CardControl {
+  /**
+   * Whether the press is refused outright, which only a write in flight is:
+   * there is nothing to say about it beyond the tooltip, and it ends by itself.
+   */
   disabled: boolean;
+  /**
+   * The capability standing in the way, or `null` while the verb acts. A
+   * blocked verb stays pressable and only rests dimmed: its press raises a
+   * notice, which states {@link CardBlock.reason} from the capability in force,
+   * so the explanation is reached by a gesture rather than only by a hover.
+   */
+  blocked: CardBlock | null;
   /** `aria-label`, which Obsidian renders as the hover tooltip. */
   tooltip: string;
 }
@@ -41,27 +65,23 @@ export interface CardControls {
 }
 
 /**
- * Whether an editing verb runs under one capability. `writable` sends the
- * write; `authorization-required` stays live because the gesture is what opens
- * Zotero's dialog, and the write follows the grant. Every other state — a
- * gesture already at the dialog, Zotero's dialog cooldown, and each read-only
- * reason — disables in place.
- *
- * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
+ * Editing tools are available only after explicit authorization.
  */
 export function editingLive(capability: EditingCapability): boolean {
-  return (
-    capability.kind === "writable" ||
-    capability.kind === "authorization-required"
-  );
+  return capability.kind === "writable";
 }
 
 /**
  * Every editing control of one card, with the reason for each that cannot run.
  *
- * A write in flight disables all three and says so: pending shows as disabled
- * verbs and nothing else, because no provisional value is ever drawn. A write
- * that failed, conflicted, or lost its answer leaves the verbs to the
+ * The two reasons a verb cannot act are not the same thing. A write in flight
+ * disables all three and says so: pending shows as disabled verbs and nothing
+ * else, because no provisional value is ever drawn, and it ends without the
+ * user doing anything. A capability that refuses writes is a state the user can
+ * read about and sometimes end, so the verb stays pressable and its press
+ * carries {@link CardControl.blocked} to the notice.
+ *
+ * A write that failed, conflicted, or lost its answer leaves the verbs to the
  * capability, so the user can try again.
  */
 export function cardControls({
@@ -70,11 +90,20 @@ export function cardControls({
   hasComment,
   now,
 }: CardControlsInput): CardControls {
-  const blocked = editingBlockedReason(capability, mutation, now);
-  const control = (label: string): CardControl =>
-    blocked === null
-      ? { disabled: false, tooltip: label }
-      : { disabled: true, tooltip: blocked };
+  const pending = mutation.kind === "pending";
+  const blocked = pending ? null : capabilityBlock(capability, now);
+  const control = (label: string): CardControl => {
+    if (pending)
+      return {
+        disabled: true,
+        blocked: null,
+        tooltip: m.annot_view_card_saving(),
+      };
+    if (blocked === null)
+      return { disabled: false, blocked: null, tooltip: label };
+    // The verb keeps its own name: the notice states the reason on a press.
+    return { disabled: false, blocked, tooltip: label };
+  };
   return {
     color: control(m.annot_view_card_color()),
     comment: control(commentLabel(hasComment)),
@@ -109,7 +138,150 @@ export function editingBlockedReason(
   now: Temporal.Instant,
 ): string | null {
   if (mutation.kind === "pending") return m.annot_view_card_saving();
+  return capabilityBlock(capability, now)?.reason ?? null;
+}
+
+/**
+ * What one Editing Capability leaves a verb to say, or `null` while the verb
+ * acts. Authorization is the one state a gesture ends, so it is the one that
+ * carries an action; every other state is waited out or fixed in Zotero.
+ */
+export function capabilityBlock(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): CardBlock | null {
   if (editingLive(capability)) return null;
   const copy = editingCapabilityCopy(capability, now);
-  return copy.detail ?? copy.label;
+  return {
+    reason: copy.detail ?? copy.label,
+    action:
+      capability.kind === "authorization-required" ? "allow-editing" : null,
+  };
+}
+
+/** Shared comment feedback for the Annotation View and PDF reader. */
+export function commentEditorControls(
+  capability: EditingCapability,
+  draft: CommentDraft | null,
+  now: Temporal.Instant,
+) {
+  const available = editingLive(capability);
+  const pending = draft?.state.kind === "pending";
+  const oneTime = capability.kind === "writable" && capability.oneTime;
+  const manual = !!oneTime || !!draft?.manualSave;
+  // Automatic saving states nothing: the quiet case is the normal one, and a
+  // standing sentence under every editor only competes with the text.
+  let hint: string | null = null;
+  if (pending) hint = m.annot_view_card_saving();
+  else if (draft?.state.kind === "failed") {
+    const { failure } = draft.state;
+    hint =
+      // A refused write and a refused editor are one state, so they say one
+      // thing: the capability's own sentence, as the blocked case below says it.
+      failure.kind === "unauthorized"
+        ? (capabilityBlock(capability, now)?.reason ??
+          writeFailureMessage(failure, now))
+        : failure.kind === "unknown-outcome" || failure.kind === "unreachable"
+          ? m.annot_view_comment_unconfirmed()
+          : writeFailureMessage(failure, now);
+  }
+  // The capability's own sentence, which names the state and the gesture that
+  // ends it. A line of its own here could only restate it more vaguely.
+  else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
+  else if (oneTime) hint = m.annot_view_comment_one_time();
+  // A draft waiting on a manual save says so with its Save comment button.
+  // A sentence restating the button is one line the card does not need.
+  return {
+    readOnly: !available,
+    saveDisabled: !available || pending,
+    manual,
+    hint,
+  };
+}
+
+/** One verb the held-draft panel offers. */
+export interface HeldDraftAction {
+  kind: "save" | "allow-editing" | "discard";
+  label: string;
+  /** Whether the press acts. A verb the capability refuses rests disabled. */
+  enabled: boolean;
+  /**
+   * Whether the verb carries the accent. The panel's own surface is the fill
+   * Obsidian gives a resting button, so a row of resting buttons on it reads
+   * as a row of text: the way out wears the accent to be a button at all.
+   * Discarding never takes it — it ends the text the user wrote.
+   */
+  primary: boolean;
+}
+
+/**
+ * Text the user holds that Zotero does not have, with the verbs that end it.
+ *
+ * The panel is the card's answer to "what do I do with this": every state it
+ * announces carries a way out, so a held draft is never a label the user can
+ * only read. A draft the plugin resolves by itself announces nothing — the
+ * quiet case is the normal one.
+ */
+export interface HeldDraft {
+  /** The user's text, which the panel shows in place of Zotero's comment. */
+  text: string;
+  /** Why the text is still held, or `null` where the state speaks for itself. */
+  reason: string | null;
+  actions: readonly HeldDraftAction[];
+}
+
+/**
+ * What the card announces about one held comment draft, or `null` where it
+ * announces nothing.
+ *
+ * Three states stay quiet, because none of them asks the user for anything.
+ * A draft matching Zotero holds nothing. A write in flight settles by itself,
+ * and drawing the user's text beside "Saving to Zotero…" would put a
+ * provisional value on the card. A conflict has its own panel with its own two
+ * verbs (aidenlx/zotlit#1151).
+ *
+ * @see apps/obsidian/policies/ui-seams.md
+ */
+export function heldCommentDraft(
+  capability: EditingCapability,
+  draft: CommentDraft | null,
+  now: Temporal.Instant,
+): HeldDraft | null {
+  if (!draft) return null;
+  if (draft.state.kind === "pending" || draft.state.kind === "conflict")
+    return null;
+  if (draft.text === draft.baseline) return null;
+  const { hint, manual, saveDisabled } = commentEditorControls(
+    capability,
+    draft,
+    now,
+  );
+  const block = capabilityBlock(capability, now);
+  // An automatic save is already on its way, so the card waits for it rather
+  // than asking the user to do what the plugin is about to do.
+  if (!manual && !saveDisabled) return null;
+  const actions: HeldDraftAction[] = [
+    {
+      kind: "save",
+      label: m.annot_view_comment_save(),
+      enabled: !saveDisabled,
+      primary: !saveDisabled,
+    },
+  ];
+  if (block?.action === "allow-editing") {
+    actions.push({
+      kind: "allow-editing",
+      label: m.capability_enable_editing(),
+      enabled: true,
+      // Where the draft cannot be saved, the grant is the way out.
+      primary: saveDisabled,
+    });
+  }
+  actions.push({
+    kind: "discard",
+    label: m.annot_view_comment_discard(),
+    enabled: true,
+    primary: false,
+  });
+  return { text: draft.text, reason: block?.reason ?? hint, actions };
 }

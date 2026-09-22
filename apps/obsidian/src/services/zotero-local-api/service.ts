@@ -100,6 +100,8 @@ export type LocalApiState =
  * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
  */
 export interface WriteAuthorizationState {
+  /** The available grant permits one authenticated write. */
+  oneTime?: boolean;
   /** A gesture is at Zotero's dialog now. */
   authorizing: boolean;
   /** Zotero refused a write to this Attachment's library this session. */
@@ -296,6 +298,7 @@ export class ZoteroLocalApiClient extends Service<void> {
     const parsed =
       attachmentKey === null ? null : parseIndexedKey(attachmentKey);
     return {
+      ...(this.#oneTime !== null && { oneTime: true }),
       authorizing: this.#authorizing !== null,
       libraryReadOnly:
         parsed !== null && this.#readOnlyLibraries.has(libraryPath(parsed)),
@@ -309,8 +312,8 @@ export class ZoteroLocalApiClient extends Service<void> {
   }
 
   /**
-   * Ask Zotero for a Write Authorization, from the gesture that wants one: an
-   * edit in the reader, or "Enable editing" in settings. Nothing else may call
+   * Ask Zotero for a Write Authorization from Allow editing in the
+   * Annotation View or settings. Nothing else may call
    * this — no dialog opens without a user action.
    *
    * A Capability Probe runs first, because the probe is the sole authority on
@@ -462,6 +465,8 @@ export class ZoteroLocalApiClient extends Service<void> {
     const library = libraryPath(parsed);
 
     const annotations: LocalApiAnnotation[] = [];
+    const keys = new Set<string>();
+    let expectedTotal: number | null | undefined;
     for (;;) {
       const query = new URLSearchParams({
         itemType: "annotation",
@@ -480,14 +485,37 @@ export class ZoteroLocalApiClient extends Service<void> {
 
       const page = readAnnotationPage(reply.value.text, attachmentKey);
       if ("failure" in page) return this.#report(page);
+      const total = totalResults(reply.value.headers);
+      if (total === null) {
+        return this.#report({
+          failure: invalid("annotation page named no valid total"),
+        });
+      }
+      if (expectedTotal === undefined) expectedTotal = total;
+      if (expectedTotal !== total) {
+        return this.#report({
+          failure: invalid("annotation total changed during pagination"),
+        });
+      }
+      for (const { key } of page.value) {
+        if (keys.has(key)) {
+          return this.#report({
+            failure: invalid("annotation page repeated an annotation"),
+          });
+        }
+        keys.add(key);
+      }
       annotations.push(...page.value);
 
-      const total = totalResults(reply.value.headers);
       if (
         page.value.length < PAGE_SIZE ||
-        total === null ||
-        annotations.length >= total
+        annotations.length >= expectedTotal
       ) {
+        if (annotations.length !== expectedTotal) {
+          return this.#report({
+            failure: invalid("annotation pages did not match their total"),
+          });
+        }
         logger.debug("Annotations read from the Zotero Local API", {
           attachmentKey,
           annotations: annotations.length,
@@ -736,7 +764,11 @@ export class ZoteroLocalApiClient extends Service<void> {
    */
   async #takeKey(serverID: string): Promise<string | null> {
     const oneTime = this.#oneTime;
-    if (oneTime === null) return await this.#credentials.read(serverID);
+    if (oneTime === null) {
+      const key = await this.#credentials.read(serverID);
+      if (key === null) this.#setAuthorized(false);
+      return key;
+    }
     this.#oneTime = null;
     this.#setAuthorized(await this.#hasKey(serverID));
     return oneTime;
