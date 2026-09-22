@@ -27,7 +27,10 @@ import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { AppContext } from "@/lib/app-context";
-import { registerMigratingWindowEvent } from "@/lib/disposables";
+import {
+  registerKeymap,
+  registerMigratingWindowEvent,
+} from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import type { ItemSummary } from "@/lib/item-summary";
@@ -52,6 +55,7 @@ import type {
 import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
+import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
 import type { PdfAnnotationEditor } from "@/services/pdf-annotation-editor/service";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { ZoteroReaderSession } from "@/services/reader-session/zotero";
@@ -407,6 +411,24 @@ export class AnnotationView extends ItemView {
       }),
     );
 
+    // Escape clears a selection this view drives. One typed into a field goes
+    // on to the field. Otherwise Obsidian moves focus to the last navigable
+    // leaf: right from the sidebar, but in the main area that switches the tab
+    // away from this view, so the key stops here.
+    const escape = registerKeymap(this.scope, [], "Escape", (event) => {
+      if (inTextEntry(event.target)) return;
+      const session = this.#boundPdfSession();
+      if (session && session.selected.length > 0) {
+        session.setSelectedAnnotations([]);
+        return false;
+      }
+      const { leftSplit, rightSplit } = this.#deps.app.workspace;
+      const root = this.leaf.getRoot();
+      if (root === leftSplit || root === rightSplit) return;
+      return false;
+    });
+    this.register(() => escape[Symbol.dispose]());
+
     this.register(
       this.#deps.liveUpdate.on("available", (available) => {
         // The mode is the user's, so it stands: only the reason the view shows
@@ -640,6 +662,12 @@ export class AnnotationView extends ItemView {
     this.#leafSession?.();
     this.#leafSession = null;
     const session = filePath && this.#deps.pdfReaders.sessionForPath(filePath);
+    // Under Active Tab the selection is the followed PDF's own: with no PDF
+    // bound, there is none to show.
+    if (this.#followMode === "active-tab")
+      this.#store.setState({
+        selectedAnnotationKeys: session ? session.selected : [],
+      });
     if (!session) return;
     const stack = new DisposableStack();
     stack.defer(session.on("target-changed", () => this.#reload()));
@@ -934,7 +962,12 @@ export class AnnotationView extends ItemView {
   /** Mirror the reader's selection and bring its first card into view. */
   #applySelection(selected: readonly string[]): void {
     this.#store.setState({ selectedAnnotationKeys: selected });
-    for (const key of selected) {
+    this.#scrollToCard(selected);
+  }
+
+  /** Bring the first of these cards the list holds into view. */
+  #scrollToCard(keys: readonly string[]): void {
+    for (const key of keys) {
       const el = this.contentEl.querySelector(
         `.zt-annot-card[data-zotero-annotation-key="${key}"]`,
       );
@@ -948,7 +981,8 @@ export class AnnotationView extends ItemView {
   /**
    * Bring one Annotation's card forward, from the Mark Popup in the PDF reader.
    * A card the list on screen does not hold is left alone: the Follow Mode is
-   * the user's, and a reveal is not one of the gestures that changes it.
+   * the user's, and a reveal is not one of the gestures that changes it. The
+   * card is selected only through a bound Obsidian PDF reader.
    *
    * @param comment whether the card's comment editor takes the caret, which is
    *   the popup's answer to anything that needs typing.
@@ -962,24 +996,30 @@ export class AnnotationView extends ItemView {
       .getState()
       .annotations?.some((record) => record.key === annotationKey);
     if (held !== true) return;
-    this.#applySelection([annotationKey]);
+    this.#boundPdfSession()?.setSelectedAnnotations([annotationKey]);
+    this.#scrollToCard([annotationKey]);
     if (comment) this.#store.setState({ editingCommentKey: annotationKey });
   }
 
   /**
-   * A card was activated: the reader this view follows takes the selection and
-   * moves to the mark. Only an Obsidian PDF view can be moved from here —
-   * Zotero owns every gesture on its own reader — so under every other mode
-   * the view holds the selection itself.
+   * A card was activated: the Obsidian PDF reader this view follows takes the
+   * selection and moves to the mark. A selection means nothing without a
+   * reader to show it in, so with no PDF bound the card takes none.
    */
   #selectAnnotation(annotationKey: string): void {
+    const session = this.#boundPdfSession();
+    if (!session) return;
+    session.setSelectedAnnotations([annotationKey]);
+    session.navigateToAnnotation(annotationKey);
+  }
+
+  /**
+   * The followed reader, while it is an Obsidian PDF view: the one reader this
+   * view can select in. Zotero owns every gesture on its own reader.
+   */
+  #boundPdfSession(): ReaderSession | null {
     const session = this.#followedSession();
-    if (session?.source === "obsidian-pdf") {
-      session.setSelectedAnnotations([annotationKey]);
-      session.navigateToAnnotation(annotationKey);
-      return;
-    }
-    this.#applySelection([annotationKey]);
+    return session?.source === "obsidian-pdf" ? session : null;
   }
 
   /** The reader this view's Follow Mode is driven by, while one answers. */
