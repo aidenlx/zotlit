@@ -1,5 +1,4 @@
-import { forwardRef } from "react";
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, Ref } from "react";
 
 import { cn, tooltipAttrs } from "@/lib/utils";
 
@@ -21,42 +20,35 @@ export interface SearchInputProps extends Omit<
    * clear control beside the field is this component's own either way.
    */
   type?: "search" | "text";
+  ref?: Ref<HTMLInputElement>;
 }
 
-/**
- * Wrapped in `forwardRef` because Preact lifts `ref` off a function
- * component's props, so a `ref` prop would hold the component, not the input.
- */
-export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
-  function SearchInput(
-    {
-      value,
-      onChange,
-      className,
-      placeholder = "Search…",
-      clearLabel,
-      type = "search",
-      ...rest
-    },
-    ref,
-  ) {
-    return (
-      <div className={cn("search-input-container", className)}>
-        <input
-          ref={ref}
-          type={type}
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange(e.currentTarget.value)}
-          {...rest}
-        />
-        <div
-          className="search-input-clear-button"
-          role="button"
-          {...tooltipAttrs(clearLabel)}
-          onClick={() => onChange("")}
-        />
-      </div>
-    );
-  },
-);
+export function SearchInput({
+  value,
+  onChange,
+  className,
+  placeholder = "Search…",
+  clearLabel,
+  type = "search",
+  ref,
+  ...rest
+}: SearchInputProps) {
+  return (
+    <div className={cn("search-input-container", className)}>
+      <input
+        ref={ref}
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        {...rest}
+      />
+      <div
+        className="search-input-clear-button"
+        role="button"
+        {...tooltipAttrs(clearLabel)}
+        onClick={() => onChange("")}
+      />
+    </div>
+  );
+}
