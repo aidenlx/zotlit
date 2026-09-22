@@ -91,6 +91,8 @@ interface ChooserState {
   /** The row box, which a page step measures itself against. */
   listRef: RefObject<HTMLDivElement | null>;
   publishRows: (rows: readonly ChooserRow[]) => void;
+  /** Puts the highlight on a row, as the pointer moving over it asks. */
+  highlightRow: (index: number) => void;
   /** The `id` of the row at an index, for `aria-activedescendant`. */
   optionId: (index: number) => string;
   /**
@@ -196,11 +198,23 @@ export interface ChooserProps {
 
 export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const app = useObsidianApp();
-  const [query, setQuery] = useState("");
+  const [query, setQueryState] = useState("");
   const [open, setOpen] = useState(false);
   const [popupId] = useState(() => `zt-chooser-${(chooserSequence += 1)}`);
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
-  const [highlight, setHighlight] = useState(0);
+  // No row is highlighted until a key or the pointer names one: a popup that
+  // opened with its first row darkened told a pointer user it was chosen.
+  const [highlight, setHighlight] = useState(-1);
+
+  /**
+   * A query hands the highlight to the first match, so Enter takes what the
+   * user typed toward, and an emptied query takes the highlight away again.
+   * The rows that publish after this re-home it from there.
+   */
+  const setQuery = useCallback((next: string) => {
+    setQueryState(next);
+    setHighlight(next.length > 0 ? 0 : -1);
+  }, []);
   const listRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => popupRef.current?.hidePopover(), []);
@@ -316,7 +330,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
    */
   useLayoutEffect(() => {
     if (!open) return;
-    setHighlight(0);
+    setHighlight(-1);
     const field = popupRef.current?.querySelector<HTMLElement>("input");
     (field ?? listRef.current)?.focus();
     app.keymap.pushScope(scope);
@@ -338,6 +352,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       listId: `${popupId}-list`,
       listRef,
       publishRows,
+      highlightRow: setHighlight,
       optionId,
       active,
       activeOptionId: active < 0 ? null : optionId(active),
@@ -346,6 +361,7 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
       value,
       onValueChange,
       query,
+      setQuery,
       open,
       popupId,
       close,
@@ -712,7 +728,7 @@ function Separator() {
  * refuses and a row Enter refuses are the same row.
  */
 function useRowSlot(value: string) {
-  const { selected, onValueChange, close } = useChooser();
+  const { selected, onValueChange, close, highlightRow } = useChooser();
   const { indexOf, rows, active, optionId } = useChooserList();
   const ref = useRef<HTMLDivElement>(null);
 
@@ -729,6 +745,15 @@ function useRowSlot(value: string) {
     id: index < 0 ? undefined : optionId(index),
     highlighted,
     disabled: row?.disabled ?? false,
+    /**
+     * The pointer moving over the row takes the highlight with it, so the
+     * keyboard and the pointer share one mark rather than darkening two rows.
+     * Movement rather than entry: a list scrolling under a still pointer is
+     * not the pointer choosing a row.
+     */
+    hover: () => {
+      if (index >= 0 && !highlighted) highlightRow(index);
+    },
     /** A click on the row, decided exactly as Enter on the highlight is. */
     activate: () =>
       runActivation(activatedRow(row, selected), close, onValueChange),
@@ -773,7 +798,7 @@ function RowShell({
   children,
   ...rest
 }: RowShellProps) {
-  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
+  const { ref, id, highlighted, disabled, activate, hover } = useRowSlot(value);
 
   return (
     <div
@@ -784,6 +809,7 @@ function RowShell({
       aria-disabled={disabled || undefined}
       data-highlighted={highlighted ? "" : undefined}
       onClick={activate}
+      onMouseMove={hover}
       {...rest}
       className={rowBox(disabled, className)}
     >

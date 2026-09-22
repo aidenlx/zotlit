@@ -172,7 +172,10 @@ export interface ChooserExtent {
 
 /**
  * The index the highlight settles on, given where it stands and which key
- * moved it. `-1` is "no row", which an empty list always answers.
+ * moved it. `-1` is "no row", which an empty list always answers, and where
+ * the highlight rests until a key or the pointer names a row: from there a
+ * step down or a jump to the end lands on the first row, and a step up or a
+ * jump to the start of the list on the last.
  *
  * A single step wraps: from the last row Down reaches the first, and from the
  * first row Up reaches the last, so holding an arrow key never dead-ends. A
@@ -185,9 +188,10 @@ export function movedHighlight(
   move: ChooserMove,
   { count, pageSize }: ChooserExtent,
 ): number {
+  if (count <= 0) return -1;
   const at = clampedHighlight(index, count);
-  if (at < 0) return -1;
   const last = count - 1;
+  if (at < 0) return move === "previous" || move === "last" ? last : 0;
   const page = Math.max(1, pageSize);
   switch (move) {
     case "previous":
@@ -208,30 +212,30 @@ export function movedHighlight(
 /**
  * The index a held highlight still points at once the list under it changed:
  * the row itself while it is in range, the last row when the list shrank past
- * it, the first row when nothing was highlighted yet, and `-1` for an empty
- * list.
+ * it, and `-1` for an empty list or for no row highlighted yet.
  */
 export function clampedHighlight(index: number, count: number): number {
-  if (count <= 0) return -1;
-  if (index < 0) return 0;
+  if (count <= 0 || index < 0) return -1;
   return Math.min(index, count - 1);
 }
 
 /**
  * Where the highlight lands once the rows under it changed: on the row it was
- * standing on, whenever that row is still there, and on the first row
- * otherwise.
+ * standing on, whenever that row is still there; on the first row when that
+ * row is gone; and on no row when none was highlighted to begin with.
  *
- * Both halves are gestures the user makes. Ticking a row rebuilds the list
- * around the same rows, and the highlight staying put is what lets several
- * rows be ticked in one visit. Typing another letter takes rows away, and an
- * index kept across that would point at whatever slid into its place.
+ * Each is a gesture the user makes. Ticking a row rebuilds the list around
+ * the same rows, and the highlight staying put is what lets several rows be
+ * ticked in one visit. Typing another letter takes rows away, and an index
+ * kept across that would point at whatever slid into its place. Opening the
+ * popup publishes rows under a highlight that stands on nothing, and a pointer
+ * user sees no row darkened until the pointer or a key names one.
  */
 export function rehomedHighlight(
   value: string | null,
   rows: readonly ChooserRow[],
 ): number {
-  if (rows.length === 0) return -1;
-  const at = value === null ? -1 : rows.findIndex((row) => row.value === value);
+  if (rows.length === 0 || value === null) return -1;
+  const at = rows.findIndex((row) => row.value === value);
   return at < 0 ? 0 : at;
 }
