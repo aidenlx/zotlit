@@ -36,14 +36,43 @@ Every style is a `zt:`-prefixed utility on the element that needs it; a styleshe
 
 ## Quick decision tree
 
-1. **A native component exists** → the React wrapper from `src/components/obsidian/`, or the imperative `obsidian` class in DOM-built UI (see **Native components**).
-2. **Color** → a semantic token (`zt:text-muted`, `zt:bg-background`, `zt:text-accent-foreground`), never a raw palette one. For an RGB overlay, pair the `-rgb` variant: `rgba(var(--color-red-rgb), 0.2)`.
-3. **Spacing / size** → Tailwind's default scale (`zt:gap-2`, `zt:p-3`). Obsidian's `--size-4-N` are fixed 4px multiples no theme overrides, so they map 1:1.
-4. **Radius** → `zt:rounded-sm/md/lg/xl` (`--radius-s/m/l/xl`). **Typography** → `zt:text-xs/sm/base/lg`.
-5. **A modal body can outgrow the window** → `mod-scrollable-content` on `modalEl` plus a `.modal-button-container`; read [`modal-layout.md`](modal-layout.md).
-6. **A component variable exists** (`--modal-background`, `--button-radius`, `--tab-text-color`) → arbitrary-variable syntax, or extend `zt-main.css`.
+1. **A native component exists** → the React wrapper from `src/components/obsidian/`, or the imperative `obsidian` class in DOM-built UI (see **Native components**). **A control that draws its own appearance is the exception** — a chip whose whole look is the caller's utilities, where the wrapper's supply, Obsidian's button box and its `mod-*` variants, is exactly what the chip takes back off. Build the bare element and record there why the wrapper would add nothing; `src/components/chooser.tsx`'s `Trigger` is the recorded case.
+2. **The value is only known at runtime** → the declaration stays in the class list and `style` carries the datum alone (see **Runtime values**).
+3. **Color** → a semantic token (`zt:text-muted`, `zt:bg-background`, `zt:text-accent-foreground`), never a raw palette one. For an RGB overlay, pair the `-rgb` variant: `rgba(var(--color-red-rgb), 0.2)`.
+4. **Spacing / size** → Tailwind's default scale (`zt:gap-2`, `zt:p-3`). Obsidian's `--size-4-N` are fixed 4px multiples no theme overrides, so they map 1:1.
+5. **Radius** → `zt:rounded-sm/md/lg/xl` (`--radius-s/m/l/xl`). **Typography** → `zt:text-xs/sm/base/lg`.
+6. **A modal body can outgrow the window** → `mod-scrollable-content` on `modalEl` plus a `.modal-button-container`; read [`modal-layout.md`](modal-layout.md).
+7. **A component variable exists** (`--modal-background`, `--button-radius`, `--tab-text-color`) → arbitrary-variable syntax, or extend `zt-main.css`.
 
 `references/foundations.md` is where to look first when you don't know which variable to use.
+
+## Runtime values
+
+A value the build cannot see — a colour Zotero stored, a measured width — has no class of its own. Keep the declaration in the class list and let `style` carry the datum:
+
+```tsx
+<blockquote
+  className="zt:border-l-2 zt:border-l-(--zt-annot-color)"
+  style={{ "--zt-annot-color": annot.color } as React.CSSProperties}
+/>
+```
+
+A finite state is an attribute rather than a value, so every class it can take is one the build already generated:
+
+```tsx
+// Present or absent — `zt:data-selected:` matches presence, so pass `undefined`, not "false".
+<div data-selected={selected ? "" : undefined} className="zt:data-selected:border-primary" />
+```
+
+A state a descendant styles against travels by selector, so the child reads the ancestor instead of taking a prop:
+
+```tsx
+<div className="zt:group" data-selected="">
+  <div className="zt:opacity-70 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100" />
+</div>
+```
+
+The check: `style` holds `--zt-*` keys only. A CSS property name there means the declaration left the class list, where the theme's tokens, the variants, and `cn()` can no longer reach it.
 
 ## Scoped preflight (`.zt-root`)
 
@@ -70,7 +99,7 @@ class AnnotationView extends ItemView {
 }
 ```
 
-Inside it, write semantic HTML — `<blockquote>`, `<p>`, `<ul>`/`<li>`, `<h2>`, `<hr>` — and a width utility is a full border (`zt:border-l-2`, `zt:divide-y zt:divide-border`) because preflight supplies `border-style: solid`. For a data-driven color keep the width in the utility and pass the value as a custom property — `style={{ "--zt-annot-color": color }}` with `zt:border-l-(--zt-annot-color)`, and a `data-*` attribute where the value is optional.
+Inside it, write semantic HTML — `<blockquote>`, `<p>`, `<ul>`/`<li>`, `<h2>`, `<hr>` — and a width utility is a full border (`zt:border-l-2`, `zt:divide-y zt:divide-border`) because preflight supplies `border-style: solid`. For a data-driven color keep the width in the utility and pass the color as a custom property — see **Runtime values**.
 
 It is safe because preflight sits in `@layer base`: your `zt:` utilities (`@layer utilities`) outrank it, and Obsidian's unlayered stylesheet outranks every layer. So preflight only clears browser UA defaults — `<blockquote>`'s `margin: 1em 40px`, `<p>`'s `margin: 1em 0`, the 40px list indent.
 

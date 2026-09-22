@@ -100,6 +100,8 @@ export type LocalApiState =
  * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
  */
 export interface WriteAuthorizationState {
+  /** The available grant permits one authenticated write. */
+  oneTime?: boolean;
   /** A gesture is at Zotero's dialog now. */
   authorizing: boolean;
   /** Zotero refused a write to this Attachment's library this session. */
@@ -296,6 +298,7 @@ export class ZoteroLocalApiClient extends Service<void> {
     const parsed =
       attachmentKey === null ? null : parseIndexedKey(attachmentKey);
     return {
+      ...(this.#oneTime !== null && { oneTime: true }),
       authorizing: this.#authorizing !== null,
       libraryReadOnly:
         parsed !== null && this.#readOnlyLibraries.has(libraryPath(parsed)),
@@ -309,8 +312,8 @@ export class ZoteroLocalApiClient extends Service<void> {
   }
 
   /**
-   * Ask Zotero for a Write Authorization, from the gesture that wants one: an
-   * edit in the reader, or "Enable editing" in settings. Nothing else may call
+   * Ask Zotero for a Write Authorization from Allow editing in the
+   * Annotation View or settings. Nothing else may call
    * this — no dialog opens without a user action.
    *
    * A Capability Probe runs first, because the probe is the sole authority on
@@ -761,7 +764,11 @@ export class ZoteroLocalApiClient extends Service<void> {
    */
   async #takeKey(serverID: string): Promise<string | null> {
     const oneTime = this.#oneTime;
-    if (oneTime === null) return await this.#credentials.read(serverID);
+    if (oneTime === null) {
+      const key = await this.#credentials.read(serverID);
+      if (key === null) this.#setAuthorized(false);
+      return key;
+    }
     this.#oneTime = null;
     this.#setAuthorized(await this.#hasKey(serverID));
     return oneTime;

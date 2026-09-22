@@ -174,6 +174,8 @@ export interface CommentDraft {
   /** Current shared input. */
   text: string;
   state: CommentDraftState;
+  /** The next save requires an explicit action after a grant or interruption. */
+  manualSave?: boolean;
 }
 
 type CommentWriteDecision =
@@ -212,6 +214,7 @@ function commentDraftAfterWrite(
         kind: "update",
         draft: {
           ...current,
+          manualSave: true,
           state: { kind: "failed", failure: outcome.failure },
         },
       };
@@ -292,7 +295,6 @@ export interface AnnotationRepositoryDeps {
   >;
   localApi: Pick<
     ZoteroLocalApiClient,
-    | "authorize"
     | "authorizedSend"
     | "demandSource"
     | "listAnnotations"
@@ -610,6 +612,10 @@ export class AnnotationRepository extends Service<void> {
     const standing = id ? this.#commentDrafts.get(id) : undefined;
     const held = standing ? null : this.#holding(annotationKey);
     if (!id || (!standing && (!source || !held))) return null;
+    const capability = this.capabilityFor(
+      standing?.attachmentKey ?? held!.attachmentKey,
+    );
+    if (capability.kind !== "writable") return standing ?? null;
     const baseline = standing?.baseline ?? held!.record.comment ?? "";
     const draft = standing
       ? {
@@ -625,6 +631,7 @@ export class AnnotationRepository extends Service<void> {
           attachmentKey: held!.attachmentKey,
           serverID: source!.serverID,
           baseline,
+          ...(capability.oneTime && { manualSave: true }),
           text: text ?? baseline,
           state: { kind: "editing" } as const,
         };
@@ -638,9 +645,13 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /** Submit the current shared draft once. */
-  submitComment(annotationKey: string): Promise<MutationState> {
+  submitComment(
+    annotationKey: string,
+    { automatic = false }: { automatic?: boolean } = {},
+  ): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
     if (!draft) return Promise.resolve(IDLE);
+    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
     const id = commentDraftID(draft.serverID, annotationKey);
     const save = this.#commentSave(id);
     this.#clearCommentTimers(save);
@@ -655,6 +666,13 @@ export class AnnotationRepository extends Service<void> {
       this.#dropCommentDraft(annotationKey);
       return Promise.resolve(IDLE);
     }
+    const capability = this.capabilityFor(draft.attachmentKey);
+    if (capability.kind !== "writable")
+      return Promise.resolve({
+        kind: "failed",
+        failure: this.#writeBlocked(draft.attachmentKey)!,
+      });
+    draft.manualSave = !!capability.oneTime;
     const submittedText = draft.text;
     this.#setCommentDraft(draft, { kind: "pending" });
     save.submittedText = submittedText;
@@ -669,7 +687,7 @@ export class AnnotationRepository extends Service<void> {
         save.queued &&
         this.#commentDrafts.has(id)
       ) {
-        void this.submitComment(annotationKey);
+        void this.submitComment(annotationKey, { automatic: true });
       }
     });
     return operation;
@@ -681,11 +699,7 @@ export class AnnotationRepository extends Service<void> {
     submittedText: string,
   ): Promise<MutationState> {
     const id = commentDraftID(submitted.serverID, annotationKey);
-    const outcome = await this.#patchComment(
-      annotationKey,
-      submittedText,
-      false,
-    );
+    const outcome = await this.patchComment(annotationKey, submittedText);
     const current = this.#commentDrafts.get(id);
     if (!current || current.state.kind === "conflict") return outcome;
     this.#applyCommentWriteDecision({
@@ -729,7 +743,7 @@ export class AnnotationRepository extends Service<void> {
         save.queued &&
         this.#commentDrafts.has(id)
       ) {
-        void this.submitComment(annotationKey);
+        void this.submitComment(annotationKey, { automatic: true });
       }
     });
     return operation;
@@ -802,9 +816,8 @@ export class AnnotationRepository extends Service<void> {
   /**
    * Create one highlight or underline on an Attachment, from a user gesture.
    *
-   * The gesture is what may open Zotero's dialog, so a session that has not
-   * been authorized asks here and continues on Allow; nothing else in this
-   * class does. The write itself is a one-element multi-object `POST` carrying
+   * An explicit authorization must already be available. The write is a
+   * one-element multi-object `POST` carrying
    * a write token and no client key, and its answer is checked object by object
    * before the created Annotation is read back.
    *
@@ -836,7 +849,7 @@ export class AnnotationRepository extends Service<void> {
       return { kind: "failed", failure: { kind: "position-too-large" } };
     }
 
-    const blocked = await this.#authorizeGesture(attachmentKey);
+    const blocked = this.#writeBlocked(attachmentKey);
     if (blocked) return { kind: "failed", failure: blocked };
 
     const library = libraryPath(parsed);
@@ -918,19 +931,10 @@ export class AnnotationRepository extends Service<void> {
     annotationKey: string,
     comment: string,
   ): Promise<MutationState> {
-    return await this.#patchComment(annotationKey, comment, true);
-  }
-
-  async #patchComment(
-    annotationKey: string,
-    comment: string,
-    authorize: boolean,
-  ): Promise<MutationState> {
     return await this.#command(annotationKey, {
       write: "comment",
       attempted: comment,
       request: (target) => commentPatch(target, comment),
-      authorize,
     });
   }
 
@@ -1000,6 +1004,13 @@ export class AnnotationRepository extends Service<void> {
     stack.defer(this.#localApi.on("changed", () => this.#sourceMoved()));
     stack.defer(
       this.#localApi.on("capability-changed", () => {
+        for (const [id, draft] of this.#commentDrafts) {
+          if (this.capabilityFor(draft.attachmentKey).kind === "writable")
+            continue;
+          this.#cancelCommentSave(draft.annotationKey, draft.serverID);
+          this.#commentDrafts.set(id, { ...draft, manualSave: true });
+          this.#emitter.emit("comment-draft-changed", draft.annotationKey);
+        }
         this.#emitter.emit("capability-changed");
       }),
     );
@@ -1020,7 +1031,9 @@ export class AnnotationRepository extends Service<void> {
    */
   #capability(attachmentKey: string | null): EditingCapability {
     const capability =
-      this.#localApi.demandSource() && !this.#compatibleApiSource(attachmentKey)
+      attachmentKey !== null &&
+      this.#localApi.demandSource() &&
+      !this.#compatibleApiSource(attachmentKey)
         ? ({ kind: "read-only", reason: "server-changed" } as const)
         : editingCapabilityOf(
             this.#localApi.state,
@@ -1046,10 +1059,7 @@ export class AnnotationRepository extends Service<void> {
    * partition supplies committed versions for source handoff, but writes wait
    * for an active Local API source and its authorization state.
    *
-   * The gesture behind the command is what may open Zotero's dialog, exactly as
-   * it is for a create: under `authorization-required` the write waits on the
-   * same one-request-at-a-time continuation and goes on after Allow, rather
-   * than being sent keyless and coming back `401`.
+   * Every mutation requires an existing authorization.
    *
    * @param command.write which verb this is, so a conflict can name the two
    *   values the card puts side by side.
@@ -1066,7 +1076,6 @@ export class AnnotationRepository extends Service<void> {
       attempted: string | null;
       request: (target: WriteTarget) => WriteRequest;
       settle?: "re-read" | "drop";
-      authorize?: boolean;
     },
   ): Promise<MutationState> {
     const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
@@ -1094,7 +1103,6 @@ export class AnnotationRepository extends Service<void> {
       attempted: string | null;
       request: (target: WriteTarget) => WriteRequest;
       settle?: "re-read" | "drop";
-      authorize?: boolean;
     },
   ): Promise<MutationState> {
     if (command.generation !== this.#commandGeneration) {
@@ -1129,10 +1137,7 @@ export class AnnotationRepository extends Service<void> {
     }
 
     this.#settle(annotationKey, { kind: "pending" });
-    const blocked =
-      command.authorize === false
-        ? this.#backgroundWriteBlocked(held.attachmentKey)
-        : await this.#authorizeGesture(held.attachmentKey);
+    const blocked = this.#writeBlocked(held.attachmentKey);
     if (blocked) {
       return this.#settle(annotationKey, {
         kind: "failed",
@@ -1303,10 +1308,32 @@ export class AnnotationRepository extends Service<void> {
     );
   }
 
-  #backgroundWriteBlocked(attachmentKey: string): WriteFailure | null {
-    return this.#capability(attachmentKey).kind === "authorization-required"
-      ? { kind: "unauthorized" }
-      : null;
+  #writeBlocked(attachmentKey: string): WriteFailure | null {
+    const capability = this.#capability(attachmentKey);
+    switch (capability.kind) {
+      case "writable":
+        return null;
+      case "authorization-required":
+      case "authorizing":
+        return { kind: "unauthorized" };
+      case "cooldown":
+        return {
+          kind: "cooldown",
+          retryAfter: this.#now().until(capability.retryAfter),
+        };
+      case "read-only":
+        if (
+          capability.reason === "probing" ||
+          capability.reason === "zotero-unavailable"
+        )
+          return { kind: "unreachable" };
+        if (capability.reason === "invalid-response")
+          return {
+            kind: "invalid-response",
+            issue: "Zotero response unavailable",
+          };
+        return { kind: capability.reason };
+    }
   }
 
   /**
@@ -1489,21 +1516,6 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * Zotero's own dialog, where this Attachment needs one before it can be
-   * written to. A session that already holds an authorization asks nothing.
-   *
-   * @returns why the gesture cannot go on, or `null` where it can.
-   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
-   */
-  async #authorizeGesture(attachmentKey: string): Promise<WriteFailure | null> {
-    if (this.#capability(attachmentKey).kind !== "authorization-required") {
-      return null;
-    }
-    const granted = await this.#localApi.authorize();
-    return "failure" in granted ? granted.failure : null;
-  }
-
-  /**
    * One Attachment's list is superseded: it goes, and the Attachment is
    * announced. The only signal a consumer replaces a list on.
    *
@@ -1566,7 +1578,15 @@ export class AnnotationRepository extends Service<void> {
     return save;
   }
 
+  #canAutosave(draft: CommentDraft): boolean {
+    const capability = this.capabilityFor(draft.attachmentKey);
+    return (
+      !draft.manualSave && capability.kind === "writable" && !capability.oneTime
+    );
+  }
+
   #scheduleCommentSave(draft: CommentDraft): void {
+    if (!this.#canAutosave(draft)) return;
     const id = commentDraftID(draft.serverID, draft.annotationKey);
     const save = this.#commentSave(id);
     if (save.inFlight) {
@@ -1577,11 +1597,11 @@ export class AnnotationRepository extends Service<void> {
     if (save.idleTimer !== null) clearTimeout(save.idleTimer);
     save.idleTimer = setTimeout(() => {
       save.idleTimer = null;
-      void this.submitComment(draft.annotationKey);
+      void this.submitComment(draft.annotationKey, { automatic: true });
     }, COMMENT_IDLE_SAVE_MS);
     save.burstTimer ??= setTimeout(() => {
       save.burstTimer = null;
-      void this.submitComment(draft.annotationKey);
+      void this.submitComment(draft.annotationKey, { automatic: true });
     }, COMMENT_BURST_SAVE_MS);
   }
 

@@ -1,8 +1,13 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createBoundedObsidianCall,
+  createObsidianCall,
   isObsidianUnreachable,
+  ObsidianUnreachableError,
 } from "./obsidian-cli.ts";
 
 describe("bounded Obsidian CLI call", () => {
@@ -119,5 +124,40 @@ describe("bounded Obsidian CLI call", () => {
       "=> ready",
     );
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("Obsidian CLI child reaping", () => {
+  function alive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "EPERM";
+    }
+  }
+
+  // The defect this guards: a CLI waiting on a window that never answers
+  // outlives SIGTERM and keeps its pipes, so `execFile` never settles and the
+  // caller waits forever. Seen in the End-to-end Run as a 60 s Vitest timeout
+  // on a different test each run, and as orphans surviving for hours.
+  it("settles and reaps a child that ignores SIGTERM", async () => {
+    const pidFile = join(await mkdtemp(join(tmpdir(), "zt-cli-")), "pid");
+    // Stands in for the real CLI: reports its pid, ignores SIGTERM, never answers.
+    const deaf = [
+      "-e",
+      `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));` +
+        "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+    ];
+    const call = createObsidianCall({
+      command: process.execPath,
+      timeoutMs: 300,
+    });
+
+    await expect(call(deaf)).rejects.toThrow(ObsidianUnreachableError);
+
+    const pid = Number(await readFile(pidFile, "utf8"));
+    expect(Number.isInteger(pid)).toBe(true);
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 5000 });
   });
 });

@@ -247,8 +247,6 @@ export function buildServices(
           annotations: annotationRepository,
           settings,
           capabilityGestures: {
-            showEditingCapability: () =>
-              void capabilityNotices.showEditingCapability(),
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
           },

@@ -67,9 +67,11 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [deep modules](policies/pure-logic.md) — default to one cohesive module; split only with concrete payoff
 - [comments](policies/comments.md) — JSDoc conventions, module-level comments
 - [function-parameters](policies/function-parameters.md) — max 3 positional, options object for the rest
-- [tautological tests](policies/tautological-tests.md) — independent oracles, consumer boundaries, and bulk assertions
+- [testing strategy](policies/testing-strategy.md) — E2E-first; failure-mode-first for isolation tests; regression tests earn their place
+- [tautological tests](policies/tautological-tests.md) — independent oracles, change detectors, consumer boundaries, and bulk assertions
 - [test timing](policies/test-timing.md) — completion signals, clocks, polling, and external events
 - [test isolation](policies/test-isolation.md) — fixture state, resource allocation, lifetime, setup cost, and order dependence
+- [ui-testing](policies/ui-testing.md) — test decisions and wiring, not drawing; visual correctness is proved in the running app
 - [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase

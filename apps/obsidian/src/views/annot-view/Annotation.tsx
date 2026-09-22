@@ -2,6 +2,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -12,6 +13,7 @@ import type { KeyboardEvent } from "react";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
+import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
@@ -29,7 +31,11 @@ import type { ExcerptImage } from "@/services/excerpt-image/format";
 
 import { AnnotActionsContext } from "./actions";
 import { conflictPanel } from "./card-conflict";
-import { cardControls, commentIcon } from "./card-controls";
+import {
+  cardControls,
+  commentIcon,
+  commentEditorControls,
+} from "./card-controls";
 import type { CardControl, CardControls } from "./card-controls";
 import {
   excerptImageOwnership,
@@ -192,6 +198,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const mutation = useMutation(annot.key);
+  const capability = useAnnotStore((state) => state.capability);
   const panel = useMemo(
     () =>
       mutation.kind === "conflict" ? conflictPanel(mutation.conflict) : null,
@@ -221,21 +228,21 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
           <span className="zt:min-w-0 zt:break-words">{value.value}</span>
         </div>
       ))}
-      <div className="zt:flex zt:gap-2">
+      <div className="zt:mt-2 zt:flex zt:flex-wrap zt:gap-2">
         {panel.actions.map((action) => (
-          <span
+          <Button
             key={action.kind}
-            className="zt:cursor-link zt:rounded-sm zt:text-link zt:underline zt:underline-offset-2 zt:hover:text-link-hover zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
-            // The card's own click takes the selection; a verb is not that, and
-            // `activatable` stops the click before the card sees it.
-            {...activatable(() =>
-              action.kind === "discard"
-                ? actions.onDiscardConflict(annot)
-                : actions.onApplyAgain(annot),
-            )}
+            disabled={
+              action.kind !== "discard" && capability.kind !== "writable"
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              if (action.kind === "discard") actions.onDiscardConflict(annot);
+              else actions.onApplyAgain(annot);
+            }}
           >
             {action.label}
-          </span>
+          </Button>
         ))}
       </div>
     </div>
@@ -359,7 +366,34 @@ function CommentSlot({
   editing: boolean;
   control: CardControl;
 }) {
+  const draft = useAnnotStore(
+    (state) => state.commentDrafts.get(annot.key) ?? null,
+  );
+  const capability = useAnnotStore((state) => state.capability);
   if (editing) return <CommentEditor annot={annot} />;
+  if (draft) {
+    const controls = commentEditorControls(
+      capability,
+      draft,
+      Temporal.Now.instant(),
+    );
+    return (
+      <div className="zt:px-2 zt:py-1">
+        <div className="zt:text-xs zt:text-muted-foreground">
+          {m.annot_view_comment_draft()}
+        </div>
+        <div className="zt:break-words zt:whitespace-pre-wrap zt:select-text">
+          {draft.text}
+        </div>
+        <div
+          role="status"
+          className="zt:mt-1 zt:text-xs zt:text-muted-foreground"
+        >
+          {controls.hint}
+        </div>
+      </div>
+    );
+  }
   if (annot.comment === null) return null;
   return <Comment annot={annot} editable={!control.disabled} />;
 }
@@ -415,11 +449,21 @@ function Comment({
  * stores it and keeps the editor open.
  */
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
+  const labelId = useId();
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
   const stored = annot.comment ?? "";
   const text = useAnnotStore(
     (state) => state.commentDrafts.get(annot.key)?.text ?? stored,
+  );
+  const capability = useAnnotStore((state) => state.capability);
+  const draft = useAnnotStore(
+    (state) => state.commentDrafts.get(annot.key) ?? null,
+  );
+  const controls = commentEditorControls(
+    capability,
+    draft,
+    Temporal.Now.instant(),
   );
   const annotRef = useRef(annot);
   annotRef.current = annot;
@@ -459,14 +503,14 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
 
   const save = (): void => {
     setEditing(null);
-    if (text !== stored) actions.onSaveComment(annot, text);
+    if (text !== stored) actions.onSaveComment(annot, text, true);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
-      if (text !== stored) actions.onSaveComment(annot, text);
+      if (text !== stored) actions.onSaveComment(annot, text, true);
       setEditing(null);
     }
   };
@@ -474,16 +518,44 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   return (
     // Placing the caret is not the card's selection.
     <div className="zt:px-2 zt:py-1" onClick={(e) => e.stopPropagation()}>
+      <span id={labelId} className="zt:sr-only">
+        {m.annot_view_card_edit_comment()}
+      </span>
       <textarea
         ref={focusEnd}
         className="zt:w-full zt:resize-none zt:bg-transparent zt:text-xs"
         defaultValue={text}
+        readOnly={controls.readOnly}
+        aria-labelledby={labelId}
         rows={Math.min(6, Math.max(2, text.split("\n").length + 1))}
         placeholder={m.annot_view_card_comment_placeholder()}
         onChange={(e) => actions.onEditComment(annot, e.currentTarget.value)}
         onKeyDown={onKeyDown}
-        onBlur={save}
+        onBlur={(event) => {
+          if (
+            event.relatedTarget?.instanceOf(Node) &&
+            event.currentTarget.parentElement?.contains(event.relatedTarget)
+          )
+            return;
+          if (!controls.manual && !controls.readOnly) save();
+        }}
       />
+      <div className="zt:mt-2 zt:flex zt:flex-wrap zt:items-center zt:gap-2">
+        <span
+          role="status"
+          className="zt:min-w-0 zt:flex-1 zt:text-xs zt:text-muted-foreground"
+        >
+          {controls.hint}
+        </span>
+        {controls.manual && (
+          <Button
+            disabled={controls.saveDisabled}
+            onClick={() => actions.onSaveComment(annot, text)}
+          >
+            {m.annot_view_comment_save()}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

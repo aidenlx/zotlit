@@ -1,22 +1,30 @@
 import { expect, it } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import type { CommentDraft } from "@/services/annotation-repository/service";
 import type { MutationState } from "@/services/annotation-repository/write";
 
-import { cardControls, commentIcon, commentLabel } from "./card-controls";
+import {
+  cardControls,
+  commentIcon,
+  commentLabel,
+  commentEditorControls,
+} from "./card-controls";
 import type { CardControls } from "./card-controls";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
-/** The two states a gesture reaches Zotero from. */
+/** Both grant lifetimes enable mutation controls. */
 const LIVE: EditingCapability[] = [
   { kind: "writable" },
-  { kind: "authorization-required" },
+  { kind: "writable", oneTime: true },
 ];
 
 /** Every other capability, each with a reason a surface can show in place. */
 const BLOCKED: EditingCapability[] = [
+  { kind: "authorization-required" },
   { kind: "authorizing" },
   { kind: "cooldown", retryAfter: NOW.add({ seconds: 30 }) },
   ...(
@@ -110,4 +118,70 @@ it("names the comment verb for what pressing it would do", () => {
   expect(controlsOf({ kind: "writable" }).comment.tooltip).toBe(
     commentLabel(false),
   );
+});
+
+it("shows the current save outcome and preserves a manual recovery action", () => {
+  const draft: CommentDraft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: "",
+    text: "Research note",
+    state: { kind: "editing" },
+  };
+  expect(
+    commentEditorControls({ kind: "writable", oneTime: true }, draft, NOW),
+  ).toEqual({
+    readOnly: false,
+    saveDisabled: false,
+    manual: true,
+    hint: m.annot_view_comment_one_time(),
+  });
+  expect(
+    commentEditorControls(
+      { kind: "authorization-required" },
+      { ...draft, manualSave: true, state: { kind: "pending" } },
+      NOW,
+    ),
+  ).toEqual({
+    readOnly: true,
+    saveDisabled: true,
+    manual: true,
+    hint: m.annot_view_card_saving(),
+  });
+  expect(
+    commentEditorControls(
+      { kind: "writable" },
+      {
+        ...draft,
+        manualSave: true,
+        state: { kind: "failed", failure: { kind: "unknown-outcome" } },
+      },
+      NOW,
+    ),
+  ).toEqual({
+    readOnly: false,
+    saveDisabled: false,
+    manual: true,
+    hint: m.annot_view_comment_unconfirmed(),
+  });
+  expect(
+    commentEditorControls(
+      { kind: "read-only", reason: "zotero-unavailable" },
+      { ...draft, manualSave: true },
+      NOW,
+    ),
+  ).toEqual({
+    readOnly: true,
+    saveDisabled: true,
+    manual: true,
+    hint: m.annot_view_comment_paused(),
+  });
+  expect(
+    commentEditorControls(
+      { kind: "writable" },
+      { ...draft, manualSave: true },
+      NOW,
+    ).hint,
+  ).toBe(m.annot_view_comment_resume());
 });

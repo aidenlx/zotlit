@@ -117,11 +117,6 @@ export type AttachmentReads = Pick<AttachmentResolver, "resolve" | "on">;
  */
 export interface CapabilityGestures {
   /**
-   * The affordance's click: a Capability Probe, then the "Zotero editing"
-   * settings row. The Annotation View's renderer hands over the same gesture.
-   */
-  showEditingCapability: () => void;
-  /**
    * An edit gesture met a block on this Attachment, with a fresh probe already
    * behind it. The seam says why, once per reason per capability episode.
    */
@@ -530,7 +525,6 @@ export class PdfViewBinding implements Disposable, HoverParent {
       renderCapabilityAffordance(capabilitySlot, {
         capability,
         now: this.#now(),
-        onActivate: () => this.#gestures.showEditingCapability(),
       });
       if (capability.kind === "cooldown") {
         ticking ??= slot.win.setInterval(
