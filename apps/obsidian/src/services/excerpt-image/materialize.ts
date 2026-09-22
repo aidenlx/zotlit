@@ -247,6 +247,9 @@ export async function materializeExcerpt(options: {
     const gate = Promise.withResolvers<void>();
     publications.set(destination, gate.promise);
     await previous;
+    // Set once this call creates the destination rather than adopting an
+    // existing one, so a cancelled insertion can take back only its own bytes.
+    let created = false;
     try {
       assertCurrent();
       await mkdir(dirname(destination), { recursive: true });
@@ -259,6 +262,7 @@ export async function materializeExcerpt(options: {
         assertCurrent();
         try {
           await link(temporary, destination);
+          created = true;
         } catch (error) {
           if (!isErrno(error, "EEXIST")) throw error;
         }
@@ -276,13 +280,28 @@ export async function materializeExcerpt(options: {
       }
       // The atomic filesystem publish precedes the vault's asynchronous watcher.
       // Register it now so the first rendered embed can resolve its TFile. A
-      // later failure leaves the content-addressed asset for another caller.
+      // failure keeps the content-addressed asset for another caller.
       assertCurrent();
       await adapter.reconcileInternalFile(path);
       assertCurrent();
       if (!app.vault.getFileByPath(path))
         throw new Error("Published excerpt is not registered in the vault");
       return { kind: "saved", path, outcome };
+    } catch (error) {
+      // A cancelled insertion keeps no excerpt, so the bytes this call
+      // published are taken back with it. A destination this call adopted
+      // instead, and a failure its caller survived, both keep their bytes.
+      if (
+        created &&
+        (options.signal?.aborted || (options.valid && !options.valid()))
+      )
+        await unlink(destination).catch((cleanupError) => {
+          if (!isErrno(cleanupError, "ENOENT"))
+            logger.warn("Excerpt rollback cleanup failed", {
+              error: cleanupError,
+            });
+        });
+      throw error;
     } finally {
       gate.resolve();
       if (publications.get(destination) === gate.promise)
