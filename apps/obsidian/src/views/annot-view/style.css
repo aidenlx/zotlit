@@ -68,6 +68,16 @@
   margin-inline-start: calc(var(--list-indent) * -1);
 }
 
+/* A card's verbs and its type glyph are the `clickable-icon` Obsidian draws
+   inside a property value row: a 14px glyph in 4px of padding, so the box
+   is 22px in a row of 12px text rather than the toolbar's 24px. Obsidian
+   declares the padding unlayered, where no utility reaches it. */
+.zt-annot-card .clickable-icon {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  padding: var(--size-2-2);
+}
+
 /* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
    no utility can quiet it. The page label is a row of chrome that happens to
    open Zotero: it takes the row's own muted ink, and the underline arrives on

@@ -139,11 +139,13 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         actions.onSelectAnnotation(annot);
       }}
     >
-      {/* One 24px box metric for every member of the row, so the glyph, the
-          page label and the verbs sit on one line rather than three. Each end
-          control pulls back by the `clickable-icon` padding it carries, which
-          lands its glyph on the card's text edge instead of 6px inside it. */}
-      <div className="zt:flex zt:min-h-6 zt:items-center zt:gap-1">
+      {/* One 22px box metric for every member of the row, so the glyph, the
+          page label and the verbs sit on one line rather than three: the
+          card's `clickable-icon` is the one Obsidian draws in a property row,
+          a 14px glyph in 4px of padding, set in `style.css`. Each end control
+          pulls back by that padding, which lands its glyph on the card's text
+          edge instead of 4px inside it. */}
+      <div className="zt:flex zt:items-center zt:gap-1">
         {/* The card's own click takes the selection, and a pointer is the only
             thing that can press a card. This is the same gesture as a control:
             the keyboard reaches it, and `aria-pressed` says what it left.
@@ -153,7 +155,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
           aria-pressed={selected}
           // `.clickable-icon` reads `cursor: var(--cursor)` unlayered, so a
           // `cursor-*` utility cannot reach it. Feed that variable instead.
-          className="zt:-ms-1.5 zt:data-drag-ready:[--cursor:grab]"
+          className="zt:-ms-1 zt:data-drag-ready:[--cursor:grab]"
           data-drag-ready=""
           draggable
           onDragStart={(e) => actions.onDragStart(e, annot)}
@@ -289,7 +291,7 @@ function CardActionBar({
     // The card's own click takes the selection; a verb is not that. The row
     // claims the click once, rather than each control claiming it itself.
     <div
-      className="zt:ms-auto zt:-me-1.5 zt:flex zt:shrink-0 zt:items-center"
+      className="zt:ms-auto zt:-me-1 zt:flex zt:shrink-0 zt:items-center"
       onClick={claimClick}
     >
       {/* 70% is the floor the resting state can dim to and still read: at it
@@ -702,8 +704,8 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
 
 /**
  * Where the Annotation is and what colour it was made in: a dot of the
- * highlight colour before the page, in the quiet 13px the row's glyphs sit
- * beside. The colour is data Zotero stored, so it rides in the card's own
+ * highlight colour before the page, in the card's own 12px and the muted ink
+ * a Bases card gives its labels. The colour is data Zotero stored, so it rides in the card's own
  * `--zt-annot-color` and the declaration that reads it stays a utility; an
  * Annotation with no colour gets the page alone, which is the whole of what
  * "no colour" has to say.
@@ -720,7 +722,7 @@ function PageLabel({
   if (!page) return null;
   const label = m.annot_view_page({ page });
   const row =
-    "zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:text-sm zt:text-muted-foreground zt:tabular-nums";
+    "zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:text-muted-foreground zt:tabular-nums";
   const marks = (
     <>
       {color && (
