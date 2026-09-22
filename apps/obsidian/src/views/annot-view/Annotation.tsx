@@ -713,7 +713,8 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
 /**
  * What the Annotation is, where it is and what colour it was made in, as one
  * chip: the type glyph in the highlight colour before the page, on a fill of
- * that colour at 22%, in the 22px box the row's verbs wear. The page is a
+ * that colour at 22%, a 20px box centred on the 22px row the verbs wear, with
+ * a 12px glyph so the chip reads a step lighter than a verb. The page is a
  * locator, so it is set in the monospace face at 11px, which reads as a
  * reference rather than as a word of the excerpt below it; `zt-annot-page-chip`
  * is where the view stylesheet sets that size, one step under the card's own. The colour is data Zotero stored,
@@ -740,7 +741,7 @@ function PageChip({
   onDragStart: (e: DragEvent<HTMLElement>) => void;
 }) {
   const chip = cn(
-    "zt-annot-page-chip zt:flex zt:h-5.5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:ps-1 zt:pe-1.5 zt:font-mono zt:font-medium zt:tabular-nums",
+    "zt-annot-page-chip zt:flex zt:h-5 zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:px-1 zt:font-mono zt:font-medium zt:tabular-nums",
     color
       ? "zt:bg-(--zt-annot-color)/22 zt:text-foreground zt:hover:ring-1 zt:hover:ring-(--zt-annot-color) zt:motion-safe:transition-shadow"
       : "zt:text-muted-foreground",
@@ -749,7 +750,7 @@ function PageChip({
     <>
       <Icon
         name={typeIcon(type)}
-        size={14}
+        size={12}
         className={cn("zt:shrink-0", color && "zt:text-(--zt-annot-color)")}
       />
       {page && (
