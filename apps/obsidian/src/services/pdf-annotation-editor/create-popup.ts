@@ -167,6 +167,7 @@ export interface CommentSheetProps {
   onCancel: () => void;
   /** The caller binds Mod+Enter through its owning native Scope. */
   nativeSubmit?: boolean;
+  readOnly?: boolean;
 }
 
 /**
@@ -178,7 +179,13 @@ export interface CommentSheetProps {
  */
 export function renderCommentSheet(
   sheet: HTMLElement,
-  { value, onSave, onCancel, nativeSubmit = false }: CommentSheetProps,
+  {
+    value,
+    onSave,
+    onCancel,
+    nativeSubmit = false,
+    readOnly = false,
+  }: CommentSheetProps,
 ): HTMLTextAreaElement {
   sheet.empty();
   sheet.addClass(themeHook.pdfCommentSheet);
@@ -191,10 +198,14 @@ export function renderCommentSheet(
     },
   });
   editor.value = value;
-  sheet.createDiv({
-    cls: ["zt:text-xs", "zt:text-muted"],
-    text: m.pdf_create_popup_comment_hint(),
-  });
+  editor.readOnly = readOnly;
+  if (!nativeSubmit)
+    sheet.createDiv({
+      cls: ["zt:text-xs", "zt:text-muted-foreground"],
+      text: readOnly
+        ? m.annot_view_comment_paused()
+        : m.pdf_create_popup_comment_hint(),
+    });
   editor.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -209,7 +220,7 @@ export function renderCommentSheet(
       return;
     }
     event.preventDefault();
-    onSave(editor.value);
+    if (!editor.readOnly) onSave(editor.value);
   });
   return editor;
 }
