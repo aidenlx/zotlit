@@ -26,6 +26,7 @@ import {
 import type { AnnotViewAttachment, Library } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { AppContext } from "@/lib/app-context";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
@@ -324,20 +325,22 @@ export class AnnotationView extends ItemView {
 
     this.#root = createRoot(this.contentEl);
     this.#root.render(
-      <AnnotStoreProvider value={this.#store}>
-        <AnnotActionsContext value={this.#actions}>
-          <CapabilitySlotContext
-            value={
-              <CapabilityAffordance
-                capabilities={this.#deps.annotations}
-                onActivate={this.#deps.showEditingCapability}
-              />
-            }
-          >
-            <AnnotView />
-          </CapabilitySlotContext>
-        </AnnotActionsContext>
-      </AnnotStoreProvider>,
+      <AppContext value={this.app}>
+        <AnnotStoreProvider value={this.#store}>
+          <AnnotActionsContext value={this.#actions}>
+            <CapabilitySlotContext
+              value={
+                <CapabilityAffordance
+                  capabilities={this.#deps.annotations}
+                  onActivate={this.#deps.showEditingCapability}
+                />
+              }
+            >
+              <AnnotView />
+            </CapabilitySlotContext>
+          </AnnotActionsContext>
+        </AnnotStoreProvider>
+      </AppContext>,
     );
 
     this.register(
