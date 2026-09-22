@@ -71,6 +71,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [tautological tests](policies/tautological-tests.md) — independent oracles, change detectors, consumer boundaries, and bulk assertions
 - [test timing](policies/test-timing.md) — completion signals, clocks, polling, and external events
 - [test isolation](policies/test-isolation.md) — fixture state, resource allocation, lifetime, setup cost, and order dependence
+- [ui-testing](policies/ui-testing.md) — test decisions and wiring, not drawing; visual correctness is proved in the running app
 - [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase

@@ -22,7 +22,6 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [hover-popover](policies/hover-popover.md) — extend `PopoutAwareHoverPopover`; cancel a timer on the window that armed it
 - [tailwind-first](policies/tailwind-first.md) — styling is a `zt:` utility; `style` carries data, the class list carries declarations; a stylesheet earns its load where a utility cannot reach
 - [ui-seams](policies/ui-seams.md) — functional core, imperative shell; notices render at the seam, tests assert data
-- [ui-testing](policies/ui-testing.md) — unit tests cover only pure logic; a rendered surface is proved in the running app
 - [cli-text](policies/cli-text.md) — `zotlit:*` CLI output is hardcoded English, never sourced from the Language Pack facade
 
 ## UI stack
@@ -78,7 +77,7 @@ Run `/obsidian-debug` to build, reload, and screenshot the running Obsidian inst
 
 ## Testing
 
-Unit tests cover pure logic; a rendered surface is proved in the running app — [ui-testing](policies/ui-testing.md) is the rule, `/obsidian-debug` the loop.
+Unit tests cover pure logic (root [ui-testing](../../policies/ui-testing.md)); components stay unmounted. A rendered surface is proved in the running app — `/obsidian-debug` is the loop.
 
 Vitest runs in Node with `"obsidian"` resolved to a local mock via `resolve.alias`. Extend the mock when touching new `obsidian` exports; keep the surface minimal.
 
