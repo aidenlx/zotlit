@@ -96,28 +96,17 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
-  /**
-   * Inline tag panel (below the filter bar) open.
-   *
-   * Orphaned once the tag filter moved into a Chooser, where the browser owns
-   * whether the popup stands. It stays, with {@link useTogglePanel}, because
-   * spec aidenlx/zotlit#1190 puts its removal out of scope: the flag is
-   * reported so that dropping it is a decision of its own rather than a side
-   * effect of the migration.
-   */
-  panelOpen: boolean;
 }
 
 /** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags" | "panelOpen"
+  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
   selectedTags: [],
-  panelOpen: false,
 };
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -215,24 +204,11 @@ export function useSetFilterQuery(): (query: string) => void {
   return (query) => store.setState({ filterQuery: query });
 }
 
-/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen/panelOpen untouched. */
+/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen untouched. */
 export function useClearFilters(): () => void {
   const store = useAnnotStoreApi();
   return () =>
     store.setState({ filterQuery: "", selectedColors: [], selectedTags: [] });
-}
-
-/**
- * Toggles {@link AnnotState.panelOpen}. No caller: the inline tag panel it
- * opened is a Chooser now. It stands with the flag, for the reason recorded
- * there.
- */
-export function useTogglePanel(): () => void {
-  const store = useAnnotStoreApi();
-  return () => {
-    const { panelOpen } = store.getState();
-    store.setState({ panelOpen: !panelOpen });
-  };
 }
 
 /**

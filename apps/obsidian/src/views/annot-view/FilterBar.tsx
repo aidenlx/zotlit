@@ -270,12 +270,10 @@ function TagPill({
   chip,
   onToggle,
   truncate,
-  dense,
 }: {
   chip: TagChip;
   onToggle: (tag: string) => void;
   truncate?: boolean;
-  dense?: boolean;
 }) {
   const disabled = !chip.selected && !chip.available;
   const state = chip.selected ? "selected" : disabled ? "disabled" : "resting";
@@ -285,7 +283,6 @@ function TagPill({
       aria-disabled={disabled || undefined}
       className={tagChipVariants({
         state,
-        density: dense ? "dense" : "comfortable",
         truncate,
       })}
       {...activatable(() => onToggle(chip.name), { disabled })}
