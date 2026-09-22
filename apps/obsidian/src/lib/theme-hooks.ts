@@ -99,6 +99,13 @@ export const themeHook = {
   annotCapability: "zt-annot-capability",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
+  /**
+   * The Chooser popup: the anchored popover a filtering multi-select opens,
+   * such as the Annotation View's tag filter. It is no Obsidian menu, so a
+   * theme reaching `.menu` never reaches it; it takes the same look from the
+   * `--menu-*` variables instead. `:popover-open` marks it while it stands.
+   */
+  chooser: "zt-chooser",
 } as const;
 
 /**

@@ -1,7 +1,8 @@
 // Top filter bar: swatches, first tag chip, tag-vocabulary trigger, count/clear
-// cluster; toggles an inline tag-cloud panel rendered directly beneath it.
+// cluster; the trigger opens the tag vocabulary in a Chooser anchored under it.
 import { useMemo } from "react";
 
+import { Chooser } from "@/components/chooser";
 import { Icon } from "@/components/obsidian/icon";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
@@ -19,20 +20,19 @@ import {
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
+  useSetSelectedTags,
   useToggleSelectedColor,
   useToggleSelectedTag,
-  useTogglePanel,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
 
 export function FilterBar() {
   const annotations = useAnnotStore((s) => s.annotations);
-  const panelOpen = useAnnotStore((s) => s.panelOpen);
   const selectedColors = useAnnotStore((s) => s.selectedColors);
   const clearFilters = useClearFilters();
-  const togglePanel = useTogglePanel();
   const toggleColor = useToggleSelectedColor();
   const toggleTag = useToggleSelectedTag();
+  const setTags = useSetSelectedTags();
 
   const filter = useAnnotFilter();
 
@@ -52,59 +52,46 @@ export function FilterBar() {
   const active = isFilterActive(filter);
 
   const firstChip = pickFirstTagChip(tagChips);
-  const selectedTagCount = filter.tags.length;
   const vocabSize = tagChips.length;
 
   if (!annotations || annotations.length === 0) return null;
 
   return (
-    <>
-      <div className="zt:flex zt:min-h-7 zt:shrink-0 zt:items-start zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-1">
-        {/* Wrappable zone: swatches, divider, first chip, trigger wrap among
+    <div className="zt:flex zt:min-h-7 zt:shrink-0 zt:items-start zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-1">
+      {/* Wrappable zone: swatches, divider, first chip, trigger wrap among
             themselves when space runs out. The count/Clear cluster below sits
             outside this zone so it never joins the wrap. */}
-        <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-2">
-          <SwatchRow
-            colors={swatchColors}
-            selectedColors={selectedColors}
-            onToggle={toggleColor}
-            small
-          />
-          {/* Hidden below the width band where the tag zone wraps onto its own
+      <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-2">
+        <SwatchRow
+          colors={swatchColors}
+          selectedColors={selectedColors}
+          onToggle={toggleColor}
+          small
+        />
+        {/* Hidden below the width band where the tag zone wraps onto its own
               line — a fixed-height rule there would dangle at the line break
               instead of separating two columns on one line. */}
-          <span className="zt:hidden zt:h-4 zt:w-px zt:shrink-0 zt:self-center zt:bg-border zt:@sm:block" />
-          <div className="zt:flex zt:min-w-0 zt:flex-auto zt:items-center zt:gap-1">
-            {firstChip && (
-              <TagPill chip={firstChip} onToggle={toggleTag} truncate />
-            )}
-            {vocabSize >= 2 && (
-              <TagsTrigger
-                selectedCount={selectedTagCount}
-                vocabSize={vocabSize}
-                panelOpen={panelOpen}
-                onToggle={togglePanel}
-              />
-            )}
-          </div>
-        </div>
-        <div className="zt:flex zt:h-7 zt:shrink-0 zt:items-center zt:gap-2">
-          <span className="zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground">
-            {m.annot_view_filter_count({ shown, total })}
-          </span>
-          {active && <ClearLink onClear={clearFilters} />}
+        <span className="zt:hidden zt:h-4 zt:w-px zt:shrink-0 zt:self-center zt:bg-border zt:@sm:block" />
+        <div className="zt:flex zt:min-w-0 zt:flex-auto zt:items-center zt:gap-1">
+          {firstChip && (
+            <TagPill chip={firstChip} onToggle={toggleTag} truncate />
+          )}
+          {vocabSize >= 2 && (
+            <TagChooser
+              chips={tagChips}
+              selectedTags={filter.tags}
+              onChange={setTags}
+            />
+          )}
         </div>
       </div>
-      {panelOpen && (
-        <div className="zt:max-h-57.5 zt:shrink-0 zt:overflow-y-auto zt:border-b zt:border-border zt:bg-popover zt:px-3 zt:py-2">
-          <div className="zt:flex zt:flex-wrap zt:gap-1">
-            {tagChips.map((chip) => (
-              <TagPill key={chip.name} chip={chip} onToggle={toggleTag} dense />
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+      <div className="zt:flex zt:h-7 zt:shrink-0 zt:items-center zt:gap-2">
+        <span className="zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground">
+          {m.annot_view_filter_count({ shown, total })}
+        </span>
+        {active && <ClearLink onClear={clearFilters} />}
+      </div>
+    </div>
   );
 }
 
@@ -193,59 +180,93 @@ function TagPill({
 }
 
 /**
- * Dashed action chip that opens/closes the tag panel. Counting (k = selected
- * tag count ≥ 2) shows a filter icon and k in accent styling; otherwise shows
- * "+{n-1}" (n = vocabulary size) in muted styling. The two states carry two
- * different meanings, so each one gets its own glyph rather than its own
- * colour. Never shrinks or wraps.
+ * The whole tag vocabulary, in a Chooser hanging under a dashed action chip.
+ * Counting (k = selected tag count ≥ 2) shows a filter icon and k in accent
+ * styling; otherwise shows "+{n-1}" (n = vocabulary size) in muted styling.
+ * The two states carry two different meanings, so each one gets its own glyph
+ * rather than its own colour. The chip never shrinks or wraps.
  */
-function TagsTrigger({
-  selectedCount,
-  vocabSize,
-  panelOpen,
-  onToggle,
+function TagChooser({
+  chips,
+  selectedTags,
+  onChange,
 }: {
-  selectedCount: number;
-  vocabSize: number;
-  panelOpen: boolean;
-  onToggle: () => void;
+  chips: readonly TagChip[];
+  selectedTags: readonly string[];
+  onChange: (tags: string[]) => void;
 }) {
+  const selectedCount = selectedTags.length;
   const counting = selectedCount >= 2;
-  const count = counting ? selectedCount : vocabSize - 1;
+  const count = counting ? selectedCount : chips.length - 1;
   const ariaLabel = counting
     ? m.annot_view_filter_trigger_selected({ count })
     : m.annot_view_filter_trigger_show_all();
 
+  // The Chooser matches on the label alone, so what a row needs beyond its
+  // name travels with it rather than being looked up again while rendering.
+  const rows = useMemo(
+    () =>
+      chips.map((chip) => ({
+        value: chip.name,
+        label: chip.name,
+        hitCount: chip.hitCount,
+        disabled: !chip.selected && !chip.available,
+      })),
+    [chips],
+  );
+
   return (
-    <span
-      aria-expanded={panelOpen}
-      data-counting={counting ? "" : undefined}
-      className={cn(
-        // Shares the tag pills' radius, but stays a dashed *action* chip — a solid
-        // 1px border and muted fill keep it distinct from the native data chips.
-        "zt:inline-flex zt:shrink-0 zt:cursor-pointer zt:items-center zt:gap-0.75 zt:rounded-(--tag-radius) zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2.5 zt:py-0.5 zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus",
-        "zt:data-counting:border-primary zt:data-counting:bg-[color-mix(in_srgb,var(--interactive-accent)_12%,var(--background-primary))] zt:data-counting:text-accent-foreground",
-      )}
-      {...activatable(onToggle)}
-      {...tooltipAttrs(ariaLabel)}
-    >
-      {counting ? <Icon name="filter" size={10} /> : "+"}
-      {count}
-      <svg
-        width="8"
-        height="8"
-        viewBox="0 0 8 8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        data-open={panelOpen ? "" : undefined}
-        className="zt:duration-150 zt:data-open:rotate-180 zt:motion-safe:transition-transform"
+    <Chooser value={selectedTags} onValueChange={onChange}>
+      <Chooser.Trigger
+        data-counting={counting ? "" : undefined}
+        className={cn(
+          // Shares the tag pills' radius, but stays a dashed *action* chip — a solid
+          // 1px border and muted fill keep it distinct from the native data chips.
+          "zt:inline-flex zt:shrink-0 zt:cursor-pointer zt:items-center zt:gap-0.75 zt:rounded-(--tag-radius) zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2.5 zt:py-0.5 zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus",
+          "zt:data-counting:border-primary zt:data-counting:bg-[color-mix(in_srgb,var(--interactive-accent)_12%,var(--background-primary))] zt:data-counting:text-accent-foreground",
+        )}
+        {...tooltipAttrs(ariaLabel)}
       >
-        <path d="M1.5 3 4 5.5 6.5 3" />
-      </svg>
-    </span>
+        {counting ? <Icon name="filter" size={10} /> : "+"}
+        {count}
+        <svg
+          width="8"
+          height="8"
+          viewBox="0 0 8 8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="zt:duration-150 zt:group-data-open:rotate-180 zt:motion-safe:transition-transform"
+        >
+          <path d="M1.5 3 4 5.5 6.5 3" />
+        </svg>
+      </Chooser.Trigger>
+      <Chooser.Popup>
+        <Chooser.Input
+          placeholder={m.annot_view_filter_tag_search_placeholder()}
+          clearLabel={m.annot_view_clear_search()}
+        />
+        <Chooser.List items={rows} emptyLabel={m.annot_view_filter_tag_empty()}>
+          {(row) => (
+            <Chooser.Item
+              key={row.value}
+              value={row.value}
+              disabled={row.disabled}
+              {...tooltipAttrs(
+                m.annot_view_filter_tag_tooltip({
+                  name: row.label,
+                  count: row.hitCount,
+                }),
+              )}
+            >
+              {row.label}
+            </Chooser.Item>
+          )}
+        </Chooser.List>
+      </Chooser.Popup>
+    </Chooser>
   );
 }
 

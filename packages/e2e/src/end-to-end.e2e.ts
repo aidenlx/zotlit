@@ -75,13 +75,13 @@ const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
 const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
 const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
 const annotationAttachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
-const annotationKeys = ANNOTATIONS.filter(
+/** Every Fixture Annotation hanging off that attachment. */
+const attachmentAnnotations = ANNOTATIONS.filter(
   ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
-).map(({ key }) => key);
+);
+const annotationKeys = attachmentAnnotations.map(({ key }) => key);
 const annotationKeysByPage = Map.groupBy(
-  ANNOTATIONS.filter(
-    ({ parentItemID }) => parentItemID === annotationAttachment.itemID,
-  ),
+  attachmentAnnotations,
   ({ position }) => position.pageIndex,
 );
 
@@ -446,6 +446,54 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
+      // positioning — which only a running Obsidian has. A popup that collapsed
+      // still holds its rows in the DOM, so what tells is whether its own box
+      // is still around them.
+      await obEval(
+        vaultId,
+        `(function(){const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=root?.querySelector('.zt-chooser');if(popup&&!popup.matches(':popover-open')){const trigger=root.querySelector('.zt-chooser-trigger');if(!trigger)throw new Error('No .zt-chooser-trigger in the Annotation View');trigger.click();}return true;})()`,
+      );
+      // `menuChrome` is the computed-style half of the proof. The popup wears no
+      // `.menu` class, so its chrome can only come from Obsidian's `--menu-*`
+      // variables. A throwaway sibling declares the same five variables and is
+      // measured beside it: equal computed values mean the popup reads them, in
+      // whatever units the engine resolved, under whatever theme is loaded. The
+      // sibling is also checked against the initial values, because an
+      // undefined variable would leave both boxes bare and make equality say
+      // nothing.
+      //
+      // The shadow is the one read compared by suffix. Tailwind's `shadow-()`
+      // utility composes its ring and inset placeholders ahead of the value, so
+      // the popup carries four transparent stops in front of the three
+      // `--menu-shadow` supplies.
+      const tagChooserBox = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=root?.querySelector('.zt-chooser');if(!popup)return{open:false,rowsInsidePopup:false,menuChrome:false};const box=popup.getBoundingClientRect();const rows=Array.from(popup.querySelectorAll('[role="option"]'));const probe=popup.parentElement.appendChild(document.createElement('div'));probe.style.cssText='position:absolute;left:-9999px;visibility:hidden;background-color:var(--menu-background);border:var(--menu-border-width) solid var(--menu-border-color);border-radius:var(--menu-radius);padding:var(--menu-padding);box-shadow:var(--menu-shadow)';const got=getComputedStyle(popup),want=getComputedStyle(probe);const reads=['backgroundColor','borderTopWidth','borderTopColor','borderTopLeftRadius','paddingTop'];const chrome=reads.every(name=>got[name]===want[name])&&got.boxShadow.endsWith(want.boxShadow)&&want.backgroundColor!=='rgba(0, 0, 0, 0)'&&parseFloat(want.borderTopWidth)>0&&parseFloat(want.borderTopLeftRadius)>0&&parseFloat(want.paddingTop)>0&&want.boxShadow!=='none';probe.remove();return{open:popup.matches(':popover-open'),rowsInsidePopup:rows.length>0&&rows.every(row=>{const r=row.getBoundingClientRect();return r.height>0&&r.top>=box.top&&r.bottom<=box.bottom&&r.left>=box.left&&r.right<=box.right;}),menuChrome:chrome};})())`;
+      const tagChooserClosed = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const popup=root?.querySelector('.zt-chooser');if(!popup)return{open:false,hidden:false};return{open:popup.matches(':popover-open'),hidden:!popup.checkVisibility()&&popup.getBoundingClientRect().height===0};})())`;
+      expect(
+        await obEvalUntil(vaultId, tagChooserBox, {
+          expected: JSON.stringify({
+            open: true,
+            rowsInsidePopup: true,
+            menuChrome: true,
+          }),
+        }),
+      ).toBe(true);
+      await obEval(
+        vaultId,
+        `(function(){app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl.querySelector('.zt-chooser')?.hidePopover();return true;})()`,
+      );
+      // A closed popover is hidden by the user-agent rule
+      // `[popover]:not(:popover-open) { display: none }`, which any
+      // unconditional author-origin `display` outranks. The popup then keeps
+      // painting after it closes and the view behind draws over it, which
+      // reads as a popup that will not close and has lost its background.
+      // Only a running Obsidian has that user-agent rule, so this is the one
+      // place the closed state can be proven.
+      expect(
+        await obEvalUntil(vaultId, tagChooserClosed, {
+          expected: JSON.stringify({ open: false, hidden: true }),
+        }),
+      ).toBe(true);
       for (const [pageIndex, annotations] of annotationKeysByPage) {
         const pageKeys = annotations.map(({ key }) => key).sort();
         expect(

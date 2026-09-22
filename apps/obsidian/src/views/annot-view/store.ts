@@ -5,6 +5,7 @@ import { createStore } from "zustand/vanilla";
 
 import type { AnnotViewAttachment } from "@zotlit/db";
 
+import { toggledValues } from "@/components/chooser-logic";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -95,20 +96,17 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
-  /** Inline tag panel (below the filter bar) open. */
-  panelOpen: boolean;
 }
 
 /** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags" | "panelOpen"
+  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
   selectedTags: [],
-  panelOpen: false,
 };
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -206,19 +204,11 @@ export function useSetFilterQuery(): (query: string) => void {
   return (query) => store.setState({ filterQuery: query });
 }
 
-/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen/panelOpen untouched. */
+/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen untouched. */
 export function useClearFilters(): () => void {
   const store = useAnnotStoreApi();
   return () =>
     store.setState({ filterQuery: "", selectedColors: [], selectedTags: [] });
-}
-
-export function useTogglePanel(): () => void {
-  const store = useAnnotStoreApi();
-  return () => {
-    const { panelOpen } = store.getState();
-    store.setState({ panelOpen: !panelOpen });
-  };
 }
 
 export function useToggleSelectedColor(): (color: string) => void {
@@ -244,11 +234,12 @@ export function useAnnotFilter(): AnnotFilter {
 /**
  * The tag filter after one tag is toggled. Named apart from the hook because
  * the card's tag menu is built outside React, from the view's own store handle.
+ *
+ * The rule itself is {@link toggledValues}, which the Chooser's rows tick
+ * through as well, so the two paths into the tag filter cannot drift.
  */
 export function toggledTags(selectedTags: string[], tag: string): string[] {
-  return selectedTags.includes(tag)
-    ? selectedTags.filter((name) => name !== tag)
-    : [...selectedTags, tag];
+  return toggledValues(selectedTags, tag);
 }
 
 export function useToggleSelectedTag(): (tag: string) => void {
@@ -257,4 +248,13 @@ export function useToggleSelectedTag(): (tag: string) => void {
     store.setState({
       selectedTags: toggledTags(store.getState().selectedTags, tag),
     });
+}
+
+/**
+ * Takes a whole tag selection, for a surface that decides the next one itself
+ * — the Chooser reports what a tick leaves behind rather than which tag moved.
+ */
+export function useSetSelectedTags(): (tags: string[]) => void {
+  const store = useAnnotStoreApi();
+  return (tags) => store.setState({ selectedTags: tags });
 }
