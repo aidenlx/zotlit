@@ -479,11 +479,16 @@ export interface ChooserInputProps {
  * screen reader reads the pair as. The root moves focus here on open rather
  * than this part claiming it, because a Chooser without a search field has to
  * hand the highlight another owner.
+ *
+ * It is a text field rather than a search field so that Escape stays the
+ * platform's: a search field answers Escape itself by clearing its query, and
+ * the popup's light dismiss then never sees the key while a query stands.
  */
 function Input({ placeholder, clearLabel }: ChooserInputProps) {
   const { query, setQuery, open, listId, activeOptionId } = useChooser();
   return (
     <SearchInput
+      type="text"
       role="combobox"
       aria-expanded={open}
       aria-controls={listId}
