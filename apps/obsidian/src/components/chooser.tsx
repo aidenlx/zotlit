@@ -379,17 +379,21 @@ export interface ChooserTriggerProps extends Omit<
  * selection as swatches and the tag filter as a count beside a glyph. The
  * trigger takes children instead, so each caller writes its own.
  *
- * It is a bare `<button>` rather than the `Button` wrapper from
- * `src/components/obsidian/`, which the obsidian-css decision tree asks for
- * wherever a native component exists. The exception is appearance, not the
- * attribute: the wrapper does pass `popovertarget` through to its element, but
- * what it exists to give — Obsidian's own button look and its `mod-*` variants
- * — is exactly what a trigger drawn as a chip beside the filter bar's data
- * chips has to take back off. The element is a `<button>` either way, so
- * Obsidian's unlayered `button` rules apply either way and `chooser.css` is
- * needed either way; routing through the wrapper would drop no rule and would
- * add a variant API with no caller and a base `gap` for the chip to override.
+ * The element stays bare rather than wearing the `Button` wrapper from
+ * `src/components/obsidian/`, which the decision tree asks for wherever a
+ * native component exists. What that wrapper supplies — Obsidian's button box
+ * and its `mod-*` variants — is what this control must not wear: the trigger
+ * stands as a chip, and the data chips it stands beside are `<span>`s — the
+ * tag filter's `TagPill` among them — so a trigger is the only chip that ever
+ * wears Obsidian's button box. `chooser.css` rolls that box back, so the
+ * caller's utilities draw it. The wrapper would add `variant`, `loading` and
+ * `icon` with no caller to take them, and save no rule: both routes render a
+ * `<button>` inside `.zt-root`, so Obsidian's unlayered `button` rules reach
+ * it either way. The attribute is not the difference — `Button` spreads
+ * `popovertarget` through to its own element as this one does.
+ *
  * @see ./chooser.css
+ * @see .agents/skills/obsidian-css/SKILL.md
  */
 function Trigger({ className, style, ref, ...rest }: ChooserTriggerProps) {
   const { anchorName, popupId, open } = useChooser();

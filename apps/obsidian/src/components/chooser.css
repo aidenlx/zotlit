@@ -5,7 +5,8 @@
    utilities on the trigger are what draws it, with the scoped preflight
    underneath. The anchor name is one of those utilities — `anchor-name` is a
    standard property, set from a layered `zt:` class — so rolling back to the
-   layered value is what keeps it. */
+   layered value is what keeps it.
+   @see https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button#popovertarget */
 .zt-root button.zt-chooser-trigger {
   all: revert-layer;
 }
