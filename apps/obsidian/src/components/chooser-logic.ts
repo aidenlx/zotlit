@@ -173,7 +173,7 @@ export interface ChooserExtent {
 /**
  * The index the highlight settles on, given where it stands and which key
  * moved it. `-1` is "no row", which an empty list always answers, and where
- * the highlight rests until a key or the pointer names a row: from there a
+ * the highlight rests until a key or a click names a row: from there a
  * step down or a jump to the end lands on the first row, and a step up or a
  * jump to the start of the list on the last.
  *
@@ -229,7 +229,7 @@ export function clampedHighlight(index: number, count: number): number {
  * ticked in one visit. Typing another letter takes rows away, and an index
  * kept across that would point at whatever slid into its place. Opening the
  * popup publishes rows under a highlight that stands on nothing, and a pointer
- * user sees no row darkened until the pointer or a key names one.
+ * user sees no row darkened until a click or a key names one.
  */
 export function rehomedHighlight(
   value: string | null,

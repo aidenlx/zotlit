@@ -91,7 +91,7 @@ interface ChooserState {
   /** The row box, which a page step measures itself against. */
   listRef: RefObject<HTMLDivElement | null>;
   publishRows: (rows: readonly ChooserRow[]) => void;
-  /** Puts the highlight on a row, as the pointer moving over it asks. */
+  /** Puts the highlight on a row, as a click on it asks. */
   highlightRow: (index: number) => void;
   /** The `id` of the row at an index, for `aria-activedescendant`. */
   optionId: (index: number) => string;
@@ -202,8 +202,8 @@ export function Chooser({ value, onValueChange, children }: ChooserProps) {
   const [open, setOpen] = useState(false);
   const [popupId] = useState(() => `zt-chooser-${(chooserSequence += 1)}`);
   const [rows, setRows] = useState<readonly ChooserRow[]>([]);
-  // No row is highlighted until a key or the pointer names one: a popup that
-  // opened with its first row darkened told a pointer user it was chosen.
+  // No row is highlighted until a key names one or a row is clicked: a popup
+  // that opened with its first row darkened told a pointer user it was chosen.
   const [highlight, setHighlight] = useState(-1);
 
   /**
@@ -746,17 +746,18 @@ function useRowSlot(value: string) {
     highlighted,
     disabled: row?.disabled ?? false,
     /**
-     * The pointer moving over the row takes the highlight with it, so the
-     * keyboard and the pointer share one mark rather than darkening two rows.
-     * Movement rather than entry: a list scrolling under a still pointer is
-     * not the pointer choosing a row.
+     * A click on the row, decided exactly as Enter on the highlight is. It
+     * moves the highlight onto the row first, as a click in Obsidian's own
+     * Bases toolbar menu does, so the arrow keys carry on from the row that
+     * was just ticked. The pointer merely passing over a row moves nothing:
+     * the highlight is the keyboard's mark and stays where a key or a click
+     * put it while the pointer wanders in and out of the popup, and what the
+     * pointer rests on is drawn by the row's own hover tint.
      */
-    hover: () => {
-      if (index >= 0 && !highlighted) highlightRow(index);
+    activate: () => {
+      if (index >= 0) highlightRow(index);
+      runActivation(activatedRow(row, selected), close, onValueChange);
     },
-    /** A click on the row, decided exactly as Enter on the highlight is. */
-    activate: () =>
-      runActivation(activatedRow(row, selected), close, onValueChange),
   };
 }
 
@@ -766,6 +767,9 @@ const rowBox = (disabled: boolean, className?: string) =>
     // The row a Bases toolbar menu draws: 4px of padding, 6px before the
     // mark, an 8px gap between the mark and the name.
     "zt:flex zt:cursor-clickable zt:items-center zt:gap-2 zt:rounded-sm zt:py-1 zt:ps-1.5 zt:pe-1 zt:text-sm",
+    // Two tints on one row box: the pointer's, which is the platform's hover
+    // state and leaves with the pointer, and the highlight's, which is row
+    // state and stays put until a key or a click moves it.
     disabled ? "zt:text-muted-foreground" : "zt:hover:bg-muted",
     "zt:data-highlighted:bg-muted",
     className,
@@ -798,7 +802,7 @@ function RowShell({
   children,
   ...rest
 }: RowShellProps) {
-  const { ref, id, highlighted, disabled, activate, hover } = useRowSlot(value);
+  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
 
   return (
     <div
@@ -809,7 +813,6 @@ function RowShell({
       aria-disabled={disabled || undefined}
       data-highlighted={highlighted ? "" : undefined}
       onClick={activate}
-      onMouseMove={hover}
       {...rest}
       className={rowBox(disabled, className)}
     >

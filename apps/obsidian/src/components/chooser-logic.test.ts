@@ -236,7 +236,7 @@ it("highlights no row while the list is empty", () => {
 });
 
 it("steps onto an end of the list when nothing is highlighted yet", () => {
-  // Nothing is highlighted until a key or the pointer asks: Down takes the
+  // Nothing is highlighted until a key or a click asks: Down takes the
   // first row, Up the last, so the first key lands where the eye expects.
   expect(movedHighlight(-1, "next", LIST)).toBe(0);
   expect(movedHighlight(-1, "previous", LIST)).toBe(5);
@@ -245,7 +245,7 @@ it("steps onto an end of the list when nothing is highlighted yet", () => {
 });
 
 it("keeps no highlight as no highlight when the list is not empty", () => {
-  // A pointer user sees no row darkened until the pointer or a key names one.
+  // A pointer user sees no row darkened until a click or a key names one.
   expect(clampedHighlight(-1, 3)).toBe(-1);
 });
 
