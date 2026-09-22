@@ -48,7 +48,6 @@ import type {
 import {
   useAnnotStore,
   useMutation,
-  useOpenDrawer,
   useSetEditingComment,
   useToggleSelectedTag,
 } from "./store";
@@ -71,7 +70,7 @@ function typeIcon(type: ResolvedAnnotationTypeName): string {
  * A verb the Editing Capability blocks rests dimmed, as the state it reports is
  * one the user can read about. The dim is all it takes: `aria-disabled` would
  * hide the control from assistive technology, and its press is the only route
- * to the drawer that holds the explanation.
+ * to the notice that holds the explanation.
  */
 const BLOCKED_VERB_DIM = "zt:data-blocked:opacity-50";
 
@@ -268,19 +267,18 @@ function CardActionBar({
 }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
-  const openDrawer = useOpenDrawer();
   const hasComment = annot.comment !== null;
 
   /**
    * What one verb's press does. A verb the Editing Capability blocks keeps its
-   * press and spends it on the drawer instead of on the write: the reason lives
+   * press and spends it on a notice instead of on the write: the reason lives
    * there, and a control that refused the press could never reach it.
    */
   const press =
     (control: CardControl, act: (evt: MouseEvent<HTMLElement>) => void) =>
     (evt: MouseEvent<HTMLElement>): void => {
       if (control.blocked) {
-        openDrawer(evt.currentTarget);
+        actions.onBlockedPress(control.blocked);
         return;
       }
       act(evt);

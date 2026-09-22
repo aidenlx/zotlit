@@ -88,14 +88,14 @@ it("keeps a verb the capability blocks pressable, so its press reaches the reaso
     const action =
       capability.kind === "authorization-required" ? "allow-editing" : null;
 
-    // Not disabled: the press is what opens the drawer holding the reason.
+    // Not disabled: the press is what raises the notice holding the reason.
     expect(states(controls)).toEqual([false, false, false]);
     expect(blocks(controls)).toEqual([
       { reason, action },
       { reason, action },
       { reason, action },
     ]);
-    // The verb keeps its own name; the drawer is what states the reason.
+    // The verb keeps its own name; the notice is what states the reason.
     expect(tooltips(controls)).toEqual(
       tooltips(controlsOf({ kind: "writable" })),
     );
@@ -119,8 +119,8 @@ it("offers Allow editing to the one capability a gesture can change", () => {
 });
 
 it("counts a cooldown down each time the sentence is read again", () => {
-  // The drawer derives its sentence as it renders rather than storing the one a
-  // press found, so the seconds it names have to follow the instant it reads at.
+  // The sentence is derived at the instant it is read, so the seconds it names
+  // have to follow that instant.
   const capability: EditingCapability = {
     kind: "cooldown",
     retryAfter: NOW.add({ seconds: 30 }),

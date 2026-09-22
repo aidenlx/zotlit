@@ -1,7 +1,6 @@
 import type { IconName } from "obsidian";
 import {
   useContext,
-  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -10,16 +9,12 @@ import {
 } from "react";
 import type { RefObject } from "react";
 
-import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
-import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
-import { capabilityBlock } from "./card-controls";
 import { filterAnnotations, isFilterActive } from "./filter";
 import { FilterBar } from "./FilterBar";
 import { annotViewBody, headerShape } from "./presentation";
@@ -32,7 +27,6 @@ import {
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
-  useCloseDrawer,
   useSetFilterQuery,
   useToggleSearchOpen,
 } from "./store";
@@ -109,9 +103,7 @@ export function AnnotView() {
   const hasItem = body.kind === "list" || body.kind === "loading";
 
   return (
-    // `relative` is the drawer's own frame: it sits over the list at the pane's
-    // bottom edge, so nothing it says can reflow what the reader is scanning.
-    <div className="zt:@container zt:relative zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
+    <div className="zt:@container zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
       <AnnotHeader />
       {hasItem && (
         <FilterBar
@@ -133,105 +125,7 @@ export function AnnotView() {
       ) : (
         <EmptyPane message={body.message} action={body.action} />
       )}
-      <CapabilityDrawer />
     </div>
-  );
-}
-
-/**
- * Why the verb just pressed could not act, at the pane's bottom edge and over
- * the list. One drawer per view, and what it states is the Editing Capability
- * in force rather than the one a press found: authorizing, a cooldown counting
- * down and editing coming back all move the sentence and the action under the
- * open drawer.
- *
- * It is a labelled section rather than a dialog: it interrupts nothing, the
- * list behind it stays live, and the keyboard is offered rather than trapped.
- * Focus moves into it on open so the sentence is announced where it happened,
- * and Escape or Close hands the keyboard back to the verb that opened it.
- *
- * The content it last held survives the close, so the exit transition has
- * something to carry out; `inert` keeps the closed shape out of the keyboard's
- * and assistive technology's way while it does.
- */
-function CapabilityDrawer() {
-  const open = useAnnotStore((s) => s.drawerOpen);
-  const opener = useAnnotStore((s) => s.drawerOpener);
-  const capability = useAnnotStore((s) => s.capability);
-  const closeDrawer = useCloseDrawer();
-  const actions = useContext(AnnotActionsContext);
-  const labelId = useId();
-  const panel = useRef<HTMLElement>(null);
-  // Read as the cards read it: the instant the state it speaks about last
-  // moved, so a cooldown's remaining seconds are the ones that state left.
-  const block = useMemo(
-    () => capabilityBlock(capability, Temporal.Now.instant()),
-    [capability],
-  );
-  const shown = useRef(block);
-  if (block) shown.current = block;
-
-  useEffect(() => {
-    if (open) {
-      panel.current?.focus();
-      return;
-    }
-    // A drawer that closed by itself can hold the keyboard while it goes inert,
-    // which would drop focus to the body. Hand it back to the verb first.
-    const el = panel.current;
-    if (el && el.contains(el.doc.activeElement)) opener.current?.focus();
-    opener.current = null;
-  }, [open, opener]);
-
-  const content = shown.current;
-  if (!content) return null;
-
-  /** Close, and hand the keyboard back to the verb that opened this. */
-  const dismiss = (): void => {
-    const verb = opener.current;
-    closeDrawer();
-    verb?.focus();
-  };
-
-  return (
-    <section
-      ref={panel}
-      tabIndex={-1}
-      inert={!open}
-      aria-labelledby={labelId}
-      data-open={open ? "" : undefined}
-      // Neutral chrome: the raised fill the cards wear, one step of shadow, and
-      // no alert colour — a capability that refuses writes is a state, not a
-      // fault. The static shape is the whole message; motion only carries it in,
-      // and `starting:` is what gives the first open the same entry as the rest,
-      // since that one mounts the element already open.
-      className="zt:invisible zt:absolute zt:inset-x-2 zt:bottom-2 zt:flex zt:translate-y-1 zt:flex-col zt:gap-2 zt:rounded-md zt:bg-card zt:p-2 zt:text-xs zt:opacity-0 zt:shadow-md zt:ring-1 zt:ring-border zt:duration-150 zt:ease-out zt:data-open:visible zt:data-open:translate-y-0 zt:data-open:opacity-100 zt:motion-safe:transition-[opacity,translate,visibility] zt:starting:translate-y-1 zt:starting:opacity-0"
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        // Obsidian's own Escape would otherwise act on the pane behind this.
-        event.stopPropagation();
-        dismiss();
-      }}
-    >
-      <div className="zt:flex zt:items-start zt:gap-2">
-        <p id={labelId} className="zt:min-w-0 zt:flex-1 zt:text-pretty">
-          {content.reason}
-        </p>
-        <IconButton
-          icon="x"
-          className="zt:-me-1 zt:-mt-1"
-          onClick={dismiss}
-          {...tooltipAttrs(m.annot_view_drawer_close())}
-        />
-      </div>
-      {content.action === "allow-editing" && (
-        <div className="zt:flex zt:justify-end">
-          <Button onClick={() => actions.onAllowEditing()}>
-            {m.capability_enable_editing()}
-          </Button>
-        </div>
-      )}
-    </section>
   );
 }
 

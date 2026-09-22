@@ -423,7 +423,6 @@
   "annot_view_filter_no_match": "No annotations match the current filters",
   "annot_view_clear_filters": "Clear filters",
   "annot_view_clear_search": "Clear search",
-  "annot_view_drawer_close": "Close",
   "annot_view_filter_count": "{shown} of {total}",
   "annot_view_filter_more_count": "+{count}",
   "annot_view_filter_tag_trigger": "Filter by tag",

@@ -30,7 +30,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
-import type { CardControl } from "./card-controls";
+import type { CardBlock, CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
@@ -49,6 +49,13 @@ export interface AnnotActions {
   onChooseAttachment(): void;
   /** Ask Zotero for write authorization, from the header menu. */
   onAllowEditing(): void;
+  /**
+   * Say why the verb just pressed could not act, in an Obsidian notice. A
+   * blocked verb keeps its press and spends it here instead of on the write.
+   * The notice reads the capability at the press, so it offers the one gesture
+   * that could change it where there is one.
+   */
+  onBlockedPress(block: CardBlock): void;
   /** Open Zotero's eight swatches from a card's palette control. */
   onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
@@ -395,10 +402,10 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
 
     // Every entry here is a verb. A blocked write shows as a dimmed entry and
-    // says why once, in the header menu's capability row and in the drawer a
-    // card verb opens, rather than in a label under each menu it blocks. A menu
-    // row is dimmed by either reason: the drawer is reached from a card verb,
-    // and a menu cannot open one.
+    // says why once, in the header menu's capability row and in the notice a
+    // card verb raises, rather than in a label under each menu it blocks. A menu
+    // row is dimmed by either reason: the notice is reached from a card verb,
+    // and a menu cannot raise one.
     const deleteControl = deps.deleteControl(annot);
     menu.addItem((item) => {
       item
@@ -442,6 +449,23 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     },
     onChooseAttachment,
     onAllowEditing: deps.onAllowEditing,
+    onBlockedPress(block) {
+      if (block.action === null) {
+        new BaseNotice(block.reason);
+        return;
+      }
+      const notice = new BaseNotice(
+        BaseNotice.render((renderer) => {
+          renderer.setTitle(block.reason);
+          renderer.addAction((button) => {
+            button.setButtonText(m.capability_enable_editing()).onClick(() => {
+              notice.hide();
+              deps.onAllowEditing();
+            });
+          });
+        }),
+      );
+    },
     onColorMenu(evt, annot) {
       showMenu(evt, (menu) =>
         buildColorMenu(menu, {
@@ -487,6 +511,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onHeaderMenu: () => {},
   onChooseAttachment: () => {},
   onAllowEditing: () => {},
+  onBlockedPress: () => {},
   onColorMenu: () => {},
   onDragStart: () => {},
   onSetFollowMode: () => {},

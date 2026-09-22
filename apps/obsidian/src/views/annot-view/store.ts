@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useMemo } from "react";
-import type { RefObject } from "react";
 import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
@@ -95,40 +94,20 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
-  /**
-   * Whether the drawer at the pane's bottom edge stands open. What it states is
-   * not stored: it is derived from the Editing Capability as it renders, so the
-   * sentence, a cooldown's remaining seconds and the action it offers follow
-   * the live state rather than the state one press left behind.
-   */
-  drawerOpen: boolean;
-  /**
-   * The verb the open drawer was pressed from, so Close and Escape return the
-   * keyboard where it came from. A stable ref object rather than a value: the
-   * element is read at the moment focus moves and nothing renders from it, so
-   * writing it must not move the snapshot every subscriber compares.
-   */
-  drawerOpener: RefObject<HTMLElement | null>;
 }
 
 /**
- * Search, filter and drawer defaults, not persisted; reset whenever the
- * displayed item changes. The drawer belongs here because it speaks about the
- * Attachment on screen, and the item that replaces it takes its own capability.
+ * Search and filter defaults, not persisted; reset whenever the displayed item
+ * changes.
  */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  | "searchOpen"
-  | "filterQuery"
-  | "selectedColors"
-  | "selectedTags"
-  | "drawerOpen"
+  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
   selectedTags: [],
-  drawerOpen: false,
 };
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -158,7 +137,6 @@ export function createAnnotStore() {
         pinnable: null,
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
-        drawerOpener: { current: null },
         ...INITIAL_FILTER_STATE,
       }),
     ),
@@ -220,28 +198,6 @@ export function useToggleSearchOpen(): () => void {
         : { searchOpen: true },
     );
   };
-}
-
-/**
- * Open the capability drawer from one blocked verb, holding the element that
- * pressed it so the keyboard can be handed back when the drawer closes. What
- * the drawer says is the capability's, not this press's, so nothing about the
- * verb travels with it.
- */
-export function useOpenDrawer(): (opener: HTMLElement | null) => void {
-  const store = useAnnotStoreApi();
-  return useCallback(
-    (opener) => {
-      store.getState().drawerOpener.current = opener;
-      store.setState({ drawerOpen: true });
-    },
-    [store],
-  );
-}
-
-export function useCloseDrawer(): () => void {
-  const store = useAnnotStoreApi();
-  return useCallback(() => store.setState({ drawerOpen: false }), [store]);
 }
 
 export function useSetFilterQuery(): (query: string) => void {

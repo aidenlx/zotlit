@@ -437,16 +437,6 @@ export class AnnotationView extends ItemView {
         },
       ),
     );
-    // The drawer exists to say why a write cannot happen; once one can, it has
-    // nothing left to say and goes without the user closing it.
-    this.register(
-      this.#store.subscribe(
-        (s) => s.capability.kind,
-        (kind) => {
-          if (kind === "writable") this.#store.setState({ drawerOpen: false });
-        },
-      ),
-    );
     this.register(
       this.#deps.annotations.on("mutation-changed", (annotationKey) => {
         const mutations = new Map(this.#store.getState().mutations);

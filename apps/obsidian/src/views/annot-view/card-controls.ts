@@ -15,12 +15,12 @@ import type { MutationState } from "@/services/annotation-repository/write";
 
 /**
  * Why a verb cannot act while the Editing Capability stands in its way, and the
- * one gesture that could change that — what the capability drawer states.
+ * one gesture that could change that — what the capability notice states.
  */
 export interface CardBlock {
   /** The capability's own sentence: its detail, or its label where it has none. */
   reason: string;
-  /** The gesture the drawer offers, or `null` where nothing the user does helps. */
+  /** The gesture the notice offers, or `null` where nothing the user does helps. */
   action: "allow-editing" | null;
 }
 
@@ -33,8 +33,8 @@ export interface CardControl {
   disabled: boolean;
   /**
    * The capability standing in the way, or `null` while the verb acts. A
-   * blocked verb stays pressable and only rests dimmed: its press opens the
-   * drawer, which states {@link CardBlock.reason} from the capability in force,
+   * blocked verb stays pressable and only rests dimmed: its press raises a
+   * notice, which states {@link CardBlock.reason} from the capability in force,
    * so the explanation is reached by a gesture rather than only by a hover.
    */
   blocked: CardBlock | null;
@@ -79,7 +79,7 @@ export function editingLive(capability: EditingCapability): boolean {
  * else, because no provisional value is ever drawn, and it ends without the
  * user doing anything. A capability that refuses writes is a state the user can
  * read about and sometimes end, so the verb stays pressable and its press
- * carries {@link CardControl.blocked} to the drawer.
+ * carries {@link CardControl.blocked} to the notice.
  *
  * A write that failed, conflicted, or lost its answer leaves the verbs to the
  * capability, so the user can try again.
@@ -101,7 +101,7 @@ export function cardControls({
       };
     if (blocked === null)
       return { disabled: false, blocked: null, tooltip: label };
-    // The verb keeps its own name: the drawer states the reason on a press.
+    // The verb keeps its own name: the notice states the reason on a press.
     return { disabled: false, blocked, tooltip: label };
   };
   return {
@@ -169,7 +169,9 @@ export function commentEditorControls(
   const pending = draft?.state.kind === "pending";
   const oneTime = capability.kind === "writable" && capability.oneTime;
   const manual = !!oneTime || !!draft?.manualSave;
-  let hint = m.annot_view_comment_auto();
+  // Automatic saving states nothing: the quiet case is the normal one, and a
+  // standing sentence under every editor only competes with the text.
+  let hint: string | null = null;
   if (pending) hint = m.annot_view_card_saving();
   else if (draft?.state.kind === "failed") {
     const { failure } = draft.state;

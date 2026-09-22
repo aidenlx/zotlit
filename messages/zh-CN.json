@@ -476,7 +476,6 @@
   "annot_view_filter_no_match": "没有标注与当前过滤器匹配",
   "annot_view_clear_filters": "清除过滤器",
   "annot_view_clear_search": "清除搜索",
-  "annot_view_drawer_close": "关闭",
   "annot_view_filter_count": "{shown} / {total}",
   "annot_view_filter_more_count": "+{count}",
   "annot_view_filter_tag_trigger": "按标签筛选",
