@@ -64,23 +64,13 @@ import type {
 } from "./chooser-logic";
 import "./chooser.css";
 
-// The decision logic is a sibling file; this module is the entry, so the types
-// a caller writes its rows and its render callback against come from here too.
-// The functions stay in the sibling: the one consumer outside this component —
-// the Annotation View's store, toggling a tag — imports it directly rather than
-// pulling the component graph in behind a helper.
-export type {
-  ChooserActivation,
-  ChooserGroup,
-  ChooserLayout,
-  ChooserMatcher,
-  ChooserMove,
-  ChooserRow,
-  ChooserSection,
-} from "./chooser-logic";
-
-/** Rows a page step covers when the list is too empty to measure one. */
-const FALLBACK_PAGE_SIZE = 10;
+// `chooser-logic.ts` is a module of its own rather than an implementation
+// detail behind this one, and it is the single entry to what a Chooser
+// decides: every consumer takes its rows, its groups and its toggle rule from
+// there — this component, the callers that write rows, and the Annotation
+// View's store, which toggles a tag from outside React and would otherwise
+// pull the whole component graph in behind a re-export. Nothing here
+// re-exports any part of it, so its surface has one door.
 
 interface ChooserState {
   selected: readonly string[];
@@ -172,11 +162,16 @@ function runActivation(
  * How many rows a Page Up or Page Down step covers: as many whole rows as the
  * scroll box shows. Read off the DOM at the moment the key fires, because a
  * themed row height and a flipped popup both change it.
+ *
+ * A list with no row to measure answers zero, and so does a box too short to
+ * hold one whole row. Neither is special-cased here: {@link movedHighlight}
+ * already takes a page of at least one row, and a list with no measurable row
+ * has no row for a page step to move over either.
  */
 function pageSizeOf(list: HTMLElement | null): number {
   const row = list?.querySelector<HTMLElement>('[role="option"]');
-  if (!list || !row || row.offsetHeight === 0) return FALLBACK_PAGE_SIZE;
-  return Math.max(1, Math.floor(list.clientHeight / row.offsetHeight));
+  if (!list || !row || row.offsetHeight === 0) return 0;
+  return Math.floor(list.clientHeight / row.offsetHeight);
 }
 
 /**
@@ -377,6 +372,24 @@ export interface ChooserTriggerProps extends Omit<
  *
  * It carries the anchor name and `data-open`, so the caller's own content
  * reads the open state through `zt:group-data-open:` rather than a prop.
+ *
+ * Spec aidenlx/zotlit#1190 names a `Chooser.Value` part inside it. There is
+ * none: a part that renders the selection has to decide what a selection
+ * reads as, and the two callers disagree — the colour filter draws its
+ * selection as swatches and the tag filter as a count beside a glyph. The
+ * trigger takes children instead, so each caller writes its own.
+ *
+ * It is a bare `<button>` rather than the `Button` wrapper from
+ * `src/components/obsidian/`, which the obsidian-css decision tree asks for
+ * wherever a native component exists. The exception is appearance, not the
+ * attribute: the wrapper does pass `popovertarget` through to its element, but
+ * what it exists to give — Obsidian's own button look and its `mod-*` variants
+ * — is exactly what a trigger drawn as a chip beside the filter bar's data
+ * chips has to take back off. The element is a `<button>` either way, so
+ * Obsidian's unlayered `button` rules apply either way and `chooser.css` is
+ * needed either way; routing through the wrapper would drop no rule and would
+ * add a variant API with no caller and a base `gap` for the chip to override.
+ * @see ./chooser.css
  */
 function Trigger({ className, style, ref, ...rest }: ChooserTriggerProps) {
   const { anchorName, popupId, open } = useChooser();
@@ -389,7 +402,7 @@ function Trigger({ className, style, ref, ...rest }: ChooserTriggerProps) {
       data-open={open ? "" : undefined}
       {...rest}
       className={cn(
-        "zt-chooser-trigger",
+        themeHook.chooserTrigger,
         "zt:group zt:[anchor-name:var(--zt-chooser-anchor)]",
         className,
       )}
@@ -409,6 +422,14 @@ export interface ChooserPopupProps extends Omit<
  * The popup itself. `inset: auto` hands placement to the position area: the
  * popover user-agent rule pins all four edges, which would strand a flipped
  * popup at the top of the viewport instead of above its trigger.
+ *
+ * Its height is the smaller of a comfortable list and the room the trigger
+ * leaves: `position-area` makes the space on the chosen side the popup's
+ * containing block, so a percentage height resolves against that space and
+ * against the space on the other side once `flip-block` has flipped it. The
+ * cap keeps a long vocabulary from filling a tall pane; the percentage keeps
+ * a popup near an edge inside the viewport, scrolling its rows instead of
+ * running off it.
  *
  * The display utility is gated on `:popover-open`. A closed popover is hidden
  * by the user-agent rule `[popover]:not(:popover-open) { display: none }`, and
@@ -448,7 +469,7 @@ function Popup({ className, style, ref, ...rest }: ChooserPopupProps) {
       {...rest}
       className={cn(
         themeHook.chooser,
-        "zt:inset-auto zt:my-1 zt:max-h-75 zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
+        "zt:inset-auto zt:my-1 zt:[max-height:min(--spacing(75),calc(100%_-_--spacing(2)))] zt:max-w-80 zt:min-w-50 zt:flex-col zt:[&:popover-open]:flex",
         "zt:border-(length:--menu-border-width) zt:border-(--menu-border-color) zt:bg-(--menu-background) zt:p-(--menu-padding) zt:text-foreground zt:shadow-(--menu-shadow)",
         "zt:rounded-(--menu-radius) zt:[corner-shape:var(--menu-corner-shape)]",
         "zt:[position-anchor:var(--zt-chooser-anchor)] zt:[position-area:block-end_span-inline-end] zt:[position-try-fallbacks:flip-block]",
@@ -504,8 +525,15 @@ function Input({ placeholder, clearLabel }: ChooserInputProps) {
 
 export interface ChooserListProps<Row extends ChooserRow> extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  "children"
+  "children" | "aria-label"
 > {
+  /**
+   * What the list box is called. Required rather than optional: a list box
+   * carries no name of its own, and an unnamed one is announced as a bare
+   * "list box" — the caller is the only one that knows whether its rows are
+   * tags or colours.
+   */
+  "aria-label": string;
   /**
    * Every row the caller offers, in the order it wants them read, split into
    * the groups it wants them drawn in. A group is a heading and a separator,
@@ -522,14 +550,19 @@ export interface ChooserListProps<Row extends ChooserRow> extends Omit<
    */
   groups: readonly ChooserGroup<Row>[];
   /**
-   * Shown in place of the rows when the query matches none of them.
+   * Shown beside the rows when the query matches none of them.
    *
    * Spec aidenlx/zotlit#1190 names this a `Chooser.Empty` part. It stays a
    * prop: the query filter runs here, so only this part knows the rows came
    * out empty, and a sibling part would mean hoisting the row list into the
    * root and making the root generic over the row type.
+   *
+   * Optional, because a Chooser the caller gave no search field cannot come
+   * out empty: nothing narrows its rows, so the message would be copy for a
+   * state that never happens. Leaving it out draws no message and no live
+   * region.
    */
-  emptyLabel: string;
+  emptyLabel?: string;
   children: (row: Row) => ReactNode;
 }
 
@@ -570,55 +603,72 @@ function List<Row extends ChooserRow>({
   );
 
   return (
-    // The tab index is programmatic: the root focuses this element when the
-    // caller rendered no search field, and a Chooser still holds exactly one
-    // tab stop either way.
-    <div
-      ref={listRef}
-      id={listId}
-      role="listbox"
-      tabIndex={-1}
-      aria-multiselectable
-      aria-activedescendant={activeOptionId ?? undefined}
-      {...rest}
-      className={cn("zt:min-h-0 zt:flex-1 zt:overflow-y-auto", className)}
-    >
+    <>
       {/* The empty message stands beside the rows rather than in their place:
           action rows are exempt from the query, so a query that matches no
           entry can still leave one standing, and "nothing matched" and "here
-          is what you can still do" are both true at once. */}
-      {empty && (
-        <div className="zt:px-2 zt:py-1 zt:text-xs zt:text-muted-foreground">
-          {emptyLabel}
+          is what you can still do" are both true at once.
+
+          It sits outside the list box and carries a live region, because a
+          list box owns options: a bare `div` among them is dropped by
+          assistive technology, and the one moment the message matters is the
+          keystroke that empties the list — which is a live region's job to
+          announce. The region is mounted for as long as the caller offers a
+          message, and only its text comes and goes; a region that appears
+          with its text is announced by no screen reader reliably. With no
+          text it draws no box, so it costs the rows no room. */}
+      {emptyLabel !== undefined && (
+        <div
+          role="status"
+          className={cn(
+            "zt:shrink-0 zt:px-2 zt:text-xs zt:text-muted-foreground",
+            empty && "zt:py-1",
+          )}
+        >
+          {empty ? emptyLabel : ""}
         </div>
       )}
-      <ChooserListContext value={list}>
-        {sections.map((section, index) => (
-          <Fragment key={section.at}>
-            {(index > 0 || empty) && <Separator />}
-            {section.label === undefined ? (
-              section.rows.map(children)
-            ) : (
-              // A labelled run is a list-box group, so a screen reader reads
-              // the heading with the rows under it. The heading itself is no
-              // option and carries no id the highlight can point at.
-              <div
-                role="group"
-                aria-labelledby={`${listId}-group-${section.at}`}
-              >
+      {/* The tab index is programmatic: the root focuses this element when the
+          caller rendered no search field, and a Chooser still holds exactly
+          one tab stop either way. */}
+      <div
+        ref={listRef}
+        id={listId}
+        role="listbox"
+        tabIndex={-1}
+        aria-multiselectable
+        aria-activedescendant={activeOptionId ?? undefined}
+        {...rest}
+        className={cn("zt:min-h-0 zt:flex-1 zt:overflow-y-auto", className)}
+      >
+        <ChooserListContext value={list}>
+          {sections.map((section, index) => (
+            <Fragment key={section.groupIndex}>
+              {(index > 0 || empty) && <Separator />}
+              {section.label === undefined ? (
+                section.rows.map(children)
+              ) : (
+                // A labelled run is a list-box group, so a screen reader reads
+                // the heading with the rows under it. The heading itself is no
+                // option and carries no id the highlight can point at.
                 <div
-                  id={`${listId}-group-${section.at}`}
-                  className="zt:px-2 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
+                  role="group"
+                  aria-labelledby={`${listId}-group-${section.groupIndex}`}
                 >
-                  {section.label}
+                  <div
+                    id={`${listId}-group-${section.groupIndex}`}
+                    className="zt:px-2 zt:pt-1 zt:pb-0.5 zt:text-xs zt:text-muted-foreground"
+                  >
+                    {section.label}
+                  </div>
+                  {section.rows.map(children)}
                 </div>
-                {section.rows.map(children)}
-              </div>
-            )}
-          </Fragment>
-        ))}
-      </ChooserListContext>
-    </div>
+              )}
+            </Fragment>
+          ))}
+        </ChooserListContext>
+      </div>
+    </>
   );
 }
 
@@ -639,11 +689,10 @@ function Separator() {
 }
 
 /**
- * What an entry and an action share: where the row sits in the list, whether
- * the highlight is on it, whether it is disabled, the scroll-into-view that
- * keeps the highlight in sight, and what activating it comes to. Both draw the
- * same box, so both ask the same question here and one keyboard model reaches
- * both.
+ * What {@link RowShell} needs of a row: where it sits in the list, whether the
+ * highlight is on it, whether it is disabled, the scroll-into-view that keeps
+ * the highlight in sight, and what activating it comes to. An entry and an
+ * action ask the same question, so one keyboard model reaches both.
  *
  * Whether a row is disabled is read off the published row alone, never off a
  * prop beside it: the key handler reads the same flag, so a row the pointer
@@ -682,6 +731,57 @@ const rowBox = (disabled: boolean, className?: string) =>
     className,
   );
 
+interface RowShellProps extends HTMLAttributes<HTMLDivElement> {
+  /** Which published row this draws. */
+  value: string;
+  /** What the row reports as its selected state; an action row holds none. */
+  selected: boolean;
+  /**
+   * The glyph in the row's leading column. Leaving it out keeps the column and
+   * draws nothing in it, so every label in the list lines up either way.
+   */
+  icon?: IconName;
+}
+
+/**
+ * The option every row is drawn as: its place in the list, its highlight, its
+ * disabled state, what a click on it comes to, and the box holding a leading
+ * glyph and one line of label. {@link Item} and {@link Action} differ in what
+ * they put in those two slots and in nothing else, so the element itself is
+ * written once and one keyboard model reaches both.
+ */
+function RowShell({
+  value,
+  selected,
+  icon,
+  className,
+  children,
+  ...rest
+}: RowShellProps) {
+  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
+
+  return (
+    <div
+      ref={ref}
+      id={id}
+      role="option"
+      aria-selected={selected}
+      aria-disabled={disabled || undefined}
+      data-highlighted={highlighted ? "" : undefined}
+      onClick={activate}
+      {...rest}
+      className={rowBox(disabled, className)}
+    >
+      <Icon
+        name={icon ?? "check"}
+        size={14}
+        className={cn("zt:shrink-0", !icon && "zt:invisible")}
+      />
+      <span className="zt:truncate">{children}</span>
+    </div>
+  );
+}
+
 export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
   /**
    * Which published row this draws. Everything else about the row — whether it
@@ -695,38 +795,37 @@ export interface ChooserItemProps extends HTMLAttributes<HTMLDivElement> {
  * A tickable row. Ticking hands the whole next selection to the caller and
  * leaves the popup standing, so several rows can be ticked in one visit.
  *
- * The row carries no tab stop. The Chooser has exactly one — the search field —
- * and the highlight below is row state plus a scroll-into-view that the list
- * names as its active descendant, so a user narrows, moves and ticks without
- * the caret ever leaving what they are typing into.
+ * The row carries no tab stop. The Chooser has exactly one — the search field,
+ * or the list box itself when the caller rendered no search field — and the
+ * highlight below is row state plus a scroll-into-view that the tab stop names
+ * as its active descendant, so a user narrows, moves and ticks without the
+ * caret ever leaving what they are typing into.
  *
  * The tick is a styled indicator rather than a checkbox, because a list box
  * option may hold no focusable control; `aria-selected` is what reports it.
+ *
+ * Spec aidenlx/zotlit#1190 names `Chooser.ItemText` and `Chooser.ItemIndicator`
+ * as parts inside it. There are none: a row is a tick and one line of label in
+ * that order, always, and the two parts exist to let a caller reorder or
+ * restyle a pair this one draws itself. The caller's children are the label,
+ * and the indicator is the row's own.
+ *
+ * It stays a separate part from {@link Action} rather than one row component
+ * with a flag: the two say different things — one ticks and reports
+ * `aria-selected`, the other runs and reports none. What they draw the same is
+ * drawn once, in {@link RowShell}.
  */
-function Item({ value, className, children, ...rest }: ChooserItemProps) {
+function Item({ value, ...rest }: ChooserItemProps) {
   const { selected } = useChooser();
-  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
   const ticked = selected.includes(value);
 
   return (
-    <div
-      ref={ref}
-      id={id}
-      role="option"
-      aria-selected={ticked}
-      aria-disabled={disabled || undefined}
-      data-highlighted={highlighted ? "" : undefined}
-      onClick={activate}
+    <RowShell
+      value={value}
+      selected={ticked}
+      icon={ticked ? "check" : undefined}
       {...rest}
-      className={rowBox(disabled, className)}
-    >
-      <Icon
-        name="check"
-        size={14}
-        className={cn("zt:shrink-0", !ticked && "zt:invisible")}
-      />
-      <span className="zt:truncate">{children}</span>
-    </div>
+    />
   );
 }
 
@@ -755,35 +854,8 @@ export interface ChooserActionProps extends HTMLAttributes<HTMLDivElement> {
  * state as false because it holds none. Running it leaves the popup standing
  * unless the action calls the `close` it is handed.
  */
-function Action({
-  value,
-  icon,
-  className,
-  children,
-  ...rest
-}: ChooserActionProps) {
-  const { ref, id, highlighted, disabled, activate } = useRowSlot(value);
-
-  return (
-    <div
-      ref={ref}
-      id={id}
-      role="option"
-      aria-selected={false}
-      aria-disabled={disabled || undefined}
-      data-highlighted={highlighted ? "" : undefined}
-      onClick={activate}
-      {...rest}
-      className={rowBox(disabled, className)}
-    >
-      <Icon
-        name={icon ?? "check"}
-        size={14}
-        className={cn("zt:shrink-0", !icon && "zt:invisible")}
-      />
-      <span className="zt:truncate">{children}</span>
-    </div>
-  );
+function Action({ value, icon, ...rest }: ChooserActionProps) {
+  return <RowShell value={value} selected={false} icon={icon} {...rest} />;
 }
 
 Chooser.Trigger = Trigger;

@@ -74,7 +74,7 @@ it("leaves the rows themselves untouched", () => {
 it("draws the groups in the order they were given", () => {
   const { sections } = chooserLayout(GROUPS, null);
   expect(sections.map((section) => section.label)).toEqual(["Tags", undefined]);
-  expect(sections.map((section) => section.at)).toEqual([0, 1]);
+  expect(sections.map((section) => section.groupIndex)).toEqual([0, 1]);
   expect(sections.map((section) => labelsOf(section.rows))).toEqual([
     ["method", "theory", "review", "draft"],
     ["Clear selected tags"],
@@ -105,7 +105,9 @@ it("keeps a surviving group's place in the caller's list", () => {
     { label: "Gone", items: [] },
     { label: "Tags", items: ROWS },
   ];
-  expect(chooserLayout(groups, null).sections.map((s) => s.at)).toEqual([1]);
+  expect(chooserLayout(groups, null).sections.map((s) => s.groupIndex)).toEqual(
+    [1],
+  );
 });
 
 it("leaves an action row standing whatever the query matches", () => {
@@ -127,7 +129,7 @@ it("leaves an action row standing whatever the query matches", () => {
 
 it("reports an empty query result while the action row still stands", () => {
   const nothing = chooserLayout(GROUPS, () => null);
-  expect(nothing.sections.map((section) => section.at)).toEqual([1]);
+  expect(nothing.sections.map((section) => section.groupIndex)).toEqual([1]);
   expect(labelsOf(nothing.rows)).toEqual(["Clear selected tags"]);
   expect(nothing.empty).toBe(true);
 });

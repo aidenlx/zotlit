@@ -106,6 +106,13 @@ export const themeHook = {
    * `--menu-*` variables instead. `:popover-open` marks it while it stands.
    */
   chooser: "zt-chooser",
+  /**
+   * The control a Chooser hangs under, which is a `<button>` because that is
+   * what the popover invoker attribute takes. It carries `aria-expanded` and
+   * `data-open` while its popup stands, and its own Obsidian button styling is
+   * reverted, so what draws it is the caller's classes alone.
+   */
+  chooserTrigger: "zt-chooser-trigger",
 } as const;
 
 /**

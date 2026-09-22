@@ -1,10 +1,10 @@
 // Top filter bar: colour trigger, first tag chip, tag-vocabulary trigger,
 // count/clear cluster; each trigger opens its vocabulary in a Chooser anchored
 // under it.
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 
 import { Chooser } from "@/components/chooser";
-import type { ChooserGroup, ChooserRow } from "@/components/chooser";
+import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
@@ -147,6 +147,21 @@ function Swatch({ hex, className }: { hex: string; className?: string }) {
 }
 
 /**
+ * The one colour a tick moved, read off the selection the Chooser reports: the
+ * colour the next selection gained, or the one it lost. `undefined` when the
+ * two selections hold the same colours, which nothing ticking a row produces.
+ */
+function changedColor(
+  before: readonly string[],
+  after: readonly string[],
+): string | undefined {
+  return (
+    after.find((hex) => !before.includes(hex)) ??
+    before.find((hex) => !after.includes(hex))
+  );
+}
+
+/**
  * The colours present in the annotations, in a Chooser hanging under the same
  * dashed action chip the tag filter uses. It carries no search field: a
  * palette is read by sight, so each row is the swatch alone and the tick
@@ -195,22 +210,21 @@ function ColorChooser({
     [colors, selectedColors],
   );
 
-  // The Chooser reports the whole selection a tick leaves behind, while the
-  // store toggles one colour at a time. The single entry the two lists
-  // disagree on is the colour that was ticked, so the existing store action
-  // is reached without a second one beside it.
-  const onValueChange = useCallback(
-    (next: readonly string[]) => {
-      const changed =
-        next.find((hex) => !selectedColors.includes(hex)) ??
-        selectedColors.find((hex) => !next.includes(hex));
-      if (changed !== undefined) onToggle(changed);
-    },
-    [selectedColors, onToggle],
-  );
-
   return (
-    <Chooser value={selectedColors} onValueChange={onValueChange}>
+    // The store keeps the colour action #1194 asks to reuse unchanged — it
+    // takes the one colour that moved — so the selection the Chooser reports
+    // is read back down to that colour here. The recovery is exact rather
+    // than a guess: a tick on a row is the only thing that calls
+    // `onValueChange` — by click or by Enter, both through `activatedRow` —
+    // and what it hands over is `toggledValues(selected, value)`, which
+    // differs from the selection it was given by that one value alone.
+    <Chooser
+      value={selectedColors}
+      onValueChange={(next) => {
+        const moved = changedColor(selectedColors, next);
+        if (moved !== undefined) onToggle(moved);
+      }}
+    >
       <Chooser.Trigger
         data-counting={counting ? "" : undefined}
         className={filterTriggerChip}
@@ -230,9 +244,12 @@ function ColorChooser({
         <TriggerChevron />
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-40">
+        {/* No empty message: the list carries no search field, so nothing
+            narrows it and the palette is never empty — a trigger stands only
+            where a colour does. */}
         <Chooser.List
           groups={groups}
-          emptyLabel={m.annot_view_filter_color_empty()}
+          aria-label={m.annot_view_filter_color_list()}
         >
           {(row) => (
             <Chooser.Item
@@ -382,6 +399,7 @@ function TagChooser({
         />
         <Chooser.List
           groups={groups}
+          aria-label={m.annot_view_filter_tag_list()}
           emptyLabel={m.annot_view_filter_tag_empty()}
         >
           {(row) =>

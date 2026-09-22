@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
@@ -96,17 +96,28 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
+  /**
+   * Inline tag panel (below the filter bar) open.
+   *
+   * Orphaned once the tag filter moved into a Chooser, where the browser owns
+   * whether the popup stands. It stays, with {@link useTogglePanel}, because
+   * spec aidenlx/zotlit#1190 puts its removal out of scope: the flag is
+   * reported so that dropping it is a decision of its own rather than a side
+   * effect of the migration.
+   */
+  panelOpen: boolean;
 }
 
 /** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
+  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags" | "panelOpen"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
   selectedTags: [],
+  panelOpen: false,
 };
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -204,13 +215,32 @@ export function useSetFilterQuery(): (query: string) => void {
   return (query) => store.setState({ filterQuery: query });
 }
 
-/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen untouched. */
+/** Clears filterQuery/selectedColors/selectedTags; leaves searchOpen/panelOpen untouched. */
 export function useClearFilters(): () => void {
   const store = useAnnotStoreApi();
   return () =>
     store.setState({ filterQuery: "", selectedColors: [], selectedTags: [] });
 }
 
+/**
+ * Toggles {@link AnnotState.panelOpen}. No caller: the inline tag panel it
+ * opened is a Chooser now. It stands with the flag, for the reason recorded
+ * there.
+ */
+export function useTogglePanel(): () => void {
+  const store = useAnnotStoreApi();
+  return () => {
+    const { panelOpen } = store.getState();
+    store.setState({ panelOpen: !panelOpen });
+  };
+}
+
+/**
+ * The colour filter after one colour is toggled. Unchanged by the Chooser
+ * migration: aidenlx/zotlit#1194 asks for this action to be reused as it
+ * stands, so the filter bar names the one colour that moved rather than the
+ * store taking a whole selection.
+ */
 export function useToggleSelectedColor(): (color: string) => void {
   const store = useAnnotStoreApi();
   return (color) => {
@@ -242,19 +272,27 @@ export function toggledTags(selectedTags: string[], tag: string): string[] {
   return toggledValues(selectedTags, tag);
 }
 
+/** Memoised on the store, as {@link useSetSelectedTags} is. */
 export function useToggleSelectedTag(): (tag: string) => void {
   const store = useAnnotStoreApi();
-  return (tag) =>
-    store.setState({
-      selectedTags: toggledTags(store.getState().selectedTags, tag),
-    });
+  return useCallback(
+    (tag) =>
+      store.setState({
+        selectedTags: toggledTags(store.getState().selectedTags, tag),
+      }),
+    [store],
+  );
 }
 
 /**
  * Takes a whole tag selection, for a surface that decides the next one itself
  * — the Chooser reports what a tick leaves behind rather than which tag moved.
+ *
+ * Memoised on the store: the Chooser's row groups are built in a memo over it,
+ * and a fresh closure per render would rebuild them on every render of the
+ * filter bar.
  */
 export function useSetSelectedTags(): (tags: string[]) => void {
   const store = useAnnotStoreApi();
-  return (tags) => store.setState({ selectedTags: tags });
+  return useCallback((tags) => store.setState({ selectedTags: tags }), [store]);
 }

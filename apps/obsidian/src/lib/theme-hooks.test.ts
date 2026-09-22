@@ -19,6 +19,12 @@ it("promises the Annotation View hooks by literal name", () => {
   });
 });
 
-it("promises the Chooser hook by literal name", () => {
-  expect(themeHook.chooser).toBe("zt-chooser");
+it("promises the Chooser hooks by literal name", () => {
+  expect({
+    popup: themeHook.chooser,
+    trigger: themeHook.chooserTrigger,
+  }).toEqual({
+    popup: "zt-chooser",
+    trigger: "zt-chooser-trigger",
+  });
 });

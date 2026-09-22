@@ -48,7 +48,7 @@ export interface ChooserSection<Row extends ChooserRow> {
    * drops it, so a section's place among the survivors shifts under it; this
    * is the identity that holds still, and what a renderer keys a section by.
    */
-  at: number;
+  groupIndex: number;
   rows: Row[];
 }
 
@@ -92,14 +92,15 @@ export function chooserLayout<Row extends ChooserRow>(
   matcher: ChooserMatcher | null,
 ): ChooserLayout<Row> {
   const sections: ChooserSection<Row>[] = [];
-  for (const [at, group] of groups.entries()) {
+  for (const [groupIndex, group] of groups.entries()) {
     const rows = group.items.filter(
       (row) =>
         row.action !== undefined ||
         matcher === null ||
         matcher(row.label) !== null,
     );
-    if (rows.length > 0) sections.push({ label: group.label, at, rows });
+    if (rows.length > 0)
+      sections.push({ label: group.label, groupIndex, rows });
   }
   const rows = sections.flatMap((section) => section.rows);
   return {
