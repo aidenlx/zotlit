@@ -22,19 +22,19 @@ pnpm fixture
 
 This command builds the required workspace packages and development plugin bundles. It then builds the default `all` Scope Case. The command installs and enables the ZotLit development bundle in the Fixture Vault. It also installs the pinned Better BibTeX add-on in the Fixture profile.
 
-The generated tree is under `tmp/acceptance-fixture`:
+The generated tree is under `.scratch/acceptance-fixture`:
 
 | Path | Content |
 | --- | --- |
-| `tmp/acceptance-fixture/zotero-data` | Zotero data directory |
-| `tmp/acceptance-fixture/zotero-data/zotero.sqlite` | Generated Zotero database |
-| `tmp/acceptance-fixture/zotero-data/styles` | Bundled CSL styles, plus the Fixture Spec's user-installed styles |
-| `tmp/acceptance-fixture/linked-files` | Host-native files for linked-file attachments |
-| `tmp/acceptance-fixture/zotero-profile` | Zotero profile whose preferences select the generated data directory |
-| `tmp/acceptance-fixture/zt-fixture-vault` | Fixture Vault |
-| `tmp/acceptance-fixture/zt-fixture-vault/.obsidian/plugins/zotlit` | Installed ZotLit development bundle and Fixture settings |
+| `.scratch/acceptance-fixture/zotero-data` | Zotero data directory |
+| `.scratch/acceptance-fixture/zotero-data/zotero.sqlite` | Generated Zotero database |
+| `.scratch/acceptance-fixture/zotero-data/styles` | Bundled CSL styles, plus the Fixture Spec's user-installed styles |
+| `.scratch/acceptance-fixture/linked-files` | Host-native files for linked-file attachments |
+| `.scratch/acceptance-fixture/zotero-profile` | Zotero profile whose preferences select the generated data directory |
+| `.scratch/acceptance-fixture/zt-fixture-vault` | Fixture Vault |
+| `.scratch/acceptance-fixture/zt-fixture-vault/.obsidian/plugins/zotlit` | Installed ZotLit development bundle and Fixture settings |
 
-`tmp/acceptance-fixture` is a path only. The generated artifact is the Fixture.
+`.scratch/acceptance-fixture` is a path only. The generated artifact is the Fixture.
 
 Print the three main runtime paths at any time:
 
@@ -505,7 +505,7 @@ Requirements:
 - **Settings → General → Advanced → Command line interface** is enabled.
 - The development plugin bundle can be built. The suite uses its development-only `zotlit:library-scope` command.
 
-The suite creates and registers `tmp/e2e-fixture-vault`, points it at the Fixture data, and removes it after the run. It covers a Literature Note render through the update-all-notes batch operation. It also changes to the `available` Scope Case and verifies the reported Library Scope.
+The suite creates and registers `.scratch/e2e-fixture-vault`, points it at the Fixture data, and removes it after the run. It covers a Literature Note render through the update-all-notes batch operation. It also changes to the `available` Scope Case and verifies the reported Library Scope.
 
 The suite does not require a running Paired Zotero. If desktop Obsidian is not reachable, all tests skip and the command exits successfully.
 

@@ -21,10 +21,10 @@ import {
 test("native collections load and watch content without generated entry files", async () => {
   const packageRoot = getPackageRoot(import.meta.filename);
   const workspaceRoot = await getWorkspaceRoot(packageRoot);
-  await mkdir(join(workspaceRoot, "tmp"), { recursive: true });
+  await mkdir(join(workspaceRoot, ".scratch"), { recursive: true });
   await using resources = new AsyncDisposableStack();
   const root = resources.adopt(
-    await mkdtemp(join(workspaceRoot, "tmp/native-collections-")),
+    await mkdtemp(join(workspaceRoot, ".scratch/native-collections-")),
     (path) => rm(path, { recursive: true, force: true }),
   );
   await symlink(

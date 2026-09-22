@@ -20,9 +20,9 @@ export interface FixtureLayout {
   pluginDataPath: string;
 }
 
-/** Where the Fixture lives, under the workspace scratch area (git-ignored). */
+/** Where the Fixture lives, under the workspace `.scratch/` root (git-ignored). */
 export function getFixtureRoot(workspaceRoot: string): string {
-  return join(workspaceRoot, "tmp", "acceptance-fixture");
+  return join(workspaceRoot, ".scratch", "acceptance-fixture");
 }
 
 export function getFixtureLayout(root: string): FixtureLayout {

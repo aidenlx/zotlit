@@ -53,8 +53,10 @@ async function fixture(
   await using stack = new AsyncDisposableStack();
   const f = stack.use(await profileServiceFixture({ [PATH]: source }));
   const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-  await mkdir(resolve(workspaceRoot, "tmp"), { recursive: true });
-  const scratch = await mkdtemp(resolve(workspaceRoot, "tmp/check-draft-"));
+  await mkdir(resolve(workspaceRoot, ".scratch"), { recursive: true });
+  const scratch = await mkdtemp(
+    resolve(workspaceRoot, ".scratch/check-draft-"),
+  );
   stack.defer(() => rm(scratch, { recursive: true, force: true }));
   Object.assign(f.vault, {
     read: async (file: { path: string }) => f.vault.contents.get(file.path)!,

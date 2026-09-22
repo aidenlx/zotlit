@@ -10,7 +10,7 @@ the PDF marks and annotation cards, a pop-out card's native shortcut scope,
 external Zotero changes, refresh without the Companion, an acknowledged write
 whose response and reread were lost, pane closure during a write, Local API
 loss and recovery, and the final PDF byte hash. The log is
-`tmp/spec-1157/1166-paired-final.log`.
+`.scratch/spec-1157/1166-paired-final.log`.
 
 The paired cleanup restores the exact original `localAPIKeys.json` bytes and
 Obsidian SecretStorage value. Zotero caches cleared keys for the life of its

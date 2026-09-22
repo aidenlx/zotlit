@@ -96,8 +96,8 @@ const ROUGIER_ANNOTATION_KEYS = [
 ] as const;
 
 beforeAll(async () => {
-  // Workspace scratch, not the system temp dir — see policies/scratch-artifacts.md.
-  const scratch = join(await getWorkspaceRoot(import.meta.dirname), "tmp");
+  // Workspace scratch, not the system temp dir — see AGENTS.md → Working files.
+  const scratch = join(await getWorkspaceRoot(import.meta.dirname), ".scratch");
   await mkdir(scratch, { recursive: true });
   layout = getFixtureLayout(await mkdtemp(join(scratch, "fixture-test-")));
   fixture.defer(() => rm(layout.root, { recursive: true, force: true }));

@@ -47,7 +47,10 @@ describe("managed Better BibTeX", () => {
   });
 
   it("installs the verified XPI under the add-on id", async () => {
-    const scratch = join(await getWorkspaceRoot(import.meta.dirname), "tmp");
+    const scratch = join(
+      await getWorkspaceRoot(import.meta.dirname),
+      ".scratch",
+    );
     await mkdir(scratch, { recursive: true });
     const root = await mkdtemp(join(scratch, "better-bibtex-test-"));
     await using cleanup = new AsyncDisposableStack();
