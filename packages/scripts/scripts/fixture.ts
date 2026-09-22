@@ -303,7 +303,7 @@ const cli = yargs(hideBin(process.argv))
     () => {},
     async () => {
       const report = await harvestPristineTemplate(
-        join(workspaceRoot, "tmp", "fixture-harvest"),
+        join(workspaceRoot, ".scratch", "fixture-harvest"),
       );
       console.log(`Harvested from ${report.applicationDir}`);
       console.log(

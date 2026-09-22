@@ -61,7 +61,7 @@ Real SQLite tests establish these results:
 ## Live Zotero 10 lock result
 
 The Paired Run used Zotero 10.0 with the generated Fixture database at
-`tmp/acceptance-fixture/zotero-data/zotero.sqlite`. Zotero kept a non-empty WAL
+`.scratch/acceptance-fixture/zotero-data/zotero.sqlite`. Zotero kept a non-empty WAL
 and held the database with its exclusive locking configuration.
 
 A probe ran in installed Obsidian with Electron 43.7.1 and Node 24.21.0. A

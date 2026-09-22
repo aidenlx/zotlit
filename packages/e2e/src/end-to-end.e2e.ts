@@ -71,9 +71,8 @@ const vaultScriptPath = join(
   "obsidian-vault.ts",
 );
 // Distinct from the per-worktree dev vault (`getDevVaultDir`) and the raw
-// Fixture Vault (`getFixtureLayout(...).vaultDir`) — see
-// policies/scratch-artifacts.md.
-const e2eVaultPath = join(workspaceRoot, "tmp", "e2e-fixture-vault");
+// Fixture Vault (`getFixtureLayout(...).vaultDir`) — see AGENTS.md → Working files.
+const e2eVaultPath = join(workspaceRoot, ".scratch", "e2e-fixture-vault");
 const execFileAsync = promisify(execFile);
 
 function runVaultScript(args: string[]) {
@@ -898,7 +897,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
 
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
-    const freshPath = join(workspaceRoot, "tmp", "e2e-first-note-vault");
+    const freshPath = join(workspaceRoot, ".scratch", "e2e-first-note-vault");
     await using cleanup = new AsyncDisposableStack();
     cleanup.defer(async () => {
       await runVaultScript(["remove", freshPath, "--purge"]);
@@ -2353,7 +2352,7 @@ interface LibraryScopeReport {
 describe.skipIf(!reachable || pairedZotero !== null)(
   "Fresh destination flow",
   () => {
-    const vaultPath = join(workspaceRoot, "tmp", "e2e-destination-vault");
+    const vaultPath = join(workspaceRoot, ".scratch", "e2e-destination-vault");
     let vaultId = "";
     let m: typeof import("@obsidian-messages");
 

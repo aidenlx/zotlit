@@ -58,7 +58,7 @@ describe("Paired Run", () => {
   it("allocates distinct free ports for Live Updates and Zotero HTTP", async () => {
     const ports = createNodePairedRunPorts({
       workspaceRoot: "/workspace",
-      layout: getFixtureLayout("/workspace/tmp/fixture"),
+      layout: getFixtureLayout("/workspace/.scratch/acceptance-fixture"),
     });
 
     const liveUpdatePort = await ports.allocateLiveUpdatePort();

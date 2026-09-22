@@ -73,7 +73,7 @@ export async function generateSampleItems(
 export async function regenerateFixtureSampleItems(
   workspaceRoot: string,
 ): Promise<GeneratedSampleItem[]> {
-  const scratch = join(workspaceRoot, "tmp");
+  const scratch = join(workspaceRoot, ".scratch");
   await mkdir(scratch, { recursive: true });
   const fixtureRoot = await mkdtemp(join(scratch, "sample-items-"));
   await using resources = new AsyncDisposableStack();
