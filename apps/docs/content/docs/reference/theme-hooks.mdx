@@ -180,16 +180,22 @@ These class names, data attribute values, and default styles are ZotLit's public
 
 ## Annotation View hooks [#annot-view]
 
-The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`.
+The Annotation View lists a Zotero attachment's Annotations beside the reader, with its own toolbar. Its menus are Obsidian's own, which a theme reaches through `menu`. Its tag filter and its color filter are Choosers, which a theme reaches through `zt-chooser` and `zt-chooser-trigger`.
 
 | Class                 | Marks                                                                   |
 | --------------------- | ----------------------------------------------------------------------- |
 | `zt-annot-capability` | The Editing Capability affordance in the Annotation View's toolbar.     |
 | `zt-annot-conflict`   | The panel an Annotation Card shows while a Write Conflict stands on it. |
+| `zt-chooser`          | The Chooser popup the tag filter or the color filter opens.             |
+| `zt-chooser-trigger`  | The control that Chooser popup hangs under.                             |
 
 `zt-annot-capability` holds the same affordance the reader shows, and carries the same `data-zt-capability-tone`: `ready`, `action`, `busy`, or `warning`.
 
 `zt-annot-conflict` appears on a card whose last edit met a newer value in Zotero, or whose create Zotero never answered for. It names what happened, shows the two values, and offers the verbs that settle it.
+
+`zt-chooser` marks the anchored popover a filtering multi-select opens. It is a native popover rather than an Obsidian menu, so `:popover-open` matches it while it stands and `menu` never reaches it. It takes its chrome from `--menu-background`, `--menu-border-color`, `--menu-border-width`, `--menu-corner-shape`, `--menu-padding`, `--menu-radius`, and `--menu-shadow`, so a theme that retints menus reaches it through those.
+
+`zt-chooser-trigger` marks the control the popup hangs under, which is a `<button>` because that is what the popover invoker attribute takes. It carries `aria-expanded` and `data-open` while its popup stands, and its Obsidian button styling is reverted, so a theme styles it from this class rather than from `button`.
 
 These class names and data attribute values are ZotLit's public theme contract for the Annotation View. DOM structure remains private.
 

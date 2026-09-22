@@ -45,10 +45,7 @@ import {
   SCOPE_CASES,
   VAULT_CASES,
 } from "#fixture";
-import {
-  createBoundedObsidianCall,
-  isObsidianUnreachable,
-} from "#obsidian-cli";
+import { createObsidianCall, isObsidianUnreachable } from "#obsidian-cli";
 import {
   createObsidianHostReadiness,
   OBSIDIAN_HOST_TIMEOUT_MS,
@@ -98,18 +95,7 @@ function obsidianUserData(): string {
  * Bounded, because a vault window that has gone while the registry still calls
  * it open never answers at all; see `#obsidian-cli`.
  */
-const cli = createBoundedObsidianCall(async (args, signal) => {
-  const result = await execFileAsync("obsidian", args, {
-    signal,
-    // A CLI waiting on a window that never answers sits in `pthread_join` and
-    // outlives SIGTERM, which keeps its pipes — and so this process — alive
-    // long after the call was abandoned. SIGKILL reaps it instead of stranding
-    // it; such orphans were surviving for days.
-    killSignal: "SIGKILL",
-    windowsHide: true,
-  });
-  return `${result.stdout}${result.stderr}`.trim();
-});
+const cli = createObsidianCall();
 
 /**
  * Swallow a probe's failure so a retry loop can poll, but never the one that
