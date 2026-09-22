@@ -19,7 +19,12 @@ export const CapabilitySlotContext = createContext<ReactNode>(null);
 export function CapabilitySlot() {
   const content = useContext(CapabilitySlotContext);
   return content === null ? null : (
-    <div className={cn(themeHook.annotCapability, "zt:flex zt:items-center")}>
+    <div
+      className={cn(
+        themeHook.annotCapability,
+        "zt:flex zt:min-w-0 zt:items-center",
+      )}
+    >
       {content}
     </div>
   );

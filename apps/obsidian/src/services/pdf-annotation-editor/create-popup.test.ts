@@ -98,12 +98,12 @@ it("stands the creating verbs down while a create is in flight", () => {
   ).toEqual(["copy"]);
 });
 
-it("keeps every verb live where the gesture is what asks for authorization", () => {
+it("keeps only copying available before authorization", () => {
   expect(
-    row({ capability: { kind: "authorization-required" } }).some(
-      ({ disabled }) => disabled,
-    ),
-  ).toBe(false);
+    row({ capability: { kind: "authorization-required" } })
+      .filter(({ disabled }) => !disabled)
+      .map(({ id }) => id),
+  ).toEqual(["copy"]);
 });
 
 it("draws the row and runs each control's own action", () => {

@@ -59,7 +59,7 @@ export type CitationIndexActions = Pick<CitationIndex, "reset">;
  */
 export type AnnotationCapabilityActions = Pick<
   AnnotationRepository,
-  "capability" | "on"
+  "capability" | "on" | "probe"
 >;
 
 /** The Write Authorization the "Zotero editing" row grants and forgets. */

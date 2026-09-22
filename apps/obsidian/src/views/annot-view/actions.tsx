@@ -64,7 +64,11 @@ export interface AnnotActions {
   /** Recolour one Annotation in Zotero, from a swatch in the card's menu. */
   onSetColor(annot: AnnotationRecord, color: string): void;
   /** Store what the card's comment editor holds, from the gesture that closed it. */
-  onSaveComment(annot: AnnotationRecord, comment: string): void;
+  onSaveComment(
+    annot: AnnotationRecord,
+    comment: string,
+    automatic?: boolean,
+  ): void;
   bindCommentEditor(
     editor: HTMLTextAreaElement,
     annot: AnnotationRecord,
@@ -193,9 +197,13 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const onOpenComment = (annot: AnnotationRecord): void => {
     deps.annotations.editComment(annot.key);
   };
-  const onSaveComment = (annot: AnnotationRecord, comment: string): void => {
+  const onSaveComment = (
+    annot: AnnotationRecord,
+    comment: string,
+    automatic = false,
+  ): void => {
     deps.annotations.editComment(annot.key, comment);
-    report(deps.annotations.submitComment(annot.key));
+    report(deps.annotations.submitComment(annot.key, { automatic }));
   };
   const bindCommentEditor: AnnotActions["bindCommentEditor"] = (
     editor,

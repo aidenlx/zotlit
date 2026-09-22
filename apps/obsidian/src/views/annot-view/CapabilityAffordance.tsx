@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import { Icon } from "@/components/obsidian/icon";
-import { activatable, cn, tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import { countdownInterval } from "@/services/annotation-repository/cooldown";
@@ -21,14 +21,13 @@ export type CapabilityReads = Pick<
 
 export interface CapabilityAffordanceProps {
   capabilities: CapabilityReads;
-  /** The click: a Capability Probe, then the "Zotero editing" settings row. */
+  /** Requests write authorization through Zotero’s native approval dialog. */
   onActivate: () => void;
 }
 
 /**
- * Present while editing is unavailable: one labeled action with the setup or
- * authorization step in its tooltip. Normal editing controls stand alone once
- * editing is available.
+ * Offers authorization when Zotero is reachable, and shows a disabled status
+ * while approval is pending. Reading and authorized editing stay quiet.
  *
  * @see https://github.com/aidenlx/zotlit/issues/1147
  */
@@ -36,7 +35,7 @@ export function CapabilityAffordance({
   capabilities,
   onActivate,
 }: CapabilityAffordanceProps) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLButtonElement>(null);
   const attachmentKey = useAnnotStore((s) => s.selectedAttachmentKey);
   const capability = useEditingCapability(capabilities, attachmentKey);
   const now = useCountdown(capability.kind === "cooldown", ref);
@@ -45,14 +44,16 @@ export function CapabilityAffordance({
   const { icon, tone, tooltip, label, spinning, countdown } = affordance;
 
   return (
-    <div
+    <button
+      type="button"
       ref={ref}
       data-zt-capability-tone={tone}
       aria-busy={spinning || undefined}
-      {...activatable(onActivate)}
+      disabled={affordance.disabled}
+      onClick={onActivate}
       className={cn(
         "clickable-icon",
-        "zt:flex zt:items-center zt:gap-1",
+        "zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-start zt:whitespace-normal",
         tone === "warning" && "mod-warning",
       )}
       {...tooltipAttrs(tooltip)}
@@ -62,7 +63,7 @@ export function CapabilityAffordance({
       {countdown !== null && (
         <span className="zt:text-xs zt:tabular-nums">{countdown}</span>
       )}
-    </div>
+    </button>
   );
 }
 

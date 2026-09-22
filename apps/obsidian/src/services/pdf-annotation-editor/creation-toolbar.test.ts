@@ -148,9 +148,9 @@ it.each([
 
 it.each([
   { kind: "writable" },
-  { kind: "authorization-required" },
+  { kind: "writable", oneTime: true },
 ] satisfies EditingCapability[])(
-  "keeps every control a gesture can reach live under $kind, because the gesture is what asks",
+  "enables editing tools with an available grant",
   (capability) => {
     const live = model({ armed: "highlight", capability }).filter(
       ({ disabled }) => !disabled,

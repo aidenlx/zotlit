@@ -827,11 +827,13 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
       kind: "read-only",
       reason: "local-api-disabled",
     });
+    expect(affordanceIn(reader.toolbarRightEl)).toBeNull();
+    annotations.setCapability({ kind: "authorizing" });
     const node = affordanceIn(reader.toolbarRightEl)!;
-    expect(node.dataset.ztCapabilityTone).toBe("action");
+    expect(node.dataset.ztCapabilityTone).toBe("busy");
     expect(node.classList.contains("mod-warning")).toBe(false);
-    expect(node.textContent).toContain("Enable editing");
-    expect(node.getAttribute("aria-label")).toContain("local API");
+    expect(node.textContent).toContain("Waiting for approval in Zotero");
+    expect(node.getAttribute("role")).toBe("status");
     expect(reader.toolbarRightEl.childElementCount).toBe(1);
   }
 
@@ -880,7 +882,7 @@ it("counts a cooldown down on the toolbar's window, under the binding's disposer
   expect(stopped).toHaveBeenCalledOnce();
 });
 
-it("hands the affordance's click and its keyboard activation to the one gesture", async () => {
+it("keeps pending authorization informational in the PDF reader", async () => {
   const reader = pdfReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);
   const gestures = capabilityGestures();
@@ -889,7 +891,7 @@ it("hands the affordance's click and its keyboard activation to the one gesture"
   await using service = new PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
-    annotations: annotationReads([], { kind: "authorization-required" }),
+    annotations: annotationReads([], { kind: "authorizing" }),
     capabilityGestures: gestures,
     markGestures: markGestures(),
     settings: readerSettings(),
@@ -900,9 +902,7 @@ it("hands the affordance's click and its keyboard activation to the one gesture"
   node.click();
   node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
 
-  // What the gesture then does — probe, then reveal the row — is the UI seam's,
-  // and is asserted where it lives.
-  expect(gestures.showEditingCapability).toHaveBeenCalledTimes(2);
+  expect(node.getAttribute("role")).toBe("status");
 });
 
 it("probes before a blocked keystroke is answered, and stays out of the way otherwise", async () => {
@@ -950,10 +950,9 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   expect(annotations.probe).toHaveBeenCalledOnce();
   expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
 
-  // A gesture that opens Zotero's dialog and goes on is not a blocked one, so
-  // it is never answered with a notice saying the edit did not happen.
+  // Unauthorized editing remains blocked until explicit approval.
   annotations.setCapability({ kind: "authorization-required" });
   await press("h");
-  expect(annotations.probe).toHaveBeenCalledOnce();
-  expect(gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(annotations.probe).toHaveBeenCalledTimes(2);
+  expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
 });

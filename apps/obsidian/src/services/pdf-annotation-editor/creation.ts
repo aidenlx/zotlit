@@ -392,12 +392,16 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (!this.#commenting) return;
     const editor = renderCommentSheet(column.createDiv(), {
       value: this.#comment,
+      readOnly: !editingLive(this.#capability()),
       onSave: (comment) => {
         this.#comment = comment;
         const tool = this.#armed ?? "highlight";
         this.#commit(tool, this.#colors()[tool]);
       },
       onCancel: () => this.#setCommenting(false),
+    });
+    editor.addEventListener("input", () => {
+      this.#comment = editor.value;
     });
     editor.focus();
     editor.setSelectionRange(editor.value.length, editor.value.length);

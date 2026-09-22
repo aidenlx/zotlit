@@ -25,7 +25,10 @@ import type {
 import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { conflictPanel } from "@/views/annot-view/card-conflict";
-import { editingLive } from "@/views/annot-view/card-controls";
+import {
+  commentEditorControls,
+  editingLive,
+} from "@/views/annot-view/card-controls";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import { renderCommentSheet } from "./create-popup";
@@ -209,6 +212,7 @@ export class MarkSelection implements Disposable {
     this.#surfaces.defer(
       this.#deps.annotations.on("capability-changed", () => {
         if (!this.#commenting) this.#popup?.refresh();
+        else this.#updateCommentControls();
       }),
     );
     this.#surfaces.defer(
@@ -221,6 +225,10 @@ export class MarkSelection implements Disposable {
     this.#surfaces.defer(
       this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
         if (annotationKey !== this.#selected) return;
+        if (!this.#commenting) {
+          this.#popup?.refresh();
+          return;
+        }
         const draft = this.#deps.annotations.commentDraftFor(annotationKey);
         if (draft?.state.kind === "conflict") {
           if (!this.#commenting) return;
@@ -228,6 +236,7 @@ export class MarkSelection implements Disposable {
           this.#popup?.refresh();
           return;
         }
+        this.#updateCommentControls();
         if (!draft) return;
         if (!this.#commentEditor) return;
         if (this.#commentEditor.value === draft.text) return;
@@ -468,6 +477,26 @@ export class MarkSelection implements Disposable {
       }),
       (id, node) => this.#activate(id, node, annotation),
     );
+    const draft = this.#deps.annotations.commentDraftFor(annotation.key);
+    if (draft && draft.state.kind !== "conflict") {
+      const preview = column.createDiv({
+        cls: ["zt-pdf-comment-sheet", "zt:mt-2"],
+      });
+      preview.createDiv({
+        cls: "zt:text-xs zt:text-muted-foreground",
+        text: m.annot_view_comment_draft(),
+      });
+      preview.createDiv({
+        cls: "zt:whitespace-pre-wrap zt:break-words zt:select-text",
+        text: draft.text,
+      });
+      preview.createDiv({
+        cls: "zt:text-xs zt:text-muted-foreground",
+        attr: { role: "status" },
+        text: commentEditorControls(this.#capability(), draft, this.#deps.now())
+          .hint,
+      });
+    }
     if (
       mutation.kind === "conflict" &&
       mutation.conflict.write === "comment" &&
@@ -503,7 +532,7 @@ export class MarkSelection implements Disposable {
         this.#write(this.#deps.annotations.submitComment(annotation.key));
       },
       onCancel: () => {
-        this.#submitCommentEditor(annotation);
+        this.#submitCommentEditor(annotation, true);
         this.#closeCommentEditor();
         this.#popup?.refresh();
       },
@@ -513,14 +542,35 @@ export class MarkSelection implements Disposable {
       this.#deps.annotations.editComment(annotation.key, editor.value);
     });
     this.#commentEditor = editor;
+    const feedback = column.createDiv({
+      cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2 zt:mt-2",
+    });
+    feedback.createSpan({
+      cls: "zt:flex-1 zt:min-w-0 zt:text-xs zt:text-muted-foreground",
+      attr: { "data-comment-status": "", role: "status" },
+    });
+    const save = feedback.createEl("button", {
+      text: m.annot_view_comment_save(),
+      attr: { "data-comment-save": "", type: "button" },
+    });
+    save.addEventListener("click", () => this.#submitCommentEditor(annotation));
+    this.#updateCommentControls();
     life.use(
       bindEditorSubmitScope(editor, this.#deps.scope, () =>
         this.#submitCommentEditor(annotation),
       ),
     );
     life.use(
-      registerDomEvent(editor, "blur", () => {
-        this.#submitCommentEditor(annotation);
+      registerDomEvent(editor, "blur", (event) => {
+        const target = event.relatedTarget as Node | null;
+        if (target?.instanceOf(Node) && column.contains(target)) return;
+        const controls = commentEditorControls(
+          this.#capability(),
+          this.#deps.annotations.commentDraftFor(annotation.key),
+          this.#deps.now(),
+        );
+        if (controls.manual || controls.readOnly) return;
+        this.#submitCommentEditor(annotation, true);
         this.#closeCommentEditor();
         this.#popup?.refresh();
       }),
@@ -529,17 +579,42 @@ export class MarkSelection implements Disposable {
     editor.setSelectionRange(editor.value.length, editor.value.length);
   }
 
-  #submitCommentEditor(annotation: AnnotationRecord): void {
+  #updateCommentControls(): void {
+    const editor = this.#commentEditor;
+    const annotation = this.#record();
+    if (!editor || !annotation) return;
+    const controls = commentEditorControls(
+      this.#capability(),
+      this.#deps.annotations.commentDraftFor(annotation.key),
+      this.#deps.now(),
+    );
+    editor.readOnly = controls.readOnly;
+    const status = editor.parentElement?.querySelector<HTMLElement>(
+      "[data-comment-status]",
+    );
+    if (status) status.textContent = controls.hint;
+    const save = editor.parentElement?.querySelector<HTMLButtonElement>(
+      "[data-comment-save]",
+    );
+    if (save) {
+      save.toggle(controls.manual);
+      save.disabled = controls.saveDisabled;
+    }
+  }
+
+  #submitCommentEditor(annotation: AnnotationRecord, automatic = false): void {
     const editor = this.#commentEditor;
     if (!editor) return;
     this.#deps.annotations.editComment(annotation.key, editor.value);
-    this.#write(this.#deps.annotations.submitComment(annotation.key));
+    this.#write(
+      this.#deps.annotations.submitComment(annotation.key, { automatic }),
+    );
   }
 
   #submitAndCloseCommentEditor(): void {
     const annotation = this.#record();
     if (annotation && this.#commentEditor) {
-      this.#submitCommentEditor(annotation);
+      this.#submitCommentEditor(annotation, true);
     }
     this.#closeCommentEditor();
   }
@@ -564,12 +639,16 @@ export class MarkSelection implements Disposable {
     for (const value of panel.values) {
       box.createDiv({ text: `${value.label}: ${value.value}` });
     }
-    const actions = box.createDiv({ cls: ["zt:flex", "zt:gap-2"] });
+    const actions = box.createDiv({
+      cls: ["zt:flex", "zt:flex-wrap", "zt:gap-2", "zt:mt-2"],
+    });
     for (const action of panel.actions) {
       const button = actions.createEl("button", {
         cls: "mod-cta",
         text: action.label,
       });
+      button.disabled =
+        action.kind !== "discard" && !editingLive(this.#capability());
       button.addEventListener("click", () => {
         if (action.kind === "apply-again") {
           this.#write(this.#deps.annotations.retryCommentDraft(annotation.key));

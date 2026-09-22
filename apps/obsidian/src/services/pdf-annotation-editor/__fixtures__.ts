@@ -326,10 +326,9 @@ export function annotationReads(
   };
 }
 
-/** The two gestures the Editing Capability affordance hands to its UI seam. */
+/** The blocked-edit gesture the PDF reader hands to its UI seam. */
 export function capabilityGestures() {
   return {
-    showEditingCapability: vi.fn(),
     reportBlockedGesture: vi.fn(),
   };
 }

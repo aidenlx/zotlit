@@ -9,6 +9,8 @@ import type { IconName } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
+import type { CommentDraft } from "@/services/annotation-repository/service";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
 /** One header control: whether it runs, and what its tooltip says. */
@@ -41,19 +43,10 @@ export interface CardControls {
 }
 
 /**
- * Whether an editing verb runs under one capability. `writable` sends the
- * write; `authorization-required` stays live because the gesture is what opens
- * Zotero's dialog, and the write follows the grant. Every other state — a
- * gesture already at the dialog, Zotero's dialog cooldown, and each read-only
- * reason — disables in place.
- *
- * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
+ * Editing tools are available only after explicit authorization.
  */
 export function editingLive(capability: EditingCapability): boolean {
-  return (
-    capability.kind === "writable" ||
-    capability.kind === "authorization-required"
-  );
+  return capability.kind === "writable";
 }
 
 /**
@@ -112,4 +105,35 @@ export function editingBlockedReason(
   if (editingLive(capability)) return null;
   const copy = editingCapabilityCopy(capability, now);
   return copy.detail ?? copy.label;
+}
+
+/** Shared comment feedback for the Annotation View and PDF reader. */
+export function commentEditorControls(
+  capability: EditingCapability,
+  draft: CommentDraft | null,
+  now: Temporal.Instant,
+) {
+  const available = editingLive(capability);
+  const pending = draft?.state.kind === "pending";
+  const oneTime = capability.kind === "writable" && capability.oneTime;
+  const manual = !!oneTime || !!draft?.manualSave;
+  let hint = m.annot_view_comment_auto();
+  if (pending) hint = m.annot_view_card_saving();
+  else if (draft?.state.kind === "failed") {
+    const { failure } = draft.state;
+    hint =
+      failure.kind === "unauthorized"
+        ? m.annot_view_comment_unauthorized()
+        : failure.kind === "unknown-outcome" || failure.kind === "unreachable"
+          ? m.annot_view_comment_unconfirmed()
+          : writeFailureMessage(failure, now);
+  } else if (!available) hint = m.annot_view_comment_paused();
+  else if (oneTime) hint = m.annot_view_comment_one_time();
+  else if (manual) hint = m.annot_view_comment_resume();
+  return {
+    readOnly: !available,
+    saveDisabled: !available || pending,
+    manual,
+    hint,
+  };
 }

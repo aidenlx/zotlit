@@ -138,9 +138,22 @@
   display: flex;
   flex-direction: column;
   gap: var(--size-2-1);
-  width: 15em;
+  inline-size: 20em;
+  max-inline-size: calc(100vw - var(--size-4-4));
 }
 
 :where(.zt-pdf-comment-sheet textarea) {
   font-size: var(--font-ui-small);
+}
+
+/* The native toolbar uses one fixed row. Let our tools and permission status
+   wrap within the reader when the pane cannot fit all toolbar groups. */
+.pdf-toolbar:has(> .pdf-toolbar-right > .zt-pdf-creation-toolbar) {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+.pdf-toolbar-right:has(> .zt-pdf-creation-toolbar) {
+  max-inline-size: 100%;
+  min-inline-size: 0;
 }

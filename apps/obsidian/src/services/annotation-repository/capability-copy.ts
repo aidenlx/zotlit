@@ -55,7 +55,9 @@ export function editingCapabilityCopy(
       return {
         icon: "pencil",
         tone: "ready",
-        label: m.capability_writable(),
+        label: capability.oneTime
+          ? m.capability_one_time()
+          : m.capability_writable(),
         detail: null,
         spinning: false,
       };
@@ -101,6 +103,7 @@ export function editingCapabilityCopy(
  * @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
  */
 export interface CapabilityAffordance {
+  disabled: boolean;
   /** The Obsidian icon, from the one icon map. */
   icon: string;
   tone: CapabilityTone;
@@ -129,15 +132,20 @@ export function editingCapabilityAffordance(
   capability: EditingCapability,
   now: Temporal.Instant,
 ): CapabilityAffordance | null {
-  if (capability.kind === "writable") return null;
+  if (capability.kind === "writable" || capability.kind === "read-only")
+    return null;
   const { icon, tone, label, detail, spinning } = editingCapabilityCopy(
     capability,
     now,
   );
   return {
-    icon: tone === "warning" ? "pencil" : icon,
-    tone: tone === "warning" ? "action" : tone,
-    label: m.capability_enable_editing(),
+    disabled: capability.kind !== "authorization-required",
+    icon,
+    tone,
+    label:
+      capability.kind === "authorization-required"
+        ? m.capability_enable_editing()
+        : label,
     tooltip:
       detail === null
         ? label

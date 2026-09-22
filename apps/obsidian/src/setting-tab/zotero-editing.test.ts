@@ -7,6 +7,19 @@ import { editingRowModel } from "./zotero-editing";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
+it("shows a manual connection check while the service retains its last result", () => {
+  const model = editingRowModel({
+    capability: { kind: "read-only", reason: "local-api-disabled" },
+    remembered: true,
+    checking: true,
+    now: NOW,
+  });
+  expect(model.status.label).toBe(m.capability_probing());
+  expect(model.check).toEqual({ shown: true, disabled: true });
+  expect(model.enable.shown).toBe(false);
+  expect(model.forget.disabled).toBe(true);
+});
+
 it("shows the capability from the one shared copy table", () => {
   const model = row({ kind: "read-only", reason: "local-api-disabled" });
 
@@ -19,25 +32,19 @@ it("drops 'Enable editing' once editing is on", () => {
   expect(row({ kind: "authorization-required" }).enable.shown).toBe(true);
 });
 
-/**
- * "Enable editing" runs a Capability Probe before it asks Zotero for anything,
- * so it stays live wherever a fresh probe could clear the state.
- */
-it.each<[EditingCapability, boolean]>([
-  [{ kind: "authorization-required" }, false],
-  [{ kind: "read-only", reason: "probing" }, false],
-  [{ kind: "read-only", reason: "zotero-unavailable" }, false],
-  [{ kind: "read-only", reason: "local-api-disabled" }, false],
-  [{ kind: "read-only", reason: "server-changed" }, false],
-  [{ kind: "read-only", reason: "invalid-response" }, false],
-  // Nothing a probe or a dialog can do changes these two.
-  [{ kind: "read-only", reason: "incompatible-zotero" }, true],
-  [{ kind: "read-only", reason: "library-read-only" }, true],
-  // A request is already at the dialog, or Zotero refuses to be asked again.
-  [{ kind: "authorizing" }, true],
-  [{ kind: "cooldown", retryAfter: NOW.add({ seconds: 30 }) }, true],
-])("refuses 'Enable editing' for %o: %s", (capability, disabled) => {
-  expect(row(capability).enable.disabled).toBe(disabled);
+it("reserves authorization for an available API and offers a separate connection check", () => {
+  expect(
+    row({ kind: "read-only", reason: "zotero-unavailable" }).enable,
+  ).toEqual({ shown: false, disabled: true });
+  expect(
+    row({ kind: "read-only", reason: "local-api-disabled" }).check.shown,
+  ).toBe(true);
+  expect(row({ kind: "authorizing" }).enable.disabled).toBe(true);
+  expect(row({ kind: "authorizing" }).check.shown).toBe(false);
+  expect(row({ kind: "authorization-required" }).enable).toEqual({
+    shown: true,
+    disabled: false,
+  });
 });
 
 it("offers 'Forget authorization' only while this device remembers one", () => {

@@ -467,7 +467,9 @@ export class AnnotationView extends ItemView {
   protected override async onClose(): Promise<void> {
     const editingCommentKey = this.#store.getState().editingCommentKey;
     if (editingCommentKey) {
-      void this.#deps.annotations.submitComment(editingCommentKey);
+      void this.#deps.annotations.submitComment(editingCommentKey, {
+        automatic: true,
+      });
     }
     this.#loadDisposables?.[Symbol.dispose]();
     this.#loadDisposables = null;

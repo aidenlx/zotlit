@@ -129,7 +129,7 @@ function Toolbar({ hasItem, collapsed, onToggleCollapsed }: ToolbarProps) {
 
   return (
     <SidebarToolbar className="zt:flex-col zt:gap-2 zt:@sm:flex-row zt:@sm:items-center">
-      <SidebarToolbar.Actions className="zt:@sm:w-auto zt:@sm:shrink-0">
+      <SidebarToolbar.Actions className="zt:min-w-0 zt:@sm:w-auto">
         <FollowModeMenu />
         <CapabilitySlot />
         {hasItem && (
