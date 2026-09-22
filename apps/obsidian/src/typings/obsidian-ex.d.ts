@@ -417,7 +417,25 @@ declare module "obsidian" {
     setting: SettingsModal;
     commands: {
       executeCommandById(id: string): boolean;
+      /**
+       * Every command registered with `editorCallback` or
+       * `editorCheckCallback`, which act on `workspace.activeEditor`, plus
+       * every command pinned to the mobile toolbar, by id.
+       */
+      editorCommands: Record<string, Command>;
     };
+    hotkeyManager: {
+      /** The user's own hotkeys for a command; `undefined` when never customised. */
+      getHotkeys(id: string): ExtendedHotkey[] | undefined;
+      getDefaultHotkeys(id: string): ExtendedHotkey[] | undefined;
+    };
+  }
+  /**
+   * A stored hotkey. One recorded against a physical key carries its
+   * `KeyboardEvent.code`, which Obsidian matches in place of `key`.
+   */
+  interface ExtendedHotkey extends Hotkey {
+    code?: string;
   }
 
   /**

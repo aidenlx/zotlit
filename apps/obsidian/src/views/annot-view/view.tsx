@@ -288,7 +288,6 @@ export class AnnotationView extends ItemView {
 
     this.#actions = createAnnotActions({
       app: this.#deps.app,
-      scope: this.scope,
       excerptDisplay: this.#deps.excerptDisplay,
       excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: this.#deps.annotations,

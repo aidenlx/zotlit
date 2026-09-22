@@ -119,19 +119,6 @@
   all: revert-layer;
 }
 
-/* The comment editor stands in the slot the rendered comment stood in, so it
-   is the same text at the same size in the same place: a caret in the card,
-   not an input box drawn over it. Obsidian's own `textarea` rules are
-   unlayered, so its fill, its border, its 8px radius, its 4px-by-8px padding
-   and its 13px all outrank the utilities the editor wears. `revert-layer`
-   rolls the element back to the plugin's own layers, where those utilities and
-   the scoped preflight are what draws it. The same trick the header block and
-   the Chooser trigger take.
-   @see apps/obsidian/src/components/chooser.css */
-.zt-root textarea.zt-annot-comment-editor {
-  all: revert-layer;
-}
-
 /* The Attachment suggester exists to tell two similar names apart, so a long
    name wraps rather than being clipped. Obsidian declares the clip unlayered
    on `.suggestion-item`, where no utility reaches it. */
