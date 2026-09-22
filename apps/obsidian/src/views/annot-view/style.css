@@ -78,6 +78,16 @@
   padding: var(--size-2-2);
 }
 
+/* A card's buttons are set in the card's own 12px, not the 13px Obsidian gives
+   a modal button, and in half its padding. The card is 12px text in a dock a
+   few hundred pixels wide: at Obsidian's own size three verbs never fit one
+   line, and the held-draft panel wraps its last verb onto a line of its own.
+   Obsidian declares both unlayered, where no utility reaches them. */
+.zt-annot-card button {
+  padding: var(--size-2-2) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
 /* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
    no utility can quiet it. The page chip is a row of chrome that happens to
    open Zotero: it keeps the ink its utilities set, and its hover is the ring
@@ -106,6 +116,19 @@
    the Chooser trigger takes.
    @see apps/obsidian/src/components/chooser.css */
 .zt-root button.zt-annot-header {
+  all: revert-layer;
+}
+
+/* The comment editor stands in the slot the rendered comment stood in, so it
+   is the same text at the same size in the same place: a caret in the card,
+   not an input box drawn over it. Obsidian's own `textarea` rules are
+   unlayered, so its fill, its border, its 8px radius, its 4px-by-8px padding
+   and its 13px all outrank the utilities the editor wears. `revert-layer`
+   rolls the element back to the plugin's own layers, where those utilities and
+   the scoped preflight are what draws it. The same trick the header block and
+   the Chooser trigger take.
+   @see apps/obsidian/src/components/chooser.css */
+.zt-root textarea.zt-annot-comment-editor {
   all: revert-layer;
 }
 

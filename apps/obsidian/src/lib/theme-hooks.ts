@@ -93,6 +93,8 @@ export const themeHook = {
   pdfCommentSheet: "zt-pdf-comment-sheet",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
+  /** The panel an Annotation Card shows over a comment draft Zotero has not taken. */
+  annotDraft: "zt-annot-draft",
   /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a

@@ -121,6 +121,8 @@ export interface CapabilityGestures {
    * behind it. The seam says why, once per reason per capability episode.
    */
   reportBlockedGesture: (attachmentKey: string) => void;
+  /** Ask Zotero for editing again, from a gesture that names the grant itself. */
+  allowEditing: () => void;
 }
 
 export interface PdfViewBindingDeps {
@@ -605,6 +607,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         revealAnnotation: (annotationKey, options) =>
           this.#markGestures.revealAnnotation(annotationKey, options),
         reportBlockedGesture: () => this.#editGesture(),
+        allowEditing: () => this.#gestures.allowEditing(),
       },
       creation,
       now: this.#now,

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -14,6 +14,7 @@ import {
   commentLabel,
   commentEditorControls,
   editingBlockedReason,
+  heldCommentDraft,
 } from "./card-controls";
 import type { CardBlock, CardControls } from "./card-controls";
 
@@ -252,4 +253,103 @@ it("shows the current save outcome and preserves a manual recovery action", () =
       NOW,
     ).hint,
   ).toBe(m.annot_view_comment_resume());
+});
+
+describe("the held-draft panel", () => {
+  const draft: CommentDraft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: "",
+    text: "Research note",
+    state: { kind: "editing" },
+  };
+  const kinds = (capability: EditingCapability, held: CommentDraft) =>
+    heldCommentDraft(capability, held, NOW)?.actions.map(
+      (action) => action.kind,
+    ) ?? null;
+
+  it("stays quiet where nothing is asked of the user", () => {
+    expect(heldCommentDraft({ kind: "writable" }, null, NOW)).toBeNull();
+    // An editor opened and closed without typing holds what Zotero already has.
+    expect(
+      heldCommentDraft({ kind: "writable" }, { ...draft, text: "" }, NOW),
+    ).toBeNull();
+    // A write settles by itself, and the Conflict panel owns its own two verbs.
+    expect(
+      heldCommentDraft(
+        { kind: "writable" },
+        { ...draft, state: { kind: "pending" } },
+        NOW,
+      ),
+    ).toBeNull();
+    expect(
+      heldCommentDraft(
+        { kind: "writable" },
+        { ...draft, state: { kind: "conflict", fresh: "In Zotero" } },
+        NOW,
+      ),
+    ).toBeNull();
+    // An automatic save is already on its way.
+    expect(heldCommentDraft({ kind: "writable" }, draft, NOW)).toBeNull();
+  });
+
+  it("gives the accent to the way out, and never to Discard", () => {
+    const accent = (capability: EditingCapability) =>
+      heldCommentDraft(capability, draft, NOW)?.actions.find(
+        (action) => action.primary,
+      )?.kind ?? null;
+    expect(accent({ kind: "writable", oneTime: true })).toBe("save");
+    // Saving is refused, so the grant that ends the refusal takes the accent.
+    expect(accent({ kind: "authorization-required" })).toBe("allow-editing");
+    expect(
+      accent({ kind: "read-only", reason: "zotero-unavailable" }),
+    ).toBeNull();
+  });
+
+  it("carries a way out of every state it announces", () => {
+    expect(kinds({ kind: "writable", oneTime: true }, draft)).toEqual([
+      "save",
+      "discard",
+    ]);
+    expect(kinds({ kind: "authorization-required" }, draft)).toEqual([
+      "save",
+      "allow-editing",
+      "discard",
+    ]);
+    expect(
+      kinds({ kind: "read-only", reason: "zotero-unavailable" }, draft),
+    ).toEqual(["save", "discard"]);
+  });
+
+  it("offers Discard where nothing else can act, and states why", () => {
+    const held = heldCommentDraft(
+      { kind: "read-only", reason: "zotero-unavailable" },
+      draft,
+      NOW,
+    );
+    expect(held?.text).toBe("Research note");
+    // The capability's own sentence, not the editor's generic paused line.
+    expect(held?.reason).toBe(
+      editingCapabilityCopy(
+        { kind: "read-only", reason: "zotero-unavailable" },
+        NOW,
+      ).detail,
+    );
+    // Nothing can act but Discard, and Discard never wears the accent.
+    expect(held?.actions).toEqual([
+      {
+        kind: "save",
+        label: m.annot_view_comment_save(),
+        enabled: false,
+        primary: false,
+      },
+      {
+        kind: "discard",
+        label: m.annot_view_comment_discard(),
+        enabled: true,
+        primary: false,
+      },
+    ]);
+  });
 });

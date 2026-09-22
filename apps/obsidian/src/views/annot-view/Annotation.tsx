@@ -35,8 +35,9 @@ import {
   cardControls,
   commentIcon,
   commentEditorControls,
+  heldCommentDraft,
 } from "./card-controls";
-import type { CardControl, CardControls } from "./card-controls";
+import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
   excerptImageOwnership,
   excerptImageTarget,
@@ -205,7 +206,7 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
     <div
       className={cn(
         themeHook.annotConflict,
-        "zt:-mx-3 zt:flex zt:flex-col zt:gap-1 zt:bg-secondary zt:px-3 zt:py-1.5",
+        "zt:-mx-3 zt:flex zt:flex-col zt:gap-1 zt:bg-popover zt:px-3 zt:py-1.5",
       )}
     >
       <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
@@ -384,37 +385,94 @@ function CommentSlot({
   );
   const capability = useAnnotStore((state) => state.capability);
   if (editing) return <CommentEditor annot={annot} />;
-  if (draft) {
-    const controls = commentEditorControls(
-      capability,
-      draft,
-      Temporal.Now.instant(),
-    );
-    return (
-      <div>
-        <div className="zt:text-xs zt:text-muted-foreground">
-          {m.annot_view_comment_draft()}
-        </div>
-        <div className="zt:break-words zt:whitespace-pre-wrap zt:text-foreground zt:select-text">
-          {draft.text}
-        </div>
-        {controls.hint && (
-          <div
-            role="status"
-            className="zt:mt-1 zt:text-xs zt:text-muted-foreground"
-          >
-            {controls.hint}
-          </div>
-        )}
-      </div>
-    );
-  }
+  // A draft the plugin still resolves by itself draws nothing of its own: the
+  // card keeps showing what Zotero holds until the write lands or the draft
+  // turns into something the user must answer.
+  const held = heldCommentDraft(capability, draft, Temporal.Now.instant());
+  if (held) return <HeldDraftPanel annot={annot} held={held} />;
   if (annot.comment === null) return null;
   return (
     <Comment
       annot={annot}
       editable={!control.disabled && control.blocked === null}
     />
+  );
+}
+
+/**
+ * The text the user holds that Zotero has not taken, with the verbs that end
+ * it. It wears the Write Conflict panel's surface because it is the same kind
+ * of state — local text waiting on the user — and it carries its verbs for the
+ * same reason: a card that only says "unsaved" leaves nowhere to go.
+ *
+ * @see https://github.com/aidenlx/zotlit/issues/1145
+ */
+function HeldDraftPanel({
+  annot,
+  held,
+}: {
+  annot: AnnotationRecord;
+  held: HeldDraft;
+}) {
+  const actions = useContext(AnnotActionsContext);
+  const setEditing = useSetEditingComment();
+  return (
+    <div
+      className={cn(
+        themeHook.annotDraft,
+        // `popover` is the surface token; `secondary` is the token Obsidian
+        // gives a resting button, so a panel wearing it leaves every button on
+        // it at 1:1 against its own fill.
+        "zt:-mx-3 zt:flex zt:flex-col zt:gap-1 zt:bg-popover zt:px-3 zt:py-1.5",
+      )}
+      // The panel is the draft's own surface; the card's selection is not it.
+      onClick={claimClick}
+    >
+      <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
+        <Icon name="pencil-line" size={14} />
+        {m.annot_view_comment_draft()}
+      </div>
+      <div
+        className="zt:cursor-text zt:break-words zt:whitespace-pre-wrap zt:select-text"
+        // The held text opens the editor on a click, as a saved comment does:
+        // the state that most needs editing is not the one you cannot reach.
+        onClick={(e) => {
+          if (e.currentTarget.win.getSelection()?.isCollapsed === false) return;
+          actions.onOpenComment(annot);
+          setEditing(annot.key);
+        }}
+      >
+        {held.text}
+      </div>
+      {held.reason !== null && (
+        // The reason runs to three and four lines in a narrow dock, past where
+        // the card's own tight leading stays readable.
+        <div
+          role="status"
+          className="zt:leading-normal zt:text-pretty zt:text-muted-foreground"
+        >
+          {held.reason}
+        </div>
+      )}
+      <div className="zt:mt-1 zt:flex zt:flex-wrap zt:gap-2">
+        {held.actions.map((action) => (
+          <Button
+            key={action.kind}
+            variant={action.primary ? "cta" : "default"}
+            disabled={!action.enabled}
+            onClick={() => {
+              if (action.kind === "save")
+                actions.onSaveComment(annot, held.text);
+              else if (action.kind === "allow-editing")
+                actions.onAllowEditing();
+              else actions.onDiscardComment(annot);
+            }}
+          >
+            {action.label}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -521,17 +579,19 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
     );
   }, [text]);
 
+  // Every close asks for the submit, including one that changed nothing: the
+  // request is what drops a draft holding only what Zotero already has, so
+  // clicking the card out of an untouched editor leaves no held text behind.
   const save = (): void => {
     setEditing(null);
-    if (text !== stored) actions.onSaveComment(annot, text, true);
+    actions.onSaveComment(annot, text, true);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
-      if (text !== stored) actions.onSaveComment(annot, text, true);
-      setEditing(null);
+      save();
     }
   };
 
@@ -543,7 +603,9 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
       </span>
       <textarea
         ref={focusEnd}
-        className="zt:w-full zt:resize-none zt:bg-transparent zt:text-xs zt:text-foreground"
+        // `block` drops the baseline strip an inline-level control leaves
+        // under itself, which the card's own 6px gap would otherwise sit on.
+        className="zt-annot-comment-editor zt:block zt:w-full zt:resize-none zt:bg-transparent zt:text-xs zt:text-foreground"
         defaultValue={text}
         readOnly={controls.readOnly}
         aria-labelledby={labelId}
@@ -560,7 +622,15 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
           if (!controls.manual && !controls.readOnly) save();
         }}
       />
-      <div className="zt:mt-2 zt:flex zt:flex-wrap zt:items-center zt:gap-2">
+      {/* The row's air belongs to what it holds: an automatic save says
+          nothing and shows no button, so the editor ends at the text rather
+          than over an empty strip. */}
+      <div
+        className={cn(
+          "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
+          (controls.hint !== null || controls.manual) && "zt:mt-2",
+        )}
+      >
         {/* The live region stays mounted through the quiet case, so the save
             states it announces are a change inside it rather than a new node,
             and the Save button keeps the row's end. */}

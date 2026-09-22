@@ -621,7 +621,11 @@ export class AnnotationRepository extends Service<void> {
       ? {
           ...standing,
           ...(text !== undefined && { text }),
+          // A new keystroke clears the last failure; re-sending the same
+          // text does not, so the reason stays on the card until the user
+          // writes something else or saves again.
           ...(text !== undefined &&
+            text !== standing.text &&
             standing.state.kind === "failed" && {
               state: { kind: "editing" } as const,
             }),
@@ -651,20 +655,24 @@ export class AnnotationRepository extends Service<void> {
   ): Promise<MutationState> {
     const draft = this.commentDraftFor(annotationKey);
     if (!draft) return Promise.resolve(IDLE);
-    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
     const id = commentDraftID(draft.serverID, annotationKey);
     const save = this.#commentSave(id);
     this.#clearCommentTimers(save);
     if (draft.state.kind === "conflict") {
       return Promise.resolve(this.mutationFor(annotationKey));
     }
+    // A draft holding what Zotero already has is not a draft: it is dropped
+    // ahead of every other answer, so an editor the user opened and closed
+    // without typing leaves nothing behind for a card to announce. Manual-save
+    // mode does not hold it either — there is nothing there to save.
+    if (!save.inFlight && sameComment(draft.text, draft.baseline)) {
+      this.#dropCommentDraft(annotationKey);
+      return Promise.resolve(IDLE);
+    }
+    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
     if (save.inFlight) {
       save.queued = draft.text !== save.submittedText;
       return save.inFlight;
-    }
-    if (sameComment(draft.text, draft.baseline)) {
-      this.#dropCommentDraft(annotationKey);
-      return Promise.resolve(IDLE);
     }
     const capability = this.capabilityFor(draft.attachmentKey);
     if (capability.kind !== "writable")

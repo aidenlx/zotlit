@@ -92,6 +92,12 @@ export interface AnnotActions {
   ): Disposable;
   onOpenComment(annot: AnnotationRecord): void;
   onEditComment(annot: AnnotationRecord, comment: string): void;
+  /**
+   * Drop held text Zotero never took, from the card's "Discard". Zotero's own
+   * comment stands as it is, so the card behind the panel already shows what
+   * the discard leaves.
+   */
+  onDiscardComment(annot: AnnotationRecord): void;
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
   /**
@@ -211,6 +217,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   };
   const onOpenComment = (annot: AnnotationRecord): void => {
     deps.annotations.editComment(annot.key);
+  };
+  const onDiscardComment = (annot: AnnotationRecord): void => {
+    deps.annotations.discardCommentDraft(annot.key);
   };
   const onSaveComment = (
     annot: AnnotationRecord,
@@ -426,6 +435,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     bindCommentEditor,
     onOpenComment,
     onEditComment,
+    onDiscardComment,
     onDeleteAnnotation,
     onApplyAgain,
     onDiscardConflict,
@@ -522,6 +532,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onSelectAnnotation: () => {},
   onSetColor: () => {},
   onSaveComment: () => {},
+  onDiscardComment: () => {},
   bindCommentEditor: () => ({ [Symbol.dispose]: () => {} }),
   onOpenComment: () => {},
   onEditComment: () => {},

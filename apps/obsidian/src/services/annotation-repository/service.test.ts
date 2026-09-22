@@ -2916,3 +2916,27 @@ function nextChange(
     });
   });
 }
+
+it("drops a comment draft holding what Zotero already has", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack);
+  const sent = requests.length;
+
+  // Opening the editor starts a draft before any typing. Closing it asks for
+  // the submit, and an untouched draft leaves nothing behind for a card to
+  // announce as unsaved.
+  expect(repository.editComment("PUPR5FG5")).not.toBeNull();
+  await repository.submitComment("PUPR5FG5", { automatic: true });
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+
+  // Typing and undoing it back to Zotero's own text says the same thing.
+  repository.editComment("PUPR5FG5", "Second thoughts");
+  repository.editComment("PUPR5FG5", "");
+  await repository.submitComment("PUPR5FG5", { automatic: true });
+  expect(repository.commentDraftFor("PUPR5FG5")).toBeNull();
+
+  // Neither close wrote to Zotero.
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(0);
+});

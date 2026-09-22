@@ -191,3 +191,94 @@ export function commentEditorControls(
     hint,
   };
 }
+
+/** One verb the held-draft panel offers. */
+export interface HeldDraftAction {
+  kind: "save" | "allow-editing" | "discard";
+  label: string;
+  /** Whether the press acts. A verb the capability refuses rests disabled. */
+  enabled: boolean;
+  /**
+   * Whether the verb carries the accent. The panel's own surface is the fill
+   * Obsidian gives a resting button, so a row of resting buttons on it reads
+   * as a row of text: the way out wears the accent to be a button at all.
+   * Discarding never takes it — it ends the text the user wrote.
+   */
+  primary: boolean;
+}
+
+/**
+ * Text the user holds that Zotero does not have, with the verbs that end it.
+ *
+ * The panel is the card's answer to "what do I do with this": every state it
+ * announces carries a way out, so a held draft is never a label the user can
+ * only read. A draft the plugin resolves by itself announces nothing — the
+ * quiet case is the normal one.
+ */
+export interface HeldDraft {
+  /** The user's text, which the panel shows in place of Zotero's comment. */
+  text: string;
+  /** Why the text is still held, or `null` where the state speaks for itself. */
+  reason: string | null;
+  actions: readonly HeldDraftAction[];
+}
+
+/**
+ * What the card announces about one held comment draft, or `null` where it
+ * announces nothing.
+ *
+ * Three states stay quiet, because none of them asks the user for anything.
+ * A draft matching Zotero holds nothing. A write in flight settles by itself,
+ * and drawing the user's text beside "Saving to Zotero…" would put a
+ * provisional value on the card. A conflict has its own panel with its own two
+ * verbs (aidenlx/zotlit#1151).
+ *
+ * @see apps/obsidian/policies/ui-seams.md
+ */
+export function heldCommentDraft(
+  capability: EditingCapability,
+  draft: CommentDraft | null,
+  now: Temporal.Instant,
+): HeldDraft | null {
+  if (!draft) return null;
+  if (draft.state.kind === "pending" || draft.state.kind === "conflict")
+    return null;
+  if (draft.text === draft.baseline) return null;
+  const { hint, manual, saveDisabled } = commentEditorControls(
+    capability,
+    draft,
+    now,
+  );
+  // The capability standing in the way is the nearer answer to "why is this
+  // still here", and it is the one the panel's own verbs act on: a generic
+  // "editing paused" beside an "Allow editing" button says less than the
+  // capability's own sentence does.
+  const block = capabilityBlock(capability, now);
+  // An automatic save is already on its way, so the card waits for it rather
+  // than asking the user to do what the plugin is about to do.
+  if (!manual && !saveDisabled) return null;
+  const actions: HeldDraftAction[] = [
+    {
+      kind: "save",
+      label: m.annot_view_comment_save(),
+      enabled: !saveDisabled,
+      primary: !saveDisabled,
+    },
+  ];
+  if (block?.action === "allow-editing") {
+    actions.push({
+      kind: "allow-editing",
+      label: m.capability_enable_editing(),
+      enabled: true,
+      // Where the draft cannot be saved, the grant is the way out.
+      primary: saveDisabled,
+    });
+  }
+  actions.push({
+    kind: "discard",
+    label: m.annot_view_comment_discard(),
+    enabled: true,
+    primary: false,
+  });
+  return { text: draft.text, reason: block?.reason ?? hint, actions };
+}

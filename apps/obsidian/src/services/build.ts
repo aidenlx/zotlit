@@ -249,6 +249,7 @@ export function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
+            allowEditing: () => void capabilityNotices.showEditingCapability(),
           },
           markGestures: {
             revealAnnotation: (annotationKey, options) =>

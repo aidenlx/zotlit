@@ -330,6 +330,7 @@ export function annotationReads(
 export function capabilityGestures() {
   return {
     reportBlockedGesture: vi.fn(),
+    allowEditing: vi.fn(),
   };
 }
 
