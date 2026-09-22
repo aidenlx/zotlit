@@ -19,7 +19,7 @@ import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { excerptAssetIdentity } from "@/services/excerpt-image/materialize";
+import { excerptAssetIdentities } from "@/services/excerpt-image/materialize";
 import { defaults } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -119,7 +119,7 @@ async function harness(
     /** Vault paths the note index and the vault answer for. */
     vaultFiles?: readonly string[];
     partials?: readonly LiteratureNoteTemplatePartial[];
-    immutable?: "owned" | "foreign";
+    immutable?: "owned" | "previous" | "foreign";
     reference?: "embed" | "link";
     shifted?: boolean;
   } = {},
@@ -139,7 +139,7 @@ async function harness(
   const vaultFiles = new Set(
     options.vaultFiles ?? [ITEM_NOTE_PATH, CHILD_NOTE_PATH, IMAGE_PATH],
   );
-  const identity = excerptAssetIdentity({
+  const identities = excerptAssetIdentities({
     sourceScope: options.immutable === "foreign" ? "/other-source" : dataDir,
     source: {
       kind: "zotero-db",
@@ -151,6 +151,9 @@ async function harness(
     attachmentKey: "ATCH2345",
     annotation: { key: "ANIM2345" },
   });
+  // "previous" writes the name the release before the shared identity used.
+  const identity =
+    options.immutable === "previous" ? identities[1]! : identities[0]!;
   const immutablePath = `literatures/attachments/zotlit-excerpt-${identity}-${"a".repeat(64)}.png`;
   const original = options.immutable
     ? `${options.reference === "link" ? "" : "!"}[[${immutablePath}]]`
@@ -351,7 +354,7 @@ it("exports the selected Item with the vault targets this vault can answer", asy
   expect(body).not.toContain("PRIVATE CHILD NOTE BODY");
 });
 
-it.each(["owned", "foreign"] as const)(
+it.each(["owned", "previous", "foreign"] as const)(
   "exports only referenced immutable images with matching ownership (%s)",
   async (immutable) => {
     await using bridge = await harness({ immutable });
@@ -364,18 +367,19 @@ it.each(["owned", "foreign"] as const)(
       roots: { annotations: unknown[] };
       unavailable: { path: string }[];
     };
-    if (immutable === "owned") {
-      expect(JSON.stringify(snapshot.roots.annotations[0])).toContain(
-        "zotlit-excerpt-",
-      );
-      expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
-        "annotations[0].zt.imgLink",
-      );
-    } else {
+    if (immutable === "foreign") {
       expect(JSON.stringify(snapshot.roots.annotations[0])).not.toContain(
         "zotlit-excerpt-",
       );
       expect(snapshot.unavailable.map(({ path }) => path)).toContain(
+        "annotations[0].zt.imgLink",
+      );
+    } else {
+      // An asset the previous release named is still the annotation's own image.
+      expect(JSON.stringify(snapshot.roots.annotations[0])).toContain(
+        "zotlit-excerpt-",
+      );
+      expect(snapshot.unavailable.map(({ path }) => path)).not.toContain(
         "annotations[0].zt.imgLink",
       );
     }

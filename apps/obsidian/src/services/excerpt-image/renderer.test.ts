@@ -4,6 +4,7 @@ import { loadPdfJs } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { redPng } from "./__fixtures__/png";
+import { sizedWebp } from "./__fixtures__/webp";
 import { ExcerptRenderer } from "./renderer";
 import { ExcerptImageService } from "./service";
 import type { ExcerptRequest } from "./service";
@@ -158,7 +159,9 @@ function fixture() {
           started.resolve();
           return;
         }
-        callback(new Blob([new Uint8Array([137, 80, 78, 71])]));
+        callback(
+          new Blob([sizedWebp(this.width, this.height) as unknown as BlobPart]),
+        );
       },
     };
     canvases.push(canvas);
@@ -314,6 +317,50 @@ it("releases its renderer after a standalone resolution", async () => {
   expect(service.rendererDiagnostics?.snapshot().documentOpen).toBe(false);
 });
 
+it("renders only after the resident document has been destroyed", async () => {
+  await using f = fixture();
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  vi.stubGlobal("document", { createElement: f.canvas });
+  vi.mocked(loadPdfJs).mockImplementation(f.load);
+  const destroying = Promise.withResolvers<void>();
+  f.state.destroyGate = destroying.promise;
+  // Whatever this test asserts, the fixture's document must be allowed to close.
+  cleanup.defer(() => destroying.resolve());
+  const service = cleanup.use(
+    new ExcerptImageService({
+      stamp: async () => ({ size: 4, mtimeMs: 1 }),
+    }),
+  );
+
+  const operation = service.operation();
+  await operation.resolve(f.request);
+  // The operation ends, and its teardown holds the render slot until the
+  // resident document is destroyed.
+  void operation[Symbol.asyncDispose]();
+  await f.destroyStarted.promise;
+  const second = service.resolve(f.request);
+  // Wait for the second resolution to reach the render queue: parked behind the
+  // teardown, or — without the serialization — already rendering.
+  await vi.waitFor(() => {
+    expect(service.queueDiagnostics.queued === 1 || f.tasks.length === 2).toBe(
+      true,
+    );
+  });
+  const renderedWhileDestroying = f.tasks.length;
+
+  destroying.resolve();
+  expect(await second).toMatchObject({ provenance: "rendered" });
+  // Nothing rendered while the resident document was being destroyed, and the
+  // render that waited loaded the file itself instead of reusing the closing
+  // session — which it could only do once the document was gone.
+  expect(renderedWhileDestroying).toBe(1);
+  expect(f.getDocument).toHaveBeenCalledTimes(2);
+  expect(f.tasks).toHaveLength(2);
+});
+
 it.each(["scope", "source", "library", "attachment", "path", "stamp"])(
   "replaces the resident document on %s changes",
   async (change) => {
@@ -333,6 +380,26 @@ it.each(["scope", "source", "library", "attachment", "path", "stamp"])(
     expect(f.destroys[1]).not.toHaveBeenCalled();
   },
 );
+
+it("keeps one resident document across the two representations of a database", async () => {
+  await using f = fixture();
+  await f.render();
+  await f.render({
+    ...f.request,
+    source: {
+      kind: "zotero-db",
+      database: { userID: 1, localUserKey: "local", serverID: "SERVER" },
+      libraryID: 1,
+      libraryRevision: 3,
+    },
+  });
+  expect(f.getDocument).toHaveBeenCalledTimes(1);
+  // The first request reads the file it loads; the second reads no bytes of its
+  // own, because the resident document already holds this revision.
+  expect(f.files[0]!.read).toHaveBeenCalled();
+  expect(f.files[1]!.read).not.toHaveBeenCalled();
+  expect(f.destroys[0]).not.toHaveBeenCalled();
+});
 
 it("rejects an oversized open file before allocating or loading PDF.js", async () => {
   await using f = fixture();

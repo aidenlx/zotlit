@@ -26,11 +26,13 @@ import type {
   AttachmentResolution,
   AttachmentResolver,
 } from "@/services/attachment-resolver/service";
+import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
 
 import { dropPendingAnchor, peekPendingAnchor } from "./anchor-capture";
+import { borrowReaderDocument } from "./borrow";
 import {
   isEditGesture,
   removeCapabilityAffordance,
@@ -274,6 +276,25 @@ export class PdfViewBinding implements Disposable, HoverParent {
   /** This PDF view as a Reader Session, for a surface that follows a reader. */
   get session(): ReaderSession {
     return this.#session;
+  }
+
+  /**
+   * This view's open document, as excerpt work may borrow it instead of loading
+   * the file again. `null` while no document stands — a view whose file Zotero
+   * does not know, one still loading its PDF, and one whose viewer closed all
+   * answer `null`, and the caller renders detached from the file instead.
+   *
+   * The reader keeps ownership of the document, its pages, and its visible
+   * render tasks; the borrow reads a page and starts its own render task on its
+   * own canvas.
+   *
+   * @see apps/obsidian/docs/adr/0054-reader-and-detached-excerpts-share-cache-publication.md
+   */
+  borrow(): BorrowedExcerptDocument | null {
+    return borrowReaderDocument({
+      controller: () => this.#controller,
+      path: this.#absolutePath,
+    });
   }
 
   /** Whether the reader surfaces may mount: every probe so far passed. */

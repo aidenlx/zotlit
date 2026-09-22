@@ -1,8 +1,6 @@
 # Batches reuse excerpt outcomes with bounded memory
 
-Accepted design; implementation is pending.
-
-A batch retains completed Excerpt Image outcomes in a shared memory cache, initially limited to 32 MiB of encoded image bytes and 256 outcome entries. Least-recently-used entries are evicted when either limit is exceeded; eviction permits recomputation. Successful generated pixels remain reusable within that batch when IndexedDB persistence fails. Reuse requires matching verified source identity, Annotation rendering inputs, renderer version, and PDF freshness checks. The batch releases its retained outcomes when it ends. These initial limits are subject to measurement.
+A batch retains completed Excerpt Image outcomes in a shared memory cache, initially limited to 32 MiB of encoded image bytes and 256 outcome entries. Least-recently-used entries are evicted when either limit is exceeded; eviction permits recomputation. Successful generated pixels remain reusable within that batch when IndexedDB persistence fails. Reuse requires matching verified source identity, Annotation rendering inputs, renderer version, and PDF freshness checks. The batch releases its retained outcomes when it ends. These initial limits are subject to measurement; the [batch retention record](../../../../docs/excerpt-image-batch-measurements.md) holds the avoided renders, reuse hits, and peak retained bytes they were measured at.
 
 This scope covers Literature Note creation and update batches, Imported Note batches, and Child Notes imported through a Literature Note template. Nested imports share the initiating batch's outcome cache. Each destination note retains its own asset materialization and existing-image retention rules.
 

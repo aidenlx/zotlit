@@ -29,6 +29,7 @@ import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candid
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
+import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
@@ -271,6 +272,7 @@ export default class ZotLitPlugin extends Plugin {
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         excerptImage: services.excerptImage,
+        excerptDisplay: services.excerptDisplay,
         annotations: services.annotationRepository,
         writeAuthorization: services.zoteroLocalApi,
         template: services.template,
@@ -393,7 +395,7 @@ export default class ZotLitPlugin extends Plugin {
       liveUpdate: services.localServer,
       pdfReaders: services.pdfAnnotationEditor,
       annotations: services.annotationRepository,
-      excerptImage: services.excerptImage,
+      excerptDisplay: services.excerptDisplay,
       showEditingCapability: () =>
         void services.capabilityNotices.showEditingCapability(),
       zoteroPref: services.zoteroPref,
@@ -565,6 +567,26 @@ export default class ZotLitPlugin extends Plugin {
       services.localServer.on("db/updated", () => {
         services.db.notifyExternalChange();
       }),
+    );
+
+    // A saved pixel edit revalidates its Excerpt Image wherever the image
+    // stands: the card that shows the Annotation, and — with no card on screen —
+    // the device-local image the store already holds for it. One subscriber
+    // covers every surface that can save an edit.
+    stack.defer(
+      services.annotationRepository.on(
+        "excerpt-pixels-changed",
+        (record, source) => {
+          const request = savedExcerptRequest({
+            annotation: record,
+            source,
+            sourceScope: services.zoteroPref.dataDir,
+            db: services.db,
+            paths: services.zoteroPref,
+          });
+          if (request) services.excerptDisplay.revalidate(request);
+        },
+      ),
     );
 
     this.#services = services;

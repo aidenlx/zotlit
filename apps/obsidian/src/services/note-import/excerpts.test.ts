@@ -22,7 +22,9 @@ import annotationTemplate from "@zotlit/templates/defaults/annotation.liquid?raw
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { AttachmentImportService } from "@/services/attachment-import/service";
+import { availableOutcome } from "@/services/excerpt-image/__fixtures__/outcome";
 import { bluePng, redPng } from "@/services/excerpt-image/__fixtures__/png";
+import { PNG_FORMAT } from "@/services/excerpt-image/format";
 import { createExcerptPreparation } from "@/services/excerpt-image/prepare";
 import type { ExcerptSummary } from "@/services/excerpt-image/prepare";
 import type {
@@ -154,12 +156,12 @@ async function fixture(mode = "normal") {
     }),
   );
   await attachments.ready;
-  let outcome: ExcerptOutcome = {
-    kind: "available",
+  let outcome: ExcerptOutcome = availableOutcome({
     bytes: bluePng,
+    format: PNG_FORMAT,
     provenance: "rendered",
     freshness: "checked",
-  };
+  });
   const resolve = vi.fn(
     async (request: ExcerptRequest): Promise<ExcerptOutcome> => {
       if (mode === "partial" && request.annotation.type === "ink")
@@ -254,12 +256,14 @@ it("refreshes live image and ink versions while preserving frozen snapshots and 
   for (const name of names) expect(original).toContain(`![[Images/${name}]]`);
   expect(f.render).toHaveBeenCalledTimes(2);
   await f.app.vault.create("Other.md", original);
-  f.setOutcome({
-    kind: "available",
-    bytes: redPng,
-    provenance: "rendered",
-    freshness: "checked",
-  });
+  f.setOutcome(
+    availableOutcome({
+      bytes: redPng,
+      format: PNG_FORMAT,
+      provenance: "rendered",
+      freshness: "checked",
+    }),
+  );
   await f.import(file);
   const updated = await f.app.vault.read(file);
   expect(updated).not.toBe(original);

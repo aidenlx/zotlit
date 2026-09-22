@@ -19,6 +19,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
+import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
   AvailableLibrary,
   LibrarySelector,
@@ -325,6 +327,62 @@ it.each([false, true])(
     });
   },
 );
+
+it("runs every row of one update batch under one outcome scope, released after the run", async () => {
+  const deps = makeDeps();
+  await using probe = excerptReuseProbe();
+  const scopes: (ExcerptOutcomeScope | undefined)[] = [];
+  // Each row resolves the probe's excerpt in turn, so the second resolution
+  // cannot be merged into the first one's in-flight request: only the run's own
+  // retention can answer it.
+  let resolutions: Promise<unknown> = Promise.resolve();
+  const resolveThrough = (outcomes: ExcerptOutcomeScope | undefined) => {
+    scopes.push(outcomes);
+    resolutions = resolutions.then(() => probe.resolve(outcomes));
+    return resolutions;
+  };
+  deps.noteFeature.writeNoteUpdate = async (_file, options) => {
+    await resolveThrough(options.outcomes);
+    return { bodyUpdated: true, duplicateRegionCount: 0 };
+  };
+  deps.noteFeature.createNote = async (_item, options) => {
+    await resolveThrough(options?.outcomes);
+    return { outcome: "created", file: { path: "Literature/New.md" } as TFile };
+  };
+  deps.noteIndex.getNotesByItemKey = (key) =>
+    key === "ITEM1" ? [{ path: "Literature/Item1.md" } as TFile] : [];
+  itemsIn(
+    new Map([
+      [1, USER_LIBRARY_ID],
+      [2, USER_LIBRARY_ID],
+    ]),
+  );
+  vi.mocked(getItemsByID).mockImplementation((_client, itemIDs) =>
+    itemIDs.map((itemID) => ({ itemID, indexedKey: `ITEM${itemID}` }) as Item),
+  );
+
+  await runBatchUpdate(deps, [1, 2]);
+  const modal = openedModals.at(-1)!;
+  await modal.onClassify({
+    onProgress: vi.fn(),
+    signal: new AbortController().signal,
+  });
+  const result = await modal.onRun({
+    onItemSettled: vi.fn(),
+    signal: new AbortController().signal,
+  });
+
+  expect(result).toMatchObject({ created: 1, updated: 1, failed: 0 });
+  // One run is one batch: both rows' notes share one scope, and the second one
+  // reuses the outcome the first produced instead of rendering it again.
+  expect(scopes).toHaveLength(2);
+  expect(scopes[1]).toBe(scopes[0]);
+  expect(probe.renders()).toBe(1);
+  // The run released what it retained, so a later note driven through the same
+  // scope renders again rather than reusing.
+  await probe.resolve(scopes[0]);
+  expect(probe.renders()).toBe(2);
+});
 
 it("classifies conflicting Companion Profiles as kept rows before any write or picker", async () => {
   const books = "Bk3Qn7XvT2Lp" as ProfileId;

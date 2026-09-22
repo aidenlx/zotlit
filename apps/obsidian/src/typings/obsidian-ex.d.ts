@@ -539,6 +539,29 @@ declare module "obsidian" {
      */
     commonObjs: PDFObjects;
     getTextContent(params: { includeChars: true }): Promise<PDFTextContent>;
+    /** The viewport a scale and an offset map PDF points through. */
+    getViewport(options: {
+      scale: number;
+      offsetX?: number;
+      offsetY?: number;
+    }): PDFPageViewport;
+    /**
+     * PDF.js's own render task for a caller-owned canvas. Its creator owns the
+     * task: a task this build started is the one it may cancel, and a page's
+     * other render tasks — the reader's own — are never touched.
+     */
+    render(options: {
+      canvasContext: CanvasRenderingContext2D;
+      viewport: PDFPageViewport;
+      intent: "display";
+    }): PDFRenderTask;
+  }
+
+  /** One page render PDF.js runs onto a canvas its caller owns. */
+  interface PDFRenderTask {
+    promise: Promise<void>;
+    cancel(): void;
+    onContinue?: (continueCallback: () => void) => void;
   }
 
   /** PDF.js's resolved-object store, read for the base font name alone. */
@@ -558,6 +581,12 @@ declare module "obsidian" {
     getPage(pageNumber: number): Promise<PDFPageProxy>;
     /** The PDF catalog's `/PageLabels`, or `null` where the PDF declares none. */
     getPageLabels(): Promise<string[] | null>;
+    /**
+     * The bytes this document was loaded from, read to completion. A document
+     * loaded from a URL fetches what it has not read yet, and one whose worker
+     * already holds the whole stream answers from it.
+     */
+    getData(): Promise<Uint8Array>;
   }
 
   interface PDFTextContent {

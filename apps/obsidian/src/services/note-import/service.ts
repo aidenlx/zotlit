@@ -1,7 +1,7 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
 import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
-import pLimit from "p-limit";
+import PQueue from "p-queue";
 
 import { getAnnotationsByKey, getItemsByID, getNoteByKey } from "@zotlit/db";
 import type {
@@ -38,6 +38,8 @@ import type {
   AttachmentImport,
   AttachmentImportService,
 } from "@/services/attachment-import/service";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
+import { resolveOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
   ExcerptPreparation,
   ExcerptSummary,
@@ -86,6 +88,8 @@ interface RunContext {
   /** Profile every note this run writes belongs to. */
   profile: ResolvedProfile;
   reportExcerpts?: (summary: ExcerptSummary) => void;
+  /** The initiating batch's retained outcomes; this run's notes all share it. */
+  outcomes?: ExcerptOutcomeScope;
 }
 
 interface QueuedImport {
@@ -131,6 +135,11 @@ export interface PrepareNoteImportOptions {
   groupIdMemo?: GroupIDMemo;
   /** Shared across a run so parent-item/annotation tag lookups memoize. */
   tagMemo?: TagMemo;
+  /**
+   * The initiating batch's retained outcomes, so the Child Notes this run
+   * imports reuse the Literature Note's own excerpt resolutions.
+   */
+  outcomes?: ExcerptOutcomeScope;
 }
 
 export interface NoteImport {
@@ -155,6 +164,11 @@ export interface ImportNoteOptions {
   /** Explicit overwrite target; omitted resolves by imported-note index. */
   targetFile?: TFile;
   reportExcerpts?: (summary: ExcerptSummary) => void;
+  /**
+   * The initiating batch's retained outcomes. Omitted, the write opens its own
+   * scope for the notes it writes and releases it when they settle.
+   */
+  outcomes?: ExcerptOutcomeScope;
 }
 
 interface PrepareExplicitImportOptions {
@@ -173,8 +187,8 @@ export interface PreparedExplicitImport {
 
 /**
  * Stateless note-import surface: lazy child-note batching via `prepare` and
- * explicit single-note writes via `importNote`. Deps are captured once; a
- * shared `pLimit` bounds concurrent vault writes across all callers.
+ * explicit single-note writes via `importNote`. Deps are captured once; one
+ * shared `PQueue` bounds concurrent vault writes across all callers.
  */
 export interface NoteImporter {
   prepare(options: PrepareNoteImportOptions): Promise<NoteImport>;
@@ -194,7 +208,7 @@ export interface NoteImporter {
 
 /** Per-factory state shared across all calls. */
 type Ctx = NoteImporterDeps & {
-  limit: ReturnType<typeof pLimit>;
+  writes: PQueue;
   /**
    * Note key -> minted import path, recorded synchronously the moment a path
    * is minted (before the write lands). `ctx.noteIndex` is populated from
@@ -214,7 +228,7 @@ type Ctx = NoteImporterDeps & {
 export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
   const ctx: Ctx = {
     ...deps,
-    limit: pLimit(WRITE_CONCURRENCY),
+    writes: new PQueue({ concurrency: WRITE_CONCURRENCY }),
     pendingMints: new Map(),
   };
   return {
@@ -245,6 +259,7 @@ async function prepareImport(
     tagMemo: options.tagMemo,
     attachmentFolderCache: new Map(),
     profile,
+    outcomes: options.outcomes,
   };
   const queue: QueuedImport[] = [];
   logger.debug("Prepared note import", { sourcePath, importFolder });
@@ -262,8 +277,9 @@ async function doImportNote(
   options: ImportNoteOptions,
 ): Promise<WriteOutcome> {
   await ctx.profile.ready;
-  return ctx.limit(async () => {
+  return ctx.writes.add(async () => {
     const { existing, profile } = explicitImportTarget(ctx, note, options);
+    await using stack = new AsyncDisposableStack();
     const run: RunContext = {
       client: options.client,
       settings: profile.settings,
@@ -272,10 +288,14 @@ async function doImportNote(
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
       profile,
       reportExcerpts: options.reportExcerpts,
+      // This write is its own initiating batch when nothing above owns a scope.
+      outcomes: resolveOutcomeScope(options.outcomes, stack),
     };
 
     if (existing) {
-      return writeNote(ctx, note, {
+      // Awaited inside the scope: returning the pending write would release
+      // the batch's retention before the write resolved its excerpts.
+      return await writeNote(ctx, note, {
         mode: { action: "overwrite", file: existing },
         run,
       });
@@ -284,7 +304,7 @@ async function doImportNote(
       ctx.app,
       getProfileBinding(run.settings, "note.import-folder"),
     );
-    return writeNote(ctx, note, {
+    return await writeNote(ctx, note, {
       mode: { action: "create", path: mintImportPath(ctx.app, folder, note) },
       run,
     });
@@ -320,7 +340,7 @@ async function prepareExplicitImport(
     profile,
     path,
     import: (current, runOptions) =>
-      ctx.limit(async () => {
+      ctx.writes.add(async () => {
         const target = explicitImportTarget(ctx, current, {
           client: runOptions.client,
           groupIdMemo: runOptions.groupIdMemo,
@@ -346,7 +366,10 @@ async function prepareExplicitImport(
             ctx.app,
             getProfileBinding(profile.settings, "note.import-folder"),
           );
-        return writeNote(ctx, current, {
+        await using stack = new AsyncDisposableStack();
+        // Awaited inside the scope: returning the pending write would release
+        // the batch's retention before the write resolved its excerpts.
+        return await writeNote(ctx, current, {
           mode: existing
             ? { action: "overwrite", file: existing }
             : { action: "create", path },
@@ -359,6 +382,8 @@ async function prepareExplicitImport(
               runOptions.attachmentFolderCache ?? new Map(),
             profile,
             reportExcerpts: runOptions.reportExcerpts,
+            // This write is its own initiating batch when nothing above owns it.
+            outcomes: resolveOutcomeScope(runOptions.outcomes, stack),
           },
         });
       }),
@@ -469,13 +494,19 @@ async function flushQueue(
 ): Promise<{ created: number; skipped: number; failed: number }> {
   if (queue.length === 0) return { created: 0, skipped: 0, failed: 0 };
   await ensureImportFolder(ctx.app, options.importFolder);
+  await using stack = new AsyncDisposableStack();
+  // One flush is one initiating batch when nothing above owns a scope.
+  const run: RunContext = {
+    ...options.run,
+    outcomes: resolveOutcomeScope(options.run.outcomes, stack),
+  };
 
   const results = await Promise.allSettled(
     queue.map((entry) =>
-      ctx.limit(async () => {
-        const noteData = getNoteByKey(options.run.client, entry.note.key, {
+      ctx.writes.add(async () => {
+        const noteData = getNoteByKey(run.client, entry.note.key, {
           libraryID: entry.note.libraryID,
-          memo: options.run.groupIdMemo,
+          memo: run.groupIdMemo,
         });
         if (!noteData) {
           logger.warn("Imported note vanished before flush; skipped", {
@@ -483,9 +514,9 @@ async function flushQueue(
           });
           return "skipped" as WriteOutcome;
         }
-        return writeNote(ctx, noteData, {
+        return await writeNote(ctx, noteData, {
           mode: { action: "create", path: entry.path },
-          run: options.run,
+          run,
         });
       }),
     ),
@@ -550,6 +581,7 @@ async function writeNote(
         notePath: path,
         settings: run.profile.settings,
         previousNote: mode.action === "overwrite" ? mode.file : undefined,
+        outcomes: run.outcomes,
       });
       for (const annotation of annotations)
         excerpts.annotationImageLink(annotation);

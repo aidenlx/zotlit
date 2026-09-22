@@ -22,6 +22,8 @@ import { createClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { excerptReuseProbe } from "@/services/excerpt-image/__fixtures__/reuse";
+import type { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import type {
   AvailableLibrary,
   LibrarySelector,
@@ -855,6 +857,51 @@ describe("note-mode modal classify + run", () => {
     });
   });
 
+  it("keeps admitted writes and their pooled report alive when the modal's signal aborts mid-run", async () => {
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(50), makeRef(51)]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const { deps } = makeDeps({});
+    const started = Promise.withResolvers<void>();
+    const finish = Promise.withResolvers<void>();
+    deps.noteImport.importNote = async (note, options) => {
+      if (note.itemID === 51) return "created";
+      started.resolve();
+      await finish.promise;
+      options.reportExcerpts?.({ zotero: 1, unchecked: 0, unavailable: 0 });
+      return "created";
+    };
+    await createBatchImport(deps).runBatchImport("note", [50, 51]);
+    const options = openedModals.at(-1)!;
+    await options.onClassify(classifyControls());
+    const abort = new AbortController();
+    const onItemSettled = vi.fn();
+    const running = options.onRun({ onItemSettled, signal: abort.signal });
+    await started.promise;
+    // The modal's signal is the only one this run observes, so an observer
+    // giving up — a host observation timeout — arrives here. The write it
+    // admitted keeps running: it is neither cancelled, nor settled, nor
+    // reported before it lands.
+    abort.abort(new Error("host observation timeout"));
+    expect(onItemSettled).not.toHaveBeenCalled();
+    expect(deps.noteFeature.reportExcerptImages).not.toHaveBeenCalled();
+    finish.resolve();
+    expect(await running).toMatchObject({
+      created: 2,
+      failed: 0,
+      cancelled: false,
+    });
+    expect(onItemSettled).toHaveBeenCalledWith({ id: 50, status: "done" });
+    expect(
+      deps.noteFeature.reportExcerptImages,
+    ).toHaveBeenCalledExactlyOnceWith({
+      zotero: 1,
+      unchecked: 0,
+      unavailable: 0,
+    });
+  });
+
   it("pools excerpt outcomes across completed notes when another note fails", async () => {
     vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
       makeRef(50),
@@ -884,6 +931,43 @@ describe("note-mode modal classify + run", () => {
       unavailable: 1,
       notRefreshed: 1,
     });
+  });
+
+  it("runs every note of one import batch under one outcome scope, released after the run", async () => {
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+      makeRef(50),
+      makeRef(51),
+      makeRef(52),
+    ]);
+    vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+      makeNote(itemID),
+    );
+    const { deps, importNote } = makeDeps({});
+    await using probe = excerptReuseProbe();
+    const scopes: (ExcerptOutcomeScope | undefined)[] = [];
+    // Each note resolves the probe's excerpt in turn, so only the run's own
+    // retention — not a shared in-flight request — can answer the repeats.
+    let resolutions: Promise<unknown> = Promise.resolve();
+    importNote.mockImplementation(async (_note, options) => {
+      scopes.push(options.outcomes);
+      resolutions = resolutions.then(() => probe.resolve(options.outcomes));
+      await resolutions;
+      return "created" as const;
+    });
+
+    await createBatchImport(deps).runBatchImport("note", [50, 51, 52]);
+    await driveLastModal();
+
+    // One run is one batch: every note resolves through one scope, and the
+    // repeats reuse the outcome the first note produced.
+    expect(scopes).toHaveLength(3);
+    expect(scopes[1]).toBe(scopes[0]);
+    expect(scopes[2]).toBe(scopes[0]);
+    expect(probe.renders()).toBe(1);
+    // Every note settled, so the run released what it retained: a later note
+    // driven through the same scope renders again.
+    await probe.resolve(scopes[0]);
+    expect(probe.renders()).toBe(2);
   });
 
   it("threads the shared group memo to every imported note", async () => {

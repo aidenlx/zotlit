@@ -9,6 +9,7 @@ import type {
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
@@ -117,6 +118,22 @@ export class PdfAnnotationEditor extends Service<void> {
   sessionForPath(filePath: string): ReaderSession | null {
     for (const binding of this.#bindings.values()) {
       if (binding.filePath === filePath) return binding.session;
+    }
+    return null;
+  }
+
+  /**
+   * The document an open PDF view holds for a file, for excerpt work that
+   * crops from the reader instead of loading the file again.
+   *
+   * @param absolutePath the file's absolute path, the one an excerpt request
+   *   resolves for an Attachment.
+   * @returns that view's document, or `null` while no open view holds the file
+   *   or holds no document for it yet.
+   */
+  borrowDocument(absolutePath: string): BorrowedExcerptDocument | null {
+    for (const binding of this.#bindings.values()) {
+      if (binding.absolutePath === absolutePath) return binding.borrow();
     }
     return null;
   }

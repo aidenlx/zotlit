@@ -22,14 +22,43 @@ import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
 import type { Settings } from "@/services/settings/schema";
 
-import { excerptKey, excerptSourceIdentity } from "./contract";
+import { excerptKey, excerptSourceIdentities } from "./contract";
 import type { ExcerptRequest } from "./contract";
+import {
+  EXCERPT_IMAGE_EXTENSIONS,
+  detectExcerptImageFormat,
+  isExcerptImage,
+  isExcerptPayload,
+} from "./format";
 import { usableExcerptPng } from "./png";
 import type { ExcerptOutcome } from "./service";
+import { usableExcerptWebpPixels } from "./webp-pixels";
 
 const logger = getLogger("excerpt-materialize");
 const MAX_PREVIOUS_BYTES = 32 * 1024 * 1024;
 const SHA256_HEX_LENGTH = 64;
+
+/**
+ * Whether bytes read back from outside this process still decode as the
+ * container they claim.
+ *
+ * `format.ts` owns the payload check every reader shares; this is where the two
+ * readers holding bytes that came from outside this process deepen it — the
+ * vault read in {@link retainExcerpt}, and the publication of an outcome this
+ * process did not encode. PNG must also inflate to the scanlines its header
+ * declares (`png.ts`), and WebP must also decode to the pixels its container
+ * declares (`webp-pixels.ts`). That depth stays here rather than in `format.ts`,
+ * which the cache read bundles without a decoder for a check that runs before
+ * every hit.
+ */
+async function usableExternalAsset(bytes: Uint8Array): Promise<boolean> {
+  const format = detectExcerptImageFormat(bytes);
+  if (!format || !isExcerptPayload(format, bytes)) return false;
+  if (format.format === "webp") return usableExcerptWebpPixels(bytes);
+  return usableExcerptPng(
+    Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+  );
+}
 
 async function readPreviousImage(path: string): Promise<Buffer> {
   await using file = await open(path, "r");
@@ -71,13 +100,13 @@ export async function retainExcerpt(options: {
 }): Promise<Extract<MaterializedExcerpt, { kind: "retained" }> | undefined> {
   const adapter = options.app.vault.adapter;
   if (!(adapter instanceof FileSystemAdapter)) return;
-  const identity = excerptAssetIdentity(options.request);
+  const identities = excerptAssetIdentities(options.request);
   for (const path of options.paths) {
     const local = relative(adapter.getFullPath(""), adapter.getFullPath(path));
     if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`))
       continue;
     const name = basename(path);
-    const owned = isOwnedExcerptAssetPath(path, identity);
+    const owned = isOwnedExcerptAssetPath(path, identities);
     const legacy =
       name === `${parseIndexedKey(options.request.annotation.key)?.key}.png`;
     if (!owned && !legacy) continue;
@@ -92,7 +121,7 @@ export async function retainExcerpt(options: {
       )
         continue;
       const bytes = await readPreviousImage(actualPath);
-      if (!usableExcerptPng(bytes)) continue;
+      if (!(await usableExternalAsset(bytes))) continue;
       // Legacy names carry no source identity. The current source's bytes must prove ownership.
       if (
         !owned &&
@@ -107,37 +136,48 @@ export async function retainExcerpt(options: {
   }
 }
 
-/** Stable ownership remains readable from a target when the annotation's pixels change. */
-export function excerptAssetIdentity(
+/**
+ * Every identity form this request's existing assets may carry, the current
+ * form first, which is the one that names a new asset. A vault written before
+ * the shared source identity holds each asset and link under the previous form,
+ * so an ownership check has to accept both.
+ */
+export function excerptAssetIdentities(
   request: Pick<
     ExcerptRequest,
     "sourceScope" | "source" | "libraryID" | "attachmentKey"
   > & { annotation: { key: string } },
-): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        request.sourceScope,
-        excerptSourceIdentity(request.source),
-        request.libraryID,
-        request.attachmentKey,
-        request.annotation.key,
-      ]),
-    )
-    .digest("hex");
+): string[] {
+  return excerptSourceIdentities(request.source).map((sourceIdentity) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify([
+          request.sourceScope,
+          sourceIdentity,
+          request.libraryID,
+          request.attachmentKey,
+          request.annotation.key,
+        ]),
+      )
+      .digest("hex"),
+  );
 }
 
 export function isOwnedExcerptAssetPath(
   path: string,
-  identity: string,
+  identities: readonly string[],
 ): boolean {
   const name = basename(path);
-  const prefix = `zotlit-excerpt-${identity}-`;
-  return (
-    name.startsWith(prefix) &&
-    name.endsWith(".png") &&
-    name.length === prefix.length + SHA256_HEX_LENGTH + ".png".length
-  );
+  return identities.some((identity) => {
+    const prefix = `zotlit-excerpt-${identity}-`;
+    if (!name.startsWith(prefix)) return false;
+    const digest = name.slice(prefix.length);
+    const dot = digest.indexOf(".");
+    return (
+      dot === SHA256_HEX_LENGTH &&
+      EXCERPT_IMAGE_EXTENSIONS.has(digest.slice(dot + 1))
+    );
+  });
 }
 
 export async function materializeExcerpt(options: {
@@ -154,6 +194,30 @@ export async function materializeExcerpt(options: {
     return { kind: "unavailable", reason: "disabled" };
   if (outcome.kind === "unavailable")
     return { kind: "unavailable", reason: "source" };
+  // Bytes that disagree with their format must not become a vault asset whose
+  // name and link claim the declared extension.
+  if (!isExcerptImage(outcome)) {
+    logger.debug("Excerpt payload does not match its format", {
+      format: outcome.format.format,
+      bytes: outcome.bytes.byteLength,
+    });
+    return { kind: "unavailable", reason: "source" };
+  }
+  // A rendered outcome's bytes are this process's own encoder output; every
+  // other outcome read them from outside it, where a persistent record can hold
+  // a container whose image data is damaged. Those must decode before they
+  // become an asset whose name and link claim that image.
+  if (
+    outcome.provenance !== "rendered" &&
+    !(await usableExternalAsset(outcome.bytes))
+  ) {
+    logger.debug("Excerpt payload has no usable pixels", {
+      provenance: outcome.provenance,
+      format: outcome.format.format,
+      bytes: outcome.bytes.byteLength,
+    });
+    return { kind: "unavailable", reason: "source" };
+  }
   const assertCurrent = () => {
     options.signal?.throwIfAborted();
     if (options.valid && !options.valid())
@@ -173,9 +237,10 @@ export async function materializeExcerpt(options: {
       .update(excerptKey(request))
       .update(outcome.bytes)
       .digest("hex");
+    const [identity] = excerptAssetIdentities(request);
     const path = joinFolderPath(
       folder,
-      `zotlit-excerpt-${excerptAssetIdentity(request)}-${digest}.png`,
+      `zotlit-excerpt-${identity}-${digest}.${outcome.format.extension}`,
     );
     const destination = adapter.getFullPath(path);
     const previous = publications.get(destination);

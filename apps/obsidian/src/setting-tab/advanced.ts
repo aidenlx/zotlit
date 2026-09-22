@@ -213,7 +213,12 @@ async function showExcerptCacheClear(ctx: SettingTabContext): Promise<void> {
         },
         ctx.app,
       ),
-    clear: () => ctx.excerptImage.clear(),
+    // The Held Reads go first: a card that repainted from the store while it
+    // emptied would hold an image the clear removed.
+    clear: async () => {
+      ctx.excerptDisplay.clear();
+      await ctx.excerptImage.clear();
+    },
   });
   if (outcome === "cleared") new BaseNotice(m.notice_excerpt_cache_cleared());
   else if (outcome === "failed")

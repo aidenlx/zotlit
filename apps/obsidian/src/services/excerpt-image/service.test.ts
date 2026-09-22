@@ -1,12 +1,57 @@
-import { mkdtemp, open, rm } from "node:fs/promises";
+import { configureSync, resetSync } from "@logtape/logtape";
+import type { LogRecord } from "@logtape/logtape";
+import { abortable } from "@std/async/abortable";
+import { mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+import type { DatabaseAnnotationSource } from "@/services/annotation-repository/service";
 
 import { redPng, corruptPng } from "./__fixtures__/png";
-import { abortable, usePromiseScheduling } from "./renderer";
-import { ExcerptImageService, excerptKey, MAX_FALLBACK_BYTES } from "./service";
-import type { ExcerptEntry, ExcerptRequest } from "./service";
+import { PNG_FORMAT } from "./format";
+import type { ExcerptImage } from "./format";
+import { usePromiseScheduling } from "./renderer";
+import {
+  ExcerptImageService,
+  excerptAnnotationRecord,
+  excerptFingerprint,
+  excerptKey,
+  MAX_FALLBACK_BYTES,
+} from "./service";
+import type { ExcerptEntry, ExcerptIdentity, ExcerptRequest } from "./service";
+
+/** Debug records the excerpt-image logger emits; read by the admission tests. */
+let captured: LogRecord[] = [];
+
+beforeAll(() => {
+  configureSync({
+    reset: true,
+    sinks: {
+      capture: (record: LogRecord) => {
+        captured.push(record);
+      },
+    },
+    loggers: [
+      { category: ["zotlit"], sinks: ["capture"], lowestLevel: "debug" },
+      { category: ["logtape", "meta"], sinks: [], lowestLevel: "error" },
+    ],
+  });
+});
+
+beforeEach(() => {
+  captured = [];
+});
+
+afterAll(() => resetSync());
 
 const request: ExcerptRequest = {
   annotation: {
@@ -34,6 +79,7 @@ const request: ExcerptRequest = {
   zoteroPngPath: "/fallback.png",
 };
 const generated: Uint8Array = new Uint8Array([1, 2, 3]);
+const rendered: ExcerptImage = { bytes: generated, format: PNG_FORMAT };
 const fallback = redPng;
 const inkRequest: ExcerptRequest = {
   ...request,
@@ -51,13 +97,22 @@ const inkRequest: ExcerptRequest = {
 
 function fixture() {
   const entries = new Map<string, ExcerptEntry>();
+  const references = new Map<string, ExcerptIdentity>();
   let pdf = { size: 100, mtimeMs: 10 };
-  const render = vi.fn(async () => generated);
+  const render = vi.fn(async () => rendered);
   const service = new ExcerptImageService({
     cache: {
       get: async (key) => entries.get(key),
       put: async (key, entry) => {
         entries.set(key, entry);
+      },
+      latest: async (identity) => references.get(identity),
+      putLatest: async (identity, reference) => {
+        references.set(identity, reference);
+      },
+      clear: async () => {
+        entries.clear();
+        references.clear();
       },
     },
     stamp: async () => pdf,
@@ -67,11 +122,37 @@ function fixture() {
   return {
     service,
     entries,
+    references,
     render,
     changePdf: () => {
       pdf = { size: 101, mtimeMs: 11 };
     },
   };
+}
+
+/**
+ * One stored excerpt, then `count` distinct requests held open on a blocked
+ * render, which fills the queue's admission bound.
+ */
+async function storedExcerptWithBlockedRenders(count: number) {
+  const f = fixture();
+  expect(await f.service.resolve(request)).toMatchObject({
+    provenance: "rendered",
+  });
+  const gate = Promise.withResolvers<ExcerptImage>();
+  const started = Promise.withResolvers<void>();
+  f.render.mockImplementation(async () => {
+    started.resolve();
+    return gate.promise;
+  });
+  const pending = Array.from({ length: count }, (_, index) =>
+    f.service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: `ANNOT${index}` },
+    }),
+  );
+  await started.promise;
+  return { ...f, pending, release: () => gate.resolve(rendered) };
 }
 
 describe("Excerpt Image resolution", () => {
@@ -87,76 +168,182 @@ describe("Excerpt Image resolution", () => {
       expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
     },
   );
-  it("admits 128 distinct requests and rejects the 129th without starting it", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+  it("waits at full capacity and renders the 129th request once a slot settles", async () => {
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
       started.resolve();
       return gate.promise;
     });
     await using service = new ExcerptImageService({ render });
-    const pending = Array.from({ length: 128 }, (_, index) =>
+    const pending = Array.from({ length: 129 }, (_, index) =>
       service.resolve({
         ...request,
         annotation: { ...request.annotation, key: `ANNOT${index}` },
       }),
     );
-    try {
-      await started.promise;
-      expect(
-        await service.resolve({
-          ...request,
-          annotation: { ...request.annotation, key: "OVERFLOW" },
-        }),
-      ).toEqual({ kind: "unavailable" });
-      expect(render).toHaveBeenCalledTimes(1);
-    } finally {
-      gate.resolve(generated);
-    }
+    await started.promise;
+    // One render holds the PDF slot, and the queue keeps every other admitted
+    // job behind it rather than refusing them.
+    expect(render).toHaveBeenCalledTimes(1);
+    gate.resolve(rendered);
+    const outcomes = await Promise.all(pending);
+    expect(outcomes.every((result) => result.kind === "available")).toBe(true);
+    expect(render).toHaveBeenCalledTimes(129);
+  });
+
+  it("waits at full capacity past the job deadline and still renders the image", async () => {
+    const limits = new Map<number, AbortController>();
+    using _deadlines = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((milliseconds) => {
+        const controller = new AbortController();
+        limits.set(milliseconds, controller);
+        return controller.signal;
+      });
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({ render });
+    const blocked = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `BLOCKED${index}` },
+      }),
+    );
+    await started.promise;
+    const waiting = service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: "WAITING" },
+    });
+    await vi.waitFor(() =>
+      expect(service.queueDiagnostics).toMatchObject({ awaiting: 1 }),
+    );
+    // Every slot is held, so the last deadline this producer created is its own
+    // preflight's. Letting it expire must not end the wait: a full bound is not
+    // a resolution, and the render's own deadline starts with its turn.
+    limits.get(35_000)!.abort(new Error("job deadline"));
+    const stillWaiting = service.queueDiagnostics;
+    gate.resolve(rendered);
+    const outcomes = await Promise.allSettled([...blocked, waiting]);
+    expect(stillWaiting).toMatchObject({ awaiting: 1, admitted: 128 });
     expect(
-      (await Promise.all(pending)).every(
-        (result) => result.kind === "available",
+      outcomes.map(
+        (settled) =>
+          settled.status === "fulfilled" && settled.value.kind === "available",
+      ),
+    ).toStrictEqual(Array.from({ length: 129 }, () => true));
+    expect(render).toHaveBeenCalledTimes(129);
+  });
+
+  it("leaves a full-capacity wait promptly when its caller cancels", async () => {
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({ render });
+    const blocked = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `BLOCKED${index}` },
+      }),
+    );
+    await started.promise;
+    const controller = new AbortController();
+    const waiting = service.resolve(
+      { ...request, annotation: { ...request.annotation, key: "WAITING" } },
+      controller.signal,
+    );
+    await vi.waitFor(() =>
+      expect(service.queueDiagnostics).toMatchObject({ awaiting: 1 }),
+    );
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: "AbortError" });
+    // The cancelled producer left no slot and no wait behind it.
+    expect(service.queueDiagnostics).toMatchObject({
+      admitted: 128,
+      awaiting: 0,
+    });
+    gate.resolve(rendered);
+    expect(
+      (await Promise.all(blocked)).every(
+        (outcome) => outcome.kind === "available",
       ),
     ).toBe(true);
     expect(render).toHaveBeenCalledTimes(128);
   });
 
-  it("bounds cancelled same-key jobs that replace the dedup entry", async () => {
+  it("resolves a cache hit while every admitted slot is held", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(request);
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    f.render.mockImplementation(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    const blocked = Array.from({ length: 128 }, (_, index) =>
+      service.resolve({
+        ...request,
+        annotation: { ...request.annotation, key: `BLOCKED${index}` },
+      }),
+    );
+    try {
+      await started.promise;
+      // Freshness and cache checks run before admission: a cache hit resolves
+      // even though the admitted bound is full and a render is in flight.
+      expect(await service.resolve(request)).toMatchObject({
+        provenance: "cache",
+        bytes: generated,
+      });
+    } finally {
+      gate.resolve(rendered);
+    }
+    expect(
+      (await Promise.all(blocked)).every(
+        (result) => result.kind === "available",
+      ),
+    ).toBe(true);
+  });
+
+  it("returns every cancelled job's capacity and keeps the queue usable", async () => {
     const started = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const render = vi.fn(async (_request, signal: AbortSignal) => {
-      started.resolve();
-      await release.promise;
-      signal.throwIfAborted();
-      return generated;
-    });
+    const render = vi.fn(
+      async (_request: ExcerptRequest, signal: AbortSignal) => {
+        if (render.mock.calls.length > 1) return rendered;
+        started.resolve();
+        await release.promise;
+        signal.throwIfAborted();
+        return rendered;
+      },
+    );
     await using service = new ExcerptImageService({ render });
 
     for (let index = 0; index < 128; index++) {
       const controller = new AbortController();
-      const listening = Promise.withResolvers<void>();
-      const addEventListener = controller.signal.addEventListener.bind(
-        controller.signal,
-      );
-      vi.spyOn(controller.signal, "addEventListener").mockImplementation(
-        (...args) => {
-          addEventListener(...args);
-          if (args[0] === "abort") listening.resolve();
-        },
-      );
       const pending = service.resolve(request, controller.signal);
       const rejection = expect(pending).rejects.toMatchObject({
         name: "AbortError",
       });
-      await listening.promise;
       if (index === 0) await started.promise;
       controller.abort();
       await rejection;
     }
 
-    expect(await service.resolve(request)).toEqual({ kind: "unavailable" });
-    expect(render).toHaveBeenCalledTimes(1);
+    // Cancelled demand released its slots: the same image can be requested
+    // again once the cancelled job's bounded teardown frees the render slot.
     release.resolve();
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+    });
+    expect(render).toHaveBeenCalledTimes(2);
   });
 
   it("waits for actual teardown before advancing a cancelled request's queue slot", async () => {
@@ -165,7 +352,7 @@ describe("Excerpt Image resolution", () => {
     const release = Promise.withResolvers<void>();
     const render = vi.fn(
       async (_request: ExcerptRequest, signal: AbortSignal) => {
-        if (render.mock.calls.length > 1) return generated;
+        if (render.mock.calls.length > 1) return rendered;
         started.resolve();
         await new Promise<void>((resolve) =>
           signal.addEventListener("abort", () => resolve(), { once: true }),
@@ -212,7 +399,7 @@ describe("Excerpt Image resolution", () => {
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
       started.resolve();
-      return new Promise<Uint8Array>(() => {});
+      return new Promise<ExcerptImage>(() => {});
     });
     await using service = new ExcerptImageService({ render });
     const pending = service.resolve(request);
@@ -238,7 +425,7 @@ describe("Excerpt Image resolution", () => {
     await using service = new ExcerptImageService({
       render: async (snapshot) => {
         savedColor = snapshot.annotation.color;
-        return generated;
+        return rendered;
       },
     });
     const result = service.resolve(input);
@@ -315,7 +502,7 @@ describe("Excerpt Image resolution", () => {
 
   it("captures each rapid saved edit before waiting for an older render", async () => {
     const started = Promise.withResolvers<void>();
-    const old = Promise.withResolvers<Uint8Array>();
+    const old = Promise.withResolvers<ExcerptImage>();
     const colors: (string | null)[] = [];
     await using service = new ExcerptImageService({
       render: async (snapshot) => {
@@ -324,7 +511,7 @@ describe("Excerpt Image resolution", () => {
           started.resolve();
           return old.promise;
         }
-        return generated;
+        return rendered;
       },
     });
     const first = service.resolve(inkRequest);
@@ -337,7 +524,7 @@ describe("Excerpt Image resolution", () => {
       ...inkRequest,
       annotation: { ...inkRequest.annotation, color: "#0000ff" },
     });
-    old.resolve(generated);
+    old.resolve(rendered);
     await Promise.all([first, second, third]);
     expect(colors).toEqual(["#ff0000", "#00ff00", "#0000ff"]);
   });
@@ -365,14 +552,14 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("keeps pre-clear work out of storage and starts a new generation for later callers", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const entries = new Map<string, ExcerptEntry>();
     const put = vi.fn(async (key: string, entry: ExcerptEntry) => {
       entries.set(key, entry);
     });
     const render = vi
-      .fn(async () => generated)
+      .fn(async () => rendered)
       .mockImplementationOnce(() => {
         started.resolve();
         return gate.promise;
@@ -392,7 +579,7 @@ describe("Excerpt Image resolution", () => {
     await started.promise;
     await service.clear();
     const current = service.resolve(request);
-    gate.resolve(generated);
+    gate.resolve(rendered);
     expect(await old).toMatchObject({ provenance: "rendered" });
     expect(await current).toMatchObject({ provenance: "rendered" });
     expect(render).toHaveBeenCalledTimes(2);
@@ -405,13 +592,14 @@ describe("Excerpt Image resolution", () => {
       .fn()
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValue({ size: 101, mtimeMs: 11 });
-    const render = vi.fn(async () => generated);
+    const render = vi.fn(async () => rendered);
     await using service = new ExcerptImageService({
       stamp,
       render,
       cache: {
         get: async () => ({
           bytes: generated,
+          format: PNG_FORMAT,
           pdf: { size: 100, mtimeMs: 10 },
         }),
         put: async () => {},
@@ -430,7 +618,7 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("degrades after open and read failures and refuses persistence without a source scope", async () => {
-    const render = vi.fn(async () => generated);
+    const render = vi.fn(async () => rendered);
     await using failedOpen = new ExcerptImageService({
       render,
       openStore: async () => {
@@ -501,7 +689,7 @@ describe("Excerpt Image resolution", () => {
     });
   });
   it("drops cancelled queued work without an unhandled rejection or poisoning the queue", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(async () => {
       started.resolve();
@@ -532,7 +720,7 @@ describe("Excerpt Image resolution", () => {
     controller.abort();
     await rejection;
     const last = service.resolve({ ...request, attachmentKey: "THIRD" });
-    gate.resolve(generated);
+    gate.resolve(rendered);
     expect(await first).toMatchObject({ kind: "available" });
     expect(await last).toMatchObject({ kind: "available" });
     expect(render).toHaveBeenCalledTimes(2);
@@ -559,6 +747,76 @@ describe("Excerpt Image resolution", () => {
     expect(f.render).toHaveBeenCalledTimes(2);
   });
 
+  it("publishes the revision the renderer loaded, not the one the probe saw", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    let pdf = { size: 100, mtimeMs: 10 };
+    const replacement = new Uint8Array([4, 5, 6]);
+    const gate = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const probed = Promise.withResolvers<void>();
+    let renders = 0;
+    const render = vi.fn(async () => {
+      // The revision this call reads, which for the queued job below is the one
+      // that replaced the PDF while it waited for the render slot.
+      const revision = pdf;
+      renders += 1;
+      if (renders === 1) {
+        started.resolve();
+        await gate.promise;
+      }
+      return revision.mtimeMs === 10
+        ? rendered
+        : { bytes: replacement, format: PNG_FORMAT };
+    });
+    await using service = new ExcerptImageService({
+      stamp: async (path) => {
+        if (path === "/late.pdf") probed.resolve();
+        return pdf;
+      },
+      render,
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+      },
+    });
+    const lateRequest: ExcerptRequest = {
+      ...request,
+      pdfPath: "/late.pdf",
+      annotation: { ...request.annotation, key: "ANNOT002" },
+    };
+    // The first job holds the render slot, rendering the stored revision.
+    const first = service.resolve(request);
+    await started.promise;
+    // The second job's own probe reads that revision, and then waits.
+    const late = service.resolve(lateRequest);
+    await probed.promise;
+    pdf = { size: 101, mtimeMs: 11 };
+    gate.resolve();
+    expect(await first).toMatchObject({
+      provenance: "rendered",
+      identity: { pdf: { size: 100, mtimeMs: 10 } },
+    });
+    // The bytes it renders are the replacement revision, and so is the stamp
+    // published beside them and stored under the excerpt's key.
+    expect(await late).toMatchObject({
+      provenance: "rendered",
+      bytes: replacement,
+      identity: { pdf: { size: 101, mtimeMs: 11 } },
+    });
+    expect(entries.get(excerptKey(lateRequest))?.pdf).toEqual({
+      size: 101,
+      mtimeMs: 11,
+    });
+    // An unchanged request reuses those bytes instead of rendering again.
+    expect(await service.resolve(lateRequest)).toMatchObject({
+      provenance: "cache",
+      bytes: replacement,
+    });
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+
   it("uses matching cached pixels when the PDF cannot be checked", async () => {
     await using service = new ExcerptImageService({
       stamp: async () => {
@@ -567,6 +825,7 @@ describe("Excerpt Image resolution", () => {
       cache: {
         get: async () => ({
           bytes: generated,
+          format: PNG_FORMAT,
           pdf: { size: 100, mtimeMs: 10 },
         }),
         put: async () => {},
@@ -578,34 +837,50 @@ describe("Excerpt Image resolution", () => {
     });
   });
 
-  it("isolates geometry, renderer input, Library, and source identities", () => {
-    const api = {
+  it("isolates geometry, renderer input, Library, and unverified source identities", () => {
+    const api: ExcerptRequest = {
       ...request,
-      source: { kind: "zotero-local-api" as const, serverID: "SAME" },
+      source: { kind: "zotero-local-api", serverID: "SAME" },
     };
     expect(excerptKey({ ...api, libraryID: 2 })).not.toBe(excerptKey(api));
     if (request.source.kind !== "zotero-db")
       throw new Error("Expected database fixture");
-    for (const serverID of [null, "SAME"]) {
-      const first = {
-        ...request,
-        source: {
-          ...request.source,
-          database: { userID: 1, localUserKey: "LOCAL-A", serverID },
-        },
-      };
-      const second = {
-        ...first,
-        source: {
-          ...first.source,
-          database: { userID: 2, localUserKey: "LOCAL-B", serverID },
-        },
-      };
-      expect(excerptKey(first)).not.toBe(excerptKey(second));
-      expect(
-        excerptKey({ ...first, sourceScope: "/copied-database" }),
-      ).not.toBe(excerptKey(first));
-    }
+    const standalone = (
+      database: DatabaseAnnotationSource["database"],
+    ): ExcerptRequest => ({
+      ...request,
+      source: { kind: "zotero-db", database, libraryID: 1, libraryRevision: 0 },
+    });
+    // A database that names no Server ID keeps a local identity, which never
+    // stands in for another user's database.
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: null }),
+      ),
+    ).not.toBe(
+      excerptKey(
+        standalone({ userID: 2, localUserKey: "LOCAL-B", serverID: null }),
+      ),
+    );
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: null }),
+      ),
+    ).not.toBe(excerptKey(api));
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: "OTHER" }),
+      ),
+    ).not.toBe(excerptKey(api));
+    // One database reached through either representation shares one identity.
+    expect(
+      excerptKey(
+        standalone({ userID: 1, localUserKey: "LOCAL-A", serverID: "SAME" }),
+      ),
+    ).toBe(excerptKey(api));
+    expect(excerptKey({ ...api, sourceScope: "/copied-database" })).not.toBe(
+      excerptKey(api),
+    );
     const changed = structuredClone(request);
     changed.annotation.position = {
       kind: "pdf-rects",
@@ -625,6 +900,242 @@ describe("Excerpt Image resolution", () => {
         annotation: { ...request.annotation, comment: "New comment" },
       }),
     ).toBe(excerptKey(request));
+  });
+
+  it("shares verified API and database sources of one Annotation", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const api: ExcerptRequest = {
+      ...request,
+      source: { kind: "zotero-local-api", serverID: "SERVER" },
+    };
+    expect(excerptKey(api)).toBe(excerptKey(request));
+    expect(await service.resolve(api)).toMatchObject({
+      provenance: "rendered",
+      bytes: generated,
+    });
+    // The database representation of the same Annotation reuses those pixels.
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      bytes: generated,
+    });
+    expect(f.render).toHaveBeenCalledTimes(1);
+  });
+
+  it("completes a cache hit while an unrelated render holds the queue", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(request);
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    f.render.mockImplementationOnce(() => {
+      started.resolve();
+      return gate.promise;
+    });
+    const blocked = service.resolve({
+      ...request,
+      annotation: { ...request.annotation, key: "ANNOT002" },
+    });
+    await started.promise;
+    // A cache hit resolves without waiting for the blocked render.
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      bytes: generated,
+    });
+    expect(f.render).toHaveBeenCalledTimes(2);
+    gate.resolve(rendered);
+    expect(await blocked).toMatchObject({ provenance: "rendered" });
+  });
+
+  it("returns a stored cache hit while every admission slot is taken", async () => {
+    const f = await storedExcerptWithBlockedRenders(128);
+    await using service = f.service;
+    try {
+      // Every slot is held by a blocked render, and the stored bytes still
+      // resolve without one.
+      expect(await service.resolve(request)).toMatchObject({
+        provenance: "cache",
+        bytes: generated,
+      });
+      expect(f.render).toHaveBeenCalledTimes(2);
+    } finally {
+      f.release();
+    }
+    expect(
+      (await Promise.all(f.pending)).every(
+        (result) => result.kind === "available",
+      ),
+    ).toBe(true);
+    expect(f.render).toHaveBeenCalledTimes(129);
+  });
+
+  it("records the excerpt key and the queue's counts at the admission decision", async () => {
+    const f = await storedExcerptWithBlockedRenders(128);
+    await using service = f.service;
+    const firstRequest = {
+      ...request,
+      annotation: { ...request.annotation, key: "WAITING-A" },
+    };
+    const first = service.resolve(firstRequest);
+    await vi.waitFor(() =>
+      expect(
+        captured.find(
+          (record) => record.properties.key === excerptKey(firstRequest),
+        ),
+      ).toBeDefined(),
+    );
+    const secondRequest = {
+      ...request,
+      annotation: { ...request.annotation, key: "WAITING-B" },
+    };
+    const second = service.resolve(secondRequest);
+    await vi.waitFor(() =>
+      expect(
+        captured.find(
+          (record) => record.properties.key === excerptKey(secondRequest),
+        ),
+      ).toBeDefined(),
+    );
+    const firstRecord = captured.find(
+      (record) => record.properties.key === excerptKey(firstRequest),
+    )!;
+    const secondRecord = captured.find(
+      (record) => record.properties.key === excerptKey(secondRequest),
+    )!;
+    // Both records name the excerpt and the full bound; the second also counts
+    // the producer already waiting for a slot, which is the saturation a
+    // diagnosis log would otherwise have to infer from a stalled progress bar.
+    expect(firstRecord.properties).toMatchObject({
+      admitted: 128,
+      awaiting: 0,
+    });
+    expect(secondRecord.properties).toMatchObject({
+      admitted: 128,
+      awaiting: 1,
+    });
+    f.release();
+    const outcomes = await Promise.all([first, second, ...f.pending]);
+    expect(outcomes.every((outcome) => outcome.kind === "available")).toBe(
+      true,
+    );
+  });
+
+  it("keeps shared work alive while another caller still demands it", async () => {
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(async (_request, signal: AbortSignal) => {
+      started.resolve();
+      await gate.promise;
+      signal.throwIfAborted();
+      return rendered;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      render,
+    });
+    const controller = new AbortController();
+    const database = service.resolve(request, controller.signal);
+    const api = service.resolve({
+      ...request,
+      source: { kind: "zotero-local-api", serverID: "SERVER" },
+    });
+    const rejection = expect(database).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    await started.promise;
+    controller.abort();
+    await rejection;
+    // The remaining representation still receives the single shared render.
+    gate.resolve(rendered);
+    expect(await api).toMatchObject({
+      provenance: "rendered",
+      bytes: generated,
+    });
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases shared work once its last caller cancels", async () => {
+    const started = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    let aborted = false;
+    const render = vi.fn((_request, signal: AbortSignal) => {
+      started.resolve();
+      return new Promise<ExcerptImage>((_, reject) =>
+        signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            released.resolve();
+            reject(signal.reason);
+          },
+          { once: true },
+        ),
+      );
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 1, mtimeMs: 1 }),
+      render,
+    });
+    const database = new AbortController();
+    const api = new AbortController();
+    const first = service.resolve(request, database.signal);
+    const second = service.resolve(
+      { ...request, source: { kind: "zotero-local-api", serverID: "SERVER" } },
+      api.signal,
+    );
+    const rejections = [
+      expect(first).rejects.toMatchObject({ name: "AbortError" }),
+      expect(second).rejects.toMatchObject({ name: "AbortError" }),
+    ];
+    await started.promise;
+    database.abort();
+    await rejections[0];
+    expect(aborted).toBe(false);
+    // Only the last caller's cancellation releases the shared render.
+    api.abort();
+    await rejections[1];
+    await released.promise;
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries the validated identity on every available outcome", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const identity = {
+      key: excerptKey(request),
+      fingerprint: excerptFingerprint(request.annotation),
+    };
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "rendered",
+      identity: { ...identity, pdf: { size: 100, mtimeMs: 10 } },
+    });
+    expect(await service.resolve(request)).toMatchObject({
+      provenance: "cache",
+      identity: { ...identity, pdf: { size: 100, mtimeMs: 10 } },
+    });
+    await using unreadable = new ExcerptImageService({
+      stamp: async () => {
+        throw new Error("offline");
+      },
+      cache: {
+        get: async () => ({ ...rendered, pdf: { size: 100, mtimeMs: 10 } }),
+        put: async () => {},
+      },
+    });
+    expect(await unreadable.resolve(request)).toMatchObject({
+      provenance: "cache",
+      identity: { ...identity, pdf: null },
+    });
+    await using fallbackOnly = new ExcerptImageService({
+      render: async () => {
+        throw new Error("broken PDF");
+      },
+      read: async () => fallback,
+    });
+    expect(await fallbackOnly.resolve(request)).toMatchObject({
+      provenance: "zotero",
+      identity: { ...identity, pdf: null },
+    });
   });
 
   it("retries rendering after an uncertain fallback and never validates that fallback", async () => {
@@ -656,7 +1167,7 @@ describe("Excerpt Image resolution", () => {
     expect(await failed.resolve(request)).toEqual({ kind: "unavailable" });
     await using working = new ExcerptImageService({
       stamp: async () => ({ size: 1, mtimeMs: 1 }),
-      render: async () => generated,
+      render: async () => rendered,
       cache: {
         get: async () => undefined,
         put: async () => {
@@ -671,7 +1182,7 @@ describe("Excerpt Image resolution", () => {
   });
 
   it("shares identical work while cancellation releases only that caller", async () => {
-    const gate = Promise.withResolvers<Uint8Array>();
+    const gate = Promise.withResolvers<ExcerptImage>();
     const started = Promise.withResolvers<void>();
     const render = vi.fn(() => {
       started.resolve();
@@ -690,7 +1201,7 @@ describe("Excerpt Image resolution", () => {
     await started.promise;
     controller.abort();
     await rejected;
-    gate.resolve(generated);
+    gate.resolve(rendered);
     expect(await second).toMatchObject({ provenance: "rendered" });
     expect(render).toHaveBeenCalledTimes(1);
   });
@@ -720,7 +1231,7 @@ describe("Excerpt Image resolution", () => {
     await using service = new ExcerptImageService({
       stamp: async () => ({ size: 1, mtimeMs: 1 }),
       render: async (_, signal) => {
-        if (!first) return generated;
+        if (!first) return rendered;
         first = false;
         started.resolve();
         return new Promise((_, reject) =>
@@ -781,5 +1292,268 @@ describe("Excerpt Image resolution", () => {
     await expect(service.resolve(request)).rejects.toMatchObject({
       name: "AbortError",
     });
+  });
+});
+
+describe("Excerpt latest references", () => {
+  /** The record one Annotation's latest image lives under, as the store keys it. */
+  const record = excerptAnnotationRecord(inkRequest);
+  /** The ink pixels one colour asks for: another colour is another saved edit. */
+  const recolor = (
+    color: string,
+    version: number | null = null,
+  ): ExcerptRequest => ({
+    ...inkRequest,
+    annotation: { ...inkRequest.annotation, color, version },
+  });
+
+  it("publishes the image of the saved pixels, and survives a failed replacement", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(inkRequest);
+    const previous = f.references.get(record);
+    expect(previous).toEqual({
+      key: excerptKey(inkRequest),
+      fingerprint: excerptFingerprint(inkRequest.annotation),
+      pdf: { size: 100, mtimeMs: 10 },
+    });
+
+    // A replacement that renders nothing keeps the reference the device has:
+    // the answer is Zotero's own image, which the store holds no bytes for.
+    const saved = recolor("#00ff00");
+    f.render.mockRejectedValueOnce(new Error("PDF unavailable"));
+    await expect(service.resolve(saved)).resolves.toMatchObject({
+      kind: "available",
+      provenance: "zotero",
+      freshness: "uncertain",
+    });
+    expect(f.references.get(record)).toBe(previous);
+
+    await expect(service.resolve(saved)).resolves.toMatchObject({
+      provenance: "rendered",
+    });
+    expect(f.references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+  });
+
+  it("takes the newer saved snapshot when it joins the older one's live job", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const references = new Map<string, ExcerptIdentity>();
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    const render = vi.fn(async () => {
+      started.resolve();
+      return gate.promise;
+    });
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render,
+      read: async () => fallback,
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
+      },
+    });
+
+    // A is in flight, a saved edit to B is admitted behind it, and the user
+    // saves A again: that third request joins the first one's job instead of
+    // admitting anything of its own.
+    const first = recolor("#ff0000", 1);
+    const second = recolor("#00ff00", 2);
+    const latest = recolor("#ff0000", 3);
+    const a = service.resolve(first);
+    const b = service.resolve(second);
+    await started.promise;
+    const joined = service.resolve(latest);
+    gate.resolve(rendered);
+    await Promise.all([a, b, joined]);
+
+    // The joining caller carries the newest saved pixels, so A's answer is the
+    // one that becomes the reference and B's older one cannot move it back.
+    expect(references.get(record)).toMatchObject({
+      key: excerptKey(latest),
+      fingerprint: excerptFingerprint(latest.annotation),
+    });
+    expect(references.get(record)?.fingerprint).not.toBe(
+      excerptFingerprint(second.annotation),
+    );
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the newest saved pixels when a stale result lands last", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const references = new Map<string, ExcerptIdentity>();
+    const gate = Promise.withResolvers<void>();
+    let stale = false;
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render: async () => rendered,
+      read: async () => fallback,
+      cache: {
+        get: async (key) => {
+          // The stale request's preflight stalls; every other read answers.
+          if (stale && key === excerptKey(inkRequest)) await gate.promise;
+          return entries.get(key);
+        },
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
+      },
+    });
+    await service.resolve(inkRequest);
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(inkRequest.annotation),
+    );
+
+    // A request for the pixels the device already holds — a captured note, a
+    // read that started before the edit — is admitted first and answers late.
+    stale = true;
+    const late = service.resolve(inkRequest);
+    const saved = recolor("#00ff00");
+    const current = service.resolve(saved);
+    await vi.waitFor(() =>
+      expect(references.get(record)?.fingerprint).toBe(
+        excerptFingerprint(saved.annotation),
+      ),
+    );
+
+    gate.resolve();
+    await expect(late).resolves.toMatchObject({
+      provenance: "cache",
+      bytes: generated,
+    });
+    await current;
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+  });
+
+  it("keeps the saved edit's pixels when an older snapshot is admitted after them", async () => {
+    const entries = new Map<string, ExcerptEntry>();
+    const references = new Map<string, ExcerptIdentity>();
+    await using service = new ExcerptImageService({
+      stamp: async () => ({ size: 100, mtimeMs: 10 }),
+      render: async () => rendered,
+      read: async () => fallback,
+      cache: {
+        get: async (key) => entries.get(key),
+        put: async (key, entry) => {
+          entries.set(key, entry);
+        },
+        latest: async (identity) => references.get(identity),
+        putLatest: async (identity, reference) => {
+          references.set(identity, reference);
+        },
+      },
+    });
+
+    // The saved edit is the display's own request, and it is admitted and
+    // resolved first: it is the Annotation's newest saved pixels.
+    const saved = recolor("#00ff00", 2);
+    await expect(service.resolve(saved)).resolves.toMatchObject({
+      provenance: "rendered",
+    });
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+
+    // A note or batch resolution holds the record as it was before that edit,
+    // and is admitted after the edit has settled. Its pixels are older, so its
+    // answer cannot become the latest reference.
+    const stale = recolor("#ff0000", 1);
+    await expect(service.resolve(stale)).resolves.toMatchObject({
+      provenance: "rendered",
+    });
+    expect(references.get(record)?.fingerprint).toBe(
+      excerptFingerprint(saved.annotation),
+    );
+  });
+
+  it("stops work a clear overtook from restoring pixels or a reference", async () => {
+    const f = fixture();
+    await using service = f.service;
+    const gate = Promise.withResolvers<ExcerptImage>();
+    const started = Promise.withResolvers<void>();
+    f.render.mockImplementationOnce(async () => {
+      started.resolve();
+      return gate.promise;
+    });
+    const pending = service.resolve(request);
+    await started.promise;
+
+    await service.clear();
+    gate.resolve(rendered);
+    await expect(pending).resolves.toMatchObject({
+      kind: "available",
+      provenance: "rendered",
+    });
+    expect(f.entries.size).toBe(0);
+    expect(f.references.size).toBe(0);
+  });
+
+  it("leaves durable note assets and Zotero's own cache out of the clear", async () => {
+    await using stack = new AsyncDisposableStack();
+    const folder = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-excerpt-clear-")),
+      (folder) => rm(folder, { recursive: true, force: true }),
+    );
+    const asset = join(folder, "excerpt.webp");
+    const zoteroImage = join(folder, "ANNOT001.png");
+    await writeFile(asset, generated);
+    await writeFile(zoteroImage, fallback);
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve({ ...request, zoteroPngPath: zoteroImage });
+    expect(f.entries.size).toBe(1);
+
+    await service.clear();
+    expect(f.entries.size).toBe(0);
+    expect(f.references.size).toBe(0);
+    expect(await readFile(asset)).toEqual(Buffer.from(generated));
+    expect(await readFile(zoteroImage)).toEqual(Buffer.from(fallback));
+  });
+
+  it("reads back the image this device last stored for an Annotation", async () => {
+    const f = fixture();
+    await using service = f.service;
+    await service.resolve(inkRequest);
+    expect(await service.stored(inkRequest)).toMatchObject({
+      kind: "available",
+      provenance: "cache",
+      freshness: "unchecked",
+      bytes: generated,
+      identity: {
+        key: excerptKey(inkRequest),
+        fingerprint: excerptFingerprint(inkRequest.annotation),
+        pdf: { size: 100, mtimeMs: 10 },
+      },
+    });
+
+    // An Annotation whose pixels moved still reads back the image the device
+    // holds: that is what a display paints while the new pixels resolve.
+    expect(
+      (await service.stored(recolor("#00ff00")))?.identity.fingerprint,
+    ).toBe(excerptFingerprint(inkRequest.annotation));
+
+    // Evicted bytes read as nothing, even though the reference stands, and a
+    // cache that keeps no references reads as nothing either.
+    f.entries.clear();
+    expect(await service.stored(inkRequest)).toBeNull();
+    const bare = new ExcerptImageService({
+      cache: { get: async () => undefined, put: async () => {} },
+    });
+    await using _bare = bare;
+    expect(await bare.stored(inkRequest)).toBeNull();
   });
 });

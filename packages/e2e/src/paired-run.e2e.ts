@@ -28,6 +28,7 @@ import {
 import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
   verifyExcerptRendering,
@@ -982,6 +983,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             { expected: "true" },
           ),
         ).toBe(true);
+      }, 120000);
+
+      // The one place a confirmed write can land: the Local API is serving
+      // this Attachment, so a saved colour edit really moves the pixels the
+      // card paints, and the card's own publication of them is observable.
+      it("keeps painting through a saved edit, then publishes the edited pixels", async (context) => {
+        await verifySavedEditDisplay(vaultId!, context);
       }, 120000);
 
       it("saves a comment from a pop-out card's native Scope", async () => {

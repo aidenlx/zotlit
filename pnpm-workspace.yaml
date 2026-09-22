@@ -55,6 +55,7 @@ catalog:
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0
+  p-queue: ^9.3.3
   preact: ^10.29.7
   react: ^19.2.0
   react-dom: ^19.2.0

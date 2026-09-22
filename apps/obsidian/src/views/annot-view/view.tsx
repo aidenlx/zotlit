@@ -34,11 +34,13 @@ import { BaseNotice } from "@/lib/notice";
 import type {
   AnnotationRecord,
   AnnotationRepository,
+  AnnotationSource,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { DatabaseService } from "@/services/database/service";
-import { excerptRequest } from "@/services/excerpt-image/service";
-import type { ExcerptImageService } from "@/services/excerpt-image/service";
+import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
+import { savedExcerptRequest } from "@/services/excerpt-image/request";
+import type { ExcerptRequest } from "@/services/excerpt-image/service";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type {
@@ -138,7 +140,11 @@ export interface AnnotViewDeps {
   /** The Editing Capability affordance's click, which the UI seam owns. */
   showEditingCapability: () => void;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  excerptImage: Pick<ExcerptImageService, "resolve">;
+  /** The plugin's live display surface for Excerpt Images. */
+  excerptDisplay: Pick<
+    ExcerptDisplayService,
+    "open" | "refresh" | "revalidate"
+  >;
   noteFeature: Pick<
     NoteFeature,
     "renderAnnotationCitation" | "prepareAnnotationInsert"
@@ -275,23 +281,8 @@ export class AnnotationView extends ItemView {
     this.#actions = createAnnotActions({
       app: this.#deps.app,
       scope: this.scope,
-      resolveImage: async ({ annotation, source, sourceScope }, signal) => {
-        if (
-          !source ||
-          sourceScope !== this.#deps.zoteroPref.dataDir ||
-          this.#deps.db.state !== "ready"
-        )
-          return { kind: "unavailable" };
-        const request = excerptRequest({
-          annotation,
-          source,
-          client: this.#deps.db.client,
-          paths: this.#deps.zoteroPref,
-        });
-        return request
-          ? this.#deps.excerptImage.resolve(request, signal)
-          : { kind: "unavailable" };
-      },
+      excerptDisplay: this.#deps.excerptDisplay,
+      excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: this.#deps.annotations,
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
@@ -309,9 +300,7 @@ export class AnnotationView extends ItemView {
         await this.#deps.annotations.refresh(attachmentKey);
         await this.#reading;
         if (this.#store.getState().selectedAttachmentKey === attachmentKey)
-          this.#store.setState((state) => ({
-            excerptRefresh: state.excerptRefresh + 1,
-          }));
+          this.#deps.excerptDisplay.refresh();
       },
       noteFeature: this.#deps.noteFeature,
       onSetFollowMode: (mode) => this.#setFollowMode(mode),
@@ -881,6 +870,19 @@ export class AnnotationView extends ItemView {
         selectedAttachmentKey === null
           ? this.#deps.annotations.capability
           : this.#deps.annotations.capabilityFor(selectedAttachmentKey),
+    });
+  }
+
+  /** The file inputs one record on screen resolves through ({@link savedExcerptRequest}). */
+  #excerptRequest(input: {
+    annotation: AnnotationRecord;
+    source: AnnotationSource | null;
+    sourceScope: string | null;
+  }): ExcerptRequest | null {
+    return savedExcerptRequest({
+      ...input,
+      db: this.#deps.db,
+      paths: this.#deps.zoteroPref,
     });
   }
 

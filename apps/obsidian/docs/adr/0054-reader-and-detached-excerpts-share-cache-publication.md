@@ -1,7 +1,5 @@
 # Reader and detached excerpts share cache publication
 
-Accepted design; implementation is pending.
-
 ZotLit's PDF reader integration and detached excerpt rendering publish generated Excerpt Images to the same ZotLit-owned cache through the shared Excerpt Image service. Both paths use the same verified identity, freshness validation, image-format policy, duplicate-work coordination, and cache-clear generation checks. Reader and detached work must cooperate without changing the reader's visible output or invalidating its owned resources.
 
 This extends [ADR 0049](0049-excerpt-images-use-zotlits-cache-and-renderer-before-zoteros-cache.md) with a reader producer while preserving detached operation when no reader is open. The reader currently paints full pages and Annotation Marks rather than cacheable Excerpt Images; the integration must establish equivalent excerpt content and rendering inputs before sharing entries. Zotero's externally owned PNG cache retains its fallback role.

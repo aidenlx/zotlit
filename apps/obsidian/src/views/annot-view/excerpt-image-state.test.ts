@@ -1,26 +1,37 @@
+// The demand one Annotation card states, and the object URL it owns.
+
 import { describe, expect, it } from "vitest";
 
-import { redPng } from "@/services/excerpt-image/__fixtures__/png";
-import { ExcerptImageService } from "@/services/excerpt-image/service";
 import type {
-  ExcerptEntry,
-  ExcerptOutcome,
-} from "@/services/excerpt-image/service";
+  AnnotationRecord,
+  AnnotationSource,
+} from "@/services/annotation-repository/service";
+import type { ExcerptImageDisplay } from "@/services/excerpt-image/display";
+import { PNG_FORMAT } from "@/services/excerpt-image/format";
+import type { ExcerptImage } from "@/services/excerpt-image/format";
 
 import {
-  excerptImageForTarget,
+  excerptImageOwnership,
   excerptImageTarget,
-  transitionExcerptImage,
 } from "./excerpt-image-state";
-import type { ExcerptImageState } from "./excerpt-image-state";
-import type { ExcerptImageTarget } from "./excerpt-image-state";
+import type {
+  ExcerptImageOwnership,
+  ExcerptImageTarget,
+} from "./excerpt-image-state";
 
-const input: Omit<ExcerptImageTarget, "key"> = {
-  refresh: 0,
-  sourceScope: "/fixture",
-  annotation: {
-    key: "INK",
-    parentKey: "PDF",
+const SOURCE: AnnotationSource = {
+  kind: "zotero-db",
+  database: { userID: 1, localUserKey: "local", serverID: "server" },
+  libraryID: 1,
+  libraryRevision: 1,
+};
+
+function annotation(
+  overrides: Partial<AnnotationRecord> = {},
+): AnnotationRecord {
+  return {
+    key: "INK1",
+    parentKey: "PDF1",
     type: "ink",
     color: "#ff0000",
     comment: null,
@@ -29,228 +40,189 @@ const input: Omit<ExcerptImageTarget, "key"> = {
     tags: [],
     version: 1,
     position: { kind: "pdf-ink", pageIndex: 0, width: 2, paths: [[20, 30]] },
-  },
-  source: {
-    kind: "zotero-db",
-    database: { userID: 1, localUserKey: "local", serverID: "server" },
-    libraryID: 1,
-    libraryRevision: 1,
-  },
-};
+    ...overrides,
+  };
+}
+
+/** One card's stated demand, as the Annotation and source it is showing. */
+function stated(
+  previous: ExcerptImageTarget | null,
+  options: {
+    annotation?: AnnotationRecord;
+    source?: AnnotationSource;
+    sourceScope?: string;
+  } = {},
+): ExcerptImageTarget {
+  return excerptImageTarget(previous, {
+    annotation: options.annotation ?? annotation(),
+    source: options.source ?? SOURCE,
+    sourceScope: options.sourceScope ?? "/fixture",
+  });
+}
+
+const image = (byte: number): ExcerptImage => ({
+  bytes: new Uint8Array([byte]),
+  format: PNG_FORMAT,
+});
+
+/** What the shared display read reports; the cards here paint what it holds. */
+function display(
+  held: ExcerptImage | null,
+  status: ExcerptImageDisplay["status"] = "settled",
+): ExcerptImageDisplay {
+  return { image: held, current: true, status };
+}
+
+/** An object URL that names the image it was made from, so a test sees the swaps. */
+const create = (one: ExcerptImage): string => `blob:${one.bytes[0]}`;
 
 describe("Annotation Card image lifecycle", () => {
-  it.each(["unavailable", "fallback", "checked"] as const)(
-    "explicit Refresh resolves unchanged %s input again after PDF recovery or replacement",
-    async (initial) => {
-      let pdfReady = initial === "checked";
-      let revision = 1;
-      let renders = 0;
-      const entries = new Map<string, ExcerptEntry>();
-      await using service = new ExcerptImageService({
-        stamp: async () => {
-          if (!pdfReady) throw new Error("PDF absent");
-          return { size: 100, mtimeMs: revision };
-        },
-        render: async () => {
-          renders++;
-          if (!pdfReady) throw new Error("PDF absent");
-          return new Uint8Array([revision]);
-        },
-        read: async () => redPng,
-        cache: {
-          get: async (key) => entries.get(key),
-          put: async (key, entry) => {
-            entries.set(key, entry);
-          },
-        },
-      });
-      let target: ExcerptImageTarget | null = null;
-      let result: ExcerptOutcome | undefined;
-      // The card effect depends on this retained target, not the record object.
-      const publish = async (published: Omit<ExcerptImageTarget, "key">) => {
-        const next = excerptImageTarget(target, published);
-        if (next === target) return;
-        target = next;
-        result = await service.resolve({
-          annotation: next.annotation,
-          source: next.source!,
-          sourceScope: next.sourceScope!,
-          attachmentKey: "PDF",
-          libraryID: 1,
-          pdfPath: "/paper.pdf",
-          zoteroPngPath: initial === "fallback" ? "/cached.png" : null,
-        });
-      };
-      await publish(input);
-      expect(result).toMatchObject(
-        initial === "unavailable"
-          ? { kind: "unavailable" }
-          : {
-              kind: "available",
-              provenance: initial === "fallback" ? "zotero" : "rendered",
-            },
-      );
-      pdfReady = true;
-      revision = 2;
-      await publish({
-        ...input,
-        annotation: { ...input.annotation, comment: "saved comment" },
-      });
-      expect(renders).toBe(1);
-      await publish({ ...input, refresh: 1 });
-      expect(renders).toBe(2);
-      expect(result).toMatchObject({
-        kind: "available",
-        provenance: "rendered",
-        freshness: "checked",
-        bytes: new Uint8Array([2]),
-      });
-    },
-  );
-  it("keeps pixels through comment edits but captures new saved color and source snapshots", () => {
-    const first = excerptImageTarget(null, input);
+  it("retains the demand a published list states again for the same pixels", () => {
+    const first = stated(null);
+
+    expect(stated(first, { sourceScope: "/other-install" })).not.toBe(first);
     expect(
-      excerptImageTarget(first, { ...input, sourceScope: "/other-install" }),
-    ).not.toBe(first);
-    expect(
-      excerptImageTarget(first, {
-        ...input,
-        annotation: {
-          ...input.annotation,
-          comment: "confirmed comment",
-          version: 2,
-        },
+      stated(first, {
+        annotation: annotation({ comment: "saved comment", version: 2 }),
       }),
     ).toBe(first);
-    const recolored = excerptImageTarget(first, {
-      ...input,
-      annotation: { ...input.annotation, color: "#00ff00", version: 3 },
+    expect(stated(first, { annotation: annotation({ tags: ["tag"] }) })).toBe(
+      first,
+    );
+    // The same Zotero database reached through its Local API representation
+    // demands the same pixels; another database demands a new image.
+    expect(
+      stated(first, {
+        source: { kind: "zotero-local-api", serverID: "server" },
+      }),
+    ).toBe(first);
+    expect(
+      stated(first, {
+        source: { kind: "zotero-local-api", serverID: "other" },
+      }),
+    ).not.toBe(first);
+  });
+
+  it("states a new demand when the pixels or the Annotation move", () => {
+    const first = stated(null);
+    const recolored = stated(first, {
+      annotation: annotation({ color: "#00ff00", version: 2 }),
     });
     expect(recolored).not.toBe(first);
-    const handoff = excerptImageTarget(recolored, {
-      refresh: input.refresh,
-      sourceScope: input.sourceScope,
-      annotation: recolored.annotation,
-      source: { kind: "zotero-local-api", serverID: "server" },
-    });
-    expect(handoff).not.toBe(recolored);
-    expect(handoff.source).toEqual({
-      kind: "zotero-local-api",
-      serverID: "server",
-    });
-    const state = transitionExcerptImage(
-      { kind: "available", target: first, url: "blob:red" },
-      { kind: "start", target: handoff },
+    expect(recolored.identity).toBe(first.identity);
+    expect(stated(recolored, { annotation: recolored.annotation })).toBe(
+      recolored,
     );
-    expect(state.release).toEqual(["blob:red"]);
-    const current = transitionExcerptImage(state.state, {
-      kind: "resolved",
-      target: handoff,
-      url: "blob:green",
+
+    const other = stated(first, {
+      annotation: annotation({ key: "INK2", parentKey: "PDF1" }),
     });
-    expect(
-      transitionExcerptImage(current.state, {
-        kind: "resolved",
-        target: recolored,
-        url: "blob:old-source",
-      }),
-    ).toEqual({ state: current.state, release: ["blob:old-source"] });
-    expect(
-      transitionExcerptImage(current.state, {
-        kind: "resolved",
-        target: first,
-        url: "blob:late-red",
-      }),
-    ).toEqual({ state: current.state, release: ["blob:late-red"] });
+    expect(other.identity).not.toBe(first.identity);
   });
-  it("keeps the new target loading when an older request completes", () => {
-    const first = {};
-    const second = {};
-    const loading = transitionExcerptImage(
-      { kind: "disposed" },
-      { kind: "start", target: first },
-    );
-    const switched = transitionExcerptImage(loading.state, {
-      kind: "start",
-      target: second,
-    });
-    const stale = transitionExcerptImage(switched.state, {
-      kind: "resolved",
-      target: first,
-      url: "blob:old",
-    });
-    expect(stale).toEqual({
-      state: { kind: "loading", target: second },
-      release: ["blob:old"],
-    });
-    expect(
-      transitionExcerptImage(stale.state, {
-        kind: "resolved",
-        target: second,
-        url: "blob:new",
-      }),
-    ).toEqual({
-      state: { kind: "available", target: second, url: "blob:new" },
-      release: [],
-    });
-  });
-  it("hides old pixels immediately on a target switch and releases them when starting", () => {
-    const old: ExcerptImageState = {
-      kind: "available",
-      target: {},
-      url: "blob:old",
+
+  it("keeps the URL a card owns while the display has nothing newer to paint", () => {
+    const one = image(1);
+    const held: ExcerptImageOwnership = {
+      identity: stated(null).identity,
+      image: one,
+      url: "blob:1",
     };
-    const target = {};
-    expect(excerptImageForTarget(old, target)).toEqual({
-      kind: "loading",
-      target,
-    });
-    expect(transitionExcerptImage(old, { kind: "start", target })).toEqual({
-      state: { kind: "loading", target },
-      release: ["blob:old"],
-    });
-  });
-  it("shows unavailable on total failure or decode failure, releasing undecodable pixels", () => {
-    const target = {};
-    const pending: ExcerptImageState = { kind: "loading", target };
+
+    for (const status of ["reading", "failed"] as const) {
+      expect(
+        excerptImageOwnership({
+          held,
+          display: display(null, status),
+          identity: held.identity,
+          create,
+        }),
+      ).toEqual({ owned: held, release: [] });
+    }
+    // One committed image is one object, so the URL that paints it stands.
     expect(
-      transitionExcerptImage(pending, { kind: "resolved", target, url: null })
-        .state,
-    ).toEqual({ kind: "unavailable", target });
-    expect(
-      transitionExcerptImage(pending, { kind: "failed", target }).state,
-    ).toEqual({ kind: "unavailable", target });
-    const decoded = transitionExcerptImage(pending, {
-      kind: "resolved",
-      target,
-      url: "blob:broken",
-    });
-    expect(
-      transitionExcerptImage(decoded.state, { kind: "failed", target }),
-    ).toEqual({
-      state: { kind: "unavailable", target },
-      release: ["blob:broken"],
-    });
-  });
-  it("disposes the current image and rejects later publication", () => {
-    const target = {};
-    const disposed = transitionExcerptImage(
-      { kind: "available", target, url: "blob:shown" },
-      { kind: "dispose" },
-    );
-    expect(disposed).toEqual({
-      state: { kind: "disposed" },
-      release: ["blob:shown"],
-    });
-    expect(
-      transitionExcerptImage(disposed.state, {
-        kind: "resolved",
-        target,
-        url: "blob:late",
+      excerptImageOwnership({
+        held,
+        display: display(one),
+        identity: held.identity,
+        create,
       }),
-    ).toEqual({ state: { kind: "disposed" }, release: ["blob:late"] });
+    ).toEqual({ owned: held, release: [] });
+  });
+
+  it("replaces the URL when another image arrives and releases the one it replaced", () => {
+    const identity = stated(null).identity;
+    const held: ExcerptImageOwnership = {
+      identity,
+      image: image(1),
+      url: "blob:1",
+    };
+
+    const replaced = excerptImageOwnership({
+      held,
+      display: display(image(2)),
+      identity,
+      create,
+    });
+    expect(replaced.owned).toEqual({
+      identity,
+      image: image(2),
+      url: "blob:2",
+    });
+    expect(replaced.release).toEqual(["blob:1"]);
+  });
+
+  it("releases the URL when a manual clear takes the image away", () => {
+    const identity = stated(null).identity;
+    const held: ExcerptImageOwnership = {
+      identity,
+      image: image(1),
+      url: "blob:1",
+    };
+
+    // A clear removed the image together with the bytes behind it: the card owns
+    // nothing and paints the established unavailable output, so the URL it was
+    // painted from goes rather than standing for an image the clear deleted.
+    // A replacement that failed is the other case, and keeps its image above.
     expect(
-      transitionExcerptImage(disposed.state, { kind: "failed", target }),
-    ).toEqual({ state: { kind: "disposed" }, release: [] });
+      excerptImageOwnership({
+        held,
+        display: display(null, "cleared"),
+        identity,
+        create,
+      }),
+    ).toEqual({ owned: null, release: ["blob:1"] });
+  });
+
+  it("releases the URL when the card paints another Annotation", () => {
+    const held: ExcerptImageOwnership = {
+      identity: stated(null).identity,
+      image: image(1),
+      url: "blob:1",
+    };
+    const other = stated(null, {
+      annotation: annotation({ key: "INK2" }),
+    }).identity;
+
+    // Another Annotation the display holds nothing for yet: the URL of the
+    // previous one goes rather than standing in for it.
+    expect(
+      excerptImageOwnership({
+        held,
+        display: display(null, "reading"),
+        identity: other,
+        create,
+      }),
+    ).toEqual({ owned: null, release: ["blob:1"] });
+    expect(
+      excerptImageOwnership({
+        held,
+        display: display(image(3)),
+        identity: other,
+        create,
+      }),
+    ).toEqual({
+      owned: { identity: other, image: image(3), url: "blob:3" },
+      release: ["blob:1"],
+    });
   });
 });

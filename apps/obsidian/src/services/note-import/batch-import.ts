@@ -37,6 +37,7 @@ import {
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import type { DatabaseService } from "@/services/database/service";
+import { ExcerptOutcomeScope } from "@/services/excerpt-image/outcome-scope";
 import { collectExcerptSummary } from "@/services/excerpt-image/prepare";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type {
@@ -772,6 +773,9 @@ async function executeImportRun(
   const tagMemo: TagMemo = new Map();
   const attachmentFolderCache = new Map<string, string>();
   using excerpts = collectExcerptSummary(deps.noteFeature.reportExcerptImages);
+  // One run is one initiating batch: every note it writes reuses one retention,
+  // released as soon as the run's last admitted consumer settles.
+  await using outcomes = new ExcerptOutcomeScope();
 
   const result = await runBatchWrite({
     db: deps.db,
@@ -793,6 +797,7 @@ async function executeImportRun(
         tagMemo,
         attachmentFolderCache,
         reportExcerpts: excerpts.add,
+        outcomes,
         ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
       };
       const outcome = task.profilePlan

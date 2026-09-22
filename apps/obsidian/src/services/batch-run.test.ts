@@ -87,6 +87,68 @@ describe("executeBatchRun", () => {
     );
   });
 
+  it("reports a task as it settles while another admitted task still runs", async () => {
+    const secondSettled = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const abort = new AbortController();
+    const settled: Parameters<BatchRunControls["onItemSettled"]>[0][] = [];
+    const controls: BatchRunControls = {
+      signal: abort.signal,
+      onItemSettled: (event) => {
+        settled.push(event);
+        if (event.id === 2) secondSettled.resolve();
+      },
+    };
+    const pending = executeBatchRun({
+      tasks: [task(1), task(2)],
+      controls,
+      concurrency: 2,
+      run: async (t) => {
+        if (t.id === 1) {
+          started.resolve();
+          await release.promise;
+          return "created";
+        }
+        return "updated";
+      },
+    });
+    await started.promise;
+    // Task 2 settles on its own while task 1 stays admitted and unfinished.
+    await secondSettled.promise;
+    expect(settled).toEqual([{ id: 2, status: "done" }]);
+    release.resolve();
+    expect(await pending).toMatchObject({ created: 1, updated: 1 });
+    expect(settled).toContainEqual({ id: 1, status: "done" });
+  });
+
+  it("keeps admitted work running when the run's signal aborts mid-run", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const { controls, abort, settled } = makeRunControls();
+    const pending = executeBatchRun({
+      tasks: [task(1), task(2)],
+      controls,
+      concurrency: 1,
+      run: async (t) => {
+        if (t.id !== 1) return "created";
+        started.resolve();
+        await release.promise;
+        return "created";
+      },
+    });
+    await started.promise;
+    // The shell's signal is the only one this run observes, and an observer
+    // giving up mid-run cancels through it. Cancellation stops queued demand
+    // and nothing else: the admitted write is neither cancelled nor reported
+    // settled by it.
+    abort.abort();
+    expect(settled).toHaveLength(0);
+    release.resolve();
+    expect(await pending).toMatchObject({ created: 1, cancelled: true });
+    expect(settled).toEqual([{ id: 1, status: "done" }]);
+  });
+
   it("counts a throwing task as failed and reports its error", async () => {
     const { controls, settled } = makeRunControls();
     const onTaskFailed = vi.fn();

@@ -12,8 +12,30 @@ import type {
   AnnotationRecord,
   AnnotationSource,
 } from "@/services/annotation-repository/service";
+import type { DatabaseService } from "@/services/database/service";
 
 import type { ExcerptRequest } from "./contract";
+
+/**
+ * The file inputs one saved Annotation resolves through, or `null` where nothing
+ * can: no Annotation Source, another Zotero data directory, or a database that
+ * is not ready.
+ *
+ * The database verifies the source again, so a record the source does not hold
+ * resolves to nothing rather than to another database's pixels.
+ */
+export function savedExcerptRequest(options: {
+  annotation: AnnotationRecord;
+  source: AnnotationSource | null;
+  sourceScope: string | null;
+  db: Pick<DatabaseService, "state" | "client">;
+  paths: AttachmentPathContext;
+}): ExcerptRequest | null {
+  const { annotation, source, sourceScope, db, paths } = options;
+  if (!source || sourceScope !== paths.dataDir || db.state !== "ready")
+    return null;
+  return excerptRequest({ annotation, source, client: db.client, paths });
+}
 
 /** Resolves file inputs only when the selected source identifies this database. */
 export function excerptRequest(options: {
