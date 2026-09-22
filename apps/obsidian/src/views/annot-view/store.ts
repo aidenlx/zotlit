@@ -6,6 +6,7 @@ import { createStore } from "zustand/vanilla";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { toggledValues } from "@/components/chooser-logic";
+import type { ItemSummary } from "@/lib/item-summary";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -32,13 +33,6 @@ export type FollowMode = "active-tab" | "zotero-reader" | "pinned";
  */
 export type AttachmentLock = "obsidian-pdf" | "zotero-reader" | null;
 
-/**
- * Whether a card can be dragged into the active note: `ready` once the
- * note's attachment-import handle stands, `preparing` while it is being
- * prepared, `none` when no note is open to receive the drop.
- */
-export type DragTarget = "ready" | "preparing" | "none";
-
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   /** Indexed Key of the Attachment on screen. */
@@ -48,6 +42,7 @@ export interface AnnotState {
   annotations: readonly AnnotationRecord[] | null;
   /** Which Annotation Source answered for {@link annotations}. */
   annotationSource: AnnotationSource | null;
+  annotationSourceScope: string | null;
   /** What the cards may do to the Attachment on screen. */
   capability: EditingCapability;
   /**
@@ -69,8 +64,12 @@ export interface AnnotState {
    * while nothing resolves. An Attachment can stand without one.
    */
   itemKey: string | null;
-  /** Pre-formatted identity label (e.g. "Title — Author (2024)"). */
-  itemDisplayLabel: string | null;
+  /**
+   * The Item on screen as the header names it: its own title, the creators and
+   * year the byline carries, and the one line built from both. `null` while
+   * nothing resolves.
+   */
+  itemDisplay: ItemSummary | null;
   /** Group library ID for the current item; `null` for user library. */
   groupID: number | null;
   followMode: FollowMode;
@@ -87,7 +86,6 @@ export interface AnnotState {
   liveUpdatesOn: boolean;
   /** Whether the Zotero Reader closed, its last Attachment still on screen. */
   zoteroReaderClosed: boolean;
-  dragTarget: DragTarget;
   /** Search row visible. */
   searchOpen: boolean;
   /** Case-insensitive substring query typed into the search row. */
@@ -98,7 +96,10 @@ export interface AnnotState {
   selectedTags: string[];
 }
 
-/** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
+/**
+ * Search and filter defaults, not persisted; reset whenever the displayed item
+ * changes.
+ */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
   "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
@@ -120,6 +121,7 @@ export function createAnnotStore() {
         attachmentLock: null,
         annotations: null,
         annotationSource: null,
+        annotationSourceScope: null,
         // Nothing has probed Zotero yet, which is exactly what "probing" says.
         capability: { kind: "read-only", reason: "probing" },
         mutations: new Map(),
@@ -127,7 +129,7 @@ export function createAnnotStore() {
         editingCommentKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,
-        itemDisplayLabel: null,
+        itemDisplay: null,
         groupID: null,
         followMode: "active-tab",
         previousMode: "active-tab",
@@ -135,7 +137,6 @@ export function createAnnotStore() {
         pinnable: null,
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
-        dragTarget: "none",
         ...INITIAL_FILTER_STATE,
       }),
     ),
@@ -227,6 +228,19 @@ export function useToggleSelectedColor(): (color: string) => void {
         : [...selectedColors, color],
     });
   };
+}
+
+/**
+ * Takes a whole colour selection, for the Chooser's own action row: clearing
+ * names no single colour, so {@link useToggleSelectedColor} has nothing to be
+ * handed. Memoised on the store, as {@link useSetSelectedTags} is.
+ */
+export function useSetSelectedColors(): (colors: string[]) => void {
+  const store = useAnnotStoreApi();
+  return useCallback(
+    (colors) => store.setState({ selectedColors: colors }),
+    [store],
+  );
 }
 
 /** Assembles the {@link AnnotFilter} from the store's query/colors/tags slices. */

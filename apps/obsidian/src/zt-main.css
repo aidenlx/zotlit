@@ -74,6 +74,10 @@
 
   /* ===== Radius ===== */
   --radius-*: initial;
+  /* A 2px corner, for a mark small enough that `--radius-s` would round it
+     away: an 8px swatch square under a 4px radius reads as a circle. Obsidian
+     names no radius this small, so it is stated here. */
+  --radius-xs: 2px;
   --radius-sm: var(--radius-s);
   --radius-md: var(--radius-m);
   --radius-lg: var(--radius-l);

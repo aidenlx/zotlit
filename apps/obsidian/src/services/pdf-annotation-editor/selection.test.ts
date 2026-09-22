@@ -141,6 +141,7 @@ function setup(
   const gestures = {
     revealAnnotation: vi.fn(),
     reportBlockedGesture: vi.fn(),
+    allowEditing: vi.fn(),
   };
   const reported: (readonly string[])[] = [];
   const navigated: string[] = [];

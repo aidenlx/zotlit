@@ -1,39 +1,64 @@
-// Top filter bar: colour trigger, first tag chip, tag-vocabulary trigger,
-// count/clear cluster; each trigger opens its vocabulary in a Chooser anchored
-// under it.
+// The control row: colour and tag Choosers, the search toggle, and a trailing
+// group carrying the count, Clear and collapse. One row of icon buttons under
+// the header, its grouping carried by space rather than by a rule.
 import { useMemo } from "react";
+import type { Ref } from "react";
 
 import { Chooser } from "@/components/chooser";
 import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
-import { activatable, cn, tooltipAttrs } from "@/lib/utils";
+import { runtime } from "@/lib/i18n/generated/runtime";
+import { cn, tooltipAttrs } from "@/lib/utils";
 
 import {
+  cappedSelection,
   deriveSwatchColors,
   deriveTagChips,
   filterAnnotations,
   isFilterActive,
-  pickFirstTagChip,
 } from "./filter";
 import type { TagChip } from "./filter";
 import {
   useAnnotFilter,
   useAnnotStore,
   useClearFilters,
+  useSetSelectedColors,
   useSetSelectedTags,
+  useToggleSearchOpen,
   useToggleSelectedColor,
-  useToggleSelectedTag,
 } from "./store";
-import { tagChipVariants } from "./tag-chip";
 
-export function FilterBar() {
+/** How many colours the trigger draws before it starts counting instead. */
+const COLOR_CAP = 3;
+
+/** The tag trigger draws one name, however many tags the filter holds. */
+const TAG_CAP = 1;
+
+export interface FilterBarProps {
+  /** The search bar the search toggle reveals, for `aria-controls`. */
+  searchBarId: string;
+  /** Where Escape in the search bar sends focus back to. */
+  searchButtonRef: Ref<HTMLDivElement>;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+export function FilterBar({
+  searchBarId,
+  searchButtonRef,
+  collapsed,
+  onToggleCollapsed,
+}: FilterBarProps) {
   const annotations = useAnnotStore((s) => s.annotations);
   const selectedColors = useAnnotStore((s) => s.selectedColors);
+  const searchOpen = useAnnotStore((s) => s.searchOpen);
   const clearFilters = useClearFilters();
+  const toggleSearchOpen = useToggleSearchOpen();
   const toggleColor = useToggleSelectedColor();
-  const toggleTag = useToggleSelectedTag();
+  const setColors = useSetSelectedColors();
   const setTags = useSetSelectedTags();
 
   const filter = useAnnotFilter();
@@ -53,83 +78,99 @@ export function FilterBar() {
   const total = annotations?.length ?? 0;
   const active = isFilterActive(filter);
 
-  const firstChip = pickFirstTagChip(tagChips);
-  const vocabSize = tagChips.length;
-  // One derived colour is already worth a trigger: ticking it hides every
-  // annotation that carries no colour. The tag trigger asks for two because
-  // its first chip stands beside it, so a vocabulary of one is fully shown
-  // already; every colour lives inside the Chooser instead.
-  const paletteSize = swatchColors.length;
-
   if (!annotations || annotations.length === 0) return null;
 
   return (
-    <div className="zt:flex zt:min-h-7 zt:shrink-0 zt:items-start zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-1">
-      {/* Wrappable zone: swatches, divider, first chip, trigger wrap among
-            themselves when space runs out. The count/Clear cluster below sits
-            outside this zone so it never joins the wrap. */}
-      <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-2">
-        {paletteSize >= 1 && (
-          <ColorChooser
-            colors={swatchColors}
-            selectedColors={selectedColors}
-            onToggle={toggleColor}
+    // The row's leading edge is the header button's: both sit in the same 8px
+    // inline padding and both pull their first glyph 6px in, so the glyphs
+    // share one edge.
+    <div className="zt:flex zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-y-1 zt:px-2 zt:pt-1 zt:text-sm">
+      {swatchColors.length >= 1 && (
+        <ColorChooser
+          colors={swatchColors}
+          selectedColors={selectedColors}
+          onToggle={toggleColor}
+          onClear={() => setColors([])}
+        />
+      )}
+      {tagChips.length >= 1 && (
+        <TagChooser
+          chips={tagChips}
+          selectedTags={filter.tags}
+          onChange={setTags}
+        />
+      )}
+      <IconButton
+        ref={searchButtonRef}
+        icon="search"
+        active={searchOpen}
+        aria-expanded={searchOpen}
+        aria-controls={searchBarId}
+        onClick={toggleSearchOpen}
+        {...tooltipAttrs(m.annot_view_search_tooltip())}
+      />
+      {/* `ms-auto` is the gap between the leading group and the trailing one:
+          the row's grouping is space, never a rule. */}
+      <div className="zt:ms-auto zt:flex zt:shrink-0 zt:items-center zt:gap-1">
+        {active && (
+          <span className="zt:whitespace-nowrap zt:text-muted-foreground zt:tabular-nums">
+            {m.annot_view_filter_count({ shown, total })}
+          </span>
+        )}
+        {active && (
+          <IconButton
+            icon="filter-x"
+            onClick={clearFilters}
+            {...tooltipAttrs(m.annot_view_clear_filters())}
           />
         )}
-        {/* Hidden below the width band where the tag zone wraps onto its own
-              line — a fixed-height rule there would dangle at the line break
-              instead of separating two columns on one line. */}
-        <span className="zt:hidden zt:h-4 zt:w-px zt:shrink-0 zt:self-center zt:bg-border zt:@sm:block" />
-        <div className="zt:flex zt:min-w-0 zt:flex-auto zt:items-center zt:gap-1">
-          {firstChip && (
-            <TagPill chip={firstChip} onToggle={toggleTag} truncate />
+        <IconButton
+          icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
+          onClick={onToggleCollapsed}
+          {...tooltipAttrs(
+            collapsed
+              ? m.annot_view_expand_tooltip()
+              : m.annot_view_collapse_tooltip(),
           )}
-          {vocabSize >= 2 && (
-            <TagChooser
-              chips={tagChips}
-              selectedTags={filter.tags}
-              onChange={setTags}
-            />
-          )}
-        </div>
-      </div>
-      <div className="zt:flex zt:h-7 zt:shrink-0 zt:items-center zt:gap-2">
-        <span className="zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground">
-          {m.annot_view_filter_count({ shown, total })}
-        </span>
-        {active && <ClearLink onClear={clearFilters} />}
+        />
       </div>
     </div>
   );
 }
 
 /**
- * The dashed action chip both filter triggers wear. A solid 1px border and a
- * muted fill keep it distinct from the native data chips beside it; the
- * counting state swaps in accent styling, so an active filter is readable
- * without opening it.
+ * The shape both Choosers hang under: Obsidian's own `clickable-icon` box, a
+ * 16px glyph in 4px by 6px of padding, its parts on the 4px gap a text-icon
+ * button keeps, with the disclosure arrow after them. The box can shrink, so
+ * a tag name gives way before the count and the verbs after it are clipped.
+ * The Chooser's stylesheet rolls its trigger back to the plugin's own layers,
+ * which discards that box along with Obsidian's button rules, so the box is
+ * drawn again here in utilities.
  */
-const filterTriggerChip = cn(
-  "zt:inline-flex zt:shrink-0 zt:cursor-pointer zt:items-center zt:gap-0.75 zt:rounded-(--tag-radius) zt:border zt:border-dashed zt:border-border zt:bg-background zt:px-2.5 zt:py-0.5 zt:text-xs zt:whitespace-nowrap zt:text-muted-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus",
-  "zt:data-counting:border-primary zt:data-counting:bg-[color-mix(in_srgb,var(--interactive-accent)_12%,var(--background-primary))] zt:data-counting:text-accent-foreground",
-);
+const filterTrigger =
+  "clickable-icon zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
 
-/** The chip's disclosure arrow; it turns over while its Chooser stands open. */
+/**
+ * The trigger's disclosure arrow, at the `--icon-xs` Obsidian gives the
+ * auxiliary arrow of its own text-icon buttons; it turns over while its
+ * Chooser stands open.
+ */
 function TriggerChevron() {
   return (
-    <svg
-      width="8"
-      height="8"
-      viewBox="0 0 8 8"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <Icon
+      name="chevron-down"
+      size="var(--icon-xs)"
       className="zt:duration-150 zt:group-data-open:rotate-180 zt:motion-safe:transition-transform"
-    >
-      <path d="M1.5 3 4 5.5 6.5 3" />
-    </svg>
+    />
+  );
+}
+
+/** What a trigger's cap leaves out, counted beside what it draws. */
+function HiddenCount({ count }: { count: number }) {
+  return (
+    <span className="zt:tabular-nums">
+      {m.annot_view_filter_more_count({ count })}
+    </span>
   );
 }
 
@@ -138,7 +179,7 @@ function Swatch({ hex, className }: { hex: string; className?: string }) {
   return (
     <span
       className={cn(
-        "zt:inline-block zt:shrink-0 zt:rounded-sm zt:bg-(--zt-swatch-color) zt:ring-1 zt:ring-border",
+        "zt:inline-block zt:shrink-0 zt:rounded-full zt:bg-(--zt-swatch-color) zt:align-middle zt:ring-1 zt:ring-foreground/10 zt:ring-inset",
         className,
       )}
       style={{ "--zt-swatch-color": hex } as React.CSSProperties}
@@ -162,10 +203,31 @@ function changedColor(
 }
 
 /**
- * The colours present in the annotations, in a Chooser hanging under the same
- * dashed action chip the tag filter uses. It carries no search field: a
- * palette is read by sight, so each row is the swatch alone and the tick
- * beside it carries the selected state.
+ * The row that empties a filter's selection, in either Chooser: it names no
+ * value of its own and carries the gesture instead. What the render callbacks
+ * discriminate a row on.
+ */
+interface ActionRow extends ChooserRow {
+  action: (close: () => void) => void;
+}
+
+/**
+ * What an action row answers to inside its Chooser, where a value names a row
+ * rather than a colour or a tag. It wears the plugin's own prefix, so no hex
+ * and no tag name collides with it.
+ */
+function clearRowValue(kind: "colors" | "tags"): string {
+  return `zt:clear-${kind}`;
+}
+
+/** A colour row draws the name beside its swatch and carries nothing else. */
+type ColorRow = (ChooserRow & { action?: undefined }) | ActionRow;
+
+/**
+ * The colours present in the annotations, in a Chooser hanging under the
+ * trigger. Each row is a square swatch and the colour's own name, so the list
+ * reads without a tooltip; it carries no search field, because a palette of at
+ * most eight is read by sight.
  *
  * With no search field, the surface stands on the other half of ADR 0044's
  * carve-out: colours are ticked several at a time, and an Obsidian `Menu`
@@ -177,38 +239,54 @@ function ColorChooser({
   colors,
   selectedColors,
   onToggle,
+  onClear,
 }: {
   colors: readonly string[];
   selectedColors: readonly string[];
   onToggle: (color: string) => void;
+  onClear: () => void;
 }) {
   const counting = selectedColors.length > 0;
-  const ariaLabel = counting
-    ? m.annot_view_filter_color_trigger_selected({
-        count: selectedColors.length,
-      })
-    : m.annot_view_filter_color_trigger_show_all();
 
-  // One group and no action row: a palette is the whole list, and the filter
-  // bar's own Clear already empties it.
-  const groups = useMemo(
-    () => [
-      {
-        items: colors.map((hex) => ({
-          value: hex,
-          label: annotationColorLabel(hex),
-        })),
-      },
-    ],
-    [colors],
-  );
-
-  // The chip wears the selection in the palette order the rows keep, so the
+  // The trigger wears the selection in the palette order the rows keep, so the
   // same filter reads the same way whatever order its colours were ticked in.
-  const selectedSwatches = useMemo(
+  const selected = useMemo(
     () => colors.filter((hex) => selectedColors.includes(hex)),
     [colors, selectedColors],
   );
+  const { shown, hiddenCount } = cappedSelection(selected, COLOR_CAP);
+
+  // The cap reaches the eye alone: the accessible name lists every colour.
+  const ariaLabel = counting
+    ? m.annot_view_filter_color_trigger_active({
+        colors: new Intl.ListFormat(runtime.getLocale(), {
+          type: "conjunction",
+        }).format(selected.map(annotationColorLabel)),
+      })
+    : m.annot_view_filter_color_trigger();
+
+  // The action row sits in a second group, reached by the same arrow keys, and
+  // stands only while something is selected: a row offering to clear an empty
+  // selection is a row that does nothing.
+  const groups = useMemo<ChooserGroup<ColorRow>[]>(() => {
+    const entries = colors.map((hex) => ({
+      value: hex,
+      label: annotationColorLabel(hex),
+    }));
+    if (selectedColors.length === 0) return [{ items: entries }];
+    return [
+      { items: entries },
+      {
+        items: [
+          {
+            value: clearRowValue("colors"),
+            label: m.annot_view_filter_color_clear(),
+            action: () => onClear(),
+          },
+        ],
+      },
+    ];
+  }, [colors, selectedColors.length, onClear]);
 
   return (
     // The store keeps the colour action #1194 asks to reuse unchanged — it
@@ -217,7 +295,8 @@ function ColorChooser({
     // than a guess: a tick on a row is the only thing that calls
     // `onValueChange` — by click or by Enter, both through `activatedRow` —
     // and what it hands over is `toggledValues(selected, value)`, which
-    // differs from the selection it was given by that one value alone.
+    // differs from the selection it was given by that one value alone. The
+    // action row runs instead of ticking, so clearing never reaches here.
     <Chooser
       value={selectedColors}
       onValueChange={(next) => {
@@ -225,22 +304,17 @@ function ColorChooser({
         if (moved !== undefined) onToggle(moved);
       }}
     >
-      <Chooser.Trigger
-        data-counting={counting ? "" : undefined}
-        className={filterTriggerChip}
-        {...tooltipAttrs(ariaLabel)}
-      >
-        {/* A fixed 1rem-tall content box, so a chip of glyphs stands the same
-            height as the tag chip beside it, whose height a line box sets. */}
-        <span className="zt:flex zt:h-4 zt:items-center zt:gap-0.5">
-          {counting ? (
-            selectedSwatches.map((hex) => (
-              <Swatch key={hex} hex={hex} className="zt:size-3" />
-            ))
-          ) : (
-            <Icon name="palette" size={12} />
-          )}
-        </span>
+      <Chooser.Trigger className={filterTrigger} {...tooltipAttrs(ariaLabel)}>
+        {counting ? (
+          <span className="zt:flex zt:items-center zt:gap-0.5">
+            {shown.map((hex) => (
+              <Swatch key={hex} hex={hex} className="zt:size-2.5" />
+            ))}
+          </span>
+        ) : (
+          <Icon name="palette" />
+        )}
+        {hiddenCount > 0 && <HiddenCount count={hiddenCount} />}
         <TriggerChevron />
       </Chooser.Trigger>
       <Chooser.Popup className="zt:min-w-40">
@@ -251,54 +325,21 @@ function ColorChooser({
           groups={groups}
           aria-label={m.annot_view_filter_color_list()}
         >
-          {(row) => (
-            <Chooser.Item
-              key={row.value}
-              value={row.value}
-              {...tooltipAttrs(row.label)}
-            >
-              <Swatch hex={row.value} className="zt:h-4 zt:w-24" />
-            </Chooser.Item>
-          )}
+          {(row) =>
+            row.action ? (
+              <Chooser.Action key={row.value} value={row.value} icon="x">
+                {row.label}
+              </Chooser.Action>
+            ) : (
+              <Chooser.Item key={row.value} value={row.value}>
+                <Swatch hex={row.value} className="zt:me-1.5 zt:size-3" />
+                {row.label}
+              </Chooser.Item>
+            )
+          }
         </Chooser.List>
       </Chooser.Popup>
     </Chooser>
-  );
-}
-
-function TagPill({
-  chip,
-  onToggle,
-  truncate,
-}: {
-  chip: TagChip;
-  onToggle: (tag: string) => void;
-  truncate?: boolean;
-}) {
-  const disabled = !chip.selected && !chip.available;
-  const state = chip.selected ? "selected" : disabled ? "disabled" : "resting";
-  return (
-    <span
-      aria-pressed={chip.selected}
-      aria-disabled={disabled || undefined}
-      className={tagChipVariants({
-        state,
-        truncate,
-      })}
-      {...activatable(() => onToggle(chip.name), { disabled })}
-      {...tooltipAttrs(
-        m.annot_view_filter_tag_tooltip({
-          name: chip.name,
-          count: chip.hitCount,
-        }),
-      )}
-    >
-      {truncate ? (
-        <span className="zt:block zt:max-w-27.5 zt:truncate">{chip.name}</span>
-      ) : (
-        chip.name
-      )}
-    </span>
   );
 }
 
@@ -308,27 +349,14 @@ interface TagEntryRow extends ChooserRow {
   action?: undefined;
 }
 
-/** The row beside the tags that clears the selection; it names no tag. */
-interface TagActionRow extends ChooserRow {
-  action: (close: () => void) => void;
-}
-
 /** What the render callback discriminates on `action` to tell apart. */
-type TagRow = TagEntryRow | TagActionRow;
+type TagRow = TagEntryRow | ActionRow;
 
 /**
- * What the action row answers to inside the Chooser, where a value names a row
- * rather than a tag. It wears the plugin's own prefix so a tag is unlikely to
- * carry the same name.
- */
-const CLEAR_TAGS = "zt:clear-tags";
-
-/**
- * The whole tag vocabulary, in a Chooser hanging under a dashed action chip.
- * Counting (k = selected tag count ≥ 2) shows a filter icon and k in accent
- * styling; otherwise shows "+{n-1}" (n = vocabulary size) in muted styling.
- * The two states carry two different meanings, so each one gets its own glyph
- * rather than its own colour. The chip never shrinks or wraps.
+ * The whole tag vocabulary, in a Chooser hanging under the same trigger shape
+ * the colours wear. Its active state is bounded the same way: the first
+ * selected tag's name, then a count of the rest, so the row stops growing as
+ * the selection piles up.
  */
 function TagChooser({
   chips,
@@ -339,12 +367,23 @@ function TagChooser({
   selectedTags: readonly string[];
   onChange: (tags: string[]) => void;
 }) {
-  const selectedCount = selectedTags.length;
-  const counting = selectedCount >= 2;
-  const count = counting ? selectedCount : chips.length - 1;
+  const counting = selectedTags.length > 0;
+
+  // In the order the rows keep, so the name on the trigger is the one leading
+  // the list rather than whichever tag was ticked first.
+  const selected = useMemo(
+    () => chips.filter((chip) => chip.selected).map((chip) => chip.name),
+    [chips],
+  );
+  const { shown, hiddenCount } = cappedSelection(selected, TAG_CAP);
+
   const ariaLabel = counting
-    ? m.annot_view_filter_trigger_selected({ count })
-    : m.annot_view_filter_trigger_show_all();
+    ? m.annot_view_filter_tag_trigger_active({
+        tags: new Intl.ListFormat(runtime.getLocale(), {
+          type: "conjunction",
+        }).format(selected),
+      })
+    : m.annot_view_filter_tag_trigger();
 
   // The Chooser matches on the label alone, so what a row needs beyond its
   // name travels with it rather than being looked up again while rendering.
@@ -369,7 +408,7 @@ function TagChooser({
       {
         items: [
           {
-            value: CLEAR_TAGS,
+            value: clearRowValue("tags"),
             label: m.annot_view_filter_tag_clear(),
             action: () => onChange([]),
           },
@@ -380,13 +419,16 @@ function TagChooser({
 
   return (
     <Chooser value={selectedTags} onValueChange={onChange}>
-      <Chooser.Trigger
-        data-counting={counting ? "" : undefined}
-        className={filterTriggerChip}
-        {...tooltipAttrs(ariaLabel)}
-      >
-        {counting ? <Icon name="filter" size={10} /> : "+"}
-        {count}
+      <Chooser.Trigger className={filterTrigger} {...tooltipAttrs(ariaLabel)}>
+        <Icon name="tag" />
+        {/* The full name is in the accessible name and in the list; the
+            trigger spends a bounded share of the row on it. */}
+        {shown.map((name) => (
+          <span key={name} className="zt:max-w-32 zt:min-w-0 zt:truncate">
+            {name}
+          </span>
+        ))}
+        {hiddenCount > 0 && <HiddenCount count={hiddenCount} />}
         <TriggerChevron />
       </Chooser.Trigger>
       <Chooser.Popup>
@@ -422,16 +464,5 @@ function TagChooser({
         </Chooser.List>
       </Chooser.Popup>
     </Chooser>
-  );
-}
-
-function ClearLink({ onClear }: { onClear: () => void }) {
-  return (
-    <span
-      className="zt:cursor-pointer zt:rounded-sm zt:text-xs zt:text-accent-foreground zt:hover:underline zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
-      {...activatable(onClear)}
-    >
-      {m.annot_view_filter_clear()}
-    </span>
   );
 }

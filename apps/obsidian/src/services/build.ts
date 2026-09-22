@@ -22,6 +22,13 @@ import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
+import { ExcerptDisplayService } from "./excerpt-image/display";
+import { createExcerptPreparation } from "./excerpt-image/prepare";
+import { prepareSingleExcerpt } from "./excerpt-image/prepare-single";
+import type { ExcerptReaderDocuments } from "./excerpt-image/reader-borrow";
+import { savedExcerptRequest } from "./excerpt-image/request";
+import { ExcerptImageService } from "./excerpt-image/service";
+import { openExcerptStore } from "./excerpt-image/store";
 import { GraphCitations } from "./graph-citations/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
@@ -86,6 +93,14 @@ export function buildServices(
     console.error(`Service "${key}" failed to initialize`, error);
   });
 
+  // The excerpt service is registered before the PDF reader, so the reader
+  // hands its documents over through this one holder. A crop asks for a reader
+  // document per resolution, and answers detached while the holder is empty.
+  let reader: PdfAnnotationEditor | undefined;
+  const readers: ExcerptReaderDocuments = {
+    borrow: (path) => reader?.borrowDocument(path) ?? null,
+  };
+
   return container
     .use({
       settings: () =>
@@ -137,6 +152,21 @@ export function buildServices(
         new DatabaseService({ settings, zoteroPref }),
     })
     .use({
+      excerptImage: () =>
+        new ExcerptImageService({
+          openStore: () => openExcerptStore(plugin.app.appId),
+          readers,
+        }),
+    })
+    .use({
+      excerptDisplay: ({ queryClient, excerptImage }) =>
+        new ExcerptDisplayService({
+          queries: queryClient,
+          resolve: (request, signal) => excerptImage.resolve(request, signal),
+          stored: (request) => excerptImage.stored(request),
+        }),
+    })
+    .use({
       attachmentResolver: ({ db, zoteroPref }) =>
         new AttachmentResolver({ db, zoteroPref }),
     })
@@ -154,11 +184,35 @@ export function buildServices(
         }),
     })
     .use({
-      annotationRepository: ({ db, queryClient, zoteroLocalApi }) =>
+      annotationRepository: ({
+        db,
+        queryClient,
+        zoteroLocalApi,
+        zoteroPref,
+        excerptImage,
+      }) =>
         new AnnotationRepository({
           db,
           queryClient,
           localApi: zoteroLocalApi,
+          // A session's first read of an Attachment has no list that stood
+          // before it to compare against, so it is compared against the image
+          // this device persists for the Annotation instead — the display's own
+          // stored-outcome read, so an Annotation this device never cached has
+          // no baseline here exactly as it has no image to replace there.
+          persistedExcerpt: async (annotation, source) => {
+            const request = savedExcerptRequest({
+              annotation,
+              source,
+              sourceScope: zoteroPref.dataDir,
+              db,
+              paths: zoteroPref,
+            });
+            if (!request) return null;
+            return (
+              (await excerptImage.stored(request))?.identity.fingerprint ?? null
+            );
+          },
         }),
     })
     .use({
@@ -186,8 +240,8 @@ export function buildServices(
         annotationRepository,
         capabilityNotices,
         settings,
-      }) =>
-        new PdfAnnotationEditor({
+      }) => {
+        reader = new PdfAnnotationEditor({
           app: plugin.app,
           attachments: attachmentResolver,
           annotations: annotationRepository,
@@ -195,12 +249,15 @@ export function buildServices(
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>
               capabilityNotices.reportBlockedGesture(attachmentKey),
+            allowEditing: () => void capabilityNotices.showEditingCapability(),
           },
           markGestures: {
             revealAnnotation: (annotationKey, options) =>
               void revealAnnotationInView(plugin, annotationKey, options),
           },
-        }),
+        });
+        return reader;
+      },
     })
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
@@ -250,6 +307,7 @@ export function buildServices(
         template,
         zoteroPref,
         attachmentImport,
+        excerptImage,
       }): NoteImporter =>
         createNoteImporter({
           profile,
@@ -258,6 +316,15 @@ export function buildServices(
           template,
           zoteroPref,
           attachmentImport,
+          excerptImages: (options) =>
+            createExcerptPreparation({
+              app: plugin.app,
+              resolver: excerptImage,
+              paths: {
+                dataDir: zoteroPref.dataDir,
+                baseAttachmentPath: zoteroPref.baseAttachmentPath,
+              },
+            })(options),
         }),
     })
     .use({
@@ -299,6 +366,7 @@ export function buildServices(
     })
     .useValue({
       noteFeature: ({
+        excerptImage,
         profile,
         template,
         db,
@@ -309,6 +377,21 @@ export function buildServices(
         noteImport,
       }): NoteFeature =>
         createNoteFeature({
+          singleExcerpt: (options) =>
+            prepareSingleExcerpt({
+              ...options,
+              app: plugin.app,
+              resolver: excerptImage,
+            }),
+          excerptImages: (options) =>
+            createExcerptPreparation({
+              app: plugin.app,
+              resolver: excerptImage,
+              paths: {
+                dataDir: zoteroPref.dataDir,
+                baseAttachmentPath: zoteroPref.baseAttachmentPath,
+              },
+            })(options),
           profile,
           app: plugin.app,
           template,

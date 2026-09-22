@@ -97,6 +97,10 @@ describe("getAnnotationsByParent tags", () => {
 
     const annotation = result.find((a) => a.key === "JDJKX3N6");
     expect(annotation?.tags).toEqual(["first-tag", "second-tag"]);
+    expect(annotation?.tagDetails).toEqual([
+      { name: "first-tag", type: 0 },
+      { name: "second-tag", type: 1 },
+    ]);
   });
 });
 
@@ -250,6 +254,6 @@ function seed(sqlite: DatabaseSync): void {
     insert into tags (tagID, name)
       values (1, 'first-tag'), (2, 'second-tag');
     insert into itemTags (itemID, tagID, type)
-      values (9060, 1, 0), (9060, 2, 0);
+      values (9060, 1, 0), (9060, 2, 1);
   `);
 }

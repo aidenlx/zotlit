@@ -108,7 +108,7 @@ export {
   getAnnotViewAttachments,
   type AnnotViewAttachment,
 } from "./queries/annot-view";
-export { type ItemTag, type TemplateTag } from "./lib/zt-tag";
+export { type ItemTag, type TemplateTag, tagTypeToName } from "./lib/zt-tag";
 export { type Attachment } from "./lib/zt-attach";
 export {
   getCollectionIDByKey,
@@ -199,6 +199,7 @@ export {
 } from "./lib/context/zt-template-note";
 export {
   fetchAnnotationsTemplateData,
+  fetchAnnotationParentContext,
   fetchNoteContext,
   type AnnotationResolvers,
   type NoteResolvers,

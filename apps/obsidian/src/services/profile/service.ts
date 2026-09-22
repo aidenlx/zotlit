@@ -2,7 +2,7 @@
 import { customAlphabet } from "nanoid";
 import { join } from "node:path/posix";
 import type { App, TFile } from "obsidian";
-import pLimit from "p-limit";
+import PQueue from "p-queue";
 import { parseDocument } from "yaml";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -243,7 +243,7 @@ export type ProfileReader = Pick<
 >;
 
 export class ProfileService extends Service {
-  readonly #mutate = pLimit(1);
+  readonly #mutate = new PQueue({ concurrency: 1 });
   readonly #deps: ProfileServiceDeps;
   readonly #events = createNanoEvents<{ changed: () => void }>();
   #profiles: LiteratureNoteProfile[] = [];
@@ -406,7 +406,7 @@ export class ProfileService extends Service {
       inherited,
       reason,
       create: () =>
-        this.#mutate(() => {
+        this.#mutate.add(() => {
           if (reason) throw new Error(reason);
           return this.#persist(label, id, content);
         }),
@@ -454,7 +454,7 @@ export class ProfileService extends Service {
     expected: ProfileDocumentExpectation,
   ): Promise<ProfileDocumentWrite> {
     await this.ready;
-    return this.#mutate(async () => {
+    return this.#mutate.add(async () => {
       await this.#settle();
       const profile = this.resolveProfile(selector);
       if (!profile)
@@ -542,7 +542,7 @@ export class ProfileService extends Service {
 
   async setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void> {
     await this.ready;
-    return this.#mutate(async () => {
+    return this.#mutate.add(async () => {
       await this.#settle();
       const profile = this.#profiles.find((entry) => entry.id === id);
       if (!profile) throw new Error(m.profile_import_changed());
@@ -589,7 +589,7 @@ export class ProfileService extends Service {
     options: { label?: string } = {},
   ): Promise<LiteratureNoteProfile> {
     await this.ready;
-    return this.#mutate(async () => {
+    return this.#mutate.add(async () => {
       const profile = this.resolveProfile(selector);
       if (!profile) throw new Error(`Unknown Profile: ${selector}`);
       const label = profile.label ?? m.settings_profile_default_name();
@@ -873,7 +873,7 @@ export class ProfileService extends Service {
         includeMatch: approvedMatch = includeMatch,
         replacePartials,
       } = {}) =>
-        this.#mutate(async () => {
+        this.#mutate.add(async () => {
           await this.#settle();
           const current = this.#importTarget(id);
           if (current?.path !== held?.path)

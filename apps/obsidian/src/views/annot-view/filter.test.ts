@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import {
+  cappedSelection,
   deriveSwatchColors,
   deriveTagChips,
   filterAnnotations,
   isFilterActive,
-  pickFirstTagChip,
   sanitizeSavedFilter,
 } from "./filter";
 import type { AnnotFilter } from "./filter";
@@ -306,7 +306,21 @@ describe("sanitizeSavedFilter", () => {
 });
 
 describe("deriveTagChips", () => {
-  it("dedupes tags and orders alphabetically regardless of selection", () => {
+  it("orders by hit count descending, then by name", () => {
+    const annots = [
+      makeAnnot({ key: "AAAAAAAA", tags: ["Mango", "Zebra", "Apple"] }),
+      makeAnnot({ key: "BBBBBBBB", tags: ["Mango", "Zebra"] }),
+      makeAnnot({ key: "CCCCCCCC", tags: ["Mango"] }),
+    ];
+    const chips = deriveTagChips(annots, NO_FILTER);
+    expect(chips.map((c) => [c.name, c.hitCount])).toEqual([
+      ["Mango", 3],
+      ["Zebra", 2],
+      ["Apple", 1],
+    ]);
+  });
+
+  it("dedupes tags and keeps its order regardless of selection", () => {
     const annots = [
       makeAnnot({
         key: "AAAAAAAA",
@@ -390,41 +404,33 @@ describe("deriveTagChips", () => {
   });
 });
 
-describe("pickFirstTagChip", () => {
-  it("returns the first selected tag in alphabetical order while filtering", () => {
-    const annots = [
-      makeAnnot({
-        key: "AAAAAAAA",
-        tags: ["Zebra", "Apple"],
-      }),
-      makeAnnot({
-        key: "BBBBBBBB",
-        tags: ["Mango"],
-      }),
-    ];
-    const chips = deriveTagChips(annots, {
-      ...NO_FILTER,
-      tags: ["Mango", "Zebra"],
+describe("cappedSelection", () => {
+  it("reports an empty selection as nothing shown and nothing hidden", () => {
+    expect(cappedSelection([], 3)).toEqual({ shown: [], hiddenCount: 0 });
+  });
+
+  it("shows every value while the selection is within the cap", () => {
+    expect(cappedSelection(["a"], 3)).toEqual({ shown: ["a"], hiddenCount: 0 });
+    expect(cappedSelection(["a", "b", "c"], 3)).toEqual({
+      shown: ["a", "b", "c"],
+      hiddenCount: 0,
     });
-    expect(pickFirstTagChip(chips)?.name).toBe("Mango");
   });
 
-  it("returns the first alphabetical tag when nothing is selected", () => {
-    const annots = [
-      makeAnnot({
-        key: "AAAAAAAA",
-        tags: ["Zebra", "Apple"],
-      }),
-      makeAnnot({
-        key: "BBBBBBBB",
-        tags: ["Mango"],
-      }),
-    ];
-    const chips = deriveTagChips(annots, NO_FILTER);
-    expect(pickFirstTagChip(chips)?.name).toBe("Apple");
+  it("counts what the cap leaves out, in the order it was given", () => {
+    expect(cappedSelection(["a", "b", "c", "d"], 3)).toEqual({
+      shown: ["a", "b", "c"],
+      hiddenCount: 1,
+    });
+    expect(
+      cappedSelection(["a", "b", "c", "d", "e", "f", "g", "h"], 3),
+    ).toEqual({ shown: ["a", "b", "c"], hiddenCount: 5 });
   });
 
-  it("returns undefined for an empty chip list", () => {
-    expect(pickFirstTagChip([])).toBeUndefined();
+  it("caps the tag trigger at its one name", () => {
+    expect(cappedSelection(["Apple", "Mango"], 1)).toEqual({
+      shown: ["Apple"],
+      hiddenCount: 1,
+    });
   });
 });

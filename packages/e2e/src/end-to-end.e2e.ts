@@ -11,7 +11,15 @@
 // open. src/paired-run.e2e.ts is the suite that runs in that case.
 
 import { execFile } from "node:child_process";
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -38,6 +46,14 @@ import {
 import type { LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
+import { verifyAnnotationDrag } from "./annotation-drag.ts";
+import { verifyAnnotationInsert } from "./annotation-insert.ts";
+import {
+  verifyMultiPdfExcerptBatch,
+  verifyReaderBackedExcerpts,
+  verifySavedEditDisplay,
+} from "./excerpt-acceptance.ts";
+import { verifyExcerptRendering } from "./excerpt-rendering.ts";
 import {
   cli,
   cliCommand,
@@ -454,6 +470,15 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      // The header block is one press target however much it reports, and the
+      // pane names its controls with `aria-label` alone. Both are shapes only a
+      // rendered view has: the focus stops are what the DOM ended up with, and
+      // a `title` anywhere in the view is the hover tooltip Obsidian would draw
+      // over its own.
+      const headerChrome = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const block=root?.querySelector('.zt-annot-header')?.parentElement??null;return {focusable:block?block.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), a[href], input').length:-1,titled:root?root.querySelectorAll('[title]').length:-1};})())`;
+      expect(await obEval(vaultId, headerChrome)).toBe(
+        JSON.stringify({ focusable: 1, titled: 0 }),
+      );
       // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
       // positioning — which only a running Obsidian has. A popup that collapsed
       // still holds its rows in the DOM, so what tells is whether its own box
@@ -552,6 +577,324 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  it("renders the deterministic PDF matrix and reuses its cache", async () => {
+    await verifyExcerptRendering(vaultId);
+  }, 120000);
+
+  // The reader-backed path against the Fixture's own Attachment: its
+  // Annotations, its Item's literature note, and Obsidian's PDF reader holding
+  // the same file the excerpt resolves from.
+  it("crops from an open reader's document, reuses it for a note import, and falls back when it closes", async () => {
+    await verifyReaderBackedExcerpts(vaultId);
+  }, 180000);
+
+  // The saved-edit case's write only lands in a Paired Run, and this is not one.
+  // What every run can show is the subject that case asks about: the repository
+  // indexes its verified database sources by Attachment, so an Annotation's own
+  // key answers `read-only`/`server-changed` wherever the Attachment it belongs
+  // to is writable — the answer the case used to skip on. The capability itself
+  // is stubbed here, so the key the case asks with is the whole observation.
+  it("asks the Fixture Attachment's Capability, not its Annotation's, before a saved edit", async () => {
+    await obEval(
+      vaultId,
+      `(()=>{
+        const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+        app.__zotlitCapabilitySubjects=[];
+        repository.capabilityFor=key=>{app.__zotlitCapabilitySubjects.push(key);return {kind:'read-only',reason:'stubbed'};};
+        return true;
+      })()`,
+    );
+    const skips: string[] = [];
+    let asked: string[] = [];
+    try {
+      await verifySavedEditDisplay(vaultId, {
+        skip: (note) => void skips.push(note ?? ""),
+      });
+      asked = JSON.parse(
+        await obEval(vaultId, "JSON.stringify(app.__zotlitCapabilitySubjects)"),
+      ) as string[];
+    } finally {
+      await obEval(
+        vaultId,
+        `(()=>{
+          const repository=app.plugins.plugins.zotlit.services.annotationRepository;
+          delete repository.capabilityFor;
+          delete app.__zotlitCapabilitySubjects;
+          return true;
+        })()`,
+      );
+    }
+    expect(
+      skips,
+      "a non-writable Attachment stops the saved-edit case before its assertions",
+    ).toHaveLength(1);
+    expect(
+      asked,
+      "the Capability is the Attachment's: an Annotation's key answers read-only/server-changed for every writable Attachment",
+    ).toEqual([annotationAttachment.key]);
+  }, 120000);
+
+  // #1184's multi-PDF batch: several of the Fixture's own PDFs, each asked for
+  // its own excerpts, cold and then warm. The Node harness behind the
+  // measurements record models PDF work; this case is the app's own answer.
+  it("measures a multi-PDF excerpt batch cold and warm", async () => {
+    const fixture = getFixtureLayout(getFixtureRoot(workspaceRoot));
+    const rougier = join(e2eVaultPath, "attachments/rougier-2014.pdf");
+    const generated = join(
+      e2eVaultPath,
+      "attachments/excerpt-acceptance/excerpt-rendering.pdf",
+    );
+    const researchInterfaces = join(
+      fixture.dataDir,
+      "storage/CNPDF26A/research-interfaces.pdf",
+    );
+    const sakimas = join(fixture.dataDir, "storage/PDFSTR22/sakimas-song.pdf");
+    // Four of the Fixture's PDFs, two excerpts each, grouped so the second of
+    // each pair is a repeated same-PDF excerpt: what one resident document
+    // serves. The rects are inside every page the Fixture ships.
+    await verifyMultiPdfExcerptBatch(vaultId, [
+      {
+        attachmentKey: "RGRPDF24",
+        pdfPath: rougier,
+        pageIndex: 0,
+        rect: [58, 538, 211, 578],
+      },
+      {
+        attachmentKey: "RGRPDF24",
+        pdfPath: rougier,
+        pageIndex: 0,
+        rect: [265.833, 611.202, 374.503, 620.019],
+      },
+      {
+        attachmentKey: "EXCERPT1",
+        pdfPath: generated,
+        pageIndex: 0,
+        rect: [70, 90, 190, 200],
+      },
+      {
+        attachmentKey: "EXCERPT1",
+        pdfPath: generated,
+        pageIndex: 4,
+        rect: [50, 350, 400, 740],
+      },
+      {
+        attachmentKey: "PDFSTR22",
+        pdfPath: sakimas,
+        pageIndex: 0,
+        rect: [80, 80, 280, 200],
+      },
+      {
+        attachmentKey: "PDFSTR22",
+        pdfPath: sakimas,
+        pageIndex: 1,
+        rect: [80, 80, 280, 200],
+      },
+      {
+        attachmentKey: "CNPDF26A",
+        pdfPath: researchInterfaces,
+        pageIndex: 0,
+        rect: [72, 96, 300, 200],
+      },
+      {
+        attachmentKey: "CNPDF26A",
+        pdfPath: researchInterfaces,
+        pageIndex: 1,
+        rect: [72, 96, 300, 200],
+      },
+    ]);
+  }, 180000);
+
+  it.each(["main", "popout"] as const)(
+    "inserts a captured annotation safely in a %s editor",
+    async (host) => {
+      await verifyAnnotationInsert(vaultId, host);
+    },
+    120000,
+  );
+
+  it.each([
+    ["main", "main"],
+    ["main", "popout"],
+    ["popout", "main"],
+    ["popout", "popout"],
+  ] as const)(
+    "drags a captured annotation from a %s view into a %s editor",
+    async (sourceHost, targetHost) => {
+      await verifyAnnotationDrag(vaultId, sourceHost, targetHost);
+    },
+    120000,
+  );
+
+  it("creates durable image and ink excerpts with PDF readers closed", async () => {
+    const parent = join(workspaceRoot, "tmp");
+    await mkdir(parent, { recursive: true });
+    const path = await mkdtemp(join(parent, "e2e-excerpt-note-vault-"));
+    await using cleanup = new AsyncDisposableStack();
+    cleanup.defer(async () => {
+      await runVaultScript(["remove", path, "--purge"]);
+    });
+    const opened = await runVaultScript([
+      "open",
+      path,
+      "--vault-case",
+      "fresh",
+    ]);
+    const id = opened.stdout.trim().split("\n")[0]!.trim();
+    // This suite skips when its Fixture has a live Zotero process.
+    expect(
+      await obEval(
+        id,
+        "(()=>{for(const leaf of app.workspace.getLeavesOfType('pdf'))leaf.detach();return String(app.workspace.getLeavesOfType('pdf').length);})()",
+      ),
+    ).toBe("0");
+    const result = await createFixtureNote(id, 46);
+    expect(result.outcome).toBe("created");
+    if (result.outcome !== "created")
+      throw new Error("Excerpt note was not created");
+    const markdown = await readFile(join(path, result.path), "utf8");
+    const files: string[] = JSON.parse(
+      await obEval(
+        id,
+        "JSON.stringify(app.vault.getFiles().filter(f=>f.name.startsWith('zotlit-excerpt-')).map(f=>f.path))",
+      ),
+    );
+    expect(files).toHaveLength(3);
+    const targets = new Set(
+      markdown
+        .split("![[")
+        .slice(1)
+        .map((part) => part.split("]]")[0]!)
+        .filter((target) => target.startsWith("zotlit-excerpt-")),
+    );
+    expect(targets).toEqual(
+      new Set(files.map((file) => file.split("/").at(-1)!)),
+    );
+    const initialImages = new Map<string, Buffer>();
+    for (const file of files) {
+      const bytes = await readFile(join(path, file));
+      initialImages.set(file, bytes);
+      // ADR 0053: a newly generated Excerpt Image is lossless WebP, so the
+      // durable asset is a RIFF/WEBP container carrying the VP8L chunk.
+      expect(bytes.subarray(0, 4).toString("latin1")).toBe("RIFF");
+      expect(bytes.subarray(8, 12).toString("latin1")).toBe("WEBP");
+      expect(bytes.includes("VP8L", 12, "latin1")).toBe(true);
+      expect(bytes.length).toBeGreaterThan(1000);
+    }
+    expect(
+      JSON.parse(
+        await obEval(
+          id,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(result.path)});if(!file)throw new Error('Created note missing');const updated=await services.noteFeature.overwriteNote(file,${JSON.stringify(result.indexedKey)});return JSON.stringify({diagnostic:updated.diagnostic??null});})()`,
+        ),
+      ),
+    ).toEqual({ diagnostic: null });
+    const overwritten = await readFile(join(path, result.path), "utf8");
+    expect(overwritten).toContain("zotlit-excerpt-");
+    for (const [file, initial] of initialImages)
+      expect(await readFile(join(path, file))).toEqual(initial);
+
+    const frozenImport = JSON.parse(
+      await obEval(
+        id,
+        `(async()=>{const result=await app.plugins.plugins.zotlit.services.batchImport.runBatchImport('note',[13]);return JSON.stringify(result);})()`,
+      ),
+    ) as { outcome: string; write?: string };
+    expect(frozenImport).toMatchObject({ outcome: "single", write: "created" });
+    expect(
+      await obEvalUntil(
+        id,
+        "String(app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA').length)",
+        { expected: "1" },
+      ),
+    ).toBe(true);
+    const importedPath = await obEval(
+      id,
+      "app.plugins.plugins.zotlit.services.noteIndex.getImportedNoteByNoteKey('NNNNAAAA')[0].path",
+    );
+    const frozenMarkdown = await readFile(join(path, importedPath), "utf8");
+    expect(frozenMarkdown).toContain("Saved snapshot");
+    expect(frozenMarkdown).not.toContain("zotlit-excerpt-");
+    const frozenTargets = frozenMarkdown
+      .split("![[")
+      .slice(1)
+      .map((part) => part.split("]]", 1)[0]!);
+    expect(frozenTargets).toHaveLength(3);
+    const frozenBytes = await Promise.all(
+      frozenTargets.map((target) => readFile(join(path, target))),
+    );
+
+    const liveImport = JSON.parse(
+      await obEval(
+        id,
+        `(async()=>{const services=app.plugins.plugins.zotlit.services;services.settings.updateDefaultLiteratureNoteProfileBindings({'note.import-annotations-as-template':true});const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});if(!file)throw new Error('Imported Note missing');return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+      ),
+    ) as { outcome: string };
+    expect(liveImport).toEqual({ outcome: "overwritten" });
+    const liveMarkdown = await readFile(join(path, importedPath), "utf8");
+    expect(liveMarkdown).toContain("Saved snapshot");
+    expect(liveMarkdown.match(/zotlit-excerpt-/g)).toHaveLength(2);
+    const liveTargets = liveMarkdown
+      .split("![[")
+      .slice(1)
+      .map((part) => part.split("]]", 1)[0]!);
+    expect(liveTargets).toHaveLength(3);
+    const liveBytes = await Promise.all(
+      liveTargets.map((target) => readFile(join(path, target))),
+    );
+    expect(
+      liveBytes.some((bytes) =>
+        frozenBytes.every((frozen) => !bytes.equals(frozen)),
+      ),
+    ).toBe(true);
+
+    await obEval(
+      id,
+      `(()=>{const feature=app.plugins.plugins.zotlit.services.noteFeature;window.__zotlitExcerptReports=[];window.__zotlitExcerptReportOff=feature.on('excerpt-images-reported',summary=>window.__zotlitExcerptReports.push(summary));return true;})()`,
+    );
+    cleanup.defer(async () => {
+      await obEval(
+        id,
+        `(()=>{window.__zotlitExcerptReportOff?.();delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return true;})()`,
+      );
+    });
+    const sourcePdf = join(path, "attachments/rougier-2014.pdf");
+    const unavailablePdf = `${sourcePdf}.unavailable`;
+    await rename(sourcePdf, unavailablePdf);
+    try {
+      expect(
+        JSON.parse(
+          await obEval(
+            id,
+            `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+          ),
+        ),
+      ).toEqual({ outcome: "overwritten" });
+    } finally {
+      await rename(unavailablePdf, sourcePdf);
+    }
+    const pooledReports = JSON.parse(
+      await obEval(
+        id,
+        `JSON.stringify((()=>{window.__zotlitExcerptReportOff?.();const reports=window.__zotlitExcerptReports;delete window.__zotlitExcerptReportOff;delete window.__zotlitExcerptReports;return reports;})())`,
+      ),
+    ) as { zotero: number; unchecked: number; unavailable: number }[];
+    expect(pooledReports).toEqual([
+      { zotero: 0, unchecked: 2, unavailable: 0 },
+    ]);
+    expect(
+      JSON.parse(
+        await obEval(
+          id,
+          `(async()=>{const services=app.plugins.plugins.zotlit.services;const file=app.vault.getFileByPath(${JSON.stringify(importedPath)});return JSON.stringify(await services.batchImport.reimportNoteByKey('NNNNAAAA',file));})()`,
+        ),
+      ),
+    ).toEqual({ outcome: "overwritten" });
+
+    expect(
+      await obEval(id, "String(app.workspace.getLeavesOfType('pdf').length)"),
+    ).toBe("0");
+  });
 
   it("customizes a first note in a fresh vault, then explicitly updates that note", async () => {
     const annotatedItem = ITEMS.find((item) => item.itemID === 46)!;
@@ -670,7 +1013,7 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
     );
     await obEval(
       freshId,
-      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.leaf.getContainer().focus();return true;})()`,
+      `(async()=>{const view=${editor};await app.workspace.revealLeaf(view.leaf);view.contentEl.ownerDocument.defaultView.focus();app.workspace.setActiveLeaf(view.leaf,{focus:true});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -2098,9 +2441,11 @@ describe.skipIf(!reachable || pairedZotero !== null)(
         ),
       ).toBe("0");
       expect(
-        (await readdir(vaultPath, { recursive: true })).filter(
-          (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
-        ),
+        (await readdir(vaultPath, { recursive: true }))
+          .filter(
+            (path) => path.includes("zotlit-profile.") && path.endsWith(".md"),
+          )
+          .map((path) => path.replaceAll("\\", "/")),
       ).toEqual(["templates/zotlit-profile.default.md"]);
 
       await openAdd();

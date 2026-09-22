@@ -68,25 +68,73 @@
   margin-inline-start: calc(var(--list-indent) * -1);
 }
 
-/* Obsidian declares `.clickable-icon`'s hover fill and its focus ring
-   unlayered, so no utility can reach them. The card header is a 24px row and
-   the control's box is the whole of it, so the fill arrives as a slab against
-   the row's edges and the ring lands 3px into the neighbouring control. Take
-   both back here; the card draws its own inset mark in utilities. */
-.zt-annot-card .clickable-icon:hover {
-  background-color: transparent;
-}
-.zt-annot-card .clickable-icon:focus-visible {
-  box-shadow: none;
+/* A card's verbs and its type glyph are the `clickable-icon` Obsidian draws
+   inside a property value row: a 14px glyph in 4px of padding, so the box
+   is 22px in a row of 12px text rather than the toolbar's 24px. Obsidian
+   declares the padding unlayered, where no utility reaches it. */
+.zt-annot-card .clickable-icon {
+  --icon-size: var(--icon-xs);
+  --icon-stroke: var(--icon-xs-stroke-width);
+  padding: var(--size-2-2);
 }
 
-/* Obsidian marks an external link with a boxed arrow drawn as a background
-   image and holds 0.9em of inline-end padding for it — both unlayered. That
-   glyph takes neither `currentColor` nor the row's icon stroke, and it rides
-   0.25em above the text, so the page link draws its own Lucide arrow instead.
-   Scoped to that link, because a link inside a rendered comment still wants
-   Obsidian's own mark. */
-.zt-annot-page-link.external-link {
-  background-image: none;
-  padding-inline-end: 0;
+/* A card's buttons are set in the card's own 12px, not the 13px Obsidian gives
+   a modal button, and in half its padding. The card is 12px text in a dock a
+   few hundred pixels wide: at Obsidian's own size three verbs never fit one
+   line, and the held-draft panel wraps its last verb onto a line of its own.
+   Obsidian declares both unlayered, where no utility reaches them. */
+.zt-annot-card button {
+  padding: var(--size-2-2) var(--size-4-2);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
+   no utility can quiet it. The page chip is a row of chrome that happens to
+   open Zotero: it keeps the ink its utilities set, and its hover is the ring
+   of its own colour rather than the theme's link underline. */
+.zt-root a.zt-annot-page-link {
+  color: inherit;
+  text-decoration-line: none;
+}
+
+/* The page is a locator in the chip beside the row's verbs, one step under
+   the card's 12px so the chip reads as the verbs' size rather than as a line
+   of the excerpt. 11px is the floor the design test holds chrome to. In the
+   monospace face the no-break space between "p." and the number is a whole
+   cell, which reads as a gap; the word-spacing takes it back to a hair. */
+.zt-annot-page-chip {
+  font-size: 11px;
+  letter-spacing: -0.02em;
+  word-spacing: -0.5ch;
+}
+
+/* The header block is one `<button>`, and Obsidian's own `button` rules are
+   unlayered, so they outrank every `zt:` utility it wears — its fill, its
+   padding and its shadow among them. This rule is unlayered too and outranks
+   them in turn, and `revert-layer` rolls the element back to the plugin's own
+   layers, where the utilities on the block are what draws it. The same trick
+   the Chooser trigger takes.
+   @see apps/obsidian/src/components/chooser.css */
+.zt-root button.zt-annot-header {
+  all: revert-layer;
+}
+
+/* The comment editor stands in the slot the rendered comment stood in, so it
+   is the same text at the same size in the same place: a caret in the card,
+   not an input box drawn over it. Obsidian's own `textarea` rules are
+   unlayered, so its fill, its border, its 8px radius, its 4px-by-8px padding
+   and its 13px all outrank the utilities the editor wears. `revert-layer`
+   rolls the element back to the plugin's own layers, where those utilities and
+   the scoped preflight are what draws it. The same trick the header block and
+   the Chooser trigger take.
+   @see apps/obsidian/src/components/chooser.css */
+.zt-root textarea.zt-annot-comment-editor {
+  all: revert-layer;
+}
+
+/* The Attachment suggester exists to tell two similar names apart, so a long
+   name wraps rather than being clipped. Obsidian declares the clip unlayered
+   on `.suggestion-item`, where no utility reaches it. */
+.zt-annot-attachment-suggester .suggestion-item {
+  white-space: normal;
 }

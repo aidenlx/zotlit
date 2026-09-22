@@ -232,6 +232,8 @@ Prefixes a non-empty string with `!` to produce the Obsidian embed syntax. Null,
 | `null`              | `""`                 |
 | `""`                | `""`                 |
 
+For `zt.imgLink`, the filter uses the prepared excerpt image. If no image is available, it returns an explanation and source link without adding `!`. See [Excerpt images](/docs/concepts/excerpt-images) for saved snapshots and import outcomes.
+
 ### Link filters [#link-filters]
 
 Three filters produce Obsidian wiki-links with optional alias and subpath overrides:
@@ -250,7 +252,7 @@ Each accepts two optional positional arguments: `alias` and `subpath`.
 {{ zt | img_link: "alt text" }}
 ```
 
-When the link cannot be resolved, the filter returns `null` (which `compact` drops from an array, and output coercion renders as `""`).
+When a file or note link cannot be resolved, the filter returns `null` (which `compact` drops from an array, and output coercion renders as `""`). For image and ink annotations, `img_link` returns the excerpt fallback when an image is unavailable. For other annotation types, it returns `null`.
 
 ### `note_links`: batch note links
 

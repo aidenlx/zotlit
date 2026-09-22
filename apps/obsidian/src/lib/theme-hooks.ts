@@ -91,14 +91,10 @@ export const themeHook = {
   pdfMarkPopup: "zt-pdf-mark-popup",
   /** The comment sheet the Mark Popup opens under its create-mode row. */
   pdfCommentSheet: "zt-pdf-comment-sheet",
-  /**
-   * The Editing Capability affordance in the Annotation View's toolbar, which
-   * shows the same states as {@link themeHook.pdfCapability} and carries the
-   * same `data-zt-capability-tone`.
-   */
-  annotCapability: "zt-annot-capability",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",
+  /** The panel an Annotation Card shows over a comment draft Zotero has not taken. */
+  annotDraft: "zt-annot-draft",
   /**
    * The Chooser popup: the anchored popover a filtering multi-select opens,
    * such as the Annotation View's tag filter. It is no Obsidian menu, so a
