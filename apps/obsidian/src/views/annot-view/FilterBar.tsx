@@ -8,10 +8,6 @@ import { Chooser } from "@/components/chooser";
 import type { ChooserGroup, ChooserRow } from "@/components/chooser-logic";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import {
-  captionIcon,
-  selectionControl,
-} from "@/components/obsidian/selection-control";
 import { annotationColorLabel } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
@@ -40,9 +36,6 @@ const COLOR_CAP = 3;
 
 /** The tag trigger draws one name, however many tags the filter holds. */
 const TAG_CAP = 1;
-
-/** The borderless 24px shape every control in the row wears. */
-const rowIcon = cn("zt:h-6 zt:shrink-0", captionIcon);
 
 export interface FilterBarProps {
   /** The search bar the search toggle reveals, for `aria-controls`. */
@@ -88,10 +81,10 @@ export function FilterBar({
   if (!annotations || annotations.length === 0) return null;
 
   return (
-    // The row's leading edge is the header button's: the header wraps its
-    // trigger in the same inline padding, so the first control's box starts
-    // where the header's own box does.
-    <div className="zt:flex zt:shrink-0 zt:items-center zt:gap-1 zt:px-2 zt:pt-1 zt:text-xs">
+    // The row's leading edge is the header button's: both sit in the same 8px
+    // inline padding and both pull their first glyph 6px in, so the glyphs
+    // share one edge.
+    <div className="zt:flex zt:shrink-0 zt:items-center zt:px-2 zt:pt-1 zt:text-sm">
       {swatchColors.length >= 1 && (
         <ColorChooser
           colors={swatchColors}
@@ -114,7 +107,6 @@ export function FilterBar({
         aria-expanded={searchOpen}
         aria-controls={searchBarId}
         onClick={toggleSearchOpen}
-        className={rowIcon}
         {...tooltipAttrs(m.annot_view_search_tooltip())}
       />
       {/* `ms-auto` is the gap between the leading group and the trailing one:
@@ -129,14 +121,12 @@ export function FilterBar({
           <IconButton
             icon="filter-x"
             onClick={clearFilters}
-            className={rowIcon}
             {...tooltipAttrs(m.annot_view_clear_filters())}
           />
         )}
         <IconButton
           icon={collapsed ? "chevrons-up-down" : "chevrons-down-up"}
           onClick={onToggleCollapsed}
-          className={rowIcon}
           {...tooltipAttrs(
             collapsed
               ? m.annot_view_expand_tooltip()
@@ -149,22 +139,25 @@ export function FilterBar({
 }
 
 /**
- * The shape both Choosers hang under: a borderless 24px icon control. The
- * Chooser's stylesheet rolls its trigger back to the plugin's own layers,
- * which discards Obsidian's `clickable-icon` box along with its button rules,
- * so the box the recipe expects is drawn here in utilities.
+ * The shape both Choosers hang under: Obsidian's own `clickable-icon` box, a
+ * 16px glyph in 4px by 6px of padding, with the disclosure arrow after it.
+ * The Chooser's stylesheet rolls its trigger back to the plugin's own layers,
+ * which discards that box along with Obsidian's button rules, so the box is
+ * drawn again here in utilities.
  */
-const filterTrigger = cn(
-  selectionControl({ kind: "trigger" }),
-  "zt:inline-flex zt:h-6 zt:items-center zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground",
-);
+const filterTrigger =
+  "clickable-icon zt:inline-flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:rounded-(--clickable-icon-radius) zt:px-1.5 zt:py-1 zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus zt:focus-visible:outline-none zt:data-open:bg-muted zt:data-open:text-foreground";
 
-/** The trigger's disclosure arrow; it turns over while its Chooser stands open. */
+/**
+ * The trigger's disclosure arrow, at the `--icon-xs` Obsidian gives the
+ * auxiliary arrow of its own text-icon buttons; it turns over while its
+ * Chooser stands open.
+ */
 function TriggerChevron() {
   return (
     <Icon
       name="chevron-down"
-      size={12}
+      size="var(--icon-xs)"
       className="zt:duration-150 zt:group-data-open:rotate-180 zt:motion-safe:transition-transform"
     />
   );
@@ -184,7 +177,7 @@ function Swatch({ hex, className }: { hex: string; className?: string }) {
   return (
     <span
       className={cn(
-        "zt:inline-block zt:shrink-0 zt:rounded-xs zt:bg-(--zt-swatch-color) zt:align-middle zt:ring-1 zt:ring-border",
+        "zt:inline-block zt:shrink-0 zt:rounded-full zt:bg-(--zt-swatch-color) zt:align-middle zt:ring-1 zt:ring-foreground/10 zt:ring-inset",
         className,
       )}
       style={{ "--zt-swatch-color": hex } as React.CSSProperties}
@@ -313,11 +306,11 @@ function ColorChooser({
         {counting ? (
           <span className="zt:flex zt:items-center zt:gap-0.5">
             {shown.map((hex) => (
-              <Swatch key={hex} hex={hex} className="zt:size-2" />
+              <Swatch key={hex} hex={hex} className="zt:size-2.5" />
             ))}
           </span>
         ) : (
-          <Icon name="palette" size={12} />
+          <Icon name="palette" />
         )}
         {hiddenCount > 0 && <HiddenCount count={hiddenCount} />}
         <TriggerChevron />
@@ -425,7 +418,7 @@ function TagChooser({
   return (
     <Chooser value={selectedTags} onValueChange={onChange}>
       <Chooser.Trigger className={filterTrigger} {...tooltipAttrs(ariaLabel)}>
-        <Icon name="tag" size={12} />
+        <Icon name="tag" />
         {/* The full name is in the accessible name and in the list; the
             trigger spends a bounded share of the row on it. */}
         {shown.map((name) => (

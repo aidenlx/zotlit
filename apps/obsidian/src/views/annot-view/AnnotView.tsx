@@ -14,9 +14,8 @@ import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import { SearchInput } from "@/components/obsidian/search-input";
-import { captionIcon } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
-import { cn, tooltipAttrs } from "@/lib/utils";
+import { tooltipAttrs } from "@/lib/utils";
 
 import { AnnotActionsContext } from "./actions";
 import { Annotation } from "./Annotation";
@@ -220,7 +219,7 @@ function CapabilityDrawer() {
         </p>
         <IconButton
           icon="x"
-          className={cn(captionIcon, "zt:-me-1 zt:-mt-1")}
+          className="zt:-me-1 zt:-mt-1"
           onClick={dismiss}
           {...tooltipAttrs(m.annot_view_drawer_close())}
         />
@@ -257,7 +256,7 @@ function AnnotHeader() {
         aria-haspopup="menu"
         aria-labelledby={labelId}
         onClick={(evt) => actions.onHeaderMenu(evt)}
-        className="zt-annot-header zt:flex zt:w-full zt:items-center zt:gap-2 zt:rounded-sm zt:px-2 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
+        className="zt-annot-header zt:inline-flex zt:max-w-full zt:items-center zt:gap-2 zt:rounded-sm zt:px-1.5 zt:py-1 zt:text-start zt:hover:bg-card zt:hover:ring-1 zt:hover:ring-border zt:focus-visible:bg-card zt:focus-visible:ring-2 zt:focus-visible:ring-border-focus"
       >
         {/* The name the block promises assistive technology, held apart from
             the words on screen: an `aria-label` would reach the pointer too,
@@ -266,7 +265,7 @@ function AnnotHeader() {
         <span id={labelId} className="zt:sr-only">
           {shape.label}
         </span>
-        <span className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-0.5">
+        <span className="zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5">
           {shape.kind === "masthead" ? (
             <Masthead shape={shape} />
           ) : (
@@ -274,7 +273,8 @@ function AnnotHeader() {
           )}
         </span>
         {/* The chevron belongs to the block, not to any word in it: its own
-            inline-end lane, so no wrapped byline segment runs under it. */}
+            inline-end lane beside the text, so it stays by the words however
+            wide the pane grows, and no wrapped byline segment runs under it. */}
         <ChromeIcon name="chevron-down" />
       </button>
     </div>
@@ -315,14 +315,15 @@ function StatusBar({
 }
 
 /**
- * A 12px glyph in the header's chrome: the mode's own icon and the block's
- * chevron, at the size and ink the 12px text beside them carries.
+ * A glyph in the header's chrome: the mode's own icon and the block's
+ * chevron, at the `--icon-xs` Obsidian sets beside its own 13px text, in the
+ * byline's ink.
  */
 function ChromeIcon({ name }: { name: IconName }) {
   return (
     <Icon
       name={name}
-      size={12}
+      size="var(--icon-xs)"
       className="zt:shrink-0 zt:text-muted-foreground"
     />
   );
@@ -455,7 +456,7 @@ function AnnotList({ collapsed }: { collapsed: boolean }) {
     // query on it, and `items-start` keeps each card the height of its own
     // content rather than its row's.
     <div className="annots-container zt:@container zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-3 zt:py-3">
-      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-2 zt:@lg:gap-3 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
+      <div className="zt:grid zt:grid-cols-1 zt:items-start zt:gap-3 zt:@2xl:grid-cols-2 zt:@5xl:grid-cols-3">
         {filtered.map((annot) => (
           <Annotation key={annot.key} annot={annot} collapsed={collapsed} />
         ))}

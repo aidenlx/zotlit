@@ -68,27 +68,17 @@
   margin-inline-start: calc(var(--list-indent) * -1);
 }
 
-/* Obsidian declares `.clickable-icon`'s hover fill and its focus ring
-   unlayered, so no utility can reach them. The card header is a 24px row and
-   the control's box is the whole of it, so the fill arrives as a slab against
-   the row's edges and the ring lands 3px into the neighbouring control. Take
-   both back here; the card draws its own inset mark in utilities. */
-.zt-annot-card .clickable-icon:hover {
-  background-color: transparent;
+/* Obsidian paints a bare `<a>` in the accent with an underline, unlayered, so
+   no utility can quiet it. The page label is a row of chrome that happens to
+   open Zotero: it takes the row's own muted ink, and the underline arrives on
+   hover as the theme's own link hover does. */
+.zt-root a.zt-annot-page-link {
+  color: var(--text-muted);
+  text-decoration-line: none;
 }
-.zt-annot-card .clickable-icon:focus-visible {
-  box-shadow: none;
-}
-
-/* Obsidian marks an external link with a boxed arrow drawn as a background
-   image and holds 0.9em of inline-end padding for it — both unlayered. That
-   glyph takes neither `currentColor` nor the row's icon stroke, and it rides
-   0.25em above the text, so the page link draws its own Lucide arrow instead.
-   Scoped to that link, because a link inside a rendered comment still wants
-   Obsidian's own mark. */
-.zt-annot-page-link.external-link {
-  background-image: none;
-  padding-inline-end: 0;
+.zt-root a.zt-annot-page-link:hover {
+  color: var(--text-normal);
+  text-decoration-line: var(--link-decoration-hover);
 }
 
 /* The header block is one `<button>`, and Obsidian's own `button` rules are

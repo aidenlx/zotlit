@@ -68,18 +68,6 @@ function typeIcon(type: ResolvedAnnotationTypeName): string {
 }
 
 /**
- * What a `clickable-icon` in a card shows for hover and focus. Obsidian paints
- * both across the control's whole box, and in a 24px header that box is the
- * row — the fill reaches the row's edges and the ring reaches the next control.
- * These draw the same two marks on a pseudo-element inset inside the box, so
- * the control keeps its full 28x24 pointer target while the mark it shows fits
- * the row. `isolate` holds the mark above the control's own background and
- * under its glyph. `style.css` takes Obsidian's originals back.
- */
-const CARD_CONTROL_MARK =
-  "zt:relative zt:isolate zt:before:absolute zt:before:inset-x-px zt:before:inset-y-0.5 zt:before:-z-10 zt:before:rounded-sm zt:before:content-[''] zt:hover:before:bg-muted zt:focus-visible:before:ring-2 zt:focus-visible:before:ring-border-focus";
-
-/**
  * A verb the Editing Capability blocks rests dimmed, as the state it reports is
  * one the user can read about. The dim is all it takes: `aria-disabled` would
  * hide the control from assistive technology, and its press is the only route
@@ -127,12 +115,13 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
   return (
     <div
-      className="zt-annot-card zt:group zt:flex zt:flex-col zt:overflow-hidden zt:rounded-md zt:bg-card zt:text-xs zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
-      // One raised slab per Annotation, with nothing but the list's own gap
-      // between it and the next: no border and no divider rule, so the card's
-      // internal parts read as one block rather than as a stack of rows. The
-      // card's own voice is chrome at 12px; the excerpt and the comment name
-      // their sizes themselves.
+      className="zt-annot-card zt:group zt:flex zt:flex-col zt:gap-2 zt:overflow-hidden zt:rounded-(--bases-kanban-card-radius) zt:bg-(--bases-kanban-card-background) zt:px-3 zt:py-2 zt:text-xs zt:shadow-(--bases-kanban-card-shadow) zt:data-selected:bg-primary/10 zt:data-selected:ring-1 zt:data-selected:ring-primary zt:motion-safe:transition-colors"
+      // The card is the surface Obsidian draws for a Bases card: its fill, its
+      // radius and its hairline-and-drop shadow are read from the same theme
+      // variables, so a theme that restyles Bases cards restyles these. The
+      // parts inside stack on one 8px gap with no divider rule between them.
+      // The card's own voice is chrome at 12px; the excerpt and the comment
+      // name their sizes themselves.
       //
       // Zotero's hex is data, so it rides in a custom property and
       // `data-annot-color` says it is there; the declaration that reads them
@@ -150,12 +139,11 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         actions.onSelectAnnotation(annot);
       }}
     >
-      {/* One 24px box metric for every member of the row, so the glyphs, the
-          page link and the verbs sit on one line rather than three. `px-2`
-          is the body's own text edge; each end control pulls back by the
-          `clickable-icon` padding it carries, which lands its glyph on that
-          edge instead of 6px inside it. */}
-      <div className="zt:flex zt:min-h-6 zt:items-center zt:px-2">
+      {/* One 24px box metric for every member of the row, so the glyph, the
+          page label and the verbs sit on one line rather than three. Each end
+          control pulls back by the `clickable-icon` padding it carries, which
+          lands its glyph on the card's text edge instead of 6px inside it. */}
+      <div className="zt:flex zt:min-h-6 zt:items-center zt:gap-1">
         {/* The card's own click takes the selection, and a pointer is the only
             thing that can press a card. This is the same gesture as a control:
             the keyboard reaches it, and `aria-pressed` says what it left.
@@ -165,10 +153,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
           aria-pressed={selected}
           // `.clickable-icon` reads `cursor: var(--cursor)` unlayered, so a
           // `cursor-*` utility cannot reach it. Feed that variable instead.
-          className={cn(
-            CARD_CONTROL_MARK,
-            "zt:-ms-1.5 zt:data-drag-ready:[--cursor:grab]",
-          )}
+          className="zt:-ms-1.5 zt:data-drag-ready:[--cursor:grab]"
           data-drag-ready=""
           draggable
           onDragStart={(e) => actions.onDragStart(e, annot)}
@@ -220,7 +205,7 @@ function ConflictSlot({ annot }: { annot: AnnotationRecord }) {
     <div
       className={cn(
         themeHook.annotConflict,
-        "zt:flex zt:flex-col zt:gap-1 zt:bg-secondary zt:px-2 zt:py-1.5",
+        "zt:-mx-3 zt:flex zt:flex-col zt:gap-1 zt:bg-secondary zt:px-3 zt:py-1.5",
       )}
     >
       <div className="zt:flex zt:items-center zt:gap-1 zt:font-medium">
@@ -313,7 +298,7 @@ function CardActionBar({
       <div className="zt:flex zt:items-center zt:opacity-70 zt:group-focus-within:opacity-100 zt:group-hover:opacity-100 zt:group-data-selected:opacity-100 zt:motion-safe:transition-opacity">
         <IconButton
           icon="palette"
-          className={cn(CARD_CONTROL_MARK, BLOCKED_VERB_DIM)}
+          className={BLOCKED_VERB_DIM}
           disabled={controls.color.disabled}
           data-blocked={controls.color.blocked ? "" : undefined}
           onClick={press(controls.color, (evt) =>
@@ -323,7 +308,7 @@ function CardActionBar({
         />
         <IconButton
           icon={commentIcon(hasComment)}
-          className={cn(CARD_CONTROL_MARK, BLOCKED_VERB_DIM)}
+          className={BLOCKED_VERB_DIM}
           active={editing}
           disabled={controls.comment.disabled}
           data-blocked={controls.comment.blocked ? "" : undefined}
@@ -336,7 +321,6 @@ function CardActionBar({
       </div>
       <IconButton
         icon="more-horizontal"
-        className={CARD_CONTROL_MARK}
         onClick={(evt) => actions.onMoreOptions(evt, annot)}
         {...tooltipAttrs(m.annot_view_more_tooltip())}
       />
@@ -348,7 +332,7 @@ function CardActionBar({
  * The Annotation's own tags, in the card rather than behind a control: a
  * researcher scanning a column reads what an Annotation is filed under without
  * opening anything. They wear the same native-tag chip the filter bar and its
- * drawer draw, dense, because the card is the densest of the three surfaces.
+ * drawer draw, at the tag's own padding.
  *
  * A chip is a filter toggle, so a tag seen on one card is the gesture that
  * narrows the list to it, and a chip already in the filter rests in the accent.
@@ -359,7 +343,7 @@ function TagRow({ annot }: { annot: AnnotationRecord }) {
   if (annot.tags.length === 0) return null;
 
   return (
-    <div className="zt:flex zt:flex-wrap zt:gap-1 zt:px-2 zt:py-1">
+    <div className="zt:flex zt:flex-wrap zt:gap-1.5">
       {annot.tags.map((tag) => {
         const selected = selectedTags.includes(tag);
         return (
@@ -368,7 +352,6 @@ function TagRow({ annot }: { annot: AnnotationRecord }) {
             aria-pressed={selected}
             className={tagChipVariants({
               state: selected ? "selected" : "resting",
-              density: "dense",
               truncate: true,
             })}
             // The card's own click takes the selection; filtering is not that.
@@ -408,7 +391,7 @@ function CommentSlot({
       Temporal.Now.instant(),
     );
     return (
-      <div className="zt:px-2 zt:py-1">
+      <div>
         <div className="zt:text-xs zt:text-muted-foreground">
           {m.annot_view_comment_draft()}
         </div>
@@ -457,7 +440,7 @@ function Comment({
     <div
       ref={ref}
       className={cn(
-        "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:px-2 zt:py-1 zt:text-sm zt:break-words zt:text-foreground zt:select-text",
+        "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:text-sm zt:break-words zt:text-foreground zt:select-text",
         editable && "zt:cursor-text",
       )}
       onClick={(e) => {
@@ -552,7 +535,7 @@ function CommentEditor({ annot }: { annot: AnnotationRecord }) {
 
   return (
     // Placing the caret is not the card's selection.
-    <div className="zt:px-2 zt:py-1" onClick={(e) => e.stopPropagation()}>
+    <div onClick={(e) => e.stopPropagation()}>
       <span id={labelId} className="zt:sr-only">
         {m.annot_view_card_edit_comment()}
       </span>
@@ -629,19 +612,17 @@ function ExcerptBlock({
   }
 
   return (
-    <div className="zt:px-2 zt:py-1">
-      {/* A quotation lifted out of a document, so it takes the reading face at
-          the one size named for that use. The clamp keeps its 1.5 leading:
-          three tight lines under a fade is the shape this redesign replaced. */}
-      <blockquote
-        className={cn(
-          "zt:font-content zt:text-quote zt:text-pretty",
-          collapsed && !isImage && "zt:line-clamp-3",
-        )}
-      >
-        {content}
-      </blockquote>
-    </div>
+    // A quotation lifted out of a document, so it takes the reading face at
+    // the one size named for that use. The clamp keeps its 1.5 leading:
+    // three tight lines under a fade is the shape this redesign replaced.
+    <blockquote
+      className={cn(
+        "zt:font-content zt:text-quote zt:text-pretty",
+        collapsed && !isImage && "zt:line-clamp-3",
+      )}
+    >
+      {content}
+    </blockquote>
   );
 }
 
@@ -720,12 +701,12 @@ function ExcerptImage({ annot, collapsed }: AnnotationProps) {
 }
 
 /**
- * Where the Annotation is and what colour it was made in, as one mark: a chip
- * tinted with the highlight colour, carrying a solid square of the pure colour
- * before the page. The colour is data Zotero stored, so it rides in the card's
- * own `--zt-annot-color` and the declarations that read it stay utilities; an
- * Annotation with no colour gets an untinted chip and no square, which is the
- * whole of what "no colour" has to say.
+ * Where the Annotation is and what colour it was made in: a dot of the
+ * highlight colour before the page, in the quiet 13px the row's glyphs sit
+ * beside. The colour is data Zotero stored, so it rides in the card's own
+ * `--zt-annot-color` and the declaration that reads it stays a utility; an
+ * Annotation with no colour gets the page alone, which is the whole of what
+ * "no colour" has to say.
  */
 function PageLabel({
   page,
@@ -738,40 +719,25 @@ function PageLabel({
 }) {
   if (!page) return null;
   const label = m.annot_view_page({ page });
-  const chip = cn(
-    "zt:flex zt:min-w-0 zt:items-center zt:gap-px zt:rounded-sm zt:px-1.5 zt:tabular-nums",
-    // 18% of the swatch over the card's own fill: enough to name the colour
-    // beside the square, and far short of a fill the page text has to fight.
-    color && "zt:bg-[color-mix(in_srgb,var(--zt-annot-color)_18%,transparent)]",
-  );
+  const row =
+    "zt:flex zt:min-w-0 zt:items-center zt:gap-1.5 zt:text-sm zt:text-muted-foreground zt:tabular-nums";
   const marks = (
     <>
       {color && (
-        // The hairline holds a pale swatch apart from the tint behind it.
-        <span className="zt:me-1 zt:size-2 zt:shrink-0 zt:rounded-xs zt:bg-(--zt-annot-color) zt:ring-1 zt:ring-border" />
+        // The inset hairline holds a pale colour apart from the card's fill.
+        <span className="zt:size-2 zt:shrink-0 zt:rounded-full zt:bg-(--zt-annot-color) zt:ring-1 zt:ring-foreground/10 zt:ring-inset" />
       )}
       <span className="zt:truncate">{label}</span>
-      {backlink && (
-        // 1.5px at 12px carries the optical weight the row's 16px glyphs
-        // carry at 2px, so the arrow reads as the same icon set beside 400
-        // text rather than a heavier mark.
-        <Icon
-          name="arrow-up-right"
-          size={12}
-          strokeWidth={1.5}
-          className="zt:shrink-0"
-        />
-      )}
     </>
   );
   if (backlink) {
     return (
-      // `external-link` keeps the theme's own external-link colour and cursor;
-      // `zt-annot-page-link` is where the view stylesheet takes back the boxed
-      // glyph Obsidian paints with it, so the arrow beside the label is the same
-      // Lucide stroke as every other icon on this row.
+      // Obsidian paints every `<a>` in the accent with an underline and marks
+      // an external one with a boxed glyph, all unlayered; `zt-annot-page-link`
+      // is where the view stylesheet takes the label back to the row's own ink,
+      // keeping the underline for hover.
       <a
-        className={cn("external-link zt-annot-page-link", chip)}
+        className={cn("zt-annot-page-link", row)}
         href={backlink}
         // Opening the page in Zotero is its own verb, not the card's selection.
         onClick={(e) => e.stopPropagation()}
@@ -781,5 +747,5 @@ function PageLabel({
       </a>
     );
   }
-  return <span className={chip}>{marks}</span>;
+  return <span className={row}>{marks}</span>;
 }
