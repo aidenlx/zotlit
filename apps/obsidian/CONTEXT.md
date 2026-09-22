@@ -268,6 +268,18 @@ _Avoid_: attempt (bare), run, preview retention (the editor's, not the CLI's)
 
 ### Annotation view
 
+**Annotation View** _(Obsidian)_:
+The sidebar pane that shows one Attachment's live Annotations as Annotation Cards, chosen by its Follow Mode and narrowed by its Annotation Filter. It reads whether or not Zotero is running; the Editing Capability decides only whether a card's verbs can act.
+_Avoid_: annotation sidebar, annotation panel, annotation list (that is the cards alone)
+
+**Annotation Filter**:
+The three ways an Annotation View narrows the cards it shows — by highlight colour, by tag, and by search text — combined so a card must satisfy every active one. Clearing it shows every Annotation of the Attachment again.
+_Avoid_: filter bar (the control, not the rule), tag panel, query (the search text alone)
+
+**No Match**:
+The Annotation View state in which the Attachment has Annotations but the Annotation Filter excludes all of them. It is about the filter alone: neither an empty Attachment nor an unanswered Follow Mode is a No Match.
+_Avoid_: empty state (that is no Attachment or no Annotations), no results
+
 **Annotation Card** _(Obsidian)_:
 One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips. A deliberately dense surface: prose inside it renders compact.
 _Avoid_: annotation item, annotation row

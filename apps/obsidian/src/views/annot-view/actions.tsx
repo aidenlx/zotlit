@@ -29,11 +29,12 @@ import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
+import { chooseAttachment } from "./attachment-suggester";
 import type { CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
-import { buildAttachmentMenu, buildFollowModeMenu } from "./menus";
-import { attachmentLine } from "./presentation";
+import { buildHeaderMenu } from "./menus";
+import { attachmentLine, headerMenu } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
 
 export interface AnnotActions {
@@ -42,10 +43,12 @@ export interface AnnotActions {
     evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
     annot: AnnotationRecord,
   ): void;
-  /** Open the Follow Mode menu from the toolbar's mode button. */
-  onFollowModeMenu(evt: MouseEvent<HTMLElement>): void;
-  /** Open the Attachment picker from the slot under the toolbar. */
-  onAttachmentMenu(evt: MouseEvent<HTMLElement>): void;
+  /** Open the header block's one grouped menu, from the block itself. */
+  onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
+  /** Choose another Attachment of the Item on screen, in a suggester. */
+  onChooseAttachment(): void;
+  /** Ask Zotero for write authorization, from the header menu. */
+  onAllowEditing(): void;
   /** Open Zotero's eight swatches from a card's palette control. */
   onColorMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   onDragStart(evt: DragEvent<HTMLElement>, annot: AnnotationRecord): void;
@@ -167,6 +170,7 @@ export interface AnnotActionDeps {
   /** Comment renderer built by the view (owns the app, component, source path). */
   renderComment: CommentRenderer;
   onSetFollowMode: AnnotActions["onSetFollowMode"];
+  onAllowEditing: AnnotActions["onAllowEditing"];
   onPinCurrentItem: AnnotActions["onPinCurrentItem"];
   onPinItem: AnnotActions["onPinItem"];
   onUnpin: AnnotActions["onUnpin"];
@@ -292,6 +296,16 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     showMenuAtButton(menu, evt.currentTarget, align);
   };
 
+  /**
+   * The Attachment picker the header menu opens. The choice it offers is the
+   * one `attachmentLine` decided, read at the moment the row was pressed.
+   */
+  const onChooseAttachment = (): void => {
+    const line = attachmentLine(deps.getState());
+    if (line.kind !== "picker") return;
+    chooseAttachment(deps.app, line.options, deps.setSelectedAttachmentKey);
+  };
+
   const fillCardMenu = (menu: Menu, annot: AnnotationRecord): void => {
     const backlink = getBacklink(annot);
     if (backlink) {
@@ -381,14 +395,17 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     });
 
     // Every entry here is a verb. A blocked write shows as a dimmed entry and
-    // says why once, in the toolbar's Capability affordance, rather than in a
-    // label under each menu it blocks.
+    // says why once, in the header menu's capability row and in the drawer a
+    // card verb opens, rather than in a label under each menu it blocks. A menu
+    // row is dimmed by either reason: the drawer is reached from a card verb,
+    // and a menu cannot open one.
+    const deleteControl = deps.deleteControl(annot);
     menu.addItem((item) => {
       item
         .setTitle(m.annot_view_menu_delete())
         .setIcon("trash-2")
         .setWarning(true)
-        .setDisabled(deps.deleteControl(annot).disabled)
+        .setDisabled(deleteControl.disabled || deleteControl.blocked !== null)
         .onClick(() => void confirmDeleteAnnotation(annot));
     });
   };
@@ -408,31 +425,23 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onMoreOptions(evt, annot) {
       showMenu(evt, (menu) => fillCardMenu(menu, annot), "end");
     },
-    onFollowModeMenu(evt) {
-      const { followMode, pinnable } = deps.getState();
+    onHeaderMenu(evt) {
       showMenu(evt, (menu) =>
-        buildFollowModeMenu(menu, {
-          state: { followMode, pinnable },
+        buildHeaderMenu(menu, {
+          groups: headerMenu(deps.getState(), now()),
           actions: {
             onSetFollowMode: deps.onSetFollowMode,
             onPinCurrentItem: deps.onPinCurrentItem,
             onPinItem: deps.onPinItem,
             onUnpin: deps.onUnpin,
+            onChooseAttachment,
+            onAllowEditing: deps.onAllowEditing,
           },
         }),
       );
     },
-    onAttachmentMenu(evt) {
-      const line = attachmentLine(deps.getState());
-      if (line.kind !== "picker") return;
-      showMenu(evt, (menu) =>
-        buildAttachmentMenu(menu, {
-          options: line.options,
-          selectedKey: line.selectedKey,
-          onSelect: deps.setSelectedAttachmentKey,
-        }),
-      );
-    },
+    onChooseAttachment,
+    onAllowEditing: deps.onAllowEditing,
     onColorMenu(evt, annot) {
       showMenu(evt, (menu) =>
         buildColorMenu(menu, {
@@ -475,8 +484,9 @@ const NOOP_DEMAND: ExcerptDisplayDemand = {
 
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
-  onFollowModeMenu: () => {},
-  onAttachmentMenu: () => {},
+  onHeaderMenu: () => {},
+  onChooseAttachment: () => {},
+  onAllowEditing: () => {},
   onColorMenu: () => {},
   onDragStart: () => {},
   onSetFollowMode: () => {},

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo } from "react";
+import type { RefObject } from "react";
 import { useStore } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
@@ -6,6 +7,7 @@ import { createStore } from "zustand/vanilla";
 import type { AnnotViewAttachment } from "@zotlit/db";
 
 import { toggledValues } from "@/components/chooser-logic";
+import type { ItemSummary } from "@/lib/item-summary";
 import type {
   AnnotationRecord,
   AnnotationSource,
@@ -63,8 +65,12 @@ export interface AnnotState {
    * while nothing resolves. An Attachment can stand without one.
    */
   itemKey: string | null;
-  /** Pre-formatted identity label (e.g. "Title — Author (2024)"). */
-  itemDisplayLabel: string | null;
+  /**
+   * The Item on screen as the header names it: its own title, the creators and
+   * year the byline carries, and the one line built from both. `null` while
+   * nothing resolves.
+   */
+  itemDisplay: ItemSummary | null;
   /** Group library ID for the current item; `null` for user library. */
   groupID: number | null;
   followMode: FollowMode;
@@ -89,17 +95,40 @@ export interface AnnotState {
   selectedColors: string[];
   /** Selected tags, by name. */
   selectedTags: string[];
+  /**
+   * Whether the drawer at the pane's bottom edge stands open. What it states is
+   * not stored: it is derived from the Editing Capability as it renders, so the
+   * sentence, a cooldown's remaining seconds and the action it offers follow
+   * the live state rather than the state one press left behind.
+   */
+  drawerOpen: boolean;
+  /**
+   * The verb the open drawer was pressed from, so Close and Escape return the
+   * keyboard where it came from. A stable ref object rather than a value: the
+   * element is read at the moment focus moves and nothing renders from it, so
+   * writing it must not move the snapshot every subscriber compares.
+   */
+  drawerOpener: RefObject<HTMLElement | null>;
 }
 
-/** Search & filter defaults, not persisted; reset whenever the displayed item changes. */
+/**
+ * Search, filter and drawer defaults, not persisted; reset whenever the
+ * displayed item changes. The drawer belongs here because it speaks about the
+ * Attachment on screen, and the item that replaces it takes its own capability.
+ */
 export const INITIAL_FILTER_STATE: Pick<
   AnnotState,
-  "searchOpen" | "filterQuery" | "selectedColors" | "selectedTags"
+  | "searchOpen"
+  | "filterQuery"
+  | "selectedColors"
+  | "selectedTags"
+  | "drawerOpen"
 > = {
   searchOpen: false,
   filterQuery: "",
   selectedColors: [],
   selectedTags: [],
+  drawerOpen: false,
 };
 
 export type AnnotStore = ReturnType<typeof createAnnotStore>;
@@ -121,7 +150,7 @@ export function createAnnotStore() {
         editingCommentKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,
-        itemDisplayLabel: null,
+        itemDisplay: null,
         groupID: null,
         followMode: "active-tab",
         previousMode: "active-tab",
@@ -129,6 +158,7 @@ export function createAnnotStore() {
         pinnable: null,
         liveUpdatesOn: false,
         zoteroReaderClosed: false,
+        drawerOpener: { current: null },
         ...INITIAL_FILTER_STATE,
       }),
     ),
@@ -192,6 +222,28 @@ export function useToggleSearchOpen(): () => void {
   };
 }
 
+/**
+ * Open the capability drawer from one blocked verb, holding the element that
+ * pressed it so the keyboard can be handed back when the drawer closes. What
+ * the drawer says is the capability's, not this press's, so nothing about the
+ * verb travels with it.
+ */
+export function useOpenDrawer(): (opener: HTMLElement | null) => void {
+  const store = useAnnotStoreApi();
+  return useCallback(
+    (opener) => {
+      store.getState().drawerOpener.current = opener;
+      store.setState({ drawerOpen: true });
+    },
+    [store],
+  );
+}
+
+export function useCloseDrawer(): () => void {
+  const store = useAnnotStoreApi();
+  return useCallback(() => store.setState({ drawerOpen: false }), [store]);
+}
+
 export function useSetFilterQuery(): (query: string) => void {
   const store = useAnnotStoreApi();
   return (query) => store.setState({ filterQuery: query });
@@ -220,6 +272,19 @@ export function useToggleSelectedColor(): (color: string) => void {
         : [...selectedColors, color],
     });
   };
+}
+
+/**
+ * Takes a whole colour selection, for the Chooser's own action row: clearing
+ * names no single colour, so {@link useToggleSelectedColor} has nothing to be
+ * handed. Memoised on the store, as {@link useSetSelectedTags} is.
+ */
+export function useSetSelectedColors(): (colors: string[]) => void {
+  const store = useAnnotStoreApi();
+  return useCallback(
+    (colors) => store.setState({ selectedColors: colors }),
+    [store],
+  );
 }
 
 /** Assembles the {@link AnnotFilter} from the store's query/colors/tags slices. */

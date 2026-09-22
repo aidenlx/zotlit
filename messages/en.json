@@ -380,6 +380,9 @@
   "annot_view_mode_active_tab": "Active tab",
   "annot_view_mode_zotero_reader": "Zotero reader",
   "annot_view_mode_pinned": "Pinned",
+  "annot_view_header_following_active_tab": "Following the active tab",
+  "annot_view_header_following_zotero_reader": "Following the Zotero reader",
+  "annot_view_header_pinned_item": "Pinned item",
   "annot_view_mode_pin_current_item": "Pin current item",
   "annot_view_mode_unpin": "Unpin",
   "annot_view_pin_choose_item": "Choose item…",
@@ -391,8 +394,22 @@
   "annot_view_empty_live_updates_off": "Live updates is off, so the Zotero reader cannot reach this view.",
   "annot_view_enable_live_updates": "Turn on live updates",
   "annot_view_empty_pinned": "Pin an item to see its annotations.",
-  "annot_view_empty_pinned_unresolved": "The pinned item is not in the Zotero database right now.",
-  "annot_view_attachment_tooltip": "Choose attachment",
+  "annot_view_empty_pinned_unresolved": "The pinned item is not in your Zotero library right now.",
+  "annot_view_header_menu_label": "Show annotations from",
+  "annot_view_header_attachments": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "{count} attachment",
+        "category=*": "{count} attachments"
+      }
+    }
+  ],
+  "annot_view_header_reading_only": "Reading only",
+  "annot_view_header_reader_closed": "Reader closed",
+  "annot_view_header_aria_sentence": "{text}.",
+  "annot_view_attachment_choose": "Choose attachment…",
   "annot_view_attachment_locked_reader": "The Zotero reader chooses this attachment",
   "annot_view_attachment_label": "{name} ({count})",
   "annot_view_attachment_unnamed": "Untitled attachment",
@@ -406,27 +423,20 @@
   "annot_view_filter_no_match": "No annotations match the current filters",
   "annot_view_clear_filters": "Clear filters",
   "annot_view_clear_search": "Clear search",
+  "annot_view_drawer_close": "Close",
   "annot_view_filter_count": "{shown} of {total}",
-  "annot_view_filter_clear": "Clear",
-  "annot_view_filter_trigger_selected": "Filtering by {count} tags",
-  "annot_view_filter_trigger_show_all": "Show all tags",
+  "annot_view_filter_more_count": "+{count}",
+  "annot_view_filter_tag_trigger": "Filter by tag",
+  "annot_view_filter_tag_trigger_active": "Filtered by tag: {tags}",
   "annot_view_filter_tag_tooltip": "{name} ({count})",
   "annot_view_filter_tag_search_placeholder": "Search tags…",
   "annot_view_filter_tag_clear": "Clear selected tags",
   "annot_view_filter_tag_empty": "No tags match the search term",
   "annot_view_filter_tag_list": "Tags",
-  "annot_view_filter_color_trigger_selected": [
-    {
-      "declarations": ["input count", "local countPlural = count: plural"],
-      "selectors": ["countPlural"],
-      "match": {
-        "countPlural=one": "Filtering by 1 color",
-        "countPlural=*": "Filtering by {count} colors"
-      }
-    }
-  ],
-  "annot_view_filter_color_trigger_show_all": "Show all colors",
+  "annot_view_filter_color_trigger": "Filter by color",
+  "annot_view_filter_color_trigger_active": "Filtered by color: {colors}",
   "annot_view_filter_color_list": "Colors",
+  "annot_view_filter_color_clear": "Clear selected colors",
   "annot_view_color_yellow": "Yellow",
   "annot_view_color_red": "Red",
   "annot_view_color_green": "Green",

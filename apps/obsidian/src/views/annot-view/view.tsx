@@ -30,6 +30,7 @@ import { AppContext } from "@/lib/app-context";
 import { registerMigratingWindowEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
+import type { ItemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type {
@@ -62,8 +63,6 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 import { AnnotActionsContext, createAnnotActions } from "./actions";
 import type { AnnotActions } from "./actions";
 import { AnnotView } from "./AnnotView";
-import { CapabilitySlotContext } from "./capability-slot";
-import { CapabilityAffordance } from "./CapabilityAffordance";
 import { cardControls } from "./card-controls";
 import type { CardControls } from "./card-controls";
 import { createCommentRenderer } from "./comment-render";
@@ -249,7 +248,11 @@ export class AnnotationView extends ItemView {
     if (source !== "more-options") return;
     const actions = this.#actions;
     if (!actions) return;
-    buildPaneMenu(menu, { state: this.snapshot, actions });
+    buildPaneMenu(menu, {
+      state: this.snapshot,
+      actions,
+      now: Temporal.Now.instant(),
+    });
   }
 
   protected override async onOpen(): Promise<void> {
@@ -309,6 +312,7 @@ export class AnnotationView extends ItemView {
       onPinItem: () => this.#pickItemToPin(),
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
+      onAllowEditing: () => this.#deps.showEditingCapability(),
       onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
       onDragStart: drag,
       insertAnnotation: (annotation) => {
@@ -339,16 +343,7 @@ export class AnnotationView extends ItemView {
       <AppContext value={this.app}>
         <AnnotStoreProvider value={this.#store}>
           <AnnotActionsContext value={this.#actions}>
-            <CapabilitySlotContext
-              value={
-                <CapabilityAffordance
-                  capabilities={this.#deps.annotations}
-                  onActivate={this.#deps.showEditingCapability}
-                />
-              }
-            >
-              <AnnotView />
-            </CapabilitySlotContext>
+            <AnnotView />
           </AnnotActionsContext>
         </AnnotStoreProvider>
       </AppContext>,
@@ -439,6 +434,16 @@ export class AnnotationView extends ItemView {
         (s) => s.selectedAttachmentKey,
         () => {
           this.#syncCapability();
+        },
+      ),
+    );
+    // The drawer exists to say why a write cannot happen; once one can, it has
+    // nothing left to say and goes without the user closing it.
+    this.register(
+      this.#store.subscribe(
+        (s) => s.capability.kind,
+        (kind) => {
+          if (kind === "writable") this.#store.setState({ drawerOpen: false });
         },
       ),
     );
@@ -713,7 +718,7 @@ export class AnnotationView extends ItemView {
       itemKey,
       attachmentLock: lock,
       pinnable: itemKey,
-      itemDisplayLabel: this.#resolveDisplayLabel(target),
+      itemDisplay: this.#resolveItemSummary(target),
     });
 
     try {
@@ -909,7 +914,7 @@ export class AnnotationView extends ItemView {
    * The identity block names the Item only where nothing else on screen does:
    * Active Tab always has the note or the PDF in front of the user.
    */
-  #resolveDisplayLabel(target: LoadTarget): string | null {
+  #resolveItemSummary(target: LoadTarget): ItemSummary | null {
     if (this.#followMode === "active-tab" || target.itemKey === null) {
       return null;
     }
@@ -918,7 +923,7 @@ export class AnnotationView extends ItemView {
         target.key,
       ])[0];
       if (!item || isChildItemFields(item.fields)) return null;
-      return itemSummary(item, item.fields).formatted;
+      return itemSummary(item, item.fields);
     } catch {
       return null;
     }
@@ -1062,7 +1067,7 @@ export class AnnotationView extends ItemView {
     this.#store.setState({
       ...INITIAL_FILTER_STATE,
       itemKey: null,
-      itemDisplayLabel: null,
+      itemDisplay: null,
       attachments: null,
       selectedAttachmentKey: null,
       attachmentLock: null,

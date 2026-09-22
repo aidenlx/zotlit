@@ -15,6 +15,7 @@ import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { selectionControl } from "@/components/obsidian/selection-control";
 import * as m from "@/lib/i18n/generated/messages";
 import * as workbenchM from "@/lib/i18n/generated/workbench-messages";
 import { itemSummary } from "@/lib/item-summary";
@@ -27,7 +28,6 @@ import {
   SAMPLE_ITEM_CHOICES,
 } from "./selection-data";
 import {
-  selectionControl,
   selectionGroup,
   selectionGroupHeading,
   selectionHint,

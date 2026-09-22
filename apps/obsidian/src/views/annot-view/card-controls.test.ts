@@ -5,14 +5,17 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type { CommentDraft } from "@/services/annotation-repository/service";
 import type { MutationState } from "@/services/annotation-repository/write";
+import { IDLE } from "@/services/annotation-repository/write";
 
 import {
   cardControls,
+  capabilityBlock,
   commentIcon,
   commentLabel,
   commentEditorControls,
+  editingBlockedReason,
 } from "./card-controls";
-import type { CardControls } from "./card-controls";
+import type { CardBlock, CardControls } from "./card-controls";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -59,26 +62,85 @@ function tooltips(controls: CardControls): string[] {
   );
 }
 
+function blocks(controls: CardControls): (CardBlock | null)[] {
+  return [controls.color, controls.comment, controls.delete].map(
+    ({ blocked }) => blocked,
+  );
+}
+
 it("keeps every verb live where a gesture reaches Zotero, each naming itself", () => {
   for (const capability of LIVE) {
     const controls = controlsOf(capability);
 
     expect(states(controls)).toEqual([false, false, false]);
+    expect(blocks(controls)).toEqual([null, null, null]);
     // Three verbs, three names: a live control's tooltip is what it does.
     expect(new Set(tooltips(controls)).size).toBe(3);
     expect(tooltips(controls).every((text) => text.length > 0)).toBe(true);
   }
 });
 
-it("disables every verb in place, carrying the capability's own reason", () => {
+it("keeps a verb the capability blocks pressable, so its press reaches the reason", () => {
   for (const capability of BLOCKED) {
     const controls = controlsOf(capability);
     const copy = editingCapabilityCopy(capability, NOW);
     const reason = copy.detail ?? copy.label;
+    const action =
+      capability.kind === "authorization-required" ? "allow-editing" : null;
 
-    expect(states(controls)).toEqual([true, true, true]);
-    expect(tooltips(controls)).toEqual([reason, reason, reason]);
+    // Not disabled: the press is what opens the drawer holding the reason.
+    expect(states(controls)).toEqual([false, false, false]);
+    expect(blocks(controls)).toEqual([
+      { reason, action },
+      { reason, action },
+      { reason, action },
+    ]);
+    // The verb keeps its own name; the drawer is what states the reason.
+    expect(tooltips(controls)).toEqual(
+      tooltips(controlsOf({ kind: "writable" })),
+    );
   }
+});
+
+it("offers Allow editing to the one capability a gesture can change", () => {
+  expect(capabilityBlock({ kind: "authorization-required" }, NOW)).toEqual({
+    reason: m.capability_authorization_required_detail(),
+    action: "allow-editing",
+  });
+  expect(capabilityBlock({ kind: "authorizing" }, NOW)).toEqual({
+    reason: m.capability_authorizing_detail(),
+    action: null,
+  });
+  // A label stands in where the table has no detail sentence.
+  expect(
+    capabilityBlock({ kind: "read-only", reason: "probing" }, NOW),
+  ).toEqual({ reason: m.capability_probing(), action: null });
+  expect(capabilityBlock({ kind: "writable" }, NOW)).toBeNull();
+});
+
+it("counts a cooldown down each time the sentence is read again", () => {
+  // The drawer derives its sentence as it renders rather than storing the one a
+  // press found, so the seconds it names have to follow the instant it reads at.
+  const capability: EditingCapability = {
+    kind: "cooldown",
+    retryAfter: NOW.add({ seconds: 30 }),
+  };
+
+  expect(capabilityBlock(capability, NOW)?.reason).toContain("30");
+  expect(
+    capabilityBlock(capability, NOW.add({ seconds: 10 }))?.reason,
+  ).toContain("20");
+});
+
+it("answers every reader surface with the same reason string", () => {
+  // The Mark Popup reads this export, so its answer stays a plain string.
+  expect(
+    editingBlockedReason({ kind: "authorization-required" }, IDLE, NOW),
+  ).toBe(m.capability_authorization_required_detail());
+  expect(editingBlockedReason({ kind: "writable" }, IDLE, NOW)).toBeNull();
+  expect(
+    editingBlockedReason({ kind: "writable" }, { kind: "pending" }, NOW),
+  ).toBe(m.annot_view_card_saving());
 });
 
 it("shows a write in flight as disabled verbs, whatever the capability says", () => {
@@ -86,6 +148,8 @@ it("shows a write in flight as disabled verbs, whatever the capability says", ()
   const idle = controlsOf({ kind: "writable" });
 
   expect(states(pending)).toEqual([true, true, true]);
+  // A write in flight is the one case that truly cannot be pressed.
+  expect(blocks(pending)).toEqual([null, null, null]);
   // One reason, and it is the write rather than the capability.
   expect(new Set(tooltips(pending)).size).toBe(1);
   expect(tooltips(pending)[0]).not.toBe(tooltips(idle)[0]);
@@ -107,8 +171,12 @@ it("leaves a settled write's verbs to the capability, so the user can try again"
       false,
     ]);
     expect(
-      states(controlsOf({ kind: "read-only", reason: "probing" }, mutation)),
-    ).toEqual([true, true, true]);
+      blocks(controlsOf({ kind: "read-only", reason: "probing" }, mutation)),
+    ).toEqual([
+      { reason: m.capability_probing(), action: null },
+      { reason: m.capability_probing(), action: null },
+      { reason: m.capability_probing(), action: null },
+    ]);
   }
 });
 

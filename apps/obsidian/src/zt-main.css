@@ -74,6 +74,10 @@
 
   /* ===== Radius ===== */
   --radius-*: initial;
+  /* A 2px corner, for a mark small enough that `--radius-s` would round it
+     away: an 8px swatch square under a 4px radius reads as a circle. Obsidian
+     names no radius this small, so it is stated here. */
+  --radius-xs: 2px;
   --radius-sm: var(--radius-s);
   --radius-md: var(--radius-m);
   --radius-lg: var(--radius-l);
@@ -88,6 +92,15 @@
   --text-xl: calc(var(--font-ui-large) * 1.25);
   --text-2xl: calc(var(--font-ui-large) * 1.5);
   --text-3xl: calc(var(--font-ui-large) * 1.875);
+
+  /* A quotation lifted out of a document, named by that use rather than by its
+     size: the Annotation excerpt takes the reading face a step under the
+     reading size the user set — 14px at Obsidian's default 16px — and a
+     unitless 1.5 keeps a clamped three-line block readable. The UI scale above
+     follows Obsidian's interface setting; a quotation answers to the text it
+     came from. */
+  --text-quote: calc(var(--font-text-size) * 0.875);
+  --text-quote--line-height: 1.5;
 
   /* ===== Fonts ===== */
   --font-*: initial;

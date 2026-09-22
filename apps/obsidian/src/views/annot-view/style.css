@@ -90,3 +90,21 @@
   background-image: none;
   padding-inline-end: 0;
 }
+
+/* The header block is one `<button>`, and Obsidian's own `button` rules are
+   unlayered, so they outrank every `zt:` utility it wears — its fill, its
+   padding and its shadow among them. This rule is unlayered too and outranks
+   them in turn, and `revert-layer` rolls the element back to the plugin's own
+   layers, where the utilities on the block are what draws it. The same trick
+   the Chooser trigger takes.
+   @see apps/obsidian/src/components/chooser.css */
+.zt-root button.zt-annot-header {
+  all: revert-layer;
+}
+
+/* The Attachment suggester exists to tell two similar names apart, so a long
+   name wraps rather than being clipped. Obsidian declares the clip unlayered
+   on `.suggestion-item`, where no utility reaches it. */
+.zt-annot-attachment-suggester .suggestion-item {
+  white-space: normal;
+}

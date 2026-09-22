@@ -13,9 +13,31 @@ import type { CommentDraft } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
+/**
+ * Why a verb cannot act while the Editing Capability stands in its way, and the
+ * one gesture that could change that — what the capability drawer states.
+ */
+export interface CardBlock {
+  /** The capability's own sentence: its detail, or its label where it has none. */
+  reason: string;
+  /** The gesture the drawer offers, or `null` where nothing the user does helps. */
+  action: "allow-editing" | null;
+}
+
 /** One header control: whether it runs, and what its tooltip says. */
 export interface CardControl {
+  /**
+   * Whether the press is refused outright, which only a write in flight is:
+   * there is nothing to say about it beyond the tooltip, and it ends by itself.
+   */
   disabled: boolean;
+  /**
+   * The capability standing in the way, or `null` while the verb acts. A
+   * blocked verb stays pressable and only rests dimmed: its press opens the
+   * drawer, which states {@link CardBlock.reason} from the capability in force,
+   * so the explanation is reached by a gesture rather than only by a hover.
+   */
+  blocked: CardBlock | null;
   /** `aria-label`, which Obsidian renders as the hover tooltip. */
   tooltip: string;
 }
@@ -52,9 +74,14 @@ export function editingLive(capability: EditingCapability): boolean {
 /**
  * Every editing control of one card, with the reason for each that cannot run.
  *
- * A write in flight disables all three and says so: pending shows as disabled
- * verbs and nothing else, because no provisional value is ever drawn. A write
- * that failed, conflicted, or lost its answer leaves the verbs to the
+ * The two reasons a verb cannot act are not the same thing. A write in flight
+ * disables all three and says so: pending shows as disabled verbs and nothing
+ * else, because no provisional value is ever drawn, and it ends without the
+ * user doing anything. A capability that refuses writes is a state the user can
+ * read about and sometimes end, so the verb stays pressable and its press
+ * carries {@link CardControl.blocked} to the drawer.
+ *
+ * A write that failed, conflicted, or lost its answer leaves the verbs to the
  * capability, so the user can try again.
  */
 export function cardControls({
@@ -63,11 +90,20 @@ export function cardControls({
   hasComment,
   now,
 }: CardControlsInput): CardControls {
-  const blocked = editingBlockedReason(capability, mutation, now);
-  const control = (label: string): CardControl =>
-    blocked === null
-      ? { disabled: false, tooltip: label }
-      : { disabled: true, tooltip: blocked };
+  const pending = mutation.kind === "pending";
+  const blocked = pending ? null : capabilityBlock(capability, now);
+  const control = (label: string): CardControl => {
+    if (pending)
+      return {
+        disabled: true,
+        blocked: null,
+        tooltip: m.annot_view_card_saving(),
+      };
+    if (blocked === null)
+      return { disabled: false, blocked: null, tooltip: label };
+    // The verb keeps its own name: the drawer states the reason on a press.
+    return { disabled: false, blocked, tooltip: label };
+  };
   return {
     color: control(m.annot_view_card_color()),
     comment: control(commentLabel(hasComment)),
@@ -102,9 +138,25 @@ export function editingBlockedReason(
   now: Temporal.Instant,
 ): string | null {
   if (mutation.kind === "pending") return m.annot_view_card_saving();
+  return capabilityBlock(capability, now)?.reason ?? null;
+}
+
+/**
+ * What one Editing Capability leaves a verb to say, or `null` while the verb
+ * acts. Authorization is the one state a gesture ends, so it is the one that
+ * carries an action; every other state is waited out or fixed in Zotero.
+ */
+export function capabilityBlock(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): CardBlock | null {
   if (editingLive(capability)) return null;
   const copy = editingCapabilityCopy(capability, now);
-  return copy.detail ?? copy.label;
+  return {
+    reason: copy.detail ?? copy.label,
+    action:
+      capability.kind === "authorization-required" ? "allow-editing" : null,
+  };
 }
 
 /** Shared comment feedback for the Annotation View and PDF reader. */

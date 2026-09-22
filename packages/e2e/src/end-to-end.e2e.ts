@@ -470,6 +470,15 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
         throw new Error(`Annotation cards did not render: ${state}`);
       }
       expect(JSON.parse(await obEval(vaultId, visibleCards))).toEqual(expected);
+      // The header block is one press target however much it reports, and the
+      // pane names its controls with `aria-label` alone. Both are shapes only a
+      // rendered view has: the focus stops are what the DOM ended up with, and
+      // a `title` anywhere in the view is the hover tooltip Obsidian would draw
+      // over its own.
+      const headerChrome = `JSON.stringify((()=>{const root=app.workspace.getLeavesOfType('zotero-annotation-view')[0]?.view.containerEl;const block=root?.querySelector('.zt-annot-header')?.parentElement??null;return {focusable:block?block.querySelectorAll('button, [tabindex]:not([tabindex="-1"]), a[href], input').length:-1,titled:root?root.querySelectorAll('[title]').length:-1};})())`;
+      expect(await obEval(vaultId, headerChrome)).toBe(
+        JSON.stringify({ focusable: 1, titled: 0 }),
+      );
       // The tag Chooser hangs in the browser's top layer, placed by CSS anchor
       // positioning — which only a running Obsidian has. A popup that collapsed
       // still holds its rows in the DOM, so what tells is whether its own box

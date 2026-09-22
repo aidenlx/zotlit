@@ -95,10 +95,10 @@ export function editingCapabilityCopy(
 }
 
 /**
- * The enable-editing affordance, as both of its renderers draw it: the reader's
- * vanilla render function and the Annotation View's Preact component read this
- * one answer, so the two surfaces cannot drift apart. A writable capability
- * returns `null`, because the ordinary editing controls take its place.
+ * The enable-editing affordance, as the reader's vanilla render function draws
+ * it. A writable capability returns `null`, because the ordinary editing
+ * controls take its place. The Annotation View reads {@link
+ * editingCapabilityCopy} straight, in a row of its header menu.
  *
  * @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
  */
