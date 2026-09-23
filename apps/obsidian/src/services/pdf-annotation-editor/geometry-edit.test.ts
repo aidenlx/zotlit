@@ -1,9 +1,14 @@
 import { expect, it } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
-import type { AnnotationPositionRaw, PdfRectsPosition } from "@zotlit/db";
+import type {
+  AnnotationPositionRaw,
+  PdfInkPosition,
+  PdfRectsPosition,
+} from "@zotlit/db";
 
 import {
+  bodyRect,
   gripAt,
   gripCursor,
   handleLayout,
@@ -34,7 +39,7 @@ function drag(grip: Grip, [dx, dy]: [number, number], confirmed = IMAGE) {
     from,
     to: [from[0] + dx, from[1] + dy],
     viewBox: VIEW_BOX,
-  });
+  }) as PdfRectsPosition;
   return proposed.rects[0];
 }
 
@@ -125,19 +130,157 @@ it("lays an image's eight handles on its corners and edge midpoints", () => {
 
 it("lays no handle on a mark this build cannot yet adjust", () => {
   expect(handleLayout({ type: "highlight", position: IMAGE })).toEqual([]);
-  expect(
-    handleLayout({
-      type: "ink",
-      position: parseAnnotationPosition(
-        {
-          pageIndex: 1,
-          width: 2,
-          paths: [[0, 0, 5, 5]],
-        } as unknown as AnnotationPositionRaw,
-        "application/pdf",
-      ),
-    }),
-  ).toEqual([]);
+});
+
+/** An ink position on page index 1, from flat `[x, y, x, y, …]` strokes. */
+function ink(paths: number[][], width = 2): PdfInkPosition {
+  return parseAnnotationPosition(
+    { pageIndex: 1, width, paths } as unknown as AnnotationPositionRaw,
+    "application/pdf",
+  ) as PdfInkPosition;
+}
+
+/** A square stroke box, `[100, 300, 200, 400]`, drawn as its diagonal. */
+const SQUARE = ink([[100, 300, 150, 350, 200, 400]]);
+
+/** Two strokes spanning `[100, 300, 300, 400]`: twice as wide as high. */
+const WIDE = ink([
+  [100, 300, 200, 350],
+  [250, 380, 300, 400],
+]);
+
+/** The ink a drag proposes, for a held grip moved by a delta, with float
+ * noise past the sixth decimal cut off. */
+function dragInk(
+  grip: Grip,
+  [dx, dy]: [number, number],
+  confirmed: PdfInkPosition,
+): PdfInkPosition {
+  const from = [150, 350] as const;
+  const proposed = proposePosition({
+    confirmed,
+    grip,
+    from,
+    to: [from[0] + dx, from[1] + dy],
+    viewBox: VIEW_BOX,
+  }) as PdfInkPosition;
+  const round = (value: number) => Math.round(value * 1e6) / 1e6;
+  return {
+    ...proposed,
+    width: round(proposed.width),
+    paths: proposed.paths.map((path) => path.map(round)),
+  };
+}
+
+it("gives ink with no area no scale handles, whatever its strokes", () => {
+  // A dot, a flat line, and an upright line: each box lacks a dimension a
+  // proportional scale could keep.
+  expect(handleLayout({ type: "ink", position: ink([[5, 5]]) })).toEqual([]);
+  expect(handleLayout({ type: "ink", position: ink([[0, 5, 40, 5]]) })).toEqual(
+    [],
+  );
+  expect(handleLayout({ type: "ink", position: ink([[5, 0, 5, 40]]) })).toEqual(
+    [],
+  );
+});
+
+it("translates every point of every stroke by the body's travel, width kept", () => {
+  expect(dragInk("body", [12.5, -40], WIDE)).toEqual(
+    ink([
+      [112.5, 260, 212.5, 310],
+      [262.5, 340, 312.5, 360],
+    ]),
+  );
+});
+
+it("moves ink by its body only as far as its strokes stay on the page", () => {
+  // The strokes span [100, 300, 300, 400]; the view box is [10, 20, 622, 812].
+  expect(dragInk("body", [900, -900], WIDE)).toEqual(
+    ink([
+      [422, 20, 522, 70],
+      [572, 100, 622, 120],
+    ]),
+  );
+  expect(dragInk("body", [-900, 900], WIDE)).toEqual(
+    ink([
+      [10, 712, 110, 762],
+      [160, 792, 210, 812],
+    ]),
+  );
+});
+
+it("scales ink from each corner with its proportions held, the opposite corner fixed", () => {
+  // Pulled 100 points outward along x, the square doubles to 200 points a
+  // side, anchored at the corner opposite the one held.
+  expect(dragInk("br", [100, 0], SQUARE).paths).toEqual([
+    [100, 200, 200, 300, 300, 400],
+  ]);
+  expect(dragInk("tr", [100, 0], SQUARE).paths).toEqual([
+    [100, 300, 200, 400, 300, 500],
+  ]);
+  expect(dragInk("bl", [-100, 0], SQUARE).paths).toEqual([
+    [0, 200, 100, 300, 200, 400],
+  ]);
+  expect(dragInk("tl", [-100, 0], SQUARE).paths).toEqual([
+    [0, 300, 100, 400, 200, 500],
+  ]);
+});
+
+it("scales the stroke width by the square root of the area scale", () => {
+  // Twice as wide and twice as high is four times the area: the pen doubles.
+  expect(dragInk("tr", [200, 0], WIDE)).toEqual(
+    ink(
+      [
+        [100, 300, 300, 400],
+        [400, 460, 500, 500],
+      ],
+      4,
+    ),
+  );
+  // Halved on each side, a quarter of the area: the pen halves.
+  expect(dragInk("br", [-50, 0], SQUARE).width).toBe(1);
+});
+
+it("lets the horizontal travel alone set an ink corner's scale, as Zotero does", () => {
+  expect(dragInk("br", [0, -300], SQUARE)).toEqual(SQUARE);
+});
+
+it("never scales ink below one point on either side", () => {
+  // The wide strokes are 200 by 100 points: dragged far past the opposite
+  // edge, the scale stops where the shorter side reaches one point.
+  const shrunk = dragInk("br", [-900, 0], WIDE);
+  expect(shrunk.paths).toEqual([
+    [100, 399, 101, 399.5],
+    [101.5, 399.8, 102, 400],
+  ]);
+  expect(shrunk.width).toBe(0.02);
+});
+
+it("lays ink's four corner handles on its stroke box, padded out", () => {
+  const handles = handleLayout({ type: "ink", position: WIDE });
+
+  expect(Object.fromEntries(handles.map(({ grip, at }) => [grip, at]))).toEqual(
+    {
+      tl: [95, 405],
+      tr: [305, 405],
+      br: [305, 295],
+      bl: [95, 295],
+    },
+  );
+});
+
+it("takes the body of image and ink by its box, and of no other mark", () => {
+  expect(bodyRect({ type: "image", position: IMAGE })).toEqual([
+    100, 300, 300, 500,
+  ]);
+  expect(bodyRect({ type: "ink", position: WIDE })).toEqual([
+    95, 295, 305, 405,
+  ]);
+  // A dot can still be moved by the box padded round it.
+  expect(bodyRect({ type: "ink", position: ink([[5, 5]]) })).toEqual([
+    0, 0, 10, 10,
+  ]);
+  expect(bodyRect({ type: "highlight", position: IMAGE })).toBeNull();
 });
 
 it("gives a corner priority over an edge whose handle covers the same point", () => {

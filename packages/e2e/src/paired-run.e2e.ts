@@ -1390,6 +1390,283 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
       });
 
+      describe("Mark Handles on the seeded ink", () => {
+        const inkKey = "4PE492KU";
+        const path = `users/0/items/${inkKey}`;
+        const pdfView = `app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(attachmentPath)}&&view.containerEl.getBoundingClientRect().width>0)`;
+        const inkMark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(inkKey)}]')`;
+        /** Dispatches one pointer event as the browser would, at a client point. */
+        const fire = `const fire=(type,x,y,target)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
+
+        interface Stored {
+          version: number;
+          data: { annotationPosition: string; annotationSortIndex: string };
+        }
+        interface InkPosition {
+          pageIndex: number;
+          width: number;
+          paths: number[][];
+        }
+        const storedInk = async (): Promise<Stored> =>
+          (await (
+            await zoteroFetch(api, path, {
+              headers: { "Zotero-Server-ID": serverID },
+            })
+          ).json()) as Stored;
+        const inkSettled = () => readerSettled(rdp, inkKey, { api, serverID });
+
+        /** The ink as the Fixture Spec seeds it. */
+        const seeded = ANNOTATIONS.find(({ key }) => key === inkKey)!;
+        const seedPosition = seeded.position as InkPosition;
+        const seed = {
+          position: JSON.stringify(seeded.position),
+          sortIndex: seeded.sortIndex,
+        };
+
+        /**
+         * Brings page one on screen and selects the ink by a click inside its
+         * stroke box, as a researcher would, then answers where the centre of
+         * that box and its bottom-right handle are, and how many client
+         * pixels one PDF point spans on each axis of the drawn page.
+         */
+        async function selectInk(): Promise<{
+          body: { x: number; y: number };
+          corner: { x: number; y: number };
+          perX: number;
+          perY: number;
+        }> {
+          await inkSettled();
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=${inkMark};if(!mark)return 'no mark';mark.scrollIntoView({block:'center',inline:'center'});return String(mark.getBoundingClientRect().width>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          await obEval(
+            vaultId!,
+            `(function(){${fire}const mark=${inkMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return 'clicked';})()`,
+          );
+          // Ink scales from its four corners only.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-handle').length)`,
+              { expected: "4" },
+            ),
+          ).toBe(true);
+          // Measured in its own eval, and read until it stands still: the
+          // page jump can still be scrolling.
+          const measure = `(function(){const view=${pdfView};const handle=view.containerEl.querySelector('.zt-pdf-annotation-handle[data-zt-grip="br"]').getBoundingClientRect();const box=${inkMark}.getBoundingClientRect();const overlay=${inkMark}.ownerSVGElement;return JSON.stringify({body:{x:box.left+box.width/2,y:box.top+box.height/2},corner:{x:handle.left+handle.width/2,y:handle.top+handle.height/2},perX:overlay.getBoundingClientRect().width/overlay.viewBox.baseVal.width,perY:overlay.getBoundingClientRect().height/overlay.viewBox.baseVal.height});})()`;
+          let last = "";
+          expect(
+            await waitFor(async () => {
+              const next = await obEval(vaultId!, measure);
+              const still = next === last;
+              last = next;
+              return still;
+            }),
+            last,
+          ).toBe(true);
+          return JSON.parse(last) as Awaited<ReturnType<typeof selectInk>>;
+        }
+
+        /**
+         * Drags from one client point to another with the pointer held, then
+         * releases, recording which grip the press took and the Annotations
+         * whose pixels the repository announced as changed.
+         */
+        async function drag(
+          from: { x: number; y: number },
+          to: { x: number; y: number },
+        ): Promise<void> {
+          await obEval(
+            vaultId!,
+            `(function(){${fire}window.__ztPixels=[];window.__ztPixelsOff=app.plugins.plugins.zotlit.services.annotationRepository.on('excerpt-pixels-changed',(record)=>window.__ztPixels.push(record.key));const container=${pdfView}.containerEl;fire('pointerdown',${from.x},${from.y});fire('pointermove',${(from.x + to.x) / 2},${(from.y + to.y) / 2},container);fire('pointermove',${to.x},${to.y},container);fire('pointerup',${to.x},${to.y},container);fire('click',${to.x},${to.y},container);return true;})()`,
+          );
+        }
+
+        /**
+         * The ink Zotero holds once the write and the Reader's render after
+         * it have settled, checked against Zotero's open Reader, and the
+         * pixel-change announcement for it.
+         */
+        async function savedInk(): Promise<InkPosition> {
+          expect(
+            await waitFor(
+              async () =>
+                (await storedInk()).data.annotationPosition !== seed.position,
+            ),
+          ).toBe(true);
+          await inkSettled();
+          const stored = await storedInk();
+          // The Sort Index is the one the reader's text structure gives the
+          // stored position.
+          const recomputed = await obJson<string>(
+            `(async()=>{const binding=app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${stored.data.annotationPosition}));})()`,
+          );
+          expect(stored.data.annotationSortIndex).toBe(recomputed);
+          // Zotero's open Reader holds the same position.
+          expect(
+            await rdp.json<string>(`(() => {
+              const attachment = ${ATTACHMENT_ITEM};
+              const reader = Zotero.Reader._readers.find(
+                (candidate) => candidate.itemID === attachment.id,
+              );
+              return reader?._item
+                .getAnnotations()
+                .find(({ key }) => key === ${JSON.stringify(inkKey)})
+                ?.annotationPosition;
+            })()`),
+          ).toBe(stored.data.annotationPosition);
+          expect(
+            await obJson<string[]>(
+              "(function(){window.__ztPixelsOff?.();return JSON.stringify(window.__ztPixels);})()",
+            ),
+          ).toContain(inkKey);
+          return JSON.parse(stored.data.annotationPosition) as InkPosition;
+        }
+
+        /**
+         * Asserts every stored point sits where `expected` puts the seeded
+         * one, within the three-decimal rounding and the client-pixel
+         * measure of the drag.
+         */
+        function expectPoints(
+          position: InkPosition,
+          expected: (x: number, y: number) => [number, number],
+        ): void {
+          expect(position.paths).toHaveLength(seedPosition.paths.length);
+          seedPosition.paths.forEach((stroke, index) => {
+            const moved = position.paths[index]!;
+            expect(moved).toHaveLength(stroke.length);
+            for (let at = 0; at < stroke.length; at += 2) {
+              const [x, y] = expected(stroke[at]!, stroke[at + 1]!);
+              expect(
+                Math.abs(moved[at]! - x),
+                `x of point ${at / 2}`,
+              ).toBeLessThan(0.01);
+              expect(
+                Math.abs(moved[at + 1]! - y),
+                `y of point ${at / 2}`,
+              ).toBeLessThan(0.01);
+            }
+          });
+        }
+
+        /**
+         * Puts the seed back through the Local API, against whatever version
+         * Zotero holds once the Reader has finished any render a position
+         * change started.
+         */
+        async function restoreSeed(): Promise<void> {
+          await inkSettled();
+          const current = await storedInk();
+          if (
+            current.data.annotationPosition !== seed.position ||
+            current.data.annotationSortIndex !== seed.sortIndex
+          ) {
+            const apiKey = await obJson<string>(
+              "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+            );
+            const restored = await zoteroFetch(api, path, {
+              method: "PATCH",
+              headers: {
+                "Zotero-Server-ID": serverID,
+                "Zotero-API-Key": apiKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                version: current.version,
+                annotationPosition: seed.position,
+                annotationSortIndex: seed.sortIndex,
+              }),
+            });
+            expect(restored.status).toBe(204);
+            await inkSettled();
+          }
+          expect((await storedInk()).data).toMatchObject({
+            annotationPosition: seed.position,
+            annotationSortIndex: seed.sortIndex,
+          });
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)});return true;})()`,
+          );
+        }
+
+        beforeAll(async () => {
+          // A Reader opened afresh renders the Excerpt Images it lacks at
+          // once, which is what lets each write here wait for that render.
+          await closeZoteroReader(rdp, readerTabID);
+          readerTabID = await openZoteroReader(rdp);
+          await restoreSeed();
+          // A pointer gesture is hit-tested against the page as laid out, and
+          // a hidden or occluded window neither lays out nor paints it.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              "(function(){const electronWindow=require('@electron/remote').getCurrentWindow();electronWindow.show();electronWindow.moveTop();return document.visibilityState;})()",
+              { expected: "visible" },
+            ),
+          ).toBe(true);
+        });
+
+        afterEach(restoreSeed);
+
+        it("moves every point of the ink by its body's drag, the width kept", async () => {
+          const { body, perX, perY } = await selectInk();
+          // Forty pixels right and twenty down the page: down the page is
+          // toward PDF's y origin.
+          await drag(body, { x: body.x + 40, y: body.y + 20 });
+          const dx = 40 / perX;
+          const dy = -20 / perY;
+
+          const position = await savedInk();
+          expect(position.pageIndex).toBe(seedPosition.pageIndex);
+          expect(position.width).toBe(seedPosition.width);
+          expectPoints(position, (x, y) => [x + dx, y + dy]);
+          // The overlay draws the saved stroke, whose page units are PDF
+          // points counted from the page's left edge.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(${inkMark}?.getAttribute('d').startsWith('M ${position.paths[0]![0]} '))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("scales the ink from its bottom-right corner with its proportions and its pen", async () => {
+          const { corner, perX } = await selectInk();
+          // Thirty pixels right; the vertical travel is ignored, since the
+          // new width alone sets a corner's scale.
+          await drag(corner, { x: corner.x + 30, y: corner.y + 10 });
+          const points = seedPosition.paths.flat();
+          const xs = points.filter((_, index) => index % 2 === 0);
+          const ys = points.filter((_, index) => index % 2 === 1);
+          const left = Math.min(...xs);
+          const top = Math.max(...ys);
+          const width = Math.max(...xs) - left;
+          const scale = (width + 30 / perX) / width;
+
+          const position = await savedInk();
+          // The top-left corner, opposite the handle, stays put.
+          expectPoints(position, (x, y) => [
+            left + (x - left) * scale,
+            top - (top - y) * scale,
+          ]);
+          expect(position.width).toBeCloseTo(seedPosition.width * scale, 2);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `${inkMark}?.getAttribute('stroke-width')`,
+              { expected: String(position.width) },
+            ),
+          ).toBe(true);
+        }, 120000);
+      });
+
       // The one place a confirmed write can land: the Local API is serving
       // this Attachment, so a saved colour edit really moves the pixels the
       // card paints, and the card's own publication of them is observable.

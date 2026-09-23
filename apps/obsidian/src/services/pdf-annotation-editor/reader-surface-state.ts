@@ -26,7 +26,7 @@ import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
 import { creationToolbar } from "./creation-toolbar";
 import type { CreationToolbarControl } from "./creation-toolbar";
-import { sameGeometry } from "./geometry-edit";
+import { isEditablePosition, sameGeometry } from "./geometry-edit";
 import type { EditablePosition, Grip, PdfPoint } from "./geometry-edit";
 import { markPopupRow } from "./mark-popup";
 import type { MarkPopupRowInput, MarkPopupVerb } from "./mark-popup";
@@ -279,7 +279,7 @@ export function stepStack(store: ReaderSurfaceStore): void {
 
 /**
  * Begins a Geometry Edit on the selected mark, proposing its confirmed
- * position. Nothing begins while no mark with a PDF rects position is
+ * position. Nothing begins while no mark with a PDF rects or ink position is
  * selected.
  */
 export function beginAdjust(
@@ -289,7 +289,7 @@ export function beginAdjust(
   const { floating, records } = store.getState();
   if (floating.kind !== "selected") return;
   const position = records.find(({ key }) => key === floating.key)?.position;
-  if (position?.kind !== "pdf-rects") return;
+  if (!position || !isEditablePosition(position)) return;
   store.setState({
     floating: {
       ...floating,
@@ -343,7 +343,8 @@ export function endAdjust(store: ReaderSurfaceStore): EditablePosition | null {
   if (adjust.phase === "saving") return null;
   const confirmed = records.find(({ key }) => key === floating.key)?.position;
   if (
-    confirmed?.kind !== "pdf-rects" ||
+    !confirmed ||
+    !isEditablePosition(confirmed) ||
     sameGeometry(confirmed, adjust.proposal)
   ) {
     cancelAdjust(store);

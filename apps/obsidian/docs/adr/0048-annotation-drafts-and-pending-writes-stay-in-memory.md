@@ -23,3 +23,7 @@ The maintainer accepted this risk on 2026-09-20. Editing release requires a warn
 This supersedes the creation recovery workflow in [ADR 0039](0039-an-uncertain-create-is-reconciled-by-stable-fields-and-retried-only-by-the-user.md) and amends the reading/editing contract in [ADR 0047](0047-annotation-reading-is-continuous-and-editing-is-an-added-capability.md). Shared memory preserves draft continuity during refresh and between surfaces. Ordinary native API writes and reads provide the save path. The accepted trade-off is a simpler session-only model instead of durable requests, creation matching, or a dedicated retry workflow.
 
 Implementation and acceptance criteria are specified in [Spec #1157](https://github.com/aidenlx/zotlit/issues/1157).
+
+## Amendment: a Geometry Edit draws its proposal while pending
+
+A Geometry Edit is the one exception to confirmed data while a write is pending. The researcher placed the mark with the pointer or the keyboard, so the mark keeps drawing the proposed geometry from release until the write settles. A confirmed write then draws the record Zotero answered. A refused, conflicted, or lost write snaps the mark back to the confirmed record and reports through the existing notice seam. Snapping back to the confirmed record between release and response would show the mark jump back and forth on every edit. Nothing else is drawn from a proposal: the Annotation Card, colour, and comment keep showing confirmed data while pending. Accepted with [Spec #1200](https://github.com/aidenlx/zotlit/issues/1200).

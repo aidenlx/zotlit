@@ -46,10 +46,11 @@ import type {
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import type { CreationGestures } from "./creation";
 import {
+  bodyRect,
   gripAt,
   HANDLE_RADIUS,
   handleLayout,
-  movesByBody,
+  isEditablePosition,
   proposePosition,
 } from "./geometry-edit";
 import type { EditablePosition, PdfPoint } from "./geometry-edit";
@@ -482,14 +483,14 @@ export class MarkSelection implements Disposable {
     if (event.button !== 0 || !record || !this.#live()) return;
     const state = this.#state();
     if (!state.marksVisible || selectAdjust(state)) return;
-    if (record.position.kind !== "pdf-rects") return;
+    if (!isEditablePosition(record.position)) return;
     const page = this.#deps.pageAt(record.position.pageIndex);
     if (!page) return;
     const box = drawnBoxOf(page);
     const point = unitsOf(box, { x: event.clientX, y: event.clientY });
-    const rect = record.position.rects[0];
+    const rect = bodyRect(record);
     let body: [number, number, number, number] | null = null;
-    if (rect && movesByBody(record.type)) {
+    if (rect) {
       const a = unitPointOf(page, [rect[0], rect[1]]);
       const b = unitPointOf(page, [rect[2], rect[3]]);
       body = [
@@ -528,7 +529,7 @@ export class MarkSelection implements Disposable {
     const adjust = selectAdjust(this.#state());
     const dragging = this.#dragging;
     if (!record || !adjust || !dragging) return;
-    if (record.position.kind !== "pdf-rects") return;
+    if (!isEditablePosition(record.position)) return;
     // Read on every move, so a scroll or a zoom mid-drag is measured against
     // the page as it now stands.
     const page = this.#deps.pageAt(record.position.pageIndex);
