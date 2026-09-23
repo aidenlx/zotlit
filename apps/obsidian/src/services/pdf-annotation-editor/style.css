@@ -30,6 +30,42 @@
   stroke-width: 1px;
 }
 
+/*
+ * The Mark Handles of the selected mark, drawn while editing is live, and the
+ * body of a mark that moves by it. They take the pointer so the cursor can
+ * say what a press there does; which grip a press takes is still decided from
+ * geometry. `non-scaling-stroke` is set in render.ts.
+ */
+:where(.zt-pdf-annotation-overlay [data-zt-grip]) {
+  pointer-events: all;
+}
+
+:where(.zt-pdf-annotation-handle) {
+  fill: var(--background-primary);
+  stroke: var(--text-accent);
+  stroke-width: 1px;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="move"]) {
+  cursor: move;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="ew-resize"]) {
+  cursor: ew-resize;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="ns-resize"]) {
+  cursor: ns-resize;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="nwse-resize"]) {
+  cursor: nwse-resize;
+}
+
+:where(.zt-pdf-annotation-overlay [data-zt-cursor="nesw-resize"]) {
+  cursor: nesw-resize;
+}
+
 /* Zotero's highlight reads as ink on paper in either theme. */
 :where(.theme-light .zt-pdf-annotation-highlight) {
   opacity: 0.4;

@@ -7,7 +7,12 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { annotation, viewport } from "./__fixtures__";
-import { groupAnnotationsByPage, renderAnnotationOverlay } from "./render";
+import {
+  groupAnnotationsByPage,
+  patchSelectedMark,
+  renderAnnotationOverlay,
+  withPosition,
+} from "./render";
 import type { OverlayPageView } from "./render";
 
 /** The same page, described from a non-zero origin, as a PDF may do. */
@@ -418,6 +423,146 @@ it("drops an annotation whose position is not a PDF position", () => {
   ]);
 
   expect(grouped.size).toBe(0);
+});
+
+/** An image region on page zero, `[x1, y1, x2, y2]` in PDF points. */
+function figure(rect = [100, 300, 300, 500]): AnnotationRecord {
+  return record("FDRFQ7C2", "image", { pageIndex: 0, rects: [rect] });
+}
+
+/** Each handle's `[x, y, width, height]`, by the grip it names. */
+function handlesIn(page: OverlayPageView): Record<string, number[]> {
+  return Object.fromEntries(
+    [
+      ...page.div.querySelectorAll<SVGElement>(
+        `.${themeHook.pdfAnnotationHandle}`,
+      ),
+    ].map((handle) => [
+      handle.dataset.ztGrip,
+      ["x", "y", "width", "height"].map((name) =>
+        round(handle.getAttribute(name)),
+      ),
+    ]),
+  );
+}
+
+it("draws eight Mark Handles on the selected image, five pixels either side", () => {
+  // At scale 2 one page unit is two pixels, so a ten-pixel handle is five
+  // units wide. The bottom-right corner (300, 300) sits at y 792 - 300.
+  const page = pageView(viewport({ scale: 2 }));
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([figure()]),
+    selected: new Set(["FDRFQ7C2"]),
+    handles: true,
+  });
+
+  expect(handlesIn(page)).toEqual({
+    tl: [97.5, 289.5, 5, 5],
+    t: [197.5, 289.5, 5, 5],
+    tr: [297.5, 289.5, 5, 5],
+    r: [297.5, 389.5, 5, 5],
+    br: [297.5, 489.5, 5, 5],
+    b: [197.5, 489.5, 5, 5],
+    bl: [97.5, 489.5, 5, 5],
+    l: [97.5, 389.5, 5, 5],
+  });
+  // The public hook, and the cursor each handle shows over an upright page.
+  const corner = page.div.querySelector<SVGElement>('[data-zt-grip="tr"]')!;
+  expect([...corner.classList]).toEqual(["zt-pdf-annotation-handle"]);
+  expect(corner.dataset.ztCursor).toBe("nesw-resize");
+  // The body of the image moves it, so it takes the pointer too.
+  expect(markIn(page, "FDRFQ7C2").dataset.ztGrip).toBe("body");
+  expect(markIn(page, "FDRFQ7C2").dataset.ztCursor).toBe("move");
+});
+
+it("draws no Mark Handle while editing is not live, off the selection, or on a highlight", () => {
+  const drawn = (options: {
+    selected?: ReadonlySet<string>;
+    handles?: boolean;
+  }) => {
+    const page = pageView();
+    renderAnnotationOverlay(page, {
+      annotations: pageAnnotations([figure(), highlight()]),
+      ...options,
+    });
+    return {
+      handles: Object.keys(handlesIn(page)),
+      body: markIn(page, "FDRFQ7C2").dataset.ztGrip,
+    };
+  };
+
+  expect(drawn({ selected: new Set(["FDRFQ7C2"]) })).toEqual({
+    handles: [],
+    body: undefined,
+  });
+  expect(drawn({ handles: true })).toEqual({ handles: [], body: undefined });
+  expect(
+    drawn({ selected: new Set(["PUPR5FG5"]), handles: true }).handles,
+  ).toEqual([]);
+});
+
+it("patches the selected mark, its outline, and its handles in place", () => {
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([figure(), highlight()]),
+    selected: new Set(["FDRFQ7C2"]),
+    handles: true,
+  });
+  const overlay = overlayIn(page);
+  const mark = markIn(page, "FDRFQ7C2");
+  const children = [...overlay.children];
+
+  const patched = patchSelectedMark(
+    page,
+    pageAnnotations([figure([100, 280, 340, 500])])[0]!,
+    {
+      handles: true,
+    },
+  );
+
+  expect(patched).toBe(true);
+  // The same nodes, carrying the new geometry.
+  expect(overlayIn(page)).toBe(overlay);
+  expect([...overlay.children]).toEqual(children);
+  expect(markIn(page, "FDRFQ7C2")).toBe(mark);
+  expect(rectOf(page, "FDRFQ7C2")).toEqual(["100", "292", "240", "220"]);
+  expect(
+    overlay
+      .querySelector(`.${themeHook.pdfAnnotationSelectionOutline}`)!
+      .getAttribute("d"),
+  ).toBe("M 98.5 290.5 L 341.5 290.5 L 341.5 513.5 L 98.5 513.5 Z");
+  expect(handlesIn(page).br).toEqual([335, 507, 10, 10]);
+  // The neighbour is left as it stood.
+  expect(rectOf(page, "PUPR5FG5")).toEqual(["100", "72", "100", "20"]);
+});
+
+it("draws a proposed position in the mark's own place in its page's list", () => {
+  const marks = groupAnnotationsByPage([figure(), highlight()]);
+
+  const proposed = withPosition(marks, "FDRFQ7C2", {
+    kind: "pdf-rects",
+    pageIndex: 0,
+    rects: [[100, 280, 340, 500]],
+  });
+
+  expect(
+    proposed.get(0)?.map(({ annotation, rects }) => [annotation.key, rects]),
+  ).toEqual([
+    ["FDRFQ7C2", [[100, 280, 340, 500]]],
+    ["PUPR5FG5", [RECT]],
+  ]);
+});
+
+it("patches nothing on a page whose overlay holds no such mark", () => {
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+  });
+
+  expect(
+    patchSelectedMark(page, pageAnnotations([figure()])[0]!, { handles: true }),
+  ).toBe(false);
 });
 
 /** The highlight the geometry cases place, on `RECT`. */

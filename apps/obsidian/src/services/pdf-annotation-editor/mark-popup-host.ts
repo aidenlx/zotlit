@@ -58,7 +58,7 @@ export interface MarkPopupHostDeps {
 
 /**
  * Opens the popup for a floating variant with an anchor, and hides it for
- * none, a quiet selection, or an anchor of `null`. A change of variant kind,
+ * none, a quiet selection, a selection being dragged, or an anchor of `null`. A change of variant kind,
  * of selected key, or of commenting rebuilds the row; any other change to what
  * floats or to its row refreshes it, which is what keeps an editor alive.
  */
@@ -99,9 +99,12 @@ export class MarkPopupHost implements Disposable {
   #place({ refresh }: { refresh: boolean }): void {
     const state = this.#deps.store.getState();
     const { floating } = state;
+    // A drag hides the popup, so it never covers the edge being placed; the
+    // release hangs it again from the mark as it then stands.
     const variant =
       floating.kind === "none" ||
-      (floating.kind === "selected" && floating.quiet)
+      (floating.kind === "selected" &&
+        (floating.quiet || floating.adjust?.phase === "dragging"))
         ? null
         : this.#deps.variants[floating.kind];
     const anchor = variant?.anchor() ?? null;

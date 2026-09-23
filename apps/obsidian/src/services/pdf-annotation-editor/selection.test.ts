@@ -79,12 +79,14 @@ function setup(
   });
 
   const annotations = annotationEdits();
+  const sortIndex = vi.fn(async () => "00000|000012|00517");
   const reader = readerSurfaces({
     containerEl,
     page: page as unknown as OverlayPageView,
     records,
     capability,
     annotations: { ...annotations, createAnnotation: vi.fn() },
+    sortIndex,
   });
 
   return {
@@ -92,6 +94,7 @@ function setup(
     containerEl,
     page,
     annotations,
+    sortIndex,
     popup() {
       return reader.parent.hoverPopover as { staticPos: unknown } | null;
     },
@@ -606,4 +609,169 @@ it("falls back to the row, and closes the editor, when no draft can be started",
     popup.hoverEl.querySelector("[data-zt-verb='comment']"),
   ).not.toBeNull();
   expect(h.store.getState().floating).toMatchObject({ commenting: false });
+});
+
+/**
+ * An image region on page one, in PDF points: it draws from x 100 to 300 and,
+ * 792 points down a page counted from its foot, from y 292 to 492 — so its
+ * bottom-right Mark Handle sits at the client point (300, 492).
+ */
+const FIGURE = annotation("FIGR3333", "image", {
+  pageIndex: 0,
+  rects: [[100, 300, 300, 500]],
+});
+const ON_FIGURE = { x: 200, y: 392 };
+const BOTTOM_RIGHT = { x: 300, y: 492 };
+
+function pointer(
+  node: HTMLElement,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  { x, y }: { x: number; y: number },
+): void {
+  node.dispatchEvent(
+    new PointerEvent(type, {
+      clientX: x,
+      clientY: y,
+      pointerId: 1,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+/** The figure selected by a click on its body, as a researcher selects it. */
+function figureSelected(capability?: EditingCapability) {
+  const h = setup([FIGURE], capability);
+  click(h.page.div, ON_FIGURE);
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+  return h;
+}
+
+it("saves a handle drag on release, with the Sort Index of the new position", async () => {
+  using h = figureSelected();
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointermove", { x: 320, y: 500 });
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  // Nothing is written while the pointer moves.
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  await h.selection.adjusted;
+
+  // Forty points right and twenty-five down the page, which is twenty-five
+  // points toward the foot in PDF space.
+  const position = {
+    kind: "pdf-rects",
+    pageIndex: 0,
+    rects: [[100, 275, 340, 500]],
+  };
+  expect(h.sortIndex).toHaveBeenCalledWith(position);
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
+    position,
+    sortIndex: "00000|000012|00517",
+  });
+  // The adjustment ends once the write settled, and the mark stays selected.
+  expect(h.store.getState().floating).toEqual(
+    expect.not.objectContaining({ adjust: expect.anything() }),
+  );
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+});
+
+it("moves the selected image by its body", async () => {
+  using h = figureSelected();
+
+  pointer(h.page.div, "pointerdown", ON_FIGURE);
+  pointer(h.containerEl, "pointermove", { x: 230, y: 382 });
+  pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
+    position: {
+      kind: "pdf-rects",
+      pageIndex: 0,
+      rects: [[130, 310, 330, 510]],
+    },
+    sortIndex: "00000|000012|00517",
+  });
+});
+
+it("writes nothing for a release that did not move, and keeps the selection", async () => {
+  using h = figureSelected();
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointerup", BOTTOM_RIGHT);
+  click(h.page.div, BOTTOM_RIGHT);
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+});
+
+it("cancels a drag on Escape, writes nothing, and keeps the mark selected", async () => {
+  using h = figureSelected();
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  key(h.containerEl, "Escape");
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.store.getState().floating).toMatchObject({ key: "FIGR3333" });
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+});
+
+it("hides the Mark Popup during a drag and hangs it again on release", async () => {
+  using h = figureSelected();
+  expect(h.popup()).not.toBeNull();
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  expect(h.popup()).toBeNull();
+
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  expect(h.popup()).not.toBeNull();
+  await h.selection.adjusted;
+});
+
+it("takes a press on a handle as an ordinary click while editing is not live", async () => {
+  using h = figureSelected({ kind: "read-only", reason: "library-read-only" });
+
+  pointer(h.page.div, "pointerdown", { x: 299, y: 491 });
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  await h.selection.adjusted;
+
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+});
+
+it("snaps a refused write back to the confirmed geometry", async () => {
+  using h = figureSelected();
+  h.annotations.patchGeometry.mockResolvedValue({
+    kind: "failed",
+    failure: { kind: "position-too-large" },
+  });
+
+  pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
+  pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
+  expect(h.store.getState().floating).toMatchObject({
+    adjust: { phase: "saving" },
+  });
+  await h.selection.adjusted;
+
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+});
+
+it("leaves a drag beside the selected image to the text selection", async () => {
+  using h = figureSelected();
+
+  pointer(h.page.div, "pointerdown", { x: 400, y: 392 });
+  pointer(h.containerEl, "pointermove", { x: 450, y: 392 });
+  pointer(h.containerEl, "pointerup", { x: 450, y: 392 });
+  await h.selection.adjusted;
+
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
 });

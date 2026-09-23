@@ -44,6 +44,13 @@ export const themeHook = {
    */
   pdfAnnotationSelectionOutline: "zt-pdf-annotation-selection-outline",
   /**
+   * One Mark Handle on the selected Annotation Mark, drawn while editing is
+   * live. `data-zt-grip` names the edges it moves — `tl`, `t`, `tr`, `r`,
+   * `br`, `b`, `bl` or `l`, in PDF space — and the mark whose body moves it
+   * carries `data-zt-grip="body"`.
+   */
+  pdfAnnotationHandle: "zt-pdf-annotation-handle",
+  /**
    * The `<g>` a note Annotation Mark draws its glyph into, stroked in the
    * Annotation's own colour. Its `stroke-width` sets
    * both {@link themeHook.pdfAnnotationNoteFill} and

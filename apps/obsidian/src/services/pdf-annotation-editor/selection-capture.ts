@@ -194,7 +194,7 @@ function clip(rect: ClientBox, box: ClientBox): ClientBox | null {
  * @returns `null` for a singular matrix, which no page viewport carries.
  * @see https://github.com/mozilla/pdf.js/blob/v5.3.31/src/shared/util.js — `Util.inverseTransform`
  */
-function inverseTransform(
+export function inverseTransform(
   transform: readonly number[],
 ): readonly number[] | null {
   const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0] = transform;
@@ -210,7 +210,7 @@ function inverseTransform(
   ];
 }
 
-function applyTransform(
+export function applyTransform(
   [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0]: readonly number[],
   x: number,
   y: number,

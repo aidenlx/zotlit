@@ -10,12 +10,16 @@ import type { MutationState } from "@/services/annotation-repository/write";
 
 import { annotation, annotationEdits, toolColors } from "./__fixtures__";
 import type { CreationToolbarControl } from "./creation-toolbar";
+import type { EditablePosition } from "./geometry-edit";
 import {
   arm,
+  beginAdjust,
+  cancelAdjust,
   captureSelection,
   clearFloating,
   createReaderSurfaceState,
   dropRecord,
+  endAdjust,
   hideCommentDraft,
   ingestAnnotations,
   ingestCapability,
@@ -23,9 +27,11 @@ import {
   ingestMutation,
   ingestRecords,
   listenAnnotationEvents,
+  moveAdjust,
   sameCapability,
   sameFlat,
   sameFlatList,
+  selectAdjust,
   selectCapabilityAffordance,
   selectCreateRow,
   selectCreationToolbar,
@@ -549,4 +555,117 @@ it("stands the create row down while its create is in flight", () => {
   expect(row.find(({ id }) => id === "copy")).toMatchObject({
     disabled: false,
   });
+});
+
+/** The Fixture's image region on page two, as the repository answers it. */
+const FIGURE = annotation("FDRFQ7C2", "image", {
+  pageIndex: 1,
+  rects: [[48.75, 395.509, 570, 743.723]],
+});
+
+/** The figure with its right edge dragged out to `x2`. */
+function widened(x2: number): EditablePosition {
+  return {
+    kind: "pdf-rects",
+    pageIndex: 1,
+    rects: [[48.75, 395.509, x2, 743.723]],
+  };
+}
+
+/** A store with the figure selected, and a listener on the adjustment. */
+function adjusting() {
+  const store = reader();
+  ingestRecords(store, [PARAGRAPH, WORD, FIGURE]);
+  selectMark(store, "FDRFQ7C2");
+  const heard = vi.fn();
+  store.subscribe(selectAdjust, heard);
+  return { store, heard };
+}
+
+it("begins no adjustment while no mark is selected", () => {
+  const store = reader();
+
+  beginAdjust(store, { grip: "br", from: [570, 395.509] });
+
+  expect(selectAdjust(store.getState())).toBeNull();
+});
+
+it("begins an adjustment that proposes the confirmed position", () => {
+  const { store } = adjusting();
+
+  beginAdjust(store, { grip: "br", from: [570, 395.509] });
+
+  expect(selectAdjust(store.getState())).toEqual({
+    grip: "br",
+    from: [570, 395.509],
+    proposal: FIGURE.position,
+    phase: "pressed",
+  });
+});
+
+it("moves the proposal, and notifies no one for a move that changes nothing", () => {
+  const { store, heard } = adjusting();
+  beginAdjust(store, { grip: "r", from: [570, 569] });
+  heard.mockClear();
+
+  moveAdjust(store, widened(600));
+  moveAdjust(store, widened(600.0001));
+
+  expect(heard).toHaveBeenCalledTimes(1);
+  expect(selectAdjust(store.getState())).toMatchObject({
+    proposal: widened(600),
+    phase: "dragging",
+  });
+});
+
+it("cancels an adjustment and keeps the mark selected", () => {
+  const { store } = adjusting();
+  beginAdjust(store, { grip: "r", from: [570, 569] });
+  moveAdjust(store, widened(600));
+
+  cancelAdjust(store);
+
+  expect(selectAdjust(store.getState())).toBeNull();
+  expect(store.getState().floating).toMatchObject({ key: "FDRFQ7C2" });
+});
+
+it("ends a release that moved nothing with nothing to save", () => {
+  const { store } = adjusting();
+  beginAdjust(store, { grip: "r", from: [570, 569] });
+
+  expect(endAdjust(store)).toBeNull();
+  expect(selectAdjust(store.getState())).toBeNull();
+});
+
+it("ends a drag back to the confirmed geometry with nothing to save", () => {
+  const { store } = adjusting();
+  beginAdjust(store, { grip: "r", from: [570, 569] });
+  moveAdjust(store, widened(600));
+  moveAdjust(store, widened(570.0002));
+
+  expect(endAdjust(store)).toBeNull();
+  expect(selectAdjust(store.getState())).toBeNull();
+});
+
+it("holds a changed release's proposal while it saves, and takes no more moves", () => {
+  const { store } = adjusting();
+  beginAdjust(store, { grip: "r", from: [570, 569] });
+  moveAdjust(store, widened(600));
+
+  expect(endAdjust(store)).toEqual(widened(600));
+
+  moveAdjust(store, widened(610));
+  expect(selectAdjust(store.getState())).toMatchObject({
+    proposal: widened(600),
+    phase: "saving",
+  });
+});
+
+it("drops the adjustment with the selection it stood on", () => {
+  const { store } = adjusting();
+  beginAdjust(store, { grip: "r", from: [570, 569] });
+
+  selectMark(store, "WORD2222");
+
+  expect(selectAdjust(store.getState())).toBeNull();
 });
