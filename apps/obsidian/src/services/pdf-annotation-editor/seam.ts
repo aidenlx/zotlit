@@ -293,6 +293,24 @@ export function loadedPageOf(
   return page?.pdfPage ? page : null;
 }
 
+/** PDF.js `RenderingStates.FINISHED`. */
+const RENDERING_FINISHED = 3;
+
+/**
+ * The zero-based indexes of the pages PDF.js has already painted. A binding
+ * attaching to a painted view — the plugin reloaded over an open PDF tab —
+ * hears no render for these until the reader moves.
+ */
+export function renderedPagesOf(controller: PDFViewerController): number[] {
+  const count = pdfDocumentOf(controller)?.numPages ?? 0;
+  const pages: number[] = [];
+  for (let pageNumber = 1; pageNumber <= count; pageNumber++) {
+    const page = pageViewOf(controller, pageNumber);
+    if (page?.renderingState === RENDERING_FINISHED) pages.push(pageNumber - 1);
+  }
+  return pages;
+}
+
 function verdict(probe: PdfSeamProbeId, ok: boolean): PdfSeamProbeResult {
   return { probe, member: PDF_SEAM_MEMBERS[probe], ok };
 }

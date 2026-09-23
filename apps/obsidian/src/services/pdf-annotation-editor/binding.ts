@@ -60,6 +60,7 @@ import {
   probePageView,
   probeRenderEvent,
   probeTextContent,
+  renderedPagesOf,
   toolbarSlotOf,
   whenViewerReady,
 } from "./seam";
@@ -482,6 +483,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (!this.supported) {
       this[Symbol.dispose]();
       return;
+    }
+    for (const pageIndex of renderedPagesOf(controller)) {
+      this.#rendered.add(pageIndex);
     }
     this.#repaint();
     // An Anchor that arrived before the viewer did waited for this: the pages

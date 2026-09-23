@@ -3,10 +3,11 @@
 //
 // The popover has no target element, because a mark takes no pointer input and
 // a page re-render wipes every node ZotLit could point at; it hangs from a
-// virtual point instead. A fresh popover always waits its delay before the
-// first `show()`, so the delay is zero, and only `isFocused` keeps one open
-// with no target, so it is pinned at once — mouse-out and focus-out never close
-// it, and the binding alone hides it.
+// virtual point instead. It shows at once rather than after a delay, because
+// the create popup opens on the pointer release and the release's own `click`
+// hides a popover still waiting to show. Only `isFocused` keeps one open with
+// no target, so it is pinned at once — mouse-out and focus-out never close it,
+// and the binding alone hides it.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see apps/obsidian/policies/hover-popover.md
@@ -254,6 +255,7 @@ export class MarkPopup extends PopoutAwareHoverPopover {
     this.#render = render;
     this.#row = this.hoverEl.createDiv({ cls: ["zt-root", ...ROW_CLASSES] });
     this.refresh();
+    this.showNow();
   }
 
   /**
