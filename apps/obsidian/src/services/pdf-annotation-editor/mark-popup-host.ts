@@ -128,8 +128,9 @@ export class MarkPopupHost implements Disposable {
       return;
     }
     if (this.#popup) {
-      this.#popup.retarget(anchor);
+      // Redraw first: the popup centres on its anchor by the row's width.
       if (refresh) this.#popup.refresh();
+      this.#popup.retarget(anchor);
       return;
     }
     const popup = new MarkPopup({

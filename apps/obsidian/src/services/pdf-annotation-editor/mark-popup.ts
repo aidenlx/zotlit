@@ -247,9 +247,11 @@ export interface MarkPopupDeps {
 export class MarkPopup extends PopoutAwareHoverPopover {
   readonly #row: HTMLElement;
   readonly #render;
+  #anchor: Point;
 
   constructor({ parent, anchor, render }: MarkPopupDeps) {
     super(parent, null, 0, anchor);
+    this.#anchor = anchor;
     this.setIsFocused(true);
     this.hoverEl.addClass(themeHook.pdfMarkPopup);
     this.#render = render;
@@ -264,12 +266,28 @@ export class MarkPopup extends PopoutAwareHoverPopover {
    * through {@link MarkPopup.refresh}.
    */
   retarget(anchor: Point): void {
-    this.staticPos = anchor;
+    this.#anchor = anchor;
     this.position();
   }
 
   /** Redraw the row where it stands, after what it acts on changed. */
   refresh(): void {
     this.#render(this.#row);
+  }
+
+  /**
+   * Obsidian hangs a popover's left edge from its point; the popup centres on
+   * the anchor instead. The popover joins the document on its first placement,
+   * so that placement runs twice: once to measure it, once to centre it.
+   * Obsidian's viewport clamp still applies.
+   */
+  override position(): void {
+    const { x, y } = this.#anchor;
+    if (!this.hoverEl.isConnected) {
+      this.staticPos = this.#anchor;
+      super.position();
+    }
+    this.staticPos = { x: x - this.hoverEl.offsetWidth / 2, y };
+    super.position();
   }
 }
