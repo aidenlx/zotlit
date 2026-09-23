@@ -119,6 +119,11 @@ export function viewport({
         return [x1 + x / total, y2 - y / total];
     }
   };
+  // PDF.js's `transform` is the affine map `convertToViewportPoint` applies,
+  // so it is read off that map, rotation included.
+  const [e, f] = convertToViewportPoint(0, 0);
+  const [ax, bx] = convertToViewportPoint(1, 0);
+  const [cy, dy] = convertToViewportPoint(0, 1);
   return {
     viewBox: box,
     userUnit,
@@ -126,7 +131,7 @@ export function viewport({
     rotation,
     offsetX: 0,
     offsetY: 0,
-    transform: [total, 0, 0, -total, -total * x1, total * y2],
+    transform: [ax - e, bx - f, cy - e, dy - f, e, f],
     width: total * (axesSwap ? y2 - y1 : x2 - x1),
     height: total * (axesSwap ? x2 - x1 : y2 - y1),
     convertToViewportPoint,

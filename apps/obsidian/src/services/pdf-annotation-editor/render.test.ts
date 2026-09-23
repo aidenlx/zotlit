@@ -7,10 +7,13 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { annotation, viewport } from "./__fixtures__";
+import { HANDLE_RADIUS } from "./geometry-edit";
 import {
   groupAnnotationsByPage,
   patchSelectedMark,
   renderAnnotationOverlay,
+  unitPointOf,
+  unitsPerPixel,
   withPosition,
 } from "./render";
 import type { OverlayPageView } from "./render";
@@ -474,6 +477,30 @@ it("draws eight Mark Handles on the selected image, five pixels either side", ()
   // The body of the image moves it, so it takes the pointer too.
   expect(markIn(page, "FDRFQ7C2").dataset.ztGrip).toBe("body");
   expect(markIn(page, "FDRFQ7C2").dataset.ztCursor).toBe("move");
+});
+
+it("draws each Mark Handle where a press on it is measured, on a page turned a quarter turn", () => {
+  // A quarter turn lays PDF (x, y) at page units (y, x), and at scale 1.5 a
+  // unit is one and a half pixels, so a ten-pixel handle is 20/3 units wide.
+  // The bottom-right corner (300, 300) stands at (300, 300); the top-left
+  // corner (100, 500) at (500, 100). selection.test.ts presses there.
+  const page = pageView(viewport({ rotation: 90, scale: 1.5 }));
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([figure()]),
+    selected: new Set(["FDRFQ7C2"]),
+    handles: true,
+  });
+
+  const side = 20 / 3;
+  const around = ({ x, y }: { x: number; y: number }) =>
+    [x - side / 2, y - side / 2, side, side].map((value) =>
+      round(String(value)),
+    );
+  expect(handlesIn(page).br).toEqual(around({ x: 300, y: 300 }));
+  expect(handlesIn(page).tl).toEqual(around({ x: 500, y: 100 }));
+  expect(unitPointOf(page, [300, 300])).toEqual({ x: 300, y: 300 });
+  expect(HANDLE_RADIUS * unitsPerPixel(page)).toBeCloseTo(side / 2, 9);
 });
 
 it("draws no Mark Handle while editing is not live, or off the selection", () => {

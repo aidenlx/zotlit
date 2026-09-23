@@ -21,7 +21,8 @@ import {
   RANGE_HANDLE_PADDING,
   rangeHandles,
 } from "./geometry-edit";
-import type { Grip } from "./geometry-edit";
+import type { Grip, PdfPoint } from "./geometry-edit";
+import type { Point } from "./hit-test";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -312,7 +313,7 @@ function renderHandles(
   page: OverlayPage,
   placement: PdfPageAnnotation,
 ): SVGRectElement[] {
-  const toUnits = page.viewport.width / view.viewport.width;
+  const toUnits = unitsPerPixel(view);
   const half = HANDLE_RADIUS * toUnits;
   const handle = (grip: Grip, rect: PageRect) => {
     const element = createRect(page, rect);
@@ -335,7 +336,7 @@ function renderHandles(
   return [
     ...strips,
     ...handleLayout(annotation).map(({ grip, at }) => {
-      const [x, y] = page.viewport.convertToViewportPoint(at[0], at[1]);
+      const { x, y } = unitPointOf(view, at);
       return handle(grip, [x - half, y - half, x + half, y + half]);
     }),
   ];
@@ -422,6 +423,23 @@ export function markTargets(
     const rects = hitRectsOf(unitPage, placement);
     return rects.length === 0 ? [] : [{ key: placement.annotation.key, rects }];
   });
+}
+
+/**
+ * A PDF point in the page's own units: where the overlay draws it, and where a
+ * press on a Mark Handle drawn there is measured.
+ */
+export function unitPointOf(view: OverlayPageView, [x, y]: PdfPoint): Point {
+  const [px, py] = toPageUnits(view).viewport.convertToViewportPoint(x, y);
+  return { x: px, y: py };
+}
+
+/**
+ * How many page units one CSS pixel of the page spans: what sizes a Mark
+ * Handle drawn in the overlay and the reach a press on it has.
+ */
+export function unitsPerPixel(view: OverlayPageView): number {
+  return pageUnitSize(view).width / view.viewport.width;
 }
 
 /**

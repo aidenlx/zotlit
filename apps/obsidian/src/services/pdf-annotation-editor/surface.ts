@@ -1,6 +1,7 @@
 // What the reader's two gesture modules both read off the surface: whether a
 // point is on screen, where a client point falls on a page, whether the window
-// holds a text selection, and Zotero's palette as a menu.
+// holds a text selection, Zotero's palette as a menu, and how a captured
+// pointer is let go.
 //
 // Creation and selection ask the same questions of the same view, so the answer
 // is written once here and neither can drift from the other.
@@ -129,4 +130,25 @@ export function unitsOf(box: PageBox, client: Point): Point {
 export function pdfPointOf(page: OverlayPageView, { x, y }: Point): PdfPoint {
   const { transform, scale } = page.viewport;
   return applyTransform(inverseTransform(transform)!, x * scale, y * scale);
+}
+
+/**
+ * Where a client point falls on a page, in PDF points, however far outside the
+ * page a drag has carried it.
+ */
+export function pdfPointAt(page: OverlayPageView, client: Point): PdfPoint {
+  return pdfPointOf(page, unitsOf(drawnBoxOf(page), client));
+}
+
+/**
+ * Lets go of the pointer a gesture captured on the container.
+ *
+ * @returns `null`, the hold the gesture keeps once it has let go.
+ */
+export function releaseCapture(
+  containerEl: HTMLElement,
+  held: { pointerId: number } | null,
+): null {
+  if (held) containerEl.releasePointerCapture(held.pointerId);
+  return null;
 }

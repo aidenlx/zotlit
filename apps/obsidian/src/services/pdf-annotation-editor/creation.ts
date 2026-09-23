@@ -49,7 +49,7 @@ import type {
   CreationToolbarNodes,
 } from "./creation-toolbar";
 import { captureRect } from "./geometry-edit";
-import type { PdfPoint, PdfRect } from "./geometry-edit";
+import type { PdfRect } from "./geometry-edit";
 import type { Point } from "./hit-test";
 import { popupColumn } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
@@ -84,12 +84,11 @@ import { selectionPagesOf } from "./selection-capture";
 import type { SelectionPage } from "./selection-capture";
 import {
   colorMenu,
-  drawnBoxOf,
   onScreen,
   pageContentBox,
-  pdfPointOf,
+  pdfPointAt,
   selectionCollapsed,
-  unitsOf,
+  releaseCapture,
 } from "./surface";
 import { textToolOf } from "./tools";
 import type { MarkTool, TextTool, ToolColorStore } from "./tools";
@@ -375,7 +374,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     this.#capturing = { pointerId: event.pointerId, page };
     beginCapture(this.#deps.surfaceState, {
       pageIndex: page.pageIndex,
-      from: this.#pdfPointOn(page, client),
+      from: pdfPointAt(page.view, client),
     });
   }
 
@@ -391,7 +390,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#deps.surfaceState,
       captureRect({
         from: capture.from,
-        to: this.#pdfPointOn(capturing.page, {
+        to: pdfPointAt(capturing.page.view, {
           x: event.clientX,
           y: event.clientY,
         }),
@@ -403,7 +402,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   release(event: PointerEvent): void {
     const capturing = this.#capturing;
     if (!capturing || event.pointerId !== capturing.pointerId) return;
-    this.#releasePointer();
+    this.#capturing = releaseCapture(this.#deps.containerEl, this.#capturing);
     const rect = endCapture(this.#deps.surfaceState);
     if (!rect) return;
     this.#creating = this.#createImage(capturing.page.pageIndex, rect);
@@ -694,21 +693,9 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   /** Takes back the capture, drawing and creating nothing for it. */
   #cancelCapture(): void {
-    this.#releasePointer();
+    this.#capturing = releaseCapture(this.#deps.containerEl, this.#capturing);
     if (selectCapture(this.#state())?.phase !== "saving")
       cancelCapture(this.#deps.surfaceState);
-  }
-
-  #releasePointer(): void {
-    const capturing = this.#capturing;
-    this.#capturing = null;
-    if (!capturing) return;
-    this.#deps.containerEl.releasePointerCapture(capturing.pointerId);
-  }
-
-  /** Where a client point falls on a page, in PDF points, however far off it. */
-  #pdfPointOn(page: ReaderPage, client: Point): PdfPoint {
-    return pdfPointOf(page.view, unitsOf(drawnBoxOf(page.view), client));
   }
 
   /** Whether a client point falls on the text the window has selected. */

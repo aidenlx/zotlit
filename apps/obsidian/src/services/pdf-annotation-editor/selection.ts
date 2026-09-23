@@ -109,15 +109,16 @@ import type {
   ReaderSurfaceStore,
 } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
-import { markTargets } from "./render";
+import { markTargets, unitPointOf, unitsPerPixel } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
-import { applyTransform } from "./selection-capture";
 import {
   colorMenu,
   drawnBoxOf,
   onScreen,
   pageBoxOf,
+  pdfPointAt,
   pdfPointOf,
+  releaseCapture,
   selectionCollapsed,
   unitsOf,
 } from "./surface";
@@ -638,7 +639,7 @@ export class MarkSelection implements Disposable {
       })),
       body,
       point,
-      radius: (HANDLE_RADIUS * box.unitWidth) / box.width,
+      radius: HANDLE_RADIUS * unitsPerPixel(page),
     });
     if (!grip) return;
     this.#holdGrip(event, grip, pdfPointOf(page, point));
@@ -671,14 +672,13 @@ export class MarkSelection implements Disposable {
     const { pageIndex } = record.position as EditablePosition;
     const page = this.#deps.pageAt(pageIndex);
     if (!page) return null;
-    const box = drawnBoxOf(page);
     const handles = rangeHandles(
       record,
-      (RANGE_HANDLE_PADDING * box.unitWidth) / box.width,
+      RANGE_HANDLE_PADDING * unitsPerPixel(page),
     );
     const pointOn = (index: number): PdfPoint | null => {
       const on = this.#deps.pageAt(index);
-      return on && pdfPointOf(on, unitsOf(drawnBoxOf(on), client));
+      return on && pdfPointAt(on, client);
     };
     const grip = rangeGripAt(handles, pointOn);
     const on = handles.find((handle) => handle.grip === grip);
@@ -707,7 +707,7 @@ export class MarkSelection implements Disposable {
         confirmed: record.position,
         grip: adjust.grip,
         from: adjust.from,
-        to: pdfPointOf(page, unitsOf(drawnBoxOf(page), dragging.client)),
+        to: pdfPointAt(page, dragging.client),
         viewBox: page.viewport.viewBox,
       }),
     );
@@ -743,7 +743,7 @@ export class MarkSelection implements Disposable {
         (a, b) => boxDistance(a.box, client) - boxDistance(b.box, client),
       );
     if (!on) return;
-    const [x, y] = pdfPointOf(on.page, unitsOf(on.box, client));
+    const [x, y] = pdfPointAt(on.page, client);
     const ask = ++this.#rangeAsk;
     const store = this.#deps.surfaceState;
     this.#ranging = this.#deps
@@ -765,7 +765,7 @@ export class MarkSelection implements Disposable {
   }
 
   #release(): void {
-    this.#releasePointer();
+    this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
     const key = this.#selectedKey();
     const store = this.#deps.surfaceState;
     const settle = () => (key === null ? undefined : this.#settle(key));
@@ -791,16 +791,9 @@ export class MarkSelection implements Disposable {
   }
 
   #cancelDrag(): void {
-    this.#releasePointer();
+    this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
     this.#rangeAsk++;
     cancelAdjust(this.#deps.surfaceState);
-  }
-
-  #releasePointer(): void {
-    const dragging = this.#dragging;
-    this.#dragging = null;
-    if (!dragging) return;
-    this.#deps.containerEl.releasePointerCapture(dragging.pointerId);
   }
 
   /**
@@ -1190,16 +1183,6 @@ function boxDistance(box: PageBox, { x, y }: Point): number {
   const dx = Math.max(box.left - x, 0, x - (box.left + box.width));
   const dy = Math.max(box.top - y, 0, y - (box.top + box.height));
   return Math.hypot(dx, dy);
-}
-
-/**
- * A PDF point in the page's own units: the viewport's transform read at scale
- * 1, which is the scale the overlay's units are measured at.
- */
-function unitPointOf(page: OverlayPageView, [x, y]: PdfPoint): Point {
-  const { transform, scale } = page.viewport;
-  const [px, py] = applyTransform(transform, x, y);
-  return { x: px / scale, y: py / scale };
 }
 
 /**
