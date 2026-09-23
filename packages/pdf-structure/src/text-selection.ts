@@ -318,14 +318,27 @@ export interface PagePoint {
   readonly y: number;
 }
 
-/** One end of a highlight's range dragged to a point. */
-export interface RangeAdjustment {
+/**
+ * One key press on an end of a highlight's range: a character back or on, or
+ * a line up or down.
+ */
+export type RangeStep = "left" | "right" | "up" | "down";
+
+/**
+ * One end of a highlight's range dragged to a point, or stepped from the
+ * keyboard.
+ */
+export type RangeAdjustment = {
   /** The highlight or underline position as stored. */
   readonly position: PdfRectsPosition;
   readonly end: RangeEnd;
-  /** Where the pointer is, on the position's page or the one after it. */
-  readonly point: PagePoint;
-}
+} & (
+  | {
+      /** Where the pointer is, on the position's page or the one after it. */
+      readonly point: PagePoint;
+    }
+  | { readonly step: RangeStep }
+);
 
 /**
  * The distance between two rects, zero where they touch or overlap.
@@ -383,36 +396,140 @@ function offsetAtPoint(
 }
 
 /**
- * A highlight or underline with one end dragged to a point, or `null` where
- * no range can be placed.
+ * The offset a line down from `offset`: the character on the next line
+ * closest to the one at `offset`, or the page's end from its last line.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js — `getNextLineClosestOffset`
+ */
+function nextLineOffset(
+  chars: readonly StructuredChar[],
+  offset: number,
+): number | null {
+  const lineEnd = chars.findIndex(
+    (char, index) => index >= offset && char.lineBreakAfter,
+  );
+  if (lineEnd === -1 || lineEnd === chars.length - 1) return chars.length;
+  const nextEnd = chars.findIndex(
+    (char, index) => index > lineEnd && char.lineBreakAfter,
+  );
+  return closestOnLine(chars, chars[offset]!.rect, [lineEnd + 1, nextEnd]);
+}
+
+/**
+ * The offset a line up from `offset`: the character on the previous line
+ * closest to the one at `offset`, or the page's start from its first line.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js — `getPrevLineClosestOffset`
+ */
+function previousLineOffset(
+  chars: readonly StructuredChar[],
+  offset: number,
+): number | null {
+  const at = offset === chars.length ? offset - 1 : offset;
+  const previousEnd = chars.findLastIndex(
+    (char, index) => index < at && char.lineBreakAfter,
+  );
+  if (previousEnd === -1) return 0;
+  const previousStart =
+    chars.findLastIndex(
+      (char, index) => index < previousEnd && char.lineBreakAfter,
+    ) + 1;
+  return closestOnLine(chars, chars[at]!.rect, [previousStart, previousEnd]);
+}
+
+/** The first offset in `start`–`end`, inclusive, closest to a rect. */
+function closestOnLine(
+  chars: readonly StructuredChar[],
+  rect: Rect,
+  [start, end]: readonly [number, number],
+): number | null {
+  let closest: number | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (let index = start; index <= end; index++) {
+    const d = rectsDist(chars[index]!.rect, rect);
+    if (d < distance) {
+      distance = d;
+      closest = index;
+    }
+  }
+  return closest;
+}
+
+/**
+ * The boundary one key press moves a range's head to, counted through both
+ * pages as {@link adjustRange} counts them. Past a page's end, the head lands
+ * after the next page's first character, and before a page's start, before
+ * the previous page's last, as Zotero's reader steps across a page.
+ *
+ * @param pages the Annotation's page and the one after it.
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js — `getModifiedSelectionRanges`
+ */
+function steppedHead(
+  head: number,
+  step: RangeStep,
+  [first, next]: readonly [
+    readonly StructuredChar[],
+    readonly StructuredChar[],
+  ],
+): number {
+  const onNext = head > first.length;
+  const chars = onNext ? next : first;
+  const base = onNext ? first.length : 0;
+  const local = head - base;
+  if (step === "left" || (step === "up" && local === 0)) return head - 1;
+  if (step === "up") {
+    const moved = previousLineOffset(chars, local);
+    return moved === null ? head : base + moved;
+  }
+  if (local === chars.length) {
+    // Onto the next page's first character, from the first page only.
+    return !onNext && next.length ? head + 1 : head;
+  }
+  if (step === "right") return head + 1;
+  const moved = nextLineOffset(chars, local);
+  return moved === null ? head : base + moved;
+}
+
+/**
+ * A highlight or underline with one end dragged to a point, or stepped from
+ * the keyboard; `null` where no range can be placed.
  *
  * The ends are read off the stored rects as Zotero's reader reads them: the
  * start at the first character whose centre falls in the first rect, the end
  * after the last whose centre falls in the last rect, on the next page when
- * the range spilled onto it. The other end stays where it is, and the dragged
- * one moves to the character boundary nearest the point.
+ * the range spilled onto it. The other end stays where it is. A dragged end
+ * moves to the character boundary nearest the point; a stepped one moves one
+ * character back or on, or to the closest character a line up or down.
  *
- * Where Zotero's pointer path differs, this keeps the stored shape:
+ * Where Zotero's reader differs, this keeps the stored shape:
  * - An end dragged onto or past the anchor stops one character short of it,
  *   so the range keeps one character; Zotero turns the range round instead.
+ *   A step that would leave no character is refused, as Zotero refuses it.
  * - The range stays on the Annotation's page and the page after it, and the
  *   start stays on the Annotation's page, so `pageIndex` never changes. A
- *   point on any other page, or a start dragged onto the next page, is `null`.
+ *   point on any other page, a start moved onto the next page, and an end or
+ *   a start stepped off the pair, are `null`.
  * - An end before the next page's first character stores no `nextPageRects`.
- * - A drag that lands on the characters the stored rects cover proposes
+ * - An end that lands on the characters the stored rects cover proposes
  *   those rects, so it changes nothing.
  *
  * @param pages the Structured Characters of the Annotation's page and, where
- *   the range or the point reaches it, the page after.
+ *   the range, the point, or a step reaches it, the page after.
  * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js — `getSelectionRangesByPosition`, `getModifiedSelectionRanges`, `getSelectionRanges`
- * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/pdf-view.js — `_getAnnotationFromSelectionRanges`
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/pdf-view.js — `_getAnnotationFromSelectionRanges`, `_handleKeyDown`
  */
 export function adjustRange(
-  { position, end, point }: RangeAdjustment,
+  adjustment: RangeAdjustment,
   pages: ReadonlyMap<number, StructuredPage>,
 ): SelectedText | null {
+  const { position, end } = adjustment;
   const { pageIndex } = position;
-  if (point.pageIndex !== pageIndex && point.pageIndex !== pageIndex + 1)
+  const point = "point" in adjustment ? adjustment.point : null;
+  if (
+    point &&
+    point.pageIndex !== pageIndex &&
+    point.pageIndex !== pageIndex + 1
+  )
     return null;
   const first = pages.get(pageIndex)?.chars ?? [];
   const onFirst = offsetsByRects(first, position.rects);
@@ -426,17 +543,30 @@ export function adjustRange(
   // `first.length + k`.
   const from = onFirst.from;
   const to = onNext ? first.length + onNext.to : onFirst.to;
-  let head: number;
-  if (point.pageIndex === pageIndex) head = offsetAtPoint(first, point);
-  else if (next.length) head = first.length + offsetAtPoint(next, point);
-  else return null;
-
   let start = from;
   let stop = to;
-  if (end === "end") stop = Math.max(head, from + 1);
-  else {
-    if (head >= first.length) return null;
-    start = Math.min(head, to - 1);
+  if (point) {
+    let head: number;
+    if (point.pageIndex === pageIndex) head = offsetAtPoint(first, point);
+    else if (next.length) head = first.length + offsetAtPoint(next, point);
+    else return null;
+    if (end === "end") stop = Math.max(head, from + 1);
+    else {
+      if (head >= first.length) return null;
+      start = Math.min(head, to - 1);
+    }
+  } else if ("step" in adjustment) {
+    const head = steppedHead(end === "end" ? to : from, adjustment.step, [
+      first,
+      next,
+    ]);
+    if (end === "end") {
+      if (head <= from) return null;
+      stop = head;
+    } else {
+      if (head < 0 || head >= first.length || head >= to) return null;
+      start = head;
+    }
   }
 
   // The same characters keep the rects as stored, which may be drawn a hair

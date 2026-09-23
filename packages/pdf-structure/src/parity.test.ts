@@ -31,7 +31,7 @@ import { structurePage, toZoteroChars } from "@/chars";
 import { PdfTextStructure } from "@/session";
 import type { PdfPosition } from "@/sort-index";
 import { computeSortIndex } from "@/sort-index";
-import type { RangeEnd } from "@/text-selection";
+import type { RangeEnd, RangeStep } from "@/text-selection";
 import { adjustRange, offsetsByRects, textRange } from "@/text-selection";
 
 const run = promisify(execFile);
@@ -364,7 +364,7 @@ interface ZoteroSelection {
   getModifiedSelectionRanges(
     pdfPages: Record<number, StructuredPage>,
     ranges: ZoteroRange[],
-    head: { pageIndex: number; rects: Rect[] },
+    head: { pageIndex: number; rects: Rect[] } | RangeStep,
   ): ZoteroRange[];
 }
 
@@ -543,9 +543,108 @@ describe.skipIf(skip)("dragged range ends", () => {
 });
 
 /**
- * Zotero's reader dragging one end of a stored highlight to a point, or `null`
- * for a drag the port answers differently by design: one that turns the range
- * round, collapses it, or leaves the Annotation's page.
+ * A highlight's end stepped from the keyboard, against the reader's own key
+ * path: the ranges read off the stored rects, turned round for the start, and
+ * moved one character or one line. A step Zotero refuses — one that would
+ * collapse or turn the range round — or one that carries the range off the
+ * Annotation's page, the port answers `null`; these, and a step that leaves
+ * the range as it was, are all compared as "unchanged".
+ */
+describe.skipIf(skip)("stepped range ends", () => {
+  it.each(withTextLayer())(
+    "match Zotero's key path on %s",
+    async (asset) => {
+      const zotero = (await import(
+        /* @vite-ignore */ join(checkout, "reader/src/pdf/selection.js")
+      )) as ZoteroSelection;
+      const oracle = await askZotero(asset);
+      const pages = oracle.pages.map((page, pageIndex) =>
+        structurePage(pageIndex, page.viewBox, asObsidianItems(page.items)),
+      );
+      const byIndex = new Map(pages.map((page) => [page.pageIndex, page]));
+      const round = (rects: readonly Rect[]) =>
+        JSON.stringify(rects.map((rect) => rect.map((v) => +v.toFixed(3))));
+      const got: string[] = [];
+      const want: string[] = [];
+
+      for (const { pageIndex, chars } of pages) {
+        if (chars.length < 2) continue;
+        // A range at each end of the page as well as inside it, so a step
+        // crosses onto the next page and off the first.
+        const spans = [
+          [0, Math.min(chars.length, 7)],
+          [Math.max(0, chars.length - 5), chars.length],
+          ...Array.from({ length: 16 }, (_, i) => {
+            const from = (i * 53) % (chars.length - 1);
+            return [from, Math.min(chars.length, from + 1 + ((i * 29) % 60))];
+          }),
+        ];
+        for (const [from, to] of spans) {
+          const position = {
+            pageIndex,
+            rects: textRange(chars, from!, to!).rects,
+          };
+          for (const end of ["start", "end"] as RangeEnd[]) {
+            for (const step of ["left", "right", "up", "down"] as const) {
+              // The page before is there so a step off the first page is seen
+              // to leave it.
+              const expected = zoteroDrag(zotero, {
+                pages: Object.fromEntries(
+                  [pageIndex - 1, pageIndex, pageIndex + 1].flatMap((index) => {
+                    const page = byIndex.get(index);
+                    return page ? [[index, page]] : [];
+                  }),
+                ),
+                position,
+                end,
+                head: step,
+              });
+              const adjusted = adjustRange({ position, end, step }, byIndex);
+              // Zotero reads the range off the rects again, which on
+              // overlapping glyphs can take a character the stored rects
+              // were not built from; its own step that goes nowhere answers
+              // that read.
+              const [reread] = zotero.getSelectionRangesByPosition(
+                Object.fromEntries([[pageIndex, byIndex.get(pageIndex)!]]),
+                position,
+              );
+              // A step that moves nothing writes nothing, whether it answers
+              // the range unchanged, as Zotero does where no page lies
+              // before, or `null`.
+              const said = (
+                answer: {
+                  rects: readonly Rect[];
+                  nextPageRects?: readonly Rect[];
+                  text: string;
+                } | null,
+              ) =>
+                answer === null ||
+                (!answer.nextPageRects?.length &&
+                  (round(answer.rects) === round(position.rects) ||
+                    round(answer.rects) ===
+                      round(reread?.position.rects ?? [])))
+                  ? "unchanged"
+                  : `${round(answer.rects)} ${round(answer.nextPageRects ?? [])} ${answer.text}`;
+              const where = `${asset} page ${pageIndex} ${from}-${to} ${end} ${step}`;
+              got.push(`${where} ${said(adjusted)}`);
+              want.push(`${where} ${said(expected)}`);
+            }
+          }
+        }
+      }
+
+      expect(got.length).toBeGreaterThan(0);
+      expect(got).toEqual(want);
+    },
+    180_000,
+  );
+});
+
+/**
+ * Zotero's reader dragging one end of a stored highlight to a point, or
+ * stepping it from the keyboard; `null` for a move the port answers
+ * differently by design: one that turns the range round, collapses it, or
+ * leaves the Annotation's page.
  *
  * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/pdf-view.js — `_handlePointerMove`, `updateAnnotationRange`; `_getAnnotationFromSelectionRanges`
  */
@@ -560,7 +659,7 @@ function zoteroDrag(
     pages: Record<number, StructuredPage>;
     position: { pageIndex: number; rects: Rect[] };
     end: RangeEnd;
-    head: { pageIndex: number; rects: Rect[] };
+    head: { pageIndex: number; rects: Rect[] } | RangeStep;
   },
 ): { rects: Rect[]; nextPageRects: Rect[]; text: string } | null {
   let ranges = zotero.getSelectionRangesByPosition(pages, position);
