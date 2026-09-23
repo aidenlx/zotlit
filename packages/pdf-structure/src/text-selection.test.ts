@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { StructuredChar, StructuredPage } from "@/chars";
-import { offsetsByRects, selectText, textRange } from "@/text-selection";
+import {
+  adjustRange,
+  offsetsByRects,
+  selectText,
+  textRange,
+} from "@/text-selection";
 import type { TextLayerSelection } from "@/text-selection";
 
 type Flags = Pick<
@@ -313,5 +318,249 @@ describe("a DOM text selection mapped onto the page's characters", () => {
         pagesOf(page(0, line("the quick"))),
       ),
     ).toBeNull();
+  });
+});
+
+describe("a highlight's range dragged by one end", () => {
+  // "the" is chars 0–2, "quick" 3–7, "brown" 8–12, "fox" 13–15.
+  const twoLines = pagesOf(
+    page(0, line("the quick"), line("brown fox", { y: 690 })),
+  );
+  const quick = { pageIndex: 0, rects: [[120, 699, 145, 709]] as const };
+
+  it("keeps one character when the end is dragged back past the start", () => {
+    expect(
+      adjustRange(
+        {
+          position: quick,
+          end: "end",
+          point: { pageIndex: 0, x: 110, y: 704 },
+        },
+        twoLines,
+      ),
+    ).toEqual({ pageIndex: 0, rects: [[120, 699, 125, 709]], text: "q" });
+  });
+
+  it("keeps one character when the start is dragged on past the end", () => {
+    expect(
+      adjustRange(
+        {
+          position: quick,
+          end: "start",
+          point: { pageIndex: 0, x: 150, y: 704 },
+        },
+        twoLines,
+      ),
+    ).toEqual({ pageIndex: 0, rects: [[140, 699, 145, 709]], text: "k" });
+  });
+
+  it("proposes the stored rects for a drag that lands on the same characters", () => {
+    // Rects a little wider than the characters', as another writer may store.
+    const stored = { pageIndex: 0, rects: [[119, 698, 146, 710]] as const };
+
+    expect(
+      adjustRange(
+        {
+          position: stored,
+          end: "end",
+          point: { pageIndex: 0, x: 144, y: 704 },
+        },
+        twoLines,
+      ),
+    ).toEqual({ pageIndex: 0, rects: [[119, 698, 146, 710]], text: "quick" });
+  });
+
+  it("places nothing for rects that cover no character's centre", () => {
+    expect(
+      adjustRange(
+        {
+          position: { pageIndex: 0, rects: [[300, 300, 310, 310]] },
+          end: "end",
+          point: { pageIndex: 0, x: 126, y: 694 },
+        },
+        twoLines,
+      ),
+    ).toBeNull();
+  });
+
+  it("refuses a point on a page other than the highlight's and the next", () => {
+    expect(
+      adjustRange(
+        { position: quick, end: "end", point: { pageIndex: 2, x: 0, y: 0 } },
+        twoLines,
+      ),
+    ).toBeNull();
+  });
+
+  it("extends the end one word onto the next line, quoting across the break", () => {
+    expect(
+      adjustRange(
+        {
+          position: quick,
+          end: "end",
+          point: { pageIndex: 0, x: 126, y: 694 },
+        },
+        twoLines,
+      ),
+    ).toEqual({
+      pageIndex: 0,
+      rects: [
+        [120, 699, 145, 709],
+        [100, 689, 125, 699],
+      ],
+      text: "quick brown",
+    });
+  });
+
+  it("moves the start back one word, the end held", () => {
+    expect(
+      adjustRange(
+        {
+          position: quick,
+          end: "start",
+          point: { pageIndex: 0, x: 99, y: 704 },
+        },
+        twoLines,
+      ),
+    ).toEqual({
+      pageIndex: 0,
+      rects: [[100, 699, 145, 709]],
+      text: "the quick",
+    });
+  });
+
+  it("takes a character once the point passes its middle", () => {
+    // "i" spans 130–135: short of 132.5 it stays out, past it it joins.
+    const at = (x: number) =>
+      adjustRange(
+        { position: quick, end: "end", point: { pageIndex: 0, x, y: 704 } },
+        twoLines,
+      )?.text;
+
+    expect(at(131)).toBe("qu");
+    expect(at(134)).toBe("qui");
+  });
+
+  it("measures the middle along the text's direction on turned text", () => {
+    // Three glyphs running up the page, as a 90° text matrix lays them.
+    const turned = pagesOf(
+      page(
+        0,
+        ["a", "b", "c"].map(
+          (c, index): Partial<StructuredChar> => ({
+            c,
+            rotation: 90,
+            rect: [100, 100 + index * 5, 108, 105 + index * 5],
+            inlineRect: [100, 100 + index * 5, 108, 105 + index * 5],
+            lineBreakAfter: index === 2,
+          }),
+        ),
+      ),
+    );
+    const a = { pageIndex: 0, rects: [[100, 100, 108, 105]] as const };
+    const at = (y: number) =>
+      adjustRange(
+        { position: a, end: "end", point: { pageIndex: 0, x: 104, y } },
+        turned,
+      );
+
+    expect(at(111)).toEqual({
+      pageIndex: 0,
+      rects: [[100, 100, 108, 110]],
+      text: "ab",
+    });
+    expect(at(113)?.text).toBe("abc");
+  });
+
+  describe("over a page break", () => {
+    // Page 0: "end" 0–2, "of" 3–4, "one" 5–7. Page 1: "start" 0–4.
+    const twoPages = pagesOf(
+      page(0, line("end of one")),
+      page(1, line("start of two")),
+    );
+    const ofOne = { pageIndex: 0, rects: [[120, 699, 150, 709]] as const };
+    const spilled = {
+      ...ofOne,
+      nextPageRects: [[100, 699, 125, 709]] as const,
+    };
+
+    it("gains the next page's rects, the text joined by one space", () => {
+      expect(
+        adjustRange(
+          {
+            position: ofOne,
+            end: "end",
+            point: { pageIndex: 1, x: 126, y: 704 },
+          },
+          twoPages,
+        ),
+      ).toEqual({
+        pageIndex: 0,
+        rects: [[120, 699, 150, 709]],
+        nextPageRects: [[100, 699, 125, 709]],
+        text: "of one start",
+      });
+    });
+
+    it("loses them when the end comes back onto the first page", () => {
+      expect(
+        adjustRange(
+          {
+            position: spilled,
+            end: "end",
+            point: { pageIndex: 0, x: 137, y: 704 },
+          },
+          twoPages,
+        ),
+      ).toEqual({ pageIndex: 0, rects: [[120, 699, 130, 709]], text: "of" });
+    });
+
+    it("stores no empty next-page rects for an end before the next page's first character", () => {
+      expect(
+        adjustRange(
+          {
+            position: ofOne,
+            end: "end",
+            point: { pageIndex: 1, x: 99, y: 704 },
+          },
+          twoPages,
+        ),
+      ).toEqual({
+        pageIndex: 0,
+        rects: [[120, 699, 150, 709]],
+        text: "of one",
+      });
+    });
+
+    it("moves the start while the end stays on the next page", () => {
+      expect(
+        adjustRange(
+          {
+            position: spilled,
+            end: "start",
+            point: { pageIndex: 0, x: 99, y: 704 },
+          },
+          twoPages,
+        ),
+      ).toEqual({
+        pageIndex: 0,
+        rects: [[100, 699, 150, 709]],
+        nextPageRects: [[100, 699, 125, 709]],
+        text: "end of one start",
+      });
+    });
+
+    it("refuses a start dragged onto the next page, which would move the Annotation's page", () => {
+      expect(
+        adjustRange(
+          {
+            position: spilled,
+            end: "start",
+            point: { pageIndex: 1, x: 99, y: 704 },
+          },
+          twoPages,
+        ),
+      ).toBeNull();
+    });
   });
 });

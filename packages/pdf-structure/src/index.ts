@@ -18,6 +18,9 @@ export type {
 } from "@/sort-index";
 export { computeSortIndex } from "@/sort-index";
 export type {
+  PagePoint,
+  RangeAdjustment,
+  RangeEnd,
   SelectedText,
   TextLayerSelection,
   TextSelection,

@@ -17,7 +17,7 @@ upstream modules rather than an equivalent of its own. See
 | `src/vendor/` | The pinned port: `structure.js`, `page-label.js`, `util.js` from `zotero/pdf.js`, and `native-text-selection-map.js` from `zotero/reader`, copied verbatim under a provenance header. |
 | `src/chars.ts` | The adapter — Obsidian's per-glyph text content, filtered and normalised into the character stream the port consumes. |
 | `src/sort-index.ts` | The reader's `getSortIndex`, its rectangle choice, and the `PPPPP\|OOOOOO\|TTTTT` format. |
-| `src/text-selection.ts` | The reader's text selection: a DOM selection mapped onto Structured Characters, and the line rectangles and text a highlight or an underline stores. |
+| `src/text-selection.ts` | The reader's text selection: a DOM selection mapped onto Structured Characters, the line rectangles and text a highlight or an underline stores, and a stored range with one end dragged to a point. |
 | `src/page-label.ts` | The printed-page heuristic, plus the reader's alignment to the previous Annotation. |
 | `src/session.ts` | `PdfTextStructure` — one per Reader Session, memoizing Structured Characters per page. |
 | `oracle/` | The golden oracle: Zotero's own modules, run from a local checkout in Node. |
@@ -33,6 +33,8 @@ const sortIndex = await structure.sortIndex(position);
 const pageLabel = await structure.pageLabel(position.pageIndex, previous);
 // From a text selection, read off the pages' text layers:
 const selected = await structure.selectText({ text, pages });
+// From a highlight's end handle, dragged to a page point:
+const adjusted = await structure.adjustRange({ position, end: "end", point });
 ```
 
 `source` is a `PdfPageSource` the host builds over Obsidian's PDF seam.
