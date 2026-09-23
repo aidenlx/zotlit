@@ -2448,6 +2448,7 @@
   "annot_view_conflict_attempted": "Your edit",
   "annot_view_conflict_no_value": "None",
   "annot_view_conflict_delete_prompt": "Delete the annotation as Zotero holds it now?",
+  "annot_view_conflict_geometry_prompt": "The annotation's position changed in Zotero. Apply your adjustment again, or discard it to keep the position in Zotero.",
   "annot_view_conflict_apply_again": "Apply again",
   "annot_view_conflict_use_comment": "Use my comment",
   "annot_view_conflict_keep_zotero_comment": "Keep Zotero's comment",
@@ -2464,5 +2465,6 @@
   "pdf_toolbar_hide_marks": "Hide Zotero annotations",
   "pdf_create_popup_comment_hint": "Press Ctrl+Enter (Windows) or Command+Enter (macOS) to save",
   "pdf_create_popup_copy": "Copy selected text",
-  "pdf_create_failed": "The annotation was not created. {reason}"
+  "pdf_create_failed": "The annotation was not created. {reason}",
+  "pdf_adjust_failed": "The annotation was not adjusted. {reason}"
 }
