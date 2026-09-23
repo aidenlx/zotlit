@@ -9,8 +9,12 @@ import type { PageLabelSource, PreviousAnnotation } from "@/page-label";
 import { alignPageLabel, extractPageLabels } from "@/page-label";
 import type { PdfPosition } from "@/sort-index";
 import { computeSortIndex } from "@/sort-index";
-import type { SelectedText, TextSelection } from "@/text-selection";
-import { selectText } from "@/text-selection";
+import type {
+  RangeAdjustment,
+  SelectedText,
+  TextSelection,
+} from "@/text-selection";
+import { adjustRange, selectText } from "@/text-selection";
 
 const logger = getLogger(["zotlit", "pdf-structure"]);
 
@@ -98,6 +102,29 @@ export class PdfTextStructure {
     );
     return selectText(
       selection,
+      new Map(pages.map((page) => [page.pageIndex, page])),
+    );
+  }
+
+  /**
+   * A highlight or underline with one end dragged to a point, from the
+   * Structured Characters of its page and, where the range or the point
+   * reaches it, the page after; `null` for one they cannot place.
+   */
+  async adjustRange(adjustment: RangeAdjustment): Promise<SelectedText | null> {
+    const { position, point } = adjustment;
+    const spills =
+      position.nextPageRects !== undefined ||
+      point.pageIndex === position.pageIndex + 1;
+    const indexes =
+      spills && position.pageIndex + 1 < this.#source.numPages
+        ? [position.pageIndex, position.pageIndex + 1]
+        : [position.pageIndex];
+    const pages = await Promise.all(
+      indexes.map((pageIndex) => this.page(pageIndex)),
+    );
+    return adjustRange(
+      adjustment,
       new Map(pages.map((page) => [page.pageIndex, page])),
     );
   }

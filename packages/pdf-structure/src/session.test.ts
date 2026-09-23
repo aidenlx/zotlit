@@ -129,3 +129,28 @@ describe("a Sort Index on a page with no text layer", () => {
     });
   });
 });
+
+describe("a Reader Session's range adjustment", () => {
+  it("reads the next page only when the point reaches it", async () => {
+    const { source, textCalls } = stubSource();
+    const structure = new PdfTextStructure(source);
+    const seven = { pageIndex: 0, rects: [[72, 694, 78, 708]] as const };
+
+    const onPage = await structure.adjustRange({
+      position: seven,
+      end: "end",
+      point: { pageIndex: 0, x: 80, y: 700 },
+    });
+    expect(textCalls).toEqual([0]);
+    expect(onPage?.text).toBe("7");
+
+    const spilled = await structure.adjustRange({
+      position: seven,
+      end: "end",
+      point: { pageIndex: 1, x: 80, y: 690 },
+    });
+    expect(textCalls).toEqual([0, 1]);
+    expect(spilled).toMatchObject({ pageIndex: 0, text: "7 7" });
+    expect(spilled?.nextPageRects).toHaveLength(1);
+  });
+});

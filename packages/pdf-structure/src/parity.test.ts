@@ -21,12 +21,18 @@ import {
   getWorkspaceRoot,
 } from "@zotlit/scripts/package-roots";
 
-import type { ObsidianTextItem, Rect, ZoteroChar } from "@/chars";
+import type {
+  ObsidianTextItem,
+  Rect,
+  StructuredPage,
+  ZoteroChar,
+} from "@/chars";
 import { structurePage, toZoteroChars } from "@/chars";
 import { PdfTextStructure } from "@/session";
 import type { PdfPosition } from "@/sort-index";
 import { computeSortIndex } from "@/sort-index";
-import { offsetsByRects, textRange } from "@/text-selection";
+import type { RangeEnd } from "@/text-selection";
+import { adjustRange, offsetsByRects, textRange } from "@/text-selection";
 
 const run = promisify(execFile);
 
@@ -328,6 +334,15 @@ describe.skipIf(skip)("the parity PDFs the Fixture declares", () => {
   );
 });
 
+/** The Fixture PDFs that carry a text layer. */
+const withTextLayer = () =>
+  PDFS.filter(
+    (asset) =>
+      !PARITY_PDFS.some(
+        (pdf) => pdf.asset === asset && pdf.branches.includes("no-text-layer"),
+      ),
+  );
+
 /** The reader's own selection module, which the text-selection port copies. */
 interface ZoteroSelection {
   extractRange(options: {
@@ -341,6 +356,27 @@ interface ZoteroSelection {
     pageIndex: number;
     rects: readonly Rect[];
   }): { from: number; to: number } | null;
+  getSelectionRangesByPosition(
+    pdfPages: Record<number, StructuredPage>,
+    position: PdfPosition,
+  ): ZoteroRange[];
+  getReversedSelectionRanges(ranges: ZoteroRange[]): ZoteroRange[];
+  getModifiedSelectionRanges(
+    pdfPages: Record<number, StructuredPage>,
+    ranges: ZoteroRange[],
+    head: { pageIndex: number; rects: Rect[] },
+  ): ZoteroRange[];
+}
+
+/** One page's part of a selection, as Zotero's reader holds it. */
+interface ZoteroRange {
+  anchorOffset: number;
+  headOffset: number;
+  anchor?: boolean;
+  head?: boolean;
+  collapsed?: boolean;
+  position: { pageIndex: number; rects: Rect[] };
+  text: string;
 }
 
 /**
@@ -356,14 +392,7 @@ describe.skipIf(skip)("text ranges", () => {
       (i * 91 + 13) % (charCount + 1),
     ]);
 
-  const withText = PDFS.filter(
-    (asset) =>
-      !PARITY_PDFS.some(
-        (pdf) => pdf.asset === asset && pdf.branches.includes("no-text-layer"),
-      ),
-  );
-
-  it.each(withText)(
+  it.each(withTextLayer())(
     "match Zotero's ranges on %s",
     async (asset) => {
       const zotero = (await import(
@@ -415,6 +444,160 @@ describe.skipIf(skip)("text ranges", () => {
     180_000,
   );
 });
+
+/**
+ * A highlight's end dragged to a point, against the reader's own pointer path:
+ * the ranges read off the stored rects, turned round for the start, and moved
+ * to a point, then kept to two pages with their text joined by one space. The
+ * drags where the port keeps the stored shape instead — past the anchor, or
+ * off the Annotation's page — are compared as `null`s the port answers
+ * elsewhere, so only the drags both sides place are compared.
+ */
+describe.skipIf(skip)("dragged range ends", () => {
+  it.each(withTextLayer())(
+    "match Zotero's pointer path on %s",
+    async (asset) => {
+      const zotero = (await import(
+        /* @vite-ignore */ join(checkout, "reader/src/pdf/selection.js")
+      )) as ZoteroSelection;
+      const oracle = await askZotero(asset);
+      const pages = oracle.pages.map((page, pageIndex) =>
+        structurePage(pageIndex, page.viewBox, asObsidianItems(page.items)),
+      );
+      const byIndex = new Map(pages.map((page) => [page.pageIndex, page]));
+      const round = (rects: readonly Rect[]) =>
+        JSON.stringify(rects.map((rect) => rect.map((v) => +v.toFixed(3))));
+      const got: string[] = [];
+      const want: string[] = [];
+
+      for (const { pageIndex, chars } of pages) {
+        if (chars.length < 2) continue;
+        const next = byIndex.get(pageIndex + 1)?.chars ?? [];
+        for (let i = 0; i < 12; i++) {
+          const from = (i * 53) % (chars.length - 1);
+          const to = Math.min(chars.length, from + 1 + ((i * 29) % 60));
+          const position = {
+            pageIndex,
+            rects: textRange(chars, from, to).rects,
+          };
+          const targets = [
+            ...[3, 17, 41].map((step) => ({
+              pageIndex,
+              char: chars[(from + i * step) % chars.length]!,
+            })),
+            ...(next.length
+              ? [{ pageIndex: pageIndex + 1, char: next[i % next.length]! }]
+              : []),
+          ];
+          for (const { pageIndex: on, char } of targets) {
+            for (const [dx, dy] of [
+              [0.2, 0.5],
+              [0.8, 0.5],
+              [1.4, -0.3],
+            ] as const) {
+              const [x1, y1, x2, y2] = char.rect;
+              const x = x1 + (x2 - x1) * dx;
+              const y = y1 + (y2 - y1) * dy;
+              for (const end of ["start", "end"] as RangeEnd[]) {
+                const expected = zoteroDrag(zotero, {
+                  pages: Object.fromEntries(
+                    [pageIndex, pageIndex + 1].flatMap((index) => {
+                      const page = byIndex.get(index);
+                      return page ? [[index, page]] : [];
+                    }),
+                  ),
+                  position,
+                  end,
+                  head: { pageIndex: on, rects: [[x, y, x, y]] },
+                });
+                if (!expected) continue;
+                const where = `${asset} page ${pageIndex} ${from}-${to} ${end} to ${on} ${x},${y}`;
+                const adjusted = adjustRange(
+                  { position, end, point: { pageIndex: on, x, y } },
+                  byIndex,
+                );
+                // A drag back onto the stored characters keeps the stored
+                // rects by design, so only its text is compared.
+                const kept =
+                  adjusted !== null &&
+                  round(adjusted.rects) === round(position.rects);
+                const shape = (rects: readonly Rect[], next: readonly Rect[]) =>
+                  kept ? "" : `${round(rects)} ${round(next)} `;
+                got.push(
+                  `${where} ${adjusted && `${shape(adjusted.rects, adjusted.nextPageRects ?? [])}${adjusted.text}`}`,
+                );
+                want.push(
+                  `${where} ${shape(expected.rects, expected.nextPageRects)}${expected.text}`,
+                );
+              }
+            }
+          }
+        }
+      }
+
+      expect(got.length).toBeGreaterThan(0);
+      expect(got).toEqual(want);
+    },
+    180_000,
+  );
+});
+
+/**
+ * Zotero's reader dragging one end of a stored highlight to a point, or `null`
+ * for a drag the port answers differently by design: one that turns the range
+ * round, collapses it, or leaves the Annotation's page.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/pdf-view.js — `_handlePointerMove`, `updateAnnotationRange`; `_getAnnotationFromSelectionRanges`
+ */
+function zoteroDrag(
+  zotero: ZoteroSelection,
+  {
+    pages,
+    position,
+    end,
+    head,
+  }: {
+    pages: Record<number, StructuredPage>;
+    position: { pageIndex: number; rects: Rect[] };
+    end: RangeEnd;
+    head: { pageIndex: number; rects: Rect[] };
+  },
+): { rects: Rect[]; nextPageRects: Rect[]; text: string } | null {
+  let ranges = zotero.getSelectionRangesByPosition(pages, position);
+  if (!ranges.length) return null;
+  if (end === "start") ranges = zotero.getReversedSelectionRanges(ranges);
+  const moved = zotero
+    .getModifiedSelectionRanges(pages, ranges, head)
+    .filter((range) => range.position.rects.length > 0)
+    .toSorted((a, b) => a.position.pageIndex - b.position.pageIndex);
+  const [first, second] = moved;
+  if (
+    !first ||
+    first.collapsed ||
+    first.position.pageIndex !== position.pageIndex
+  )
+    return null;
+  // A range turned round runs its head before its anchor on the anchor's page.
+  const anchorRange = moved.find((range) => range.anchor);
+  const headRange = moved.find((range) => range.head);
+  if (
+    anchorRange &&
+    headRange &&
+    (anchorRange.position.pageIndex === headRange.position.pageIndex
+      ? end === "end"
+        ? headRange.headOffset <= anchorRange.anchorOffset
+        : headRange.headOffset >= anchorRange.anchorOffset
+      : end === "end"
+        ? headRange.position.pageIndex < anchorRange.position.pageIndex
+        : headRange.position.pageIndex > anchorRange.position.pageIndex)
+  )
+    return null;
+  return {
+    rects: first.position.rects,
+    nextPageRects: second?.position.rects ?? [],
+    text: second ? `${first.text} ${second.text}` : first.text,
+  };
+}
 
 describe.skipIf(skip)("the vendored port", () => {
   const marker = "// === verbatim upstream copy starts here ===\n";

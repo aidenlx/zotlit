@@ -10,6 +10,7 @@
 // under AGPL v3.
 
 import type { Rect, StructuredChar, StructuredPage } from "@/chars";
+import type { PdfRectsPosition } from "@/sort-index";
 import {
   alignTextUnits,
   buildReaderUnitMap,
@@ -305,4 +306,157 @@ export function selectText(
     ...(next && { nextPageRects: next.rects }),
     text: next ? `${first.text} ${next.text}` : first.text,
   };
+}
+
+/** Which end of a highlight's range a drag moves; the other is the anchor. */
+export type RangeEnd = "start" | "end";
+
+/** A point in PDF page space on one page. */
+export interface PagePoint {
+  readonly pageIndex: number;
+  readonly x: number;
+  readonly y: number;
+}
+
+/** One end of a highlight's range dragged to a point. */
+export interface RangeAdjustment {
+  /** The highlight or underline position as stored. */
+  readonly position: PdfRectsPosition;
+  readonly end: RangeEnd;
+  /** Where the pointer is, on the position's page or the one after it. */
+  readonly point: PagePoint;
+}
+
+/**
+ * The distance between two rects, zero where they touch or overlap.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js#L3-L37
+ */
+function rectsDist(
+  [ax1, ay1, ax2, ay2]: Rect,
+  [bx1, by1, bx2, by2]: Rect,
+): number {
+  const left = bx2 < ax1;
+  const right = ax2 < bx1;
+  const bottom = by2 < ay1;
+  const top = ay2 < by1;
+  if (top && left) return Math.hypot(ax1 - bx2, ay2 - by1);
+  if (left && bottom) return Math.hypot(ax1 - bx2, ay1 - by2);
+  if (bottom && right) return Math.hypot(ax2 - bx1, ay1 - by2);
+  if (right && top) return Math.hypot(ax2 - bx1, ay2 - by1);
+  if (left) return ax1 - bx2;
+  if (right) return bx1 - ax2;
+  if (bottom) return ay1 - by2;
+  if (top) return by1 - ay2;
+  return 0;
+}
+
+/**
+ * The character boundary nearest a point: before the closest character, or
+ * after it once the point passes its middle along the text's direction.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js#L39-L51
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js#L80-L140 — `getRangeBySelection`, the `head` branch
+ */
+function offsetAtPoint(
+  chars: readonly StructuredChar[],
+  { x, y }: PagePoint,
+): number {
+  let closest = 0;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const [index, char] of chars.entries()) {
+    const d = rectsDist(char.rect, [x, y, x, y]);
+    if (d < distance) {
+      distance = d;
+      closest = index;
+    }
+  }
+  const { rotation, rect } = chars[closest]!;
+  const midX = rect[0] + (rect[2] - rect[0]) / 2;
+  const midY = rect[1] + (rect[3] - rect[1]) / 2;
+  const past =
+    (!rotation && x > midX) ||
+    (rotation === 90 && y > midY) ||
+    (rotation === 180 && x < midX) ||
+    (rotation === 270 && y < midY);
+  return past ? closest + 1 : closest;
+}
+
+/**
+ * A highlight or underline with one end dragged to a point, or `null` where
+ * no range can be placed.
+ *
+ * The ends are read off the stored rects as Zotero's reader reads them: the
+ * start at the first character whose centre falls in the first rect, the end
+ * after the last whose centre falls in the last rect, on the next page when
+ * the range spilled onto it. The other end stays where it is, and the dragged
+ * one moves to the character boundary nearest the point.
+ *
+ * Where Zotero's pointer path differs, this keeps the stored shape:
+ * - An end dragged onto or past the anchor stops one character short of it,
+ *   so the range keeps one character; Zotero turns the range round instead.
+ * - The range stays on the Annotation's page and the page after it, and the
+ *   start stays on the Annotation's page, so `pageIndex` never changes. A
+ *   point on any other page, or a start dragged onto the next page, is `null`.
+ * - An end before the next page's first character stores no `nextPageRects`.
+ * - A drag that lands on the characters the stored rects cover proposes
+ *   those rects, so it changes nothing.
+ *
+ * @param pages the Structured Characters of the Annotation's page and, where
+ *   the range or the point reaches it, the page after.
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js — `getSelectionRangesByPosition`, `getModifiedSelectionRanges`, `getSelectionRanges`
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/pdf-view.js — `_getAnnotationFromSelectionRanges`
+ */
+export function adjustRange(
+  { position, end, point }: RangeAdjustment,
+  pages: ReadonlyMap<number, StructuredPage>,
+): SelectedText | null {
+  const { pageIndex } = position;
+  if (point.pageIndex !== pageIndex && point.pageIndex !== pageIndex + 1)
+    return null;
+  const first = pages.get(pageIndex)?.chars ?? [];
+  const onFirst = offsetsByRects(first, position.rects);
+  if (!onFirst) return null;
+  const next = pages.get(pageIndex + 1)?.chars ?? [];
+  const onNext = position.nextPageRects
+    ? offsetsByRects(next, position.nextPageRects)
+    : null;
+
+  // Boundaries count through both pages: the next page's offset `k` is
+  // `first.length + k`.
+  const from = onFirst.from;
+  const to = onNext ? first.length + onNext.to : onFirst.to;
+  let head: number;
+  if (point.pageIndex === pageIndex) head = offsetAtPoint(first, point);
+  else if (next.length) head = first.length + offsetAtPoint(next, point);
+  else return null;
+
+  let start = from;
+  let stop = to;
+  if (end === "end") stop = Math.max(head, from + 1);
+  else {
+    if (head >= first.length) return null;
+    start = Math.min(head, to - 1);
+  }
+
+  // The same characters keep the rects as stored, which may be drawn a hair
+  // off the characters' own, so a still drag proposes no change.
+  const stored =
+    start === from && stop === to
+      ? { rects: [...position.rects], nextPageRects: position.nextPageRects }
+      : null;
+  const onPage = textRange(first, start, Math.min(stop, first.length));
+  const spill =
+    stop > first.length ? textRange(next, 0, stop - first.length) : null;
+  if (!onPage.rects.length) return null;
+  return spill?.rects.length
+    ? {
+        pageIndex,
+        rects: stored?.rects ?? onPage.rects,
+        nextPageRects: stored?.nextPageRects
+          ? [...stored.nextPageRects]
+          : spill.rects,
+        text: `${onPage.text} ${spill.text}`,
+      }
+    : { pageIndex, rects: stored?.rects ?? onPage.rects, text: onPage.text };
 }
