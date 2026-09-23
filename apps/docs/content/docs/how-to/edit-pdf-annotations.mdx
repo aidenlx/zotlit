@@ -1,6 +1,6 @@
 ---
 title: "How to edit PDF annotations in Obsidian"
-description: "Create, change, and delete Zotero PDF annotations while reading the PDF in Obsidian."
+description: "Create, change, adjust, and delete Zotero PDF annotations while reading the PDF in Obsidian."
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
@@ -9,7 +9,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights and underlines, change annotation colors and comments, or delete annotations from Obsidian.
+Create highlights and underlines, change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
 
 ## Before you edit
 
@@ -56,6 +56,52 @@ If ZotLit detects that the comment changed in Zotero, it shows <UiLabel name={m.
 3. Select one of Zotero's annotation colors.
 
 The palette button on an annotation card provides the same colors.
+
+## Adjust an annotation's position
+
+You can move or resize image and ink annotations, and move either end of a highlight or underline. Editing must be enabled. When it is not, a selected mark shows no handles and the keys below do nothing.
+
+1. Select the annotation mark in the PDF. Handles appear on the mark.
+2. Drag a handle, or drag the mark itself. The mark follows the pointer.
+3. Release the pointer. ZotLit sends the new position to Zotero.
+
+Press `Escape` during a drag to put the mark back without saving. A drag that ends where it started saves nothing. The popup hides during the drag and returns after it.
+
+### Handles for each annotation type
+
+| Annotation type        | Handles                                                                            | Drag                                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Image                  | Eight squares, on the four corners and the four edge midpoints.                    | A corner moves two edges. An edge handle moves one edge. The inside of the image moves the whole rectangle.                            |
+| Ink                    | Four corners, on a box slightly larger than the strokes.                           | A corner scales the drawing. Its proportions stay the same, and the pen width scales with it. The inside of the box moves the drawing. |
+| Highlight or underline | Two narrow strips, at the start of the first line and at the end of the last line. | A strip moves that end of the range one character at a time. The quoted text follows the new range.                                    |
+
+An image rectangle stays on its page and keeps at least 10 points on each side. A highlight or underline range keeps at least one character. Its start stays on the annotation's page, and its end can move onto the next page but no further. A drag on the body of a highlight selects text as usual.
+
+### Adjust from the keyboard
+
+Select the annotation mark first. Each key press is one step.
+
+| Annotation type        | Keys                                            | Result                                                                          |
+| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| Highlight or underline | `Shift+Left arrow`, `Shift+Right arrow`         | Moves the end back or forward by one character.                                 |
+| Highlight or underline | `Shift+Up arrow`, `Shift+Down arrow`            | Moves the end to the nearest character on the line above or below.              |
+| Image                  | `Shift+Right arrow`, `Shift+Left arrow`         | Moves the right edge 5 points out or in.                                        |
+| Image                  | `Shift+Down arrow`, `Shift+Up arrow`            | Moves the bottom edge 5 points down or up.                                      |
+| Ink                    | `Shift+Right arrow`, `Shift+Down arrow`         | Enlarges the drawing by 5 points. The proportions and the top-left corner stay. |
+| Ink                    | `Shift+Left arrow`, `Shift+Up arrow`            | Shrinks the drawing by 5 points. The proportions and the top-left corner stay.  |
+| Image or ink           | `Alt+arrow` (Windows) or `Option+arrow` (macOS) | Moves the mark 5 points in the arrow's direction.                               |
+
+For a highlight or underline, add `Ctrl` (Windows) or `Command` (macOS) to the `Shift` keys to move the start instead of the end. A key that would leave the range with no characters does nothing. The image keys work as in Zotero's reader.
+
+`Alt+arrow` or `Option+arrow` does not move a mark that is within 10 points of the page edge on that side. `Up arrow` and `Down arrow` without a modifier still select the previous or next annotation in reading order.
+
+### How the change saves
+
+Each drag release and each key press is one change. ZotLit sends it to Zotero at once. ZotLit also updates the annotation's place in the annotation list order, and for a highlight or underline, its quoted text. Zotero's reader and sidebar show the new position, and the image in the annotation view refreshes. ZotLit and Zotero cannot undo this change.
+
+If the annotation changed in Zotero while you adjusted it, the annotation card shows <UiLabel name={m.annot_view_conflict_title()} /> and says that the position changed in Zotero. For a highlight or underline, the card also shows the Zotero quote beside yours. Select <UiLabel name={m.annot_view_conflict_apply_again()} /> to save your position over the Zotero one, or <UiLabel name={m.annot_view_conflict_discard()} /> to keep the Zotero position. Until you select one, the mark shows the Zotero position.
+
+If Zotero refuses the change, the mark returns to its saved position, and a notice says that the annotation was not adjusted and why.
 
 ## Delete an annotation
 
