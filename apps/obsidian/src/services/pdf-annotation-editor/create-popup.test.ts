@@ -7,11 +7,7 @@ import { editingCapabilityCopy } from "@/services/annotation-repository/capabili
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
-import {
-  createPopupRow,
-  renderCommentSheet,
-  renderCreatePopupRow,
-} from "./create-popup";
+import { createPopupRow, renderCreatePopupRow } from "./create-popup";
 import type { CreatePopupAction, CreatePopupControl } from "./create-popup";
 import { resolveToolColors } from "./tools";
 
@@ -147,62 +143,4 @@ it("gives a blocked control no listener", () => {
   content.querySelector<HTMLElement>('[data-zt-verb="copy"]')!.click();
 
   expect(pressed).toEqual([{ kind: "copy" }]);
-});
-
-it("saves the comment sheet on Ctrl+Enter and on Command+Enter", () => {
-  const sheet = document.createElement("div");
-  const onSave = vi.fn();
-  const editor = renderCommentSheet(sheet, {
-    value: "a thought",
-    onSave,
-    onCancel: vi.fn(),
-  });
-
-  editor.value = "a second thought";
-  editor.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }),
-  );
-  editor.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", metaKey: true }),
-  );
-
-  expect(onSave.mock.calls).toEqual([
-    ["a second thought"],
-    ["a second thought"],
-  ]);
-});
-
-it("leaves a plain Enter to the editor and steps back on Escape", () => {
-  const sheet = document.createElement("div");
-  const onSave = vi.fn();
-  const onCancel = vi.fn();
-  const editor = renderCommentSheet(sheet, { value: "", onSave, onCancel });
-
-  editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-  editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-
-  expect(onSave).not.toHaveBeenCalled();
-  expect(onCancel).toHaveBeenCalledOnce();
-});
-
-it("promises the comment sheet's theme hook by its literal name", () => {
-  // The name itself is the public surface, so the literal is the test.
-  // @see apps/obsidian/policies/theme-hooks.md
-  const sheet = document.createElement("div");
-
-  renderCommentSheet(sheet, { value: "", onSave: vi.fn(), onCancel: vi.fn() });
-
-  expect(sheet.classList.contains("zt-pdf-comment-sheet")).toBe(true);
-});
-
-it("opens the sheet on the comment already typed", () => {
-  const sheet = document.createElement("div");
-
-  const editor = renderCommentSheet(sheet, {
-    value: "kept across a redraw",
-    onSave: vi.fn(),
-    onCancel: vi.fn(),
-  });
-
-  expect(editor.value).toBe("kept across a redraw");
 });

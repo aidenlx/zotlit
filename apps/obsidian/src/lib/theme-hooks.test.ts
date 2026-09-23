@@ -10,8 +10,12 @@ import { expect, it } from "vitest";
 import { themeHook } from "./theme-hooks";
 
 it("promises the Annotation View hooks by literal name", () => {
-  expect({ conflict: themeHook.annotConflict }).toEqual({
+  expect({
+    conflict: themeHook.annotConflict,
+    draft: themeHook.annotDraft,
+  }).toEqual({
     conflict: "zt-annot-conflict",
+    draft: "zt-annot-draft",
   });
 });
 

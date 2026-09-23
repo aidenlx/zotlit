@@ -59,6 +59,8 @@ export interface MarkPopupVerb {
   /** The accessible name, which Obsidian also renders as the hover tooltip. */
   tooltip: string;
   disabled: boolean;
+  /** A toggle's state, or `null` for a verb that is not a toggle. */
+  pressed: boolean | null;
 }
 
 /** Where the selected mark sits in the stack of marks under one point. */
@@ -91,6 +93,8 @@ export interface MarkPopupRowInput {
   /** What the last write left on this Annotation. */
   mutation: MutationState;
   stack: MarkStack;
+  /** Whether the comment editor stands open under the row. */
+  commenting: boolean;
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
 }
@@ -109,6 +113,7 @@ export function markPopupRow({
   capability,
   mutation,
   stack,
+  commenting,
   now,
 }: MarkPopupRowInput): MarkPopupRow {
   const blocked = editingBlockedReason(capability, mutation, now);
@@ -118,23 +123,28 @@ export function markPopupRow({
     icon,
     tooltip: blocked ?? label,
     disabled: blocked !== null,
+    pressed: null,
   });
   return {
     color: annotation.color,
     verbs: [
       editing("color", "palette", m.annot_view_card_color()),
-      editing(
-        "comment",
-        commentIcon(hasComment),
-        hasComment
-          ? m.pdf_mark_popup_edit_comment()
-          : m.pdf_mark_popup_add_comment(),
-      ),
+      {
+        ...editing(
+          "comment",
+          commentIcon(hasComment),
+          hasComment
+            ? m.annot_view_card_edit_comment()
+            : m.annot_view_card_add_comment(),
+        ),
+        pressed: commenting,
+      },
       {
         id: "copy",
         icon: "copy",
         tooltip: m.annot_view_menu_copy_text(),
         disabled: annotation.text === null,
+        pressed: null,
       },
       editing("delete", "trash-2", m.annot_view_menu_delete()),
       {
@@ -142,6 +152,7 @@ export function markPopupRow({
         icon: "panel-right-open",
         tooltip: m.pdf_mark_popup_reveal(),
         disabled: false,
+        pressed: null,
       },
     ],
     stepper:
@@ -193,8 +204,9 @@ export function renderMarkPopupRow(
 /**
  * One control of a Mark Popup row, in either mode: an Obsidian
  * `clickable-icon` carrying its id in `data-zt-verb`, its accessible name and
- * tooltip, and — for a swatch — its colour through the element's own style,
- * where a stylesheet's rules can still reach it and `var()` still substitutes.
+ * tooltip, a toggle's state, and — for a swatch — its colour through the
+ * element's own style, where a stylesheet's rules can still reach it and
+ * `var()` still substitutes.
  *
  * A blocked control keeps its seat and carries the reason in its tooltip and
  * its accessible state, rather than leaving the row.
@@ -211,22 +223,48 @@ export function markPopupControl(
     tooltip,
     disabled = false,
     color = null,
+    pressed = null,
+    cls,
   }: {
     id: string;
     icon: IconName;
     tooltip: string;
     disabled?: boolean;
     color?: string | null;
+    pressed?: boolean | null;
+    cls?: readonly string[];
   },
   activate: (node: HTMLElement) => void,
 ): HTMLElement {
   const node = renderIconButton(
     row,
-    { icon, tooltip, color, disabled },
+    { icon, tooltip, color, disabled, pressed, cls },
     activate,
   );
   node.dataset.ztVerb = id;
   return node;
+}
+
+/**
+ * The popup's content laid out as a column: the row of verbs, then whatever
+ * stands under it — the comment sheet, a held draft, a Write Conflict. The row
+ * is centred, so a sheet that widens the popup leaves each verb where the
+ * pointer pressed it.
+ *
+ * @param content the popup's content element, emptied first.
+ */
+export function popupColumn(content: HTMLElement): {
+  column: HTMLElement;
+  row: HTMLElement;
+} {
+  content.empty();
+  const column = content.createDiv({
+    cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
+  });
+  const row = column.createDiv({
+    cls: ["zt:flex", "zt:items-center", "zt:gap-0.5", "zt:self-center"],
+  });
+  return { column, row };
 }
 
 export interface MarkPopupDeps {

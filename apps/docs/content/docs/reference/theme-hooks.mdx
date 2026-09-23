@@ -124,7 +124,7 @@ Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and
 | `zt-pdf-creation-toolbar`             | The Creation Toolbar in the reader's own right toolbar slot, which also holds the Editing Capability affordance.                                   |
 | `zt-pdf-tool`                         | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
 | `zt-pdf-mark-popup`                   | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
-| `zt-pdf-comment-sheet`                | The comment sheet the Mark Popup opens under its create-mode row.                                                                                  |
+| `zt-pdf-comment-sheet`                | The comment sheet the Mark Popup opens under its row, in either mode.                                                                              |
 
 ### Annotation Marks [#pdf-annotation-marks]
 
@@ -148,7 +148,7 @@ A control that cannot write right now keeps its seat: it carries `aria-disabled`
 
 `zt-pdf-mark-popup` is the popup that hangs over a selected Annotation Mark or a fresh text selection. Each control inside it carries `data-zt-verb`.
 
-Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.pdf_mark_popup_add_comment()} /> or <UiLabel name={m.pdf_mark_popup_edit_comment()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `comment`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`.
+Over a selected mark, the verbs are <UiLabel name={m.annot_view_card_color()} />, <UiLabel name={m.annot_view_card_add_comment()} /> or <UiLabel name={m.annot_view_card_edit_comment()} />, <UiLabel name={m.annot_view_menu_copy_text()} />, <UiLabel name={m.annot_view_menu_delete()} />, and <UiLabel name={m.pdf_mark_popup_reveal()} />, carrying `data-zt-verb` values `color`, `comment`, `copy`, `delete`, and `reveal`. A stack of overlapping marks adds a stepper, `data-zt-verb="stack"`. Selecting <UiLabel name={m.annot_view_card_add_comment()} /> or <UiLabel name={m.annot_view_card_edit_comment()} /> opens `zt-pdf-comment-sheet` under the row, and the verb shows as pressed while the sheet is open.
 
 Over a fresh text selection, the row instead offers <UiLabel name={m.pdf_toolbar_highlight()} /> and <UiLabel name={m.pdf_toolbar_underline()} /> (`data-zt-verb` `highlight` or `underline`), Zotero's eight colors (`data-zt-verb` `color-1` through `color-8`), <UiLabel name={m.annot_view_card_add_comment()} /> (`data-zt-verb="comment"`), and <UiLabel name={m.pdf_create_popup_copy()} /> (`data-zt-verb="copy"`). Selecting <UiLabel name={m.annot_view_card_add_comment()} /> opens `zt-pdf-comment-sheet` under the row.
 
@@ -160,7 +160,7 @@ A highlight mark blends with the page: 40% opacity with `multiply` blending in l
 
 The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The Editing Capability affordance is a bare `clickable-icon`; ZotLit adds Obsidian's own `mod-warning` class when its tone is `warning`, and leaves color otherwise to Obsidian and the theme.
 
-The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsidian's default hover-popover sizing. The comment sheet is 15em wide, wider than the row above it, since it holds a text editor.
+The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsidian's default hover-popover sizing. The comment sheet takes the width of the row above it, and is at least 12em wide.
 
 ```css
 .zt-pdf-annotation-mark[data-zotero-annotation-type="highlight"] {

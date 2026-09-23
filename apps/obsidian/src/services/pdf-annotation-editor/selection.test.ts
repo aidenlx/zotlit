@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -105,6 +106,12 @@ function press(node: HTMLElement, { x, y }: { x: number; y: number }): void {
   node.dispatchEvent(
     new MouseEvent("pointerdown", { clientX: x, clientY: y, bubbles: true }),
   );
+}
+
+/** The comment editor the popup holds, or `null` while it holds none. */
+function commentView(root: HTMLElement): EditorView | null {
+  const dom = root.querySelector<HTMLElement>(".cm-editor");
+  return dom && EditorView.findFromDOM(dom);
 }
 
 /** One whole gesture: press and release at the same point unless told otherwise. */
@@ -476,13 +483,12 @@ it("closes a comment editor when a database switch hides its draft", () => {
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
-  const editor = popup.hoverEl.querySelector("textarea");
-  expect(editor).not.toBeNull();
+  expect(commentView(popup.hoverEl)).not.toBeNull();
 
   h.annotations.hideCommentDraft();
   h.annotations.emit("comment-draft-hidden", "WORD2222");
 
-  expect(popup.hoverEl.querySelector("textarea")).toBeNull();
+  expect(commentView(popup.hoverEl)).toBeNull();
   expect(h.annotations.submitComment).not.toHaveBeenCalled();
 });
 
@@ -495,7 +501,7 @@ it("keeps a comment editor open when an ordinary draft settles", () => {
   h.annotations.hideCommentDraft();
   h.annotations.emit("comment-draft-changed", "WORD2222");
 
-  expect(popup.hoverEl.querySelector("textarea")).not.toBeNull();
+  expect(commentView(popup.hoverEl)).not.toBeNull();
 });
 
 it("says why an edit key cannot run, rather than writing under a block", () => {
@@ -543,16 +549,18 @@ it("takes a draft typed in the Annotation View into the open editor, keeping the
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
-  const editor = popup.hoverEl.querySelector("textarea")!;
-  editor.value = "worth";
-  editor.setSelectionRange(2, 2);
+  const editor = commentView(popup.hoverEl)!;
+  editor.dispatch({
+    changes: { from: 0, insert: "worth" },
+    selection: { anchor: 2 },
+  });
 
   h.annotations.editComment("WORD2222", "worth quoting");
   h.annotations.emit("comment-draft-changed", "WORD2222");
 
-  expect(popup.hoverEl.querySelector("textarea")).toBe(editor);
-  expect(editor.value).toBe("worth quoting");
-  expect([editor.selectionStart, editor.selectionEnd]).toEqual([2, 2]);
+  expect(commentView(popup.hoverEl)).toBe(editor);
+  expect(editor.state.doc.toString()).toBe("worth quoting");
+  expect(editor.state.selection.main.head).toBe(2);
 });
 
 it("keeps the row's nodes through a mutation announced again unchanged", () => {
@@ -593,7 +601,7 @@ it("falls back to the row, and closes the editor, when no draft can be started",
   setCommenting(h.store, true);
 
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  expect(popup.hoverEl.querySelector("textarea")).toBeNull();
+  expect(commentView(popup.hoverEl)).toBeNull();
   expect(
     popup.hoverEl.querySelector("[data-zt-verb='comment']"),
   ).not.toBeNull();

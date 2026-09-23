@@ -1,7 +1,6 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import { Scope } from "obsidian";
 import type { HoverParent, PDFPageViewport } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
@@ -26,6 +25,7 @@ import type {
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
@@ -504,7 +504,9 @@ export function readerSurfaces({
     contains: (node: Node | null) => host.contains(node),
     sync: () => host.sync(),
   };
+  const app = editorApp();
   const creation = new MarkCreation({
+    app,
     containerEl,
     popup,
     attachmentKey: "RGRPDF24",
@@ -520,8 +522,8 @@ export function readerSurfaces({
     now: () => READER_NOW,
   });
   const selection = new MarkSelection({
+    app,
     containerEl,
-    scope: new Scope(),
     popup,
     marks: () =>
       store.getState().marksVisible ? groupAnnotationsByPage(held) : new Map(),
@@ -554,6 +556,7 @@ export function readerSurfaces({
   });
 
   return {
+    app,
     store,
     host,
     selection,

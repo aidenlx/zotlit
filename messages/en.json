@@ -2453,8 +2453,6 @@
   "annot_view_conflict_keep_zotero_comment": "Keep Zotero's comment",
   "annot_view_conflict_delete_anyway": "Delete anyway",
   "annot_view_conflict_discard": "Discard",
-  "pdf_mark_popup_add_comment": "Add comment in the annotation view",
-  "pdf_mark_popup_edit_comment": "Edit comment in the annotation view",
   "pdf_mark_popup_reveal": "Reveal in the annotation view",
   "pdf_mark_popup_next_in_stack": "Next mark here ({position} of {total})",
   "annot_view_write_reason_position_too_large": "This selection is too large for Zotero to store as one annotation.",
