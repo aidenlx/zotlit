@@ -345,7 +345,7 @@ A change of an Annotation's position — and, for a highlight or underline, its 
 _Avoid_: move, resize, drag (the gestures, not the edit), position edit
 
 **Creation Toolbar**:
-The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
+The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight, underline, or image), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
 **Reader Surface State**:
