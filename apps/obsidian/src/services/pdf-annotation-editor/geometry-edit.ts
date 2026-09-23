@@ -44,7 +44,7 @@ export type PdfPoint = readonly [number, number];
 export type EditablePosition = PdfRectsPosition | PdfInkPosition;
 
 /** A rect in PDF points, `[x1, y1, x2, y2]`. */
-type PdfRect = [number, number, number, number];
+export type PdfRect = [number, number, number, number];
 
 /** Whether a Geometry Edit can propose a position of this shape. */
 export function isEditablePosition(
@@ -335,6 +335,48 @@ export function proposePosition({
   else if (grip.includes("t"))
     next[3] = Math.min(Math.max(y2 + dy, y1 + min), top);
   return { ...confirmed, rects: [next] };
+}
+
+/**
+ * The rectangle an image capture drags out: the box between the press and
+ * the pointer, in PDF points on the press page, held inside that page's view
+ * box. Zotero's reader clamps to the page under the pointer; the press page
+ * is the one the capture belongs to, so it is the one held here.
+ *
+ * @param options.from where the press fell, in PDF points on its page.
+ * @param options.to where the pointer is now, measured on the same page.
+ * @param options.viewBox the press page's `[x1, y1, x2, y2]` in PDF points.
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerMove`, the `image` branch
+ */
+export function captureRect({
+  from,
+  to,
+  viewBox,
+}: {
+  from: PdfPoint;
+  to: PdfPoint;
+  viewBox: readonly number[];
+}): PdfRect {
+  const [left = 0, bottom = 0, right = 0, top = 0] = viewBox;
+  return [
+    Math.max(Math.min(from[0], to[0]), left),
+    Math.max(Math.min(from[1], to[1]), bottom),
+    Math.min(Math.max(from[0], to[0]), right),
+    Math.min(Math.max(from[1], to[1]), top),
+  ];
+}
+
+/**
+ * Whether a captured rectangle is big enough to keep as an image: both sides
+ * at least {@link MIN_IMAGE_ANNOTATION_SIZE}.
+ *
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerUp`, the `image` branch
+ */
+export function capturesImage([x1, y1, x2, y2]: readonly number[]): boolean {
+  return (
+    x2! - x1! >= MIN_IMAGE_ANNOTATION_SIZE &&
+    y2! - y1! >= MIN_IMAGE_ANNOTATION_SIZE
+  );
 }
 
 /** An arrow key, by the way it points on the page. */

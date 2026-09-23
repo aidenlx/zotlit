@@ -26,8 +26,17 @@ import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
 import { creationToolbar } from "./creation-toolbar";
 import type { CreationToolbarControl } from "./creation-toolbar";
-import { isEditablePosition, sameGeometry } from "./geometry-edit";
-import type { EditablePosition, Grip, PdfPoint } from "./geometry-edit";
+import {
+  capturesImage,
+  isEditablePosition,
+  sameGeometry,
+} from "./geometry-edit";
+import type {
+  EditablePosition,
+  Grip,
+  PdfPoint,
+  PdfRect,
+} from "./geometry-edit";
 import { markPopupRow } from "./mark-popup";
 import type { MarkPopupRowInput, MarkPopupVerb } from "./mark-popup";
 import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
@@ -65,9 +74,29 @@ export interface Adjustment {
 }
 
 /**
+ * An image capture the armed image tool is dragging out on one page. Nothing
+ * is written while it stands; a release big enough to keep creates the image
+ * once, and the rectangle stays drawn until that write settles.
+ */
+export interface Capture {
+  kind: "capture";
+  /** The page the press fell on, which holds the whole rectangle. */
+  pageIndex: number;
+  /** Where the press fell, in PDF points on that page. */
+  from: PdfPoint;
+  /** The rectangle between the press and the pointer, in PDF points. */
+  rect: PdfRect;
+  /**
+   * `pressed` until the pointer moves, `dragging` while it does, and `saving`
+   * once a release sent the rectangle to Zotero.
+   */
+  phase: "pressed" | "dragging" | "saving";
+}
+
+/**
  * The one floating surface over the reader: nothing, the selected Annotation
- * Mark, or a fresh text selection about to become one. Being one union, the
- * two popups can never both stand.
+ * Mark, a fresh text selection about to become one, or an image capture being
+ * dragged out. Being one union, the two popups can never both stand.
  */
 export type Floating =
   | { kind: "none" }
@@ -95,7 +124,8 @@ export type Floating =
       commenting: boolean;
       /** Whether a create from this selection is waiting on Zotero. */
       inFlight: boolean;
-    };
+    }
+  | Capture;
 
 export interface ReaderSurfaceState {
   /** The tool a released selection commits with, or `null` while none is armed. */
@@ -368,13 +398,76 @@ export function endAdjust(store: ReaderSurfaceStore): EditablePosition | null {
   return adjust.proposal;
 }
 
+/**
+ * Begins an image capture at a press on a page, which takes the floating
+ * surface from whatever held it. Nothing begins while a capture stands.
+ */
+export function beginCapture(
+  store: ReaderSurfaceStore,
+  { pageIndex, from }: Pick<Capture, "pageIndex" | "from">,
+): void {
+  if (store.getState().floating.kind === "capture") return;
+  store.setState({
+    floating: {
+      kind: "capture",
+      pageIndex,
+      from,
+      rect: [from[0], from[1], from[0], from[1]],
+      phase: "pressed",
+    },
+  });
+}
+
+/**
+ * Takes the rectangle the pointer now drags out. A move to the held
+ * rectangle changes nothing, so no subscriber redraws; a saving capture takes
+ * no more moves.
+ */
+export function moveCapture(store: ReaderSurfaceStore, rect: PdfRect): void {
+  const { floating } = store.getState();
+  if (floating.kind !== "capture" || floating.phase === "saving") return;
+  if (
+    floating.phase === "dragging" &&
+    floating.rect.every((value, index) => value === rect[index])
+  )
+    return;
+  store.setState({ floating: { ...floating, rect, phase: "dragging" } });
+}
+
+/**
+ * Ends the capture at a release. A rectangle big enough to keep is held,
+ * `saving`, while the caller creates it; any other ends the capture.
+ *
+ * @returns the rectangle to create, or `null` for a release that keeps none.
+ */
+export function endCapture(store: ReaderSurfaceStore): PdfRect | null {
+  const { floating } = store.getState();
+  if (floating.kind !== "capture" || floating.phase === "saving") return null;
+  if (!capturesImage(floating.rect)) {
+    cancelCapture(store);
+    return null;
+  }
+  store.setState({ floating: { ...floating, phase: "saving" } });
+  return floating.rect;
+}
+
+/** Ends the capture, whatever phase it stands in, and draws nothing for it. */
+export function cancelCapture(store: ReaderSurfaceStore): void {
+  if (store.getState().floating.kind === "capture") clearFloating(store);
+}
+
 /** Opens or closes the comment editor or sheet of whatever is floating. */
 export function setCommenting(
   store: ReaderSurfaceStore,
   commenting: boolean,
 ): void {
   const { floating } = store.getState();
-  if (floating.kind === "none" || floating.commenting === commenting) return;
+  if (
+    floating.kind === "none" ||
+    floating.kind === "capture" ||
+    floating.commenting === commenting
+  )
+    return;
   store.setState({ floating: { ...floating, commenting } });
 }
 
@@ -592,8 +685,15 @@ export function selectFloatingHead({
   return {
     kind: floating.kind,
     key: floating.kind === "selected" ? floating.key : null,
-    commenting: floating.kind !== "none" && floating.commenting,
+    commenting: "commenting" in floating && floating.commenting,
   };
+}
+
+/** The image capture being dragged out, or `null` while none stands. */
+export function selectCapture({
+  floating,
+}: ReaderSurfaceState): Capture | null {
+  return floating.kind === "capture" ? floating : null;
 }
 
 /** The selected Annotation's Indexed Key, or `null` while none is selected. */

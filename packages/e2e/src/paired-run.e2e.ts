@@ -985,6 +985,187 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
       }, 120000);
 
+      describe("the image tool on the first page", () => {
+        const pdfView = `app.workspace.getLeavesOfType('pdf').map(({view})=>view).find((view)=>view.file?.path===${JSON.stringify(attachmentPath)}&&view.containerEl.getBoundingClientRect().width>0)`;
+        const tool = `${pdfView}.containerEl.querySelector('[data-zt-tool="image"]')`;
+        /** Dispatches one pointer event as the browser would, at a client point. */
+        const fire = `const fire=(type,x,y,target)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
+        /**
+         * A PDF point on page one as a client point, through the overlay the
+         * page draws: its box on screen over its own `viewBox`, which is the
+         * frame a drag on the page is measured in.
+         */
+        const clientOf = `const clientOf=(x,y)=>{const overlay=${pdfView}.viewer.child.getPage(1).div.querySelector('.zt-pdf-annotation-overlay');const box=overlay.getBoundingClientRect();const view=overlay.viewBox.baseVal;return {x:box.left+(x-view.x)*box.width/view.width,y:box.top+(view.y+view.height-y)*box.height/view.height};};`;
+
+        /** The Attachment's Annotations as Zotero holds them, by key. */
+        const annotationKeys = () =>
+          rdp.json<string[]>(
+            `${ATTACHMENT_ITEM}.getAnnotations().map(({ key }) => key)`,
+          );
+
+        /**
+         * Brings page one on screen in a window that lays it out, and arms the
+         * image tool from the Creation Toolbar.
+         */
+        async function armOnFirstPage(): Promise<void> {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              "(function(){const electronWindow=require('@electron/remote').getCurrentWindow();electronWindow.show();electronWindow.moveTop();return document.visibilityState;})()",
+              { expected: "visible" },
+            ),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return String(!!view.viewer.child.getPage(1)?.div.querySelector('.zt-pdf-annotation-overlay'));})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){const tool=${tool};if(tool.getAttribute('aria-pressed')!=='true')tool.click();return tool.getAttribute('aria-pressed');})()`,
+            ),
+          ).toBe("true");
+        }
+
+        /**
+         * Drags a rectangle between two PDF points on page one, clear of every
+         * seeded mark, and releases it.
+         */
+        const drag = (
+          [x1, y1]: readonly [number, number],
+          [x2, y2]: readonly [number, number],
+        ) =>
+          obJson<{ preview: string | null }>(
+            `(function(){${fire}${clientOf}const from=clientOf(${x1},${y1}),to=clientOf(${x2},${y2});const container=${pdfView}.containerEl;const node=fire('pointerdown',from.x,from.y);fire('pointermove',(from.x+to.x)/2,(from.y+to.y)/2,container);fire('pointermove',to.x,to.y,container);const preview=container.querySelector('.zt-pdf-capture-rect')?.getAttribute('opacity')??null;fire('pointerup',to.x,to.y,container);fire('click',to.x,to.y,node);return JSON.stringify({preview});})()`,
+          );
+
+        it("creates an image Annotation from a rectangle dragged on the page", async () => {
+          await armOnFirstPage();
+          const before = await annotationKeys();
+
+          // Drawn in full while the pointer is down: both sides pass ten points.
+          expect(await drag([80, 220], [220, 120])).toEqual({ preview: "1" });
+
+          let fresh: string[] = [];
+          expect(
+            await waitFor(async () => {
+              fresh = (await annotationKeys()).filter(
+                (key) => !before.includes(key),
+              );
+              return fresh.length > 0;
+            }),
+          ).toBe(true);
+          expect(fresh).toHaveLength(1);
+          const capturedKey = fresh[0]!;
+          cleanup.defer(async () => {
+            await rdp.json(`(async () => {
+              const item = Zotero.Items.getByLibraryAndKey(
+                Zotero.Libraries.userLibraryID,
+                ${JSON.stringify(capturedKey)},
+              );
+              if (item) await item.eraseTx();
+              return "erased";
+            })()`);
+          });
+
+          // Zotero holds an image at the dragged rect, read off the Local API.
+          const stored = (await (
+            await zoteroFetch(api, `users/0/items/${capturedKey}`, {
+              headers: { "Zotero-Server-ID": serverID },
+            })
+          ).json()) as {
+            data: {
+              annotationType: string;
+              annotationPosition: string;
+              annotationPageLabel: string;
+              annotationSortIndex: string;
+              annotationComment: string;
+            };
+          };
+          expect(stored.data).toMatchObject({
+            annotationType: "image",
+            annotationPageLabel: "1",
+            annotationComment: "",
+          });
+          const position = JSON.parse(stored.data.annotationPosition) as {
+            pageIndex: number;
+            rects: number[][];
+          };
+          expect(position.pageIndex).toBe(0);
+          expect(position.rects, stored.data.annotationPosition).toHaveLength(
+            1,
+          );
+          [80, 120, 220, 220].forEach((value, index) =>
+            expect(
+              position.rects[0]![index],
+              stored.data.annotationPosition,
+            ).toBeCloseTo(value, 2),
+          );
+          // The Sort Index is the one the reader's text structure gives the
+          // stored rect.
+          const recomputed = await obJson<string>(
+            `(async()=>{const binding=app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${JSON.stringify(position)}));})()`,
+          );
+          expect(stored.data.annotationSortIndex).toBe(recomputed);
+
+          // Zotero's open Reader holds it.
+          expect(
+            await waitFor(() => readerHoldsAnnotation(rdp, capturedKey)),
+          ).toBe(true);
+          // The page draws its mark, and the tool stood down after one capture.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(capturedKey)}]'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          expect(
+            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
+          ).toBe("false");
+          // The card shows the Excerpt Image, decoded.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(capturedKey)}]')).find(Boolean);const img=card?.querySelector('img');return String(!!img&&img.complete&&img.naturalWidth>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("creates nothing from a rectangle released under ten points on a side", async () => {
+          await armOnFirstPage();
+          const before = await annotationKeys();
+
+          // Nine points wide: drawn faint, and released to nothing. Clear of
+          // the image the create above may have left until the block ends.
+          expect(await drag([80, 400], [89, 300])).toEqual({ preview: "0.2" });
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)}).settled;return true;})()`,
+          );
+
+          expect(await annotationKeys()).toEqual(before);
+          expect(
+            await obEval(
+              vaultId!,
+              `JSON.stringify({armed:${tool}.getAttribute('aria-pressed'),preview:!!${pdfView}.containerEl.querySelector('.zt-pdf-capture-rect')})`,
+            ),
+          ).toBe(JSON.stringify({ armed: "true", preview: false }));
+          // Escape stands the tool down, so the block goes on unarmed.
+          await obEval(
+            vaultId!,
+            `(function(){${pdfView}.containerEl.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          );
+          expect(
+            await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
+          ).toBe("false");
+        }, 120000);
+      });
+
       it("saves a Geometry Edit on the seeded image through one repository write", async () => {
         const imageKey = "FDRFQ7C2";
         const path = `users/0/items/${imageKey}`;

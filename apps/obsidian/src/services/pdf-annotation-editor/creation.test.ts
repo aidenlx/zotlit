@@ -16,10 +16,12 @@ import { pressSubmit } from "@/views/annot-view/__fixtures__/editor-app";
 import {
   annotation,
   annotationEdits,
+  pageView,
   READER_NOW as NOW,
   readerSurfaces,
 } from "./__fixtures__";
-import { ingestCapability } from "./reader-surface-state";
+import { arm, ingestCapability } from "./reader-surface-state";
+import type { OverlayPageView } from "./render";
 
 /** The Fixture's own underline on `rougier-2014.pdf`, in PDF points. */
 const QUOTE = [
@@ -753,4 +755,210 @@ it("drops the waiting selection once its page leaves the screen", async () => {
 
   expect(open.popup()).toBeNull();
   expect(open.surfaceState.getState().floating).toEqual({ kind: "none" });
+});
+
+it("refuses an image create from a text selection, and offers the popup instead", async () => {
+  using open = reader();
+  arm(open.surfaceState, "image");
+
+  await open.selectText();
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.popup()).not.toBeNull();
+});
+
+/**
+ * One reader with the image tool armed from its toolbar, over a US Letter page
+ * laid out at its own size at the client origin: a client point `(x, y)` is
+ * the PDF point `(x, 792 - y)`. The highlight on it draws round client
+ * `(300, 177)`.
+ */
+function imageReader(capability?: EditingCapability) {
+  vi.useFakeTimers();
+  const containerEl = document.body.createDiv();
+  const page = pageView();
+  containerEl.append(page.div);
+  page.div.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      top: 0,
+      right: 612,
+      bottom: 792,
+      width: 612,
+      height: 792,
+    }) as DOMRect;
+  vi.spyOn(window, "getSelection").mockReturnValue({
+    rangeCount: 0,
+    isCollapsed: true,
+    removeAllRanges: () => undefined,
+  } as never);
+  const drafts: Omit<AnnotationDraft, "parentKey">[] = [];
+  const structure = {
+    sortIndex: vi.fn(async () => "00000|000100|00100"),
+    pageLabel: vi.fn(async () => "1"),
+  };
+  const surfaces = readerSurfaces({
+    containerEl,
+    page: page as unknown as OverlayPageView,
+    records: [
+      annotation("PUPR5FG5", "highlight", {
+        pageIndex: 0,
+        rects: [[265.833, 611.202, 374.503, 620.019]],
+      }),
+    ],
+    capability,
+    structure: structure as never,
+    annotations: {
+      ...annotationEdits(),
+      createAnnotation: vi.fn(
+        async (
+          _key: string,
+          draft: Omit<AnnotationDraft, "parentKey">,
+        ): Promise<CreateOutcome> => {
+          drafts.push(draft);
+          return { kind: "created", annotationKey: "MADE2345" };
+        },
+      ),
+    },
+  });
+  const slot = document.body.createDiv();
+  surfaces.creation.mountToolbar(slot);
+  // Armed as a researcher arms it, from the toolbar; the arm itself stands
+  // outside any block, which only the capture has to answer.
+  arm(surfaces.store, "image");
+
+  const pointer = (
+    type: "pointerdown" | "pointermove" | "pointerup",
+    [x, y]: [number, number],
+  ) =>
+    (type === "pointerdown" ? page.div : containerEl).dispatchEvent(
+      new PointerEvent(type, {
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+        button: 0,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  return {
+    ...surfaces,
+    containerEl,
+    slot,
+    drafts,
+    structure,
+    pointer,
+    /** One drag from a client point to another, released there. */
+    async drag(from: [number, number], to: [number, number]) {
+      pointer("pointerdown", from);
+      pointer("pointermove", to);
+      pointer("pointerup", to);
+      await surfaces.creation.created;
+    },
+    key(name: string) {
+      containerEl.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: name,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    [Symbol.dispose]() {
+      surfaces[Symbol.dispose]();
+      containerEl.remove();
+    },
+  };
+}
+
+it("creates nothing from a capture released under ten points on a side", async () => {
+  using open = imageReader();
+
+  await open.drag([100, 100], [109, 300]);
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    floating: { kind: "none" },
+    armed: "image",
+  });
+});
+
+it("creates an image from a capture of ten points or more, then stands the tool down", async () => {
+  using open = imageReader();
+
+  await open.drag([300, 292], [100, 100]);
+
+  const position = { pageIndex: 0, rects: [[100, 500, 300, 692]] };
+  expect(open.structure.sortIndex).toHaveBeenCalledWith(position);
+  expect(open.structure.pageLabel).toHaveBeenCalledWith(0, expect.any(Array));
+  expect(open.drafts).toEqual([
+    {
+      type: "image",
+      color: open.store.getState().colors.image,
+      comment: "",
+      text: "",
+      pageLabel: "1",
+      sortIndex: "00000|000100|00100",
+      position,
+    },
+  ]);
+  expect(open.revealed).toEqual(["MADE2345"]);
+  expect(open.store.getState()).toMatchObject({
+    floating: { kind: "none" },
+    armed: null,
+  });
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="image"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("cancels a capture on Escape and keeps the tool; a second Escape stands it down", async () => {
+  using open = imageReader();
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [300, 300]);
+  open.key("Escape");
+  open.pointer("pointerup", [300, 300]);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    floating: { kind: "none" },
+    armed: "image",
+  });
+  open.key("Escape");
+  expect(open.store.getState().armed).toBeNull();
+});
+
+it("reports a press while editing is not live, and captures nothing", async () => {
+  using open = imageReader({
+    kind: "read-only",
+    reason: "zotero-unavailable",
+  });
+
+  await open.drag([100, 100], [300, 300]);
+
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("leaves a press on a mark to the mark while the image tool is armed", async () => {
+  using open = imageReader();
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().floating).toMatchObject({
+    kind: "selected",
+    key: "PUPR5FG5",
+  });
 });

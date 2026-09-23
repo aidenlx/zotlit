@@ -66,6 +66,12 @@ export const themeHook = {
    */
   pdfAnnotationNoteCrease: "zt-pdf-annotation-note-crease",
   /**
+   * The rectangle the armed image tool drags out on a page, in the tool's own
+   * colour, faint while a side is under ten points. It stands in the page's
+   * {@link themeHook.pdfAnnotationOverlay} until the capture ends.
+   */
+  pdfCaptureRect: "zt-pdf-capture-rect",
+  /**
    * The always-present Editing Capability affordance in the PDF reader's own
    * toolbar. `data-zt-capability-tone` names the state it is showing —
    * `ready`, `action`, `busy` or `warning`.
@@ -77,7 +83,8 @@ export const themeHook = {
    * carries `data-zt-tool`. Each tool of its tool group is split in two — the
    * toggle under the tool's own name and the chevron that opens its colours
    * under `<tool>-color` — which today is `highlight`, `highlight-color`,
-   * `underline` and `underline-color`. `visibility` stands outside the group.
+   * `underline`, `underline-color`, `image` and `image-color`. `visibility`
+   * stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",
   /**

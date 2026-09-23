@@ -23,7 +23,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
-import { themeHook } from "@/lib/theme-hooks";
 import * as toast from "@/lib/toast";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
@@ -81,6 +80,7 @@ import type {
 import {
   distance,
   markAnchor,
+  marksAtPoint,
   pagePointOf,
   resolveMarkClick,
 } from "./hit-test";
@@ -109,14 +109,17 @@ import type {
   ReaderSurfaceStore,
 } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
-import { markTargets, pageUnitSize } from "./render";
+import { markTargets } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
-import { applyTransform, inverseTransform } from "./selection-capture";
+import { applyTransform } from "./selection-capture";
 import {
   colorMenu,
+  drawnBoxOf,
   onScreen,
-  pageContentBox,
+  pageBoxOf,
+  pdfPointOf,
   selectionCollapsed,
+  unitsOf,
 } from "./surface";
 import type { ToolColorStore } from "./tools";
 
@@ -272,11 +275,20 @@ export class MarkSelection implements Disposable {
       registerDomEvent(containerEl, "pointerdown", (event) => {
         this.#pressedAt = { x: event.clientX, y: event.clientY };
         this.#pressGrip(event);
+        // A press no grip took is the armed image tool's, unless a mark
+        // lies under it.
+        if (!this.#dragging)
+          this.#deps.creation?.grab(event, {
+            onMark: () => this.#onMark(event),
+          });
       }),
     );
     this.#surfaces.use(
       registerDomEvent(containerEl, "pointermove", (event) => {
-        if (event.pointerId !== this.#dragging?.pointerId) return;
+        if (event.pointerId !== this.#dragging?.pointerId) {
+          this.#deps.creation?.move(event);
+          return;
+        }
         this.#dragging.client = { x: event.clientX, y: event.clientY };
         this.#propose();
       }),
@@ -284,17 +296,21 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl, "pointerup", (event) => {
         if (event.pointerId === this.#dragging?.pointerId) this.#release();
+        else this.#deps.creation?.release(event);
       }),
     );
-    // A drag on a grip moves the mark; the browser selects no text under it.
+    // A drag on a grip moves the mark, and an image capture draws a
+    // rectangle; the browser selects no text under either.
     this.#surfaces.use(
       registerDomEvent(containerEl, "selectstart", (event) => {
-        if (this.#dragging) event.preventDefault();
+        if (this.#dragging || this.#deps.creation?.capturing)
+          event.preventDefault();
       }),
     );
     this.#surfaces.use(
       registerDomEvent(containerEl, "pointercancel", (event) => {
         if (event.pointerId === this.#dragging?.pointerId) this.#cancelDrag();
+        else this.#deps.creation?.cancel(event);
       }),
     );
     this.#surfaces.use(
@@ -1098,6 +1114,12 @@ export class MarkSelection implements Disposable {
     return selectSelectedRowInput(this.#state())?.annotation ?? null;
   }
 
+  /** Whether an Annotation Mark lies under a press. */
+  #onMark(event: PointerEvent): boolean {
+    const page = this.#pageUnder({ x: event.clientX, y: event.clientY });
+    return page !== null && marksAtPoint(page.targets, page.at).length > 0;
+  }
+
   /** What is selected now, and where the click that selected it fell. */
   #previous(): MarkSelectionPoint | null {
     const key = this.#selectedKey();
@@ -1163,49 +1185,11 @@ function rectsPositionOf(selected: SelectedText): EditablePosition {
   };
 }
 
-function pageBoxOf(page: OverlayPageView): PageBox {
-  const rect = pageContentBox(page.div);
-  const unit = pageUnitSize(page);
-  return {
-    left: rect.left,
-    top: rect.top,
-    width: rect.width,
-    height: rect.height,
-    unitWidth: unit.width,
-    unitHeight: unit.height,
-  };
-}
-
-/**
- * The page as the overlay is laid out on it, which is what a drag has to track
- * to the pixel. The page's border widths are rounded to whole pixels, so the
- * box inside them can be a pixel off the overlay's; the page box stands in
- * while no overlay is drawn.
- */
-function drawnBoxOf(page: OverlayPageView): PageBox {
-  const box = pageBoxOf(page);
-  const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
-  if (!overlay) return box;
-  const { left, top, width, height } = overlay.getBoundingClientRect();
-  return { ...box, left, top, width, height };
-}
-
 /** How far a client point lies outside a page's drawn box; `0` inside it. */
 function boxDistance(box: PageBox, { x, y }: Point): number {
   const dx = Math.max(box.left - x, 0, x - (box.left + box.width));
   const dy = Math.max(box.top - y, 0, y - (box.top + box.height));
   return Math.hypot(dx, dy);
-}
-
-/**
- * Where a client point falls on a page, in the page's own units, however far
- * outside the page a drag has carried it.
- */
-function unitsOf(box: PageBox, client: Point): Point {
-  return {
-    x: ((client.x - box.left) * box.unitWidth) / box.width,
-    y: ((client.y - box.top) * box.unitHeight) / box.height,
-  };
 }
 
 /**
@@ -1216,12 +1200,6 @@ function unitPointOf(page: OverlayPageView, [x, y]: PdfPoint): Point {
   const { transform, scale } = page.viewport;
   const [px, py] = applyTransform(transform, x, y);
   return { x: px / scale, y: py / scale };
-}
-
-/** The inverse of {@link unitPointOf}. */
-function pdfPointOf(page: OverlayPageView, { x, y }: Point): PdfPoint {
-  const { transform, scale } = page.viewport;
-  return applyTransform(inverseTransform(transform)!, x * scale, y * scale);
 }
 
 /**

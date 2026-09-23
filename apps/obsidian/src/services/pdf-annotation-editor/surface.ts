@@ -1,14 +1,19 @@
 // What the reader's two gesture modules both read off the surface: whether a
-// point is on screen, whether the window holds a text selection, and Zotero's
-// palette as a menu.
+// point is on screen, where a client point falls on a page, whether the window
+// holds a text selection, and Zotero's palette as a menu.
 //
 // Creation and selection ask the same questions of the same view, so the answer
 // is written once here and neither can drift from the other.
 import { Menu } from "obsidian";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
+import { themeHook } from "@/lib/theme-hooks";
 
-import type { Point } from "./hit-test";
+import type { PdfPoint } from "./geometry-edit";
+import type { PageBox, Point } from "./hit-test";
+import { pageUnitSize } from "./render";
+import type { OverlayPageView } from "./render";
+import { applyTransform, inverseTransform } from "./selection-capture";
 
 /**
  * Whether a client point falls inside the view's own box. A view with no box at
@@ -76,4 +81,52 @@ export function colorMenu(
   const menu = new Menu();
   buildColorMenu(menu, { color: current, onSelect: onPick });
   return menu;
+}
+
+/** The page's padding box, beside the same page measured in its own units. */
+export function pageBoxOf(page: OverlayPageView): PageBox {
+  const rect = pageContentBox(page.div);
+  const unit = pageUnitSize(page);
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    unitWidth: unit.width,
+    unitHeight: unit.height,
+  };
+}
+
+/**
+ * The page as the overlay is laid out on it, which is what a drag has to track
+ * to the pixel. The page's border widths are rounded to whole pixels, so the
+ * box inside them can be a pixel off the overlay's; the page box stands in
+ * while no overlay is drawn.
+ */
+export function drawnBoxOf(page: OverlayPageView): PageBox {
+  const box = pageBoxOf(page);
+  const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  if (!overlay) return box;
+  const { left, top, width, height } = overlay.getBoundingClientRect();
+  return { ...box, left, top, width, height };
+}
+
+/**
+ * Where a client point falls on a page, in the page's own units, however far
+ * outside the page a drag has carried it.
+ */
+export function unitsOf(box: PageBox, client: Point): Point {
+  return {
+    x: ((client.x - box.left) * box.unitWidth) / box.width,
+    y: ((client.y - box.top) * box.unitHeight) / box.height,
+  };
+}
+
+/**
+ * A point in the page's own units as a PDF point: the viewport's transform,
+ * read at scale 1 and inverted.
+ */
+export function pdfPointOf(page: OverlayPageView, { x, y }: Point): PdfPoint {
+  const { transform, scale } = page.viewport;
+  return applyTransform(inverseTransform(transform)!, x * scale, y * scale);
 }

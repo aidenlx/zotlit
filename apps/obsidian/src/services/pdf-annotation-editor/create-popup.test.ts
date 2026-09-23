@@ -10,17 +10,19 @@ import type { MutationState } from "@/services/annotation-repository/write";
 import { createPopupRow, renderCreatePopupRow } from "./create-popup";
 import type { CreatePopupAction, CreatePopupControl } from "./create-popup";
 import { resolveToolColors } from "./tools";
+import type { MarkTool } from "./tools";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
 const COLORS = resolveToolColors({
   highlight: "#ffd400",
   underline: "#2ea8e5",
+  image: "#ff6666",
 });
 
 function row(
   overrides: {
-    armed?: "highlight" | "underline" | null;
+    armed?: MarkTool | null;
     capability?: EditingCapability;
     mutation?: MutationState;
     commenting?: boolean;
@@ -78,6 +80,19 @@ it("commits with highlight while nothing is armed", () => {
   const armed = row().filter(({ pressed }) => pressed === true);
 
   expect(armed.map(({ color }) => color)).toEqual([COLORS.highlight]);
+});
+
+it("commits with highlight while the image tool is armed, since a selection is text", () => {
+  const pressed = row({ armed: "image" }).filter(
+    ({ pressed }) => pressed === true,
+  );
+
+  expect(pressed.map(({ id, color }) => [id, color])).toEqual([
+    [
+      `color-${ANNOTATION_COLORS.indexOf(COLORS.highlight) + 1}`,
+      COLORS.highlight,
+    ],
+  ]);
 });
 
 it.each([

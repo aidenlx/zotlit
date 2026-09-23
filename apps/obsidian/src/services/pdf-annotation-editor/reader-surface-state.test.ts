@@ -14,12 +14,15 @@ import type { EditablePosition } from "./geometry-edit";
 import {
   arm,
   beginAdjust,
+  beginCapture,
   cancelAdjust,
+  cancelCapture,
   captureSelection,
   clearFloating,
   createReaderSurfaceState,
   dropRecord,
   endAdjust,
+  endCapture,
   hideCommentDraft,
   ingestAnnotations,
   ingestCapability,
@@ -28,13 +31,16 @@ import {
   ingestRecords,
   listenAnnotationEvents,
   moveAdjust,
+  moveCapture,
   sameCapability,
   sameFlat,
   sameFlatList,
   selectAdjust,
   selectCapabilityAffordance,
+  selectCapture,
   selectCreateRow,
   selectCreationToolbar,
+  selectFloatingHead,
   selectMark,
   selectSelectedRow,
   setCommenting,
@@ -720,4 +726,84 @@ it("carries a text range's quoted text with its proposal", () => {
   });
   expect(endAdjust(store)).toEqual(longer);
   expect(selectAdjust(store.getState())?.text).toBe("the longer quote");
+});
+
+/** A store with an image capture pressed on page one at (100, 500). */
+function capturing() {
+  const store = reader();
+  beginCapture(store, { pageIndex: 0, from: [100, 500] });
+  return store;
+}
+
+it("keeps nothing from a capture released under ten points on a side", () => {
+  const store = capturing();
+  moveCapture(store, [100, 491, 300, 500]);
+
+  expect(endCapture(store)).toBeNull();
+  expect(store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("keeps nothing from a capture released where it was pressed", () => {
+  const store = capturing();
+
+  expect(endCapture(store)).toBeNull();
+  expect(selectCapture(store.getState())).toBeNull();
+});
+
+it("begins no second capture while one stands", () => {
+  const store = capturing();
+  moveCapture(store, [100, 300, 300, 500]);
+
+  beginCapture(store, { pageIndex: 1, from: [5, 5] });
+
+  expect(selectCapture(store.getState())).toMatchObject({
+    pageIndex: 0,
+    rect: [100, 300, 300, 500],
+  });
+});
+
+it("holds a released capture while it saves, and takes no more moves", () => {
+  const store = capturing();
+  moveCapture(store, [100, 300, 300, 500]);
+
+  expect(endCapture(store)).toEqual([100, 300, 300, 500]);
+  moveCapture(store, [100, 400, 300, 500]);
+
+  expect(selectCapture(store.getState())).toEqual({
+    kind: "capture",
+    pageIndex: 0,
+    from: [100, 500],
+    rect: [100, 300, 300, 500],
+    phase: "saving",
+  });
+});
+
+it("notifies no one for a capture move that changes nothing", () => {
+  const store = capturing();
+  const heard = vi.fn();
+  store.subscribe(selectCapture, heard);
+
+  moveCapture(store, [100, 300, 300, 500]);
+  moveCapture(store, [100, 300, 300, 500]);
+
+  expect(heard).toHaveBeenCalledTimes(1);
+});
+
+it("takes the floating surface from a selected mark, and cancels to nothing", () => {
+  const store = reader();
+  ingestRecords(store, [PARAGRAPH, WORD]);
+  selectMark(store, "WORD2222");
+
+  beginCapture(store, { pageIndex: 0, from: [100, 500] });
+  expect(selectFloatingHead(store.getState())).toEqual({
+    kind: "capture",
+    key: null,
+    commenting: false,
+  });
+  // A capture has no comment to open.
+  setCommenting(store, true);
+  expect(selectFloatingHead(store.getState()).commenting).toBe(false);
+
+  cancelCapture(store);
+  expect(store.getState().floating).toEqual({ kind: "none" });
 });

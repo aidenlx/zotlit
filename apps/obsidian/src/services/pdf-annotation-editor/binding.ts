@@ -60,6 +60,7 @@ import {
   sameFlat,
   selectAdjust,
   selectCapabilityAffordance,
+  selectCapture,
   selectSelectedKey,
 } from "./reader-surface-state";
 import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
@@ -67,6 +68,7 @@ import {
   groupAnnotationsByPage,
   patchSelectedMark,
   renderAnnotationOverlay,
+  renderCapture,
   scrollMarkIntoView,
   withPosition,
 } from "./render";
@@ -207,6 +209,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
   readonly #painted = new Set<number>();
+  /** The page an image capture's rectangle was last drawn on. */
+  #capturedOn: number | null = null;
   /** The pages the selected mark's last in-place redraw drew it on. */
   #patchedOn: { key: string; pages: ReadonlySet<number> } | null = null;
   #attachment: AttachmentResolution = { kind: "pending" };
@@ -685,6 +689,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         // refresh it started has answered.
         void this.refreshed.then(() => this.#selection?.select(annotationKey));
       },
+      reportBlockedGesture: () => this.#editGesture(),
       renderCapability: (slot) => {
         this.#capabilitySlot = slot;
         this.#drawCapability(selectCapabilityAffordance(state.getState()));
@@ -731,6 +736,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       }),
     );
     this.#surfaces.defer(() => this.#showAdjusting(null));
+    // An image capture draws its rectangle on the page it was pressed on.
+    this.#surfaces.defer(
+      state.subscribe(selectCapture, () => this.#drawCapture()),
+    );
     this.#surfaces.defer(
       state.subscribe(
         ({ capability }) => editingLive(capability),
@@ -868,6 +877,27 @@ export class PdfViewBinding implements Disposable, HoverParent {
         : pagesDrawing(this.#marks, key);
     for (const pageIndex of before.difference(drawn)) this.#paint(pageIndex);
     this.#patchedOn = { key, pages: drawn };
+  }
+
+  /**
+   * Draws the image capture's rectangle on its page, and takes it off the
+   * page it was last drawn on once it ends.
+   */
+  #drawCapture(): void {
+    const controller = this.#controller;
+    const state = this.#surfaceState?.getState();
+    const capture = state ? selectCapture(state) : null;
+    const held = this.#capturedOn;
+    this.#capturedOn = capture?.pageIndex ?? null;
+    if (!controller) return;
+    if (held !== null && held !== capture?.pageIndex) {
+      const page = pageViewOf(controller, held + 1);
+      if (page) renderCapture(page, null);
+    }
+    if (!capture || !state) return;
+    const page = pageViewOf(controller, capture.pageIndex + 1);
+    if (page)
+      renderCapture(page, { rect: capture.rect, color: state.colors.image });
   }
 
   /**
@@ -1068,6 +1098,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
       selected: this.#selection?.selected,
       handles: this.#handles(),
     });
+    // The rebuild took the capture's rectangle with the overlay.
+    if (this.#capturedOn === pageIndex) this.#drawCapture();
     if (annotations.length > 0) this.#painted.add(pageIndex);
     else this.#painted.delete(pageIndex);
   }
