@@ -547,6 +547,28 @@ it("draws a selected highlight's two end strips, three pixels either side of its
   expect(markIn(page, "PUPR5FG5").dataset.ztGrip).toBeUndefined();
 });
 
+it("turns a selected range's strips, and their cursor, with the text under them", () => {
+  // `RECT` spans x 100–200 and y 700–720; text turned a quarter turn reads up
+  // the page, so at scale 2 the start's strip is three units high across the
+  // rect's foot, y 792 - 700 = 92 in page units, and the end's across its
+  // head, at 72.
+  const page = pageView(viewport({ scale: 2 }));
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+    selected: new Set(["PUPR5FG5"]),
+    handles: true,
+    textRotation: () => 90,
+  });
+
+  expect(handlesIn(page)).toEqual({
+    start: [100, 90.5, 100, 3],
+    end: [100, 70.5, 100, 3],
+  });
+  const end = page.div.querySelector<SVGElement>('[data-zt-grip="end"]')!;
+  expect(end.dataset.ztCursor).toBe("ns-resize");
+});
+
 it("draws a spilled-over range's start on its first page and its end on the next", () => {
   const spilled = record("PUPR5FG5", "highlight", {
     pageIndex: 0,

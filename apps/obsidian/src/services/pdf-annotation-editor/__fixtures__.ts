@@ -484,6 +484,8 @@ export interface ReaderSurfacesOptions {
   sortIndex?: (position: PdfPosition) => Promise<string | null>;
   /** The range a text range's dragged end reaches. */
   adjustRange?: MarkSelectionDeps["adjustRange"];
+  /** The text rotation a range's handles lie across. */
+  textRotation?: MarkSelectionDeps["textRotation"];
 }
 
 /**
@@ -500,6 +502,7 @@ export function readerSurfaces({
   structure = null,
   sortIndex = async () => null,
   adjustRange = async () => null,
+  textRotation = () => 0,
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
   const colors = toolColors();
@@ -559,6 +562,7 @@ export function readerSurfaces({
     creation,
     sortIndex,
     adjustRange,
+    textRotation,
     refreshed: () => Promise.resolve(),
     now: () => READER_NOW,
   });

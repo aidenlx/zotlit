@@ -76,6 +76,7 @@ import type {
   Grip,
   PdfPoint,
   RangeGrip,
+  TextRotation,
 } from "./geometry-edit";
 import {
   distance,
@@ -214,6 +215,8 @@ export interface MarkSelectionDeps {
    * open, or for a point no range can be placed from.
    */
   adjustRange: (adjustment: RangeAdjustment) => Promise<SelectedText | null>;
+  /** The text rotation a text range's handles lie across, as they are drawn. */
+  textRotation: TextRotation;
   /**
    * Settles when the marks match the last read the view started — the read a
    * saved Geometry Edit announced, which the mark then draws.
@@ -675,6 +678,7 @@ export class MarkSelection implements Disposable {
     const handles = rangeHandles(
       record,
       RANGE_HANDLE_PADDING * unitsPerPixel(page),
+      this.#deps.textRotation,
     );
     const pointOn = (index: number): PdfPoint | null => {
       const on = this.#deps.pageAt(index);

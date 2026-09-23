@@ -46,6 +46,9 @@ export type EditablePosition = PdfRectsPosition | PdfInkPosition;
 /** A rect in PDF points, `[x1, y1, x2, y2]`. */
 export type PdfRect = [number, number, number, number];
 
+/** The text rotation under a rect on a page, in degrees. */
+export type TextRotation = (pageIndex: number, rect: PdfRect) => number;
+
 /** Whether a Geometry Edit can propose a position of this shape. */
 export function isEditablePosition(
   position: AnnotationPosition,
@@ -155,18 +158,22 @@ export function handleLayout({
  * next page where the range spilled onto it. The body carries none, since a
  * press there is the text selection's.
  *
- * Zotero's reader turns each strip by the text rotation of the characters
- * under its rect. The Structured Characters are read asynchronously, and a
- * handle is drawn and hit synchronously, so these lie as for upright text:
- * on the rect's left and right edges.
+ * Each strip lies across the text's own direction, as Zotero's reader turns
+ * it by the text rotation of the characters under its rect: upright text
+ * reads left to right, so its start stands on the rect's left edge; text
+ * turned a quarter turn reads up the page, so its start stands on the rect's
+ * foot. Zotero adds the page's rotation because it lays the strip out on
+ * screen; this lays it out in PDF points, which the page's rotation turns as
+ * it turns the rect.
  *
  * @param padding half the strip's width, in PDF points.
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, the `highlight` and `underline` branch
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, the `highlight` and `underline` branch
  */
 export function rangeHandles(
   { type, position }: Pick<AnnotationRecord, "type" | "position">,
   padding: number,
-): { grip: RangeGrip; pageIndex: number; rect: PdfRect }[] {
+  rotationOf: TextRotation,
+): { grip: RangeGrip; pageIndex: number; rect: PdfRect; rotation: number }[] {
   if (type !== "highlight" && type !== "underline") return [];
   if (position.kind !== "pdf-rects") return [];
   const first = position.rects[0];
@@ -175,23 +182,28 @@ export function rangeHandles(
     : undefined;
   const last = (spilled ?? position.rects).at(-1);
   if (!first || !last) return [];
-  const strip = (x: number, [, y1, , y2]: readonly number[]): PdfRect => [
-    x - padding,
-    y1!,
-    x + padding,
-    y2!,
-  ];
+  const handle = (
+    grip: RangeGrip,
+    pageIndex: number,
+    held: readonly number[],
+  ) => {
+    const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = held;
+    const rotation = rotationOf(pageIndex, [x1, y1, x2, y2]);
+    // The edge the text starts from, or, for the end, the one it runs to.
+    const edge = grip === "start" ? rotation : (rotation + 180) % 360;
+    const rect: PdfRect =
+      edge === 90
+        ? [x1, y1 - padding, x2, y1 + padding]
+        : edge === 180
+          ? [x2 - padding, y1, x2 + padding, y2]
+          : edge === 270
+            ? [x1, y2 - padding, x2, y2 + padding]
+            : [x1 - padding, y1, x1 + padding, y2];
+    return { grip, pageIndex, rect, rotation };
+  };
   return [
-    {
-      grip: "start",
-      pageIndex: position.pageIndex,
-      rect: strip(first[0], first),
-    },
-    {
-      grip: "end",
-      pageIndex: position.pageIndex + (spilled ? 1 : 0),
-      rect: strip(last[2], last),
-    },
+    handle("start", position.pageIndex, first),
+    handle("end", position.pageIndex + (spilled ? 1 : 0), last),
   ];
 }
 

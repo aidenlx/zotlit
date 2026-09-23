@@ -21,7 +21,7 @@ import {
   RANGE_HANDLE_PADDING,
   rangeHandles,
 } from "./geometry-edit";
-import type { Grip, PdfPoint } from "./geometry-edit";
+import type { Grip, PdfPoint, TextRotation } from "./geometry-edit";
 import type { Point } from "./hit-test";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
@@ -118,7 +118,15 @@ export interface AnnotationOverlayOptions {
   selected?: ReadonlySet<string>;
   /** Whether the selected marks carry their Mark Handles: editing is live. */
   handles?: boolean;
+  /**
+   * The text rotation a text range's handles lie across.
+   *
+   * @default upright text, for a caller that holds no rotation
+   */
+  textRotation?: TextRotation;
 }
+
+const UPRIGHT: TextRotation = () => 0;
 
 /**
  * Rebuilds this page's overlay from the Annotations given, replacing whatever
@@ -137,7 +145,12 @@ export interface AnnotationOverlayOptions {
  */
 export function renderAnnotationOverlay(
   page: OverlayPageView,
-  { annotations, selected, handles = false }: AnnotationOverlayOptions,
+  {
+    annotations,
+    selected,
+    handles = false,
+    textRotation = UPRIGHT,
+  }: AnnotationOverlayOptions,
 ): void {
   page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`)?.remove();
 
@@ -174,7 +187,7 @@ export function renderAnnotationOverlay(
   // Above the outline, so a handle is never covered by the ring it sits on.
   for (const placement of annotations) {
     if (!handles || selected?.has(placement.annotation.key) !== true) continue;
-    overlay.append(...renderHandles(page, unitPage, placement));
+    overlay.append(...renderHandles(page, placement, textRotation));
   }
 
   // Appended last, so nothing PDF.js paints later sits over the marks.
@@ -244,7 +257,10 @@ export function renderCapture(
 export function patchSelectedMark(
   page: OverlayPageView,
   placement: PdfPageAnnotation,
-  { handles }: { handles: boolean },
+  {
+    handles,
+    textRotation = UPRIGHT,
+  }: Pick<AnnotationOverlayOptions, "textRotation"> & { handles: boolean },
 ): boolean {
   const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
   if (!overlay) return false;
@@ -267,7 +283,7 @@ export function patchSelectedMark(
   const fresh = [
     ...markNodes(unitPage, placement, handles),
     ...(outline ? [outline] : []),
-    ...(handles ? renderHandles(page, unitPage, placement) : []),
+    ...(handles ? renderHandles(page, placement, textRotation) : []),
   ];
   if (held.length === 0 || held.length !== fresh.length) return false;
   held.forEach((node, index) => {
@@ -310,17 +326,18 @@ function markNodes(
  */
 function renderHandles(
   view: OverlayPageView,
-  page: OverlayPage,
   placement: PdfPageAnnotation,
+  textRotation: TextRotation,
 ): SVGRectElement[] {
+  const page = toPageUnits(view);
   const toUnits = unitsPerPixel(view);
   const half = HANDLE_RADIUS * toUnits;
-  const handle = (grip: Grip, rect: PageRect) => {
+  const handle = (grip: Grip, rect: PageRect, turn = 0) => {
     const element = createRect(page, rect);
     element.classList.add(themeHook.pdfAnnotationHandle);
     element.setAttribute("vector-effect", "non-scaling-stroke");
     element.dataset.ztGrip = grip;
-    element.dataset.ztCursor = gripCursor(grip, page.viewport.rotation);
+    element.dataset.ztCursor = gripCursor(grip, page.viewport.rotation + turn);
     return element;
   };
   // A text range's two strips, each drawn on the page that holds its rect: a
@@ -330,9 +347,15 @@ function renderHandles(
     position.kind === "pdf-rects" && placement.rects === position.nextPageRects
       ? position.pageIndex + 1
       : position.pageIndex;
-  const strips = rangeHandles(annotation, RANGE_HANDLE_PADDING * toUnits)
+  const strips = rangeHandles(
+    annotation,
+    RANGE_HANDLE_PADDING * toUnits,
+    textRotation,
+  )
     .filter(({ pageIndex }) => pageIndex === onPage)
-    .map(({ grip, rect }) => handle(grip, pdfRectToPage(page.viewport, rect)));
+    .map(({ grip, rect, rotation }) =>
+      handle(grip, pdfRectToPage(page.viewport, rect), rotation),
+    );
   return [
     ...strips,
     ...handleLayout(annotation).map(({ grip, at }) => {
