@@ -57,14 +57,14 @@ export function isEditablePosition(
  * Half the width of a text range's handle strip, in CSS pixels, as Zotero's
  * reader pads the edge it lays the strip along.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, `padding = 3`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, `padding = 3`
  */
 export const RANGE_HANDLE_PADDING = 3;
 
 /**
  * The smallest side an image rect may be resized to, in PDF points.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/common/defines.js — `MIN_IMAGE_ANNOTATION_SIZE`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js — `MIN_IMAGE_ANNOTATION_SIZE`
  */
 export const MIN_IMAGE_ANNOTATION_SIZE = 10;
 
@@ -79,14 +79,14 @@ export const HANDLE_RADIUS = 5;
  * strokes on each side, in PDF points. Zotero's reader grows the box by
  * `BOX_PADDING`, ten pixels across, so five on each side.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, `BOX_PADDING`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, `BOX_PADDING`
  */
 export const INK_BOX_PADDING = 5;
 
 /**
  * The smallest side an ink scale may leave, in PDF points.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `ink`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `ink`
  */
 export const MIN_INK_SIZE = 1;
 
@@ -94,7 +94,7 @@ export const MIN_INK_SIZE = 1;
  * The order Zotero's reader tries the handles in: corners first, so a corner
  * wins a point an edge midpoint also covers.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `getSelectedAnnotationAction`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `getSelectedAnnotationAction`
  */
 const PRIORITY: readonly Handle[] = [
   "tr",
@@ -295,7 +295,7 @@ export function gripAt({
  * @param options.from where the press fell, in PDF points on the mark's page.
  * @param options.to where the pointer is now, on the same page.
  * @param options.viewBox the page's `[x1, y1, x2, y2]` in PDF points.
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `image`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `image`
  */
 export function proposePosition({
   confirmed,
@@ -346,7 +346,7 @@ export function proposePosition({
  * @param options.from where the press fell, in PDF points on its page.
  * @param options.to where the pointer is now, measured on the same page.
  * @param options.viewBox the press page's `[x1, y1, x2, y2]` in PDF points.
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerMove`, the `image` branch
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `image` branch
  */
 export function captureRect({
   from,
@@ -370,7 +370,7 @@ export function captureRect({
  * Whether a captured rectangle is big enough to keep as an image: both sides
  * at least {@link MIN_IMAGE_ANNOTATION_SIZE}.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerUp`, the `image` branch
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerUp`, the `image` branch
  */
 export function capturesImage([x1, y1, x2, y2]: readonly number[]): boolean {
   return (
@@ -385,14 +385,14 @@ export type Arrow = "left" | "right" | "up" | "down";
 /**
  * How far one key press moves or resizes an image or ink, in PDF points.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`, `STEP`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handleKeyDown`, `STEP`
  */
 export const KEY_STEP = 5;
 
 /**
  * How close to the page's edge a nudge may bring a mark, in PDF points.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`, `PADDING`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handleKeyDown`, `PADDING`
  */
 export const KEY_PADDING = 5;
 
@@ -414,7 +414,7 @@ export type KeyEdit =
  * @param modifiers the keys held, `mod` being the platform's command key.
  * @returns `null` for a chord that asks no edit of this mark: a plain arrow,
  *   which walks the reading order, among them.
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handleKeyDown`
  */
 export function keyEdit(
   type: AnnotationRecord["type"],
@@ -443,7 +443,7 @@ export function keyEdit(
  * view box's own edge, which is the same on a page drawn from the origin.
  *
  * @returns `null` for a refused nudge, and for a mark keys do not move.
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handleKeyDown`
  */
 export function keyedPosition({
   confirmed,
@@ -524,7 +524,7 @@ const ARROW_TRAVEL: Record<Arrow, PdfPoint> = {
  * Zotero's reader. The scale stops where either side of the box would fall
  * below one point, where Zotero holds only the width to it.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` and `moveAndDrag` branches for `ink`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` and `moveAndDrag` branches for `ink`
  */
 function proposeInk(
   confirmed: PdfInkPosition,
@@ -571,7 +571,7 @@ function proposeInk(
  * c, d, e, f]`, and its width by the square root of the area the matrix
  * scales by.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/lib/path.js — `applyTransformationMatrixToInkPosition`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/path.js — `applyTransformationMatrixToInkPosition`
  */
 function transformInk(
   position: PdfInkPosition,

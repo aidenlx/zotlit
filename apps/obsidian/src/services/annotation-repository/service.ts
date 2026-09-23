@@ -39,7 +39,11 @@ import {
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
-import { resolvesSilently, sameGeometry, storedPosition } from "./reconcile";
+import {
+  resolvesSilently,
+  sameStoredGeometry,
+  storedPosition,
+} from "./reconcile";
 import {
   colorPatch,
   commentPatch,
@@ -2128,7 +2132,7 @@ function conflictOf(
 ): WriteConflict | null {
   if (attempt.write === "geometry") {
     const fresh = { position: record.position, text: record.text };
-    return sameGeometry(attempt.attempted, fresh)
+    return sameStoredGeometry(attempt.attempted, fresh)
       ? null
       : { write: "geometry", attempted: attempt.attempted, fresh };
   }

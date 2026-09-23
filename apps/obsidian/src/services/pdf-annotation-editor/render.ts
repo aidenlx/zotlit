@@ -203,7 +203,7 @@ function createOverlay(unitPage: OverlayPage): SVGSVGElement {
  * no marks, so this builds one where none stands, and takes back an overlay it
  * leaves empty.
  *
- * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/page.js — `_pushImage`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/page.js — `_pushImage`
  */
 export function renderCapture(
   page: OverlayPageView,
