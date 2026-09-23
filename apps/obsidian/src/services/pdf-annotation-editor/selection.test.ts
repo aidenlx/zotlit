@@ -257,6 +257,28 @@ it("takes the smallest mark under a click, and announces the selection", () => {
   expect(h.reported).toEqual([["WORD2222"]]);
 });
 
+it("reads a click against the page inside its border, not the border box", () => {
+  using h = setup();
+  // The desktop reader draws a border round the page, as wide as the zoom
+  // makes it: the content box is the page's own size, inside that border.
+  h.page.div.getBoundingClientRect = rect({
+    left: 0,
+    top: 0,
+    width: 652,
+    height: 832,
+  });
+  Object.defineProperties(h.page.div, {
+    clientLeft: { value: 20 },
+    clientTop: { value: 20 },
+  });
+
+  // x 196 on the page: left of the word by more than the hit pad, inside the
+  // paragraph.
+  click(h.page.div, { x: 216, y: 192 });
+
+  expect([...h.selection.selected]).toEqual(["PARA1111"]);
+});
+
 it("opens the popup at the bottom centre of the mark, and keeps one popup", () => {
   using h = setup();
 

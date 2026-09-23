@@ -346,7 +346,8 @@ it("opens the create popup over a page painted before the binding attached", asy
     height: 1188,
   };
   page.div.getBoundingClientRect = () => box as never;
-  page.div.textContent = "Scientific visualization";
+  // The one glyph the page's text content carries, as the text layer shows it.
+  const textLayer = page.div.createDiv({ cls: "textLayer", text: "E" });
   Object.assign(page, { renderingState: 3 });
   const reader = pdfReader(page);
   const view = pdfView("attachments/rougier-2014.pdf", reader);
@@ -366,15 +367,16 @@ it("opens the create popup over a page painted before the binding attached", asy
   await service.bindings[0]!.refreshed;
 
   const range = document.createRange();
-  range.selectNodeContents(page.div);
+  range.selectNodeContents(textLayer);
   vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
-    { left: 100, top: 256, right: 317, bottom: 268 },
+    { left: 87, top: 81, right: 96, bottom: 98 },
   ] as never);
   vi.spyOn(window, "getSelection").mockReturnValue({
     rangeCount: 1,
     isCollapsed: false,
     getRangeAt: () => range,
     removeAllRanges: () => undefined,
+    toString: () => "E",
   } as never);
   page.div.dispatchEvent(
     new PointerEvent("pointerdown", {
@@ -384,6 +386,7 @@ it("opens the create popup over a page painted before the binding attached", asy
     }),
   );
   document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  await service.bindings[0]!.settled;
 
   expect(
     document.querySelector(".zt-pdf-mark-popup [data-zt-verb]"),

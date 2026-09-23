@@ -47,7 +47,12 @@ import type { MarkPopupControlId } from "./mark-popup";
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import { markTargets, pageUnitSize } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
-import { colorMenu, onScreen, selectionCollapsed } from "./surface";
+import {
+  colorMenu,
+  onScreen,
+  pageContentBox,
+  selectionCollapsed,
+} from "./surface";
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
@@ -818,7 +823,7 @@ export class MarkSelection implements Disposable {
 }
 
 function pageBoxOf(page: OverlayPageView): PageBox {
-  const rect = page.div.getBoundingClientRect();
+  const rect = pageContentBox(page.div);
   const unit = pageUnitSize(page);
   return {
     left: rect.left,

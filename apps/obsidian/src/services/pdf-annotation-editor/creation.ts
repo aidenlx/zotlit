@@ -9,7 +9,7 @@
 // @see https://github.com/aidenlx/zotlit/issues/1150
 import type { HoverParent } from "obsidian";
 
-import type { PdfTextStructure } from "@zotlit/pdf-structure";
+import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
@@ -41,12 +41,24 @@ import type { CreationToolbarNodes } from "./creation-toolbar";
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
 import type { OverlayPageView } from "./render";
-import { captureSelection, selectionPagesOf } from "./selection-capture";
-import type { CapturedSelection, SelectionPage } from "./selection-capture";
-import { colorMenu, onScreen, selectionCollapsed } from "./surface";
+import { selectionPagesOf } from "./selection-capture";
+import type { SelectionPage } from "./selection-capture";
+import {
+  colorMenu,
+  onScreen,
+  pageContentBox,
+  selectionCollapsed,
+} from "./surface";
 import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
+
+/** Where the popup hangs, as a fraction of its page box, so a zoom keeps it. */
+interface AnchorAt {
+  pageIndex: number;
+  fx: number;
+  fy: number;
+}
 
 /** One page of the reader, as selection capture and the anchor read it. */
 export interface ReaderPage {
@@ -116,13 +128,15 @@ export class MarkCreation implements CreationGestures, Disposable {
   #slot: HTMLElement | null = null;
   #popup: MarkPopup | null = null;
   /** The settled selection the popup is acting on; `null` while none is. */
-  #captured: CapturedSelection | null = null;
-  /** Where the popup hangs, as a fraction of its page box, so a zoom keeps it. */
-  #anchorAt: { pageIndex: number; fx: number; fy: number } | null = null;
+  #captured: SelectedText | null = null;
+  #anchorAt: AnchorAt | null = null;
   #commenting = false;
   #comment = "";
   #inFlight = false;
   #creating = Promise.resolve();
+  #settling = Promise.resolve();
+  /** Counts gestures, so a selection placed late never outlives its own. */
+  #gesture = 0;
   #pressedOnPage = false;
 
   constructor(deps: MarkCreationDeps) {
@@ -140,6 +154,15 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   get created(): Promise<void> {
     return this.#creating;
+  }
+
+  /**
+   * Settles when the last selection this surface read has been placed on the
+   * page's characters, or refused. Already settled while none has. Never
+   * rejects.
+   */
+  get settled(): Promise<void> {
+    return this.#settling;
   }
 
   /**
@@ -170,6 +193,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   press(event: PointerEvent): void {
+    this.#gesture++;
     const inPopup =
       this.#popup?.hoverEl.contains(event.target as Node) === true;
     // The press that follows a settled selection dismisses its popup, wherever
@@ -183,15 +207,29 @@ export class MarkCreation implements CreationGestures, Disposable {
     const onPage = this.#pressedOnPage;
     this.#pressedOnPage = false;
     if (!onPage || this.#inFlight) return;
-    const captured = this.#capture();
-    if (!captured) return;
-    this.#captured = captured;
-    const armed = this.#armed;
-    if (armed) {
-      this.#commit(armed, this.#colors()[armed]);
-      return;
-    }
-    this.#open();
+    // The press that began this gesture bumped the count; a later press or
+    // the disposal bumps it again, which leaves this placement stale.
+    const gesture = this.#gesture;
+    this.#settling = this.#capture().then(
+      (placed) => {
+        if (!placed || gesture !== this.#gesture || this.#inFlight) return;
+        // The selection can collapse while the page's characters load.
+        if (selectionCollapsed(this.#deps.containerEl)) return;
+        this.#captured = placed.captured;
+        this.#anchorAt = placed.anchorAt;
+        const armed = this.#armed;
+        if (armed) {
+          this.#commit(armed, this.#colors()[armed]);
+          return;
+        }
+        this.#open();
+      },
+      (error: unknown) => {
+        logger.warn("Could not place the text selection on the page", {
+          error,
+        });
+      },
+    );
   }
 
   changed(): void {
@@ -245,6 +283,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   [Symbol.dispose](): void {
+    this.#gesture++;
     this.#closePopup();
     this.#surfaces.dispose();
   }
@@ -537,25 +576,38 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
-   * What the live window selection quotes, with the anchor the popup hangs
-   * from recorded beside it. `null` for a selection this reader cannot place.
+   * What the live window selection quotes, placed on the Structured
+   * Characters of the pages it reaches, with the anchor the popup hangs from.
+   * `null` for a selection this reader cannot place.
+   *
+   * The DOM is read before the first wait, so the result stands for the
+   * selection as it was when the gesture settled.
    */
-  #capture(): CapturedSelection | null {
-    const range = this.#range();
-    if (!range) return null;
-    const pages = selectionPagesOf(range, this.#deps.pages());
-    const captured = captureSelection(pages);
-    if (!captured) return null;
-    this.#anchorAt = anchorFractionOf(pages, captured.pageIndex);
-    return captured;
-  }
-
-  #range(): Range | null {
+  async #capture(): Promise<{
+    captured: SelectedText;
+    anchorAt: AnchorAt | null;
+  } | null> {
     const selection = this.#deps.containerEl.win.getSelection();
     if (!selection || selection.rangeCount !== 1 || selection.isCollapsed) {
       return null;
     }
-    return selection.getRangeAt(0);
+    const pages = selectionPagesOf(selection.getRangeAt(0), this.#deps.pages());
+    const structure = this.#deps.structure();
+    if (!pages.length || !structure) return null;
+    const captured = await structure.selectText({
+      text: selection.toString(),
+      pages,
+    });
+    if (!captured) {
+      logger.debug("Text selection maps onto no character of its pages", {
+        pageIndexes: pages.map(({ pageIndex }) => pageIndex),
+      });
+      return null;
+    }
+    return {
+      captured,
+      anchorAt: anchorFractionOf(pages, captured.pageIndex),
+    };
   }
 
   /**
@@ -569,7 +621,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       at &&
       this.#deps.pages().find(({ pageIndex }) => pageIndex === at.pageIndex);
     if (!at || !page) return null;
-    const rect = page.view.div.getBoundingClientRect();
+    const rect = pageContentBox(page.view.div);
     if (rect.width <= 0 || rect.height <= 0) return null;
     const point = {
       x: rect.left + at.fx * rect.width,
@@ -605,20 +657,20 @@ function previousAnnotations(
 
 /**
  * The popup's anchor as a fraction of its page box: the bottom centre of the
- * selection's boxes on the page the Annotation is filed under.
+ * selected text's boxes on the page the Annotation is filed under.
  */
 function anchorFractionOf(
   pages: readonly SelectionPage[],
   pageIndex: number,
-): { pageIndex: number; fx: number; fy: number } | null {
+): AnchorAt | null {
   const page = pages.find((one) => one.pageIndex === pageIndex);
-  if (!page || page.rects.length === 0) return null;
+  if (!page || page.clientRects.length === 0) return null;
   const width = page.box.right - page.box.left;
   const height = page.box.bottom - page.box.top;
   if (width <= 0 || height <= 0) return null;
-  const left = Math.min(...page.rects.map((rect) => rect.left));
-  const right = Math.max(...page.rects.map((rect) => rect.right));
-  const bottom = Math.max(...page.rects.map((rect) => rect.bottom));
+  const left = Math.min(...page.clientRects.map((rect) => rect.left));
+  const right = Math.max(...page.clientRects.map((rect) => rect.right));
+  const bottom = Math.max(...page.clientRects.map((rect) => rect.bottom));
   return {
     pageIndex,
     fx: ((left + right) / 2 - page.box.left) / width,

@@ -5,10 +5,11 @@ parity test that keeps them honest. `README.md` describes the public surface.
 
 ## The port is upstream code
 
-`src/vendor/*.js` is copied **verbatim** from `zotero/pdf.js` under a provenance
-header. Every line after the `// === verbatim upstream copy starts here ===`
-marker belongs to upstream, and `src/parity.test.ts` asserts it is byte-identical
-to the checkout. Leave those three files as the linter finds them;
+`src/vendor/*.js` is copied **verbatim** under a provenance header: three files
+from `zotero/pdf.js`, and `native-text-selection-map.js` from `zotero/reader`.
+Every line after the `// === verbatim upstream copy starts here ===` marker
+belongs to upstream, and `src/parity.test.ts` asserts it is byte-identical to
+the checkout. Leave those four files as the linter finds them;
 `oxlint.config.ts` ignores them for exactly that reason.
 
 The one way to change them is a whole-body refresh from a newer checkout, when
@@ -17,8 +18,8 @@ file header and in `PINNED_COMMITS` in the parity test in the same change.
 Parity means parity with one fork; drift across Zotero versions is accepted,
 because Zotero's own import worker already produces it.
 
-The hand-written `.d.ts` files are ours: `structure.js` and `page-label.js` have
-one each, because the port imports them; `util.js` has none, because only
+The hand-written `.d.ts` files are ours: `structure.js`, `page-label.js` and
+`native-text-selection-map.js` have one each, because the port imports them; `util.js` has none, because only
 `page-label.js` reaches it and TypeScript never sees that edge.
 `tsconfig.lib.json` keeps `allowJs` off, so TypeScript reads the declaration and
 the bundler reads the JS.
@@ -52,6 +53,10 @@ sides of the comparison.
 - **Zotero's modules** decide the Structured Characters and Page Labels. The
   test compares index for index, because `offset` is an index: one extra or
   missing character misplaces every Annotation after it on that page.
+  The reader's own `selection.js` decides the text ranges: `src/text-selection.ts`
+  gets the same Structured Characters, and the test compares the rectangles,
+  the text and the highlight-to-characters lookup range for range. Vitest loads
+  that module straight from the checkout.
 - **The Fixture's own `sortIndex` strings** on Attachment `RGRPDF24` are what
   Zotero's reader wrote for real Annotations of all six types. They check the
   whole chain — extraction, adapter, line grouping, offset — against output this

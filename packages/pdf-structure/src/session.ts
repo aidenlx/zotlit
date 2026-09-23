@@ -9,6 +9,8 @@ import type { PageLabelSource, PreviousAnnotation } from "@/page-label";
 import { alignPageLabel, extractPageLabels } from "@/page-label";
 import type { PdfPosition } from "@/sort-index";
 import { computeSortIndex } from "@/sort-index";
+import type { SelectedText, TextSelection } from "@/text-selection";
+import { selectText } from "@/text-selection";
 
 const logger = getLogger(["zotlit", "pdf-structure"]);
 
@@ -84,6 +86,20 @@ export class PdfTextStructure {
       });
     }
     return computeSortIndex(page, position);
+  }
+
+  /**
+   * What a DOM text selection creates, from the Structured Characters of the
+   * pages it reaches, or `null` for one they cannot place.
+   */
+  async selectText(selection: TextSelection): Promise<SelectedText | null> {
+    const pages = await Promise.all(
+      selection.pages.map(({ pageIndex }) => this.page(pageIndex)),
+    );
+    return selectText(
+      selection,
+      new Map(pages.map((page) => [page.pageIndex, page])),
+    );
   }
 
   /** The Page Label a creation on this page gets. */

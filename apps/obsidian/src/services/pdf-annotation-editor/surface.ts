@@ -22,6 +22,35 @@ export function onScreen(containerEl: HTMLElement, { x, y }: Point): boolean {
 }
 
 /**
+ * The page's padding box in client coordinates: the box its canvas, its text
+ * layer and the mark overlay fill. The desktop reader draws a border round
+ * every page (`--page-border`), and the border box would shift every point
+ * read against it by that border's width.
+ *
+ * The border is one width on every side, so the top and left widths stand for
+ * all four.
+ */
+export function pageContentBox(div: HTMLElement): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+} {
+  const rect = div.getBoundingClientRect();
+  const { clientLeft: x, clientTop: y } = div;
+  return {
+    left: rect.left + x,
+    top: rect.top + y,
+    right: rect.right - x,
+    bottom: rect.bottom - y,
+    width: rect.width - 2 * x,
+    height: rect.height - 2 * y,
+  };
+}
+
+/**
  * Whether the view's own window holds no text selection. The reader opens in
  * pop-out windows, so the selection is read from the container's window rather
  * than the global one.
