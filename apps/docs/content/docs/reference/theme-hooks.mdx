@@ -117,6 +117,7 @@ Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and
 | `zt-pdf-annotation-mark`              | One Annotation Mark inside that overlay.                                                                                                           |
 | `zt-pdf-annotation-highlight`         | The filled rectangle of a highlight Annotation Mark.                                                                                               |
 | `zt-pdf-annotation-selection-outline` | The outline traced round a selected Annotation Mark's own merged silhouette.                                                                       |
+| `zt-pdf-annotation-handle`            | One Mark Handle on the selected Annotation Mark, drawn while editing is on.                                                                        |
 | `zt-pdf-annotation-note-icon`         | The group a note Annotation Mark draws its icon into.                                                                                              |
 | `zt-pdf-annotation-note-fill`         | The body of a note Annotation Mark's icon.                                                                                                         |
 | `zt-pdf-annotation-note-crease`       | The two segments creasing the folded bottom-right corner of a note Annotation Mark's icon. Stroked, with no fill of its own.                       |
@@ -131,6 +132,8 @@ Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and
 ZotLit rebuilds `zt-pdf-annotation-overlay` for every page PDF.js renders, and draws one `zt-pdf-annotation-mark` per Annotation on that page: a filled rectangle for a highlight (`zt-pdf-annotation-highlight`), a line for an underline, a note glyph in lucide's idiom for a note (`zt-pdf-annotation-note-icon`, holding `zt-pdf-annotation-note-fill` and `zt-pdf-annotation-note-crease`), a stroked rectangle for an image region, a path for an ink stroke, and a text run for a free-text Annotation. The overlay takes no pointer input, so native text selection, PDF links, and the reader's toolbar keep working underneath it.
 
 Each mark carries `data-zotero-annotation-type` (one of `highlight`, `underline`, `note`, `image`, `ink`, or `text`) and `data-zotero-annotation-key`, the Annotation's Zotero key. The mark a Mark Popup is acting on also carries Obsidian's own `is-selected`, and the overlay draws a `zt-pdf-annotation-selection-outline` above it, hugging its own rects — or, for an ink stroke, the stroke itself.
+
+While editing is on, a selected image region also carries eight `zt-pdf-annotation-handle` squares above its outline. Each handle carries `data-zt-grip`, naming the edges it moves (`tl`, `t`, `tr`, `r`, `br`, `b`, `bl`, or `l`, where `t` is the top of the page as it is stored, before any rotation), and `data-zt-cursor`, naming the cursor it shows. The image's own mark carries `data-zt-grip="body"` and `data-zt-cursor="move"`. The handles and that body take pointer input, so a press there moves or resizes the region instead of selecting text.
 
 ### Editing Capability affordance [#pdf-capability]
 

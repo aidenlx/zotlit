@@ -53,13 +53,17 @@ import {
   listenAnnotationEvents,
   sameCapability,
   sameFlat,
+  selectAdjust,
   selectCapabilityAffordance,
+  selectSelectedKey,
 } from "./reader-surface-state";
 import type { ReaderSurfaceStore } from "./reader-surface-state";
 import {
   groupAnnotationsByPage,
+  patchSelectedMark,
   renderAnnotationOverlay,
   scrollMarkIntoView,
+  withPosition,
 } from "./render";
 import type { PdfPageAnnotation } from "./render";
 import {
@@ -114,6 +118,7 @@ export type AnnotationReads = Pick<
   | "mutationFor"
   | "on"
   | "patchColor"
+  | "patchGeometry"
   | "probe"
   | "read"
   | "refresh"
@@ -691,9 +696,22 @@ export class PdfViewBinding implements Disposable, HoverParent {
         allowEditing: () => this.#gestures.allowEditing(),
       },
       creation,
+      sortIndex: (position) => this.sortIndex(position),
+      refreshed: () => this.refreshed,
       now: this.#now,
     });
     this.#selection = selection;
+    // A Geometry Edit redraws the one mark it moves; the handles come and go
+    // with the capability to save one.
+    this.#surfaces.defer(
+      state.subscribe(selectAdjust, () => this.#patchSelected()),
+    );
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ capability }) => editingLive(capability),
+        () => this.#repaint(),
+      ),
+    );
     // The owners subscribe first, so an editor that closes is let go before
     // the host redraws or hides the popup it stood in.
     selection.load();
@@ -775,11 +793,46 @@ export class PdfViewBinding implements Disposable, HoverParent {
     });
   }
 
-  /** The marks the overlay draws, which mark visibility can stand down whole. */
+  /**
+   * The marks the overlay draws, which mark visibility can stand down whole.
+   * The selected mark is drawn from a Geometry Edit's proposal while one
+   * stands, so a re-render or a read mid-drag keeps it where the pointer put
+   * it.
+   */
   #visibleMarks(): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
-    return this.#surfaceState?.getState().marksVisible === false
-      ? new Map()
+    const state = this.#surfaceState?.getState();
+    if (state?.marksVisible === false) return new Map();
+    const key = state ? selectSelectedKey(state) : null;
+    const adjust = state ? selectAdjust(state) : null;
+    return key !== null && adjust
+      ? withPosition(this.#marks, key, adjust.proposal)
       : this.#marks;
+  }
+
+  /** Whether the selected mark carries its Mark Handles. */
+  #handles(): boolean {
+    const state = this.#surfaceState?.getState();
+    return state !== undefined && editingLive(state.capability);
+  }
+
+  /**
+   * Redraws the selected mark in place on each page that draws it, and
+   * repaints a page whose overlay cannot be patched.
+   */
+  #patchSelected(): void {
+    const controller = this.#controller;
+    const state = this.#surfaceState?.getState();
+    const key = state ? selectSelectedKey(state) : null;
+    if (!controller || key === null) return;
+    for (const [pageIndex, placements] of this.#visibleMarks()) {
+      const placement = placements.find(
+        ({ annotation }) => annotation.key === key,
+      );
+      const page = placement && pageViewOf(controller, pageIndex + 1);
+      if (!page) continue;
+      if (!patchSelectedMark(page, placement, { handles: this.#handles() }))
+        this.#paint(pageIndex);
+    }
   }
 
   /** Takes the Attachment's capability as the repository now answers it. */
@@ -967,6 +1020,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     renderAnnotationOverlay(page, {
       annotations,
       selected: this.#selection?.selected,
+      handles: this.#handles(),
     });
     if (annotations.length > 0) this.#painted.add(pageIndex);
     else this.#painted.delete(pageIndex);

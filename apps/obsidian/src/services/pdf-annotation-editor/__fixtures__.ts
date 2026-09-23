@@ -7,7 +7,7 @@ import type { Mock } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
-import type { PdfTextStructure } from "@zotlit/pdf-structure";
+import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { withRecentColor } from "@/lib/annotation-colors";
@@ -320,6 +320,7 @@ export function annotationReads(
     discardCommentDraft: vi.fn(),
     retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
+    patchGeometry: vi.fn(() => Promise.resolve(IDLE)),
     deleteAnnotation: vi.fn(() => Promise.resolve(IDLE)),
     createAnnotation: vi.fn(() =>
       Promise.resolve({ kind: "created" as const, annotationKey: "MADE2345" }),
@@ -431,6 +432,7 @@ export function annotationEdits() {
   return {
     mutationFor: vi.fn((_key: string): MutationState => IDLE),
     patchColor: vi.fn(async () => IDLE),
+    patchGeometry: vi.fn(async (): Promise<MutationState> => IDLE),
     deleteAnnotation: vi.fn(async () => IDLE),
     commentDraftFor: vi.fn(() => commentDraft),
     editComment: vi.fn((annotationKey: string, text = "") => {
@@ -473,6 +475,8 @@ export interface ReaderSurfacesOptions {
   annotations: AnnotationEdits & AnnotationCreates & AnnotationFacts;
   /** This document's Structured Characters; `null` until one is open. */
   structure?: PdfTextStructure | null;
+  /** The Sort Index a Geometry Edit is saved with. */
+  sortIndex?: (position: PdfPosition) => Promise<string | null>;
 }
 
 /**
@@ -487,6 +491,7 @@ export function readerSurfaces({
   capability = { kind: "writable" },
   annotations,
   structure = null,
+  sortIndex = async () => null,
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
   const colors = toolColors();
@@ -543,6 +548,8 @@ export function readerSurfaces({
     surfaceState: store,
     gestures,
     creation,
+    sortIndex,
+    refreshed: () => Promise.resolve(),
     now: () => READER_NOW,
   });
   selection.load();

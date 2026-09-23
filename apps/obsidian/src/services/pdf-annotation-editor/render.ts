@@ -12,6 +12,12 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 
 import { freeTextLayout } from "./free-text-layout";
 import type { PagePoint, PageRect, Turn } from "./free-text-layout";
+import {
+  gripCursor,
+  HANDLE_RADIUS,
+  handleLayout,
+  movesByBody,
+} from "./geometry-edit";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -91,6 +97,8 @@ export type OverlayPageView = Pick<PDFPageView, "div"> & {
     | "scale"
     | "rotation"
     | "userUnit"
+    // The page box in PDF points, which a Geometry Edit keeps the mark inside.
+    | "viewBox"
     // The PDF-point to viewport-pixel matrix, which selection capture inverts.
     | "transform"
     | "convertToViewportPoint"
@@ -103,6 +111,8 @@ export interface AnnotationOverlayOptions {
   annotations: readonly PdfPageAnnotation[];
   /** The Indexed Keys drawn as selected. */
   selected?: ReadonlySet<string>;
+  /** Whether the selected marks carry their Mark Handles: editing is live. */
+  handles?: boolean;
 }
 
 /**
@@ -122,7 +132,7 @@ export interface AnnotationOverlayOptions {
  */
 export function renderAnnotationOverlay(
   page: OverlayPageView,
-  { annotations, selected }: AnnotationOverlayOptions,
+  { annotations, selected, handles = false }: AnnotationOverlayOptions,
 ): void {
   page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`)?.remove();
 
@@ -139,14 +149,15 @@ export function renderAnnotationOverlay(
 
   for (const placement of annotations) {
     const { annotation } = placement;
-    for (const mark of marksFor(unitPage, placement)) {
-      mark.classList.add(themeHook.pdfAnnotationMark);
+    for (const mark of markNodes(
+      unitPage,
+      placement,
+      handles && selected?.has(annotation.key) === true,
+    )) {
       mark.classList.toggle(
         SELECTED_CLASS,
         selected?.has(annotation.key) === true,
       );
-      mark.dataset.zoteroAnnotationKey = annotation.key;
-      mark.dataset.zoteroAnnotationType = annotation.type;
       overlay.append(mark);
     }
   }
@@ -163,8 +174,108 @@ export function renderAnnotationOverlay(
     else overlay.append(outline);
   }
 
+  // Above the outline, so a handle is never covered by the ring it sits on.
+  for (const placement of annotations) {
+    if (!handles || selected?.has(placement.annotation.key) !== true) continue;
+    overlay.append(...renderHandles(page, unitPage, placement));
+  }
+
   // Appended last, so nothing PDF.js paints later sits over the marks.
   if (overlay.childElementCount > 0) page.div.append(overlay);
+}
+
+/**
+ * Redraws the selected mark on this page from another placement — the
+ * proposal of a Geometry Edit — by writing the geometry of freshly built nodes
+ * onto the ones the overlay holds, so a drag redraws one mark and leaves every
+ * other node, and the overlay itself, standing.
+ *
+ * @param options.handles whether the mark carries its Mark Handles.
+ * @returns `false` when the overlay does not hold the same nodes for this
+ *   mark, which a full {@link renderAnnotationOverlay} answers instead.
+ */
+export function patchSelectedMark(
+  page: OverlayPageView,
+  placement: PdfPageAnnotation,
+  { handles }: { handles: boolean },
+): boolean {
+  const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  if (!overlay) return false;
+  const unitPage = toPageUnits(page);
+  const { key } = placement.annotation;
+  const held = [
+    ...[
+      ...overlay.querySelectorAll<SVGElement>(
+        `.${themeHook.pdfAnnotationMark}`,
+      ),
+    ].filter((mark) => mark.dataset.zoteroAnnotationKey === key),
+    ...overlay.querySelectorAll<SVGElement>(
+      `.${themeHook.pdfAnnotationSelectionOutline}`,
+    ),
+    ...overlay.querySelectorAll<SVGElement>(
+      `.${themeHook.pdfAnnotationHandle}`,
+    ),
+  ];
+  const outline = renderSelectionOutline(unitPage, placement);
+  const fresh = [
+    ...markNodes(unitPage, placement, handles),
+    ...(outline ? [outline] : []),
+    ...(handles ? renderHandles(page, unitPage, placement) : []),
+  ];
+  if (held.length === 0 || held.length !== fresh.length) return false;
+  held.forEach((node, index) => {
+    for (const { name, value } of fresh[index]!.attributes) {
+      if (name !== "class") node.setAttribute(name, value);
+    }
+  });
+  return true;
+}
+
+/**
+ * One placement's mark nodes, carrying the hooks and data a theme and the hit
+ * test read. A mark that moves by its body takes the pointer while its handles
+ * stand, so its cursor shows the move.
+ */
+function markNodes(
+  page: OverlayPage,
+  placement: PdfPageAnnotation,
+  handles: boolean,
+): SVGElement[] {
+  const { annotation } = placement;
+  const grips = handles && movesByBody(annotation.type);
+  return marksFor(page, placement).map((mark) => {
+    mark.classList.add(themeHook.pdfAnnotationMark);
+    mark.dataset.zoteroAnnotationKey = annotation.key;
+    mark.dataset.zoteroAnnotationType = annotation.type;
+    if (grips) {
+      mark.dataset.ztGrip = "body";
+      mark.dataset.ztCursor = gripCursor("body", page.viewport.rotation);
+    }
+    return mark;
+  });
+}
+
+/**
+ * The Mark Handles of one selected placement: squares ten pixels wide at
+ * every zoom step, each showing the cursor of the edges it moves. They take
+ * the pointer for their cursor; which one a press takes is still decided from
+ * geometry.
+ */
+function renderHandles(
+  view: OverlayPageView,
+  page: OverlayPage,
+  placement: PdfPageAnnotation,
+): SVGRectElement[] {
+  const half = (HANDLE_RADIUS * page.viewport.width) / view.viewport.width;
+  return handleLayout(placement.annotation).map(({ grip, at }) => {
+    const [x, y] = page.viewport.convertToViewportPoint(at[0], at[1]);
+    const element = createRect(page, [x - half, y - half, x + half, y + half]);
+    element.classList.add(themeHook.pdfAnnotationHandle);
+    element.setAttribute("vector-effect", "non-scaling-stroke");
+    element.dataset.ztGrip = grip;
+    element.dataset.ztCursor = gripCursor(grip, page.viewport.rotation);
+    return element;
+  });
 }
 
 /**
@@ -186,6 +297,41 @@ export function scrollMarkIntoView(
     mark.scrollIntoView({ block: "center", inline: "nearest" });
     return;
   }
+}
+
+/**
+ * The marks with one Annotation drawn from another position — a Geometry
+ * Edit's proposal — each placement keeping its place in its page's list.
+ */
+export function withPosition(
+  marks: ReadonlyMap<number, readonly PdfPageAnnotation[]>,
+  key: string,
+  position: PdfPageAnnotation["position"],
+): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
+  const annotation = [...marks.values()]
+    .flat()
+    .find((placement) => placement.annotation.key === key)?.annotation;
+  if (!annotation) return marks;
+  const moved = groupAnnotationsByPage([{ ...annotation, position }]);
+  const next = new Map<number, readonly PdfPageAnnotation[]>();
+  for (const [pageIndex, placements] of marks) {
+    const [replacement] = moved.get(pageIndex) ?? [];
+    next.set(
+      pageIndex,
+      placements.flatMap((placement) =>
+        placement.annotation.key !== key
+          ? [placement]
+          : replacement
+            ? [replacement]
+            : [],
+      ),
+    );
+  }
+  for (const [pageIndex, placements] of moved) {
+    if (!marks.get(pageIndex)?.some(({ annotation: held }) => held.key === key))
+      next.set(pageIndex, [...(next.get(pageIndex) ?? []), ...placements]);
+  }
+  return next;
 }
 
 /** One Annotation's hit area on one page, as the hit test measures it. */

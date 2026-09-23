@@ -10,11 +10,14 @@
 // @see https://github.com/aidenlx/zotlit/issues/1148
 import type { App } from "obsidian";
 
+import type { PdfPosition } from "@zotlit/pdf-structure";
+
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
+import { themeHook } from "@/lib/theme-hooks";
 import * as toast from "@/lib/toast";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
@@ -43,6 +46,14 @@ import type {
 import { inTextEntry, isEditGesture } from "./capability-affordance";
 import type { CreationGestures } from "./creation";
 import {
+  gripAt,
+  HANDLE_RADIUS,
+  handleLayout,
+  movesByBody,
+  proposePosition,
+} from "./geometry-edit";
+import type { EditablePosition, PdfPoint } from "./geometry-edit";
+import {
   distance,
   markAnchor,
   pagePointOf,
@@ -53,7 +64,12 @@ import { markPopupRow, popupColumn, renderMarkPopupRow } from "./mark-popup";
 import type { MarkPopupControlId, MarkPopupRowInput } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
 import {
+  beginAdjust,
+  cancelAdjust,
+  endAdjust,
+  moveAdjust,
   sameFlat,
+  selectAdjust,
   selectSelectedRowInput,
   selectFloatingHead,
   selectMark,
@@ -70,6 +86,7 @@ import type {
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import { markTargets, pageUnitSize } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
+import { applyTransform, inverseTransform } from "./selection-capture";
 import {
   colorMenu,
   onScreen,
@@ -86,6 +103,7 @@ export type AnnotationEdits = Pick<
   | "discardCommentDraft"
   | "editComment"
   | "patchColor"
+  | "patchGeometry"
   | "retryCommentDraft"
   | "submitComment"
 >;
@@ -154,6 +172,16 @@ export interface MarkSelectionDeps {
    * @see https://github.com/aidenlx/zotlit/issues/1150
    */
   creation: CreationGestures | null;
+  /**
+   * The Sort Index of a position in the open document, which a Geometry Edit
+   * is saved with; `null` while no document is open.
+   */
+  sortIndex: (position: PdfPosition) => Promise<string | null>;
+  /**
+   * Settles when the marks match the last read the view started — the read a
+   * saved Geometry Edit announced, which the mark then draws.
+   */
+  refreshed: () => Promise<void>;
   /** The clock a cooldown's remaining seconds are read against. */
   now: () => Temporal.Instant;
 }
@@ -174,6 +202,11 @@ export class MarkSelection implements Disposable {
   #row: HTMLElement | null = null;
   #commentEditor: CommentSheet | null = null;
   #pressedAt: Point | null = null;
+  /** The pointer a Geometry Edit holds, and where it last stood. */
+  #dragging: { pointerId: number; client: Point } | null = null;
+  /** Whether the last press took a Mark Handle, whose click selects nothing. */
+  #pressedHandle = false;
+  #adjusting = Promise.resolve();
 
   constructor(deps: MarkSelectionDeps) {
     this.#deps = deps;
@@ -185,11 +218,43 @@ export class MarkSelection implements Disposable {
     return new Set(key === null ? [] : [key]);
   }
 
+  /**
+   * Settles when the last Geometry Edit released in this reader has saved, or
+   * ended without a write. Already settled while none has. Never rejects.
+   */
+  get adjusted(): Promise<void> {
+    return this.#adjusting;
+  }
+
   load(): void {
     const { containerEl } = this.#deps;
     this.#surfaces.use(
       registerDomEvent(containerEl, "pointerdown", (event) => {
         this.#pressedAt = { x: event.clientX, y: event.clientY };
+        this.#pressGrip(event);
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "pointermove", (event) => {
+        if (event.pointerId !== this.#dragging?.pointerId) return;
+        this.#dragging.client = { x: event.clientX, y: event.clientY };
+        this.#propose();
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "pointerup", (event) => {
+        if (event.pointerId === this.#dragging?.pointerId) this.#release();
+      }),
+    );
+    // A drag on a grip moves the mark; the browser selects no text under it.
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "selectstart", (event) => {
+        if (this.#dragging) event.preventDefault();
+      }),
+    );
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "pointercancel", (event) => {
+        if (event.pointerId === this.#dragging?.pointerId) this.#cancelDrag();
       }),
     );
     this.#surfaces.use(
@@ -213,9 +278,17 @@ export class MarkSelection implements Disposable {
     // Scrolling does not bubble, so the page's own scroller is reached by
     // listening on the way down.
     this.#surfaces.use(
-      registerDomEvent(containerEl, "scroll", () => this.#deps.popup.sync(), {
-        capture: true,
-      }),
+      registerDomEvent(
+        containerEl,
+        "scroll",
+        () => {
+          // The page moved under a pointer that did not, so the drag is
+          // measured again against the page where it now stands.
+          if (this.#dragging) this.#propose();
+          this.#deps.popup.sync();
+        },
+        { capture: true },
+      ),
     );
     this.#surfaces.use(
       registerDomEvent(
@@ -313,6 +386,11 @@ export class MarkSelection implements Disposable {
   #click(event: MouseEvent): void {
     const pressed = this.#pressedAt;
     this.#pressedAt = null;
+    // A Mark Handle is a grip, not a mark: its click keeps the selection.
+    if (this.#pressedHandle) {
+      this.#pressedHandle = false;
+      return;
+    }
     const client = { x: event.clientX, y: event.clientY };
     const page = this.#pageUnder(client);
     const outcome = resolveMarkClick({
@@ -363,7 +441,9 @@ export class MarkSelection implements Disposable {
     if (key === null) return;
     if (event.key === "Escape") {
       event.preventDefault();
-      this.#apply(null);
+      // Escape takes back a drag first, and the selection only after.
+      if (this.#dragging) this.#cancelDrag();
+      else this.#apply(null);
       return;
     }
     // `1`–`8` are the palette's own order, so the key and the swatch can never
@@ -388,6 +468,133 @@ export class MarkSelection implements Disposable {
     event.preventDefault();
     if (this.#live()) this.#write(this.#deps.annotations.deleteAnnotation(key));
     else this.#deps.gestures.reportBlockedGesture();
+  }
+
+  /**
+   * A press on a Mark Handle, or on the body of a selected mark that moves by
+   * it, begins a Geometry Edit: the pointer is captured and the browser's text
+   * selection is held off for the drag. Every other press, and every press
+   * while editing is not live, is left to the click and the text selection.
+   */
+  #pressGrip(event: PointerEvent): void {
+    this.#pressedHandle = false;
+    const record = this.#record();
+    if (event.button !== 0 || !record || !this.#live()) return;
+    const state = this.#state();
+    if (!state.marksVisible || selectAdjust(state)) return;
+    if (record.position.kind !== "pdf-rects") return;
+    const page = this.#deps.pageAt(record.position.pageIndex);
+    if (!page) return;
+    const box = drawnBoxOf(page);
+    const point = unitsOf(box, { x: event.clientX, y: event.clientY });
+    const rect = record.position.rects[0];
+    let body: [number, number, number, number] | null = null;
+    if (rect && movesByBody(record.type)) {
+      const a = unitPointOf(page, [rect[0], rect[1]]);
+      const b = unitPointOf(page, [rect[2], rect[3]]);
+      body = [
+        Math.min(a.x, b.x),
+        Math.min(a.y, b.y),
+        Math.max(a.x, b.x),
+        Math.max(a.y, b.y),
+      ];
+    }
+    const grip = gripAt({
+      handles: handleLayout(record).map(({ grip, at }) => ({
+        grip,
+        at: unitPointOf(page, at),
+      })),
+      body,
+      point,
+      radius: (HANDLE_RADIUS * box.unitWidth) / box.width,
+    });
+    if (!grip) return;
+    event.preventDefault();
+    this.#deps.containerEl.setPointerCapture(event.pointerId);
+    this.#dragging = {
+      pointerId: event.pointerId,
+      client: { x: event.clientX, y: event.clientY },
+    };
+    this.#pressedHandle = grip !== "body";
+    beginAdjust(this.#deps.surfaceState, {
+      grip,
+      from: pdfPointOf(page, point),
+    });
+  }
+
+  /** Proposes the position the held grip reaches at the pointer's last place. */
+  #propose(): void {
+    const record = this.#record();
+    const adjust = selectAdjust(this.#state());
+    const dragging = this.#dragging;
+    if (!record || !adjust || !dragging) return;
+    if (record.position.kind !== "pdf-rects") return;
+    // Read on every move, so a scroll or a zoom mid-drag is measured against
+    // the page as it now stands.
+    const page = this.#deps.pageAt(record.position.pageIndex);
+    if (!page) return;
+    moveAdjust(
+      this.#deps.surfaceState,
+      proposePosition({
+        confirmed: record.position,
+        grip: adjust.grip,
+        from: adjust.from,
+        to: pdfPointOf(page, unitsOf(drawnBoxOf(page), dragging.client)),
+        viewBox: page.viewport.viewBox,
+      }),
+    );
+  }
+
+  #release(): void {
+    this.#releasePointer();
+    const key = this.#selectedKey();
+    const proposal = endAdjust(this.#deps.surfaceState);
+    if (key !== null && proposal)
+      this.#adjusting = this.#saveGeometry(key, proposal);
+  }
+
+  #cancelDrag(): void {
+    this.#releasePointer();
+    cancelAdjust(this.#deps.surfaceState);
+  }
+
+  #releasePointer(): void {
+    const dragging = this.#dragging;
+    this.#dragging = null;
+    if (!dragging) return;
+    this.#deps.containerEl.releasePointerCapture(dragging.pointerId);
+  }
+
+  /**
+   * Saves a released proposal with the Sort Index recomputed from it. The mark
+   * draws the proposal until the write settles: a saved one then draws the
+   * record Zotero answered, and any other snaps back to the confirmed record,
+   * with a failure told at the notice seam.
+   */
+  async #saveGeometry(key: string, proposal: EditablePosition): Promise<void> {
+    const store = this.#deps.surfaceState;
+    const end = () => {
+      if (selectAdjust(store.getState())?.proposal === proposal)
+        cancelAdjust(store);
+    };
+    // The capability can lapse while the pointer is down.
+    if (!this.#live()) {
+      end();
+      this.#deps.gestures.reportBlockedGesture();
+      return;
+    }
+    const sortIndex = await this.#deps.sortIndex(proposal);
+    if (sortIndex === null) {
+      end();
+      return;
+    }
+    const outcome = this.#deps.annotations.patchGeometry(key, {
+      position: proposal,
+      sortIndex,
+    });
+    this.#write(outcome);
+    if ((await outcome).kind === "idle") await this.#deps.refreshed();
+    end();
   }
 
   /**
@@ -706,6 +913,47 @@ function pageBoxOf(page: OverlayPageView): PageBox {
     unitWidth: unit.width,
     unitHeight: unit.height,
   };
+}
+
+/**
+ * The page as the overlay is laid out on it, which is what a drag has to track
+ * to the pixel. The page's border widths are rounded to whole pixels, so the
+ * box inside them can be a pixel off the overlay's; the page box stands in
+ * while no overlay is drawn.
+ */
+function drawnBoxOf(page: OverlayPageView): PageBox {
+  const box = pageBoxOf(page);
+  const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  if (!overlay) return box;
+  const { left, top, width, height } = overlay.getBoundingClientRect();
+  return { ...box, left, top, width, height };
+}
+
+/**
+ * Where a client point falls on a page, in the page's own units, however far
+ * outside the page a drag has carried it.
+ */
+function unitsOf(box: PageBox, client: Point): Point {
+  return {
+    x: ((client.x - box.left) * box.unitWidth) / box.width,
+    y: ((client.y - box.top) * box.unitHeight) / box.height,
+  };
+}
+
+/**
+ * A PDF point in the page's own units: the viewport's transform read at scale
+ * 1, which is the scale the overlay's units are measured at.
+ */
+function unitPointOf(page: OverlayPageView, [x, y]: PdfPoint): Point {
+  const { transform, scale } = page.viewport;
+  const [px, py] = applyTransform(transform, x, y);
+  return { x: px / scale, y: py / scale };
+}
+
+/** The inverse of {@link unitPointOf}. */
+function pdfPointOf(page: OverlayPageView, { x, y }: Point): PdfPoint {
+  const { transform, scale } = page.viewport;
+  return applyTransform(inverseTransform(transform)!, x * scale, y * scale);
 }
 
 /**

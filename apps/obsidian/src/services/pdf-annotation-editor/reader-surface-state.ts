@@ -26,6 +26,8 @@ import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
 import { creationToolbar } from "./creation-toolbar";
 import type { CreationToolbarControl } from "./creation-toolbar";
+import { sameGeometry } from "./geometry-edit";
+import type { EditablePosition, Grip, PdfPoint } from "./geometry-edit";
 import { markPopupRow } from "./mark-popup";
 import type { MarkPopupRowInput, MarkPopupVerb } from "./mark-popup";
 import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
@@ -35,6 +37,25 @@ export interface AnchorAt {
   pageIndex: number;
   fx: number;
   fy: number;
+}
+
+/**
+ * A Geometry Edit in progress on the selected mark. Nothing is written while
+ * it stands; a release saves the proposal once, and the mark draws the
+ * proposal until that write settles.
+ */
+export interface Adjustment {
+  /** The handle, or the body, the press took. */
+  grip: Grip;
+  /** Where the press fell, in PDF points on the mark's page. */
+  from: PdfPoint;
+  /** The position the mark draws while the adjustment stands. */
+  proposal: EditablePosition;
+  /**
+   * `pressed` until the pointer moves, `dragging` while it does, and `saving`
+   * once a release sent the proposal to Zotero.
+   */
+  phase: "pressed" | "dragging" | "saving";
 }
 
 /**
@@ -56,6 +77,8 @@ export type Floating =
       quiet: boolean;
       /** Whether the comment editor stands open under the popup's row. */
       commenting: boolean;
+      /** The Geometry Edit a press on a Mark Handle or the body began. */
+      adjust?: Adjustment;
     }
   | {
       kind: "create";
@@ -242,14 +265,94 @@ export function stepStack(store: ReaderSurfaceStore): void {
   const { floating } = store.getState();
   if (floating.kind !== "selected" || floating.stack.length < 2) return;
   const index = (floating.index + 1) % floating.stack.length;
+  // A Geometry Edit stands on the mark it began on, not on the next one.
+  const { adjust: _adjust, ...selected } = floating;
   store.setState({
     floating: {
-      ...floating,
+      ...selected,
       key: floating.stack[index]!,
       index,
       commenting: false,
     },
   });
+}
+
+/**
+ * Begins a Geometry Edit on the selected mark, proposing its confirmed
+ * position. Nothing begins while no mark with a PDF rects position is
+ * selected.
+ */
+export function beginAdjust(
+  store: ReaderSurfaceStore,
+  { grip, from }: Pick<Adjustment, "grip" | "from">,
+): void {
+  const { floating, records } = store.getState();
+  if (floating.kind !== "selected") return;
+  const position = records.find(({ key }) => key === floating.key)?.position;
+  if (position?.kind !== "pdf-rects") return;
+  store.setState({
+    floating: {
+      ...floating,
+      adjust: { grip, from, proposal: position, phase: "pressed" },
+    },
+  });
+}
+
+/**
+ * Takes the position the pointer now proposes. A move that stores the same
+ * as the held proposal changes nothing, so no subscriber redraws; a saving
+ * adjustment takes no more moves.
+ */
+export function moveAdjust(
+  store: ReaderSurfaceStore,
+  proposal: EditablePosition,
+): void {
+  const { floating } = store.getState();
+  if (floating.kind !== "selected" || !floating.adjust) return;
+  const { adjust } = floating;
+  if (adjust.phase === "saving") return;
+  if (adjust.phase === "dragging" && sameGeometry(adjust.proposal, proposal))
+    return;
+  store.setState({
+    floating: {
+      ...floating,
+      adjust: { ...adjust, proposal, phase: "dragging" },
+    },
+  });
+}
+
+/** Ends the adjustment and draws the mark from its record again. */
+export function cancelAdjust(store: ReaderSurfaceStore): void {
+  const { floating } = store.getState();
+  if (floating.kind !== "selected" || !floating.adjust) return;
+  const { adjust: _adjust, ...selected } = floating;
+  store.setState({ floating: selected });
+}
+
+/**
+ * Ends the drag at a release. A proposal that stores the same as the
+ * confirmed record ends the adjustment; any other is held, `saving`, while
+ * the caller writes it.
+ *
+ * @returns the proposal to save, or `null` for a release that changed nothing.
+ */
+export function endAdjust(store: ReaderSurfaceStore): EditablePosition | null {
+  const { floating, records } = store.getState();
+  if (floating.kind !== "selected" || !floating.adjust) return null;
+  const { adjust } = floating;
+  if (adjust.phase === "saving") return null;
+  const confirmed = records.find(({ key }) => key === floating.key)?.position;
+  if (
+    confirmed?.kind !== "pdf-rects" ||
+    sameGeometry(confirmed, adjust.proposal)
+  ) {
+    cancelAdjust(store);
+    return null;
+  }
+  store.setState({
+    floating: { ...floating, adjust: { ...adjust, phase: "saving" } },
+  });
+  return adjust.proposal;
 }
 
 /** Opens or closes the comment editor or sheet of whatever is floating. */
@@ -485,6 +588,13 @@ export function selectSelectedKey({
   floating,
 }: ReaderSurfaceState): string | null {
   return floating.kind === "selected" ? floating.key : null;
+}
+
+/** The Geometry Edit on the selected mark, or `null` while none stands. */
+export function selectAdjust({
+  floating,
+}: ReaderSurfaceState): Adjustment | null {
+  return floating.kind === "selected" ? (floating.adjust ?? null) : null;
 }
 
 /** The selected Annotation's comment draft, or `null` while it has none. */
