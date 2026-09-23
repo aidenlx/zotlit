@@ -333,6 +333,15 @@ export class PdfViewBinding implements Disposable, HoverParent {
     return this.#gesturing;
   }
 
+  /**
+   * Settles when the last text selection released in this reader has been
+   * placed on the page's characters, or refused. Already settled while none
+   * has. Never rejects.
+   */
+  get settled(): Promise<void> {
+    return this.#creation?.settled ?? Promise.resolve();
+  }
+
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
   activate(): void {
     if (this.#attachment.kind === "resolved") {

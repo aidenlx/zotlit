@@ -17,3 +17,8 @@ export type {
   PdfRectsPosition,
 } from "@/sort-index";
 export { computeSortIndex } from "@/sort-index";
+export type {
+  SelectedText,
+  TextLayerSelection,
+  TextSelection,
+} from "@/text-selection";

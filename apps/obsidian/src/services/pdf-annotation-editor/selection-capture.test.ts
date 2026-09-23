@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
-import { captureSelection, selectionPagesOf } from "./selection-capture";
-import type { ClientBox, SelectionPage } from "./selection-capture";
+import { selectionPagesOf } from "./selection-capture";
+import type { ClientBox } from "./selection-capture";
 
 /**
  * A US Letter page as PDF.js lays it out at 150 %: the matrix is the one
@@ -13,19 +13,70 @@ import type { ClientBox, SelectionPage } from "./selection-capture";
  */
 const SCALE = 1.5;
 const PAGE_HEIGHT = 792;
+const PAGE_WIDTH = 612;
 const UNROTATED = [SCALE, 0, 0, -SCALE, 0, PAGE_HEIGHT * SCALE];
 
 /** The same page turned a quarter turn clockwise, as `rotation: 90` builds it. */
 const ROTATED_90 = [0, SCALE, SCALE, 0, 0, 0];
 
-/** Where the page element sits on screen, which every client box is read against. */
-function pageBox(top = 0): ClientBox {
-  return {
-    left: 20,
+/** The desktop reader's page border at this zoom, in client pixels. */
+const BORDER = 6;
+
+/**
+ * One page element with a text layer of one span per string, laid out with
+ * its content box at `(left, top)` inside a border of {@link BORDER}.
+ */
+function readerPage(
+  spans: readonly string[],
+  {
+    left = 20,
+    top = 0,
+    width = PAGE_WIDTH * SCALE,
+    height = PAGE_HEIGHT * SCALE,
+  } = {},
+) {
+  const div = document.body.createDiv({ cls: "page" });
+  div.createDiv({ cls: "canvasWrapper" });
+  const layer = div.createDiv({ cls: "textLayer" });
+  for (const text of spans) layer.createSpan({ text });
+  layer.createDiv({ cls: "endOfContent" });
+  div.getBoundingClientRect = () =>
+    ({
+      left: left - BORDER,
+      top: top - BORDER,
+      right: left + width + BORDER,
+      bottom: top + height + BORDER,
+      width: width + 2 * BORDER,
+      height: height + 2 * BORDER,
+    }) as DOMRect;
+  Object.defineProperties(div, {
+    clientLeft: { value: BORDER },
+    clientTop: { value: BORDER },
+  });
+  const box: ClientBox = {
+    left,
     top,
-    right: 20 + 612 * SCALE,
-    bottom: top + PAGE_HEIGHT * SCALE,
+    right: left + width,
+    bottom: top + height,
   };
+  return { div, layer, box };
+}
+
+/** The text node of a layer's nth span. */
+const textOf = (layer: Element, index: number) =>
+  layer.children[index]!.firstChild!;
+
+/**
+ * Seeds the boxes the browser would lay out: `text` for any range over a text
+ * node, and the whole page for any range over an element.
+ */
+function layOut(text: ClientBox, page: ClientBox) {
+  vi.spyOn(Range.prototype, "getClientRects").mockImplementation(
+    function (this: Range) {
+      const onText = this.startContainer.nodeType === Node.TEXT_NODE;
+      return [onText ? text : page] as never;
+    },
+  );
 }
 
 /** The client box a PDF-point rectangle occupies on an unrotated page. */
@@ -41,18 +92,6 @@ function clientBoxOf(
   };
 }
 
-function page(overrides: Partial<SelectionPage> = {}): SelectionPage {
-  const box = overrides.box ?? pageBox();
-  return {
-    pageIndex: 0,
-    box,
-    transform: UNROTATED,
-    rects: [clientBoxOf([58.054, 601.98, 211.489, 610.112], box)],
-    text: " Scientific visualization ",
-    ...overrides,
-  };
-}
-
 /** Rounded only for the comparison; the capture itself keeps every digit. */
 function rounded(rects: readonly (readonly number[])[]): number[][] {
   return rects.map((rect) =>
@@ -60,174 +99,152 @@ function rounded(rects: readonly (readonly number[])[]): number[][] {
   );
 }
 
-it("carries one page's boxes back to the PDF points they came from", () => {
-  // The oracle is the Fixture's own underline on `rougier-2014.pdf`, converted
-  // to client boxes and back.
-  // @see packages/scripts/lib/fixture/spec.ts — `ANNOTATIONS`
-  const box = pageBox();
-  const stored = [
-    [67.011, 612.638, 211.485, 620.77],
-    [58.054, 601.98, 211.489, 610.112],
-  ] as const;
+const view = (div: HTMLElement, transform = UNROTATED) =>
+  ({ div, viewport: { transform } }) as never;
 
-  const captured = captureSelection([
-    {
-      ...page({ box }),
-      rects: stored.map((rect) => clientBoxOf(rect, box)),
-    },
+afterEach(() => {
+  vi.restoreAllMocks();
+  document.body.empty();
+});
+
+it("reads where the selection starts and ends in the text layer's text", () => {
+  const { div, layer } = readerPage(["Scientific ", "visualization", "."]);
+  const range = document.createRange();
+  range.setStart(textOf(layer, 0), 4);
+  range.setEnd(textOf(layer, 1), 6);
+
+  const [page] = selectionPagesOf(range, [{ pageIndex: 0, view: view(div) }]);
+
+  expect(page).toMatchObject({
+    pageIndex: 0,
+    layerText: "Scientific visualization.",
+    start: 4,
+    end: 17,
+  });
+  expect(page!.layerText.slice(page!.start!, page!.end!)).toBe("ntific visual");
+});
+
+it("leaves an end open where the selection runs on past the page", () => {
+  const first = readerPage(["A quote that runs"]);
+  const second = readerPage(["on the next page."], { top: 2000 });
+  const range = document.createRange();
+  range.setStart(textOf(first.layer, 0), 2);
+  range.setEnd(textOf(second.layer, 0), 11);
+
+  const pages = selectionPagesOf(range, [
+    { pageIndex: 1, view: view(second.div) },
+    { pageIndex: 0, view: view(first.div) },
   ]);
 
-  expect(captured).not.toBeNull();
-  expect(rounded(captured!.rects)).toEqual(rounded(stored));
-  expect(captured!.nextPageRects).toBeUndefined();
-  expect(captured!.pageIndex).toBe(0);
+  expect(
+    pages.map(({ pageIndex, start, end }) => [pageIndex, start, end]),
+  ).toEqual([
+    [1, null, 11],
+    [0, 2, null],
+  ]);
 });
 
-it("trims the quoted text", () => {
-  expect(captureSelection([page()])?.text).toBe("Scientific visualization");
-});
+it("takes boxes from the selected text alone, never from the page's elements", () => {
+  // A range over a page break holds the canvas and the end-of-content element
+  // whole, and the browser answers the whole page's box for them.
+  const first = readerPage(["end of one"]);
+  const second = readerPage(["start of two"], { top: 2000 });
+  const text = clientBoxOf([58, 600, 211, 610], first.box);
+  layOut(text, first.box);
+  const range = document.createRange();
+  range.setStart(textOf(first.layer, 0), 4);
+  range.setEnd(textOf(second.layer, 0), 5);
 
-it("puts the second page's boxes in nextPageRects and joins the text with one space", () => {
-  const first = pageBox();
-  const second = pageBox(2000);
-
-  const captured = captureSelection([
-    { ...page({ pageIndex: 1, box: second }), text: "on the next page. " },
-    { ...page({ pageIndex: 0, box: first }), text: "A quote that runs " },
+  const [page] = selectionPagesOf(range, [
+    { pageIndex: 0, view: view(first.div) },
   ]);
 
-  expect(captured?.pageIndex).toBe(0);
-  expect(captured?.text).toBe("A quote that runs on the next page.");
-  expect(captured?.nextPageRects).toHaveLength(1);
+  expect(page!.clientRects).toEqual([text]);
+  expect(rounded(page!.rects)).toEqual([[58, 600, 211, 610]]);
 });
 
-it("keeps at most two pages, as Zotero's own reader does", () => {
-  const captured = captureSelection(
-    [0, 1, 2].map((pageIndex) => page({ pageIndex, text: `p${pageIndex}` })),
-  );
+it("reads the boxes against the page inside its border", () => {
+  const { div, layer, box } = readerPage(["Scientific visualization"]);
+  const stored = [58.054, 601.98, 211.489, 610.112] as const;
+  layOut(clientBoxOf(stored, box), box);
+  const range = document.createRange();
+  range.selectNodeContents(textOf(layer, 0));
 
-  expect(captured?.pageIndex).toBe(0);
-  expect(captured?.text).toBe("p0 p1");
-});
+  const [page] = selectionPagesOf(range, [{ pageIndex: 0, view: view(div) }]);
 
-it("drops a second page that is not the next one", () => {
-  const captured = captureSelection([
-    page({ pageIndex: 0, text: "first" }),
-    page({ pageIndex: 4, text: "elsewhere" }),
-  ]);
-
-  expect(captured?.text).toBe("first");
-  expect(captured?.nextPageRects).toBeUndefined();
+  expect(page!.box).toMatchObject(box);
+  expect(rounded(page!.rects)).toEqual(rounded([stored]));
 });
 
 it("clips a box that overhangs the page to the page box", () => {
-  const box = pageBox();
-  const overhang: ClientBox = {
-    left: box.left - 500,
-    top: box.top - 500,
-    right: box.left + 100 * SCALE,
-    bottom: box.top + 100 * SCALE,
-  };
+  const { div, layer, box } = readerPage(["overhang"]);
+  layOut(
+    {
+      left: box.left - 500,
+      top: box.top - 500,
+      right: box.left + 100 * SCALE,
+      bottom: box.top + 100 * SCALE,
+    },
+    box,
+  );
+  const range = document.createRange();
+  range.selectNodeContents(textOf(layer, 0));
 
-  const captured = captureSelection([page({ box, rects: [overhang] })]);
+  const [page] = selectionPagesOf(range, [{ pageIndex: 0, view: view(div) }]);
 
   // The clip leaves the page's own upper-left corner: x from 0, y from the top.
-  expect(rounded(captured!.rects)).toEqual([
+  expect(rounded(page!.rects)).toEqual([
     [0, PAGE_HEIGHT - 100, 100, PAGE_HEIGHT],
   ]);
 });
 
-it("drops a box that falls wholly outside the page", () => {
-  const box = pageBox();
-  const outside: ClientBox = {
-    left: box.right + 10,
-    top: box.top + 10,
-    right: box.right + 40,
-    bottom: box.top + 40,
-  };
-
-  expect(captureSelection([page({ box, rects: [outside] })])).toBeNull();
-});
-
 it("reads a rotated page through the same inverse", () => {
-  const box: ClientBox = {
+  const { div, layer, box } = readerPage(["turned"], {
     left: 0,
-    top: 0,
-    right: PAGE_HEIGHT * SCALE,
-    bottom: 612 * SCALE,
-  };
+    width: PAGE_HEIGHT * SCALE,
+    height: PAGE_WIDTH * SCALE,
+  });
   // On a page turned a quarter turn, a PDF point (x, y) lands at
   // (y * scale, x * scale), so this client box is the PDF box [10, 20, 30, 40].
-  const rect: ClientBox = {
-    left: 20 * SCALE,
-    top: 10 * SCALE,
-    right: 40 * SCALE,
-    bottom: 30 * SCALE,
-  };
-
-  const captured = captureSelection([
-    { ...page({ box }), transform: ROTATED_90, rects: [rect] },
-  ]);
-
-  expect(rounded(captured!.rects)).toEqual([[10, 20, 30, 40]]);
-});
-
-it("answers nothing for a selection that quotes only whitespace", () => {
-  expect(captureSelection([page({ text: "   " })])).toBeNull();
-});
-
-it("answers nothing where no page carries a box", () => {
-  expect(captureSelection([])).toBeNull();
-});
-
-it("splits one range into the part each page holds", () => {
-  const first = document.createElement("div");
-  const second = document.createElement("div");
-  first.textContent = "A quote that runs";
-  second.textContent = "on the next page.";
-  document.body.append(first, second);
-
+  layOut(
+    {
+      left: 20 * SCALE,
+      top: 10 * SCALE,
+      right: 40 * SCALE,
+      bottom: 30 * SCALE,
+    },
+    box,
+  );
   const range = document.createRange();
-  range.setStart(first.firstChild!, 2);
-  range.setEnd(second.firstChild!, 11);
+  range.selectNodeContents(textOf(layer, 0));
 
-  const pages = selectionPagesOf(range, [
-    {
-      pageIndex: 0,
-      view: { div: first, viewport: { transform: UNROTATED } } as never,
-    },
-    {
-      pageIndex: 1,
-      view: { div: second, viewport: { transform: UNROTATED } } as never,
-    },
+  const [page] = selectionPagesOf(range, [
+    { pageIndex: 0, view: view(div, ROTATED_90) },
   ]);
 
-  expect(pages.map(({ pageIndex, text }) => [pageIndex, text])).toEqual([
-    [0, "quote that runs"],
-    [1, "on the next"],
-  ]);
+  expect(rounded(page!.rects)).toEqual([[10, 20, 30, 40]]);
 });
 
 it("leaves out a page the range never reaches", () => {
-  const inside = document.createElement("div");
-  const outside = document.createElement("div");
-  inside.textContent = "quoted";
-  outside.textContent = "untouched";
-  document.body.append(inside, outside);
-
+  const inside = readerPage(["quoted"]);
+  const outside = readerPage(["untouched"], { top: 2000 });
   const range = document.createRange();
-  range.selectNodeContents(inside);
+  range.selectNodeContents(inside.layer);
 
   const pages = selectionPagesOf(range, [
-    {
-      pageIndex: 0,
-      view: { div: inside, viewport: { transform: UNROTATED } } as never,
-    },
-    {
-      pageIndex: 1,
-      view: { div: outside, viewport: { transform: UNROTATED } } as never,
-    },
+    { pageIndex: 0, view: view(inside.div) },
+    { pageIndex: 1, view: view(outside.div) },
   ]);
 
   expect(pages.map(({ pageIndex }) => pageIndex)).toEqual([0]);
+});
+
+it("leaves out a page with no text layer", () => {
+  const bare = document.body.createDiv({ cls: "page", text: "no layer" });
+  const range = document.createRange();
+  range.selectNodeContents(bare);
+
+  expect(selectionPagesOf(range, [{ pageIndex: 0, view: view(bare) }])).toEqual(
+    [],
+  );
 });

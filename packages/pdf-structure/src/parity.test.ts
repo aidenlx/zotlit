@@ -26,6 +26,7 @@ import { structurePage, toZoteroChars } from "@/chars";
 import { PdfTextStructure } from "@/session";
 import type { PdfPosition } from "@/sort-index";
 import { computeSortIndex } from "@/sort-index";
+import { offsetsByRects, textRange } from "@/text-selection";
 
 const run = promisify(execFile);
 
@@ -327,27 +328,122 @@ describe.skipIf(skip)("the parity PDFs the Fixture declares", () => {
   );
 });
 
+/** The reader's own selection module, which the text-selection port copies. */
+interface ZoteroSelection {
+  extractRange(options: {
+    chars: readonly unknown[];
+    pageIndex: number;
+    anchor: number;
+    head: number;
+  }): { position: { rects: Rect[] }; text: string } | null;
+  extractRangeByRects(options: {
+    chars: readonly unknown[];
+    pageIndex: number;
+    rects: readonly Rect[];
+  }): { from: number; to: number } | null;
+}
+
+/**
+ * The text-selection port against Zotero's own `selection.js`, over the same
+ * Structured Characters: the characters themselves are already proved above,
+ * so this isolates the range, rectangle and text rules.
+ */
+describe.skipIf(skip)("text ranges", () => {
+  /** Anchor and head pairs spread over the page, both directions included. */
+  const pairs = (charCount: number) =>
+    Array.from({ length: 40 }, (_, i) => [
+      (i * 37) % (charCount + 1),
+      (i * 91 + 13) % (charCount + 1),
+    ]);
+
+  const withText = PDFS.filter(
+    (asset) =>
+      !PARITY_PDFS.some(
+        (pdf) => pdf.asset === asset && pdf.branches.includes("no-text-layer"),
+      ),
+  );
+
+  it.each(withText)(
+    "match Zotero's ranges on %s",
+    async (asset) => {
+      const zotero = (await import(
+        /* @vite-ignore */ join(checkout, "reader/src/pdf/selection.js")
+      )) as ZoteroSelection;
+      const oracle = await askZotero(asset);
+      const got: string[] = [];
+      const want: string[] = [];
+
+      for (const [pageIndex, page] of oracle.pages.entries()) {
+        const { chars } = structurePage(
+          pageIndex,
+          page.viewBox,
+          asObsidianItems(page.items),
+        );
+        if (!chars.length) continue;
+        for (const [anchor, head] of pairs(chars.length)) {
+          const where = `${asset} page ${pageIndex} ${anchor}-${head}`;
+          const expected = zotero.extractRange({
+            chars,
+            pageIndex,
+            anchor: anchor!,
+            head: head!,
+          })!;
+          const range = textRange(chars, anchor!, head!);
+          got.push(`${where} ${JSON.stringify(range.rects)} ${range.text}`);
+          want.push(
+            `${where} ${JSON.stringify(expected.position.rects)} ${expected.text}`,
+          );
+          if (!range.rects.length) continue;
+
+          const byRects = zotero.extractRangeByRects({
+            chars,
+            pageIndex,
+            rects: range.rects,
+          });
+          got.push(
+            `${where} ${JSON.stringify(offsetsByRects(chars, range.rects))}`,
+          );
+          want.push(
+            `${where} ${JSON.stringify(byRects && { from: byRects.from, to: byRects.to })}`,
+          );
+        }
+      }
+
+      expect(got.length).toBeGreaterThan(0);
+      expect(got).toEqual(want);
+    },
+    180_000,
+  );
+});
+
 describe.skipIf(skip)("the vendored port", () => {
+  const marker = "// === verbatim upstream copy starts here ===\n";
+
+  async function expectVerbatim(file: string, upstreamPath: string) {
+    const vendored = await readFile(
+      join(packageRoot, "src/vendor", file),
+      "utf8",
+    );
+    const upstream = await readFile(join(checkout, upstreamPath), "utf8");
+
+    const [header, ...body] = vendored.split(marker);
+    expect(
+      Object.values(PINNED_COMMITS).filter((commit) =>
+        header!.includes(commit),
+      ),
+    ).toEqual(Object.values(PINNED_COMMITS));
+    expect(body.join(marker)).toBe(upstream);
+  }
+
+  it("carries native-text-selection-map.js verbatim under its provenance header", () =>
+    expectVerbatim(
+      "native-text-selection-map.js",
+      "reader/src/pdf/native-text-selection-map.mjs",
+    ));
+
   it.each(["structure.js", "page-label.js", "util.js"] as const)(
     "carries %s verbatim under its provenance header",
-    async (file) => {
-      const marker = "// === verbatim upstream copy starts here ===\n";
-      const vendored = await readFile(
-        join(packageRoot, "src/vendor", file),
-        "utf8",
-      );
-      const upstream = await readFile(
-        join(checkout, "reader/pdfjs/pdf.js/src/core/module", file),
-        "utf8",
-      );
-
-      const [header, ...body] = vendored.split(marker);
-      expect(
-        Object.values(PINNED_COMMITS).filter((commit) =>
-          header!.includes(commit),
-        ),
-      ).toEqual(Object.values(PINNED_COMMITS));
-      expect(body.join(marker)).toBe(upstream);
-    },
+    (file) =>
+      expectVerbatim(file, `reader/pdfjs/pdf.js/src/core/module/${file}`),
   );
 });

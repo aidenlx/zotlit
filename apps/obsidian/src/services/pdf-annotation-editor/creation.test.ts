@@ -2,13 +2,14 @@
 import { Menu } from "@mock/obsidian";
 import { afterEach, expect, it, vi } from "vitest";
 
+import type { SelectedText, TextSelection } from "@zotlit/pdf-structure";
+
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationDraft,
   CreateOutcome,
 } from "@/services/annotation-repository/service";
-import { createRequest } from "@/services/annotation-repository/write";
 
 import { annotation, toolColors } from "./__fixtures__";
 import { MarkCreation } from "./creation";
@@ -58,20 +59,35 @@ function reader(
   options: {
     capability?: EditingCapability;
     outcome?: CreateOutcome;
-    text?: string;
+    /** What the page's characters make of the selection; `null` refuses it. */
+    selected?: SelectedText | null;
   } = {},
 ) {
   vi.useFakeTimers();
   const containerEl = document.body.createDiv();
   containerEl.getBoundingClientRect = () => PAGE_BOX as never;
   const pageEl = containerEl.createDiv();
-  pageEl.textContent = options.text ?? "Scientific visualization";
+  const textLayer = pageEl.createDiv({
+    cls: "textLayer",
+    text: "Scientific visualization",
+  });
   pageEl.getBoundingClientRect = () => PAGE_BOX as never;
 
   const drafts: Omit<AnnotationDraft, "parentKey">[] = [];
   const sorted: unknown[] = [];
   const revealed: string[] = [];
+  const selections: TextSelection[] = [];
   const structure = {
+    selectText: vi.fn(async (selection: TextSelection) => {
+      selections.push(selection);
+      return options.selected === undefined
+        ? {
+            pageIndex: 0,
+            rects: QUOTE.map((rect) => [...rect] as const),
+            text: "Scientific visualization",
+          }
+        : options.selected;
+    }),
     sortIndex: vi.fn(async (position: unknown) => {
       sorted.push(position);
       return "00000|000434|00180";
@@ -125,16 +141,27 @@ function reader(
     pageEl,
     drafts,
     sorted,
+    selections,
     revealed,
     structure,
     slot: document.body.createDiv(),
     setCapability(next: EditingCapability) {
       capability = next;
     },
-    /** A drag that starts on the page and releases with text selected. */
-    selectText(rects = boxes()) {
+    /**
+     * A drag that starts on the page and releases with text selected, once
+     * the selection has been placed on the page's characters.
+     */
+    async selectText(rects = boxes()) {
+      this.startSelecting(rects);
+      await creation.settled;
+      // Obsidian's hover popover shows on a timer, even at no delay.
+      vi.advanceTimersByTime(0);
+    },
+    /** The same drag, left before its selection has been placed. */
+    startSelecting(rects = boxes()) {
       const range = document.createRange();
-      range.selectNodeContents(pageEl);
+      range.selectNodeContents(textLayer);
       // The capture clamps a clone of the range to each page, so the boxes are
       // supplied on the prototype rather than on this one object.
       vi.spyOn(Range.prototype, "getClientRects").mockReturnValue(
@@ -145,13 +172,12 @@ function reader(
         isCollapsed: false,
         getRangeAt: () => range,
         removeAllRanges: () => undefined,
+        toString: () => range.toString(),
       } as never);
       creation.press(
         new PointerEvent("pointerdown", { clientX: 100, clientY: 100 }),
       );
       creation.settle();
-      // Obsidian's hover popover shows on a timer, even at no delay.
-      vi.advanceTimersByTime(0);
     },
     /** A press on the page that selects nothing. */
     pressEmpty() {
@@ -187,10 +213,10 @@ afterEach(() => {
   document.body.empty();
 });
 
-it("opens the popup in create mode once the drag on the page has ended", () => {
+it("opens the popup in create mode once the drag on the page has ended", async () => {
   using open = reader();
 
-  open.selectText();
+  await open.selectText();
 
   const verbs = [
     ...(open.popup()?.querySelectorAll<HTMLElement>("[data-zt-verb]") ?? []),
@@ -204,19 +230,19 @@ it("opens the popup in create mode once the drag on the page has ended", () => {
   ]);
 });
 
-it("opens nothing for a drag that did not start on the page", () => {
+it("opens nothing for a drag that did not start on the page", async () => {
   using open = reader();
   open.pageEl.getBoundingClientRect = () =>
     ({ ...PAGE_BOX, left: 5000, right: 6000 }) as never;
 
-  open.selectText();
+  await open.selectText();
 
   expect(open.popup()).toBeNull();
 });
 
 it("commits a swatch click and reopens on the new mark", async () => {
   using open = reader();
-  open.selectText();
+  await open.selectText();
 
   open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
   await open.creation.created;
@@ -234,29 +260,81 @@ it("commits a swatch click and reopens on the new mark", async () => {
   expect(open.popup()).toBeNull();
 });
 
-it("computes the Sort Index from the unrounded rects the write rounds", async () => {
-  // A quote whose corners carry more than three decimals: the Sort Index sees
-  // every digit and the request body sees three.
-  const unrounded = [[10.123_456, 20.987_654, 30.111_111, 40.999_999]] as const;
+it("reads the selection off the page's text layer", async () => {
   using open = reader();
-  open.selectText(boxes(unrounded));
+
+  await open.selectText();
+
+  expect(open.selections).toEqual([
+    {
+      text: "Scientific visualization",
+      pages: [
+        expect.objectContaining({
+          pageIndex: 0,
+          layerText: "Scientific visualization",
+          start: 0,
+          end: 24,
+        }),
+      ],
+    },
+  ]);
+});
+
+it("writes the rectangles and the text the page's characters give", async () => {
+  const selected = {
+    pageIndex: 0,
+    rects: [[58.054, 601.98, 211.489, 610.112]],
+    nextPageRects: [[58.05, 263.92, 211.46, 272.05]],
+    text: "this process",
+  } as SelectedText;
+  using open = reader({ selected });
+  await open.selectText();
 
   open.press("h");
   await open.creation.created;
 
-  const [position] = open.sorted as { rects: number[][] }[];
-  expect(
-    position!.rects[0]!.map((value) => Math.round(value * 1e6) / 1e6),
-  ).toEqual([10.123_456, 20.987_654, 30.111_111, 40.999_999]);
-  const [body] = JSON.parse(
-    createRequest("users/0", {
-      ...open.drafts[0]!,
-      parentKey: "RGRPDF24",
-    }).body!,
-  ) as { annotationPosition: string }[];
-  expect(JSON.parse(body!.annotationPosition).rects).toEqual([
-    [10.123, 20.988, 30.111, 41],
+  const position = {
+    pageIndex: 0,
+    rects: selected.rects,
+    nextPageRects: selected.nextPageRects,
+  };
+  expect(open.sorted).toEqual([position]);
+  expect(open.drafts).toEqual([
+    expect.objectContaining({ text: "this process", position }),
   ]);
+});
+
+it("opens nothing for a selection the page's characters cannot place", async () => {
+  using open = reader({ selected: null });
+
+  await open.selectText();
+
+  expect(open.popup()).toBeNull();
+});
+
+it("opens nothing for a selection that collapsed before it was placed", async () => {
+  using open = reader();
+
+  open.startSelecting();
+  vi.spyOn(window, "getSelection").mockReturnValue({
+    rangeCount: 0,
+    isCollapsed: true,
+  } as never);
+  await open.creation.settled;
+  vi.advanceTimersByTime(0);
+
+  expect(open.popup()).toBeNull();
+});
+
+it("opens nothing for a selection the next press left before it was placed", async () => {
+  using open = reader();
+
+  open.startSelecting();
+  open.pressEmpty();
+  await open.creation.settled;
+  vi.advanceTimersByTime(0);
+
+  expect(open.popup()).toBeNull();
 });
 
 it.each([
@@ -266,7 +344,7 @@ it.each([
   "commits $type on $key while a selection is waiting",
   async ({ key, type }) => {
     using open = reader();
-    open.selectText();
+    await open.selectText();
 
     const event = open.press(key);
     await open.creation.created;
@@ -280,7 +358,7 @@ it.each([1, 4, 8])(
   "commits in swatch %i while a selection is waiting",
   async (position) => {
     using open = reader();
-    open.selectText();
+    await open.selectText();
 
     open.press(String(position));
     await open.creation.created;
@@ -293,7 +371,7 @@ it.each([1, 4, 8])(
 
 it("opens the comment sheet on c, and saves it with the create", async () => {
   using open = reader();
-  open.selectText();
+  await open.selectText();
 
   open.press("c");
   const editor = open.popup()!.querySelector("textarea")!;
@@ -325,7 +403,7 @@ it("colours the armed tool with 1 to 8 while no selection is waiting", async () 
   open.press("u");
   open.press("5");
 
-  open.selectText();
+  await open.selectText();
   await open.creation.created;
 
   expect(open.drafts.map(({ type, color }) => [type, color])).toEqual([
@@ -367,17 +445,17 @@ it("commits a released selection at once while a tool is armed", async () => {
   using open = reader();
 
   open.press("u");
-  open.selectText();
+  await open.selectText();
   await open.creation.created;
 
   expect(open.drafts.map(({ type }) => type)).toEqual(["underline"]);
   expect(open.popup()).toBeNull();
 });
 
-it("writes a popup colour back as the tool it commits with", () => {
+it("writes a popup colour back as the tool it commits with", async () => {
   using open = reader();
   open.creation.mountToolbar(open.slot);
-  open.selectText();
+  await open.selectText();
 
   open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-6"]')!.click();
 
@@ -421,17 +499,17 @@ it("commits a released selection at once while a tool is armed", async () => {
   using open = reader();
 
   open.press("u");
-  open.selectText();
+  await open.selectText();
   await open.creation.created;
 
   expect(open.drafts.map(({ type }) => type)).toEqual(["underline"]);
   expect(open.popup()).toBeNull();
 });
 
-it("writes a popup colour back as the tool it commits with", () => {
+it("writes a popup colour back as the tool it commits with", async () => {
   using open = reader();
   open.creation.mountToolbar(open.slot);
-  open.selectText();
+  await open.selectText();
 
   open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-6"]')!.click();
 
@@ -441,10 +519,10 @@ it("writes a popup colour back as the tool it commits with", () => {
   ).toBe(ANNOTATION_COLORS[5]);
 });
 
-it("steps back one level on Escape: sheet, then popup, then the armed tool", () => {
+it("steps back one level on Escape: sheet, then popup, then the armed tool", async () => {
   using open = reader();
   open.creation.mountToolbar(open.slot);
-  open.selectText();
+  await open.selectText();
   open.press("c");
   expect(open.popup()!.querySelector("textarea")).not.toBeNull();
 
@@ -497,7 +575,7 @@ it("writes nothing under a block, and leaves the notice to the binding", async (
   using open = reader({
     capability: { kind: "read-only", reason: "zotero-unavailable" },
   });
-  open.selectText();
+  await open.selectText();
 
   open.press("h");
   await open.creation.created;
@@ -521,18 +599,18 @@ it("arms nothing under a block, so the toolbar does not answer the notice back",
   ).toBe("false");
 });
 
-it("dismisses the popup on the next press", () => {
+it("dismisses the popup on the next press", async () => {
   using open = reader();
-  open.selectText();
+  await open.selectText();
 
   open.pressEmpty();
 
   expect(open.popup()).toBeNull();
 });
 
-it("stands the popup down when the selection collapses", () => {
+it("stands the popup down when the selection collapses", async () => {
   using open = reader();
-  open.selectText();
+  await open.selectText();
 
   vi.spyOn(window, "getSelection").mockReturnValue({
     rangeCount: 0,
@@ -543,9 +621,9 @@ it("stands the popup down when the selection collapses", () => {
   expect(open.popup()).toBeNull();
 });
 
-it("keeps the popup while the comment sheet holds the caret", () => {
+it("keeps the popup while the comment sheet holds the caret", async () => {
   using open = reader();
-  open.selectText();
+  await open.selectText();
   open.press("c");
 
   vi.spyOn(window, "getSelection").mockReturnValue({
