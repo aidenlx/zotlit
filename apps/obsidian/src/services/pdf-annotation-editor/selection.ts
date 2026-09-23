@@ -8,11 +8,10 @@
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
-import type { Scope } from "obsidian";
+import type { App } from "obsidian";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
-import { bindEditorSubmitScope } from "@/lib/editor-scope";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
@@ -31,10 +30,17 @@ import {
   editingLive,
   heldCommentDraft,
 } from "@/views/annot-view/card-controls";
-import type { HeldDraftAction } from "@/views/annot-view/card-controls";
+import {
+  renderCommentSheet,
+  renderConflictPanel,
+  renderHeldDraftPanel,
+} from "@/views/annot-view/comment-sheet";
+import type {
+  CommentDraftActions,
+  CommentSheet,
+} from "@/views/annot-view/comment-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
-import { renderCommentSheet } from "./create-popup";
 import type { CreationGestures } from "./creation";
 import {
   distance,
@@ -43,7 +49,7 @@ import {
   resolveMarkClick,
 } from "./hit-test";
 import type { HitPage, MarkSelectionPoint, PageBox, Point } from "./hit-test";
-import { markPopupRow, renderMarkPopupRow } from "./mark-popup";
+import { markPopupRow, popupColumn, renderMarkPopupRow } from "./mark-popup";
 import type { MarkPopupControlId, MarkPopupRowInput } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
 import {
@@ -114,8 +120,8 @@ export interface MarkGestures {
 export interface MarkSelectionDeps {
   /** The PDF view's container: where the gestures are heard, and what scrolls. */
   containerEl: HTMLElement;
-  /** The PDF view's native key scope, active only while this editor is focused. */
-  scope: Scope;
+  /** The app the comment editor takes its keys through. */
+  app: App;
   /**
    * The one popup of this view: a press inside it leaves the selection
    * standing, and a scroll re-hangs it.
@@ -160,8 +166,9 @@ export class MarkSelection implements Disposable {
    * from; `null` for a selection no click made.
    */
   #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
-  #commentEditor: HTMLTextAreaElement | null = null;
-  #commentEditorLife: DisposableStack | null = null;
+  /** The row of verbs the popup last built; `null` until one is. */
+  #row: HTMLElement | null = null;
+  #commentEditor: CommentSheet | null = null;
   #pressedAt: Point | null = null;
 
   constructor(deps: MarkSelectionDeps) {
@@ -367,7 +374,7 @@ export class MarkSelection implements Disposable {
       // listener, which hears every key of the shared edit keymap.
       if (this.#live()) {
         event.preventDefault();
-        this.#write(this.#deps.annotations.patchColor(key, swatch));
+        this.#recolor(key, swatch);
       }
       return;
     }
@@ -393,36 +400,38 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * The popup's content in selected mode, for the popup host: the row, or the
-   * comment editor while it is open. The editor is built into an empty content
-   * element only; a refresh patches its controls and leaves its caret alone.
+   * The popup's content in selected mode, for the popup host: the row, with the
+   * comment editor under it while it is open. The editor is built into an
+   * empty content element only; a refresh redraws the row and patches the
+   * editor's controls, leaving its caret alone.
    */
   renderPopup(content: HTMLElement): void {
-    const state = this.#state();
-    const input = selectSelectedRowInput(state);
+    const input = selectSelectedRowInput(this.#state());
     if (!input) return;
-    if (state.floating.kind === "selected" && state.floating.commenting) {
-      if (!content.firstChild || !this.#commentEditor)
-        this.#renderCommentEditor(content, input);
-      else this.#updateCommentControls();
+    if (input.commenting && content.firstChild && this.#commentEditor) {
+      if (this.#row) this.#renderVerbs(this.#row, input);
+      this.#updateCommentControls();
       return;
     }
     this.#closeCommentEditor();
-    this.#renderRow(content, input);
+    const column = this.#renderRow(content, input);
+    if (input.commenting) this.#renderCommentEditor(column, input);
   }
 
-  #renderRow(content: HTMLElement, input: MarkPopupRowInput): void {
-    const { annotation, mutation } = input;
-    content.empty();
-    const column = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
-    });
-    const row = column.createDiv({
-      cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
-    });
+  #renderVerbs(row: HTMLElement, input: MarkPopupRowInput): void {
     renderMarkPopupRow(row, markPopupRow(input), (id, node) =>
-      this.#activate(id, node, annotation),
+      this.#activate(id, node, input.annotation),
     );
+  }
+
+  /** @returns the column the row stands in, which the editor joins. */
+  #renderRow(content: HTMLElement, input: MarkPopupRowInput): HTMLElement {
+    const { annotation, mutation } = input;
+    const { column, row } = popupColumn(content);
+    this.#row = row;
+    this.#renderVerbs(row, input);
+    // The open editor is where the draft stands, so neither panel repeats it.
+    if (input.commenting) return column;
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
     // decision offered on one is offered on the other.
@@ -432,159 +441,96 @@ export class MarkSelection implements Disposable {
       input.now,
     );
     if (held) {
-      const preview = column.createDiv({
-        cls: ["zt-pdf-comment-sheet", "zt:mt-2"],
+      renderHeldDraftPanel(column.createDiv(), held, {
+        surface: "popup",
+        actions: this.#draftActions(annotation),
+        onOpen: () => this.#toggleComment(annotation),
       });
-      preview.createDiv({
-        cls: "zt:text-xs zt:text-muted-foreground",
-        text: m.annot_view_comment_draft(),
-      });
-      preview.createDiv({
-        cls: "zt:whitespace-pre-wrap zt:break-words zt:select-text",
-        text: held.text,
-      });
-      if (held.reason !== null) {
-        preview.createDiv({
-          cls: "zt:text-xs zt:text-muted-foreground",
-          attr: { role: "status" },
-          text: held.reason,
-        });
-      }
-      const verbs = preview.createDiv({
-        cls: ["zt:flex", "zt:flex-wrap", "zt:gap-2", "zt:mt-2"],
-      });
-      for (const action of held.actions) {
-        const button = verbs.createEl("button", {
-          ...(action.primary && { cls: "mod-cta" }),
-          text: action.label,
-        });
-        button.disabled = !action.enabled;
-        button.addEventListener("click", () => {
-          this.#runHeldDraftAction(action.kind, annotation);
-        });
-      }
     }
     if (
       mutation.kind === "conflict" &&
       mutation.conflict.write === "comment" &&
       this.#deps.annotations.commentDraftFor(annotation.key)
     ) {
-      this.#renderCommentConflict(column, annotation, mutation.conflict);
+      renderConflictPanel(
+        column.createDiv(),
+        conflictPanel(mutation.conflict),
+        {
+          surface: "popup",
+          live: editingLive(this.#capability()),
+          actions: this.#draftActions(annotation),
+        },
+      );
     }
+    return column;
   }
 
-  /** One verb from the held-draft panel, which both surfaces offer. */
-  #runHeldDraftAction(
-    kind: HeldDraftAction["kind"],
-    annotation: AnnotationRecord,
-  ): void {
-    if (kind === "save") {
-      this.#write(this.#deps.annotations.submitComment(annotation.key));
-    } else if (kind === "allow-editing") {
-      this.#deps.gestures.allowEditing();
-    } else {
-      this.#deps.annotations.discardCommentDraft(annotation.key);
-    }
+  /** The panels' verbs, bound to the repository's own writes. */
+  #draftActions(annotation: AnnotationRecord): CommentDraftActions {
+    const { annotations, gestures } = this.#deps;
+    const discard = () => annotations.discardCommentDraft(annotation.key);
+    return {
+      save: () => this.#write(annotations.submitComment(annotation.key)),
+      allowEditing: () => gestures.allowEditing(),
+      discard,
+      applyAgain: () =>
+        this.#write(annotations.retryCommentDraft(annotation.key)),
+      discardConflict: discard,
+    };
   }
 
-  #renderCommentEditor(content: HTMLElement, input: MarkPopupRowInput): void {
+  #renderCommentEditor(column: HTMLElement, input: MarkPopupRowInput): void {
     const { annotation } = input;
     const draft =
       selectSelectedDraft(this.#state()) ??
       this.#deps.annotations.editComment(annotation.key);
     if (!draft) {
-      this.#closeCommentEditor();
       // Closed in the state too, so a later refresh does not try again.
       setCommenting(this.#deps.surfaceState, false);
-      this.#renderRow(content, input);
       return;
     }
-    this.#commentEditorLife?.[Symbol.dispose]();
-    const life = new DisposableStack();
-    this.#commentEditorLife = life;
-    content.empty();
-    const column = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
-    });
-    const editor = renderCommentSheet(column, {
-      value: draft.text,
-      onSave: (comment) => {
-        this.#deps.annotations.editComment(annotation.key, comment);
-        this.#write(this.#deps.annotations.submitComment(annotation.key));
+    const close = (): void => {
+      this.#submitCommentEditor(annotation, true);
+      setCommenting(this.#deps.surfaceState, false);
+    };
+    this.#commentEditor = renderCommentSheet(
+      column.createDiv(),
+      {
+        app: this.#deps.app,
+        surface: "popup",
+        value: draft.text,
+        onChange: (text) =>
+          this.#deps.annotations.editComment(annotation.key, text),
+        onSubmit: () => this.#submitCommentEditor(annotation),
+        onSave: () => this.#submitCommentEditor(annotation),
+        onCancel: close,
+        onLeave: close,
+        // The row's own verbs stand beside the editor, so reaching one is not
+        // leaving it.
+        within: column,
       },
-      onCancel: () => {
-        this.#submitCommentEditor(annotation, true);
-        setCommenting(this.#deps.surfaceState, false);
-      },
-      nativeSubmit: true,
-    });
-    editor.addEventListener("input", () => {
-      this.#deps.annotations.editComment(annotation.key, editor.value);
-    });
-    this.#commentEditor = editor;
-    const feedback = column.createDiv({
-      cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2 zt:mt-2",
-    });
-    feedback.createSpan({
-      cls: "zt:flex-1 zt:min-w-0 zt:text-xs zt:text-muted-foreground",
-      attr: { "data-comment-status": "", role: "status" },
-    });
-    const save = feedback.createEl("button", {
-      text: m.annot_view_comment_save(),
-      attr: { "data-comment-save": "", type: "button" },
-    });
-    save.addEventListener("click", () => this.#submitCommentEditor(annotation));
-    this.#updateCommentControls();
-    life.use(
-      bindEditorSubmitScope(editor, this.#deps.scope, () =>
-        this.#submitCommentEditor(annotation),
-      ),
+      this.#commentControls(annotation),
     );
-    life.use(
-      registerDomEvent(editor, "blur", (event) => {
-        const target = event.relatedTarget as Node | null;
-        if (target?.instanceOf(Node) && column.contains(target)) return;
-        const controls = commentEditorControls(
-          this.#capability(),
-          this.#deps.annotations.commentDraftFor(annotation.key),
-          this.#state().capabilityAt,
-        );
-        if (controls.manual || controls.readOnly) return;
-        this.#submitCommentEditor(annotation, true);
-        setCommenting(this.#deps.surfaceState, false);
-      }),
-    );
-    editor.focus();
-    editor.setSelectionRange(editor.value.length, editor.value.length);
   }
 
-  #updateCommentControls(): void {
-    const editor = this.#commentEditor;
-    const annotation = this.#record();
-    if (!editor || !annotation) return;
-    const controls = commentEditorControls(
+  #commentControls(annotation: AnnotationRecord) {
+    return commentEditorControls(
       this.#capability(),
       this.#deps.annotations.commentDraftFor(annotation.key),
       this.#state().capabilityAt,
     );
-    editor.readOnly = controls.readOnly;
-    const status = editor.parentElement?.querySelector<HTMLElement>(
-      "[data-comment-status]",
-    );
-    if (status) status.textContent = controls.hint ?? "";
-    const save = editor.parentElement?.querySelector<HTMLButtonElement>(
-      "[data-comment-save]",
-    );
-    if (save) {
-      save.toggle(controls.manual);
-      save.disabled = controls.saveDisabled;
-    }
+  }
+
+  #updateCommentControls(): void {
+    const annotation = this.#record();
+    if (!annotation) return;
+    this.#commentEditor?.update(this.#commentControls(annotation));
   }
 
   #submitCommentEditor(annotation: AnnotationRecord, automatic = false): void {
     const editor = this.#commentEditor;
     if (!editor) return;
-    this.#deps.annotations.editComment(annotation.key, editor.value);
+    this.#deps.annotations.editComment(annotation.key, editor.text());
     this.#write(
       this.#deps.annotations.submitComment(annotation.key, { automatic }),
     );
@@ -599,8 +545,7 @@ export class MarkSelection implements Disposable {
   }
 
   #closeCommentEditor(): void {
-    this.#commentEditorLife?.[Symbol.dispose]();
-    this.#commentEditorLife = null;
+    this.#commentEditor?.[Symbol.dispose]();
     this.#commentEditor = null;
   }
 
@@ -612,46 +557,7 @@ export class MarkSelection implements Disposable {
     const editor = this.#commentEditor;
     if (!editor) return;
     this.#updateCommentControls();
-    if (!draft || editor.value === draft.text) return;
-    const { selectionStart, selectionEnd } = editor;
-    editor.value = draft.text;
-    editor.setSelectionRange(
-      Math.min(selectionStart, draft.text.length),
-      Math.min(selectionEnd, draft.text.length),
-    );
-  }
-
-  #renderCommentConflict(
-    content: HTMLElement,
-    annotation: AnnotationRecord,
-    conflict: Extract<MutationState, { kind: "conflict" }>["conflict"],
-  ): void {
-    const panel = conflictPanel(conflict);
-    const box = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1", "zt:px-2", "zt:pb-1"],
-    });
-    box.createDiv({ cls: "zt:font-medium", text: panel.title });
-    for (const value of panel.values) {
-      box.createDiv({ text: `${value.label}: ${value.value}` });
-    }
-    const actions = box.createDiv({
-      cls: ["zt:flex", "zt:flex-wrap", "zt:gap-2", "zt:mt-2"],
-    });
-    for (const action of panel.actions) {
-      const button = actions.createEl("button", {
-        cls: "mod-cta",
-        text: action.label,
-      });
-      button.disabled =
-        action.kind !== "discard" && !editingLive(this.#capability());
-      button.addEventListener("click", () => {
-        if (action.kind === "apply-again") {
-          this.#write(this.#deps.annotations.retryCommentDraft(annotation.key));
-        } else {
-          this.#deps.annotations.discardCommentDraft(annotation.key);
-        }
-      });
-    }
+    if (draft) editor.editor.setText(draft.text);
   }
 
   #activate(
@@ -664,14 +570,13 @@ export class MarkSelection implements Disposable {
       case "color":
         showMenuAtButton(
           colorMenu(annotation.color, (hex) =>
-            this.#write(annotations.patchColor(annotation.key, hex)),
+            this.#recolor(annotation.key, hex),
           ),
           node,
         );
         return;
       case "comment":
-        if (annotations.editComment(annotation.key))
-          setCommenting(this.#deps.surfaceState, true);
+        this.#toggleComment(annotation);
         return;
       case "copy":
         if (annotation.text === null) return;
@@ -690,6 +595,20 @@ export class MarkSelection implements Disposable {
         this.#step();
         return;
     }
+  }
+
+  /** The comment verb is a toggle: pressed again, it stores and closes. */
+  #toggleComment(annotation: AnnotationRecord): void {
+    if (this.#commentEditor) {
+      this.#submitCommentEditor(annotation, true);
+      setCommenting(this.#deps.surfaceState, false);
+    } else if (this.#deps.annotations.editComment(annotation.key)) {
+      setCommenting(this.#deps.surfaceState, true);
+    }
+  }
+
+  #recolor(key: string, color: string): void {
+    this.#write(this.#deps.annotations.patchColor(key, color));
   }
 
   /** Forward through the stack under the last click, wrapping at its end. */

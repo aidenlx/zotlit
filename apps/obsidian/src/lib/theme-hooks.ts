@@ -89,7 +89,7 @@ export const themeHook = {
    * is waiting to be created.
    */
   pdfMarkPopup: "zt-pdf-mark-popup",
-  /** The comment sheet the Mark Popup opens under its create-mode row. */
+  /** The comment sheet the Mark Popup opens under its row, in either mode. */
   pdfCommentSheet: "zt-pdf-comment-sheet",
   /** The panel an Annotation Card shows while a Write Conflict stands on it. */
   annotConflict: "zt-annot-conflict",

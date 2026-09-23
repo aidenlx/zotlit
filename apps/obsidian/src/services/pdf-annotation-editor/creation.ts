@@ -7,6 +7,8 @@
 // commits at once in that tool's colour and the popup reopens on the new mark.
 //
 // @see https://github.com/aidenlx/zotlit/issues/1150
+import type { App } from "obsidian";
+
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
@@ -21,14 +23,18 @@ import type {
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
 import { writeFailureReason } from "@/services/annotation-repository/write";
-import { capabilityBlock, editingLive } from "@/views/annot-view/card-controls";
+import {
+  commentEditorControls,
+  editingLive,
+} from "@/views/annot-view/card-controls";
+import { renderCommentSheet } from "@/views/annot-view/comment-sheet";
+import type {
+  CommentSheet,
+  CommentSheetStatus,
+} from "@/views/annot-view/comment-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
-import {
-  createPopupRow,
-  renderCommentSheet,
-  renderCreatePopupRow,
-} from "./create-popup";
+import { createPopupRow, renderCreatePopupRow } from "./create-popup";
 import type { CreatePopupAction } from "./create-popup";
 import {
   removeCreationToolbar,
@@ -39,6 +45,7 @@ import type {
   CreationToolbarNodes,
 } from "./creation-toolbar";
 import type { Point } from "./hit-test";
+import { popupColumn } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
 import {
   arm,
@@ -46,7 +53,9 @@ import {
   clearFloating,
   selectCreateRowInput,
   sameFlatList,
+  sameFlat,
   selectCreationToolbar,
+  selectFloatingHead,
   setCommenting,
   setInFlight,
   setToolColor,
@@ -96,6 +105,8 @@ export interface CreationGestures {
 }
 
 export interface MarkCreationDeps {
+  /** The app the comment sheet's editor takes its keys through. */
+  app: App;
   /** The PDF view's container: what scrolls, and what the gestures come from. */
   containerEl: HTMLElement;
   /** The one popup of this view, which a press inside leaves standing. */
@@ -131,8 +142,8 @@ export class MarkCreation implements CreationGestures, Disposable {
   readonly #surfaces = new DisposableStack();
   /** The create-mode row the popup last built; `null` until one is. */
   #row: HTMLElement | null = null;
-  /** The comment sheet's editor, which holds the comment until the save. */
-  #sheet: HTMLTextAreaElement | null = null;
+  /** The comment sheet, whose editor holds the comment until the save. */
+  #sheet: CommentSheet | null = null;
   /**
    * Whether a create is waiting on Zotero, the armed tool's among them, so a
    * drag released meanwhile makes nothing.
@@ -146,6 +157,17 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   constructor(deps: MarkCreationDeps) {
     this.#deps = deps;
+    // The sheet goes with the episode it was opened for, so its editor lets go
+    // of the keys it holds even when the popup hides under it.
+    this.#surfaces.defer(
+      deps.surfaceState.subscribe(
+        selectFloatingHead,
+        ({ kind, commenting }) => {
+          if (kind !== "create" || !commenting) this.#dropSheet();
+        },
+        { equalityFn: sameFlat },
+      ),
+    );
   }
 
   /**
@@ -376,45 +398,34 @@ export class MarkCreation implements CreationGestures, Disposable {
   renderPopup(content: HTMLElement): void {
     const input = selectCreateRowInput(this.#state());
     if (!input) return;
-    const blocked =
-      capabilityBlock(input.capability, input.now)?.reason ?? null;
+    const status = sheetStatus(input.capability, input.now);
     let built = false;
     if (!content.firstChild || !this.#row) {
       built = true;
-      // The popup's own content element is the row in selected mode, so create
-      // mode lays its row and its sheet out in a column of its own rather than
-      // restyling what both modes share.
-      const column = content.createDiv({
-        cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
-      });
-      this.#row = column.createDiv({
-        cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
-      });
+      this.#dropSheet();
+      const { column, row } = popupColumn(content);
+      this.#row = row;
       this.#sheet = input.commenting
-        ? renderCommentSheet(column.createDiv(), {
-            value: "",
-            blocked,
-            onSave: () => {
-              const tool = this.#state().armed ?? "highlight";
-              this.#commit(tool, this.#state().colors[tool]);
+        ? renderCommentSheet(
+            column.createDiv(),
+            {
+              app: this.#deps.app,
+              surface: "popup",
+              value: "",
+              onSubmit: () => {
+                const tool = this.#state().armed ?? "highlight";
+                this.#commit(tool, this.#state().colors[tool]);
+              },
+              onCancel: () => setCommenting(this.#deps.surfaceState, false),
             },
-            onCancel: () => setCommenting(this.#deps.surfaceState, false),
-          })
+            status,
+          )
         : null;
     }
     renderCreatePopupRow(this.#row, createPopupRow(input), (action) =>
       this.#activate(action),
     );
-    const editor = this.#sheet;
-    if (!editor) return;
-    if (!built) {
-      editor.readOnly = blocked !== null;
-      const hint = editor.nextElementSibling;
-      if (hint) hint.textContent = blocked ?? m.pdf_create_popup_comment_hint();
-      return;
-    }
-    editor.focus();
-    editor.setSelectionRange(editor.value.length, editor.value.length);
+    if (!built) this.#sheet?.update(status);
   }
 
   #activate(action: CreatePopupAction): void {
@@ -467,7 +478,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       type,
       color,
       captured: floating.captured,
-      comment: floating.commenting ? (this.#sheet?.value ?? "") : "",
+      comment: floating.commenting ? (this.#sheet?.text() ?? "") : "",
     });
   }
 
@@ -543,9 +554,14 @@ export class MarkCreation implements CreationGestures, Disposable {
   /** The gesture is over: the popup, the sheet, and the selection all go. */
   #clear(): void {
     this.#row = null;
-    this.#sheet = null;
+    this.#dropSheet();
     if (this.#floating().kind === "create")
       clearFloating(this.#deps.surfaceState);
+  }
+
+  #dropSheet(): void {
+    this.#sheet?.[Symbol.dispose]();
+    this.#sheet = null;
   }
 
   /** Drops the window selection, as Zotero's reader does once a mark is made. */
@@ -623,6 +639,23 @@ export class MarkCreation implements CreationGestures, Disposable {
       );
     });
   }
+}
+
+/**
+ * What the create-mode sheet says: the shared comment controls with no draft
+ * behind them, since the comment goes with the create. It has no draft to save
+ * by hand, and where nothing else speaks it names the keys that create.
+ */
+function sheetStatus(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): CommentSheetStatus {
+  const controls = commentEditorControls(capability, null, now);
+  return {
+    ...controls,
+    manual: false,
+    hint: controls.hint ?? m.pdf_create_popup_comment_hint(),
+  };
 }
 
 /**

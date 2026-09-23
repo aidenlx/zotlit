@@ -35,6 +35,7 @@ function row(
     capability: overrides.capability ?? { kind: "writable" },
     mutation: overrides.mutation ?? IDLE,
     stack: overrides.stack ?? { index: 0, total: 1 },
+    commenting: false,
     now: NOW,
   });
 }
@@ -64,7 +65,8 @@ describe("markPopupRow", () => {
     expect(row({ annotation: commented }).verbs[1]).toEqual({
       id: "comment",
       icon: "message-square",
-      tooltip: "Edit comment in the annotation view",
+      pressed: false,
+      tooltip: "Edit comment",
       disabled: false,
     });
     expect(row().color).toBe("#2ea8e5");

@@ -132,18 +132,15 @@
   --icon-size: var(--icon-xs);
 }
 
-/* The comment sheet is an editor, so it is as wide as one rather than as wide
-   as the row of verbs above it. */
+/* The comment sheet takes the row's width, so opening it leaves the popup as
+   wide as its verbs; a narrow row still gives the editor room for a phrase.
+   The sheet adds nothing to the popup's own width, which the row sets. */
 :where(.zt-pdf-comment-sheet) {
   display: flex;
   flex-direction: column;
   gap: var(--size-2-1);
-  inline-size: 20em;
-  max-inline-size: calc(100vw - var(--size-4-4));
-}
-
-:where(.zt-pdf-comment-sheet textarea) {
-  font-size: var(--font-ui-small);
+  inline-size: 0;
+  min-inline-size: max(100%, 12em);
 }
 
 /* The native toolbar uses one fixed row. Let our tools and permission status

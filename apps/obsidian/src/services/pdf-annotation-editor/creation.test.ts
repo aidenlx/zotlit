@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -10,6 +11,7 @@ import type {
   AnnotationDraft,
   CreateOutcome,
 } from "@/services/annotation-repository/service";
+import { pressSubmit } from "@/views/annot-view/__fixtures__/editor-app";
 
 import {
   annotation,
@@ -49,6 +51,12 @@ function clientBox([x1, y1, x2, y2]: readonly number[]) {
 
 function boxes(rects: readonly (readonly number[])[] = QUOTE) {
   return rects.map((rect) => clientBox(rect));
+}
+
+/** The comment editor the popup holds, or `null` while it holds none. */
+function commentView(popup: HTMLElement): EditorView | null {
+  const dom = popup.querySelector<HTMLElement>(".cm-editor");
+  return dom && EditorView.findFromDOM(dom);
 }
 
 /**
@@ -130,9 +138,10 @@ function reader(
       ),
     },
   });
-  const { creation, store: surfaceState, revealed } = reader;
+  const { app, creation, store: surfaceState, revealed } = reader;
 
   return {
+    app,
     creation,
     surfaceState,
     containerEl,
@@ -369,11 +378,9 @@ it("opens the comment sheet on c, and saves it with the create", async () => {
   await open.selectText();
 
   open.press("c");
-  const editor = open.popup()!.querySelector("textarea")!;
-  editor.value = "worth quoting";
-  editor.dispatchEvent(
-    new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }),
-  );
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
+  pressSubmit(open.app);
   await open.creation.created;
 
   expect(open.drafts.map(({ comment }) => comment)).toEqual(["worth quoting"]);
@@ -519,10 +526,10 @@ it("steps back one level on Escape: sheet, then popup, then the armed tool", asy
   open.creation.mountToolbar(open.slot);
   await open.selectText();
   open.press("c");
-  expect(open.popup()!.querySelector("textarea")).not.toBeNull();
+  expect(commentView(open.popup()!)).not.toBeNull();
 
   open.press("Escape");
-  expect(open.popup()!.querySelector("textarea")).toBeNull();
+  expect(commentView(open.popup()!)).toBeNull();
 
   open.press("Escape");
   expect(open.popup()).toBeNull();
@@ -678,11 +685,11 @@ it("keeps the comment sheet and its text through capability announcements", asyn
   using open = reader();
   await open.selectText();
   open.press("c");
-  const editor = open.popup()!.querySelector("textarea")!;
-  editor.value = "worth quoting";
+  const editor = commentView(open.popup()!)!;
+  editor.dispatch({ changes: { from: 0, insert: "worth quoting" } });
 
   ingestCapability(open.surfaceState, { kind: "writable" }, NOW);
-  expect(open.popup()!.querySelector("textarea")).toBe(editor);
+  expect(commentView(open.popup()!)).toBe(editor);
 
   // A real block stands the sheet down where it is, rather than rebuilding it.
   ingestCapability(
@@ -690,9 +697,9 @@ it("keeps the comment sheet and its text through capability announcements", asyn
     { kind: "read-only", reason: "zotero-unavailable" },
     NOW,
   );
-  expect(open.popup()!.querySelector("textarea")).toBe(editor);
-  expect(editor.value).toBe("worth quoting");
-  expect(editor.readOnly).toBe(true);
+  expect(commentView(open.popup()!)).toBe(editor);
+  expect(editor.state.doc.toString()).toBe("worth quoting");
+  expect(editor.state.readOnly).toBe(true);
 });
 
 it("ignores a drag released while an armed create is still in flight", async () => {

@@ -53,7 +53,7 @@ export type Floating =
       index: number;
       /** Whether the selection declined its popup, as a Mark Landing's does. */
       quiet: boolean;
-      /** Whether the popup holds the comment editor in place of its row. */
+      /** Whether the comment editor stands open under the popup's row. */
       commenting: boolean;
     }
   | {
@@ -495,6 +495,7 @@ export function selectSelectedRowInput({
     capability,
     mutation: mutations.get(floating.key) ?? IDLE,
     stack: { index: floating.index, total: floating.stack.length },
+    commenting: floating.commenting,
     now: capabilityAt,
   };
 }

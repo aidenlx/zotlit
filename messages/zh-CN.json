@@ -2311,8 +2311,6 @@
   "annot_view_conflict_apply_again": "再次应用",
   "annot_view_conflict_delete_anyway": "仍然删除",
   "annot_view_conflict_discard": "放弃",
-  "pdf_mark_popup_add_comment": "在标注视图中添加评论",
-  "pdf_mark_popup_edit_comment": "在标注视图中编辑评论",
   "pdf_mark_popup_reveal": "在标注视图中显示",
   "pdf_mark_popup_next_in_stack": "此处下一个标记（第 {position} 个，共 {total} 个）",
   "annot_view_write_reason_position_too_large": "所选内容过大，Zotero 无法将其存为一条标注。",

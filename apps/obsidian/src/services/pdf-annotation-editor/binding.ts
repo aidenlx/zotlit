@@ -631,6 +631,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       sync: () => host.sync(),
     };
     const creation = new MarkCreation({
+      app: this.#view.app,
       containerEl: this.#view.containerEl,
       popup,
       attachmentKey,
@@ -654,8 +655,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
     });
     this.#creation = creation;
     const selection = new MarkSelection({
+      app: this.#view.app,
       containerEl: this.#view.containerEl,
-      scope: this.#view.scope!,
       popup,
       marks: () => this.#visibleMarks(),
       records: () => this.#records,

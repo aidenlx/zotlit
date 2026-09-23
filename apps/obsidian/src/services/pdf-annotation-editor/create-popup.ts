@@ -1,5 +1,4 @@
-// The Mark Popup in create mode: the row a settled text selection offers, and
-// the comment sheet it opens under that row.
+// The Mark Popup in create mode: the row a settled text selection offers.
 //
 // The popup itself is the same one a selected mark hangs under — this module
 // supplies its row and nothing else.
@@ -13,7 +12,6 @@ import {
   isColor,
 } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
-import { themeHook } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
@@ -149,81 +147,8 @@ export function renderCreatePopupRow(
 ): void {
   row.empty();
   for (const control of controls) {
-    const node = markPopupControl(row, control, (pressed) =>
+    markPopupControl(row, control, (pressed) =>
       activate(control.action, pressed),
     );
-    if (control.pressed === null) continue;
-    node.classList.toggle("is-active", control.pressed);
-    node.setAttribute("aria-pressed", String(control.pressed));
   }
-}
-
-export interface CommentSheetProps {
-  /** What the editor opens with. */
-  value: string;
-  /** Saves the comment and creates the Annotation. */
-  onSave: (comment: string) => void;
-  /** Steps back one level, leaving the selection and the row standing. */
-  onCancel: () => void;
-  /** The caller binds Mod+Enter through its owning native Scope. */
-  nativeSubmit?: boolean;
-  /**
-   * Why the Editing Capability refuses the write, or `null` while it takes
-   * one. The sheet reads the refusal off the reason rather than off a second
-   * flag, so the two can never disagree.
-   */
-  blocked?: string | null;
-}
-
-/**
- * The optional comment sheet, under the create-mode row. `Ctrl+Enter`
- * (Windows) or `Command+Enter` (macOS) saves and `Escape` steps back; the
- * reader's own keymap is inert inside the editor, so both are bound here.
- *
- * @param sheet the element the editor is drawn into, replacing what it held.
- */
-export function renderCommentSheet(
-  sheet: HTMLElement,
-  {
-    value,
-    onSave,
-    onCancel,
-    nativeSubmit = false,
-    blocked = null,
-  }: CommentSheetProps,
-): HTMLTextAreaElement {
-  sheet.empty();
-  sheet.addClass(themeHook.pdfCommentSheet);
-  const editor = sheet.createEl("textarea", {
-    cls: ["zt:w-full", "zt:resize-none"],
-    attr: {
-      rows: "3",
-      placeholder: m.annot_view_card_comment_placeholder(),
-      "aria-label": m.annot_view_card_add_comment(),
-    },
-  });
-  editor.value = value;
-  editor.readOnly = blocked !== null;
-  if (!nativeSubmit)
-    sheet.createDiv({
-      cls: ["zt:text-xs", "zt:text-muted-foreground"],
-      text: blocked ?? m.pdf_create_popup_comment_hint(),
-    });
-  editor.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if (
-      nativeSubmit ||
-      event.key !== "Enter" ||
-      !(event.metaKey || event.ctrlKey)
-    ) {
-      return;
-    }
-    event.preventDefault();
-    if (!editor.readOnly) onSave(editor.value);
-  });
-  return editor;
 }
