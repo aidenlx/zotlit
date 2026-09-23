@@ -38,7 +38,7 @@ export function resolvesSilently(
  * compared as Zotero stores it: three decimals, so an unrounded proposal equals
  * its own saved copy. Quoted text counts only where the edit carried some.
  */
-export function sameGeometry(
+export function sameStoredGeometry(
   attempted: GeometryEdit,
   fresh: { position: AnnotationPosition; text: string | null },
 ): boolean {
