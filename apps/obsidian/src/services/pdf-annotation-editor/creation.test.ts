@@ -13,6 +13,7 @@ import type {
 
 import { annotation, toolColors } from "./__fixtures__";
 import { MarkCreation } from "./creation";
+import { createReaderSurfaceState } from "./reader-surface-state";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
@@ -94,7 +95,13 @@ function reader(
     }),
     pageLabel: vi.fn(async () => "1"),
   };
-  let capability = options.capability ?? ({ kind: "writable" } as const);
+  const capability = options.capability ?? ({ kind: "writable" } as const);
+  const colors = toolColors();
+  const surfaceState = createReaderSurfaceState({
+    colors: colors.current(),
+    capability,
+    now: NOW,
+  });
 
   const creation = new MarkCreation({
     containerEl,
@@ -121,22 +128,22 @@ function reader(
     repaint: vi.fn(),
     reveal: (annotationKey) => revealed.push(annotationKey),
     renderCapability: vi.fn(),
-    colors: toolColors(),
+    colors,
+    surfaceState,
     annotations: {
-      capabilityFor: () => capability,
       createAnnotation: vi.fn(async (_key: string, draft) => {
         drafts.push(draft);
         return (
           options.outcome ?? { kind: "created", annotationKey: "MADE2345" }
         );
       }),
-      on: () => () => undefined,
     } as never,
     now: () => NOW,
   });
 
   return {
     creation,
+    surfaceState,
     containerEl,
     pageEl,
     drafts,
@@ -145,9 +152,6 @@ function reader(
     revealed,
     structure,
     slot: document.body.createDiv(),
-    setCapability(next: EditingCapability) {
-      capability = next;
-    },
     /**
      * A drag that starts on the page and releases with text selected, once
      * the selection has been placed on the page's characters.
@@ -643,10 +647,10 @@ it("takes the marks off the pages and puts them back", () => {
     '[data-zt-tool="visibility"]',
   )!;
   visibility.click();
-  expect(open.creation.marksVisible).toBe(false);
+  expect(open.surfaceState.getState().marksVisible).toBe(false);
 
   open.slot.querySelector<HTMLElement>('[data-zt-tool="visibility"]')!.click();
-  expect(open.creation.marksVisible).toBe(true);
+  expect(open.surfaceState.getState().marksVisible).toBe(true);
 });
 
 it("leaves the toolbar slot as Obsidian built it when it is disposed", () => {

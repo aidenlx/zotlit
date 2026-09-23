@@ -33,13 +33,27 @@ import {
 } from "./create-popup";
 import type { CreatePopupAction } from "./create-popup";
 import {
-  creationToolbar,
   removeCreationToolbar,
   renderCreationToolbar,
 } from "./creation-toolbar";
-import type { CreationToolbarNodes } from "./creation-toolbar";
+import type {
+  CreationToolbarControl,
+  CreationToolbarNodes,
+} from "./creation-toolbar";
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
+import {
+  arm,
+  sameCapability,
+  sameFlatList,
+  selectCreationToolbar,
+  setToolColor,
+  toggleMarks,
+} from "./reader-surface-state";
+import type {
+  ReaderSurfaceState,
+  ReaderSurfaceStore,
+} from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 import { selectionPagesOf } from "./selection-capture";
 import type { SelectionPage } from "./selection-capture";
@@ -49,7 +63,7 @@ import {
   pageContentBox,
   selectionCollapsed,
 } from "./surface";
-import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
+import type { MarkTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -67,10 +81,7 @@ export interface ReaderPage {
 }
 
 /** What the creation surfaces write Annotations through. */
-export type AnnotationCreates = Pick<
-  AnnotationRepository,
-  "capabilityFor" | "createAnnotation" | "on"
->;
+export type AnnotationCreates = Pick<AnnotationRepository, "createAnnotation">;
 
 /**
  * The gestures the reader's own listeners hand to the creation surfaces. One
@@ -111,6 +122,8 @@ export interface MarkCreationDeps {
   renderCapability: (slot: HTMLElement) => void;
   /** Each tool's own colour, which is kept across PDFs rather than per view. */
   colors: ToolColorStore;
+  /** What this view's surfaces draw from; the toolbar redraws off it alone. */
+  surfaceState: ReaderSurfaceStore;
   annotations: AnnotationCreates;
   now: () => Temporal.Instant;
 }
@@ -122,10 +135,6 @@ export interface MarkCreationDeps {
 export class MarkCreation implements CreationGestures, Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
-  #armed: MarkTool | null = null;
-  #marksVisible = true;
-  /** The reader's right toolbar slot, once the toolbar is mounted into it. */
-  #slot: HTMLElement | null = null;
   #popup: MarkPopup | null = null;
   /** The settled selection the popup is acting on; `null` while none is. */
   #captured: SelectedText | null = null;
@@ -141,11 +150,6 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   constructor(deps: MarkCreationDeps) {
     this.#deps = deps;
-  }
-
-  /** Whether the Annotation Marks are drawn over the pages. */
-  get marksVisible(): boolean {
-    return this.#marksVisible;
   }
 
   /**
@@ -167,26 +171,31 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   /**
    * Draws the Creation Toolbar into the reader's right toolbar slot and keeps
-   * it in step with the Editing Capability. The slot is emptied again by this
+   * it in step with the Reader Surface State. The slot is emptied again by this
    * object's disposal, and the removal is idempotent because Obsidian's own
    * `empty()` on unload may have cleared it first.
    *
    * @returns the toolbar's nodes, so the caller can draw into its capability slot.
    */
   mountToolbar(slot: HTMLElement): CreationToolbarNodes {
-    this.#slot = slot;
-    this.#surfaces.defer(() => {
-      this.#slot = null;
-      removeCreationToolbar(slot);
-    });
+    this.#surfaces.defer(() => removeCreationToolbar(slot));
+    const state = this.#deps.surfaceState;
+    const draw = (controls: readonly CreationToolbarControl[]) =>
+      renderCreationToolbar(slot, controls, (id, node) =>
+        this.#toolbarActivate(id, node),
+      );
+    const nodes = draw(selectCreationToolbar(state.getState()));
     this.#surfaces.defer(
-      this.#deps.annotations.on("capability-changed", () => {
-        this.#drawToolbar();
-        this.#popup?.refresh();
+      state.subscribe(selectCreationToolbar, draw, {
+        equalityFn: sameFlatList,
       }),
     );
-    const nodes = renderCreationToolbar(slot, this.#model(), (id, node) =>
-      this.#toolbarActivate(id, node),
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ capability }) => capability,
+        () => this.#popup?.refresh(),
+        { equalityFn: sameCapability },
+      ),
     );
     this.#deps.renderCapability(nodes.capabilitySlot);
     return nodes;
@@ -217,9 +226,9 @@ export class MarkCreation implements CreationGestures, Disposable {
         if (selectionCollapsed(this.#deps.containerEl)) return;
         this.#captured = placed.captured;
         this.#anchorAt = placed.anchorAt;
-        const armed = this.#armed;
+        const { armed } = this.#state();
         if (armed) {
-          this.#commit(armed, this.#colors()[armed]);
+          this.#commit(armed, this.#state().colors[armed]);
           return;
         }
         this.#open();
@@ -259,13 +268,13 @@ export class MarkCreation implements CreationGestures, Disposable {
     const live = editingLive(this.#capability());
     if (tool !== null) {
       event.preventDefault();
-      if (waiting) this.#commit(tool, this.#colors()[tool]);
-      else if (live) this.#arm(this.#armed === tool ? null : tool);
+      if (waiting) this.#commit(tool, this.#state().colors[tool]);
+      else if (live) this.#arm(this.#state().armed === tool ? null : tool);
       return;
     }
     if (swatch !== undefined) {
       event.preventDefault();
-      const target = this.#armed ?? "highlight";
+      const target = this.#state().armed ?? "highlight";
       if (waiting) this.#commit(target, swatch);
       else if (live) this.#setColor(target, swatch);
       return;
@@ -290,20 +299,17 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   /** The tool the toolbar shows as armed, or `null` while none is. */
   #arm(tool: MarkTool | null): void {
-    this.#armed = tool;
-    this.#drawToolbar();
+    arm(this.#deps.surfaceState, tool);
     this.#popup?.refresh();
   }
 
   #setColor(tool: MarkTool, color: string): void {
-    this.#deps.colors.set(tool, color);
-    this.#drawToolbar();
+    setToolColor(this.#deps.surfaceState, this.#deps.colors, { tool, color });
     this.#popup?.refresh();
   }
 
-  /** Every tool's colour as it now stands, which is a settings read. */
-  #colors(): Readonly<Record<AnnotationTool, string>> {
-    return this.#deps.colors.current();
+  #state(): ReaderSurfaceState {
+    return this.#deps.surfaceState.getState();
   }
 
   /**
@@ -321,7 +327,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#clear();
       return true;
     }
-    if (this.#armed === null) return false;
+    if (this.#state().armed === null) return false;
     this.#arm(null);
     return true;
   }
@@ -336,7 +342,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     switch (id) {
       case "highlight":
       case "underline":
-        this.#arm(this.#armed === id ? null : id);
+        this.#arm(this.#state().armed === id ? null : id);
         return;
       case "highlight-color":
         this.#openColorMenu("highlight", node);
@@ -345,8 +351,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         this.#openColorMenu("underline", node);
         return;
       case "visibility":
-        this.#marksVisible = !this.#marksVisible;
-        this.#drawToolbar();
+        toggleMarks(this.#deps.surfaceState);
         this.#deps.repaint();
         return;
       default:
@@ -361,28 +366,10 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   #openColorMenu(tool: MarkTool, node: HTMLElement): void {
     showMenuAtButton(
-      colorMenu(this.#colors()[tool], (hex) => this.#setColor(tool, hex)),
+      colorMenu(this.#state().colors[tool], (hex) => this.#setColor(tool, hex)),
       node,
       "end",
     );
-  }
-
-  #drawToolbar(): void {
-    const slot = this.#slot;
-    if (!slot) return;
-    renderCreationToolbar(slot, this.#model(), (id, node) =>
-      this.#toolbarActivate(id, node),
-    );
-  }
-
-  #model() {
-    return creationToolbar({
-      armed: this.#armed,
-      colors: this.#colors(),
-      marksVisible: this.#marksVisible,
-      capability: this.#capability(),
-      now: this.#deps.now(),
-    });
   }
 
   /** The popup in create mode, over the selection this gesture settled on. */
@@ -419,8 +406,8 @@ export class MarkCreation implements CreationGestures, Disposable {
     renderCreatePopupRow(
       row,
       createPopupRow({
-        armed: this.#armed,
-        colors: this.#colors(),
+        armed: this.#state().armed,
+        colors: this.#state().colors,
         capability: this.#capability(),
         mutation: this.#inFlight ? { kind: "pending" } : { kind: "idle" },
         commenting: this.#commenting,
@@ -435,8 +422,8 @@ export class MarkCreation implements CreationGestures, Disposable {
         capabilityBlock(this.#capability(), this.#deps.now())?.reason ?? null,
       onSave: (comment) => {
         this.#comment = comment;
-        const tool = this.#armed ?? "highlight";
-        this.#commit(tool, this.#colors()[tool]);
+        const tool = this.#state().armed ?? "highlight";
+        this.#commit(tool, this.#state().colors[tool]);
       },
       onCancel: () => this.#setCommenting(false),
     });
@@ -450,12 +437,12 @@ export class MarkCreation implements CreationGestures, Disposable {
   #activate(action: CreatePopupAction): void {
     switch (action.kind) {
       case "tool":
-        this.#commit(action.tool, this.#colors()[action.tool]);
+        this.#commit(action.tool, this.#state().colors[action.tool]);
         return;
       case "color": {
         // A colour chosen in the popup becomes that tool's colour, so the
         // toolbar and the popup never disagree.
-        const tool = this.#armed ?? "highlight";
+        const tool = this.#state().armed ?? "highlight";
         this.#setColor(tool, action.color);
         this.#commit(tool, action.color);
         return;
@@ -572,7 +559,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   #capability(): EditingCapability {
-    return this.#deps.annotations.capabilityFor(this.#deps.attachmentKey);
+    return this.#state().capability;
   }
 
   /**

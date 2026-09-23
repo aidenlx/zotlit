@@ -12,9 +12,11 @@ import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
 import { annotation, pageView } from "./__fixtures__";
+import { createReaderSurfaceState } from "./reader-surface-state";
 import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";
+import { resolveToolColors } from "./tools";
 
 const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
@@ -61,7 +63,7 @@ function rect({
 }
 
 /** The repository, reduced to what the selection reads and writes through. */
-function annotationEdits(capability: EditingCapability = { kind: "writable" }) {
+function annotationEdits() {
   let commentDraft: {
     annotationKey: string;
     attachmentKey: string;
@@ -84,7 +86,6 @@ function annotationEdits(capability: EditingCapability = { kind: "writable" }) {
     };
   }
   return {
-    capabilityFor: vi.fn(() => capability),
     mutationFor: vi.fn((): MutationState => IDLE),
     patchColor: vi.fn(async () => IDLE),
     deleteAnnotation: vi.fn(async () => IDLE),
@@ -137,7 +138,7 @@ function setup(
   });
 
   const parent = { hoverPopover: null };
-  const annotations = annotationEdits(capability);
+  const annotations = annotationEdits();
   const gestures = {
     revealAnnotation: vi.fn(),
     reportBlockedGesture: vi.fn(),
@@ -159,7 +160,6 @@ function setup(
     containerEl,
     scope: new MockScope() as unknown as Scope,
     parent,
-    attachmentKey: "ABCD2345",
     marks: () => groupAnnotationsByPage(held),
     records: () => held,
     pageAt: (pageIndex) =>
@@ -168,6 +168,11 @@ function setup(
     navigate: (key) => navigated.push(key),
     report: (keys) => reported.push(keys),
     annotations,
+    surfaceState: createReaderSurfaceState({
+      colors: resolveToolColors(),
+      capability,
+      now: NOW,
+    }),
     gestures,
     creation,
     now: () => NOW,

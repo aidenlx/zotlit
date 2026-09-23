@@ -340,6 +340,10 @@ _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover 
 The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
+**Reader Surface State**:
+What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, and the clock a cooldown is read against. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
+_Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
+
 **Annotation Draft**:
 The shared unsaved comment for one Annotation, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
 _Avoid_: pending write (the draft has not been submitted), cached comment
