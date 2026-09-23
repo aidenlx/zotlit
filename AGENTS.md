@@ -37,7 +37,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `.scratch/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
 | `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
 
-**The End-to-end Run is the final gate, run once when the work is complete.** During development, iterate on typecheck and single test files, and prove a change end to end by walking it through the running app (`/obsidian-debug`); once that walkthrough passes, encode it as a test in `packages/e2e`, the repeatable artifact of that proof. A full pass takes over an hour, and its turbo build restarts a `pnpm fixture dev` Zotero mid-run, which fails tests that were green.
+**The End-to-end Run is the final gate, run once when the work is complete.** During development, iterate on typecheck and single test files, and prove a change end to end by walking it through the running app (`/obsidian-debug`); once that walkthrough passes, encode it as a test in `packages/e2e`, the repeatable artifact of that proof. A full pass takes over an hour. The Paired Run suite relaunches Zotero in its `afterAll`, so re-read `paired-zotero.json` for the new RDP port after any run.
 
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
