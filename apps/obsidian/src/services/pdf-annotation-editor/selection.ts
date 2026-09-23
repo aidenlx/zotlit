@@ -59,6 +59,7 @@ import {
   selectMark,
   selectSelectedDraft,
   selectSelectedKey,
+  recordColorUse,
   setCommenting,
   stepStack,
 } from "./reader-surface-state";
@@ -75,6 +76,7 @@ import {
   pageContentBox,
   selectionCollapsed,
 } from "./surface";
+import type { ToolColorStore } from "./tools";
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
@@ -140,6 +142,8 @@ export interface MarkSelectionDeps {
   /** Announces the selection to whoever follows this reader. */
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
+  /** The colours used last, which a recolour puts a colour first in. */
+  colors: ToolColorStore;
   /** What this view's surfaces draw from, the Editing Capability among it. */
   surfaceState: ReaderSurfaceStore;
   gestures: MarkGestures;
@@ -608,6 +612,7 @@ export class MarkSelection implements Disposable {
   }
 
   #recolor(key: string, color: string): void {
+    recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
     this.#write(this.#deps.annotations.patchColor(key, color));
   }
 

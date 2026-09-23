@@ -228,10 +228,29 @@ it("opens the popup in create mode once the drag on the page has ended", async (
   expect(verbs).toEqual([
     "highlight",
     "underline",
-    ...ANNOTATION_COLORS.map((_, index) => `color-${index + 1}`),
+    "color-1",
+    "color-2",
+    "color-3",
+    "color-4",
     "comment",
     "copy",
   ]);
+});
+
+it("offers the colour used last first, whichever tool used it", async () => {
+  using open = reader();
+  await open.selectText();
+  open.press("6");
+  await open.creation.created;
+
+  await open.selectText();
+
+  const swatches = [
+    ...(open
+      .popup()
+      ?.querySelectorAll<HTMLElement>("[data-zt-verb^='color-']") ?? []),
+  ].map((node) => node.dataset.ztVerb);
+  expect(swatches).toEqual(["color-6", "color-1", "color-2", "color-3"]);
 });
 
 it("opens nothing for a drag that did not start on the page", async () => {
@@ -459,12 +478,12 @@ it("writes a popup colour back as the tool it commits with", async () => {
   open.creation.mountToolbar(open.slot);
   await open.selectText();
 
-  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-6"]')!.click();
+  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
 
   expect(
     open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight"]')?.style
       .color,
-  ).toBe(ANNOTATION_COLORS[5]);
+  ).toBe(ANNOTATION_COLORS[2]);
 });
 
 it("opens a tool's colours from its own chevron, armed or not", () => {
@@ -513,12 +532,12 @@ it("writes a popup colour back as the tool it commits with", async () => {
   open.creation.mountToolbar(open.slot);
   await open.selectText();
 
-  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-6"]')!.click();
+  open.popup()!.querySelector<HTMLElement>('[data-zt-verb="color-3"]')!.click();
 
   expect(
     open.slot.querySelector<HTMLElement>('[data-zt-tool="highlight"]')?.style
       .color,
-  ).toBe(ANNOTATION_COLORS[5]);
+  ).toBe(ANNOTATION_COLORS[2]);
 });
 
 it("steps back one level on Escape: sheet, then popup, then the armed tool", async () => {

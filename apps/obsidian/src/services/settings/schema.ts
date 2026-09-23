@@ -183,6 +183,11 @@ export const schema = v.object({
    * never recoloured follows Zotero's own default.
    */
   "reader.annotation-colors": annotationToolColorsSchema,
+  /**
+   * The annotation colours used last in the PDF reader, most recent first. One
+   * list for every tool, so the popup offers the same swatches to each.
+   */
+  "reader.recent-colors": v.array(v.string()),
 
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
@@ -236,6 +241,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.focus-annot-view": true,
   "reader.open-file-links": true,
   "reader.annotation-colors": {},
+  "reader.recent-colors": [],
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

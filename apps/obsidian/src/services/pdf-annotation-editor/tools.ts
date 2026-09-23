@@ -41,6 +41,9 @@ export const DEFAULT_TOOL_COLOR = ANNOTATION_COLORS[0]!;
 /** The settings key each tool's colour is kept under. */
 export const TOOL_COLORS_SETTING = "reader.annotation-colors";
 
+/** The settings key the colours used last are kept under, for every tool. */
+export const RECENT_COLORS_SETTING = "reader.recent-colors";
+
 /**
  * Each tool's chosen colour, as the settings file carries it. Sparse: a tool
  * never recoloured stays absent, so it follows Zotero's default rather than a
@@ -64,8 +67,15 @@ export function resolveToolColors(
   ) as Record<AnnotationTool, string>;
 }
 
-/** What the reader reads each tool's colour through, and writes a choice back. */
+/**
+ * What the reader reads each tool's colour through, and writes a choice back;
+ * and the colours used last, which every tool shares.
+ */
 export interface ToolColorStore {
   current: () => Readonly<Record<AnnotationTool, string>>;
   set: (tool: AnnotationTool, color: string) => void;
+  /** The colours used last, most recent first. */
+  recent: () => readonly string[];
+  /** Puts a colour first in the recent list. */
+  use: (color: string) => void;
 }

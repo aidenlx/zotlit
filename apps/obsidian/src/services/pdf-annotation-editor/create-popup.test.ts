@@ -24,11 +24,13 @@ function row(
     capability?: EditingCapability;
     mutation?: MutationState;
     commenting?: boolean;
+    swatches?: readonly string[];
   } = {},
 ): readonly CreatePopupControl[] {
   return createPopupRow({
     armed: overrides.armed ?? null,
     colors: COLORS,
+    swatches: overrides.swatches ?? ANNOTATION_COLORS.slice(0, 4),
     capability: overrides.capability ?? { kind: "writable" },
     mutation: overrides.mutation ?? IDLE,
     commenting: overrides.commenting ?? false,
@@ -36,22 +38,30 @@ function row(
   });
 }
 
-it("offers both tools, Zotero's eight colours, the comment sheet and copy", () => {
+it("offers both tools, the swatches it is handed, the comment sheet and copy", () => {
   expect(row().map(({ id }) => id)).toEqual([
     "highlight",
     "underline",
-    ...ANNOTATION_COLORS.map((_, index) => `color-${index + 1}`),
+    "color-1",
+    "color-2",
+    "color-3",
+    "color-4",
     "comment",
     "copy",
   ]);
 });
 
-it("names the eight swatches in Zotero's own order", () => {
-  const swatches = row().flatMap(({ action }) =>
-    action.kind === "color" ? [action.color] : [],
+it("names each swatch by its seat in Zotero's palette, in the order handed", () => {
+  const swatches = row({
+    swatches: [ANNOTATION_COLORS[5]!, ANNOTATION_COLORS[1]!],
+  }).flatMap(({ id, action }) =>
+    action.kind === "color" ? [[id, action.color]] : [],
   );
 
-  expect(swatches).toEqual(ANNOTATION_COLORS);
+  expect(swatches).toEqual([
+    ["color-6", ANNOTATION_COLORS[5]],
+    ["color-2", ANNOTATION_COLORS[1]],
+  ]);
 });
 
 it("marks the armed tool's own colour, so the popup and the toolbar agree", () => {
