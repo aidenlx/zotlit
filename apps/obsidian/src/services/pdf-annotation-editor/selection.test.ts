@@ -14,6 +14,7 @@ import {
   annotationEdits,
   pageView,
   readerSurfaces,
+  viewport,
 } from "./__fixtures__";
 import { setCommenting } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
@@ -816,6 +817,39 @@ it("snaps a refused write back to the confirmed geometry", async () => {
   await h.selection.adjusted;
 
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
+});
+
+it("takes a press on a handle where it is drawn on a page turned a quarter turn", async () => {
+  // A quarter turn lays PDF (x, y) at page units (y, x) on a page 792 wide
+  // and 612 high, which the seeded box draws one unit to the pixel: the
+  // figure spans x 300–500 and y 100–300, and its bottom-right corner, PDF
+  // (300, 300), stands at (300, 300), where render.test.ts sees it drawn.
+  using h = setup([FIGURE]);
+  h.page.viewport = viewport({ rotation: 90, scale: 1.5 });
+  h.page.div.getBoundingClientRect = rect({
+    left: 0,
+    top: 0,
+    width: 792,
+    height: 612,
+  });
+  click(h.page.div, { x: 400, y: 200 });
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+
+  pointer(h.page.div, "pointerdown", { x: 300, y: 300 });
+  pointer(h.containerEl, "pointermove", { x: 310, y: 320 });
+  pointer(h.containerEl, "pointerup", { x: 310, y: 320 });
+  await h.selection.adjusted;
+
+  // Ten units right is ten points up PDF's y, and twenty down is twenty
+  // points along its x: the corner moves to (320, 310).
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
+    position: {
+      kind: "pdf-rects",
+      pageIndex: 0,
+      rects: [[100, 310, 320, 500]],
+    },
+    sortIndex: "00000|000012|00517",
+  });
 });
 
 it("leaves a drag beside the selected image to the text selection", async () => {
