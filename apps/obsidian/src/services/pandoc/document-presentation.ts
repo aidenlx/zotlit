@@ -41,6 +41,8 @@ export interface ProfilePresentationFailure {
 /** The Imported Note Profile that selected one document's CSL style. */
 export interface ProfileStyleSource {
   profile: ProfileSelector;
+  /** The label as the user wrote it; absent for the default Profile. */
+  label?: string;
   target: string;
 }
 
@@ -55,6 +57,26 @@ export type DocumentPresentationFailure =
   | { kind: "unusable"; property: UnusableProperty }
   | ProfilePresentationFailure
   | ProfileStylePresentationFailure;
+
+/** Where one document's CSL style comes from, as the export surfaces name it. */
+export type StyleSource =
+  | { kind: "note" }
+  | { kind: "profile"; label: string | undefined }
+  | { kind: "vault" };
+
+/** The source of the style a read presentation selects. */
+export function styleSourceOf({
+  presentation,
+  profileStyle,
+}: {
+  presentation: RenderPresentation;
+  profileStyle?: ProfileStyleSource;
+}): StyleSource {
+  if (profileStyle) return { kind: "profile", label: profileStyle.label };
+  return presentation.styleId === undefined
+    ? { kind: "vault" }
+    : { kind: "note" };
+}
 
 /**
  * What one document renders its Citations and references under, or the property
@@ -117,6 +139,7 @@ export function documentPresentation(
       resolved.profile.bindings["citation.references-style"];
     profileStyle = {
       profile: resolved.profile.selector,
+      label: resolved.profile.label,
       target: file.path,
     };
   } else if (declaredStyle !== undefined) {

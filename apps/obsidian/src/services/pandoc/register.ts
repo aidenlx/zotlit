@@ -11,6 +11,7 @@ import type {
   CliFlags,
   FileSystemAdapter,
   Plugin,
+  TFile,
 } from "obsidian";
 
 import {
@@ -22,9 +23,23 @@ import {
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
+import type { ProfileReader } from "@/services/profile/service";
+import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import { CSL_COMMAND, resolveCslStyle } from "./csl";
+import {
+  CSL_COMMAND,
+  flagsInvalidResponse,
+  resolveCslStyle,
+  resolveDocumentCslStyle,
+} from "./csl";
+import type { CslResponse, DocumentStyleRead } from "./csl";
+import {
+  documentPresentation,
+  effectivePresentation,
+  styleSourceOf,
+  vaultPresentation,
+} from "./document-presentation";
 import {
   createPandocIntegrationHandlers,
   PANDOC_FILES_COMMAND,
@@ -43,6 +58,8 @@ export interface PandocResolveDeps {
   app: App;
   db: Pick<DatabaseService, "acquireRead" | "activeReadMode">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
+  settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
 }
 
 function resolveFlags(): CliFlags {
@@ -59,10 +76,14 @@ function cslFlags(): CliFlags {
   return {
     style: {
       value: "<csl-id>",
-      description: "CSL ID of the Zotero-installed style",
-      required: true,
+      description: "CSL ID of the Zotero-installed style; pass this or file",
     },
-  } satisfies Record<"style", CliFlag>;
+    file: {
+      value: "<absolute-path>",
+      description:
+        "Absolute path to the Markdown file whose style to resolve; pass this or style",
+    },
+  } satisfies Record<"style" | "file", CliFlag>;
 }
 
 export function registerPandocResolve(
@@ -109,33 +130,69 @@ export function registerPandocResolve(
   );
   plugin.registerCliHandler(
     CSL_COMMAND,
-    "Materialize the CSL file of one Zotero-installed style, for the ZotLit Pandoc filter",
+    "Materialize the CSL file of one Zotero-installed style or of one note's style, for the ZotLit Pandoc filter",
     cslFlags(),
     async (params) => {
       await deps.zoteroPref.ready;
+      await deps.profile.ready;
+      const { dataDir } = deps.zoteroPref;
       // A native run carries no vault Citation Locale: the installed style
       // keeps the locale behavior Zotero installed it with.
-      const response = await resolveCslStyle(params.style ?? "", {
-        resolve: (styleId) =>
-          resolveInstalledStyle(deps.zoteroPref.dataDir, { styleId }),
-      });
+      const ports = {
+        resolve: (styleId: string) =>
+          resolveInstalledStyle(dataDir, { styleId }),
+      };
+      const { style, file } = params;
+      let response: CslResponse;
+      if (style !== undefined && file === undefined)
+        response = await resolveCslStyle(style, ports);
+      else if (file !== undefined && style === undefined)
+        response = await resolveDocumentCslStyle(file, {
+          ...ports,
+          readStyle: (absolutePath) => readDocumentStyle(deps, absolutePath),
+        });
+      else response = flagsInvalidResponse();
       return JSON.stringify(response, null, 2);
     },
   );
 }
 
-/** Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */
-function readDocument(app: App, absolutePath: string): ResolveDocument | null {
-  if (!isAbsolute(absolutePath)) return null;
-  const basePath = (app.vault.adapter as FileSystemAdapter).getBasePath();
-  const file = app.vault.getFileByPath(
-    normalizePath(relative(basePath, absolutePath)),
+/**
+ * The style one note renders with in Obsidian, read through the boundary every
+ * in-app surface and the built-in export read it through.
+ */
+function readDocumentStyle(
+  { app, settings, profile }: PandocResolveDeps,
+  absolutePath: string,
+): DocumentStyleRead {
+  const file = vaultFile(app, absolutePath);
+  if (!file) return { kind: "file-not-found" };
+  const declared = documentPresentation(app.metadataCache, file, profile);
+  if (declared.kind === "unusable") return declared;
+  const { styleId } = effectivePresentation(
+    declared.presentation,
+    vaultPresentation(settings.current),
   );
+  return { kind: "read", styleId, source: styleSourceOf(declared) };
+}
+
+/** The note at an absolute path, with the links Obsidian's cache holds for it. */
+function readDocument(app: App, absolutePath: string): ResolveDocument | null {
+  const file = vaultFile(app, absolutePath);
   if (!file) return null;
   return {
     sourcePath: file.path,
     links: app.metadataCache.getFileCache(file)?.links ?? [],
   };
+}
+
+/** Desktop-only plugin: the adapter is always a `FileSystemAdapter`. */
+function vaultFile(app: App, absolutePath: string): TFile | null {
+  if (!isAbsolute(absolutePath)) return null;
+  const basePath = (app.vault.adapter as FileSystemAdapter).getBasePath();
+  return app.vault.getFileByPath(
+    normalizePath(relative(basePath, absolutePath)),
+  );
 }
 
 /** One read lease per invocation, however many links the document carries. */

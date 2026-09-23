@@ -86,6 +86,8 @@ export type ResolvedCslStyle =
       styleId: string;
       /** CSL ID of the independent parent, when the requested style is dependent. */
       parentId: string | undefined;
+      /** The requested style's title, as the style picker lists it. */
+      title: string;
       /**
        * Standalone CSL: the independent style's formatting under the effective
        * Citation Locale.
@@ -151,6 +153,7 @@ export function styleHasEntryMarkers(styleXml: string | undefined): boolean {
 /** One resolution's identity and content, before a Citation Locale applies. */
 interface StyleContent {
   styleId: string;
+  title: string;
   parentId: string | undefined;
   /** `default-locale` of the requested style, which outlives its parent's. */
   defaultLocale: string | undefined;
@@ -249,6 +252,7 @@ export class InstalledStyleCache {
 
     const content: StyleContent = {
       styleId,
+      title: requested.title,
       parentId: requested.parentId,
       defaultLocale: requested.defaultLocale,
       xml,
@@ -287,6 +291,7 @@ function resolvedUnderLocale(
   return {
     kind: "installed",
     styleId: content.styleId,
+    title: content.title,
     parentId: content.parentId,
     xml: withDefaultLocale(content.xml, locale ?? content.defaultLocale),
   };

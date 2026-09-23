@@ -15,7 +15,7 @@ Complete these steps before changing files, running Pandoc, or calling the resol
 
 Read the guide again after a ZotLit update or when a saved integration pair might be stale.
 
-This skill is written against Pandoc CLI Contract version 2 — the `contractVersion` the integration-files answer carries. When that answer reports another number, run `zotlit:pandoc-guide` again and follow the live guide over this skill.
+This skill is written against Pandoc CLI Contract version 3 — the `contractVersion` the integration-files answer carries. When that answer reports another number, run `zotlit:pandoc-guide` again and follow the live guide over this skill.
 
 ## Select the workflow
 

@@ -57,13 +57,15 @@ See [Import Zotero notes](/docs/how-to/import-zotero-notes) for the import workf
 
 CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.
 
-The dropdown stores the CSL style ID. Default uses ZotLit's embedded style. ZotLit uses the embedded style only while Default is selected.
+The dropdown stores the CSL style ID. Default uses ZotLit's embedded style. ZotLit uses the embedded style only while Default is selected. In a native Pandoc run, Default uses the Pandoc default style, Chicago author-date.
 
 An unavailable style remains selected. In-text citations stay native, and the References Sidebar shows its minimal list. The row then reads <UiLabel name={m.settings_citation_references_style_warning()} />.
 
 The first formatting attempt shows <UiLabel name={m.notice_citation_style_missing()} /> once per plugin lifecycle. Its <UiLabel name={m.notice_citation_style_missing_action()} /> action opens ZotLit settings.
 
-A note can select its own style with the `zotlit-csl` property. The property takes the CSL style ID of a style installed in Zotero. Every other note keeps the vault selection.
+Built-in export with an unavailable style stops and shows <UiLabel name={m.pandoc_export_error_style({ style: "…" })} /> A native Pandoc run of a note that uses the unavailable style stops with `style-missing`. Neither export uses another style.
+
+A note can select its own style with the `zotlit-csl` property. The property takes the CSL style ID of a style installed in Zotero. Every other note keeps the vault selection. A native Pandoc run cites each note with the style the note uses in Obsidian, unless the note sets `csl` or `citation-style`, or you pass `--csl`.
 
 That note uses its own style for in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, and the copied bibliography. The built-in export dialog opens on the same style. The dialog holds a style you pick there for that run alone, and never writes it to the note.
 

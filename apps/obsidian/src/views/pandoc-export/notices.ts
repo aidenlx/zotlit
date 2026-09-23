@@ -43,6 +43,8 @@ export type ExportProblem =
       recover: () => void;
     }
   | { kind: "profile-style-invalid"; styleId: string }
+  /** A style the vault or the dialog selected, by its name. */
+  | { kind: "style-invalid"; style: string }
   | { kind: "destination-unwritable"; detail: string };
 
 /** One message per failure arm, each naming the situation and its fix. */
@@ -139,6 +141,11 @@ export function showExportFailure(failure: ExportProblem): void {
         case "profile-style-invalid":
           renderer.addText(
             m.pandoc_export_error_profile_style({ style: failure.styleId }),
+          );
+          break;
+        case "style-invalid":
+          renderer.addText(
+            m.pandoc_export_error_style({ style: failure.style }),
           );
           break;
         case "destination-unwritable":
