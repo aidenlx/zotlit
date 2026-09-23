@@ -1322,6 +1322,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const imageKey = "FDRFQ7C2";
         const image = seededMark(imageKey, { image: true });
         const imageMark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]')`;
+        const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(imageKey)}]')).find(Boolean)`;
 
         /**
          * Brings page two on screen and selects the image by a click on its
@@ -1379,6 +1380,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             perY: number;
           };
         }
+
+        /**
+         * Whether the image's Annotation Card shows the conflict a Geometry
+         * Edit left, with its prompt and its "Apply again" button.
+         */
+        const conflictShown = async () =>
+          (await obEval(
+            vaultId!,
+            `(function(){const panel=(${card})?.querySelector('.zt-annot-conflict');if(!panel||panel.getBoundingClientRect().width===0)return 'none';return String(panel.textContent.includes("The annotation's position changed in Zotero.")&&[...panel.querySelectorAll('button')].some((node)=>node.textContent==='Apply again'));})()`,
+          )) === "true";
 
         beforeAll(async () => {
           // A Reader opened afresh renders the Excerpt Images it lacks at
@@ -1473,12 +1484,15 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const handle = await selectImage();
           const { version } = await image.stored();
 
-          const mutation = await obJson<string>(
-            `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});fire('pointerup',${handle.x},${handle.y},${pdfView}.containerEl);fire('click',${handle.x},${handle.y},node);return JSON.stringify(app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)}).kind);})()`,
+          await obEval(
+            vaultId!,
+            `(function(){${FIRE}const node=fire('pointerdown',${handle.x},${handle.y});fire('pointerup',${handle.x},${handle.y},${pdfView}.containerEl);fire('click',${handle.x},${handle.y},node);return true;})()`,
           );
-          expect(mutation).toBe("idle");
 
-          // The version is the marker: a write of the same rect still bumps it.
+          // Read once the Reader has held one version across two polls, so a
+          // write the release started would have landed. The version is the
+          // marker: a write of the same rect still bumps it.
+          await image.settled();
           const stored = await image.stored();
           expect(stored.version).toBe(version);
           expect(stored.data.annotationPosition).toBe(
@@ -1596,6 +1610,33 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("nudges the image five points down for Alt+ArrowDown, with the Sort Index of its new top", async () => {
+          await selectImage();
+
+          expect(await pressKey("ArrowDown", { altKey: true })).toEqual({
+            prevented: true,
+          });
+
+          // Five points down the page is five toward PDF's y origin: both
+          // edges move, the top edge the Sort Index measures among them.
+          const expected = [48.75, 390.509, 570, 738.723];
+          expect(
+            await waitFor(async () =>
+              rectIs((await image.stored()).data.annotationPosition, expected),
+            ),
+          ).toBe(true);
+          const stored = await image.stored();
+          expect(stored.data.annotationSortIndex).not.toBe(
+            image.seed.annotationSortIndex,
+          );
+          expect(stored.data.annotationSortIndex).toBe(
+            await recomputedSortIndex(vaultId!, {
+              attachmentPath,
+              position: stored.data.annotationPosition,
+            }),
+          );
+        }, 120000);
+
         it("lands a conflicted Geometry Edit against Zotero's fresh version when applied again", async () => {
           await using teardown = new AsyncDisposableStack();
           // A conflict left standing by a failed assertion is ended before
@@ -1638,62 +1679,40 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const changed = await image.stored();
           expect(rectIs(changed.data.annotationPosition, fresh)).toBe(true);
 
-          // The write met Zotero's newer version: the Annotation holds a
-          // geometry conflict with Zotero's rect beside the attempted one,
-          // and the card offers the choice.
-          const conflictHolds = `(function(){const mutation=app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)});if(mutation.kind!=='conflict'||mutation.conflict.write!=='geometry')return mutation.kind;const near=(rect,expected)=>rect.every((value,index)=>Math.abs(value-expected[index])<5e-4);return String(near(mutation.conflict.fresh.position.rects[0],${JSON.stringify(fresh)})&&near(mutation.conflict.attempted.position.rects[0],${JSON.stringify(attempted)}));})()`;
-          expect(
-            await obEvalUntil(vaultId!, conflictHolds, { expected: "true" }),
-          ).toBe(true);
-          const applyAgain = `(function(){const button=[...document.querySelectorAll('.zt-annot-conflict button')].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';button.click();return 'applied';})()`;
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              `String(!![...document.querySelectorAll('.zt-annot-conflict')].find((node)=>node.getBoundingClientRect().width>0))`,
-              { expected: "true" },
-            ),
-          ).toBe(true);
-          // Zotero's Reader stays on Zotero's rect meanwhile.
+          // The write met Zotero's newer version: the Annotation Card offers
+          // the choice, and Zotero keeps its own rect meanwhile.
+          expect(await waitFor(conflictShown)).toBe(true);
           expect(
             rectIs((await image.stored()).data.annotationPosition, fresh),
           ).toBe(true);
+          const applyAgain = `(function(){const button=[...(${card})?.querySelectorAll('.zt-annot-conflict button')??[]].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';button.click();return 'applied';})()`;
 
           // Zotero's open Reader saves the image it renders after a position
-          // change, which bumps the version again; a retry sent before that
-          // save meets a newer version once more and stands in conflict
-          // again, so each retry waits for the Reader, and is pressed again
-          // while a conflict stands.
+          // change; a retry sent before that save meets a newer version once
+          // more and the card offers the choice again, so each retry waits
+          // for the Reader, and is pressed again while the choice stands.
           let landed = false;
           for (let attempt = 0; attempt < 3 && !landed; attempt++) {
             await image.settled();
             const before = (await image.stored()).version;
             expect(await obEval(vaultId!, applyAgain)).toBe("applied");
-            // Settled once the retry saved, or once a newer version refused it.
+            // Settled once Zotero holds the attempted rect at a newer
+            // version, or once a newer version refused it and the card asks
+            // again.
             expect(
               await waitFor(async () => {
-                const kind = await obEval(
-                  vaultId!,
-                  `String(app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)}).kind)`,
-                );
-                return (
-                  kind === "idle" ||
-                  (kind === "conflict" &&
-                    (await image.stored()).version > before)
-                );
+                const stored = await image.stored();
+                if (stored.version <= before) return false;
+                landed = rectIs(stored.data.annotationPosition, attempted);
+                return landed || (await conflictShown());
               }),
             ).toBe(true);
-            const stored = await image.stored();
-            landed =
-              rectIs(stored.data.annotationPosition, attempted) &&
-              stored.version > before;
           }
           expect(landed).toBe(true);
-          expect(
-            await obEval(
-              vaultId!,
-              `String(app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)}).kind)`,
-            ),
-          ).toBe("idle");
+          // The card lets the choice go once the edit landed.
+          expect(await waitFor(async () => !(await conflictShown()))).toBe(
+            true,
+          );
           expect((await image.stored()).version).toBeGreaterThan(
             changed.version,
           );
@@ -1906,6 +1925,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const highlightMarks = `[...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')]`;
         /** The client box of the first run of `word` in page one's text layer. */
         const wordRect = `const wordRect=(word)=>{const walker=document.createTreeWalker(${pdfView}.containerEl.querySelector('.page[data-page-number="1"] .textLayer'),NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){const at=node.data.indexOf(word);if(at>=0){const range=document.createRange();range.setStart(node,at);range.setEnd(node,at+word.length);return range.getBoundingClientRect();}}return null;};`;
+        /** Whether the highlight's Annotation Card quotes text `test` accepts. */
+        const cardQuotes = (test: string) =>
+          `(function(){const card=app.workspace.getLeavesOfType('zotero-annotation-view').map(({view})=>view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(highlightKey)}]')).find(Boolean);if(!card)return 'no card';return String([...card.querySelectorAll('*')].some((node)=>node.childElementCount===0&&(${test})(node.textContent)));})()`;
         const seedText = highlight.seed.annotationText!;
         const seedRects = (
           highlight.seeded.position as { rects: readonly (readonly number[])[] }
@@ -2045,7 +2067,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `String([...document.querySelectorAll('.workspace-leaf-content *')].some((node)=>node.childElementCount===0&&node.textContent.includes('just a few. Furthermore,')))`,
+              cardQuotes("(text)=>text.includes('just a few. Furthermore,')"),
               { expected: "true" },
             ),
           ).toBe(true);
@@ -2105,7 +2127,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(
             await obEvalUntil(
               vaultId!,
-              `String([...document.querySelectorAll('.workspace-leaf-content *')].some((node)=>node.childElementCount===0&&node.textContent.trimEnd().endsWith('just a few. F')))`,
+              cardQuotes("(text)=>text.trimEnd().endsWith('just a few. F')"),
               { expected: "true" },
             ),
           ).toBe(true);
