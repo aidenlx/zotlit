@@ -669,3 +669,34 @@ it("drops the adjustment with the selection it stood on", () => {
 
   expect(selectAdjust(store.getState())).toBeNull();
 });
+
+it("adjusts selected ink, and no free-text mark", () => {
+  const stroke = annotation("4PE492KU", "ink", {
+    pageIndex: 0,
+    width: 2,
+    paths: [[203.571, 673.009, 238.518, 686.737]],
+  });
+  const moved: EditablePosition = {
+    kind: "pdf-ink",
+    pageIndex: 0,
+    width: 2,
+    paths: [[213.571, 663.009, 248.518, 676.737]],
+  };
+  const typed = annotation("TEXT1111", "text", {
+    pageIndex: 0,
+    rects: [[100, 100, 200, 120]],
+    fontSize: 12,
+    rotation: 0,
+  });
+  const store = reader();
+  ingestRecords(store, [stroke, typed]);
+
+  selectMark(store, "TEXT1111");
+  beginAdjust(store, { grip: "body", from: [150, 110] });
+  expect(selectAdjust(store.getState())).toBeNull();
+
+  selectMark(store, "4PE492KU");
+  beginAdjust(store, { grip: "body", from: [220, 680] });
+  moveAdjust(store, moved);
+  expect(endAdjust(store)).toEqual(moved);
+});

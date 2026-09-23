@@ -537,6 +537,43 @@ it("patches the selected mark, its outline, and its handles in place", () => {
   expect(rectOf(page, "PUPR5FG5")).toEqual(["100", "72", "100", "20"]);
 });
 
+it("patches a scaled ink stroke, the width of its casing, and its four handles in place", () => {
+  const stroke = (paths: number[][], width: number) =>
+    record("4PE492KU", "ink", { pageIndex: 0, width, paths });
+  const page = pageView();
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([stroke([[100, 300, 200, 400]], 2)]),
+    selected: new Set(["4PE492KU"]),
+    handles: true,
+  });
+  const overlay = overlayIn(page);
+  const children = [...overlay.children];
+  // The body of the ink moves it, and only its four corners scale it.
+  expect(markIn(page, "4PE492KU").dataset.ztGrip).toBe("body");
+  expect(Object.keys(handlesIn(page)).sort()).toEqual(["bl", "br", "tl", "tr"]);
+
+  // Doubled from the top-left corner: twice the size, twice the pen.
+  const patched = patchSelectedMark(
+    page,
+    pageAnnotations([stroke([[100, 200, 300, 400]], 4)])[0]!,
+    { handles: true },
+  );
+
+  expect(patched).toBe(true);
+  expect([...overlay.children]).toEqual(children);
+  const mark = markIn(page, "4PE492KU");
+  expect(mark.getAttribute("d")).toBe("M 100 592 L 300 392");
+  expect(mark.getAttribute("stroke-width")).toBe("4");
+  // The casing rides the pen's new width, padded 1.5 units either side.
+  const casing = overlay.querySelector<SVGElement>(
+    `.${themeHook.pdfAnnotationSelectionOutline}`,
+  )!;
+  expect(casing.getAttribute("d")).toBe("M 100 592 L 300 392");
+  expect(casing.style.strokeWidth).toBe("7");
+  // The bottom-right handle stands five units out from (300, 200).
+  expect(handlesIn(page).br).toEqual([300, 592, 10, 10]);
+});
+
 it("draws a proposed position in the mark's own place in its page's list", () => {
   const marks = groupAnnotationsByPage([figure(), highlight()]);
 

@@ -695,6 +695,36 @@ it("moves the selected image by its body", async () => {
   });
 });
 
+it("moves the selected ink by its body, from anywhere in its padded stroke box", async () => {
+  // One stroke from (100, 300) to (200, 400) in PDF points: client (100, 492)
+  // to (200, 392), its box padded five points out on every side.
+  const stroke = annotation("INK44444", "ink", {
+    pageIndex: 0,
+    width: 2,
+    paths: [[100, 300, 200, 400]],
+  });
+  using h = setup([stroke]);
+  click(h.page.div, { x: 150, y: 442 });
+  expect([...h.selection.selected]).toEqual(["INK44444"]);
+
+  // Four points below the stroke's foot, inside the padding and clear of
+  // every corner handle.
+  pointer(h.page.div, "pointerdown", { x: 150, y: 496 });
+  pointer(h.containerEl, "pointermove", { x: 180, y: 476 });
+  pointer(h.containerEl, "pointerup", { x: 180, y: 476 });
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("INK44444", {
+    position: {
+      kind: "pdf-ink",
+      pageIndex: 0,
+      width: 2,
+      paths: [[130, 320, 230, 420]],
+    },
+    sortIndex: "00000|000012|00517",
+  });
+});
+
 it("writes nothing for a release that did not move, and keeps the selection", async () => {
   using h = figureSelected();
 
