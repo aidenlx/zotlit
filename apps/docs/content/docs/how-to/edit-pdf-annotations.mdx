@@ -9,7 +9,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights and underlines, change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
+Create highlights, underlines, and image annotations, change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
 
 ## Before you edit
 
@@ -35,6 +35,16 @@ You can keep both applications open. Make changes in one application at a time, 
 The toolbar at the right of the PDF reader provides the same two tools. Select a tool to keep it active, then select text to create marks without using the popup each time. Use the arrow beside a tool to select its color.
 
 To create one highlight in another color, select the text and select a color from the popup. When neither tool is active, a color creates a highlight.
+
+## Create an image annotation
+
+Use the image tool to capture a figure, a table, or another area without text.
+
+1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_image()} />.
+2. Drag a rectangle around the area. The rectangle stays faint until it is large enough to save.
+3. Release the pointer. The new mark appears, and its card shows the captured area.
+
+The tool turns off after each capture. To cancel a drag, press `Escape`. Press `Escape` again to turn off the tool. A press on an annotation mark selects that mark instead of starting a rectangle.
 
 ## Add or edit a comment
 
