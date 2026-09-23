@@ -10,11 +10,16 @@
 // @see https://github.com/aidenlx/zotlit/issues/1148
 import type { App } from "obsidian";
 
-import type { PdfPosition } from "@zotlit/pdf-structure";
+import type {
+  PdfPosition,
+  RangeAdjustment,
+  SelectedText,
+} from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
 import { BaseNotice } from "@/lib/notice";
 import { themeHook } from "@/lib/theme-hooks";
@@ -51,9 +56,18 @@ import {
   HANDLE_RADIUS,
   handleLayout,
   isEditablePosition,
+  isRangeGrip,
   proposePosition,
+  RANGE_HANDLE_PADDING,
+  rangeGripAt,
+  rangeHandles,
 } from "./geometry-edit";
-import type { EditablePosition, PdfPoint } from "./geometry-edit";
+import type {
+  EditablePosition,
+  Grip,
+  PdfPoint,
+  RangeGrip,
+} from "./geometry-edit";
 import {
   distance,
   markAnchor,
@@ -95,6 +109,8 @@ import {
   selectionCollapsed,
 } from "./surface";
 import type { ToolColorStore } from "./tools";
+
+const logger = getLogger("pdf-annotation-editor");
 
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
@@ -179,6 +195,12 @@ export interface MarkSelectionDeps {
    */
   sortIndex: (position: PdfPosition) => Promise<string | null>;
   /**
+   * A highlight's or underline's range with one end dragged to a point, from
+   * the open document's Structured Characters; `null` while no document is
+   * open, or for a point no range can be placed from.
+   */
+  adjustRange: (adjustment: RangeAdjustment) => Promise<SelectedText | null>;
+  /**
    * Settles when the marks match the last read the view started — the read a
    * saved Geometry Edit announced, which the mark then draws.
    */
@@ -208,6 +230,13 @@ export class MarkSelection implements Disposable {
   /** Whether the last press took a Mark Handle, whose click selects nothing. */
   #pressedHandle = false;
   #adjusting = Promise.resolve();
+  /**
+   * The text range the pointer last asked for, which a release waits on so
+   * it saves where the pointer let go.
+   */
+  #ranging = Promise.resolve();
+  /** Counts the range asks, so an answer a later ask or a cancel overtook is dropped. */
+  #rangeAsk = 0;
 
   constructor(deps: MarkSelectionDeps) {
     this.#deps = deps;
@@ -484,6 +513,12 @@ export class MarkSelection implements Disposable {
     const state = this.#state();
     if (!state.marksVisible || selectAdjust(state)) return;
     if (!isEditablePosition(record.position)) return;
+    const client = { x: event.clientX, y: event.clientY };
+    const range = this.#rangeGripAt(record, client);
+    if (range) {
+      this.#holdGrip(event, range.grip, range.from);
+      return;
+    }
     const page = this.#deps.pageAt(record.position.pageIndex);
     if (!page) return;
     const box = drawnBoxOf(page);
@@ -510,6 +545,14 @@ export class MarkSelection implements Disposable {
       radius: (HANDLE_RADIUS * box.unitWidth) / box.width,
     });
     if (!grip) return;
+    this.#holdGrip(event, grip, pdfPointOf(page, point));
+  }
+
+  /**
+   * Captures the pointer for a Geometry Edit on a grip, holding the browser's
+   * text selection off for the drag.
+   */
+  #holdGrip(event: PointerEvent, grip: Grip, from: PdfPoint): void {
     event.preventDefault();
     this.#deps.containerEl.setPointerCapture(event.pointerId);
     this.#dragging = {
@@ -517,10 +560,34 @@ export class MarkSelection implements Disposable {
       client: { x: event.clientX, y: event.clientY },
     };
     this.#pressedHandle = grip !== "body";
-    beginAdjust(this.#deps.surfaceState, {
-      grip,
-      from: pdfPointOf(page, point),
-    });
+    beginAdjust(this.#deps.surfaceState, { grip, from });
+  }
+
+  /**
+   * The end of a selected highlight's or underline's range a press takes, and
+   * where it fell on the page of that end's strip; `null` for a press on
+   * neither, or on a mark that is no text range.
+   */
+  #rangeGripAt(
+    record: AnnotationRecord,
+    client: Point,
+  ): { grip: RangeGrip; from: PdfPoint } | null {
+    const { pageIndex } = record.position as EditablePosition;
+    const page = this.#deps.pageAt(pageIndex);
+    if (!page) return null;
+    const box = drawnBoxOf(page);
+    const handles = rangeHandles(
+      record,
+      (RANGE_HANDLE_PADDING * box.unitWidth) / box.width,
+    );
+    const pointOn = (index: number): PdfPoint | null => {
+      const on = this.#deps.pageAt(index);
+      return on && pdfPointOf(on, unitsOf(drawnBoxOf(on), client));
+    };
+    const grip = rangeGripAt(handles, pointOn);
+    const on = handles.find((handle) => handle.grip === grip);
+    const from = on && pointOn(on.pageIndex);
+    return grip && from ? { grip, from } : null;
   }
 
   /** Proposes the position the held grip reaches at the pointer's last place. */
@@ -532,6 +599,10 @@ export class MarkSelection implements Disposable {
     if (!isEditablePosition(record.position)) return;
     // Read on every move, so a scroll or a zoom mid-drag is measured against
     // the page as it now stands.
+    if (isRangeGrip(adjust.grip)) {
+      this.#proposeRange(record, adjust.grip, dragging.client);
+      return;
+    }
     const page = this.#deps.pageAt(record.position.pageIndex);
     if (!page) return;
     moveAdjust(
@@ -546,16 +617,96 @@ export class MarkSelection implements Disposable {
     );
   }
 
+  /**
+   * Asks the document for the range the held end reaches at a client point,
+   * and proposes it once it answers, unless a later ask or a cancel came
+   * first. A point no range can be placed from keeps the last proposal.
+   *
+   * The start is measured on the Annotation's own page, however far off it
+   * the pointer is, since the start never leaves that page. The end is
+   * measured on that page or the next, whichever box the pointer is nearer.
+   */
+  #proposeRange(
+    record: AnnotationRecord,
+    grip: RangeGrip,
+    client: Point,
+  ): void {
+    const position = record.position;
+    if (position.kind !== "pdf-rects") return;
+    const pages = [position.pageIndex, position.pageIndex + 1].flatMap(
+      (pageIndex) => {
+        const page = this.#deps.pageAt(pageIndex);
+        return page ? [{ pageIndex, page, box: drawnBoxOf(page) }] : [];
+      },
+    );
+    const [on] = pages
+      .filter(
+        ({ pageIndex }) => grip === "end" || pageIndex === position.pageIndex,
+      )
+      .toSorted(
+        (a, b) => boxDistance(a.box, client) - boxDistance(b.box, client),
+      );
+    if (!on) return;
+    const [x, y] = pdfPointOf(on.page, unitsOf(on.box, client));
+    const ask = ++this.#rangeAsk;
+    const store = this.#deps.surfaceState;
+    this.#ranging = this.#deps
+      .adjustRange({
+        position,
+        end: grip,
+        point: { pageIndex: on.pageIndex, x, y },
+      })
+      .then((selected) => {
+        if (ask !== this.#rangeAsk || !selected) return;
+        moveAdjust(
+          store,
+          {
+            kind: "pdf-rects",
+            pageIndex: selected.pageIndex,
+            rects: selected.rects.map(([x1, y1, x2, y2]) => [x1, y1, x2, y2]),
+            ...(selected.nextPageRects && {
+              nextPageRects: selected.nextPageRects.map(([x1, y1, x2, y2]) => [
+                x1,
+                y1,
+                x2,
+                y2,
+              ]),
+            }),
+          },
+          selected.text,
+        );
+      })
+      .catch((error: unknown) => {
+        logger.warn("Could not place a highlight's dragged range", {
+          error,
+          annotationKey: record.key,
+        });
+      });
+  }
+
   #release(): void {
     this.#releasePointer();
     const key = this.#selectedKey();
-    const proposal = endAdjust(this.#deps.surfaceState);
-    if (key !== null && proposal)
-      this.#adjusting = this.#saveGeometry(key, proposal);
+    const store = this.#deps.surfaceState;
+    const settle = () => {
+      const text = selectAdjust(store.getState())?.text;
+      const proposal = endAdjust(store);
+      return key !== null && proposal
+        ? this.#saveGeometry(key, proposal, text)
+        : undefined;
+    };
+    // A text range's last proposal may still be on its way from the document.
+    if (isRangeGrip(selectAdjust(store.getState())?.grip ?? "body")) {
+      this.#adjusting = this.#ranging.then(settle);
+      return;
+    }
+    const saving = settle();
+    if (saving) this.#adjusting = saving;
   }
 
   #cancelDrag(): void {
     this.#releasePointer();
+    this.#rangeAsk++;
     cancelAdjust(this.#deps.surfaceState);
   }
 
@@ -572,7 +723,11 @@ export class MarkSelection implements Disposable {
    * record Zotero answered, and any other snaps back to the confirmed record,
    * with a failure told at the notice seam.
    */
-  async #saveGeometry(key: string, proposal: EditablePosition): Promise<void> {
+  async #saveGeometry(
+    key: string,
+    proposal: EditablePosition,
+    text?: string,
+  ): Promise<void> {
     const store = this.#deps.surfaceState;
     const end = () => {
       if (selectAdjust(store.getState())?.proposal === proposal)
@@ -592,6 +747,7 @@ export class MarkSelection implements Disposable {
     const outcome = this.#deps.annotations.patchGeometry(key, {
       position: proposal,
       sortIndex,
+      ...(text !== undefined && { text }),
     });
     this.#write(outcome);
     if ((await outcome).kind === "idle") await this.#deps.refreshed();
@@ -928,6 +1084,13 @@ function drawnBoxOf(page: OverlayPageView): PageBox {
   if (!overlay) return box;
   const { left, top, width, height } = overlay.getBoundingClientRect();
   return { ...box, left, top, width, height };
+}
+
+/** How far a client point lies outside a page's drawn box; `0` inside it. */
+function boxDistance(box: PageBox, { x, y }: Point): number {
+  const dx = Math.max(box.left - x, 0, x - (box.left + box.width));
+  const dy = Math.max(box.top - y, 0, y - (box.top + box.height));
+  return Math.hypot(dx, dy);
 }
 
 /**

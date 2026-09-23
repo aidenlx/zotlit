@@ -11,7 +11,11 @@ import type {
 } from "obsidian";
 
 import { PdfTextStructure } from "@zotlit/pdf-structure";
-import type { PdfPosition } from "@zotlit/pdf-structure";
+import type {
+  PdfPosition,
+  RangeAdjustment,
+  SelectedText,
+} from "@zotlit/pdf-structure";
 
 import { EXTERNAL_FILE_PREFIX } from "@/lib/constants";
 import {
@@ -43,6 +47,7 @@ import {
 } from "./capability-affordance";
 import { MarkCreation } from "./creation";
 import type { ReaderPage } from "./creation";
+import { isRangeGrip } from "./geometry-edit";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
@@ -57,7 +62,7 @@ import {
   selectCapabilityAffordance,
   selectSelectedKey,
 } from "./reader-surface-state";
-import type { ReaderSurfaceStore } from "./reader-surface-state";
+import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
 import {
   groupAnnotationsByPage,
   patchSelectedMark,
@@ -202,6 +207,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
   readonly #painted = new Set<number>();
+  /** The pages the selected mark's last in-place redraw drew it on. */
+  #patchedOn: { key: string; pages: ReadonlySet<number> } | null = null;
   #attachment: AttachmentResolution = { kind: "pending" };
   #filePath: string | null = null;
   #absolutePath: string | null = null;
@@ -333,6 +340,19 @@ export class PdfViewBinding implements Disposable, HoverParent {
   async sortIndex(position: PdfPosition): Promise<string | null> {
     const structure = this.#structure();
     return structure ? await structure.sortIndex(position) : null;
+  }
+
+  /**
+   * A highlight's or underline's range with one end dragged to a page point,
+   * from the open document's Structured Characters — the proposal of a
+   * Geometry Edit on a text range.
+   *
+   * @returns `null` while no document is open, or for a point no range can be
+   *   placed from.
+   */
+  async adjustRange(adjustment: RangeAdjustment): Promise<SelectedText | null> {
+    const structure = this.#structure();
+    return structure ? await structure.adjustRange(adjustment) : null;
   }
 
   /** Whether the reader surfaces may mount: every probe so far passed. */
@@ -697,6 +717,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       },
       creation,
       sortIndex: (position) => this.sortIndex(position),
+      adjustRange: (adjustment) => this.adjustRange(adjustment),
       refreshed: () => this.refreshed,
       now: this.#now,
     });
@@ -704,8 +725,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
     // A Geometry Edit redraws the one mark it moves; the handles come and go
     // with the capability to save one.
     this.#surfaces.defer(
-      state.subscribe(selectAdjust, () => this.#patchSelected()),
+      state.subscribe(selectAdjust, (adjust) => {
+        this.#patchSelected();
+        this.#showAdjusting(adjust);
+      }),
     );
+    this.#surfaces.defer(() => this.#showAdjusting(null));
     this.#surfaces.defer(
       state.subscribe(
         ({ capability }) => editingLive(capability),
@@ -824,15 +849,36 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const state = this.#surfaceState?.getState();
     const key = state ? selectSelectedKey(state) : null;
     if (!controller || key === null) return;
+    const drawn = new Set<number>();
     for (const [pageIndex, placements] of this.#visibleMarks()) {
       const placement = placements.find(
         ({ annotation }) => annotation.key === key,
       );
+      if (placement) drawn.add(pageIndex);
       const page = placement && pageViewOf(controller, pageIndex + 1);
       if (!page) continue;
       if (!patchSelectedMark(page, placement, { handles: this.#handles() }))
         this.#paint(pageIndex);
     }
+    // A page the mark left — the next page of a range that no longer spills
+    // onto it — is painted without it.
+    const before =
+      this.#patchedOn?.key === key
+        ? this.#patchedOn.pages
+        : pagesDrawing(this.#marks, key);
+    for (const pageIndex of before.difference(drawn)) this.#paint(pageIndex);
+    this.#patchedOn = { key, pages: drawn };
+  }
+
+  /**
+   * Marks the reader while a text range's end moves, so the stylesheet shows
+   * the text cursor, as Zotero's reader does, over the captured pointer.
+   */
+  #showAdjusting(adjust: Adjustment | null): void {
+    const moving =
+      adjust?.phase === "dragging" && isRangeGrip(adjust.grip) ? "text" : null;
+    if (moving) this.#view.containerEl.dataset.ztAdjusting = moving;
+    else delete this.#view.containerEl.dataset.ztAdjusting;
   }
 
   /** Takes the Attachment's capability as the repository now answers it. */
@@ -1054,6 +1100,19 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#probes.record([result]);
     if (!this.supported) this[Symbol.dispose]();
   }
+}
+
+/** The pages that draw an Annotation, by its Indexed Key. */
+function pagesDrawing(
+  marks: ReadonlyMap<number, readonly PdfPageAnnotation[]>,
+  key: string,
+): Set<number> {
+  const pages = new Set<number>();
+  for (const [pageIndex, placements] of marks) {
+    if (placements.some(({ annotation }) => annotation.key === key))
+      pages.add(pageIndex);
+  }
+  return pages;
 }
 
 /**

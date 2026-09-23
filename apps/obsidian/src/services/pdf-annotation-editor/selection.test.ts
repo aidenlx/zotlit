@@ -3,6 +3,8 @@ import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
+
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
@@ -80,6 +82,9 @@ function setup(
 
   const annotations = annotationEdits();
   const sortIndex = vi.fn(async () => "00000|000012|00517");
+  const adjustRange = vi.fn(
+    async (_adjustment: RangeAdjustment): Promise<SelectedText | null> => null,
+  );
   const reader = readerSurfaces({
     containerEl,
     page: page as unknown as OverlayPageView,
@@ -87,6 +92,7 @@ function setup(
     capability,
     annotations: { ...annotations, createAnnotation: vi.fn() },
     sortIndex,
+    adjustRange,
   });
 
   return {
@@ -95,6 +101,7 @@ function setup(
     page,
     annotations,
     sortIndex,
+    adjustRange,
     popup() {
       return reader.parent.hoverPopover as { staticPos: unknown } | null;
     },
@@ -804,4 +811,92 @@ it("leaves a drag beside the selected image to the text selection", async () => 
 
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+});
+
+/**
+ * A highlight on page one from x 100 to 200 and, counted from the page foot,
+ * y 300 to 312 — client y 480 to 492 — so its end strip stands on x 200.
+ */
+const QUOTE = annotation("QUOT5555", "highlight", {
+  pageIndex: 0,
+  rects: [[100, 300, 200, 312]],
+});
+const ON_QUOTE = { x: 150, y: 486 };
+const QUOTE_END = { x: 201, y: 486 };
+
+/** The quote selected by a click on it, as a researcher selects it. */
+function quoteSelected() {
+  const h = setup([QUOTE]);
+  click(h.page.div, ON_QUOTE);
+  expect([...h.selection.selected]).toEqual(["QUOT5555"]);
+  return h;
+}
+
+it("saves a range's end dragged along the text, with its quoted text", async () => {
+  using h = quoteSelected();
+  h.adjustRange.mockResolvedValue({
+    pageIndex: 0,
+    rects: [[100, 300, 260, 312]],
+    text: "the quote, one word longer",
+  });
+
+  pointer(h.page.div, "pointerdown", QUOTE_END);
+  pointer(h.containerEl, "pointermove", { x: 260, y: 486 });
+  // Released before the document answered: the save waits for the answer.
+  pointer(h.containerEl, "pointerup", { x: 260, y: 486 });
+  await h.selection.adjusted;
+
+  expect(h.adjustRange).toHaveBeenCalledWith({
+    position: QUOTE.position,
+    end: "end",
+    point: { pageIndex: 0, x: 260, y: 306 },
+  });
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("QUOT5555", {
+    position: {
+      kind: "pdf-rects",
+      pageIndex: 0,
+      rects: [[100, 300, 260, 312]],
+    },
+    sortIndex: "00000|000012|00517",
+    text: "the quote, one word longer",
+  });
+});
+
+it("drops a range the document answers after Escape took its drag back", async () => {
+  using h = quoteSelected();
+  let answer!: (selected: SelectedText) => void;
+  h.adjustRange.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+
+  pointer(h.page.div, "pointerdown", QUOTE_END);
+  pointer(h.containerEl, "pointermove", { x: 260, y: 486 });
+  key(h.containerEl, "Escape");
+  // A fresh press on the same strip, before the first drag's answer lands.
+  pointer(h.page.div, "pointerdown", QUOTE_END);
+  answer({
+    pageIndex: 0,
+    rects: [[100, 300, 260, 312]],
+    text: "the quote, one word longer",
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(h.store.getState().floating).toMatchObject({
+    adjust: { phase: "pressed", proposal: QUOTE.position },
+  });
+});
+
+it("leaves a press inside the selected highlight to the text selection", async () => {
+  using h = quoteSelected();
+
+  pointer(h.page.div, "pointerdown", ON_QUOTE);
+  pointer(h.containerEl, "pointermove", { x: 180, y: 486 });
+  pointer(h.containerEl, "pointerup", { x: 180, y: 486 });
+  await h.selection.adjusted;
+
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect(h.adjustRange).not.toHaveBeenCalled();
 });

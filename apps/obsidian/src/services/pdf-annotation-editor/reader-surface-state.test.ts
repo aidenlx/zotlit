@@ -700,3 +700,24 @@ it("adjusts selected ink, and no free-text mark", () => {
   moveAdjust(store, moved);
   expect(endAdjust(store)).toEqual(moved);
 });
+
+it("carries a text range's quoted text with its proposal", () => {
+  const store = reader();
+  ingestRecords(store, [PARAGRAPH]);
+  selectMark(store, PARAGRAPH.key);
+  beginAdjust(store, { grip: "end", from: [300, 700] });
+  const longer: EditablePosition = {
+    kind: "pdf-rects",
+    pageIndex: 0,
+    rects: [[72, 700, 330, 712]],
+  };
+
+  moveAdjust(store, longer, "the longer quote");
+
+  expect(selectAdjust(store.getState())).toMatchObject({
+    proposal: longer,
+    text: "the longer quote",
+  });
+  expect(endAdjust(store)).toEqual(longer);
+  expect(selectAdjust(store.getState())?.text).toBe("the longer quote");
+});

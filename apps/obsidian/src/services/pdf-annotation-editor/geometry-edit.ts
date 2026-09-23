@@ -20,8 +20,22 @@ import type { Point } from "./hit-test";
  */
 export type Handle = "tl" | "t" | "tr" | "r" | "br" | "b" | "bl" | "l";
 
-/** What a press holds: one Mark Handle, or the body of the selected mark. */
-export type Grip = Handle | "body";
+/**
+ * A highlight's or underline's Mark Handle, by the end of its range it moves;
+ * the other end is the anchor.
+ */
+export type RangeGrip = "start" | "end";
+
+/**
+ * What a press holds: one Mark Handle of an image or ink, the body of the
+ * selected mark, or one end of a text range.
+ */
+export type Grip = Handle | "body" | RangeGrip;
+
+/** Whether a grip moves one end of a text range. */
+export function isRangeGrip(grip: Grip): grip is RangeGrip {
+  return grip === "start" || grip === "end";
+}
 
 /** A point in PDF page space, `[x, y]` in points. */
 export type PdfPoint = readonly [number, number];
@@ -38,6 +52,14 @@ export function isEditablePosition(
 ): position is EditablePosition {
   return position.kind === "pdf-rects" || position.kind === "pdf-ink";
 }
+
+/**
+ * Half the width of a text range's handle strip, in CSS pixels, as Zotero's
+ * reader pads the edge it lays the strip along.
+ *
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, `padding = 3`
+ */
+export const RANGE_HANDLE_PADDING = 3;
 
 /**
  * The smallest side an image rect may be resized to, in PDF points.
@@ -125,6 +147,78 @@ export function handleLayout({
     { grip: "bl", at: [x1, y1] },
     { grip: "l", at: [x1, ym] },
   ];
+}
+
+/**
+ * A highlight's or underline's two Mark Handles: a strip along the leading
+ * edge of its first rect, and one along the trailing edge of its last, on the
+ * next page where the range spilled onto it. The body carries none, since a
+ * press there is the text selection's.
+ *
+ * Zotero's reader turns each strip by the text rotation of the characters
+ * under its rect. The Structured Characters are read asynchronously, and a
+ * handle is drawn and hit synchronously, so these lie as for upright text:
+ * on the rect's left and right edges.
+ *
+ * @param padding half the strip's width, in PDF points.
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, the `highlight` and `underline` branch
+ */
+export function rangeHandles(
+  { type, position }: Pick<AnnotationRecord, "type" | "position">,
+  padding: number,
+): { grip: RangeGrip; pageIndex: number; rect: PdfRect }[] {
+  if (type !== "highlight" && type !== "underline") return [];
+  if (position.kind !== "pdf-rects") return [];
+  const first = position.rects[0];
+  const spilled = position.nextPageRects?.length
+    ? position.nextPageRects
+    : undefined;
+  const last = (spilled ?? position.rects).at(-1);
+  if (!first || !last) return [];
+  const strip = (x: number, [, y1, , y2]: readonly number[]): PdfRect => [
+    x - padding,
+    y1!,
+    x + padding,
+    y2!,
+  ];
+  return [
+    {
+      grip: "start",
+      pageIndex: position.pageIndex,
+      rect: strip(first[0], first),
+    },
+    {
+      grip: "end",
+      pageIndex: position.pageIndex + (spilled ? 1 : 0),
+      rect: strip(last[2], last),
+    },
+  ];
+}
+
+/**
+ * The end of a text range a press takes: the start first, so it wins where a
+ * one-character range's strips overlap, as in Zotero's reader.
+ *
+ * @param pointOn the press in PDF points on a page, or `null` for a page the
+ *   press cannot be placed on.
+ * @returns `null` for a press on neither strip.
+ */
+export function rangeGripAt(
+  handles: readonly { grip: RangeGrip; pageIndex: number; rect: PdfRect }[],
+  pointOn: (pageIndex: number) => PdfPoint | null,
+): RangeGrip | null {
+  for (const { grip, pageIndex, rect } of handles) {
+    const point = pointOn(pageIndex);
+    if (
+      point &&
+      point[0] >= rect[0] &&
+      point[0] <= rect[2] &&
+      point[1] >= rect[1] &&
+      point[1] <= rect[3]
+    )
+      return grip;
+  }
+  return null;
 }
 
 /**
@@ -216,6 +310,8 @@ export function proposePosition({
   to: PdfPoint;
   viewBox: readonly number[];
 }): EditablePosition {
+  // A text range's end is placed on its characters, not by the travel.
+  if (isRangeGrip(grip)) return confirmed;
   const dx = to[0] - from[0];
   const dy = to[1] - from[1];
   if (confirmed.kind === "pdf-ink")
@@ -367,6 +463,7 @@ export function sameGeometry(
 export function gripCursor(grip: Grip, rotation: number): string {
   if (grip === "body") return "move";
   const turned = rotation % 180 !== 0;
+  if (isRangeGrip(grip)) return turned ? "ns-resize" : "ew-resize";
   if (grip.length === 1) {
     const horizontal = grip === "l" || grip === "r";
     return horizontal !== turned ? "ew-resize" : "ns-resize";

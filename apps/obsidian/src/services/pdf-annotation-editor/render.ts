@@ -17,7 +17,10 @@ import {
   HANDLE_RADIUS,
   handleLayout,
   movesByBody,
+  RANGE_HANDLE_PADDING,
+  rangeHandles,
 } from "./geometry-edit";
+import type { Grip } from "./geometry-edit";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -257,25 +260,42 @@ function markNodes(
 
 /**
  * The Mark Handles of one selected placement: squares ten pixels wide at
- * every zoom step, each showing the cursor of the edges it moves. They take
- * the pointer for their cursor; which one a press takes is still decided from
- * geometry.
+ * every zoom step, or a text range's strips six pixels wide, each showing the
+ * cursor of the edges it moves. They take the pointer for their cursor; which
+ * one a press takes is still decided from geometry.
  */
 function renderHandles(
   view: OverlayPageView,
   page: OverlayPage,
   placement: PdfPageAnnotation,
 ): SVGRectElement[] {
-  const half = (HANDLE_RADIUS * page.viewport.width) / view.viewport.width;
-  return handleLayout(placement.annotation).map(({ grip, at }) => {
-    const [x, y] = page.viewport.convertToViewportPoint(at[0], at[1]);
-    const element = createRect(page, [x - half, y - half, x + half, y + half]);
+  const toUnits = page.viewport.width / view.viewport.width;
+  const half = HANDLE_RADIUS * toUnits;
+  const handle = (grip: Grip, rect: PageRect) => {
+    const element = createRect(page, rect);
     element.classList.add(themeHook.pdfAnnotationHandle);
     element.setAttribute("vector-effect", "non-scaling-stroke");
     element.dataset.ztGrip = grip;
     element.dataset.ztCursor = gripCursor(grip, page.viewport.rotation);
     return element;
-  });
+  };
+  // A text range's two strips, each drawn on the page that holds its rect: a
+  // spilled-over range's end is on the next page.
+  const { annotation, position } = placement;
+  const onPage =
+    position.kind === "pdf-rects" && placement.rects === position.nextPageRects
+      ? position.pageIndex + 1
+      : position.pageIndex;
+  const strips = rangeHandles(annotation, RANGE_HANDLE_PADDING * toUnits)
+    .filter(({ pageIndex }) => pageIndex === onPage)
+    .map(({ grip, rect }) => handle(grip, pdfRectToPage(page.viewport, rect)));
+  return [
+    ...strips,
+    ...handleLayout(annotation).map(({ grip, at }) => {
+      const [x, y] = page.viewport.convertToViewportPoint(at[0], at[1]);
+      return handle(grip, [x - half, y - half, x + half, y + half]);
+    }),
+  ];
 }
 
 /**

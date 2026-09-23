@@ -13,6 +13,8 @@ import {
   gripCursor,
   handleLayout,
   proposePosition,
+  rangeGripAt,
+  rangeHandles,
   sameGeometry,
 } from "./geometry-edit";
 import type { Grip } from "./geometry-edit";
@@ -334,4 +336,59 @@ it("points the cursor along the edge a handle moves, as the page is turned", () 
     ),
   ).toEqual(["ns-resize", "ew-resize", "nesw-resize", "nwse-resize", "move"]);
   expect(gripCursor("tr", 180)).toBe("nesw-resize");
+});
+
+/** A highlight's staircase: two lines on page 1, spilling onto page 2. */
+const STAIRCASE = parseAnnotationPosition(
+  {
+    pageIndex: 1,
+    rects: [
+      [200, 700, 400, 712],
+      [72, 686, 300, 698],
+    ],
+    nextPageRects: [[72, 740, 150, 752]],
+  } as unknown as AnnotationPositionRaw,
+  "application/pdf",
+) as PdfRectsPosition;
+
+it("lays a range's handles on the leading edge of its first line and the trailing edge of its last", () => {
+  expect(rangeHandles({ type: "highlight", position: STAIRCASE }, 3)).toEqual([
+    { grip: "start", pageIndex: 1, rect: [197, 700, 203, 712] },
+    { grip: "end", pageIndex: 2, rect: [147, 740, 153, 752] },
+  ]);
+  const onePage = rects([[100, 300, 160, 312]]);
+  expect(rangeHandles({ type: "underline", position: onePage }, 2)).toEqual([
+    { grip: "start", pageIndex: 1, rect: [98, 300, 102, 312] },
+    { grip: "end", pageIndex: 1, rect: [158, 300, 162, 312] },
+  ]);
+  // An image or ink is resized by its own handles.
+  expect(rangeHandles({ type: "image", position: IMAGE }, 3)).toEqual([]);
+});
+
+it("takes a range's handle from the page it is drawn on, and never its body", () => {
+  const handles = rangeHandles({ type: "highlight", position: STAIRCASE }, 3);
+  const at =
+    (pageIndex: number, point: readonly [number, number]) => (page: number) =>
+      page === pageIndex ? point : null;
+
+  expect(rangeGripAt(handles, at(1, [199, 705]))).toBe("start");
+  expect(rangeGripAt(handles, at(2, [152, 745]))).toBe("end");
+  // The end's strip on page 2 is not reached by the same point on page 1.
+  expect(rangeGripAt(handles, at(1, [152, 745]))).toBeNull();
+  // Inside the highlight, text selection keeps the press.
+  expect(rangeGripAt(handles, at(1, [300, 705]))).toBeNull();
+});
+
+it("gives the start the press where a one-character range's strips overlap", () => {
+  const handles = rangeHandles(
+    { type: "highlight", position: rects([[100, 300, 104, 312]]) },
+    3,
+  );
+
+  expect(rangeGripAt(handles, () => [102, 305])).toBe("start");
+});
+
+it("points a range handle's cursor along the text, as the page is turned", () => {
+  expect(gripCursor("end", 0)).toBe("ew-resize");
+  expect(gripCursor("start", 90)).toBe("ns-resize");
 });
