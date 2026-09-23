@@ -334,9 +334,12 @@ it("probes the page a view had already painted before the binding attached", asy
   expect(reader.page.pdfPage?.getTextContent).toHaveBeenCalledOnce();
 });
 
-// A plugin reload over an open PDF tab attaches to pages PDF.js has already
-// painted, and those send no render event until the reader moves.
-it("opens the create popup over a page painted before the binding attached", async () => {
+/**
+ * A painted page one glyph wide, laid out in the document so a drag across it
+ * reaches selection capture. The page's text layer shows the glyph the text
+ * content carries.
+ */
+function paintedPage() {
   const page = pageView();
   const box = {
     left: 0,
@@ -347,7 +350,6 @@ it("opens the create popup over a page painted before the binding attached", asy
     height: 1188,
   };
   page.div.getBoundingClientRect = () => box as never;
-  // The one glyph the page's text content carries, as the text layer shows it.
   const textLayer = page.div.createDiv({ cls: "textLayer", text: "E" });
   Object.assign(page, { renderingState: 3 });
   const reader = pdfReader(page);
@@ -355,7 +357,59 @@ it("opens the create popup over a page painted before the binding attached", asy
   view.containerEl.getBoundingClientRect = () => box as never;
   view.containerEl.append(page.div);
   document.body.append(view.containerEl);
-  const { app } = workspace([{ view }]);
+  const viewer = reader.child.pdfViewer as { pdfDocument?: unknown };
+  return {
+    page,
+    reader,
+    view,
+    /** The document proxy the reader's viewer holds; `undefined` while opening. */
+    get pdfDocument(): unknown {
+      return viewer.pdfDocument;
+    },
+    set pdfDocument(value: unknown) {
+      viewer.pdfDocument = value;
+    },
+    /** Drags across the glyph, the gesture that opens the create popup. */
+    dragAcrossGlyph: async (service: PdfAnnotationEditor) => {
+      const range = document.createRange();
+      range.selectNodeContents(textLayer);
+      vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
+        { left: 87, top: 81, right: 96, bottom: 98 },
+      ] as never);
+      vi.spyOn(window, "getSelection").mockReturnValue({
+        rangeCount: 1,
+        isCollapsed: false,
+        getRangeAt: () => range,
+        removeAllRanges: () => undefined,
+        toString: () => "E",
+      } as never);
+      page.div.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          clientX: 100,
+          clientY: 260,
+        }),
+      );
+      document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+      await service.bindings[0]!.settled;
+      vi.restoreAllMocks();
+    },
+    cleanup: () => {
+      view.containerEl.remove();
+      document.body.querySelector(".zt-pdf-mark-popup")?.remove();
+    },
+  };
+}
+
+function createPopup(): Element | null {
+  return document.querySelector(".zt-pdf-mark-popup [data-zt-verb]");
+}
+
+// A plugin reload over an open PDF tab attaches to pages PDF.js has already
+// painted, and those send no render event until the reader moves.
+it("opens the create popup over a page painted before the binding attached", async () => {
+  const painted = paintedPage();
+  const { app } = workspace([{ view: painted.view }]);
   await using service = new PdfAnnotationEditor({
     app,
     attachments: attachmentReads(RESOLVED),
@@ -367,34 +421,74 @@ it("opens the create popup over a page painted before the binding attached", asy
   await service.ready;
   await service.bindings[0]!.refreshed;
 
-  const range = document.createRange();
-  range.selectNodeContents(textLayer);
-  vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
-    { left: 87, top: 81, right: 96, bottom: 98 },
-  ] as never);
-  vi.spyOn(window, "getSelection").mockReturnValue({
-    rangeCount: 1,
-    isCollapsed: false,
-    getRangeAt: () => range,
-    removeAllRanges: () => undefined,
-    toString: () => "E",
-  } as never);
-  page.div.dispatchEvent(
-    new PointerEvent("pointerdown", {
-      bubbles: true,
-      clientX: 100,
-      clientY: 260,
-    }),
-  );
-  document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-  await service.bindings[0]!.settled;
+  await painted.dragAcrossGlyph(service);
 
-  expect(
-    document.querySelector(".zt-pdf-mark-popup [data-zt-verb]"),
-  ).not.toBeNull();
-  vi.restoreAllMocks();
-  view.containerEl.remove();
-  document.body.querySelector(".zt-pdf-mark-popup")?.remove();
+  expect(createPopup()).not.toBeNull();
+  painted.cleanup();
+});
+
+// A PDF opened in a hidden tab has a viewer before it has a document or a
+// loaded page: Obsidian defers the open until the tab shows, and the binding
+// has attached by then.
+it("reads the text structure of a document Obsidian opened after the binding attached", async () => {
+  const painted = paintedPage();
+  const { pdfDocument } = painted;
+  const { pdfPage } = painted.page;
+  painted.pdfDocument = undefined;
+  delete painted.page.pdfPage;
+  const { app } = workspace([{ view: painted.view }]);
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  painted.pdfDocument = pdfDocument;
+  painted.page.pdfPage = pdfPage;
+  painted.reader.renderFirstPage();
+  await painted.dragAcrossGlyph(service);
+
+  expect(createPopup()).not.toBeNull();
+  painted.cleanup();
+});
+
+// A vault modify and a pop-out migration reopen a new document proxy in the
+// same view; the characters memoized from the old proxy describe stale bytes.
+it("reads the text structure again once the view reopened its document", async () => {
+  const painted = paintedPage();
+  const { app } = workspace([{ view: painted.view }]);
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+  await painted.dragAcrossGlyph(service);
+  const readsOfOld = painted.page.pdfPage!.getTextContent.mock.calls.length;
+
+  const reopened = pageView();
+  painted.pdfDocument = {
+    numPages: 1,
+    getPage: vi.fn(async () => reopened.pdfPage),
+    getPageLabels: vi.fn(async () => null),
+  };
+  painted.reader.renderFirstPage();
+  await painted.dragAcrossGlyph(service);
+
+  expect(reopened.pdfPage?.getTextContent).toHaveBeenCalledOnce();
+  expect(painted.page.pdfPage!.getTextContent).toHaveBeenCalledTimes(
+    readsOfOld,
+  );
+  painted.cleanup();
 });
 
 it("waits for the first render when Obsidian is still opening the document", async () => {

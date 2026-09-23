@@ -144,6 +144,8 @@ export interface FakePageView {
     commonObjs: { has: Mock; get: Mock };
     getTextContent: Mock;
   };
+  /** PDF.js `RenderingStates`: `3` once the page has finished painting. */
+  renderingState?: number;
 }
 
 /**
@@ -203,6 +205,7 @@ export function pdfReader(page = pageView()) {
     viewer: host(child),
     /** What Obsidian dispatches once PDF.js paints page one. */
     renderFirstPage: () => {
+      page.renderingState = 3;
       for (const listener of listeners) {
         listener({ pageNumber: 1, source: page });
       }

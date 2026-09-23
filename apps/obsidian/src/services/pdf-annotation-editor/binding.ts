@@ -3,6 +3,7 @@ import type {
   FileSystemAdapter,
   HoverParent,
   HoverPopover,
+  PDFDocumentProxy,
   PDFFileView,
   PDFPageRenderedListener,
   PDFPageView,
@@ -195,12 +196,6 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #surfaces = new DisposableStack();
   /** The pages this binding currently holds an overlay on. */
   readonly #painted = new Set<number>();
-  /**
-   * The pages PDF.js has built for this document, by zero-based index. A text
-   * selection can only reach a page that has rendered, so this is the whole
-   * search space selection capture and the popup's anchor walk.
-   */
-  readonly #rendered = new Set<number>();
   #attachment: AttachmentResolution = { kind: "pending" };
   #filePath: string | null = null;
   #absolutePath: string | null = null;
@@ -227,13 +222,21 @@ export class PdfViewBinding implements Disposable, HoverParent {
   /** What the reader surfaces draw from; `null` until they are mounted. */
   #surfaceState: ReaderSurfaceStore | null = null;
   /**
-   * This Reader Session's Structured Characters, memoized per page for as long
-   * as the session lives. One PDF view is one Reader Session, so the memo is
-   * built here and released with the binding.
+   * This Reader Session's Structured Characters, memoized per page beside the
+   * document they were read from. The view opens its document after the
+   * binding attached when its tab is hidden, and reopens a new document proxy
+   * in place on a vault modify and a pop-out migration, so the memo is read
+   * against the live document on every ask and rebuilt once that changed.
    *
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
-  #structure: PdfTextStructure | null = null;
+  #held: {
+    document: PDFDocumentProxy;
+    structure: PdfTextStructure;
+    /** The Page Label pass, scheduled in idle time on `win`. */
+    idle: number;
+    win: Window;
+  } | null = null;
   #refreshing = Promise.resolve();
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
@@ -482,7 +485,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (!this.supported) return;
 
     this.#controller = controller;
-    this.#openStructure(controller);
+    this.#surfaces.defer(() => this.#closeStructure());
+    this.#structure();
     this.#mountToolbar();
 
     const onRender: PDFPageRenderedListener = (event) => {
@@ -492,7 +496,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this[Symbol.dispose]();
         return;
       }
-      this.#rendered.add(event.pageNumber - 1);
+      // A document that opened after the attach, or replaced the one this
+      // binding read, is painted before it is asked about.
+      this.#structure();
       // PDF.js drops every child it does not keep on a zoom, a rotation and a
       // page recycle, so each render rebuilds this page's marks from data.
       this.#paint(event.pageNumber - 1);
@@ -509,9 +515,6 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (!this.supported) {
       this[Symbol.dispose]();
       return;
-    }
-    for (const pageIndex of renderedPagesOf(controller)) {
-      this.#rendered.add(pageIndex);
     }
     this.#repaint();
     // An Anchor that arrived before the viewer did waited for this: the pages
@@ -633,7 +636,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       attachmentKey,
       pages: () => this.#pages(),
       records: () => this.#records,
-      structure: () => this.#structure,
+      structure: () => this.#structure(),
       repaint: () => this.#repaint(),
       reveal: (annotationKey) => {
         // The create dropped the Attachment's list, so the mark exists once the
@@ -705,17 +708,20 @@ export class PdfViewBinding implements Disposable, HoverParent {
   }
 
   /**
-   * The Structured Characters of the open document, and the Page Label pass
-   * over them. The pass runs in idle time once the document is open, because a
-   * creation that arrives first awaits the same pass rather than starting one.
+   * The Structured Characters of the document the viewer holds right now, and
+   * the Page Label pass over them. The pass runs in idle time once the
+   * document is open, because a creation that arrives first awaits the same
+   * pass rather than starting one. `null` while no document is open.
    *
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
-  #openStructure(controller: PDFViewerController): void {
-    const document_ = pdfDocumentOf(controller);
-    if (!document_ || this.#structure) return;
+  #structure(): PdfTextStructure | null {
+    const controller = this.#controller;
+    const document_ = controller && pdfDocumentOf(controller);
+    if (!document_) return null;
+    if (this.#held?.document === document_) return this.#held.structure;
+    this.#closeStructure();
     const structure = new PdfTextStructure(pdfPageSource(document_));
-    this.#structure = structure;
     const win = this.#view.containerEl.win;
     const idle = win.requestIdleCallback(() => {
       void structure.pageLabels().catch((error: unknown) => {
@@ -725,17 +731,27 @@ export class PdfViewBinding implements Disposable, HoverParent {
         });
       });
     });
-    this.#surfaces.defer(() => {
-      win.cancelIdleCallback(idle);
-      this.#structure = null;
-    });
+    this.#held = { document: document_, structure, idle, win };
+    return structure;
   }
 
-  /** The pages PDF.js still holds, of those this binding has seen render. */
+  /** Releases the held Structured Characters and their pending label pass. */
+  #closeStructure(): void {
+    const held = this.#held;
+    if (!held) return;
+    held.win.cancelIdleCallback(held.idle);
+    this.#held = null;
+  }
+
+  /**
+   * The pages PDF.js holds painted right now, read from the viewer on each
+   * ask. A text selection can only reach a page that has rendered, so this is
+   * the whole search space of selection capture and the popup's anchor walk.
+   */
   #pages(): ReaderPage[] {
     const controller = this.#controller;
     if (!controller) return [];
-    return [...this.#rendered].flatMap((pageIndex) => {
+    return renderedPagesOf(controller).flatMap((pageIndex) => {
       const view = pageViewOf(controller, pageIndex + 1);
       return view ? [{ pageIndex, view }] : [];
     });
@@ -803,7 +819,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       read: this.#read,
       records: this.#records,
       marks: this.#marks,
-      rendered: this.#rendered,
+      rendered: new Set(renderedPagesOf(controller)),
     });
     if (landing.kind === "drop") return;
     if (landing.kind === "page") {
