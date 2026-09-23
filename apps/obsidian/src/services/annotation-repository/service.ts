@@ -39,12 +39,13 @@ import {
 
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
-import { resolvesSilently } from "./reconcile";
+import { resolvesSilently, sameGeometry, storedPosition } from "./reconcile";
 import {
   colorPatch,
   commentPatch,
   createRequest,
   eraseRequest,
+  geometryPatch,
   IDLE,
   MAX_POSITION_LENGTH,
   newWriteToken,
@@ -53,7 +54,9 @@ import {
 import type {
   AnnotationDraft,
   ConflictedWrite,
+  GeometryEdit,
   MutationState,
+  WriteConflict,
   WriteFailure,
   WriteRequest,
   WriteTarget,
@@ -62,6 +65,7 @@ import type {
 export type { EditingCapability } from "./capability";
 export type {
   AnnotationDraft,
+  GeometryEdit,
   MutationState,
   WriteConflict,
   WriteFailure,
@@ -201,14 +205,16 @@ function commentDraftAfterWrite(
               state: { kind: "editing" },
             },
           };
-    case "conflict":
+    case "conflict": {
+      // A comment write conflicts over a comment; only a Geometry Edit's
+      // conflict carries no text to hold.
+      const { conflict } = outcome;
+      const fresh = conflict.write === "geometry" ? "" : (conflict.fresh ?? "");
       return {
         kind: "update",
-        draft: {
-          ...current,
-          state: { kind: "conflict", fresh: outcome.conflict.fresh ?? "" },
-        },
+        draft: { ...current, state: { kind: "conflict", fresh } },
       };
+    }
     case "failed":
       return {
         kind: "update",
@@ -337,8 +343,17 @@ interface HeldAnnotation {
   record: AnnotationRecord;
 }
 
+/** What one command asks Zotero for, which a conflict puts beside the fresh record. */
+type WriteAttempt =
+  | { write: Exclude<ConflictedWrite, "geometry">; attempted: string | null }
+  | { write: "geometry"; attempted: GeometryEdit };
+
 type ConfirmedWrite =
-  | { kind: "record"; record: AnnotationRecord; write: "color" | "comment" }
+  | {
+      kind: "record";
+      record: AnnotationRecord;
+      write: "color" | "comment" | "geometry";
+    }
   | { kind: "created"; record: AnnotationRecord }
   | { kind: "deleted"; annotationKey: string };
 
@@ -783,6 +798,7 @@ export class AnnotationRepository extends Service<void> {
     let outcome = await this.patchComment(annotationKey, submittedText);
     if (
       outcome.kind === "conflict" &&
+      outcome.conflict.write === "comment" &&
       sameComment(outcome.conflict.fresh, reviewed)
     ) {
       outcome = await this.patchComment(annotationKey, submittedText);
@@ -947,6 +963,35 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
+   * Save one Geometry Edit: the new position, the Sort Index recomputed from
+   * it, and for a highlight or underline the quoted text. The record Zotero
+   * answers after the write is what the marks and cards draw next.
+   *
+   * @param annotationKey the Annotation's Indexed Key.
+   * @param edit its Sort Index was computed from the unrounded position.
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  async patchGeometry(
+    annotationKey: string,
+    edit: GeometryEdit,
+  ): Promise<MutationState> {
+    if (writePosition(edit.position).length > MAX_POSITION_LENGTH) {
+      logger.debug("A Geometry Edit's position is longer than Zotero accepts", {
+        annotationKey,
+      });
+      return this.#settle(annotationKey, {
+        kind: "failed",
+        failure: { kind: "position-too-large" },
+      });
+    }
+    return await this.#command(annotationKey, {
+      write: "geometry",
+      attempted: edit,
+      request: (target, record) => geometryPatch(target, record.type, edit),
+    });
+  }
+
+  /**
    * Erase one Annotation in Zotero. The record leaves the Attachment's list
    * only once Zotero has answered, so the card and the Annotation Mark stand
    * until the delete is real.
@@ -976,14 +1021,16 @@ export class AnnotationRepository extends Service<void> {
   async retryWrite(annotationKey: string): Promise<MutationState> {
     const standing = this.#mutations.get(annotationKey);
     if (standing?.kind !== "conflict") return standing ?? IDLE;
-    const { write, attempted } = standing.conflict;
-    switch (write) {
+    const { conflict } = standing;
+    switch (conflict.write) {
       case "color":
-        return await this.patchColor(annotationKey, attempted ?? "");
+        return await this.patchColor(annotationKey, conflict.attempted ?? "");
       case "comment":
-        return await this.patchComment(annotationKey, attempted ?? "");
+        return await this.patchComment(annotationKey, conflict.attempted ?? "");
       case "delete":
         return await this.deleteAnnotation(annotationKey);
+      case "geometry":
+        return await this.patchGeometry(annotationKey, conflict.attempted);
     }
   }
 
@@ -1072,6 +1119,8 @@ export class AnnotationRepository extends Service<void> {
    * @param command.write which verb this is, so a conflict can name the two
    *   values the card puts side by side.
    * @param command.attempted the value the user asked for; `null` for a delete.
+   * @param command.request the request, built against the held record's
+   *   version and type.
    * @param command.settle whether the Annotation is read back after the `204`,
    *   or leaves the list because the write erased it.
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
@@ -1079,10 +1128,8 @@ export class AnnotationRepository extends Service<void> {
    */
   async #command(
     annotationKey: string,
-    command: {
-      write: ConflictedWrite;
-      attempted: string | null;
-      request: (target: WriteTarget) => WriteRequest;
+    command: WriteAttempt & {
+      request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
     },
   ): Promise<MutationState> {
@@ -1104,12 +1151,10 @@ export class AnnotationRepository extends Service<void> {
 
   async #runCommand(
     annotationKey: string,
-    command: {
+    command: WriteAttempt & {
       expectedServerID: string | null;
       generation: number;
-      write: ConflictedWrite;
-      attempted: string | null;
-      request: (target: WriteTarget) => WriteRequest;
+      request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
     },
   ): Promise<MutationState> {
@@ -1154,11 +1199,10 @@ export class AnnotationRepository extends Service<void> {
     }
 
     const library = libraryPath(parsed);
-    const { path, method, headers, body } = command.request({
-      library,
-      key: parsed.key,
-      version,
-    });
+    const { path, method, headers, body } = command.request(
+      { library, key: parsed.key, version },
+      held.record,
+    );
     const source = this.#compatibleApiSource(held.attachmentKey);
     const reply = await this.#localApi.authorizedSend(path, {
       library,
@@ -1188,8 +1232,7 @@ export class AnnotationRepository extends Service<void> {
         failure: reply.failure,
       });
       const state = await this.#writeRefused(held, annotationKey, {
-        write: command.write,
-        attempted: command.attempted,
+        ...command,
         failure: reply.failure,
       });
       if (state.kind === "failed") await this.refresh(held.attachmentKey);
@@ -1362,13 +1405,9 @@ export class AnnotationRepository extends Service<void> {
   async #writeRefused(
     held: HeldAnnotation,
     annotationKey: string,
-    refusal: {
-      write: ConflictedWrite;
-      attempted: string | null;
-      failure: WriteFailure;
-    },
+    refusal: WriteAttempt & { failure: WriteFailure },
   ): Promise<MutationState> {
-    const { write, attempted, failure } = refusal;
+    const { failure } = refusal;
     if (failure.kind === "not-found") {
       this.#dropAttachment(held.attachmentKey, held.queryKey);
       return { kind: "failed", failure };
@@ -1403,15 +1442,15 @@ export class AnnotationRepository extends Service<void> {
     }));
     this.#dropAttachment(held.attachmentKey, held.queryKey);
 
-    const value = freshValueOf(record, write);
-    if (resolvesSilently(write, attempted, value)) {
+    const conflict = conflictOf(refusal, record);
+    if (!conflict) {
       logger.debug("A write conflict resolved to the value Zotero holds", {
         annotationKey,
-        write,
+        write: refusal.write,
       });
       return IDLE;
     }
-    return { kind: "conflict", conflict: { write, attempted, fresh: value } };
+    return { kind: "conflict", conflict };
   }
 
   /**
@@ -1461,7 +1500,7 @@ export class AnnotationRepository extends Service<void> {
       value: {
         kind: "record",
         record,
-        write: write === "comment" ? "comment" : "color",
+        write: write === "delete" ? "color" : write,
       },
     };
   }
@@ -2079,6 +2118,27 @@ function confirmationKey(confirmation: ConfirmedWrite): string {
     : confirmation.record.key;
 }
 
+/**
+ * The Write Conflict a refused write leaves against the record Zotero holds
+ * now, or `null` where that record already holds what the write asked for.
+ */
+function conflictOf(
+  attempt: WriteAttempt,
+  record: AnnotationRecord,
+): WriteConflict | null {
+  if (attempt.write === "geometry") {
+    const fresh = { position: record.position, text: record.text };
+    return sameGeometry(attempt.attempted, fresh)
+      ? null
+      : { write: "geometry", attempted: attempt.attempted, fresh };
+  }
+  const { write, attempted } = attempt;
+  const fresh = freshValueOf(record, write);
+  return resolvesSilently(write, attempted, fresh)
+    ? null
+    : { write, attempted, fresh };
+}
+
 /** What Zotero holds now for the field one refused write asked to change. */
 function freshValueOf(
   record: AnnotationRecord,
@@ -2093,6 +2153,9 @@ function freshValueOf(
     // input; the fresh card itself is what "Delete anyway" is asked against.
     case "delete":
       return null;
+    // The stored position and the quoted text, as one comparable value.
+    case "geometry":
+      return JSON.stringify([storedPosition(record.position), record.text]);
   }
 }
 

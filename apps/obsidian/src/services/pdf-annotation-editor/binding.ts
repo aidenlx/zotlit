@@ -11,6 +11,7 @@ import type {
 } from "obsidian";
 
 import { PdfTextStructure } from "@zotlit/pdf-structure";
+import type { PdfPosition } from "@zotlit/pdf-structure";
 
 import { EXTERNAL_FILE_PREFIX } from "@/lib/constants";
 import {
@@ -313,6 +314,20 @@ export class PdfViewBinding implements Disposable, HoverParent {
       controller: () => this.#controller,
       path: this.#absolutePath,
     });
+  }
+
+  /**
+   * The Sort Index Zotero's reader would give this position in the open
+   * document — the call a creation makes, and the one a Geometry Edit makes
+   * again for the position it moved to.
+   *
+   * @param position unrounded, as the gesture computed it.
+   * @returns `null` while no document is open.
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  async sortIndex(position: PdfPosition): Promise<string | null> {
+    const structure = this.#structure();
+    return structure ? await structure.sortIndex(position) : null;
   }
 
   /** Whether the reader surfaces may mount: every probe so far passed. */

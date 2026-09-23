@@ -336,6 +336,14 @@ _Avoid_: overlay element, highlight box, mark widget
 The one popover the reader shows for the selected Annotation Mark or a fresh text selection, holding the verbs for that Annotation: colour, comment, copy, delete, reveal, and the stepper through overlapping marks. Opened and closed by the selection alone, never by hover — except a Mark Landing, which selects without summoning it.
 _Avoid_: selection toolbar, floating toolbar, annotation popover, hover popover (the primitive, not the surface)
 
+**Mark Handle**:
+A grip drawn on the selected Annotation Mark, while editing is live, that begins a Geometry Edit. Paint like the mark it sits on, hit-tested by geometry.
+_Avoid_: resize handle (an image's only), grip, control point
+
+**Geometry Edit**:
+A change of an Annotation's position — and, for a highlight or underline, its text range and quoted text — saved to Zotero with a recomputed Sort Index. The page and the Page Label stay.
+_Avoid_: move, resize, drag (the gestures, not the edit), position edit
+
 **Creation Toolbar**:
 The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight or underline), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
@@ -353,7 +361,7 @@ A conflict between the user's intended Annotation change and a different change 
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
 **Sort Index**:
-The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it once, at creation, and never rewrites it.
+The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it at creation and recomputes it on a Geometry Edit, the one edit Zotero's own reader recomputes it for.
 _Avoid_: sort key, reading position, annotation order
 
 **Structured Characters**:
