@@ -355,22 +355,58 @@ const STAIRCASE = parseAnnotationPosition(
   "application/pdf",
 ) as PdfRectsPosition;
 
+/** Upright text under every rect. */
+const upright = () => 0;
+
 it("lays a range's handles on the leading edge of its first line and the trailing edge of its last", () => {
-  expect(rangeHandles({ type: "highlight", position: STAIRCASE }, 3)).toEqual([
-    { grip: "start", pageIndex: 1, rect: [197, 700, 203, 712] },
-    { grip: "end", pageIndex: 2, rect: [147, 740, 153, 752] },
+  expect(
+    rangeHandles({ type: "highlight", position: STAIRCASE }, 3, upright),
+  ).toEqual([
+    { grip: "start", pageIndex: 1, rect: [197, 700, 203, 712], rotation: 0 },
+    { grip: "end", pageIndex: 2, rect: [147, 740, 153, 752], rotation: 0 },
   ]);
   const onePage = rects([[100, 300, 160, 312]]);
-  expect(rangeHandles({ type: "underline", position: onePage }, 2)).toEqual([
-    { grip: "start", pageIndex: 1, rect: [98, 300, 102, 312] },
-    { grip: "end", pageIndex: 1, rect: [158, 300, 162, 312] },
+  expect(
+    rangeHandles({ type: "underline", position: onePage }, 2, upright),
+  ).toEqual([
+    { grip: "start", pageIndex: 1, rect: [98, 300, 102, 312], rotation: 0 },
+    { grip: "end", pageIndex: 1, rect: [158, 300, 162, 312], rotation: 0 },
   ]);
   // An image or ink is resized by its own handles.
-  expect(rangeHandles({ type: "image", position: IMAGE }, 3)).toEqual([]);
+  expect(rangeHandles({ type: "image", position: IMAGE }, 3, upright)).toEqual(
+    [],
+  );
+});
+
+it("lays a range's handles across text turned a quarter turn, which reads up the page", () => {
+  // One column of text from y 300 up to y 360, x 100 to 112: the start
+  // stands on its foot and the end on its head.
+  const column = rects([[100, 300, 112, 360]]);
+  const asked: unknown[] = [];
+  const turned = (pageIndex: number, rect: readonly number[]) => {
+    asked.push([pageIndex, rect]);
+    return 90;
+  };
+
+  expect(
+    rangeHandles({ type: "highlight", position: column }, 3, turned),
+  ).toEqual([
+    { grip: "start", pageIndex: 1, rect: [100, 297, 112, 303], rotation: 90 },
+    { grip: "end", pageIndex: 1, rect: [100, 357, 112, 363], rotation: 90 },
+  ]);
+  // Each end asks for the text under its own rect.
+  expect(asked).toEqual([
+    [1, [100, 300, 112, 360]],
+    [1, [100, 300, 112, 360]],
+  ]);
 });
 
 it("takes a range's handle from the page it is drawn on, and never its body", () => {
-  const handles = rangeHandles({ type: "highlight", position: STAIRCASE }, 3);
+  const handles = rangeHandles(
+    { type: "highlight", position: STAIRCASE },
+    3,
+    upright,
+  );
   const at =
     (pageIndex: number, point: readonly [number, number]) => (page: number) =>
       page === pageIndex ? point : null;
@@ -387,6 +423,7 @@ it("gives the start the press where a one-character range's strips overlap", () 
   const handles = rangeHandles(
     { type: "highlight", position: rects([[100, 300, 104, 312]]) },
     3,
+    upright,
   );
 
   expect(rangeGripAt(handles, () => [102, 305])).toBe("start");

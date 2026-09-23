@@ -47,7 +47,8 @@ import {
 } from "./capability-affordance";
 import { MarkCreation } from "./creation";
 import type { ReaderPage } from "./creation";
-import { isRangeGrip } from "./geometry-edit";
+import { isRangeGrip, rangeHandles } from "./geometry-edit";
+import type { TextRotation } from "./geometry-edit";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
@@ -254,6 +255,13 @@ export class PdfViewBinding implements Disposable, HoverParent {
     idle: number;
     win: Window;
   } | null = null;
+  /**
+   * The text rotation under a rect, read from the Structured Characters the
+   * document's structure already holds. A page it has not structured reads as
+   * upright until it has, and the selection of a text range asks for it.
+   */
+  readonly #textRotation: TextRotation = (pageIndex, rect) =>
+    this.#held?.structure.textRotation(pageIndex, rect) ?? 0;
   #refreshing = Promise.resolve();
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
@@ -723,6 +731,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       creation,
       sortIndex: (position) => this.sortIndex(position),
       adjustRange: (adjustment) => this.adjustRange(adjustment),
+      textRotation: this.#textRotation,
       refreshed: () => this.refreshed,
       now: this.#now,
     });
@@ -736,6 +745,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
       }),
     );
     this.#surfaces.defer(() => this.#showAdjusting(null));
+    this.#surfaces.defer(
+      state.subscribe(selectSelectedKey, (key) => this.#readRangeText(key)),
+    );
     // An image capture draws its rectangle on the page it was pressed on.
     this.#surfaces.defer(
       state.subscribe(selectCapture, () => this.#drawCapture()),
@@ -866,7 +878,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
       if (placement) drawn.add(pageIndex);
       const page = placement && pageViewOf(controller, pageIndex + 1);
       if (!page) continue;
-      if (!patchSelectedMark(page, placement, { handles: this.#handles() }))
+      if (
+        !patchSelectedMark(page, placement, {
+          handles: this.#handles(),
+          textRotation: this.#textRotation,
+        })
+      )
         this.#paint(pageIndex);
     }
     // A page the mark left — the next page of a range that no longer spills
@@ -1081,6 +1098,35 @@ export class PdfViewBinding implements Disposable, HoverParent {
       });
   }
 
+  /**
+   * Asks for the Structured Characters under a selected text range's ends, so
+   * its handles lie across its text once they are read.
+   */
+  #readRangeText(key: string | null): void {
+    const record = this.#records.find((held) => held.key === key);
+    const handles = record ? rangeHandles(record, 0, this.#textRotation) : [];
+    const structure = handles.length > 0 ? this.#structure() : null;
+    if (
+      !structure ||
+      handles.every(
+        ({ pageIndex, rect }) =>
+          structure.textRotation(pageIndex, rect) !== null,
+      )
+    )
+      return;
+    void Promise.all(
+      handles.map(({ pageIndex }) => structure.page(pageIndex)),
+    ).then(
+      () => this.#patchSelected(),
+      (error: unknown) => {
+        logger.debug("Could not read the text under a range's handles", {
+          error,
+          annotationKey: key,
+        });
+      },
+    );
+  }
+
   /** Every page holding marks, and every page that has just lost them. */
   #repaint(): void {
     for (const pageIndex of this.#painted.union(new Set(this.#marks.keys()))) {
@@ -1097,6 +1143,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       annotations,
       selected: this.#selection?.selected,
       handles: this.#handles(),
+      textRotation: this.#textRotation,
     });
     // The rebuild took the capture's rectangle with the overlay.
     if (this.#capturedOn === pageIndex) this.#drawCapture();
