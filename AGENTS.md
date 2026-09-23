@@ -83,6 +83,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [CLI + skill pair](policies/cli-skill-pair.md) — tooling facts in the CLI; process, policy, and tone in the skill
 - [CLI help](policies/cli-help.md) — help and reference generated from handler code; yargs for Node.js, guide commands for Obsidian
 - [grouping](policies/grouping.md) — `Map.groupBy` / `Object.groupBy` for keyed grouping
+- [host-state](policies/host-state.md) — read host state on demand through a seam helper; a set filled by event replay is a mirror
 
 ### i18n
 
