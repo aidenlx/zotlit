@@ -11,11 +11,13 @@ import type {
   CreateOutcome,
 } from "@/services/annotation-repository/service";
 
-import { annotation, toolColors } from "./__fixtures__";
-import { MarkCreation } from "./creation";
-import { createReaderSurfaceState } from "./reader-surface-state";
-
-const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
+import {
+  annotation,
+  annotationEdits,
+  READER_NOW as NOW,
+  readerSurfaces,
+} from "./__fixtures__";
+import { ingestCapability } from "./reader-surface-state";
 
 /** The Fixture's own underline on `rougier-2014.pdf`, in PDF points. */
 const QUOTE = [
@@ -62,6 +64,8 @@ function reader(
     outcome?: CreateOutcome;
     /** What the page's characters make of the selection; `null` refuses it. */
     selected?: SelectedText | null;
+    /** What the write waits on before Zotero answers. */
+    answered?: Promise<void>;
   } = {},
 ) {
   vi.useFakeTimers();
@@ -76,7 +80,6 @@ function reader(
 
   const drafts: Omit<AnnotationDraft, "parentKey">[] = [];
   const sorted: unknown[] = [];
-  const revealed: string[] = [];
   const selections: TextSelection[] = [];
   const structure = {
     selectText: vi.fn(async (selection: TextSelection) => {
@@ -95,51 +98,39 @@ function reader(
     }),
     pageLabel: vi.fn(async () => "1"),
   };
-  const capability = options.capability ?? ({ kind: "writable" } as const);
-  const colors = toolColors();
-  const surfaceState = createReaderSurfaceState({
-    colors: colors.current(),
-    capability,
-    now: NOW,
-  });
-
-  const creation = new MarkCreation({
+  const reader = readerSurfaces({
     containerEl,
-    parent: { hoverPopover: null },
-    attachmentKey: "RGRPDF24",
-    pages: () => [
-      {
-        pageIndex: 0,
-        view: {
-          div: pageEl,
-          viewport: {
-            transform: [SCALE, 0, 0, -SCALE, 0, PAGE_HEIGHT * SCALE],
-          },
-        } as never,
+    page: {
+      div: pageEl,
+      viewport: {
+        transform: [SCALE, 0, 0, -SCALE, 0, PAGE_HEIGHT * SCALE],
       },
-    ],
-    records: () => [
+    } as never,
+    records: [
       annotation("PUPR5FG5", "highlight", {
         pageIndex: 0,
         rects: [[265.833, 611.202, 374.503, 620.019]],
       }),
     ],
-    structure: () => structure as never,
-    repaint: vi.fn(),
-    reveal: (annotationKey) => revealed.push(annotationKey),
-    renderCapability: vi.fn(),
-    colors,
-    surfaceState,
+    capability: options.capability,
+    structure: structure as never,
     annotations: {
-      createAnnotation: vi.fn(async (_key: string, draft) => {
-        drafts.push(draft);
-        return (
-          options.outcome ?? { kind: "created", annotationKey: "MADE2345" }
-        );
-      }),
-    } as never,
-    now: () => NOW,
+      ...annotationEdits(),
+      createAnnotation: vi.fn(
+        async (
+          _key: string,
+          draft: Omit<AnnotationDraft, "parentKey">,
+        ): Promise<CreateOutcome> => {
+          drafts.push(draft);
+          await options.answered;
+          return (
+            options.outcome ?? { kind: "created", annotationKey: "MADE2345" }
+          );
+        },
+      ),
+    },
   });
+  const { creation, store: surfaceState, revealed } = reader;
 
   return {
     creation,
@@ -205,7 +196,7 @@ function reader(
       return document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
     },
     [Symbol.dispose]() {
-      creation[Symbol.dispose]();
+      reader[Symbol.dispose]();
       containerEl.remove();
     },
   };
@@ -661,4 +652,79 @@ it("leaves the toolbar slot as Obsidian built it when it is disposed", () => {
   open.creation[Symbol.dispose]();
 
   expect(open.slot.childElementCount).toBe(0);
+});
+
+it("closes the create popup and drops its selection on a press on the page", async () => {
+  using open = reader();
+  await open.selectText();
+  expect(open.popup()).not.toBeNull();
+
+  open.pageEl.dispatchEvent(
+    new MouseEvent("pointerdown", {
+      clientX: 100,
+      clientY: 100,
+      bubbles: true,
+    }),
+  );
+
+  expect(open.popup()).toBeNull();
+  // Nothing waits any more, so the tool key arms rather than commits.
+  open.press("h");
+  await open.creation.created;
+  expect(open.drafts).toEqual([]);
+});
+
+it("keeps the comment sheet and its text through capability announcements", async () => {
+  using open = reader();
+  await open.selectText();
+  open.press("c");
+  const editor = open.popup()!.querySelector("textarea")!;
+  editor.value = "worth quoting";
+
+  ingestCapability(open.surfaceState, { kind: "writable" }, NOW);
+  expect(open.popup()!.querySelector("textarea")).toBe(editor);
+
+  // A real block stands the sheet down where it is, rather than rebuilding it.
+  ingestCapability(
+    open.surfaceState,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+  expect(open.popup()!.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("worth quoting");
+  expect(editor.readOnly).toBe(true);
+});
+
+it("ignores a drag released while an armed create is still in flight", async () => {
+  let answer = () => {};
+  using open = reader({
+    answered: new Promise<void>((resolve) => {
+      answer = resolve;
+    }),
+  });
+  open.press("u");
+  open.startSelecting();
+  await open.creation.settled;
+  const first = open.creation.created;
+
+  open.startSelecting();
+  await open.creation.settled;
+  expect(open.creation.created).toBe(first);
+
+  answer();
+  await open.creation.created;
+  expect(open.drafts).toHaveLength(1);
+});
+
+it("drops the waiting selection once its page leaves the screen", async () => {
+  using open = reader();
+  await open.selectText();
+  expect(open.popup()).not.toBeNull();
+
+  open.pageEl.getBoundingClientRect = () =>
+    ({ ...PAGE_BOX, top: -5000, bottom: -4000 }) as never;
+  open.containerEl.dispatchEvent(new Event("scroll"));
+
+  expect(open.popup()).toBeNull();
+  expect(open.surfaceState.getState().floating).toEqual({ kind: "none" });
 });

@@ -43,9 +43,12 @@ import { MarkCreation } from "./creation";
 import type { ReaderPage } from "./creation";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
+import { MarkPopupHost } from "./mark-popup-host";
 import {
   createReaderSurfaceState,
+  ingestAnnotations,
   ingestCapability,
+  listenAnnotationEvents,
   sameCapability,
   sameFlat,
   selectCapabilityAffordance,
@@ -219,6 +222,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #landingFrame: number | null = null;
   /** The creation surfaces of this view; `null` until they can be mounted. */
   #creation: MarkCreation | null = null;
+  /** The one Mark Popup of this view; `null` until the surfaces are mounted. */
+  #popupHost: MarkPopupHost | null = null;
   /** What the reader surfaces draw from; `null` until they are mounted. */
   #surfaceState: ReaderSurfaceStore | null = null;
   /**
@@ -497,7 +502,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#applyLanding();
       // The re-render can have wiped the mark the popup hangs over, so its
       // anchor is taken from the page as it now stands.
-      this.#selection?.sync();
+      this.#popupHost?.sync();
     };
     this.#surfaces.use(onPageRendered(controller, onRender));
     this.#probePage(loadedPageOf(controller));
@@ -616,9 +621,15 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#ingestCapability(),
       ),
     );
+    // The per-Annotation facts the Mark Popup reads come in the same way.
+    this.#surfaces.use(listenAnnotationEvents(state, this.#annotations));
+    const popup = {
+      contains: (node: Node | null) => host.contains(node),
+      sync: () => host.sync(),
+    };
     const creation = new MarkCreation({
       containerEl: this.#view.containerEl,
-      parent: this,
+      popup,
       attachmentKey,
       pages: () => this.#pages(),
       records: () => this.#records,
@@ -642,7 +653,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const selection = new MarkSelection({
       containerEl: this.#view.containerEl,
       scope: this.#view.scope!,
-      parent: this,
+      popup,
       marks: () => this.#visibleMarks(),
       records: () => this.#records,
       pageAt: (pageIndex) =>
@@ -662,14 +673,35 @@ export class PdfViewBinding implements Disposable, HoverParent {
       now: this.#now,
     });
     this.#selection = selection;
+    // The owners subscribe first, so an editor that closes is let go before
+    // the host redraws or hides the popup it stood in.
+    selection.load();
+    const host = new MarkPopupHost({
+      parent: this,
+      store: state,
+      variants: {
+        selected: {
+          anchor: () => selection.anchor(),
+          render: (content) => selection.renderPopup(content),
+        },
+        create: {
+          anchor: () => creation.anchor(),
+          render: (content) => creation.renderPopup(content),
+          unanchored: () => creation.unanchored(),
+        },
+      },
+    });
+    this.#popupHost = host;
+    // Owners before the host, so an editor is let go before its popup goes.
     this.#surfaces.defer(() => {
       this.#selection = null;
       this.#creation = null;
+      this.#popupHost = null;
       this.#surfaceState = null;
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();
+      host[Symbol.dispose]();
     });
-    selection.load();
   }
 
   /**
@@ -857,6 +889,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#read = true;
         this.#records = list.annotations;
         this.#marks = groupAnnotationsByPage(list.annotations);
+        if (this.#surfaceState)
+          ingestAnnotations(
+            this.#surfaceState,
+            list.annotations,
+            this.#annotations,
+          );
         logger.debug("Annotation marks rebuilt for a PDF view", {
           path: this.filePath,
           source: list.source.kind,
@@ -864,9 +902,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
           pages: this.#marks.size,
         });
         this.#repaint();
-        // A mark the read retired takes its selection with it; one that moved
-        // takes the popup along.
-        this.#selection?.sync();
+        // A mark the read retired took its selection with it above; one that
+        // moved takes the popup along.
+        this.#popupHost?.sync();
         // The Attachment's marks now stand, which is what an Anchor waiting on
         // this view — a cold open, or a read that answered after it — needs.
         this.#land();
