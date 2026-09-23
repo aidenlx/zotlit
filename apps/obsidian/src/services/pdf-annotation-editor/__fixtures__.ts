@@ -40,7 +40,7 @@ import type { AnnotationFacts } from "./reader-surface-state";
 import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";
-import type { AnnotationEdits } from "./selection";
+import type { AnnotationEdits, MarkSelectionDeps } from "./selection";
 import { resolveToolColors } from "./tools";
 import type { AnnotationToolColors, ToolColorStore } from "./tools";
 
@@ -477,6 +477,8 @@ export interface ReaderSurfacesOptions {
   structure?: PdfTextStructure | null;
   /** The Sort Index a Geometry Edit is saved with. */
   sortIndex?: (position: PdfPosition) => Promise<string | null>;
+  /** The range a text range's dragged end reaches. */
+  adjustRange?: MarkSelectionDeps["adjustRange"];
 }
 
 /**
@@ -492,6 +494,7 @@ export function readerSurfaces({
   annotations,
   structure = null,
   sortIndex = async () => null,
+  adjustRange = async () => null,
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
   const colors = toolColors();
@@ -549,6 +552,7 @@ export function readerSurfaces({
     gestures,
     creation,
     sortIndex,
+    adjustRange,
     refreshed: () => Promise.resolve(),
     now: () => READER_NOW,
   });

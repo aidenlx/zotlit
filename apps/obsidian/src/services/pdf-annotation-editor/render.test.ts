@@ -476,7 +476,7 @@ it("draws eight Mark Handles on the selected image, five pixels either side", ()
   expect(markIn(page, "FDRFQ7C2").dataset.ztCursor).toBe("move");
 });
 
-it("draws no Mark Handle while editing is not live, off the selection, or on a highlight", () => {
+it("draws no Mark Handle while editing is not live, or off the selection", () => {
   const drawn = (options: {
     selected?: ReadonlySet<string>;
     handles?: boolean;
@@ -497,9 +497,48 @@ it("draws no Mark Handle while editing is not live, off the selection, or on a h
     body: undefined,
   });
   expect(drawn({ handles: true })).toEqual({ handles: [], body: undefined });
-  expect(
-    drawn({ selected: new Set(["PUPR5FG5"]), handles: true }).handles,
-  ).toEqual([]);
+});
+
+it("draws a selected highlight's two end strips, three pixels either side of its edges", () => {
+  // At scale 2 one page unit is two pixels, so a strip six pixels wide is
+  // three units wide. `RECT` spans x 100–200 and lands at y 72–92.
+  const page = pageView(viewport({ scale: 2 }));
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([highlight()]),
+    selected: new Set(["PUPR5FG5"]),
+    handles: true,
+  });
+
+  expect(handlesIn(page)).toEqual({
+    start: [98.5, 72, 3, 20],
+    end: [198.5, 72, 3, 20],
+  });
+  const end = page.div.querySelector<SVGElement>('[data-zt-grip="end"]')!;
+  expect(end.dataset.ztCursor).toBe("ew-resize");
+  // The body stays the text selection's.
+  expect(markIn(page, "PUPR5FG5").dataset.ztGrip).toBeUndefined();
+});
+
+it("draws a spilled-over range's start on its first page and its end on the next", () => {
+  const spilled = record("PUPR5FG5", "highlight", {
+    pageIndex: 0,
+    rects: [RECT],
+    nextPageRects: [[72, 740, 150, 752]],
+  });
+  const grouped = groupAnnotationsByPage([spilled]);
+  const drawnOn = (pageIndex: number) => {
+    const page = pageView();
+    renderAnnotationOverlay(page, {
+      annotations: grouped.get(pageIndex) ?? [],
+      selected: new Set(["PUPR5FG5"]),
+      handles: true,
+    });
+    return Object.keys(handlesIn(page));
+  };
+
+  expect(drawnOn(0)).toEqual(["start"]);
+  expect(drawnOn(1)).toEqual(["end"]);
 });
 
 it("patches the selected mark, its outline, and its handles in place", () => {

@@ -66,6 +66,15 @@
   cursor: nesw-resize;
 }
 
+/*
+ * A text range's end, once it moves, shows the text cursor over the whole
+ * reader, as Zotero's does: the pointer is captured by the reader, so the
+ * strip it left no longer decides the cursor.
+ */
+:where([data-zt-adjusting="text"], [data-zt-adjusting="text"] *) {
+  cursor: text;
+}
+
 /* Zotero's highlight reads as ink on paper in either theme. */
 :where(.theme-light .zt-pdf-annotation-highlight) {
   opacity: 0.4;

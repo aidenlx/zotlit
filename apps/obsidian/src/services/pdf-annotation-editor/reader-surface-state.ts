@@ -52,6 +52,12 @@ export interface Adjustment {
   /** The position the mark draws while the adjustment stands. */
   proposal: EditablePosition;
   /**
+   * The quoted text of a highlight's or underline's proposed range, saved
+   * with it; absent while the proposal is the confirmed position, and for an
+   * image or ink.
+   */
+  text?: string;
+  /**
    * `pressed` until the pointer moves, `dragging` while it does, and `saving`
    * once a release sent the proposal to Zotero.
    */
@@ -299,13 +305,14 @@ export function beginAdjust(
 }
 
 /**
- * Takes the position the pointer now proposes. A move that stores the same
- * as the held proposal changes nothing, so no subscriber redraws; a saving
- * adjustment takes no more moves.
+ * Takes the position the pointer now proposes, with the quoted text of a text
+ * range's. A move that stores the same as the held proposal changes nothing,
+ * so no subscriber redraws; a saving adjustment takes no more moves.
  */
 export function moveAdjust(
   store: ReaderSurfaceStore,
   proposal: EditablePosition,
+  text?: string,
 ): void {
   const { floating } = store.getState();
   if (floating.kind !== "selected" || !floating.adjust) return;
@@ -316,7 +323,12 @@ export function moveAdjust(
   store.setState({
     floating: {
       ...floating,
-      adjust: { ...adjust, proposal, phase: "dragging" },
+      adjust: {
+        ...adjust,
+        proposal,
+        ...(text !== undefined && { text }),
+        phase: "dragging",
+      },
     },
   });
 }
