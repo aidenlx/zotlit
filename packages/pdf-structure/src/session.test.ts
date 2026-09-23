@@ -168,3 +168,16 @@ describe("a Reader Session's range adjustment", () => {
     expect(stepped).toMatchObject({ pageIndex: 0, text: "7 7" });
   });
 });
+
+describe("the text rotation a Reader Session reads synchronously", () => {
+  it("is unknown until the page is structured, then read from its characters", async () => {
+    const structure = new PdfTextStructure(stubSource().source);
+    // Page zero's one glyph spans x 72–78 and y 695–707.
+    const rect = [70, 690, 80, 710] as const;
+
+    expect(structure.textRotation(0, rect)).toBeNull();
+    await structure.page(0);
+    expect(structure.textRotation(0, rect)).toBe(0);
+    expect(structure.textRotation(1, rect)).toBeNull();
+  });
+});

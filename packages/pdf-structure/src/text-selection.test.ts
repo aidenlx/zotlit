@@ -4,6 +4,7 @@ import type { StructuredChar, StructuredPage } from "@/chars";
 import {
   adjustRange,
   offsetsByRects,
+  rectRotation,
   selectText,
   textRange,
 } from "@/text-selection";
@@ -696,5 +697,29 @@ describe("a highlight's range stepped by one end", () => {
         text: "of one",
       });
     });
+  });
+});
+
+describe("the text rotation under a rect", () => {
+  /** Three glyphs turned a quarter turn, running up the page from y 100. */
+  const turned = page(
+    0,
+    [0, 1, 2].map((index) => ({
+      rect: [300, 100 + index * 5, 308, 105 + index * 5] as const,
+      rotation: 90,
+    })),
+  ).chars;
+  const upright = page(0, line("abc")).chars;
+
+  it("is the rotation of the characters whose centres the rect covers", () => {
+    expect(rectRotation([...upright, ...turned], [299, 99, 309, 116])).toBe(90);
+    expect(rectRotation([...upright, ...turned], [99, 699, 116, 709])).toBe(0);
+  });
+
+  it("is upright over no character, and the greater rotation on a tie", () => {
+    expect(rectRotation(turned, [0, 0, 10, 10])).toBe(0);
+    // One upright centre, (102.5, 704), and one turned, (304, 102.5).
+    const both = [upright[0]!, turned[0]!];
+    expect(rectRotation(both, [100, 100, 310, 710])).toBe(90);
   });
 });

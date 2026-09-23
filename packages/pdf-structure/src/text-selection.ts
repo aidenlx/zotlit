@@ -590,3 +590,32 @@ export function adjustRange(
       }
     : { pageIndex, rects: stored?.rects ?? onPage.rects, text: onPage.text };
 }
+
+/**
+ * The text rotation under a rect: the most common rotation of the characters
+ * whose centres it covers, and `0` where it covers none. A tie goes to the
+ * greater rotation, as Zotero's count over object keys leaves it.
+ *
+ * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/selection.js#L842-L859 — `getRectRotationOnText`
+ */
+export function rectRotation(
+  chars: readonly StructuredChar[],
+  rect: Rect,
+): number {
+  const counts = new Map<number, number>();
+  for (const { rect: box, rotation } of chars) {
+    const x = box[0] + (box[2] - box[0]) / 2;
+    const y = box[1] + (box[3] - box[1]) / 2;
+    if (x >= rect[0] && x <= rect[2] && y >= rect[1] && y <= rect[3])
+      counts.set(rotation, (counts.get(rotation) ?? 0) + 1);
+  }
+  let common = 0;
+  let most = 0;
+  for (const [rotation, count] of [...counts].toSorted(([a], [b]) => a - b)) {
+    if (count >= most) {
+      common = rotation;
+      most = count;
+    }
+  }
+  return common;
+}

@@ -3,7 +3,7 @@
 
 import { getLogger } from "@logtape/logtape";
 
-import type { ObsidianTextItem, StructuredPage } from "@/chars";
+import type { ObsidianTextItem, Rect, StructuredPage } from "@/chars";
 import { structurePage } from "@/chars";
 import type { PageLabelSource, PreviousAnnotation } from "@/page-label";
 import { alignPageLabel, extractPageLabels } from "@/page-label";
@@ -14,7 +14,7 @@ import type {
   SelectedText,
   TextSelection,
 } from "@/text-selection";
-import { adjustRange, selectText } from "@/text-selection";
+import { adjustRange, rectRotation, selectText } from "@/text-selection";
 
 const logger = getLogger(["zotlit", "pdf-structure"]);
 
@@ -36,6 +36,8 @@ export class PdfTextStructure {
    * is kept for as long as the session lives and no longer.
    */
   readonly #cache = new Map<number, Promise<StructuredPage>>();
+  /** The pages the memo has finished structuring, for a synchronous read. */
+  readonly #settled = new Map<number, StructuredPage>();
   readonly #emptyPagesLogged = new Set<number>();
   #pageLabels: Promise<readonly string[]> | null = null;
 
@@ -49,7 +51,25 @@ export class PdfTextStructure {
     if (cached) return cached;
     const page = this.#structure(pageIndex);
     this.#cache.set(pageIndex, page);
+    // A failed page is the awaiting caller's to report; nothing is held for it.
+    void page.then(
+      (structured) => this.#settled.set(pageIndex, structured),
+      () => undefined,
+    );
     return page;
+  }
+
+  /**
+   * The text rotation under a rect, as Zotero's reader turns a range's handles
+   * by it, read synchronously from a page this session has already
+   * structured.
+   *
+   * @returns `null` while the page is not yet structured; {@link page} asks
+   *   for it.
+   */
+  textRotation(pageIndex: number, rect: Rect): number | null {
+    const page = this.#settled.get(pageIndex);
+    return page ? rectRotation(page.chars, rect) : null;
   }
 
   async #structure(pageIndex: number): Promise<StructuredPage> {
