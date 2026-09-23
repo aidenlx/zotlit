@@ -333,6 +333,66 @@ it("probes the page a view had already painted before the binding attached", asy
   expect(reader.page.pdfPage?.getTextContent).toHaveBeenCalledOnce();
 });
 
+// A plugin reload over an open PDF tab attaches to pages PDF.js has already
+// painted, and those send no render event until the reader moves.
+it("opens the create popup over a page painted before the binding attached", async () => {
+  const page = pageView();
+  const box = {
+    left: 0,
+    top: 0,
+    right: 918,
+    bottom: 1188,
+    width: 918,
+    height: 1188,
+  };
+  page.div.getBoundingClientRect = () => box as never;
+  page.div.textContent = "Scientific visualization";
+  Object.assign(page, { renderingState: 3 });
+  const reader = pdfReader(page);
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  view.containerEl.getBoundingClientRect = () => box as never;
+  view.containerEl.append(page.div);
+  document.body.append(view.containerEl);
+  const { app } = workspace([{ view }]);
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations: annotationReads(),
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+  });
+  await service.ready;
+  await service.bindings[0]!.refreshed;
+
+  const range = document.createRange();
+  range.selectNodeContents(page.div);
+  vi.spyOn(Range.prototype, "getClientRects").mockReturnValue([
+    { left: 100, top: 256, right: 317, bottom: 268 },
+  ] as never);
+  vi.spyOn(window, "getSelection").mockReturnValue({
+    rangeCount: 1,
+    isCollapsed: false,
+    getRangeAt: () => range,
+    removeAllRanges: () => undefined,
+  } as never);
+  page.div.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      clientX: 100,
+      clientY: 260,
+    }),
+  );
+  document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+
+  expect(
+    document.querySelector(".zt-pdf-mark-popup [data-zt-verb]"),
+  ).not.toBeNull();
+  vi.restoreAllMocks();
+  view.containerEl.remove();
+  document.body.querySelector(".zt-pdf-mark-popup")?.remove();
+});
+
 it("waits for the first render when Obsidian is still opening the document", async () => {
   const reader = loadingReader();
   const view = pdfView("attachments/rougier-2014.pdf", reader);

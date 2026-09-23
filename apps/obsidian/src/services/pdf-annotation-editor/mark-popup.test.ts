@@ -213,6 +213,17 @@ describe("MarkPopup", () => {
     expect(open.parent.hoverPopover).toBe(open.popup);
   });
 
+  // The create popup opens on the release of a drag, and the same release
+  // then clicks, before any timer can run.
+  it("stays open through the click that ends the gesture which opened it", () => {
+    using open = openPopup();
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(open.popup.hoverEl.isConnected).toBe(true);
+    expect(open.parent.hoverPopover).toBe(open.popup);
+  });
+
   it("stays open with nothing hovering it, and nothing to hover", () => {
     using open = openPopup();
     vi.advanceTimersByTime(0);

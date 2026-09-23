@@ -508,6 +508,8 @@ declare module "obsidian" {
     viewport: PDFPageViewport;
     /** The PDF.js page proxy backing this view; absent until the page loads. */
     pdfPage?: PDFPageProxy;
+    /** PDF.js `RenderingStates`: `3` once the page has finished painting. */
+    renderingState?: number;
   }
 
   /**
@@ -785,8 +787,8 @@ declare module "obsidian" {
     /**
      * Whether the popover stands open on its own. Obsidian's own
      * should-show test reads it beside the pointer and the focus, and its
-     * global click handler leaves a focused popover alone — so this is what
-     * pins one open that has no target to hover.
+     * global click handler leaves a focused popover alone once it has shown —
+     * so this is what pins one open that has no target to hover.
      */
     isFocused: boolean;
     setIsFocused(focused: boolean): void;
