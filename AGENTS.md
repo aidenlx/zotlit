@@ -37,6 +37,8 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 | `pnpm fixture`                    | Builds the Fixture — the disposable multi-Library test environment — under `.scratch/acceptance-fixture/`. See the [Fixture guide](docs/fixture.md); run `pnpm fixture --help` for live Fixture Spec details. |
 | `pnpm e2e`                        | Runs the End-to-end Run suite (`packages/e2e`) against a running desktop Obsidian; skips cleanly (not part of `pnpm test`/CI) when none is reachable. |
 
+**The End-to-end Run is the final gate, run once when the work is complete.** During development, iterate on typecheck and single test files, and prove a change end to end by walking it through the running app (`/obsidian-debug`); once that walkthrough passes, encode it as a test in `packages/e2e`, the repeatable artifact of that proof. A full pass takes over an hour, and its turbo build restarts a `pnpm fixture dev` Zotero mid-run, which fails tests that were green.
+
 Linter/formatter are **oxlint + oxfmt**, not ESLint/Prettier. Configs live at `oxlint.config.ts` / `oxfmt.config.ts` at root and per-package, extending `@zotlit/config/oxlint` and `@zotlit/config/oxfmt`.
 
 ESLint is present at the root for **one** purpose: `pnpm review` checks `apps/obsidian` against the official Obsidian developer guidelines via `eslint-plugin-obsidianmd`, before a release is cut. Only the `obsidianmd/*` rules are enabled — oxlint owns everything else. Root `typescript` is aliased to `@typescript/typescript6` because typescript-eslint cannot run on TypeScript 7; workspace packages keep TypeScript 7 via the catalog. Leave `eslint.config.js` and that alias in place. See [ADR 0020](docs/adr/0020-obsidian-guideline-review-runs-on-eslint-at-release.md).
