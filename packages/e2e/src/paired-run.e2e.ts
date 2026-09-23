@@ -1388,6 +1388,172 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await restoreLocalApi.disposeAsync();
           expect((await storedImage()).version).toBe(version);
         }, 120000);
+
+        /** Presses one key with modifiers on the reader, as Obsidian delivers it. */
+        const pressKey = (key: string, modifiers: Record<string, boolean>) =>
+          obJson<{ prevented: boolean }>(
+            `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+          );
+
+        /** Whether the stored rect is `expected` to three decimals. */
+        const rectIs = (position: string, expected: readonly number[]) => {
+          const [rect] = (JSON.parse(position) as { rects: number[][] }).rects;
+          return (
+            rect?.length === 4 &&
+            rect.every(
+              (value, index) => Math.abs(value - expected[index]!) < 5e-4,
+            )
+          );
+        };
+
+        it("widens the image by five points for Shift+ArrowRight", async () => {
+          await selectImage();
+          const { version } = await storedImage();
+
+          expect(await pressKey("ArrowRight", { shiftKey: true })).toEqual({
+            prevented: true,
+          });
+
+          // The seed's right edge, 570, moves out to 575; nothing else moves.
+          const expected = [48.75, 395.509, 575, 743.723];
+          expect(
+            await waitFor(async () =>
+              rectIs((await storedImage()).data.annotationPosition, expected),
+            ),
+          ).toBe(true);
+          const stored = await storedImage();
+          expect(stored.version).toBeGreaterThan(version);
+          const recomputed = await obJson<string>(
+            `(async()=>{const binding=app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${stored.data.annotationPosition}));})()`,
+          );
+          expect(stored.data.annotationSortIndex).toBe(recomputed);
+
+          // Zotero's open Reader holds the same rect, and the overlay draws it.
+          expect(
+            await waitFor(() =>
+              rdp.json<boolean>(`(() => {
+                const attachment = ${ATTACHMENT_ITEM};
+                const reader = Zotero.Reader._readers.find(
+                  (candidate) => candidate.itemID === attachment.id,
+                );
+                const annotation = reader?._item
+                  .getAnnotations()
+                  .find(({ key }) => key === ${JSON.stringify(imageKey)});
+                return annotation?.annotationPosition === ${JSON.stringify(stored.data.annotationPosition)};
+              })()`),
+            ),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(Math.abs(Number(${imageMark}?.getAttribute('width'))-526.25)<0.001)`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("lands a conflicted Geometry Edit against Zotero's fresh version when applied again", async () => {
+          await using teardown = new AsyncDisposableStack();
+          // A conflict left standing by a failed assertion is ended before
+          // the seed goes back.
+          teardown.defer(async () => {
+            await obEval(
+              vaultId!,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;if(repository.mutationFor(${JSON.stringify(imageKey)}).kind==='conflict')repository.discardConflict(${JSON.stringify(imageKey)});return true;})()`,
+            );
+          });
+          const handle = await selectImage();
+          // Twenty points right from the bottom-right handle: the right edge
+          // is to move out from 570 to 590.
+          const to = { x: handle.x + 20 * handle.perX, y: handle.y };
+          const attempted = [48.75, 395.509, 590, 743.723];
+          const pressed = await obJson<{ grip: string }>(
+            `(function(){${fire}const node=fire('pointerdown',${handle.x},${handle.y});fire('pointermove',${to.x},${to.y},${pdfView}.containerEl);return JSON.stringify({grip:node.dataset.ztGrip});})()`,
+          );
+          expect(pressed).toEqual({ grip: "br" });
+
+          // Zotero moves the left edge while the pointer is still down, and
+          // the release follows at once, before ZotLit reads the change.
+          const fresh = [60, 395.509, 570, 743.723];
+          await rdp.json<boolean>(`(async () => {
+            const attachment = ${ATTACHMENT_ITEM};
+            const item = Zotero.Items.getByLibraryAndKey(
+              attachment.libraryID,
+              ${JSON.stringify(imageKey)},
+            );
+            item.annotationPosition = JSON.stringify({ pageIndex: 1, rects: [${JSON.stringify(fresh)}] });
+            await item.saveTx();
+            return true;
+          })()`);
+          await obEval(
+            vaultId!,
+            `(function(){${fire}const container=${pdfView}.containerEl;fire('pointerup',${to.x},${to.y},container);fire('click',${to.x},${to.y},container);return true;})()`,
+          );
+          // Read after the release, so no read of ours stands between
+          // Zotero's change and the write that meets it.
+          const changed = await storedImage();
+          expect(rectIs(changed.data.annotationPosition, fresh)).toBe(true);
+
+          // The write met Zotero's newer version: the Annotation holds a
+          // geometry conflict with Zotero's rect beside the attempted one,
+          // and the card offers the choice.
+          const conflictHolds = `(function(){const mutation=app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)});if(mutation.kind!=='conflict'||mutation.conflict.write!=='geometry')return mutation.kind;const near=(rect,expected)=>rect.every((value,index)=>Math.abs(value-expected[index])<5e-4);return String(near(mutation.conflict.fresh.position.rects[0],${JSON.stringify(fresh)})&&near(mutation.conflict.attempted.position.rects[0],${JSON.stringify(attempted)}));})()`;
+          expect(
+            await obEvalUntil(vaultId!, conflictHolds, { expected: "true" }),
+          ).toBe(true);
+          const applyAgain = `(function(){const button=[...document.querySelectorAll('.zt-annot-conflict button')].find((node)=>node.getBoundingClientRect().width>0&&node.textContent==='Apply again');if(!button)return 'no button';button.click();return 'applied';})()`;
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!![...document.querySelectorAll('.zt-annot-conflict')].find((node)=>node.getBoundingClientRect().width>0))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          // Zotero's Reader stays on Zotero's rect meanwhile.
+          expect(
+            rectIs((await storedImage()).data.annotationPosition, fresh),
+          ).toBe(true);
+
+          // Zotero's open Reader saves the image it renders after a position
+          // change, which bumps the version again; a retry sent before that
+          // save meets a newer version once more and stands in conflict
+          // again, so each retry waits for the Reader, and is pressed again
+          // while a conflict stands.
+          let landed = false;
+          for (let attempt = 0; attempt < 3 && !landed; attempt++) {
+            await imageSettled();
+            const before = (await storedImage()).version;
+            expect(await obEval(vaultId!, applyAgain)).toBe("applied");
+            // Settled once the retry saved, or once a newer version refused it.
+            expect(
+              await waitFor(async () => {
+                const kind = await obEval(
+                  vaultId!,
+                  `String(app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)}).kind)`,
+                );
+                return (
+                  kind === "idle" ||
+                  (kind === "conflict" &&
+                    (await storedImage()).version > before)
+                );
+              }),
+            ).toBe(true);
+            const stored = await storedImage();
+            landed =
+              rectIs(stored.data.annotationPosition, attempted) &&
+              stored.version > before;
+          }
+          expect(landed).toBe(true);
+          expect(
+            await obEval(
+              vaultId!,
+              `String(app.plugins.plugins.zotlit.services.annotationRepository.mutationFor(${JSON.stringify(imageKey)}).kind)`,
+            ),
+          ).toBe("idle");
+          expect((await storedImage()).version).toBeGreaterThan(
+            changed.version,
+          );
+        }, 180000);
       });
 
       describe("Mark Handles on the seeded ink", () => {
@@ -1917,6 +2083,60 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             seeded.position as { rects: readonly (readonly number[])[] }
           ).rects;
           expect(position.rects[0]![0]).toBe(seedRects[0]![0]);
+        }, 120000);
+
+        it("extends the quote by one character for Shift+ArrowRight", async () => {
+          await selectHighlight();
+          const prevented = await obJson<boolean>(
+            `(function(){const event=new KeyboardEvent('keydown',{key:'ArrowRight',shiftKey:true,bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify(event.defaultPrevented);})()`,
+          );
+          expect(prevented).toBe(true);
+          expect(
+            await waitFor(
+              async () =>
+                (await storedHighlight()).data.annotationText !== seed.text,
+            ),
+          ).toBe(true);
+          await highlightSettled();
+
+          // The seed ends on "few."; the next character is the "F" of
+          // "Furthermore,", after the space the text structure puts between
+          // words.
+          const stored = await storedHighlight();
+          const text = `${seed.text} F`;
+          expect(stored.data.annotationText).toBe(text);
+          const recomputed = await obJson<string>(
+            `(async()=>{const binding=app.plugins.plugins.zotlit.services.pdfAnnotationEditor.bindings.find((candidate)=>candidate.filePath===${JSON.stringify(attachmentPath)});return JSON.stringify(await binding.sortIndex(${stored.data.annotationPosition}));})()`,
+          );
+          expect(stored.data.annotationSortIndex).toBe(recomputed);
+
+          // Zotero's open Reader holds the same quote, and the Annotation
+          // Card quotes it.
+          expect(
+            await waitFor(() =>
+              rdp.json<boolean>(`(() => {
+                const attachment = ${ATTACHMENT_ITEM};
+                const reader = Zotero.Reader._readers.find(
+                  (candidate) => candidate.itemID === attachment.id,
+                );
+                const annotation = reader?._item
+                  .getAnnotations()
+                  .find(({ key }) => key === ${JSON.stringify(highlightKey)});
+                return (
+                  annotation?.annotationPosition ===
+                    ${JSON.stringify(stored.data.annotationPosition)} &&
+                  annotation?.annotationText === ${JSON.stringify(text)}
+                );
+              })()`),
+            ),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String([...document.querySelectorAll('.workspace-leaf-content *')].some((node)=>node.childElementCount===0&&node.textContent.trimEnd().endsWith('just a few. F')))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
         }, 120000);
       });
 
