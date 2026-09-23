@@ -10,6 +10,7 @@ import type { AnnotationPositionRaw } from "@zotlit/db";
 import type { PdfTextStructure } from "@zotlit/pdf-structure";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { withRecentColor } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
@@ -381,10 +382,15 @@ export function readerSettings(): Pick<SettingsService, "current" | "update"> {
 /** Each tool's colour, held the way the settings-backed store holds it. */
 export function toolColors(): ToolColorStore {
   let stored: AnnotationToolColors = {};
+  let recent: readonly string[] = [];
   return {
     current: () => resolveToolColors(stored),
     set: (tool, color) => {
       stored = { ...stored, [tool]: color };
+    },
+    recent: () => recent,
+    use: (color) => {
+      recent = withRecentColor(recent, color);
     },
   };
 }
@@ -533,6 +539,7 @@ export function readerSurfaces({
     navigate: (key) => navigated.push(key),
     report: (keys) => reported.push(keys),
     annotations,
+    colors,
     surfaceState: store,
     gestures,
     creation,

@@ -42,6 +42,8 @@ export interface CreatePopupControl {
   color: string | null;
   /** A toggle's state, or `null` for a control that is not a toggle. */
   pressed: boolean | null;
+  /** Classes beside Obsidian's own `clickable-icon`. */
+  cls?: readonly string[];
   action: CreatePopupAction;
 }
 
@@ -49,6 +51,8 @@ export interface CreatePopupRowInput {
   /** The armed tool, which a colour commits with; highlight where none is. */
   armed: MarkTool | null;
   colors: Readonly<Record<AnnotationTool, string>>;
+  /** The swatches the row offers, in the order it draws them. */
+  swatches: readonly string[];
   /** What this Attachment's Annotations may be edited to right now. */
   capability: EditingCapability;
   /** What the create in flight, if any, left on the selection. */
@@ -60,8 +64,9 @@ export interface CreatePopupRowInput {
 }
 
 /**
- * The create-mode row: the two tools, Zotero's eight colours, the comment
- * sheet, and copy.
+ * The create-mode row: the two tools, the swatches it is handed, the comment
+ * sheet, and copy. A swatch keeps its seat in Zotero's palette as its id, so
+ * `color-3` and the `3` key name the same colour whatever the row offers.
  *
  * Copying never changes Zotero, so it never stands down; every verb that
  * creates follows the same rule the Annotation Card's header does, because they
@@ -70,6 +75,7 @@ export interface CreatePopupRowInput {
 export function createPopupRow({
   armed,
   colors,
+  swatches,
   capability,
   mutation,
   commenting,
@@ -103,14 +109,16 @@ export function createPopupRow({
       color: colors.underline,
       pressed: armed === "underline",
     }),
-    ...ANNOTATION_COLORS.map((hex, index) =>
+    ...swatches.map((hex) =>
       creating({
-        id: `color-${index + 1}`,
+        id: `color-${ANNOTATION_COLORS.indexOf(hex) + 1}`,
         icon: "circle",
         label: annotationColorLabel(hex),
         action: { kind: "color", color: hex },
         color: hex,
         pressed: isColor(colors[tool], hex),
+        // A swatch is a solid dot of its colour, not an outline.
+        cls: ["zt:[&_svg]:fill-current"],
       }),
     ),
     creating({

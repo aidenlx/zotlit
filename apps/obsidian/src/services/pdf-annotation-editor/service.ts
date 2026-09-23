@@ -8,6 +8,7 @@ import type {
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import { isColor, withRecentColor } from "@/lib/annotation-colors";
 import { registerEvent } from "@/lib/disposables";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import type { ReaderSession } from "@/services/reader-session/session";
@@ -23,7 +24,11 @@ import type {
 } from "./binding";
 import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
-import { resolveToolColors, TOOL_COLORS_SETTING } from "./tools";
+import {
+  RECENT_COLORS_SETTING,
+  resolveToolColors,
+  TOOL_COLORS_SETTING,
+} from "./tools";
 import type { AnnotationTool, ToolColorStore } from "./tools";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
@@ -224,9 +229,10 @@ export class PdfAnnotationEditor extends Service<void> {
 }
 
 /**
- * Each tool's colour, read and written through the settings file, so a colour
- * chosen in one PDF is the colour the next one opens with. A choice made before
- * the settings have loaded is dropped rather than written over what is on disk.
+ * Each tool's colour and the colours used last, read and written through the
+ * settings file, so a colour chosen in one PDF is the colour the next one opens
+ * with. A choice made before the settings have loaded is dropped rather than
+ * written over what is on disk.
  */
 function toolColorStore(
   settings: Pick<SettingsService, "current" | "update">,
@@ -237,6 +243,15 @@ function toolColorStore(
       const stored = settings.current?.[TOOL_COLORS_SETTING];
       if (!stored) return;
       settings.update({ [TOOL_COLORS_SETTING]: { ...stored, [tool]: color } });
+    },
+    recent: () => settings.current?.[RECENT_COLORS_SETTING] ?? [],
+    use: (color: string) => {
+      const stored = settings.current?.[RECENT_COLORS_SETTING];
+      // A colour already first changes nothing, so it writes nothing.
+      if (!stored || isColor(stored[0] ?? null, color)) return;
+      settings.update({
+        [RECENT_COLORS_SETTING]: withRecentColor(stored, color),
+      });
     },
   };
 }

@@ -51,6 +51,7 @@ import {
   arm,
   captureSelection,
   clearFloating,
+  recordColorUse,
   selectCreateRowInput,
   sameFlatList,
   sameFlat,
@@ -540,6 +541,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         return;
       }
       created = true;
+      recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
       this.#deps.reveal(outcome.annotationKey);
     } finally {
       this.#writing = false;

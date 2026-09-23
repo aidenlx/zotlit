@@ -9,6 +9,7 @@ import { createStore } from "zustand/vanilla";
 
 import type { SelectedText } from "@zotlit/pdf-structure";
 
+import { offeredSwatches } from "@/lib/annotation-colors";
 import { capabilityReason } from "@/services/annotation-repository/capability";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -74,6 +75,8 @@ export interface ReaderSurfaceState {
   marksVisible: boolean;
   /** Every tool's colour, as the settings-backed tool colour store holds it. */
   colors: Readonly<Record<AnnotationTool, string>>;
+  /** The colours used last, most recent first, which every tool shares. */
+  recentColors: readonly string[];
   /** What this Attachment's Annotations may be edited to right now. */
   capability: EditingCapability;
   /**
@@ -100,15 +103,18 @@ export type ReaderSurfaceStore = ReturnType<typeof createReaderSurfaceState>;
 
 export function createReaderSurfaceState({
   colors,
+  recentColors = [],
   capability,
   now,
-}: Pick<ReaderSurfaceState, "colors" | "capability" | "now">) {
+}: Pick<ReaderSurfaceState, "colors" | "capability" | "now"> &
+  Partial<Pick<ReaderSurfaceState, "recentColors">>) {
   return createStore<ReaderSurfaceState>()(
     subscribeWithSelector(
       (): ReaderSurfaceState => ({
         armed: null,
         marksVisible: true,
         colors,
+        recentColors,
         capability,
         capabilityAt: now,
         now,
@@ -125,7 +131,10 @@ export function arm(store: ReaderSurfaceStore, tool: MarkTool | null): void {
   store.setState({ armed: tool });
 }
 
-/** Writes a tool's colour to the settings-backed store and to this view. */
+/**
+ * Writes a tool's colour to the settings-backed store and to this view. The
+ * choice is a use of that colour too.
+ */
 export function setToolColor(
   store: ReaderSurfaceStore,
   toolColors: ToolColorStore,
@@ -133,6 +142,20 @@ export function setToolColor(
 ): void {
   toolColors.set(tool, color);
   store.setState({ colors: toolColors.current() });
+  recordColorUse(store, toolColors, color);
+}
+
+/**
+ * Puts a colour first in the recent list every tool shares: a tool coloured,
+ * a mark created, or a mark recoloured.
+ */
+export function recordColorUse(
+  store: ReaderSurfaceStore,
+  toolColors: ToolColorStore,
+  color: string,
+): void {
+  toolColors.use(color);
+  store.setState({ recentColors: toolColors.recent() });
 }
 
 export function toggleMarks(store: ReaderSurfaceStore): void {
@@ -535,6 +558,9 @@ export function selectSelectedRow(
   ];
 }
 
+/** How many swatches the create-mode row offers; the `1`–`8` keys reach all. */
+const CREATE_POPUP_SWATCHES = 4;
+
 /**
  * What the create-mode row is decided from, or `null` while no selection
  * waits. Read against the instant the capability was ingested, as above.
@@ -543,6 +569,7 @@ export function selectCreateRowInput({
   floating,
   armed,
   colors,
+  recentColors,
   capability,
   capabilityAt,
 }: ReaderSurfaceState): CreatePopupRowInput | null {
@@ -550,6 +577,7 @@ export function selectCreateRowInput({
   return {
     armed,
     colors,
+    swatches: offeredSwatches(recentColors, CREATE_POPUP_SWATCHES),
     capability,
     mutation: floating.inFlight ? { kind: "pending" } : IDLE,
     commenting: floating.commenting,
@@ -559,15 +587,17 @@ export function selectCreateRowInput({
 
 /**
  * The create-mode row as flat records, for {@link sameFlatList}: each control
- * without the action it runs, which its id already names. Empty while no
- * selection waits.
+ * without the action it runs and the classes it wears, which its id already
+ * names. Empty while no selection waits.
  */
 export function selectCreateRow(
   state: ReaderSurfaceState,
-): readonly Omit<CreatePopupControl, "action">[] {
+): readonly Omit<CreatePopupControl, "action" | "cls">[] {
   const input = selectCreateRowInput(state);
   return input
-    ? createPopupRow(input).map(({ action: _action, ...control }) => control)
+    ? createPopupRow(input).map(
+        ({ action: _action, cls: _cls, ...control }) => control,
+      )
     : [];
 }
 

@@ -614,6 +614,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     if (this.#selection) return;
     const state = createReaderSurfaceState({
       colors: this.#toolColors.current(),
+      recentColors: this.#toolColors.recent(),
       capability: this.#capability(),
       now: this.#now(),
     });
@@ -666,6 +667,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       navigate: (annotationKey) => this.#navigate(annotationKey),
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
+      colors: this.#toolColors,
       surfaceState: state,
       gestures: {
         revealAnnotation: (annotationKey, options) =>

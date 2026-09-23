@@ -85,8 +85,8 @@ export const themeHook = {
    * Each control inside it carries `data-zt-verb` — `color`, `comment`,
    * `copy`, `delete`, `reveal`, and `stack` for the stepper through
    * overlapping marks when a mark is selected; `highlight`, `underline`,
-   * `color-1` to `color-8`, `comment` and `copy` when a fresh text selection
-   * is waiting to be created.
+   * the four most recently used of `color-1` to `color-8`, `comment` and
+   * `copy` when a fresh text selection is waiting to be created.
    */
   pdfMarkPopup: "zt-pdf-mark-popup",
   /** The comment sheet the Mark Popup opens under its row, in either mode. */
