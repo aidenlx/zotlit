@@ -244,6 +244,96 @@ it("rewrites its controls in place and keeps the capability slot", () => {
   ).toBe("true");
 });
 
+it("keeps every control node across a redraw with equal controls", () => {
+  const slot = toolbarSlot();
+  draw(slot);
+  const before = [...slot.querySelectorAll("[data-zt-tool]")];
+
+  draw(slot);
+
+  const after = [...slot.querySelectorAll("[data-zt-tool]")];
+  expect(after).toHaveLength(before.length);
+  after.forEach((node, index) => expect(node).toBe(before[index]));
+});
+
+it("patches changed controls in place rather than rebuilding them", () => {
+  const slot = toolbarSlot();
+  draw(slot);
+  const before = [...slot.querySelectorAll("[data-zt-tool]")];
+  const capability = {
+    kind: "read-only",
+    reason: "library-read-only",
+  } as const;
+  const copy = editingCapabilityCopy(capability, NOW);
+  const why = copy.detail ?? copy.label;
+
+  draw(slot, model({ armed: "underline", marksVisible: false, capability }));
+
+  const after = [...slot.querySelectorAll("[data-zt-tool]")];
+  after.forEach((node, index) => expect(node).toBe(before[index]));
+  expect(shownIn(slot)).toEqual([
+    {
+      id: "highlight",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#ffd400",
+      icon: expect.stringContaining("lucide-highlighter"),
+    },
+    {
+      id: "highlight-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "underline",
+      pressed: "true",
+      disabled: "true",
+      tooltip: why,
+      color: "#2ea8e5",
+      icon: expect.stringContaining("lucide-underline"),
+    },
+    {
+      id: "underline-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
+      id: "visibility",
+      pressed: "false",
+      disabled: null,
+      tooltip: "Show Zotero annotations",
+      color: "",
+      icon: expect.stringContaining("lucide-eye-off"),
+    },
+  ]);
+});
+
+it("runs nothing for a press on a control that was stood down after it was built", () => {
+  const slot = toolbarSlot();
+  const activate = vi.fn();
+  draw(slot, model(), activate);
+  const highlight = slot.querySelector<HTMLElement>(
+    '[data-zt-tool="highlight"]',
+  )!;
+
+  draw(
+    slot,
+    model({ capability: { kind: "read-only", reason: "zotero-unavailable" } }),
+    activate,
+  );
+  highlight.click();
+  highlight.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+  expect(activate).not.toHaveBeenCalled();
+});
+
 it("mounts bare clickable icons, with no preflight root in Obsidian's toolbar", () => {
   const slot = toolbarSlot();
 

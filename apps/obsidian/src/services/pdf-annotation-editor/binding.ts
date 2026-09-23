@@ -18,6 +18,7 @@ import {
 } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
+import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type {
   AnnotationRecord,
   AnnotationRepository,
@@ -42,6 +43,14 @@ import { MarkCreation } from "./creation";
 import type { ReaderPage } from "./creation";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
+import {
+  createReaderSurfaceState,
+  ingestCapability,
+  sameCapability,
+  sameFlat,
+  selectCapabilityAffordance,
+} from "./reader-surface-state";
+import type { ReaderSurfaceStore } from "./reader-surface-state";
 import {
   groupAnnotationsByPage,
   renderAnnotationOverlay,
@@ -210,6 +219,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #landingFrame: number | null = null;
   /** The creation surfaces of this view; `null` until they can be mounted. */
   #creation: MarkCreation | null = null;
+  /** What the reader surfaces draw from; `null` until they are mounted. */
+  #surfaceState: ReaderSurfaceStore | null = null;
   /**
    * This Reader Session's Structured Characters, memoized per page for as long
    * as the session lives. One PDF view is one Reader Session, so the memo is
@@ -222,7 +233,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   /** Serialises the refreshes, so a slower read never overwrites a later one. */
   #refreshSerial = 0;
   /** Redraws the Editing Capability affordance; a no-op until one is mounted. */
-  #drawCapability: () => void = () => undefined;
+  #drawCapability: (affordance: CapabilityAffordance | null) => void = () =>
+    undefined;
   /** The Creation Toolbar's own slot for the affordance; `null` until mounted. */
   #capabilitySlot: HTMLElement | null = null;
   #toolbarMounted = false;
@@ -521,7 +533,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   #mountToolbar(): void {
     const creation = this.#creation;
-    if (this.#toolbarMounted || !creation) return;
+    const state = this.#surfaceState;
+    if (this.#toolbarMounted || !creation || !state) return;
     const controller = this.#controller;
     const slot = controller && toolbarSlotOf(controller);
     if (!slot) return;
@@ -533,17 +546,17 @@ export class PdfViewBinding implements Disposable, HoverParent {
       ticking = null;
     };
 
-    this.#drawCapability = () => {
+    this.#drawCapability = (affordance) => {
       const capabilitySlot = this.#capabilitySlot;
       if (this.#surfaces.disposed || !capabilitySlot) return;
-      const capability = this.#capability();
-      renderCapabilityAffordance(capabilitySlot, {
-        capability,
-        now: this.#now(),
-      });
+      renderCapabilityAffordance(capabilitySlot, affordance);
+    };
+    // The clock runs only while a cooldown counts down. Each tick reads the
+    // capability afresh, because a cooldown lapses without an announcement.
+    const runClock = (capability: EditingCapability): void => {
       if (capability.kind === "cooldown") {
         ticking ??= slot.win.setInterval(
-          () => this.#drawCapability(),
+          () => this.#ingestCapability(),
           COUNTDOWN_INTERVAL.total("milliseconds"),
         );
       } else stopTicking();
@@ -560,7 +573,17 @@ export class PdfViewBinding implements Disposable, HoverParent {
       this.#capabilitySlot = null;
     });
     this.#surfaces.defer(
-      this.#annotations.on("capability-changed", () => this.#drawCapability()),
+      state.subscribe(
+        selectCapabilityAffordance,
+        (affordance) => this.#drawCapability(affordance),
+        { equalityFn: sameFlat },
+      ),
+    );
+    this.#surfaces.defer(
+      state.subscribe(({ capability }) => capability, runClock, {
+        equalityFn: sameCapability,
+        fireImmediately: true,
+      }),
     );
     this.#surfaces.use(
       registerDomEvent(this.#view.containerEl, "keydown", (event) => {
@@ -581,6 +604,18 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   #mountSelection(attachmentKey: string): void {
     if (this.#selection) return;
+    const state = createReaderSurfaceState({
+      colors: this.#toolColors.current(),
+      capability: this.#capability(),
+      now: this.#now(),
+    });
+    this.#surfaceState = state;
+    // The one listener the reader surfaces hear the Editing Capability through.
+    this.#surfaces.defer(
+      this.#annotations.on("capability-changed", () =>
+        this.#ingestCapability(),
+      ),
+    );
     const creation = new MarkCreation({
       containerEl: this.#view.containerEl,
       parent: this,
@@ -596,9 +631,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       },
       renderCapability: (slot) => {
         this.#capabilitySlot = slot;
-        this.#drawCapability();
+        this.#drawCapability(selectCapabilityAffordance(state.getState()));
       },
       colors: this.#toolColors,
+      surfaceState: state,
       annotations: this.#annotations,
       now: this.#now,
     });
@@ -607,7 +643,6 @@ export class PdfViewBinding implements Disposable, HoverParent {
       containerEl: this.#view.containerEl,
       scope: this.#view.scope!,
       parent: this,
-      attachmentKey,
       marks: () => this.#visibleMarks(),
       records: () => this.#records,
       pageAt: (pageIndex) =>
@@ -616,6 +651,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       navigate: (annotationKey) => this.#navigate(annotationKey),
       report: (annotationKeys) => this.#session.reportSelection(annotationKeys),
       annotations: this.#annotations,
+      surfaceState: state,
       gestures: {
         revealAnnotation: (annotationKey, options) =>
           this.#markGestures.revealAnnotation(annotationKey, options),
@@ -629,6 +665,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#surfaces.defer(() => {
       this.#selection = null;
       this.#creation = null;
+      this.#surfaceState = null;
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();
     });
@@ -674,7 +711,15 @@ export class PdfViewBinding implements Disposable, HoverParent {
 
   /** The marks the overlay draws, which mark visibility can stand down whole. */
   #visibleMarks(): ReadonlyMap<number, readonly PdfPageAnnotation[]> {
-    return this.#creation?.marksVisible === false ? new Map() : this.#marks;
+    return this.#surfaceState?.getState().marksVisible === false
+      ? new Map()
+      : this.#marks;
+  }
+
+  /** Takes the Attachment's capability as the repository now answers it. */
+  #ingestCapability(): void {
+    const state = this.#surfaceState;
+    if (state) ingestCapability(state, this.#capability(), this.#now());
   }
 
   /** What this view may do to its Attachment's Annotations right now. */

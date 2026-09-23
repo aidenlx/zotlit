@@ -44,6 +44,8 @@ import {
 import type { HitPage, MarkSelectionPoint, PageBox, Point } from "./hit-test";
 import { MarkPopup, markPopupRow, renderMarkPopupRow } from "./mark-popup";
 import type { MarkPopupControlId } from "./mark-popup";
+import { sameCapability } from "./reader-surface-state";
+import type { ReaderSurfaceStore } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import { markTargets, pageUnitSize } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
@@ -57,7 +59,6 @@ import {
 /** What the selection reads and writes one Annotation through. */
 export type AnnotationEdits = Pick<
   AnnotationRepository,
-  | "capabilityFor"
   | "commentDraftFor"
   | "deleteAnnotation"
   | "discardCommentDraft"
@@ -108,8 +109,6 @@ export interface MarkSelectionDeps {
    * Obsidian's Page Preview on that view keeps its own `hoverPopover`.
    */
   parent: HoverParent;
-  /** The Attachment whose Annotations are on screen, by Indexed Key. */
-  attachmentKey: string;
   /** The marks on screen, by page index, as the binding last painted them. */
   marks: () => ReadonlyMap<number, readonly PdfPageAnnotation[]>;
   /** Every Annotation of this Attachment, as the repository last answered. */
@@ -123,6 +122,8 @@ export interface MarkSelectionDeps {
   /** Announces the selection to whoever follows this reader. */
   report: (annotationKeys: readonly string[]) => void;
   annotations: AnnotationEdits;
+  /** What this view's surfaces draw from, the Editing Capability among it. */
+  surfaceState: ReaderSurfaceStore;
   gestures: MarkGestures;
   /**
    * The creation surfaces, which hear the same pointer, key and scroll gestures
@@ -223,10 +224,14 @@ export class MarkSelection implements Disposable {
       }),
     );
     this.#surfaces.defer(
-      this.#deps.annotations.on("capability-changed", () => {
-        if (!this.#commenting) this.#popup?.refresh();
-        else this.#updateCommentControls();
-      }),
+      this.#deps.surfaceState.subscribe(
+        ({ capability }) => capability,
+        () => {
+          if (!this.#commenting) this.#popup?.refresh();
+          else this.#updateCommentControls();
+        },
+        { equalityFn: sameCapability },
+      ),
     );
     this.#surfaces.defer(
       this.#deps.annotations.on("mutation-changed", (annotationKey) => {
@@ -780,7 +785,7 @@ export class MarkSelection implements Disposable {
   }
 
   #capability(): EditingCapability {
-    return this.#deps.annotations.capabilityFor(this.#deps.attachmentKey);
+    return this.#deps.surfaceState.getState().capability;
   }
 
   #record(): AnnotationRecord | null {

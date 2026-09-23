@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { themeHook } from "@/lib/theme-hooks";
+import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 
 import {
   annotation,
@@ -901,6 +902,48 @@ it("shows the Editing Capability in the reader's toolbar and follows it", async 
   }
 
   expect(reader.toolbarRightEl.childElementCount).toBe(0);
+});
+
+it("keeps the toolbar's nodes across capability announcements, and stands them down in place", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads();
+  const { app } = workspace([{ view }]);
+  const controls = () => [
+    ...reader.toolbarRightEl.querySelectorAll<HTMLElement>("[data-zt-tool]"),
+  ];
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    now: () => NOW,
+  });
+  await service.ready;
+  const drawn = controls();
+  expect(drawn.map((node) => node.dataset.ztTool)).toEqual([
+    "highlight",
+    "highlight-color",
+    "underline",
+    "underline-color",
+    "visibility",
+  ]);
+
+  // A probe that learned nothing new, announced while a press is under way:
+  // the node under the pointer has to be the one the click lands on.
+  annotations.setCapability({ kind: "writable" });
+  controls().forEach((node, index) => expect(node).toBe(drawn[index]));
+
+  const blocked = { kind: "read-only", reason: "zotero-unavailable" } as const;
+  annotations.setCapability(blocked);
+  const copy = editingCapabilityCopy(blocked, NOW);
+  const highlight = controls()[0]!;
+  expect(highlight).toBe(drawn[0]);
+  expect(highlight.getAttribute("aria-disabled")).toBe("true");
+  expect(highlight.getAttribute("aria-label")).toBe(copy.detail ?? copy.label);
 });
 
 it("counts a cooldown down on the toolbar's window, under the binding's disposer", async () => {

@@ -15,7 +15,7 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import { IDLE } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
-import { renderIconButton } from "./icon-button";
+import { renderIconButton, updateIconButton } from "./icon-button";
 import "./style.css";
 import { MARK_TOOLS } from "./tools";
 import type { MarkTool } from "./tools";
@@ -172,10 +172,23 @@ interface ToolbarShape extends CreationToolbarNodes {
 /** Names one tool group apart from another reader's, for `aria-labelledby`. */
 let groupSerial = 0;
 
+/** The last model and handler each drawn toolbar took, by its root node. */
+const drawn = new WeakMap<
+  HTMLElement,
+  {
+    controls: ReadonlyMap<CreationToolbarControlId, CreationToolbarControl>;
+    activate: CreationToolbarActivate;
+  }
+>();
+
 /**
  * Draws the toolbar into the reader's right toolbar slot, building its nodes on
- * the first call and rewriting the controls on every call after — so a caller
- * redraws by calling again, once per state change.
+ * the first call and patching them in place on every call after — so a caller
+ * redraws by calling again, once per state change, and a node under a pointer
+ * that is still down outlives the redraw.
+ *
+ * A press is answered against the model the last call drew, so a control
+ * stood down after its node was built takes no press.
  *
  * @param slot the reader's right toolbar slot.
  */
@@ -185,24 +198,45 @@ export function renderCreationToolbar(
   activate: CreationToolbarActivate,
 ): CreationToolbarNodes {
   const shape = toolbarIn(slot) ?? createToolbar(slot);
-  shape.tools.empty();
-  shape.actions.empty();
+  drawn.set(shape.root, {
+    controls: new Map(controls.map((control) => [control.id, control])),
+    activate,
+  });
   const seats = new Map<MarkTool, HTMLElement>();
 
   for (const control of controls) {
-    const seat = seatFor(shape, seats, control.split);
-    const node = renderIconButton(seat, control, (pressed) =>
-      activate(control.id, pressed),
-    );
-    node.dataset.ztTool = control.id;
+    const node =
+      shape.root.querySelector<HTMLElement>(`[data-zt-tool="${control.id}"]`) ??
+      buildControl(shape, seats, control);
+    updateIconButton(node, control);
     if (control.split === null) continue;
     // A split tool is one button, so the armed fill is the seat's and covers
     // both halves at once. Only the toggle reports the state, because only it
     // answers a press.
     node.removeClass("is-active");
-    if (control.pressed === true) seat.addClass("is-active");
+    if (control.pressed !== null)
+      node.parentElement?.toggleClass("is-active", control.pressed);
   }
   return { root: shape.root, capabilitySlot: shape.capabilitySlot };
+}
+
+/** One control's node, built live; its state is drawn by the caller. */
+function buildControl(
+  shape: ToolbarShape,
+  seats: Map<MarkTool, HTMLElement>,
+  { id, icon, tooltip, split }: CreationToolbarControl,
+): HTMLElement {
+  const node = renderIconButton(
+    seatFor(shape, seats, split),
+    { icon, tooltip },
+    (pressed) => {
+      const last = drawn.get(shape.root);
+      if (last?.controls.get(id)?.disabled === false)
+        last.activate(id, pressed);
+    },
+  );
+  node.dataset.ztTool = id;
+  return node;
 }
 
 /**
