@@ -2676,6 +2676,142 @@ it("refuses a create under the Zotero DB source before any request", async () =>
   expect(requests).toHaveLength(sent);
 });
 
+/**
+ * The Fixture's image, 40 points wider on the right, and the Sort Index its
+ * new top-left gives. The seed rect is `[48.75, 395.509, 570, 743.723]`.
+ */
+const WIDER_IMAGE = {
+  position: { pageIndex: 1, rects: [[48.75, 395.509, 610, 743.723]] },
+  sortIndex: "00001|001860|00048",
+};
+
+it("saves a Geometry Edit in one patch and publishes the record Zotero answers", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack, {
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { ...WIDER_IMAGE, version: 21 })),
+  });
+  const announced: unknown[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", (record) =>
+      announced.push([record.key, record.position]),
+    ),
+  );
+  const sent = requests.length;
+
+  const outcome = await repository.patchGeometry("FDRFQ7C2", WIDER_IMAGE);
+
+  expect(outcome).toEqual({ kind: "idle" });
+  const [write] = requests.slice(sent);
+  expect([write?.method, write?.url.pathname]).toEqual([
+    "PATCH",
+    "/api/users/0/items/FDRFQ7C2",
+  ]);
+  expect(JSON.parse(write?.body ?? "")).toEqual({
+    version: 12,
+    annotationPosition: '{"pageIndex":1,"rects":[[48.75,395.509,610,743.723]]}',
+    annotationSortIndex: "00001|001860|00048",
+  });
+  const moved = { kind: "pdf-rects", ...WIDER_IMAGE.position };
+  expect(
+    (await repository.read("RGRPDF24"))?.annotations.find(
+      ({ key }) => key === "FDRFQ7C2",
+    )?.position,
+  ).toEqual(moved);
+  expect(announced).toEqual([["FDRFQ7C2", moved]]);
+});
+
+it("refuses a Geometry Edit longer than Zotero accepts before the write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository, requests } = await writable(stack);
+  const sent = requests.length;
+
+  const outcome = await repository.patchGeometry("FDRFQ7C2", {
+    position: {
+      pageIndex: 1,
+      width: 2,
+      paths: [Array.from({ length: 12_000 }, () => 123.456)],
+    },
+    sortIndex: "00001|000000|00047",
+  });
+
+  expect(outcome).toEqual({
+    kind: "failed",
+    failure: { kind: "position-too-large" },
+  });
+  expect(requests).toHaveLength(sent);
+});
+
+it("puts Zotero's geometry beside the attempted Geometry Edit on a 412", async () => {
+  await using stack = new AsyncDisposableStack();
+  const moved = { pageIndex: 1, rects: [[60, 400, 570, 743.723]] };
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { position: moved, version: 30 })),
+  });
+  const conflicted: string[] = [];
+  stack.defer(repository.on("write-conflict", (key) => conflicted.push(key)));
+
+  const outcome = await repository.patchGeometry("FDRFQ7C2", WIDER_IMAGE);
+
+  expect(outcome).toEqual({
+    kind: "conflict",
+    conflict: {
+      write: "geometry",
+      attempted: WIDER_IMAGE,
+      fresh: { position: { kind: "pdf-rects", ...moved }, text: null },
+    },
+  });
+  expect(conflicted).toEqual(["FDRFQ7C2"]);
+});
+
+it("resolves a Geometry Edit silently where Zotero already holds that geometry", async () => {
+  await using stack = new AsyncDisposableStack();
+  const { repository } = await writable(stack, {
+    write: () => staleVersion(),
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { ...WIDER_IMAGE, version: 30 })),
+  });
+
+  const outcome = await repository.patchGeometry("FDRFQ7C2", {
+    ...WIDER_IMAGE,
+    // Unrounded, as the reader computes it; Zotero stores three decimals.
+    position: {
+      pageIndex: 1,
+      rects: [[48.750_2, 395.509, 610.000_4, 743.723]],
+    },
+  });
+
+  expect(outcome).toEqual({ kind: "idle" });
+});
+
+it("sends a conflicted Geometry Edit again against the version Zotero holds now", async () => {
+  await using stack = new AsyncDisposableStack();
+  let refuse = true;
+  const { repository, requests } = await writable(stack, {
+    write: () => (refuse ? staleVersion() : writeAccepted()),
+    item: () =>
+      annotationItem(
+        afterWrite("FDRFQ7C2", {
+          position: { pageIndex: 1, rects: [[60, 400, 570, 743.723]] },
+          version: 30,
+        }),
+      ),
+  });
+  await repository.patchGeometry("FDRFQ7C2", WIDER_IMAGE);
+  refuse = false;
+  const sent = requests.length;
+
+  await repository.retryWrite("FDRFQ7C2");
+
+  expect(JSON.parse(requests[sent]!.body ?? "")).toEqual({
+    version: 30,
+    annotationPosition: '{"pageIndex":1,"rects":[[48.75,395.509,610,743.723]]}',
+    annotationSortIndex: "00001|001860|00048",
+  });
+});
+
 it("refuses a position longer than Zotero accepts before the write", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, requests } = await writable(stack);

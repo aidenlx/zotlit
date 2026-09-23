@@ -985,6 +985,111 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
       }, 120000);
 
+      it("saves a Geometry Edit on the seeded image through one repository write", async () => {
+        const imageKey = "FDRFQ7C2";
+        const path = `users/0/items/${imageKey}`;
+        const seed = (await (
+          await zoteroFetch(api, path, {
+            headers: { "Zotero-Server-ID": serverID },
+          })
+        ).json()) as {
+          data: { annotationPosition: string; annotationSortIndex: string };
+        };
+        // The seed goes back through the Local API against whatever version
+        // Zotero holds then, so a failed assertion leaves no edited image for
+        // the next run to inherit.
+        await using revert = new AsyncDisposableStack();
+        revert.defer(async () => {
+          const apiKey = await obJson<string>(
+            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+          );
+          const current = (await (
+            await zoteroFetch(api, path, {
+              headers: { "Zotero-Server-ID": serverID },
+            })
+          ).json()) as { version: number };
+          const restored = await zoteroFetch(api, path, {
+            method: "PATCH",
+            headers: {
+              "Zotero-Server-ID": serverID,
+              "Zotero-API-Key": apiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              version: current.version,
+              annotationPosition: seed.data.annotationPosition,
+              annotationSortIndex: seed.data.annotationSortIndex,
+            }),
+          });
+          expect(restored.status).toBe(204);
+        });
+
+        // The seed's rect is [48.75, 395.509, 570, 743.723] on page index 1:
+        // the edit widens it 40 points to the right and lowers its top edge 40
+        // points, which moves the Sort Index's distance from the page top.
+        const edited = {
+          pageIndex: 1,
+          rects: [[48.75, 395.509, 610, 703.723]],
+        };
+        const outcome = await obJson<{
+          sortIndex: string | null;
+          state: { kind: string };
+          announced: string[];
+        }>(
+          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex});return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+        );
+        expect(outcome.state.kind).toBe("idle");
+        expect(outcome.announced).toEqual([imageKey]);
+
+        // Zotero holds the rect and a recomputed Sort Index, read straight
+        // off the Local API.
+        const stored = (await (
+          await zoteroFetch(api, path, {
+            headers: { "Zotero-Server-ID": serverID },
+          })
+        ).json()) as {
+          data: { annotationPosition: string; annotationSortIndex: string };
+        };
+        expect(JSON.parse(stored.data.annotationPosition)).toEqual(edited);
+        expect(stored.data.annotationSortIndex).toBe(outcome.sortIndex);
+        expect(stored.data.annotationSortIndex).toMatch(
+          /^\d{5}\|\d{6}\|\d{5}$/,
+        );
+        expect(stored.data.annotationSortIndex).not.toBe(
+          seed.data.annotationSortIndex,
+        );
+
+        // Zotero's open Reader holds the same rect.
+        expect(
+          await waitFor(() =>
+            rdp.json<boolean>(`(() => {
+              const attachment = ${ATTACHMENT_ITEM};
+              const reader = Zotero.Reader._readers.find(
+                (candidate) => candidate.itemID === attachment.id,
+              );
+              const annotation = reader?._item
+                .getAnnotations()
+                .find(({ key }) => key === ${JSON.stringify(imageKey)});
+              return annotation?.annotationPosition === ${JSON.stringify(JSON.stringify(edited))};
+            })()`),
+          ),
+        ).toBe(true);
+
+        // The Obsidian overlay draws the mark in PDF points: 610 - 48.75 wide,
+        // 703.723 - 395.509 high.
+        await obEval(
+          vaultId!,
+          `(function(){const leaf=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(attachmentPath)});const viewer=leaf?.view.viewer.child?.pdfViewer?.pdfViewer;if(viewer)viewer.currentPageNumber=2;return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const mark=app.workspace.getLeavesOfType('pdf').map(({view})=>view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(imageKey)}]')).find(Boolean);return mark?[mark.getAttribute('width'),Number(mark.getAttribute('height')).toFixed(3)].join(' '):'none';})()`,
+            { expected: "561.25 308.214" },
+          ),
+        ).toBe(true);
+      }, 120000);
+
       // The one place a confirmed write can land: the Local API is serving
       // this Attachment, so a saved colour edit really moves the pixels the
       // card paints, and the card's own publication of them is observable.

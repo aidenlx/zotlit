@@ -70,6 +70,19 @@ export function conflictPanel(conflict: WriteConflict): ConflictPanel {
       ],
     };
   }
+  if (conflict.write === "geometry") {
+    // A geometry names no value in words yet, so the two verbs stand alone.
+    // @see https://github.com/aidenlx/zotlit/issues/1205
+    return {
+      title: m.annot_view_conflict_title(),
+      values: [],
+      prompt: null,
+      actions: [
+        { kind: "apply-again", label: m.annot_view_conflict_apply_again() },
+        discard,
+      ],
+    };
+  }
   const show = (value: string | null): string =>
     value === null || value === ""
       ? m.annot_view_conflict_no_value()
