@@ -52,15 +52,22 @@ export interface MarkPopupHostDeps {
   /** The hover parent, which is the binding rather than the PDF view. */
   parent: HoverParent;
   store: ReaderSurfaceStore;
-  /** What each floating kind draws, and where it hangs. */
-  variants: Record<Exclude<Floating["kind"], "none">, MarkPopupVariant>;
+  /**
+   * What each floating kind draws, and where it hangs. An image capture has
+   * no popup.
+   */
+  variants: Record<
+    Exclude<Floating["kind"], "none" | "capture">,
+    MarkPopupVariant
+  >;
 }
 
 /**
  * Opens the popup for a floating variant with an anchor, and hides it for
- * none, a quiet selection, a selection being dragged, or an anchor of `null`. A change of variant kind,
- * of selected key, or of commenting rebuilds the row; any other change to what
- * floats or to its row refreshes it, which is what keeps an editor alive.
+ * none, an image capture, a quiet selection, a selection being dragged, or an
+ * anchor of `null`. A change of variant kind, of selected key, or of
+ * commenting rebuilds the row; any other change to what floats or to its row
+ * refreshes it, which is what keeps an editor alive.
  */
 export class MarkPopupHost implements Disposable {
   readonly #deps;
@@ -103,6 +110,7 @@ export class MarkPopupHost implements Disposable {
     // release hangs it again from the mark as it then stands.
     const variant =
       floating.kind === "none" ||
+      floating.kind === "capture" ||
       (floating.kind === "selected" &&
         (floating.quiet || floating.adjust?.phase === "dragging"))
         ? null
@@ -152,7 +160,7 @@ export class MarkPopupHost implements Disposable {
   #render(content: HTMLElement): void {
     const state = this.#deps.store.getState();
     const { floating } = state;
-    if (floating.kind === "none") return;
+    if (floating.kind === "none" || floating.kind === "capture") return;
     const head = selectFloatingHead(state);
     if (!sameFlat(this.#built, head)) {
       content.empty();

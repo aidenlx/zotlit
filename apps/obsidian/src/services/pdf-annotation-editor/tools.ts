@@ -3,7 +3,7 @@
 //
 // One tool per Zotero annotation type, in the order Zotero's own reader shows
 // them, so the group a reader learns here is the group Zotero offers. ZotLit
-// writes two of them today; the rest keep their seat and stand down.
+// writes three of them today, and the Creation Toolbar seats those three.
 //
 // The colours are settings rather than view state, so a tool armed in one PDF
 // draws in the same colour in the next one.
@@ -25,10 +25,21 @@ export const ANNOTATION_TOOLS = [
 
 export type AnnotationTool = (typeof ANNOTATION_TOOLS)[number];
 
-/** The tools ZotLit creates today, which are the two an armed tool commits as. */
-export const MARK_TOOLS = ["highlight", "underline"] as const;
+/** The tools ZotLit creates today, which are the three an armed tool commits as. */
+export const MARK_TOOLS = ["highlight", "underline", "image"] as const;
 
 export type MarkTool = (typeof MARK_TOOLS)[number];
+
+/** The tools a text selection commits as; the image tool takes a rectangle. */
+export type TextTool = Exclude<MarkTool, "image">;
+
+/**
+ * The tool a text selection commits as while a tool is armed: the armed one
+ * where it takes text, and highlight where none does.
+ */
+export function textToolOf(armed: MarkTool | null): TextTool {
+  return armed === "highlight" || armed === "underline" ? armed : "highlight";
+}
 
 /** Whether ZotLit can write this tool's Annotation yet. */
 export function isMarkTool(tool: AnnotationTool): tool is MarkTool {

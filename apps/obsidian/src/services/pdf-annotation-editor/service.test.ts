@@ -1023,6 +1023,8 @@ it("keeps the toolbar's nodes across capability announcements, and stands them d
     "highlight-color",
     "underline",
     "underline-color",
+    "image",
+    "image-color",
     "visibility",
   ]);
 

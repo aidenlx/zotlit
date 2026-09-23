@@ -13,6 +13,7 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 import { freeTextLayout } from "./free-text-layout";
 import type { PagePoint, PageRect, Turn } from "./free-text-layout";
 import {
+  capturesImage,
   gripCursor,
   HANDLE_RADIUS,
   handleLayout,
@@ -140,15 +141,7 @@ export function renderAnnotationOverlay(
   page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`)?.remove();
 
   const unitPage = toPageUnits(page);
-  const document_ = page.div.ownerDocument;
-  const overlay = document_.createElementNS(SVG_NS, "svg");
-  overlay.classList.add(themeHook.pdfAnnotationOverlay);
-  overlay.setAttribute("aria-hidden", "true");
-  overlay.setAttribute(
-    "viewBox",
-    `0 0 ${unitPage.viewport.width} ${unitPage.viewport.height}`,
-  );
-  overlay.setAttribute("preserveAspectRatio", "none");
+  const overlay = createOverlay(unitPage);
 
   for (const placement of annotations) {
     const { annotation } = placement;
@@ -185,6 +178,56 @@ export function renderAnnotationOverlay(
 
   // Appended last, so nothing PDF.js paints later sits over the marks.
   if (overlay.childElementCount > 0) page.div.append(overlay);
+}
+
+/** An empty overlay over the page, measured in the page's own units. */
+function createOverlay(unitPage: OverlayPage): SVGSVGElement {
+  const overlay = unitPage.document.createElementNS(SVG_NS, "svg");
+  overlay.classList.add(themeHook.pdfAnnotationOverlay);
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.setAttribute(
+    "viewBox",
+    `0 0 ${unitPage.viewport.width} ${unitPage.viewport.height}`,
+  );
+  overlay.setAttribute("preserveAspectRatio", "none");
+  return overlay;
+}
+
+/**
+ * Draws the rectangle an image capture drags out on this page, over every
+ * mark, or takes it away for `null`. Zotero's reader draws it as a solid
+ * three-pixel frame in the tool's colour, faint while a side is under ten
+ * points, so the release that would keep nothing shows as such.
+ *
+ * The overlay is rebuilt on every page render and is absent on a page with
+ * no marks, so this builds one where none stands, and takes back an overlay it
+ * leaves empty.
+ *
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/page.js — `_pushImage`
+ */
+export function renderCapture(
+  page: OverlayPageView,
+  capture: { rect: PdfRect; color: string } | null,
+): void {
+  const held = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  held?.querySelector(`.${themeHook.pdfCaptureRect}`)?.remove();
+  if (!capture) {
+    if (held?.childElementCount === 0) held.remove();
+    return;
+  }
+  const unitPage = toPageUnits(page);
+  const overlay = held ?? page.div.appendChild(createOverlay(unitPage));
+  const element = createRect(
+    unitPage,
+    pdfRectToPage(unitPage.viewport, capture.rect),
+  );
+  element.classList.add(themeHook.pdfCaptureRect);
+  element.setAttribute("fill", "none");
+  element.setAttribute("stroke", capture.color);
+  element.setAttribute("stroke-width", "3");
+  element.setAttribute("vector-effect", "non-scaling-stroke");
+  element.setAttribute("opacity", capturesImage(capture.rect) ? "1" : "0.2");
+  overlay.append(element);
 }
 
 /**

@@ -529,6 +529,7 @@ export function readerSurfaces({
     structure: () => structure,
     repaint: vi.fn(),
     reveal: (annotationKey) => revealed.push(annotationKey),
+    reportBlockedGesture: gestures.reportBlockedGesture,
     renderCapability: vi.fn(),
     colors,
     surfaceState: store,

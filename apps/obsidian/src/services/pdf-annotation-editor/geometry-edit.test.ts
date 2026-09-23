@@ -9,6 +9,8 @@ import type {
 
 import {
   bodyRect,
+  captureRect,
+  capturesImage,
   gripAt,
   gripCursor,
   handleLayout,
@@ -524,4 +526,48 @@ it("nudges ink by five points, and refuses near the page's edge", () => {
       viewBox: VIEW_BOX,
     }),
   ).toBeNull();
+});
+
+it("keeps no image from a rectangle under ten points on either side", () => {
+  expect(capturesImage([100, 300, 109.999, 500])).toBe(false);
+  expect(capturesImage([100, 300, 300, 309.999])).toBe(false);
+  expect(capturesImage([100, 300, 100, 300])).toBe(false);
+  // Ten points exactly is big enough, as Zotero's own `>=` reads it.
+  expect(capturesImage([100, 300, 110, 310])).toBe(true);
+});
+
+it("normalises the capture from whichever corner the drag started", () => {
+  const box = [100, 300, 300, 500];
+  // Down-right, up-right, down-left and up-left on screen, in PDF points.
+  const drags = [
+    [
+      [100, 500],
+      [300, 300],
+    ],
+    [
+      [100, 300],
+      [300, 500],
+    ],
+    [
+      [300, 500],
+      [100, 300],
+    ],
+    [
+      [300, 300],
+      [100, 500],
+    ],
+  ] as const;
+  for (const [from, to] of drags) {
+    expect(captureRect({ from, to, viewBox: VIEW_BOX })).toEqual(box);
+  }
+});
+
+it("clamps the capture to the press page's view box, on every edge", () => {
+  // The view box runs from (10, 20) to (622, 812).
+  expect(
+    captureRect({ from: [100, 300], to: [-50, -40], viewBox: VIEW_BOX }),
+  ).toEqual([10, 20, 100, 300]);
+  expect(
+    captureRect({ from: [100, 300], to: [700, 900], viewBox: VIEW_BOX }),
+  ).toEqual([100, 300, 622, 812]);
 });
