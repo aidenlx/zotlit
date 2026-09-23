@@ -1000,6 +1000,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // the next run to inherit.
         await using revert = new AsyncDisposableStack();
         revert.defer(async () => {
+          await readerSettled(rdp, imageKey, { api, serverID });
           const apiKey = await obJson<string>(
             "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
           );
@@ -1109,25 +1110,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             })
           ).json()) as Stored;
 
-        /**
-         * A position change drops Zotero's cached Excerpt Image, and its open
-         * Reader then renders a new one and saves the Annotation it holds. A
-         * write that lands inside that render is overwritten with the Reader's
-         * older position, so every write here waits for the image first.
-         */
-        async function readerSettled(): Promise<void> {
-          expect(
-            await waitFor(() =>
-              rdp.json<boolean>(`(async () => {
-                const item = Zotero.Items.getByLibraryAndKey(
-                  Zotero.Libraries.userLibraryID,
-                  ${JSON.stringify(imageKey)},
-                );
-                return await Zotero.Annotations.hasCacheImage(item);
-              })()`),
-            ),
-          ).toBe(true);
-        }
+        const imageSettled = () =>
+          readerSettled(rdp, imageKey, { api, serverID });
 
         /**
          * Brings page two on screen and selects the image by a click on its
@@ -1141,7 +1125,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           perX: number;
           perY: number;
         }> {
-          await readerSettled();
+          await imageSettled();
           expect(
             await obEvalUntil(
               vaultId!,
@@ -1199,7 +1183,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * position change started, and holds it there.
          */
         async function restoreSeed(): Promise<void> {
-          await readerSettled();
+          await imageSettled();
           const current = await storedImage();
           if (
             current.data.annotationPosition !== seed.position ||
@@ -1222,7 +1206,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               }),
             });
             expect(restored.status).toBe(204);
-            await readerSettled();
+            await imageSettled();
           }
           expect((await storedImage()).data).toMatchObject({
             annotationPosition: seed.position,
@@ -2255,6 +2239,70 @@ function closeZoteroReader(rdp: ZoteroRdp, tabID: string): Promise<string> {
     Zotero.Reader.getByTabID(${JSON.stringify(tabID)})?.close();
     return "closed";
   })()`);
+}
+
+/**
+ * Waits until Zotero is done with the last position write on one image or ink
+ * Annotation. The write drops the cached Excerpt Image in a commit callback
+ * nothing awaits; Zotero's open Reader then renders a fresh image and saves the
+ * whole Annotation, which bumps its version. A write sent before that save
+ * carries a stale version and is refused with 412, so this waits until the
+ * Reader holds the stored position with a rendered image and nothing left to
+ * save, the cache image is back, and two Local API reads 1.5 s apart agree on
+ * the version.
+ */
+async function readerSettled(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+  { api, serverID }: { api: string; serverID: string },
+): Promise<void> {
+  const readerDone = () =>
+    rdp.json<boolean>(`(async () => {
+      const attachment = ${ATTACHMENT_ITEM};
+      const item = Zotero.Items.getByLibraryAndKey(
+        attachment.libraryID,
+        ${JSON.stringify(annotationKey)},
+      );
+      const reader = Zotero.Reader._readers.find(
+        (candidate) => candidate.itemID === attachment.id,
+      );
+      const manager = reader?._internalReader?._annotationManager;
+      if (!item || !manager) return false;
+      // The Reader's annotations live in its content window, so they are read
+      // by index rather than handed a chrome callback.
+      let held = null;
+      for (let index = 0; index < manager._annotations.length; index++) {
+        const candidate = manager._annotations[index];
+        if (candidate.id === ${JSON.stringify(annotationKey)}) held = candidate;
+      }
+      const canonical = (position) =>
+        JSON.stringify(position, Object.keys(position).sort());
+      return (
+        !!held?.image &&
+        canonical(held.position) ===
+          canonical(JSON.parse(item.annotationPosition)) &&
+        manager._unsavedAnnotations.size === 0 &&
+        !manager._savingInProgress &&
+        (await Zotero.Annotations.hasCacheImage(item))
+      );
+    })()`);
+  const version = async () =>
+    (
+      (await (
+        await zoteroFetch(api, `users/0/items/${annotationKey}`, {
+          headers: { "Zotero-Server-ID": serverID },
+        })
+      ).json()) as { version: number }
+    ).version;
+  expect(
+    await waitFor(async () => {
+      if (!(await readerDone())) return false;
+      const before = await version();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return (await readerDone()) && (await version()) === before;
+    }, 120),
+    `the Zotero Reader never settled on ${annotationKey}`,
+  ).toBe(true);
 }
 
 /** Whether the Reader open on the Attachment is showing the Annotation `key`. */
