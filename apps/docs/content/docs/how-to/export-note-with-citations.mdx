@@ -42,10 +42,13 @@ ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero lo
     Review these fields:
 
     - <UiLabel name={m.pandoc_export_format_name()} /> starts with <UiLabel name={m.pandoc_export_format_docx()} />. Select <UiLabel name={m.pandoc_export_format_html()} /> for HTML output.
-    - <UiLabel name={m.pandoc_export_style_name()} /> starts with your current <UiLabel name={m.settings_citation_references_style_name()} />.
+    - <UiLabel name={m.pandoc_export_style_name()} /> starts with the style the note uses in Obsidian. The line under the picker names where that style comes from:
+      - <UiLabel name={m.pandoc_export_style_from_note()} /> The note has its own `zotlit-csl` property.
+      - <UiLabel name={m.pandoc_export_style_from_profile({ profile: "Research" })} /> The note is an Imported Note, and its profile selects the style.
+      - <UiLabel name={m.pandoc_export_style_from_vault()} /> The note uses your <UiLabel name={m.settings_citation_references_style_name()} />.
     - <UiLabel name={m.pandoc_export_destination_name()} /> starts with the source note's path and filename stem.
 
-    Change the format, style, or destination as needed.
+    Change the format, style, or destination as needed. When you pick another style, the line reads <UiLabel name={m.pandoc_export_style_changed({ style: "APA Style 7th edition" })} /> The dialog does not change the note.
 
   </Step>
   <Step>
@@ -56,7 +59,7 @@ ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero lo
   </Step>
 </Steps>
 
-The destination contains a `.docx` Word document or an `.html` web page. The output includes formatted citations and a bibliography.
+The destination contains a `.docx` Word document or an `.html` web page. The output includes formatted citations and a bibliography. The notice names the file and the style, for example <UiLabel name={m.notice_pandoc_export_done({ file: "Draft.docx", style: "APA Style 7th edition" })} />
 
 Export leaves the source note unchanged. The bibliography is generated in the exported document; your Markdown keeps the citations it was generated from. To place a bibliography elsewhere, [copy it from the References Sidebar](/docs/how-to/review-copy-troubleshoot-references#copy-references).
 
@@ -98,6 +101,7 @@ Pandoc reads the note, so text it treats as ordinary (a key inside code or behin
 | ZotLit asks you to start Zotero                                                                               | Start Zotero and keep it running during export.                                                                                       |
 | The Zotero local API is disabled                                                                              | In Zotero, open **Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero**.          |
 | Better BibTeX or the Zotero local API refuses the request                                                     | Check the named source in the error, then retry after it responds normally.                                                           |
+| Zotero cannot supply the chosen style                                                                         | Install the style in Zotero, or choose another style in the dialog. ZotLit does not export with a different style.                    |
 | Pandoc stops the conversion                                                                                   | Correct the source or style problem named in the error, then run the export again.                                                    |
 | ZotLit cannot write the exported document                                                                     | Select a writable destination and run the export again.                                                                               |
 

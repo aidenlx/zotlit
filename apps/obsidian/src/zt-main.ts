@@ -507,6 +507,8 @@ export default class ZotLitPlugin extends Plugin {
       app: this.app,
       db: services.db,
       zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      profile: services.profile,
     });
 
     registerPandocExport(this, {

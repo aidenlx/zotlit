@@ -51,6 +51,7 @@ describe("zotlit:csl", () => {
       command: CSL_COMMAND,
       styleId: PARENT,
       path: expect.stringMatching(/\.csl$/),
+      title: PARENT,
     });
     await expect(readFile(pathOf(response), "utf8")).resolves.toContain(
       `<id>${PARENT}</id>`,

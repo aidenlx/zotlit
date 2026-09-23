@@ -70,13 +70,15 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
   <Step>
     ### Set the document style and language
 
+    Without a style property, the note cites with the style ZotLit selects for it in Obsidian. For an Imported Note, that is its profile's style. For every other note, it is your <UiLabel name={m.settings_citation_references_style_name()} />. Set a style here only when this note needs a different one.
+
     Open the input note and run:
 
     <Command name={m.command_set_citation_presentation_name()} />
 
-    Select a CSL style installed in Zotero. Enter the complete document's language, then select <UiLabel name={m.citation_presentation_confirm()} />.
+    Select a CSL style installed in Zotero, or select <UiLabel name={m.citation_presentation_style_inherited({ style: "…" })} />. Enter the complete document's language, then select <UiLabel name={m.citation_presentation_confirm()} />.
 
-    The note frontmatter now contains a Zotero style ID and a Pandoc language tag:
+    When you select a named style, the note frontmatter contains its Zotero style ID and a Pandoc language tag:
 
     ```yaml
     ---
@@ -85,7 +87,7 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
     ---
     ```
 
-    The note must not also contain `csl` or `citation-style` for this path.
+    The note must not also contain `csl` or `citation-style` for this path. <UiLabel name={m.citation_presentation_style_inherited({ style: "…" })} /> removes `zotlit-csl`, and the note returns to the vault or profile style.
 
     <Callout type="info" title="Use a Pandoc-owned style instead">
       A document can keep a sole standard `csl` or `citation-style` input, and
@@ -112,6 +114,14 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
     Confirm that the output `.docx` exists and opens.
 
+    Pandoc prints one ZotLit line in the terminal that names the style and where it comes from:
+
+    ```text
+    ZotLit: citations use APA Style 7th edition (from your vault settings).
+    ```
+
+    Check that the line names the style you expect. The source reads `from this note`, `from the Research profile`, `from your vault settings`, or `from the csl field or the --csl option`. When your vault selection is Default, the line names the Pandoc default style, Chicago author-date. This line is not a warning, so `--fail-if-warnings` does not stop the run.
+
     Check that `[[Doe 2020#cite:locator=33]]` became a formatted citation with locator `33`. Confirm that the document contains the corresponding formatted bibliography entry.
 
   </Step>
@@ -121,17 +131,20 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
 Open <UiLabel name={m.settings_citation_pandoc_guide_name()} /> under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} /> for the full error reference.
 
-| Error code                   | Recovery                                                                    |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| `file-not-found`             | Use the absolute path of a Markdown file inside the open vault.             |
-| `database-unavailable`       | Repair the Zotero database connection in ZotLit.                            |
-| `item-not-found`             | Correct the Literature Note's `zotero-key`, or restore the item.            |
-| `citation-key-missing`       | Assign a citation key to the resolved Zotero item.                          |
-| `duplicate-citation-key`     | Give the cited items distinct citation keys.                                |
-| `unresolved-citation-intent` | Point the `#cite:` link to a valid Literature Note.                         |
-| `style-missing`              | Install the style named by `zotlit-csl` in Zotero, or correct the style ID. |
-| `parent-missing`             | Install the dependent style's independent parent in Zotero.                 |
-| `csl-ambiguous`              | Keep only standard `csl` or `zotlit-csl`.                                   |
+| Error code                   | Recovery                                                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `file-not-found`             | Use the absolute path of a Markdown file inside the open vault.                                                                   |
+| `database-unavailable`       | Repair the Zotero database connection in ZotLit.                                                                                  |
+| `item-not-found`             | Correct the Literature Note's `zotero-key`, or restore the item.                                                                  |
+| `citation-key-missing`       | Assign a citation key to the resolved Zotero item.                                                                                |
+| `duplicate-citation-key`     | Give the cited items distinct citation keys.                                                                                      |
+| `unresolved-citation-intent` | Point the `#cite:` link to a valid Literature Note.                                                                               |
+| `style-missing`              | Install the named style in Zotero, or change the style where it is set: `zotlit-csl`, the ZotLit settings, or the profile.        |
+| `style-property-invalid`     | Set `zotlit-csl` to the ID of a style installed in Zotero, or remove it.                                                          |
+| `language-property-invalid`  | Set `lang` to a language tag such as `en-US`, or remove it. ZotLit checks `lang` only when the note has no `zotlit-csl` or `csl`. |
+| `profile-unavailable`        | Switch the note to an available profile in Obsidian.                                                                              |
+| `parent-missing`             | Install the dependent style's independent parent in Zotero.                                                                       |
+| `csl-ambiguous`              | Keep only standard `csl` or `zotlit-csl`.                                                                                         |
 
 Refresh both integration files when the saved pair came from an earlier ZotLit version. Keep the pair together when you move the workflow folder.
 

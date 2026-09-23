@@ -6,6 +6,9 @@ import {
   settingsOf,
   TFile,
 } from "@mock/obsidian";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { App, Command, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,12 +25,52 @@ import type { PandocExportDeps } from "./register";
 
 /** The styles Zotero has installed while the export dialog is open. */
 const zotero = vi.hoisted(() => ({ styles: [] as InstalledCslStyle[] }));
-const notices = vi.hoisted(() => ({ showExportFailure: vi.fn() }));
-
-vi.mock("@/services/pandoc/styles", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/services/pandoc/styles")>()),
-  listInstalledStyles: () => Promise.resolve(zotero.styles),
+const notices = vi.hoisted(() => ({
+  showExportFailure: vi.fn(),
+  /** Every message a finished export showed. */
+  shown: [] as string[],
 }));
+
+vi.mock("@/services/pandoc/styles", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/services/pandoc/styles")>();
+  return {
+    ...actual,
+    listInstalledStyles: () => Promise.resolve(zotero.styles),
+    // An installed style resolves as Zotero lists it; anything else takes the
+    // real resolver's answer for a data directory that holds no styles.
+    resolveInstalledStyle: (
+      ...args: Parameters<typeof actual.resolveInstalledStyle>
+    ) => {
+      const listed = zotero.styles.find(({ id }) => id === args[1].styleId);
+      return listed
+        ? Promise.resolve({
+            kind: "installed" as const,
+            styleId: listed.id,
+            title: listed.title,
+            parentId: undefined,
+            xml: "<style/>",
+          })
+        : actual.resolveInstalledStyle(...args);
+    },
+  };
+});
+vi.mock("@/services/pandoc/export", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/pandoc/export")>()),
+  exportCitedDocument: () => Promise.resolve({ output: new Uint8Array() }),
+}));
+vi.mock("@/lib/notice", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notice")>();
+  return {
+    ...actual,
+    BaseNotice: class extends actual.BaseNotice {
+      constructor(message: string | DocumentFragment, duration?: number) {
+        super(message, duration);
+        if (typeof message === "string") notices.shown.push(message);
+      }
+    },
+  };
+});
 vi.mock("./notices", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./notices")>()),
   showExportFailure: notices.showExportFailure,
@@ -55,6 +98,8 @@ interface VaultOptions {
       "citation.references-style"
     >;
   engineInstalled?: boolean;
+  /** Where the vault stands on disk, which is where an export is written. */
+  basePath?: string;
 }
 
 /** One vault the built-in export command is registered in, on one note. */
@@ -62,6 +107,7 @@ function openVault({
   note,
   settings = {},
   engineInstalled = true,
+  basePath = BASE_PATH,
 }: VaultOptions = {}) {
   const file = markdownFile("draft.md");
   const frontmatter = note ?? {};
@@ -90,7 +136,10 @@ function openVault({
   const app = {
     workspace: { getActiveFile: () => (note ? file : null) },
     metadataCache: { getFileCache: () => ({ frontmatter }) },
-    vault: { adapter: { getBasePath: () => BASE_PATH } },
+    vault: {
+      adapter: { getBasePath: () => basePath },
+      cachedRead: () => Promise.resolve("[[Doe 2020]]\n"),
+    },
   } as unknown as App;
 
   registerPandocExport(
@@ -144,6 +193,9 @@ function openVault({
       return {
         format: format!,
         style: style!,
+        /** What the dialog says under the style picker. */
+        styleNote: () =>
+          rows.find((row) => row.name === m.pandoc_export_style_name())?.desc,
         /** The destination the dialog names, as the user reads it. */
         destination: () =>
           rows.find((row) => row.name === m.pandoc_export_destination_name())
@@ -176,6 +228,7 @@ beforeEach(() => {
   Modal.instances.length = 0;
   zotero.styles = [NOTE_STYLE, VAULT_STYLE];
   notices.showExportFailure.mockClear();
+  notices.shown.length = 0;
 });
 
 describe("the Export note with citations command", () => {
@@ -244,6 +297,102 @@ describe("the Export note with citations command", () => {
     await vi.waitFor(() => expect(vault.converted()).toBe(false));
 
     expect(Modal.instances).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      "the note",
+      { note: { "zotlit-csl": NOTE_STYLE.id } },
+      m.pandoc_export_style_from_note(),
+    ],
+    [
+      "the vault settings",
+      {
+        note: {},
+        settings: { "citation.references-style": VAULT_STYLE.id },
+      },
+      m.pandoc_export_style_from_vault(),
+    ],
+    [
+      "the Profile",
+      {
+        note: {
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": PROFILE_ID,
+        },
+        settings: {
+          profiles: [
+            {
+              id: PROFILE_ID,
+              label: "Research",
+              bindings: { "citation.references-style": NOTE_STYLE.id },
+            },
+          ],
+        },
+      },
+      m.pandoc_export_style_from_profile({ profile: "Research" }),
+    ],
+  ] satisfies [string, VaultOptions, string][])(
+    "says the style comes from %s",
+    async (_source, options, text) => {
+      const dialog = await openVault(options).openDialog();
+
+      expect(dialog.styleNote()).toBe(text);
+    },
+  );
+
+  it("says the note keeps its style where this export picks another", async () => {
+    const vault = openVault({ note: { "zotlit-csl": NOTE_STYLE.id } });
+
+    const dialog = await vault.openDialog();
+    dialog.style.choose(VAULT_STYLE.id);
+
+    expect(dialog.styleNote()).toBe(
+      m.pandoc_export_style_changed({ style: NOTE_STYLE.title }),
+    );
+  });
+
+  it("names the style the finished export cites with", async () => {
+    await using stack = new AsyncDisposableStack();
+    const basePath = stack.adopt(
+      await mkdtemp(join(tmpdir(), "zotlit-export-")),
+      (dir) => rm(dir, { recursive: true, force: true }),
+    );
+    const vault = openVault({
+      note: {},
+      settings: { "citation.references-style": VAULT_STYLE.id },
+      basePath,
+    });
+
+    const dialog = await vault.openDialog();
+    dialog.confirm();
+
+    await vi.waitFor(() =>
+      expect(notices.shown).toContain(
+        m.notice_pandoc_export_done({
+          file: "draft.docx",
+          style: VAULT_STYLE.title,
+        }),
+      ),
+    );
+  });
+
+  it("stops rather than exporting in another style where Zotero lacks the vault style", async () => {
+    const vault = openVault({
+      note: {},
+      settings: { "citation.references-style": MISSING_STYLE_ID },
+    });
+
+    const dialog = await vault.openDialog();
+    dialog.confirm();
+
+    await vi.waitFor(() =>
+      expect(notices.showExportFailure).toHaveBeenCalledWith({
+        kind: "style-invalid",
+        style: MISSING_STYLE_ID,
+      }),
+    );
+    expect(vault.converted()).toBe(false);
   });
 
   it("names the Profile when its selected style is unavailable", async () => {

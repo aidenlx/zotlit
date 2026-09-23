@@ -112,6 +112,7 @@ describe("documentPresentation", () => {
       presentation: { styleId: "research-style" },
       profileStyle: {
         profile: "Bk3Qn7XvT2Lp",
+        label: "Research",
         target: FILE.path,
       },
     });
@@ -134,6 +135,7 @@ describe("documentPresentation", () => {
       presentation: { styleId: "default-style" },
       profileStyle: {
         profile: "Bk3Qn7XvT2Lp",
+        label: "Research",
         target: FILE.path,
       },
     });
@@ -188,6 +190,7 @@ describe("documentPresentation", () => {
       presentation: { styleId: "research-style" },
       profileStyle: {
         profile: "Bk3Qn7XvT2Lp",
+        label: "Research",
         target: FILE.path,
       },
     });
@@ -208,7 +211,11 @@ describe("documentPresentation", () => {
     ).toEqual({
       kind: "read",
       presentation: { styleId: "research-style" },
-      profileStyle: { profile: "Bk3Qn7XvT2Lp", target: FILE.path },
+      profileStyle: {
+        profile: "Bk3Qn7XvT2Lp",
+        label: "Research",
+        target: FILE.path,
+      },
     });
   });
 
@@ -229,6 +236,7 @@ describe("documentPresentation", () => {
       presentation: { styleId: "research-style" },
       profileStyle: {
         profile: "Bk3Qn7XvT2Lp",
+        label: "Research",
         target: FILE.path,
       },
     });

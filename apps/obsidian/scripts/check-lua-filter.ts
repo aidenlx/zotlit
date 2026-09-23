@@ -29,7 +29,7 @@ import "./source-alias.ts";
 // renderer supplies.
 const { Window } = await import("happy-dom");
 Object.assign(globalThis, { DOMParser: new Window().DOMParser });
-const { materializeCslStyle, resolveCslStyle } =
+const { materializeCslStyle, resolveCslStyle, resolveDocumentCslStyle } =
   await import("../src/services/pandoc/csl.ts");
 const { resolveInstalledStyle } =
   await import("../src/services/pandoc/styles.ts");
@@ -483,8 +483,10 @@ interface Cli {
   notes: string;
   /** The stub answers `zotlit:resolve` with this file. */
   response: string;
-  /** The stub answers `zotlit:csl` with this file. */
+  /** The stub answers `zotlit:csl style=` with this file. */
   cslResponse: string;
+  /** The stub answers `zotlit:csl file=` with this file. */
+  cslFileResponse: string;
   callLog: string;
   /** The Zotero data directory the installed styles sit in. */
   dataDir: string;
@@ -503,6 +505,7 @@ async function setupCli(workspace: string): Promise<Cli> {
   const callLog = join(workspace, "obsidian-call.txt");
   const response = join(workspace, "obsidian-response.json");
   const cslResponse = join(workspace, "obsidian-csl-response.json");
+  const cslFileResponse = join(workspace, "obsidian-csl-file-response.json");
   const dataDir = join(workspace, "zotero");
   const styles = join(dataDir, "styles");
   await mkdir(notes, { recursive: true });
@@ -515,8 +518,9 @@ async function setupCli(workspace: string): Promise<Cli> {
     [
       "#!/bin/sh",
       `printf '%s|%s\\n' "$PWD" "$*" >> "${callLog}"`,
-      'case "$1" in',
-      `zotlit:csl) exec cat "${cslResponse}" ;;`,
+      'case "$1 $2" in',
+      `"zotlit:csl file="*) exec cat "${cslFileResponse}" ;;`,
+      `zotlit:csl*) exec cat "${cslResponse}" ;;`,
       `*) exec cat "${response}" ;;`,
       "esac",
       "",
@@ -544,12 +548,28 @@ async function setupCli(workspace: string): Promise<Cli> {
     JSON.stringify(CSL_REFERENCES),
   );
   await writeFile(join(workspace, "pandoc-owned.csl"), PANDOC_OWNED_STYLE);
+  // A note with no style of its own takes the vault selection, which starts on
+  // Default: Pandoc keeps its own default style.
+  await writeFile(
+    cslFileResponse,
+    JSON.stringify(
+      await resolveDocumentCslStyle(join(notes, "input.md"), {
+        resolve: () => Promise.reject(new Error("Default resolves nothing")),
+        readStyle: () => ({
+          kind: "read",
+          styleId: null,
+          source: { kind: "vault" },
+        }),
+      }),
+    ),
+  );
 
   return {
     workspace,
     notes,
     response,
     cslResponse,
+    cslFileResponse,
     callLog,
     dataDir,
     store: join(workspace, "csl-store"),
@@ -569,10 +589,12 @@ async function runCli(
     to = "plain",
     standalone = false,
     csl,
+    failIfWarnings = false,
   }: {
     bibliography?: string;
     to?: string;
     standalone?: boolean;
+    failIfWarnings?: boolean;
     /** A style file the user passes on the command line, as `--csl` does. */
     csl?: string;
   } = {},
@@ -589,6 +611,7 @@ async function runCli(
       to,
       ...(standalone ? ["--standalone"] : []),
       ...(csl === undefined ? [] : ["--csl", csl]),
+      ...(failIfWarnings ? ["--fail-if-warnings"] : []),
     ],
     { cwd: cli.workspace, env: cli.env },
   );
@@ -599,6 +622,7 @@ async function checkCliVariant(workspace: string): Promise<void> {
   await checkCliResolves(cli);
   await checkCliErrorPayload(cli);
   await checkDependentStyle(cli);
+  await checkVaultStyle(cli);
   await checkDocumentLanguage(cli);
   await checkPandocOwnedStyle(cli);
   await checkStyleAmbiguity(cli);
@@ -619,6 +643,11 @@ async function checkCliResolves(cli: Cli): Promise<void> {
   const call = await readFile(cli.callLog, "utf8");
   check(name, call, `zotlit:resolve file=${join(cli.notes, "input.md")}`);
   check(name, call, `${cli.notes}|`);
+  check(
+    name,
+    run.stderr,
+    "ZotLit: citations use the Pandoc default style, Chicago author-date (from your vault settings).",
+  );
 }
 
 async function checkCliErrorPayload(cli: Cli): Promise<void> {
@@ -690,6 +719,52 @@ async function checkDependentStyle(cli: Cli): Promise<void> {
     await readFile(cli.callLog, "utf8"),
     `zotlit:csl style=${CSL_DEPENDENT}`,
   );
+  check(
+    name,
+    run.stderr,
+    "ZotLit: citations use Journal (German) (from this note).",
+  );
+}
+
+/**
+ * A note with no style of its own cites with the one ZotLit selects for it in
+ * Obsidian, and the run names that style without raising a Pandoc warning.
+ */
+async function checkVaultStyle(cli: Cli): Promise<void> {
+  checks += 1;
+  const name = "a note without its own style cites with the vault style";
+  await writeStyledInput(cli, ["title: Draft"]);
+  const input = join(cli.notes, "input.md");
+  const defaultResponse = await readFile(cli.cslFileResponse, "utf8");
+  await writeFile(
+    cli.cslFileResponse,
+    JSON.stringify(
+      await resolveDocumentCslStyle(input, {
+        resolve: (requested) =>
+          resolveInstalledStyle(cli.dataDir, { styleId: requested }),
+        materialize: (xml) => materializeCslStyle(xml, cli.store),
+        readStyle: () => ({
+          kind: "read",
+          styleId: CSL_DEPENDENT,
+          source: { kind: "vault" },
+        }),
+      }),
+    ),
+  );
+
+  const run = await runCli(cli, {
+    bibliography: "csl-references.json",
+    failIfWarnings: true,
+  });
+  await writeFile(cli.cslFileResponse, defaultResponse);
+  if (!checkRan(name, run)) return;
+  check(name, flatten(run.stdout), "[1]", "journal März");
+  check(name, await readFile(cli.callLog, "utf8"), `zotlit:csl file=${input}`);
+  check(
+    name,
+    run.stderr,
+    "ZotLit: citations use Journal (German) (from your vault settings).",
+  );
 }
 
 /** ZotLit resolves the style and leaves the document language alone. */
@@ -728,6 +803,11 @@ async function checkPandocOwnedStyle(cli: Cli): Promise<void> {
   if (!checkRan(name, run)) return;
   check(name, flatten(run.stdout), "pandoc-owned-citation");
   checkAbsent(name, await readFile(cli.callLog, "utf8"), "zotlit:csl");
+  check(
+    name,
+    run.stderr,
+    `ZotLit: citations use the style file ${join(cli.workspace, "pandoc-owned.csl")} (from the csl field or the --csl option).`,
+  );
 }
 
 /** Two style declarations name two owners, so the run stops instead of choosing. */

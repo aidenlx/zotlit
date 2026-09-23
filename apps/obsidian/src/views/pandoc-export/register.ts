@@ -7,6 +7,7 @@ import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
 import { parseIndexedKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { nodeFetch } from "@/lib/node-fetch";
@@ -23,6 +24,7 @@ import type { BibliographyItemRef } from "@/services/pandoc/bibliography";
 import {
   documentPresentation,
   effectivePresentation,
+  styleSourceOf,
   vaultPresentation,
 } from "@/services/pandoc/document-presentation";
 import { describeError, exportCitedDocument } from "@/services/pandoc/export";
@@ -126,28 +128,30 @@ export async function runPandocExport(
   const choices = await openPandocExportModal(app, {
     dataDir: zoteroPref.dataDir,
     referencesStyleId: effective.styleId,
+    styleSource: styleSourceOf(declared),
     notePath: absolutePath(app, file),
   });
   if (!choices) return;
 
-  // The style the note itself named, carried into this run unchanged, stops it
-  // where Zotero cannot supply that style: the run never falls back to another.
-  const style = await exportPresentation(
-    zoteroPref.dataDir,
-    { styleId: choices.styleId, locale: effective.locale },
-    { documentStyle: choices.styleId === declared.presentation.styleId },
-  );
+  // A style Zotero cannot supply stops the run, whichever place selected it:
+  // the run never falls back to another style.
+  const style = await exportPresentation(zoteroPref.dataDir, {
+    styleId: choices.styleId,
+    locale: effective.locale,
+  });
   if (style === null) {
+    const noteStyle = choices.styleId === declared.presentation.styleId;
     showExportFailure(
-      declared.profileStyle &&
-        choices.styleId === declared.presentation.styleId &&
-        typeof choices.styleId === "string"
+      noteStyle && declared.profileStyle && typeof choices.styleId === "string"
         ? { kind: "profile-style-invalid", styleId: choices.styleId }
-        : { kind: "document-style-invalid" },
+        : noteStyle
+          ? { kind: "document-style-invalid" }
+          : { kind: "style-invalid", style: choices.styleId ?? "" },
     );
     return;
   }
 
+  const { title: styleTitle, ...engineStyle } = style;
   using notice = new LazyNotice();
   notice.setMessage(m.notice_pandoc_export_running());
 
@@ -161,7 +165,7 @@ export async function runPandocExport(
         },
         markdown: await app.vault.cachedRead(file),
         format: choices.format,
-        ...style,
+        ...engineStyle,
       },
       exportPorts(deps, await pandocEngine.getEngine()),
     );
@@ -191,7 +195,10 @@ export async function runPandocExport(
     return;
   }
   new BaseNotice(
-    m.notice_pandoc_export_done({ file: basename(choices.destination) }),
+    m.notice_pandoc_export_done({
+      file: basename(choices.destination),
+      style: styleTitle,
+    }),
   );
 }
 
@@ -202,41 +209,26 @@ export async function runPandocExport(
  * content with that locale already applied; the embedded default style takes
  * the locale beside it.
  *
- * A vault selection Zotero cannot supply falls back to the embedded default
- * style, still in the Citation Locale the request named.
- *
- * @param documentStyle whether the request carries the style the note itself
- *   named, which speaks for that note alone.
- * @returns what the engine formats with, or `null` where the note's own style
- *   is unusable — that document stops rather than exporting in another style.
+ * @returns what the engine formats with and the style's title, or `null` where
+ *   the requested style is unusable — the document stops rather than exporting
+ *   in another style.
  */
 async function exportPresentation(
   dataDir: string,
   request: CslStyleRequest,
-  { documentStyle }: { documentStyle: boolean },
-): Promise<{ styleXml?: string; locale?: string } | null> {
+): Promise<{ styleXml?: string; locale?: string; title: string } | null> {
   const style = await resolveInstalledStyle(dataDir, request);
-  if (style.kind === "installed") return { styleXml: style.xml };
+  if (style.kind === "installed")
+    return { styleXml: style.xml, title: style.title };
   if (style.kind === "failed") {
-    const unusable = {
+    logger.warn("Stopping the export: the requested style is unusable", {
       styleId: style.styleId,
       parentId: style.parentId,
       reason: style.reason,
-    };
-    if (documentStyle) {
-      logger.warn(
-        "Stopping the export: the note's own style is unusable",
-        unusable,
-      );
-      return null;
-    }
-    logger.warn(
-      "Exporting with the embedded style: the chosen one is unusable",
-      unusable,
-    );
-    return { locale: request.locale ?? undefined };
+    });
+    return null;
   }
-  return { locale: style.locale };
+  return { locale: style.locale, title: citationStyleLabel() };
 }
 
 function exportPorts(

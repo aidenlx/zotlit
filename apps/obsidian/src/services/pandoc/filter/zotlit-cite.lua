@@ -5,8 +5,9 @@
 -- process, the sandbox region reads a pre-written resolve map. The build keeps
 -- exactly one of them; there is no runtime fallback between the two.
 --
--- The cli variant also resolves a document's `zotlit-csl` property to the CSL
--- file citeproc opens, through `zotlit:csl`.
+-- The cli variant also resolves the style a document renders with in Obsidian
+-- to the CSL file citeproc opens, through `zotlit:csl`, and names that style on
+-- stderr.
 
 PANDOC_VERSION:must_be_at_least(
   "3.1.1",
@@ -102,11 +103,10 @@ local function read_resolve_payload()
   )
 end
 
---- The absolute CSL file `zotlit:csl` materializes for one installed style ID.
-local function csl_path(style)
-  local context = string.format("zotlit-csl: %s", style)
+--- One `zotlit:csl` answer that names a style, or stops the run.
+local function csl_payload(arguments, context)
   local payload = decode_payload(
-    call_obsidian("csl-call-failed", { "zotlit:csl", "style=" .. style }),
+    call_obsidian("csl-call-failed", arguments),
     "csl-response-invalid",
     "zotlit:csl response"
   )
@@ -120,6 +120,11 @@ local function csl_path(style)
     end
     report_errors()
   end
+  return payload
+end
+
+--- The absolute CSL file a `zotlit:csl` answer carries.
+local function payload_path(payload, context)
   if type(payload.path) ~= "string" then
     add_error(
       "csl-response-invalid",
@@ -131,23 +136,62 @@ local function csl_path(style)
   return payload.path
 end
 
---- Replaces a sole `zotlit-csl` with the CSL path citeproc opens. A standard
---- `csl` stays Pandoc's own, and `lang` is left as the document declares it.
+--- Tells the reader which style the run cites with, and where it came from.
+local function announce(style, origin)
+  io.stderr:write(string.format("ZotLit: citations use %s (%s).\n", style, origin))
+end
+
+--- Where a `file` answer found its style, in the words the run reports.
+local function origin_of(source)
+  local kind = type(source) == "table" and source.kind or nil
+  if kind == "note" then
+    return "from this note"
+  elseif kind == "profile" then
+    return string.format("from the %s profile", source.label or "default")
+  end
+  return "from your vault settings"
+end
+
+--- Sets the CSL file citeproc opens to the style the note renders with in
+--- Obsidian: its sole `zotlit-csl`, or else the style ZotLit selects for it. A
+--- standard `csl` or `citation-style` stays Pandoc's own, and `lang` is left as
+--- the document declares it.
 local function resolve_style(meta)
   local requested = meta["zotlit-csl"]
-  if requested == nil then
+  if requested ~= nil then
+    if meta.csl ~= nil then
+      add_error(
+        "csl-ambiguous",
+        'The document declares its Citation and References Style twice: "csl" names a style file Pandoc opens, "zotlit-csl" names the Zotero-installed style ID ZotLit resolves. Keep one of them.'
+      )
+      report_errors()
+    end
+    local style = pandoc.utils.stringify(requested)
+    local context = string.format("zotlit-csl: %s", style)
+    local payload = csl_payload({ "zotlit:csl", "style=" .. style }, context)
+    meta.csl = pandoc.MetaString(payload_path(payload, context))
+    meta["zotlit-csl"] = nil
+    announce(payload.title or style, "from this note")
     return meta
   end
-  if meta.csl ~= nil then
-    add_error(
-      "csl-ambiguous",
-      'The document declares its Citation and References Style twice: "csl" names a style file Pandoc opens, "zotlit-csl" names the Zotero-installed style ID ZotLit resolves. Keep one of them.'
+
+  local standard = meta.csl or meta["citation-style"]
+  if standard ~= nil then
+    announce(
+      string.format("the style file %s", pandoc.utils.stringify(standard)),
+      "from the csl field or the --csl option"
     )
-    report_errors()
+    return meta
   end
-  local style = pandoc.utils.stringify(requested)
-  meta.csl = pandoc.MetaString(csl_path(style))
-  meta["zotlit-csl"] = nil
+
+  local context = "the style ZotLit selects for this note"
+  local payload = csl_payload({ "zotlit:csl", "file=" .. input_path() }, context)
+  if type(payload.styleId) ~= "string" then
+    announce("the Pandoc default style, Chicago author-date", origin_of(payload.source))
+    return meta
+  end
+  meta.csl = pandoc.MetaString(payload_path(payload, context))
+  announce(payload.title or payload.styleId, origin_of(payload.source))
   return meta
 end
 --@end
