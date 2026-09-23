@@ -754,12 +754,17 @@ it("writes nothing for a release that did not move, and keeps the selection", as
   using h = figureSelected();
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  expect(h.popup()).toBeNull();
   pointer(h.containerEl, "pointerup", BOTTOM_RIGHT);
-  click(h.page.div, BOTTOM_RIGHT);
+  h.page.div.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 492, bubbles: true }),
+  );
   await h.selection.adjusted;
 
   expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+  // The popup the press hid hangs again from the mark.
+  expect(h.popup()).not.toBeNull();
 });
 
 it("cancels a drag on Escape, writes nothing, and keeps the mark selected", async () => {
@@ -781,6 +786,7 @@ it("hides the Mark Popup during a drag and hangs it again on release", async () 
   expect(h.popup()).not.toBeNull();
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
+  expect(h.popup()).toBeNull();
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
   expect(h.popup()).toBeNull();
 
@@ -938,6 +944,18 @@ it("drops a range the document answers after Escape took its drag back", async (
   expect(h.store.getState().floating).toMatchObject({
     adjust: { phase: "pressed", proposal: QUOTE.position },
   });
+});
+
+it("hides the Mark Popup at the press on a range's end, before the document answers", async () => {
+  using h = quoteSelected();
+  expect(h.popup()).not.toBeNull();
+
+  pointer(h.page.div, "pointerdown", QUOTE_END);
+  expect(h.popup()).toBeNull();
+
+  pointer(h.containerEl, "pointerup", QUOTE_END);
+  await h.selection.adjusted;
+  expect(h.popup()).not.toBeNull();
 });
 
 it("leaves a press inside the selected highlight to the text selection", async () => {
