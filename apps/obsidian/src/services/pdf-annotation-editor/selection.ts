@@ -8,7 +8,7 @@
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
-import type { HoverParent, Scope } from "obsidian";
+import type { Scope } from "obsidian";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import { registerDomEvent } from "@/lib/disposables";
@@ -21,6 +21,7 @@ import type { EditingCapability } from "@/services/annotation-repository/capabil
 import type {
   AnnotationRecord,
   AnnotationRepository,
+  CommentDraft,
 } from "@/services/annotation-repository/service";
 import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -42,10 +43,23 @@ import {
   resolveMarkClick,
 } from "./hit-test";
 import type { HitPage, MarkSelectionPoint, PageBox, Point } from "./hit-test";
-import { MarkPopup, markPopupRow, renderMarkPopupRow } from "./mark-popup";
-import type { MarkPopupControlId } from "./mark-popup";
-import { sameCapability } from "./reader-surface-state";
-import type { ReaderSurfaceStore } from "./reader-surface-state";
+import { markPopupRow, renderMarkPopupRow } from "./mark-popup";
+import type { MarkPopupControlId, MarkPopupRowInput } from "./mark-popup";
+import type { MarkPopupHost } from "./mark-popup-host";
+import {
+  sameFlat,
+  selectSelectedRowInput,
+  selectFloatingHead,
+  selectMark,
+  selectSelectedDraft,
+  selectSelectedKey,
+  setCommenting,
+  stepStack,
+} from "./reader-surface-state";
+import type {
+  ReaderSurfaceState,
+  ReaderSurfaceStore,
+} from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
 import { markTargets, pageUnitSize } from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
@@ -63,8 +77,6 @@ export type AnnotationEdits = Pick<
   | "deleteAnnotation"
   | "discardCommentDraft"
   | "editComment"
-  | "mutationFor"
-  | "on"
   | "patchColor"
   | "retryCommentDraft"
   | "submitComment"
@@ -105,10 +117,10 @@ export interface MarkSelectionDeps {
   /** The PDF view's native key scope, active only while this editor is focused. */
   scope: Scope;
   /**
-   * The popup's hover parent. It is the binding rather than the PDF view, so
-   * Obsidian's Page Preview on that view keeps its own `hoverPopover`.
+   * The one popup of this view: a press inside it leaves the selection
+   * standing, and a scroll re-hangs it.
    */
-  parent: HoverParent;
+  popup: Pick<MarkPopupHost, "contains" | "sync">;
   /** The marks on screen, by page index, as the binding last painted them. */
   marks: () => ReadonlyMap<number, readonly PdfPageAnnotation[]>;
   /** Every Annotation of this Attachment, as the repository last answered. */
@@ -126,9 +138,8 @@ export interface MarkSelectionDeps {
   surfaceState: ReaderSurfaceStore;
   gestures: MarkGestures;
   /**
-   * The creation surfaces, which hear the same pointer, key and scroll gestures
-   * this class already owns. One listener set serves both, so the selected mark
-   * and a fresh text selection can never both have a popup open.
+   * The creation surfaces, which hear the same pointer and key gestures this
+   * class already owns. One listener set serves both.
    *
    * @see https://github.com/aidenlx/zotlit/issues/1150
    */
@@ -138,21 +149,17 @@ export interface MarkSelectionDeps {
 }
 
 /**
- * One selected mark per PDF view, and one popup retargeted across marks rather
- * than rebuilt per mark.
+ * One selected mark per PDF view, held in the Reader Surface State, with the
+ * row and the comment editor the popup host draws over it.
  */
 export class MarkSelection implements Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
-  #selected: string | null = null;
-  /** Whether the standing selection declined its popup, as a Landing's does. */
-  #quiet = false;
-  /** Where the click that made the selection fell, which a repeat click steps from. */
-  #at: MarkSelectionPoint | null = null;
-  /** The marks under that point, smallest first, which the stepper walks. */
-  #stack: readonly string[] = [];
-  #popup: MarkPopup | null = null;
-  #commenting = false;
+  /**
+   * Where the click that made the selection fell, which a repeat click steps
+   * from; `null` for a selection no click made.
+   */
+  #at: Pick<MarkSelectionPoint, "pageIndex" | "point"> | null = null;
   #commentEditor: HTMLTextAreaElement | null = null;
   #commentEditorLife: DisposableStack | null = null;
   #pressedAt: Point | null = null;
@@ -163,7 +170,8 @@ export class MarkSelection implements Disposable {
 
   /** The Indexed Keys the overlay draws as selected. */
   get selected(): ReadonlySet<string> {
-    return new Set(this.#selected === null ? [] : [this.#selected]);
+    const key = this.#selectedKey();
+    return new Set(key === null ? [] : [key]);
   }
 
   load(): void {
@@ -194,7 +202,7 @@ export class MarkSelection implements Disposable {
     // Scrolling does not bubble, so the page's own scroller is reached by
     // listening on the way down.
     this.#surfaces.use(
-      registerDomEvent(containerEl, "scroll", () => this.sync(), {
+      registerDomEvent(containerEl, "scroll", () => this.#deps.popup.sync(), {
         capture: true,
       }),
     );
@@ -216,71 +224,34 @@ export class MarkSelection implements Disposable {
     this.#surfaces.use(
       registerDomEvent(containerEl.doc, "selectionchange", () => {
         if (
-          this.#selected !== null &&
+          this.#selectedKey() !== null &&
           !selectionCollapsed(this.#deps.containerEl)
         )
           this.#apply(null);
         this.#deps.creation?.changed();
       }),
     );
+    const state = this.#deps.surfaceState;
     this.#surfaces.defer(
-      this.#deps.surfaceState.subscribe(
-        ({ capability }) => capability,
-        () => {
-          if (!this.#commenting) this.#popup?.refresh();
-          else this.#updateCommentControls();
+      state.subscribe(selectSelectedKey, (key) => {
+        this.#deps.repaint();
+        this.#deps.report(key === null ? [] : [key]);
+      }),
+    );
+    // The editor goes with the episode it was opened for: a closed editor, a
+    // stepped or dropped selection, and a hidden or conflicting draft alike.
+    this.#surfaces.defer(
+      state.subscribe(
+        selectFloatingHead,
+        ({ kind, commenting }) => {
+          if (kind !== "selected" || !commenting) this.#closeCommentEditor();
         },
-        { equalityFn: sameCapability },
+        { equalityFn: sameFlat },
       ),
     );
     this.#surfaces.defer(
-      this.#deps.annotations.on("mutation-changed", (annotationKey) => {
-        if (annotationKey === this.#selected && !this.#commenting) {
-          this.#popup?.refresh();
-        }
-      }),
+      state.subscribe(selectSelectedDraft, (draft) => this.#patchEditor(draft)),
     );
-    this.#surfaces.defer(
-      this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
-        if (annotationKey !== this.#selected) return;
-        if (!this.#commenting) {
-          this.#popup?.refresh();
-          return;
-        }
-        const draft = this.#deps.annotations.commentDraftFor(annotationKey);
-        if (draft?.state.kind === "conflict") {
-          if (!this.#commenting) return;
-          this.#closeCommentEditor();
-          this.#popup?.refresh();
-          return;
-        }
-        this.#updateCommentControls();
-        if (!draft) return;
-        if (!this.#commentEditor) return;
-        if (this.#commentEditor.value === draft.text) return;
-        const { selectionStart, selectionEnd } = this.#commentEditor;
-        this.#commentEditor.value = draft.text;
-        this.#commentEditor.setSelectionRange(
-          Math.min(selectionStart, draft.text.length),
-          Math.min(selectionEnd, draft.text.length),
-        );
-      }),
-    );
-    this.#surfaces.defer(
-      this.#deps.annotations.on("comment-draft-hidden", (annotationKey) => {
-        if (annotationKey !== this.#selected || !this.#commenting) return;
-        this.#closeCommentEditor();
-        this.#popup?.refresh();
-      }),
-    );
-    this.#surfaces.defer(
-      this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
-        if (annotationKey !== this.#selected) return;
-        this.#closeCommentEditor();
-        this.#apply(null);
-      }),
-    );
-    this.#surfaces.defer(() => this.#close());
   }
 
   /**
@@ -300,48 +271,10 @@ export class MarkSelection implements Disposable {
     this.#apply(annotationKey, null, { popup });
   }
 
-  /**
-   * The page moved or its marks were rebuilt: a selection whose Annotation is
-   * gone stands down, and the popup follows whatever is left. A mark that
-   * scrolled out of the reader hides the popup and keeps the selection.
-   */
-  sync(): void {
-    this.#deps.creation?.sync();
-    const key = this.#selected;
-    if (key !== null && !this.#deps.records().some((one) => one.key === key)) {
-      this.#apply(null);
-      return;
-    }
-    const anchor = this.#quiet ? null : this.#anchor();
-    if (!anchor) {
-      this.#close();
-      return;
-    }
-    if (this.#popup) {
-      this.#popup.retarget(anchor);
-      return;
-    }
-    const popup = new MarkPopup({
-      parent: this.#deps.parent,
-      anchor,
-      render: (row) => this.#renderRow(row),
-    });
-    popup.register(() => {
-      if (this.#popup === popup) this.#popup = null;
-    });
-    this.#popup = popup;
-  }
-
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
     this.#surfaces.dispose();
-  }
-
-  #close(): void {
-    this.#submitAndCloseCommentEditor();
-    const popup = this.#popup;
-    this.#popup = null;
-    popup?.hide();
+    if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
   }
 
   #apply(
@@ -353,23 +286,17 @@ export class MarkSelection implements Disposable {
     } | null = null,
     { popup = true }: { popup?: boolean } = {},
   ): void {
-    if (key !== this.#selected) {
+    if (key !== this.#selectedKey()) {
       this.#submitAndCloseCommentEditor();
     }
-    this.#quiet = !popup && key !== null;
-    this.#selected = key;
     this.#at =
       key !== null && at !== null
-        ? { key, pageIndex: at.pageIndex, point: at.point }
+        ? { pageIndex: at.pageIndex, point: at.point }
         : null;
-    this.#stack = at?.stack ?? (key === null ? [] : [key]);
-    this.#deps.repaint();
-    this.#deps.report(key === null ? [] : [key]);
-    // A popup that was already open now stands over another mark, so it says
-    // what that one offers; one this opened drew itself as it was built.
-    const open = this.#popup;
-    this.sync();
-    if (open !== null && this.#popup === open) open.refresh();
+    selectMark(this.#deps.surfaceState, key, {
+      stack: at?.stack,
+      quiet: !popup,
+    });
   }
 
   #click(event: MouseEvent): void {
@@ -383,13 +310,13 @@ export class MarkSelection implements Disposable {
       collapsed: selectionCollapsed(this.#deps.containerEl),
       onLink: linkUnder(event.target),
       altKey: event.altKey,
-      previous: this.#at,
+      previous: this.#previous(),
     });
     switch (outcome.kind) {
       case "ignore":
         return;
       case "deselect":
-        if (this.#selected !== null) this.#apply(null);
+        if (this.#selectedKey() !== null) this.#apply(null);
         return;
       case "select":
         if (page) {
@@ -412,7 +339,7 @@ export class MarkSelection implements Disposable {
     if (walk !== null) {
       const next = stepReadingOrder(
         readingOrder(this.#deps.records()),
-        this.#selected,
+        this.#selectedKey(),
         walk,
       );
       if (next === null) return;
@@ -421,7 +348,7 @@ export class MarkSelection implements Disposable {
       this.#deps.navigate(next);
       return;
     }
-    const key = this.#selected;
+    const key = this.#selectedKey();
     if (key === null) return;
     if (event.key === "Escape") {
       event.preventDefault();
@@ -458,20 +385,34 @@ export class MarkSelection implements Disposable {
    * of these.
    */
   #outsidePress(event: PointerEvent): void {
-    if (this.#selected === null) return;
+    if (this.#selectedKey() === null) return;
     const target = event.target as Node | null;
     if (this.#deps.containerEl.contains(target)) return;
-    if (this.#popup?.hoverEl.contains(target) === true) return;
+    if (this.#deps.popup.contains(target)) return;
     this.#apply(null);
   }
 
-  #renderRow(content: HTMLElement): void {
-    const annotation = this.#record();
-    if (!annotation) return;
-    if (this.#commenting) {
-      this.#renderCommentEditor(content, annotation);
+  /**
+   * The popup's content in selected mode, for the popup host: the row, or the
+   * comment editor while it is open. The editor is built into an empty content
+   * element only; a refresh patches its controls and leaves its caret alone.
+   */
+  renderPopup(content: HTMLElement): void {
+    const state = this.#state();
+    const input = selectSelectedRowInput(state);
+    if (!input) return;
+    if (state.floating.kind === "selected" && state.floating.commenting) {
+      if (!content.firstChild || !this.#commentEditor)
+        this.#renderCommentEditor(content, input);
+      else this.#updateCommentControls();
       return;
     }
+    this.#closeCommentEditor();
+    this.#renderRow(content, input);
+  }
+
+  #renderRow(content: HTMLElement, input: MarkPopupRowInput): void {
+    const { annotation, mutation } = input;
     content.empty();
     const column = content.createDiv({
       cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
@@ -479,21 +420,8 @@ export class MarkSelection implements Disposable {
     const row = column.createDiv({
       cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
     });
-    const stack = this.#stack.indexOf(annotation.key);
-    const mutation = this.#deps.annotations.mutationFor(annotation.key);
-    renderMarkPopupRow(
-      row,
-      markPopupRow({
-        annotation,
-        capability: this.#capability(),
-        mutation,
-        stack: {
-          index: stack === -1 ? 0 : stack,
-          total: stack === -1 ? 1 : this.#stack.length,
-        },
-        now: this.#deps.now(),
-      }),
-      (id, node) => this.#activate(id, node, annotation),
+    renderMarkPopupRow(row, markPopupRow(input), (id, node) =>
+      this.#activate(id, node, annotation),
     );
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
@@ -501,7 +429,7 @@ export class MarkSelection implements Disposable {
     const held = heldCommentDraft(
       this.#capability(),
       this.#deps.annotations.commentDraftFor(annotation.key),
-      this.#deps.now(),
+      input.now,
     );
     if (held) {
       const preview = column.createDiv({
@@ -557,19 +485,18 @@ export class MarkSelection implements Disposable {
     } else {
       this.#deps.annotations.discardCommentDraft(annotation.key);
     }
-    this.#popup?.refresh();
   }
 
-  #renderCommentEditor(
-    content: HTMLElement,
-    annotation: AnnotationRecord,
-  ): void {
+  #renderCommentEditor(content: HTMLElement, input: MarkPopupRowInput): void {
+    const { annotation } = input;
     const draft =
-      this.#deps.annotations.commentDraftFor(annotation.key) ??
+      selectSelectedDraft(this.#state()) ??
       this.#deps.annotations.editComment(annotation.key);
     if (!draft) {
       this.#closeCommentEditor();
-      this.#renderRow(content);
+      // Closed in the state too, so a later refresh does not try again.
+      setCommenting(this.#deps.surfaceState, false);
+      this.#renderRow(content, input);
       return;
     }
     this.#commentEditorLife?.[Symbol.dispose]();
@@ -587,8 +514,7 @@ export class MarkSelection implements Disposable {
       },
       onCancel: () => {
         this.#submitCommentEditor(annotation, true);
-        this.#closeCommentEditor();
-        this.#popup?.refresh();
+        setCommenting(this.#deps.surfaceState, false);
       },
       nativeSubmit: true,
     });
@@ -621,12 +547,11 @@ export class MarkSelection implements Disposable {
         const controls = commentEditorControls(
           this.#capability(),
           this.#deps.annotations.commentDraftFor(annotation.key),
-          this.#deps.now(),
+          this.#state().capabilityAt,
         );
         if (controls.manual || controls.readOnly) return;
         this.#submitCommentEditor(annotation, true);
-        this.#closeCommentEditor();
-        this.#popup?.refresh();
+        setCommenting(this.#deps.surfaceState, false);
       }),
     );
     editor.focus();
@@ -640,7 +565,7 @@ export class MarkSelection implements Disposable {
     const controls = commentEditorControls(
       this.#capability(),
       this.#deps.annotations.commentDraftFor(annotation.key),
-      this.#deps.now(),
+      this.#state().capabilityAt,
     );
     editor.readOnly = controls.readOnly;
     const status = editor.parentElement?.querySelector<HTMLElement>(
@@ -676,8 +601,24 @@ export class MarkSelection implements Disposable {
   #closeCommentEditor(): void {
     this.#commentEditorLife?.[Symbol.dispose]();
     this.#commentEditorLife = null;
-    this.#commenting = false;
     this.#commentEditor = null;
+  }
+
+  /**
+   * Takes the shared draft into the open editor, keeping the caret, so the
+   * Annotation View and the popup edit one draft.
+   */
+  #patchEditor(draft: CommentDraft | null): void {
+    const editor = this.#commentEditor;
+    if (!editor) return;
+    this.#updateCommentControls();
+    if (!draft || editor.value === draft.text) return;
+    const { selectionStart, selectionEnd } = editor;
+    editor.value = draft.text;
+    editor.setSelectionRange(
+      Math.min(selectionStart, draft.text.length),
+      Math.min(selectionEnd, draft.text.length),
+    );
   }
 
   #renderCommentConflict(
@@ -709,7 +650,6 @@ export class MarkSelection implements Disposable {
         } else {
           this.#deps.annotations.discardCommentDraft(annotation.key);
         }
-        this.#popup?.refresh();
       });
     }
   }
@@ -730,9 +670,8 @@ export class MarkSelection implements Disposable {
         );
         return;
       case "comment":
-        this.#commenting = true;
-        annotations.editComment(annotation.key);
-        this.#popup?.refresh();
+        if (annotations.editComment(annotation.key))
+          setCommenting(this.#deps.surfaceState, true);
         return;
       case "copy":
         if (annotation.text === null) return;
@@ -755,15 +694,7 @@ export class MarkSelection implements Disposable {
 
   /** Forward through the stack under the last click, wrapping at its end. */
   #step(): void {
-    const at = this.#at;
-    if (at === null || this.#stack.length < 2) return;
-    const next =
-      this.#stack[(this.#stack.indexOf(at.key) + 1) % this.#stack.length]!;
-    this.#apply(next, {
-      pageIndex: at.pageIndex,
-      point: at.point,
-      stack: this.#stack,
-    });
+    stepStack(this.#deps.surfaceState);
   }
 
   /**
@@ -785,12 +716,25 @@ export class MarkSelection implements Disposable {
   }
 
   #capability(): EditingCapability {
-    return this.#deps.surfaceState.getState().capability;
+    return this.#state().capability;
+  }
+
+  #state(): ReaderSurfaceState {
+    return this.#deps.surfaceState.getState();
+  }
+
+  #selectedKey(): string | null {
+    return selectSelectedKey(this.#state());
   }
 
   #record(): AnnotationRecord | null {
-    const key = this.#selected;
-    return this.#deps.records().find((record) => record.key === key) ?? null;
+    return selectSelectedRowInput(this.#state())?.annotation ?? null;
+  }
+
+  /** What is selected now, and where the click that selected it fell. */
+  #previous(): MarkSelectionPoint | null {
+    const key = this.#selectedKey();
+    return key !== null && this.#at !== null ? { key, ...this.#at } : null;
   }
 
   /** The page with marks under a client point, and where the point fell on it. */
@@ -805,13 +749,13 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * Where the popup hangs: the bottom centre of the selected mark's union rect,
-   * recomputed from the page as it stands now — a page re-render can wipe the
-   * mark while the popup is open. `null` once the mark is off screen, which
-   * hides the popup and keeps the selection.
+   * Where the popup hangs, for the popup host: the bottom centre of the
+   * selected mark's union rect, recomputed from the page as it stands now — a
+   * page re-render can wipe the mark while the popup is open. `null` once the
+   * mark is off screen, which hides the popup and keeps the selection.
    */
-  #anchor(): Point | null {
-    const key = this.#selected;
+  anchor(): Point | null {
+    const key = this.#selectedKey();
     if (key === null) return null;
     for (const [index, annotations] of this.#deps.marks()) {
       const drawn = annotations.filter(

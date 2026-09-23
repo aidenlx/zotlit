@@ -341,7 +341,7 @@ The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight 
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
 **Reader Surface State**:
-What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, and the clock a cooldown is read against. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
+What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, or a text selection about to become one), and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
 _Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 
 **Annotation Draft**:

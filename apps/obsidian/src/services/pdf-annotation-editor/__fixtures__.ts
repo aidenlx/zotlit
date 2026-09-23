@@ -1,12 +1,14 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import type { PDFPageViewport } from "obsidian";
+import { Scope } from "obsidian";
+import type { HoverParent, PDFPageViewport } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 import type { AnnotationPositionRaw } from "@zotlit/db";
+import type { PdfTextStructure } from "@zotlit/pdf-structure";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -25,6 +27,19 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
+import { MarkCreation } from "./creation";
+import type { AnnotationCreates } from "./creation";
+import { MarkPopupHost } from "./mark-popup-host";
+import {
+  createReaderSurfaceState,
+  ingestAnnotations,
+  listenAnnotationEvents,
+} from "./reader-surface-state";
+import type { AnnotationFacts } from "./reader-surface-state";
+import { groupAnnotationsByPage } from "./render";
+import type { OverlayPageView } from "./render";
+import { MarkSelection } from "./selection";
+import type { AnnotationEdits } from "./selection";
 import { resolveToolColors } from "./tools";
 import type { AnnotationToolColors, ToolColorStore } from "./tools";
 
@@ -376,4 +391,190 @@ export function failedIn(
   results: readonly { probe: string; ok: boolean }[],
 ): string[] {
   return results.filter(({ ok }) => !ok).map(({ probe }) => probe);
+}
+
+/**
+ * The repository, reduced to what the selected mark reads and writes through,
+ * with a hand on its announcements.
+ */
+export function annotationEdits() {
+  let commentDraft: {
+    annotationKey: string;
+    attachmentKey: string;
+    serverID: string;
+    baseline: string;
+    text: string;
+    state: { kind: "editing" };
+  } | null = null;
+  const listeners = new Map<string, Set<(...args: never[]) => void>>();
+  function on<K extends keyof AnnotationRepositoryEvents>(
+    event: K,
+    listener: AnnotationRepositoryEvents[K],
+  ): () => void {
+    const registered = listeners.get(event) ?? new Set();
+    const callback = listener as (...args: never[]) => void;
+    registered.add(callback);
+    listeners.set(event, registered);
+    return () => {
+      registered.delete(callback);
+    };
+  }
+  return {
+    mutationFor: vi.fn((_key: string): MutationState => IDLE),
+    patchColor: vi.fn(async () => IDLE),
+    deleteAnnotation: vi.fn(async () => IDLE),
+    commentDraftFor: vi.fn(() => commentDraft),
+    editComment: vi.fn((annotationKey: string, text = "") => {
+      commentDraft = {
+        annotationKey,
+        attachmentKey: "ABCD2345",
+        serverID: "test",
+        baseline: "",
+        text,
+        state: { kind: "editing" },
+      };
+      return commentDraft;
+    }),
+    submitComment: vi.fn(async () => IDLE),
+    discardCommentDraft: vi.fn(),
+    retryCommentDraft: vi.fn(async () => IDLE),
+    on: vi.fn(on),
+    hideCommentDraft() {
+      commentDraft = null;
+    },
+    emit(event: string, annotationKey: string) {
+      for (const listener of listeners.get(event) ?? []) {
+        listener(annotationKey as never);
+      }
+    },
+  };
+}
+
+/** The instant the reader surfaces read their clock at. */
+export const READER_NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
+
+export interface ReaderSurfacesOptions {
+  /** The PDF view's container, where the gestures are heard. */
+  containerEl: HTMLElement;
+  /** The one page the reader holds, at page index 0. */
+  page: OverlayPageView;
+  /** What the last read answered. */
+  records: readonly AnnotationRecord[];
+  capability?: EditingCapability;
+  annotations: AnnotationEdits & AnnotationCreates & AnnotationFacts;
+  /** This document's Structured Characters; `null` until one is open. */
+  structure?: PdfTextStructure | null;
+}
+
+/**
+ * The reader surfaces over one page, wired the way the binding wires them: one
+ * Reader Surface State, the Mark Selection and the Mark Creation that draw from
+ * it, and the one popup host over both.
+ */
+export function readerSurfaces({
+  containerEl,
+  page,
+  records,
+  capability = { kind: "writable" },
+  annotations,
+  structure = null,
+}: ReaderSurfacesOptions) {
+  const parent: HoverParent = { hoverPopover: null };
+  const colors = toolColors();
+  const store = createReaderSurfaceState({
+    colors: colors.current(),
+    capability,
+    now: READER_NOW,
+  });
+  let held = records;
+  ingestAnnotations(store, held, annotations);
+  const listening = listenAnnotationEvents(store, annotations);
+  const gestures = {
+    revealAnnotation: vi.fn(),
+    reportBlockedGesture: vi.fn(),
+    allowEditing: vi.fn(),
+  };
+  const reported: (readonly string[])[] = [];
+  const navigated: string[] = [];
+  const revealed: string[] = [];
+  const popup = {
+    contains: (node: Node | null) => host.contains(node),
+    sync: () => host.sync(),
+  };
+  const creation = new MarkCreation({
+    containerEl,
+    popup,
+    attachmentKey: "RGRPDF24",
+    pages: () => [{ pageIndex: 0, view: page }],
+    records: () => held,
+    structure: () => structure,
+    repaint: vi.fn(),
+    reveal: (annotationKey) => revealed.push(annotationKey),
+    renderCapability: vi.fn(),
+    colors,
+    surfaceState: store,
+    annotations,
+    now: () => READER_NOW,
+  });
+  const selection = new MarkSelection({
+    containerEl,
+    scope: new Scope(),
+    popup,
+    marks: () =>
+      store.getState().marksVisible ? groupAnnotationsByPage(held) : new Map(),
+    records: () => held,
+    pageAt: (pageIndex) => (pageIndex === 0 ? page : null),
+    repaint: vi.fn(),
+    navigate: (key) => navigated.push(key),
+    report: (keys) => reported.push(keys),
+    annotations,
+    surfaceState: store,
+    gestures,
+    creation,
+    now: () => READER_NOW,
+  });
+  selection.load();
+  const host = new MarkPopupHost({
+    parent,
+    store,
+    variants: {
+      selected: {
+        anchor: () => selection.anchor(),
+        render: (content) => selection.renderPopup(content),
+      },
+      create: {
+        anchor: () => creation.anchor(),
+        render: (content) => creation.renderPopup(content),
+        unanchored: () => creation.unanchored(),
+      },
+    },
+  });
+
+  return {
+    store,
+    host,
+    selection,
+    creation,
+    parent,
+    colors,
+    gestures,
+    reported,
+    navigated,
+    revealed,
+    /** What a refresh does once the read answers: the records, replaced. */
+    replace(next: readonly AnnotationRecord[]) {
+      held = next;
+      ingestAnnotations(store, next, annotations);
+    },
+    /** What the binding does once a page re-rendered. */
+    sync() {
+      host.sync();
+    },
+    [Symbol.dispose]() {
+      selection[Symbol.dispose]();
+      creation[Symbol.dispose]();
+      host[Symbol.dispose]();
+      listening.dispose();
+    },
+  };
 }

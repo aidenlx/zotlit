@@ -1,24 +1,18 @@
 // @vitest-environment happy-dom
-import { Menu, Scope as MockScope } from "@mock/obsidian";
-import type { Scope } from "obsidian";
+import { Menu } from "@mock/obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type {
-  AnnotationRecord,
-  AnnotationRepositoryEvents,
-} from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
-import { annotation, pageView } from "./__fixtures__";
-import { createReaderSurfaceState } from "./reader-surface-state";
-import { groupAnnotationsByPage } from "./render";
+import {
+  annotation,
+  annotationEdits,
+  pageView,
+  readerSurfaces,
+} from "./__fixtures__";
+import { setCommenting } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
-import { MarkSelection } from "./selection";
-import { resolveToolColors } from "./tools";
-
-const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
 /**
  * Two marks on page one, the second inside the first, in PDF points. A US
@@ -62,60 +56,6 @@ function rect({
     }) as DOMRect;
 }
 
-/** The repository, reduced to what the selection reads and writes through. */
-function annotationEdits() {
-  let commentDraft: {
-    annotationKey: string;
-    attachmentKey: string;
-    serverID: string;
-    baseline: string;
-    text: string;
-    state: { kind: "editing" };
-  } | null = null;
-  const listeners = new Map<string, Set<(...args: never[]) => void>>();
-  function on<K extends keyof AnnotationRepositoryEvents>(
-    event: K,
-    listener: AnnotationRepositoryEvents[K],
-  ): () => void {
-    const registered = listeners.get(event) ?? new Set();
-    const callback = listener as (...args: never[]) => void;
-    registered.add(callback);
-    listeners.set(event, registered);
-    return () => {
-      registered.delete(callback);
-    };
-  }
-  return {
-    mutationFor: vi.fn((): MutationState => IDLE),
-    patchColor: vi.fn(async () => IDLE),
-    deleteAnnotation: vi.fn(async () => IDLE),
-    commentDraftFor: vi.fn(() => commentDraft),
-    editComment: vi.fn((annotationKey: string, text = "") => {
-      commentDraft = {
-        annotationKey,
-        attachmentKey: "ABCD2345",
-        serverID: "test",
-        baseline: "",
-        text,
-        state: { kind: "editing" },
-      };
-      return commentDraft;
-    }),
-    submitComment: vi.fn(async () => IDLE),
-    discardCommentDraft: vi.fn(),
-    retryCommentDraft: vi.fn(async () => IDLE),
-    on: vi.fn(on),
-    hideCommentDraft() {
-      commentDraft = null;
-    },
-    emit(event: string, annotationKey: string) {
-      for (const listener of listeners.get(event) ?? []) {
-        listener(annotationKey as never);
-      }
-    },
-  };
-}
-
 function setup(
   records: readonly AnnotationRecord[] = [PARAGRAPH, WORD],
   capability: EditingCapability = { kind: "writable" },
@@ -137,69 +77,25 @@ function setup(
     height: 792,
   });
 
-  const parent = { hoverPopover: null };
   const annotations = annotationEdits();
-  const gestures = {
-    revealAnnotation: vi.fn(),
-    reportBlockedGesture: vi.fn(),
-    allowEditing: vi.fn(),
-  };
-  const reported: (readonly string[])[] = [];
-  const navigated: string[] = [];
-  // The creation surfaces hear the same gestures; this records what reaches
-  // them, so a key the selected-mark keymap took can be told from one it left.
-  const creation = {
-    press: vi.fn(),
-    settle: vi.fn(),
-    changed: vi.fn(),
-    key: vi.fn(),
-    sync: vi.fn(),
-  };
-  let held = records;
-  const selection = new MarkSelection({
+  const reader = readerSurfaces({
     containerEl,
-    scope: new MockScope() as unknown as Scope,
-    parent,
-    marks: () => groupAnnotationsByPage(held),
-    records: () => held,
-    pageAt: (pageIndex) =>
-      pageIndex === 0 ? (page as unknown as OverlayPageView) : null,
-    repaint: vi.fn(),
-    navigate: (key) => navigated.push(key),
-    report: (keys) => reported.push(keys),
-    annotations,
-    surfaceState: createReaderSurfaceState({
-      colors: resolveToolColors(),
-      capability,
-      now: NOW,
-    }),
-    gestures,
-    creation,
-    now: () => NOW,
+    page: page as unknown as OverlayPageView,
+    records,
+    capability,
+    annotations: { ...annotations, createAnnotation: vi.fn() },
   });
-  selection.load();
 
   return {
-    selection,
+    ...reader,
     containerEl,
     page,
-    parent,
     annotations,
-    gestures,
-    creation,
-    reported,
-    navigated,
-    /** What the last read answered, for a refresh that retires a mark. */
-    replace(next: readonly AnnotationRecord[]) {
-      held = next;
-    },
-    /** The open popup, once its zero-length wait has run. */
     popup() {
-      vi.advanceTimersByTime(0);
-      return parent.hoverPopover as { staticPos: unknown } | null;
+      return reader.parent.hoverPopover as { staticPos: unknown } | null;
     },
     [Symbol.dispose]() {
-      selection[Symbol.dispose]();
+      reader[Symbol.dispose]();
       containerEl.remove();
     },
   };
@@ -436,7 +332,7 @@ it("re-anchors the popup when the page is rendered again", () => {
     width: 1224,
     height: 1584,
   });
-  h.selection.sync();
+  h.sync();
 
   expect(h.popup()).toBe(opened);
   expect(opened?.staticPos).toEqual({ x: 440, y: 364 });
@@ -474,7 +370,7 @@ it("drops a selection whose Annotation the last read retired", () => {
   click(h.page.div, ON_WORD);
 
   h.replace([PARAGRAPH]);
-  h.selection.sync();
+  h.sync();
 
   expect(h.selection.selected.size).toBe(0);
   expect(h.reported).toEqual([["WORD2222"], []]);
@@ -628,4 +524,78 @@ it("leaves nothing behind once the binding disposes it", () => {
   click(h.page.div, ON_WORD);
   expect(h.reported).toEqual([["WORD2222"]]);
   h.containerEl.remove();
+});
+
+it("stands the selection down at once when its Annotation is deleted", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  expect(h.popup()).not.toBeNull();
+
+  h.annotations.emit("annotation-deleted", "WORD2222");
+
+  expect(h.selection.selected.size).toBe(0);
+  expect(h.popup()).toBeNull();
+  expect(h.reported).toEqual([["WORD2222"], []]);
+});
+
+it("takes a draft typed in the Annotation View into the open editor, keeping the caret", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  const editor = popup.hoverEl.querySelector("textarea")!;
+  editor.value = "worth";
+  editor.setSelectionRange(2, 2);
+
+  h.annotations.editComment("WORD2222", "worth quoting");
+  h.annotations.emit("comment-draft-changed", "WORD2222");
+
+  expect(popup.hoverEl.querySelector("textarea")).toBe(editor);
+  expect(editor.value).toBe("worth quoting");
+  expect([editor.selectionStart, editor.selectionEnd]).toEqual([2, 2]);
+});
+
+it("keeps the row's nodes through a mutation announced again unchanged", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const del = () =>
+    popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='delete']");
+  const drawn = del();
+
+  h.annotations.emit("mutation-changed", "WORD2222");
+  expect(del()).toBe(drawn);
+
+  h.annotations.mutationFor.mockReturnValue({ kind: "pending" });
+  h.annotations.emit("mutation-changed", "WORD2222");
+  expect(del()?.getAttribute("aria-disabled")).toBe("true");
+});
+
+it("selects a landed mark without a popup, and opens one for the next selection", () => {
+  using h = setup();
+
+  h.selection.select("WORD2222", { popup: false });
+  h.sync();
+
+  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect(h.reported).toEqual([["WORD2222"]]);
+  expect(h.popup()).toBeNull();
+
+  h.selection.select("PARA1111");
+  expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
+});
+
+it("falls back to the row, and closes the editor, when no draft can be started", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  h.annotations.editComment.mockReturnValue(null as never);
+
+  setCommenting(h.store, true);
+
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  expect(popup.hoverEl.querySelector("textarea")).toBeNull();
+  expect(
+    popup.hoverEl.querySelector("[data-zt-verb='comment']"),
+  ).not.toBeNull();
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
 });

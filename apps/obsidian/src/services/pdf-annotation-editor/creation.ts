@@ -7,8 +7,6 @@
 // commits at once in that tool's colour and the popup reopens on the new mark.
 //
 // @see https://github.com/aidenlx/zotlit/issues/1150
-import type { HoverParent } from "obsidian";
-
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
@@ -41,16 +39,22 @@ import type {
   CreationToolbarNodes,
 } from "./creation-toolbar";
 import type { Point } from "./hit-test";
-import { MarkPopup } from "./mark-popup";
+import type { MarkPopupHost } from "./mark-popup-host";
 import {
   arm,
-  sameCapability,
+  captureSelection,
+  clearFloating,
+  selectCreateRowInput,
   sameFlatList,
   selectCreationToolbar,
+  setCommenting,
+  setInFlight,
   setToolColor,
   toggleMarks,
 } from "./reader-surface-state";
 import type {
+  AnchorAt,
+  Floating,
   ReaderSurfaceState,
   ReaderSurfaceStore,
 } from "./reader-surface-state";
@@ -67,13 +71,6 @@ import type { MarkTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
 
-/** Where the popup hangs, as a fraction of its page box, so a zoom keeps it. */
-interface AnchorAt {
-  pageIndex: number;
-  fx: number;
-  fy: number;
-}
-
 /** One page of the reader, as selection capture and the anchor read it. */
 export interface ReaderPage {
   pageIndex: number;
@@ -85,8 +82,7 @@ export type AnnotationCreates = Pick<AnnotationRepository, "createAnnotation">;
 
 /**
  * The gestures the reader's own listeners hand to the creation surfaces. One
- * listener set serves both the selected mark and the fresh selection, so the
- * two floating surfaces can never both be open.
+ * listener set serves both the selected mark and the fresh selection.
  */
 export interface CreationGestures {
   /** A pointer went down anywhere in the reader's window. */
@@ -97,15 +93,13 @@ export interface CreationGestures {
   changed: () => void;
   /** A keystroke the selected-mark keymap did not take. */
   key: (event: KeyboardEvent) => void;
-  /** The pages moved, so the popup re-hangs from where the selection now sits. */
-  sync: () => void;
 }
 
 export interface MarkCreationDeps {
   /** The PDF view's container: what scrolls, and what the gestures come from. */
   containerEl: HTMLElement;
-  /** The popup's hover parent, which is the binding rather than the PDF view. */
-  parent: HoverParent;
+  /** The one popup of this view, which a press inside leaves standing. */
+  popup: Pick<MarkPopupHost, "contains">;
   /** The Attachment the new Annotation hangs from, by Indexed Key. */
   attachmentKey: string;
   /** Every page the reader has built, in any order. */
@@ -135,13 +129,15 @@ export interface MarkCreationDeps {
 export class MarkCreation implements CreationGestures, Disposable {
   readonly #deps;
   readonly #surfaces = new DisposableStack();
-  #popup: MarkPopup | null = null;
-  /** The settled selection the popup is acting on; `null` while none is. */
-  #captured: SelectedText | null = null;
-  #anchorAt: AnchorAt | null = null;
-  #commenting = false;
-  #comment = "";
-  #inFlight = false;
+  /** The create-mode row the popup last built; `null` until one is. */
+  #row: HTMLElement | null = null;
+  /** The comment sheet's editor, which holds the comment until the save. */
+  #sheet: HTMLTextAreaElement | null = null;
+  /**
+   * Whether a create is waiting on Zotero, the armed tool's among them, so a
+   * drag released meanwhile makes nothing.
+   */
+  #writing = false;
   #creating = Promise.resolve();
   #settling = Promise.resolve();
   /** Counts gestures, so a selection placed late never outlives its own. */
@@ -190,21 +186,13 @@ export class MarkCreation implements CreationGestures, Disposable {
         equalityFn: sameFlatList,
       }),
     );
-    this.#surfaces.defer(
-      state.subscribe(
-        ({ capability }) => capability,
-        () => this.#popup?.refresh(),
-        { equalityFn: sameCapability },
-      ),
-    );
     this.#deps.renderCapability(nodes.capabilitySlot);
     return nodes;
   }
 
   press(event: PointerEvent): void {
     this.#gesture++;
-    const inPopup =
-      this.#popup?.hoverEl.contains(event.target as Node) === true;
+    const inPopup = this.#deps.popup.contains(event.target as Node);
     // The press that follows a settled selection dismisses its popup, wherever
     // it lands — the popup is only ever opened from a release.
     if (!inPopup) this.#clear();
@@ -215,23 +203,32 @@ export class MarkCreation implements CreationGestures, Disposable {
   settle(): void {
     const onPage = this.#pressedOnPage;
     this.#pressedOnPage = false;
-    if (!onPage || this.#inFlight) return;
+    if (!onPage || this.#writing) return;
     // The press that began this gesture bumped the count; a later press or
     // the disposal bumps it again, which leaves this placement stale.
     const gesture = this.#gesture;
     this.#settling = this.#capture().then(
       (placed) => {
-        if (!placed || gesture !== this.#gesture || this.#inFlight) return;
+        if (!placed || gesture !== this.#gesture || this.#writing) return;
         // The selection can collapse while the page's characters load.
         if (selectionCollapsed(this.#deps.containerEl)) return;
-        this.#captured = placed.captured;
-        this.#anchorAt = placed.anchorAt;
-        const { armed } = this.#state();
+        const { armed, colors } = this.#state();
         if (armed) {
-          this.#commit(armed, this.#state().colors[armed]);
+          // The armed tool commits at once and opens no popup, so the
+          // selection never floats.
+          this.#creating = this.#create({
+            type: armed,
+            color: colors[armed],
+            captured: placed.captured,
+            comment: "",
+          });
           return;
         }
-        this.#open();
+        if (placed.anchorAt)
+          captureSelection(this.#deps.surfaceState, {
+            captured: placed.captured,
+            anchorAt: placed.anchorAt,
+          });
       },
       (error: unknown) => {
         logger.warn("Could not place the text selection on the page", {
@@ -244,9 +241,10 @@ export class MarkCreation implements CreationGestures, Disposable {
   changed(): void {
     // The comment sheet takes focus, which collapses the window selection; the
     // geometry the popup is acting on was captured when the drag ended.
-    if (this.#commenting || this.#inFlight) return;
-    if (this.#captured !== null && selectionCollapsed(this.#deps.containerEl))
-      this.#clear();
+    const floating = this.#floating();
+    if (floating.kind !== "create" || floating.commenting || floating.inFlight)
+      return;
+    if (selectionCollapsed(this.#deps.containerEl)) this.#clear();
   }
 
   key(event: KeyboardEvent): void {
@@ -260,7 +258,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     const tool =
       key === "h" ? "highlight" : key === "u" ? "underline" : (null as null);
     const swatch = ANNOTATION_COLORS[Number(key) - 1];
-    const waiting = this.#captured !== null;
+    const waiting = this.#floating().kind === "create";
 
     // Arming a tool and colouring one move controls the block has already
     // disabled, so under a block they stand still: the binding's own notice is
@@ -281,35 +279,38 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     if (key !== "c" || !waiting) return;
     event.preventDefault();
-    this.#setCommenting(true);
+    setCommenting(this.#deps.surfaceState, true);
   }
 
-  sync(): void {
-    if (!this.#popup) return;
-    const anchor = this.#anchor();
-    if (anchor) this.#popup.retarget(anchor);
-    else this.#clear();
+  /**
+   * The selection's page left the screen, for the popup host: the selection
+   * goes with its popup, as the next press would take it.
+   */
+  unanchored(): void {
+    this.#clear();
   }
 
   [Symbol.dispose](): void {
     this.#gesture++;
-    this.#closePopup();
     this.#surfaces.dispose();
+    this.#clear();
   }
 
   /** The tool the toolbar shows as armed, or `null` while none is. */
   #arm(tool: MarkTool | null): void {
     arm(this.#deps.surfaceState, tool);
-    this.#popup?.refresh();
   }
 
   #setColor(tool: MarkTool, color: string): void {
     setToolColor(this.#deps.surfaceState, this.#deps.colors, { tool, color });
-    this.#popup?.refresh();
   }
 
   #state(): ReaderSurfaceState {
     return this.#deps.surfaceState.getState();
+  }
+
+  #floating(): Floating {
+    return this.#state().floating;
   }
 
   /**
@@ -319,23 +320,18 @@ export class MarkCreation implements CreationGestures, Disposable {
    * @returns whether a level was there to step back from.
    */
   #stepBack(): boolean {
-    if (this.#commenting) {
-      this.#setCommenting(false);
+    const floating = this.#floating();
+    if (floating.kind === "create" && floating.commenting) {
+      setCommenting(this.#deps.surfaceState, false);
       return true;
     }
-    if (this.#captured !== null) {
+    if (floating.kind === "create") {
       this.#clear();
       return true;
     }
     if (this.#state().armed === null) return false;
     this.#arm(null);
     return true;
-  }
-
-  #setCommenting(open: boolean): void {
-    this.#commenting = open;
-    if (!open) this.#comment = "";
-    this.#popup?.refresh();
   }
 
   #toolbarActivate(id: string, node: HTMLElement): void {
@@ -372,64 +368,51 @@ export class MarkCreation implements CreationGestures, Disposable {
     );
   }
 
-  /** The popup in create mode, over the selection this gesture settled on. */
-  #open(): void {
-    const anchor = this.#anchor();
-    if (!anchor) return;
-    if (this.#popup) {
-      this.#popup.retarget(anchor);
-      this.#popup.refresh();
+  /**
+   * The popup's row in create mode, for the popup host. Into an empty content
+   * element it builds the row and, while commenting, the sheet; into the one it
+   * built it redraws the row and leaves the sheet and its text standing.
+   */
+  renderPopup(content: HTMLElement): void {
+    const input = selectCreateRowInput(this.#state());
+    if (!input) return;
+    const blocked =
+      capabilityBlock(input.capability, input.now)?.reason ?? null;
+    let built = false;
+    if (!content.firstChild || !this.#row) {
+      built = true;
+      // The popup's own content element is the row in selected mode, so create
+      // mode lays its row and its sheet out in a column of its own rather than
+      // restyling what both modes share.
+      const column = content.createDiv({
+        cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
+      });
+      this.#row = column.createDiv({
+        cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
+      });
+      this.#sheet = input.commenting
+        ? renderCommentSheet(column.createDiv(), {
+            value: "",
+            blocked,
+            onSave: () => {
+              const tool = this.#state().armed ?? "highlight";
+              this.#commit(tool, this.#state().colors[tool]);
+            },
+            onCancel: () => setCommenting(this.#deps.surfaceState, false),
+          })
+        : null;
+    }
+    renderCreatePopupRow(this.#row, createPopupRow(input), (action) =>
+      this.#activate(action),
+    );
+    const editor = this.#sheet;
+    if (!editor) return;
+    if (!built) {
+      editor.readOnly = blocked !== null;
+      const hint = editor.nextElementSibling;
+      if (hint) hint.textContent = blocked ?? m.pdf_create_popup_comment_hint();
       return;
     }
-    const popup = new MarkPopup({
-      parent: this.#deps.parent,
-      anchor,
-      render: (content) => this.#renderPopup(content),
-    });
-    popup.register(() => {
-      if (this.#popup === popup) this.#popup = null;
-    });
-    this.#popup = popup;
-  }
-
-  #renderPopup(content: HTMLElement): void {
-    content.empty();
-    // The popup's own content element is the row in selected mode, so create
-    // mode lays its row and its sheet out in a column of its own rather than
-    // restyling what both modes share.
-    const column = content.createDiv({
-      cls: ["zt:flex", "zt:flex-col", "zt:gap-1"],
-    });
-    const row = column.createDiv({
-      cls: ["zt:flex", "zt:items-center", "zt:gap-0.5"],
-    });
-    renderCreatePopupRow(
-      row,
-      createPopupRow({
-        armed: this.#state().armed,
-        colors: this.#state().colors,
-        capability: this.#capability(),
-        mutation: this.#inFlight ? { kind: "pending" } : { kind: "idle" },
-        commenting: this.#commenting,
-        now: this.#deps.now(),
-      }),
-      (action) => this.#activate(action),
-    );
-    if (!this.#commenting) return;
-    const editor = renderCommentSheet(column.createDiv(), {
-      value: this.#comment,
-      blocked:
-        capabilityBlock(this.#capability(), this.#deps.now())?.reason ?? null,
-      onSave: (comment) => {
-        this.#comment = comment;
-        const tool = this.#state().armed ?? "highlight";
-        this.#commit(tool, this.#state().colors[tool]);
-      },
-      onCancel: () => this.#setCommenting(false),
-    });
-    editor.addEventListener("input", () => {
-      this.#comment = editor.value;
-    });
     editor.focus();
     editor.setSelectionRange(editor.value.length, editor.value.length);
   }
@@ -447,12 +430,18 @@ export class MarkCreation implements CreationGestures, Disposable {
         this.#commit(tool, action.color);
         return;
       }
-      case "comment":
-        this.#setCommenting(!this.#commenting);
+      case "comment": {
+        const floating = this.#floating();
+        setCommenting(
+          this.#deps.surfaceState,
+          floating.kind === "create" && !floating.commenting,
+        );
         return;
+      }
       case "copy": {
-        const text = this.#captured?.text;
-        if (text === undefined) return;
+        const floating = this.#floating();
+        if (floating.kind !== "create") return;
+        const { text } = floating.captured;
         void toast.promise(navigator.clipboard.writeText(text), {
           success: m.annot_view_copied_text(),
           error: m.annot_view_copy_failed(),
@@ -472,14 +461,28 @@ export class MarkCreation implements CreationGestures, Disposable {
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
   #commit(type: MarkTool, color: string): void {
-    if (this.#inFlight) return;
-    this.#creating = this.#create(type, color);
+    const floating = this.#floating();
+    if (floating.kind !== "create" || this.#writing) return;
+    this.#creating = this.#create({
+      type,
+      color,
+      captured: floating.captured,
+      comment: floating.commenting ? (this.#sheet?.value ?? "") : "",
+    });
   }
 
-  async #create(type: MarkTool, color: string): Promise<void> {
-    const captured = this.#captured;
+  async #create({
+    type,
+    color,
+    captured,
+    comment,
+  }: {
+    type: MarkTool;
+    color: string;
+    captured: SelectedText;
+    comment: string;
+  }): Promise<void> {
     const structure = this.#deps.structure();
-    if (!captured) return;
     // A blocked gesture is answered by the binding's own edit-gesture listener,
     // which hears every key of the shared edit keymap.
     if (!editingLive(this.#capability())) return;
@@ -487,8 +490,8 @@ export class MarkCreation implements CreationGestures, Disposable {
       logger.warn("No text structure stands for this PDF; nothing was created");
       return;
     }
-    this.#inFlight = true;
-    this.#popup?.refresh();
+    this.#writing = true;
+    setInFlight(this.#deps.surfaceState, true);
     let created = false;
     try {
       const position = {
@@ -510,7 +513,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         {
           type,
           color,
-          comment: this.#comment,
+          comment,
           text: captured.text,
           pageLabel,
           sortIndex,
@@ -528,29 +531,21 @@ export class MarkCreation implements CreationGestures, Disposable {
       created = true;
       this.#deps.reveal(outcome.annotationKey);
     } finally {
-      this.#inFlight = false;
+      this.#writing = false;
+      setInFlight(this.#deps.surfaceState, false);
       if (created) {
         this.#clear();
         this.#collapse();
-      } else {
-        this.#popup?.refresh();
       }
     }
   }
 
   /** The gesture is over: the popup, the sheet, and the selection all go. */
   #clear(): void {
-    this.#captured = null;
-    this.#anchorAt = null;
-    this.#commenting = false;
-    this.#comment = "";
-    this.#closePopup();
-  }
-
-  #closePopup(): void {
-    const popup = this.#popup;
-    this.#popup = null;
-    popup?.hide();
+    this.#row = null;
+    this.#sheet = null;
+    if (this.#floating().kind === "create")
+      clearFloating(this.#deps.surfaceState);
   }
 
   /** Drops the window selection, as Zotero's reader does once a mark is made. */
@@ -598,16 +593,19 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
-   * Where the popup hangs: the bottom centre of the selection's own boxes,
-   * measured against the page as it now stands, so a zoom or a re-render moves
-   * the popup with the text. `null` once the page is off screen.
+   * Where the popup hangs, for the popup host: the bottom centre of the
+   * selection's own boxes, measured against the page as it now stands, so a
+   * zoom or a re-render moves the popup with the text. `null` once the page is
+   * off screen.
    */
-  #anchor(): Point | null {
-    const at = this.#anchorAt;
-    const page =
-      at &&
-      this.#deps.pages().find(({ pageIndex }) => pageIndex === at.pageIndex);
-    if (!at || !page) return null;
+  anchor(): Point | null {
+    const floating = this.#floating();
+    if (floating.kind !== "create") return null;
+    const at = floating.anchorAt;
+    const page = this.#deps
+      .pages()
+      .find(({ pageIndex }) => pageIndex === at.pageIndex);
+    if (!page) return null;
     const rect = pageContentBox(page.view.div);
     if (rect.width <= 0 || rect.height <= 0) return null;
     const point = {
