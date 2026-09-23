@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
+import { Keymap } from "obsidian";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
@@ -151,6 +152,22 @@ function key(node: HTMLElement, name: string, target?: HTMLElement): void {
       key: name,
       bubbles: true,
       cancelable: true,
+    }),
+  );
+}
+
+/** One key with modifiers held, as Obsidian delivers it to the reader. */
+function chord(
+  node: HTMLElement,
+  name: string,
+  modifiers: Pick<KeyboardEventInit, "shiftKey" | "altKey" | "metaKey">,
+): void {
+  node.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: name,
+      bubbles: true,
+      cancelable: true,
+      ...modifiers,
     }),
   );
 }
@@ -899,4 +916,114 @@ it("leaves a press inside the selected highlight to the text selection", async (
 
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect(h.adjustRange).not.toHaveBeenCalled();
+});
+
+it("commits one Geometry Edit for Shift+ArrowRight on the selected image, with a recomputed Sort Index", async () => {
+  using h = figureSelected();
+
+  chord(h.containerEl, "ArrowRight", { shiftKey: true });
+  await h.selection.adjusted;
+
+  // Five points wider, on its right edge.
+  const position = {
+    kind: "pdf-rects",
+    pageIndex: 0,
+    rects: [[100, 300, 305, 500]],
+  };
+  expect(h.sortIndex).toHaveBeenCalledWith(position);
+  expect(h.annotations.patchGeometry).toHaveBeenCalledTimes(1);
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
+    position,
+    sortIndex: "00000|000012|00517",
+  });
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+});
+
+it("nudges the selected image five points down the page for Alt+ArrowDown", async () => {
+  using h = figureSelected();
+
+  chord(h.containerEl, "ArrowDown", { altKey: true });
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
+    position: {
+      kind: "pdf-rects",
+      pageIndex: 0,
+      rects: [[100, 295, 300, 495]],
+    },
+    sortIndex: "00000|000012|00517",
+  });
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+});
+
+it("keeps walking the reading order with a plain arrow while an image is selected", async () => {
+  using h = setup([FIGURE, WORD]);
+  click(h.page.div, ON_FIGURE);
+
+  key(h.containerEl, "ArrowUp");
+  key(h.containerEl, "ArrowRight");
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect([...h.selection.selected]).not.toEqual(["FIGR3333"]);
+});
+
+it("writes nothing for a Geometry Edit key while editing is not live", async () => {
+  using h = figureSelected({ kind: "read-only", reason: "library-read-only" });
+
+  chord(h.containerEl, "ArrowRight", { shiftKey: true });
+  chord(h.containerEl, "ArrowDown", { shiftKey: true });
+  chord(h.containerEl, "ArrowDown", { altKey: true });
+  await h.selection.adjusted;
+
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect([...h.selection.selected]).toEqual(["FIGR3333"]);
+});
+
+it("steps a highlight's start for Mod+Shift+ArrowLeft, saving its quoted text", async () => {
+  vi.spyOn(Keymap, "isModifier").mockImplementation(
+    (event, modifier) => modifier === "Mod" && event.metaKey,
+  );
+  using h = quoteSelected();
+  h.adjustRange.mockResolvedValue({
+    pageIndex: 0,
+    rects: [[95, 300, 200, 312]],
+    text: "a quote",
+  });
+
+  chord(h.containerEl, "ArrowLeft", { shiftKey: true, metaKey: true });
+  await h.selection.adjusted;
+
+  expect(h.adjustRange).toHaveBeenCalledWith({
+    position: QUOTE.position,
+    end: "start",
+    step: "left",
+  });
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("QUOT5555", {
+    position: {
+      kind: "pdf-rects",
+      pageIndex: 0,
+      rects: [[95, 300, 200, 312]],
+    },
+    sortIndex: "00000|000012|00517",
+    text: "a quote",
+  });
+});
+
+it("steps a highlight's end for Shift+ArrowDown, and writes nothing for a step the document refuses", async () => {
+  using h = quoteSelected();
+
+  chord(h.containerEl, "ArrowDown", { shiftKey: true });
+  await h.selection.adjusted;
+
+  expect(h.adjustRange).toHaveBeenCalledWith({
+    position: QUOTE.position,
+    end: "end",
+    step: "down",
+  });
+  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  expect([...h.selection.selected]).toEqual(["QUOT5555"]);
 });

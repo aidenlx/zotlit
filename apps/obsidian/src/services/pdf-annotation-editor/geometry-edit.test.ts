@@ -12,6 +12,8 @@ import {
   gripAt,
   gripCursor,
   handleLayout,
+  keyedPosition,
+  keyEdit,
   proposePosition,
   rangeGripAt,
   rangeHandles,
@@ -391,4 +393,135 @@ it("gives the start the press where a one-character range's strips overlap", () 
 it("points a range handle's cursor along the text, as the page is turned", () => {
   expect(gripCursor("end", 0)).toBe("ew-resize");
   expect(gripCursor("start", 90)).toBe("ns-resize");
+});
+
+/** The one rect a key press proposes for the image, or `null` if refused. */
+function keyImage(
+  edit: "resize" | "nudge",
+  arrow: "left" | "right" | "up" | "down",
+  confirmed = IMAGE,
+) {
+  const keyed = keyedPosition({ confirmed, edit, arrow, viewBox: VIEW_BOX });
+  return keyed && (keyed.proposal as PdfRectsPosition).rects[0];
+}
+
+it("reads which Geometry Edit a modified arrow asks of each kind of mark", () => {
+  const plain = { shift: false, alt: false, mod: false };
+  expect(keyEdit("highlight", { ...plain, shift: true })).toEqual({
+    kind: "range",
+    end: "end",
+  });
+  expect(keyEdit("underline", { ...plain, shift: true, mod: true })).toEqual({
+    kind: "range",
+    end: "start",
+  });
+  expect(keyEdit("image", { ...plain, shift: true })).toEqual({
+    kind: "resize",
+  });
+  expect(keyEdit("ink", { ...plain, alt: true })).toEqual({ kind: "nudge" });
+  // Plain arrows walk the reading order, and the other chords are no edit.
+  expect(keyEdit("image", plain)).toBeNull();
+  expect(keyEdit("highlight", plain)).toBeNull();
+  expect(keyEdit("highlight", { ...plain, alt: true })).toBeNull();
+  expect(keyEdit("image", { ...plain, shift: true, mod: true })).toBeNull();
+  expect(keyEdit("image", { ...plain, shift: true, alt: true })).toBeNull();
+  expect(keyEdit("note", { ...plain, shift: true })).toBeNull();
+});
+
+it("resizes an image by five points on its right edge, or its bottom, as Zotero's keys do", () => {
+  // The image is [100, 300, 300, 500]: Right and Left move x2, Down and Up
+  // move y1, the foot of the rect in PDF space.
+  expect(keyImage("resize", "right")).toEqual([100, 300, 305, 500]);
+  expect(keyImage("resize", "left")).toEqual([100, 300, 295, 500]);
+  expect(keyImage("resize", "down")).toEqual([100, 295, 300, 500]);
+  expect(keyImage("resize", "up")).toEqual([100, 305, 300, 500]);
+});
+
+it("stops a keyed resize at ten points and at the page's view box", () => {
+  const small = rects([[100, 300, 112, 312]]);
+  expect(keyImage("resize", "left", small)).toEqual([100, 300, 110, 312]);
+  expect(keyImage("resize", "up", small)).toEqual([100, 302, 112, 312]);
+  // The view box is [10, 20, 622, 812].
+  const edge = rects([[100, 22, 620, 500]]);
+  expect(keyImage("resize", "right", edge)).toEqual([100, 22, 622, 500]);
+  expect(keyImage("resize", "down", edge)).toEqual([100, 20, 620, 500]);
+});
+
+it("nudges an image by five points each way", () => {
+  expect(keyImage("nudge", "left")).toEqual([95, 300, 295, 500]);
+  expect(keyImage("nudge", "right")).toEqual([105, 300, 305, 500]);
+  expect(keyImage("nudge", "up")).toEqual([100, 305, 300, 505]);
+  expect(keyImage("nudge", "down")).toEqual([100, 295, 300, 495]);
+});
+
+it("refuses a nudge that would bring the mark within five points of the page's edge", () => {
+  // Zotero moves a mark only while it stands a step and a padding, ten
+  // points, inside the view box [10, 20, 622, 812] on the side it moves to.
+  const nearLeft = rects([[19.9, 300, 100, 400]]);
+  expect(keyImage("nudge", "left", nearLeft)).toBeNull();
+  expect(keyImage("nudge", "left", rects([[20, 300, 100, 400]]))).toEqual([
+    15, 300, 95, 400,
+  ]);
+  expect(
+    keyImage("nudge", "right", rects([[100, 300, 612.1, 400]])),
+  ).toBeNull();
+  expect(keyImage("nudge", "down", rects([[100, 29.9, 200, 400]]))).toBeNull();
+  expect(keyImage("nudge", "up", rects([[100, 300, 200, 802.1]]))).toBeNull();
+  // The far side is no bar.
+  expect(keyImage("nudge", "right", nearLeft)).toEqual([24.9, 300, 105, 400]);
+});
+
+it("scales ink by five points with its proportions held, about its top-left corner", () => {
+  const key = (arrow: "left" | "right" | "up" | "down") => {
+    const keyed = keyedPosition({
+      confirmed: WIDE,
+      edit: "resize",
+      arrow,
+      viewBox: VIEW_BOX,
+    })!.proposal as PdfInkPosition;
+    const round = (value: number) => Math.round(value * 1e6) / 1e6;
+    return {
+      width: round(keyed.width),
+      paths: keyed.paths.map((path) => path.map(round)),
+    };
+  };
+  // The strokes span [100, 300, 300, 400], twice as wide as high. Right
+  // makes them five points wider, 205 by 102.5, the top-left (100, 400) held.
+  expect(key("right").paths).toEqual([
+    [100, 297.5, 202.5, 348.75],
+    [253.75, 379.5, 305, 400],
+  ]);
+  // Down makes them five points higher, so ten points wider: 210 by 105.
+  expect(key("down").paths).toEqual([
+    [100, 295, 205, 347.5],
+    [257.5, 379, 310, 400],
+  ]);
+  // Left and Up shrink them the same way, the pen following the scale.
+  expect(key("left").paths[0]).toEqual([100, 302.5, 197.5, 351.25]);
+  expect(key("up").paths[0]).toEqual([100, 305, 195, 352.5]);
+  expect(key("down").width).toBe(2.1);
+});
+
+it("nudges ink by five points, and refuses near the page's edge", () => {
+  const nudged = keyedPosition({
+    confirmed: WIDE,
+    edit: "nudge",
+    arrow: "right",
+    viewBox: VIEW_BOX,
+  })!.proposal as PdfInkPosition;
+  expect(nudged).toEqual(
+    ink([
+      [105, 300, 205, 350],
+      [255, 380, 305, 400],
+    ]),
+  );
+  const low = ink([[100, 25, 200, 125]]);
+  expect(
+    keyedPosition({
+      confirmed: low,
+      edit: "nudge",
+      arrow: "down",
+      viewBox: VIEW_BOX,
+    }),
+  ).toBeNull();
 });

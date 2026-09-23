@@ -32,7 +32,10 @@ export interface ConflictPanel {
    * no value and so has none to compare.
    */
   values: readonly ConflictValue[];
-  /** The question a delete asks instead of showing two values. */
+  /**
+   * The question a delete asks instead of showing two values, or what a
+   * Geometry Edit's conflict is about, since a position has no value in words.
+   */
   prompt: string | null;
   actions: readonly ConflictAction[];
 }
@@ -71,12 +74,25 @@ export function conflictPanel(conflict: WriteConflict): ConflictPanel {
     };
   }
   if (conflict.write === "geometry") {
-    // A geometry names no value in words yet, so the two verbs stand alone.
-    // @see https://github.com/aidenlx/zotlit/issues/1205
+    // A position has no value in words, so the prompt names what moved. A
+    // highlight's or underline's quoted text does, and stands beside it.
+    const { attempted, fresh } = conflict;
     return {
       title: m.annot_view_conflict_title(),
-      values: [],
-      prompt: null,
+      values:
+        attempted.text === undefined
+          ? []
+          : [
+              {
+                label: m.annot_view_conflict_fresh(),
+                value: fresh.text || m.annot_view_conflict_no_value(),
+              },
+              {
+                label: m.annot_view_conflict_attempted(),
+                value: attempted.text,
+              },
+            ],
+      prompt: m.annot_view_conflict_geometry_prompt(),
       actions: [
         { kind: "apply-again", label: m.annot_view_conflict_apply_again() },
         discard,

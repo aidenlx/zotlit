@@ -337,6 +337,143 @@ export function proposePosition({
   return { ...confirmed, rects: [next] };
 }
 
+/** An arrow key, by the way it points on the page. */
+export type Arrow = "left" | "right" | "up" | "down";
+
+/**
+ * How far one key press moves or resizes an image or ink, in PDF points.
+ *
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`, `STEP`
+ */
+export const KEY_STEP = 5;
+
+/**
+ * How close to the page's edge a nudge may bring a mark, in PDF points.
+ *
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`, `PADDING`
+ */
+export const KEY_PADDING = 5;
+
+/**
+ * The Geometry Edit a modified arrow key asks of the selected mark: one end
+ * of a text range stepped, an image or ink resized, or either nudged.
+ */
+export type KeyEdit =
+  | { kind: "range"; end: RangeGrip }
+  | { kind: "resize" }
+  | { kind: "nudge" };
+
+/**
+ * Which Geometry Edit a modified arrow key asks of a kind of mark, as
+ * Zotero's reader reads its keys: `Shift` moves the end of a highlight's or
+ * underline's range, and `Mod`+`Shift` its start; `Shift` resizes an image
+ * or ink, and `Alt` nudges it.
+ *
+ * @param modifiers the keys held, `mod` being the platform's command key.
+ * @returns `null` for a chord that asks no edit of this mark: a plain arrow,
+ *   which walks the reading order, among them.
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`
+ */
+export function keyEdit(
+  type: AnnotationRecord["type"],
+  { shift, alt, mod }: { shift: boolean; alt: boolean; mod: boolean },
+): KeyEdit | null {
+  if (type === "highlight" || type === "underline") {
+    return shift && !alt ? { kind: "range", end: mod ? "start" : "end" } : null;
+  }
+  if (!movesByBody(type) || mod || shift === alt) return null;
+  return shift ? { kind: "resize" } : { kind: "nudge" };
+}
+
+/**
+ * The position one key press proposes for an image or ink, and the grip the
+ * press stands for.
+ *
+ * `resize` grows or shrinks by {@link KEY_STEP}, as Zotero's reader does: an
+ * image's right edge follows Right and Left and its foot follows Down and
+ * Up, held at ten points and the view box as a drag is; ink scales with its
+ * proportions held about its top-left corner, Right and Left by five points
+ * of width and Down and Up by five points of height.
+ *
+ * `nudge` moves the mark by {@link KEY_STEP}, and not at all while the side
+ * it moves to stands within a step and a {@link KEY_PADDING} of the view box.
+ * Zotero measures that from the page's origin; this measures it from the
+ * view box's own edge, which is the same on a page drawn from the origin.
+ *
+ * @returns `null` for a refused nudge, and for a mark keys do not move.
+ * @see ~/repo/zotlit-repo/zotero/reader/src/pdf/pdf-view.js — `_handleKeyDown`
+ */
+export function keyedPosition({
+  confirmed,
+  edit,
+  arrow,
+  viewBox,
+}: {
+  confirmed: EditablePosition;
+  edit: "resize" | "nudge";
+  arrow: Arrow;
+  viewBox: readonly number[];
+}): { grip: Grip; proposal: EditablePosition } | null {
+  const box =
+    confirmed.kind === "pdf-ink"
+      ? inkBox(confirmed)
+      : (confirmed.rects[0] ?? null);
+  if (!box) return null;
+  const [x1, y1, x2, y2] = box;
+  const step = KEY_STEP;
+  const propose = (grip: Grip, [dx, dy]: PdfPoint) => ({
+    grip,
+    proposal: proposePosition({
+      confirmed,
+      grip,
+      from: [0, 0],
+      to: [dx, dy],
+      viewBox,
+    }),
+  });
+  if (edit === "nudge") {
+    const [left = 0, bottom = 0, right = 0, top = 0] = viewBox;
+    const room = step + KEY_PADDING;
+    const allowed =
+      arrow === "left"
+        ? x1 - left >= room
+        : arrow === "right"
+          ? right - x2 >= room
+          : arrow === "down"
+            ? y1 - bottom >= room
+            : top - y2 >= room;
+    if (!allowed) return null;
+    const [dx, dy] = ARROW_TRAVEL[arrow];
+    return propose("body", [dx * step, dy * step]);
+  }
+  if (confirmed.kind === "pdf-ink") {
+    // The top-left stays: the bottom-right corner is what scales. Down and Up
+    // step the height, which the proportions turn into width.
+    const ratio = (x2 - x1) / (y2 - y1);
+    const width =
+      arrow === "right"
+        ? step
+        : arrow === "left"
+          ? -step
+          : arrow === "down"
+            ? step * ratio
+            : -step * ratio;
+    return propose("br", [width, 0]);
+  }
+  const [dx, dy] = ARROW_TRAVEL[arrow];
+  return arrow === "left" || arrow === "right"
+    ? propose("r", [dx * step, 0])
+    : propose("b", [0, dy * step]);
+}
+
+/** Which way an arrow points in PDF space, which counts up from the foot. */
+const ARROW_TRAVEL: Record<Arrow, PdfPoint> = {
+  left: [-1, 0],
+  right: [1, 0],
+  up: [0, 1],
+  down: [0, -1],
+};
+
 /**
  * The ink a drag proposes. The body carries every stroke point by the travel,
  * stopping when the stroke box meets the page's view box. A corner scales the

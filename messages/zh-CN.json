@@ -2308,6 +2308,7 @@
   "annot_view_conflict_attempted": "您的编辑",
   "annot_view_conflict_no_value": "无",
   "annot_view_conflict_delete_prompt": "要删除 Zotero 当前保存的这条标注吗？",
+  "annot_view_conflict_geometry_prompt": "这条标注的位置已在 Zotero 中更改。可以再次应用你的调整，或放弃调整以保留 Zotero 中的位置。",
   "annot_view_conflict_apply_again": "再次应用",
   "annot_view_conflict_delete_anyway": "仍然删除",
   "annot_view_conflict_discard": "放弃",
@@ -2322,5 +2323,6 @@
   "pdf_toolbar_hide_marks": "隐藏 Zotero 标注",
   "pdf_create_popup_comment_hint": "按 Ctrl+Enter（Windows）或 Command+Enter（macOS）保存",
   "pdf_create_popup_copy": "复制所选文本",
-  "pdf_create_failed": "标注未创建。{reason}"
+  "pdf_create_failed": "标注未创建。{reason}",
+  "pdf_adjust_failed": "标注未调整。{reason}"
 }

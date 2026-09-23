@@ -9,6 +9,7 @@
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
 import type { App } from "obsidian";
+import { Keymap } from "obsidian";
 
 import type {
   PdfPosition,
@@ -30,8 +31,14 @@ import type {
   AnnotationRepository,
   CommentDraft,
 } from "@/services/annotation-repository/service";
-import { writeFailureMessage } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
+import {
+  writeFailureMessage,
+  writeFailureReason,
+} from "@/services/annotation-repository/write";
+import type {
+  MutationState,
+  WriteFailure,
+} from "@/services/annotation-repository/write";
 import { conflictPanel } from "@/views/annot-view/card-conflict";
 import {
   commentEditorControls,
@@ -57,12 +64,15 @@ import {
   handleLayout,
   isEditablePosition,
   isRangeGrip,
+  keyedPosition,
+  keyEdit,
   proposePosition,
   RANGE_HANDLE_PADDING,
   rangeGripAt,
   rangeHandles,
 } from "./geometry-edit";
 import type {
+  Arrow,
   EditablePosition,
   Grip,
   PdfPoint,
@@ -450,9 +460,11 @@ export class MarkSelection implements Disposable {
   }
 
   #key(event: KeyboardEvent): void {
-    // A modified keystroke belongs to Obsidian's own commands, and one inside a
-    // text field belongs to the field.
-    if (event.ctrlKey || event.metaKey || inTextEntry(event.target)) return;
+    // A keystroke inside a text field belongs to the field.
+    if (inTextEntry(event.target)) return;
+    if (this.#geometryKey(event)) return;
+    // A modified keystroke belongs to Obsidian's own commands.
+    if (event.ctrlKey || event.metaKey) return;
     const walk =
       event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : null;
     if (walk !== null) {
@@ -498,6 +510,74 @@ export class MarkSelection implements Disposable {
     event.preventDefault();
     if (this.#live()) this.#write(this.#deps.annotations.deleteAnnotation(key));
     else this.#deps.gestures.reportBlockedGesture();
+  }
+
+  /**
+   * A modified arrow on the selected mark is one Geometry Edit, committed
+   * through the same path a released drag takes: `Shift` steps a text range's
+   * end, `Mod`+`Shift` its start, `Shift` resizes an image or ink, and `Alt`
+   * nudges it. While editing is not live the key does nothing, and while an
+   * earlier edit is still on its way it waits for none.
+   *
+   * @returns whether the key was one of these, which no other verb then takes.
+   */
+  #geometryKey(event: KeyboardEvent): boolean {
+    const arrow = ARROWS[event.key];
+    const record = this.#record();
+    if (!arrow || !record || !isEditablePosition(record.position)) return false;
+    const mod = Keymap.isModifier(event, "Mod");
+    // `Ctrl` on macOS, and `Meta` elsewhere, is no platform key.
+    if ((event.ctrlKey || event.metaKey) && !mod) return false;
+    const edit = keyEdit(record.type, {
+      shift: event.shiftKey,
+      alt: event.altKey,
+      mod,
+    });
+    if (!edit) return false;
+    if (!this.#live() || this.#dragging || selectAdjust(this.#state()))
+      return true;
+    event.preventDefault();
+    const store = this.#deps.surfaceState;
+    const { position } = record;
+    if (edit.kind === "range") {
+      if (position.kind !== "pdf-rects") return true;
+      beginAdjust(store, { grip: edit.end, from: [0, 0] });
+      const ask = ++this.#rangeAsk;
+      this.#adjusting = this.#deps
+        .adjustRange({ position, end: edit.end, step: arrow })
+        .then((selected) => {
+          if (ask !== this.#rangeAsk) return;
+          if (!selected) {
+            cancelAdjust(store);
+            return;
+          }
+          moveAdjust(store, rectsPositionOf(selected), selected.text);
+          return this.#settle(record.key);
+        })
+        .catch((error: unknown) => {
+          cancelAdjust(store);
+          logger.warn("Could not step a highlight's range", {
+            error,
+            annotationKey: record.key,
+          });
+        });
+      return true;
+    }
+    const page = this.#deps.pageAt(position.pageIndex);
+    const keyed =
+      page &&
+      keyedPosition({
+        confirmed: position,
+        edit: edit.kind,
+        arrow,
+        viewBox: page.viewport.viewBox,
+      });
+    if (!keyed) return true;
+    beginAdjust(store, { grip: keyed.grip, from: [0, 0] });
+    moveAdjust(store, keyed.proposal);
+    const saving = this.#settle(record.key);
+    if (saving) this.#adjusting = saving;
+    return true;
   }
 
   /**
@@ -658,23 +738,7 @@ export class MarkSelection implements Disposable {
       })
       .then((selected) => {
         if (ask !== this.#rangeAsk || !selected) return;
-        moveAdjust(
-          store,
-          {
-            kind: "pdf-rects",
-            pageIndex: selected.pageIndex,
-            rects: selected.rects.map(([x1, y1, x2, y2]) => [x1, y1, x2, y2]),
-            ...(selected.nextPageRects && {
-              nextPageRects: selected.nextPageRects.map(([x1, y1, x2, y2]) => [
-                x1,
-                y1,
-                x2,
-                y2,
-              ]),
-            }),
-          },
-          selected.text,
-        );
+        moveAdjust(store, rectsPositionOf(selected), selected.text);
       })
       .catch((error: unknown) => {
         logger.warn("Could not place a highlight's dragged range", {
@@ -688,13 +752,7 @@ export class MarkSelection implements Disposable {
     this.#releasePointer();
     const key = this.#selectedKey();
     const store = this.#deps.surfaceState;
-    const settle = () => {
-      const text = selectAdjust(store.getState())?.text;
-      const proposal = endAdjust(store);
-      return key !== null && proposal
-        ? this.#saveGeometry(key, proposal, text)
-        : undefined;
-    };
+    const settle = () => (key === null ? undefined : this.#settle(key));
     // A text range's last proposal may still be on its way from the document.
     if (isRangeGrip(selectAdjust(store.getState())?.grip ?? "body")) {
       this.#adjusting = this.#ranging.then(settle);
@@ -702,6 +760,18 @@ export class MarkSelection implements Disposable {
     }
     const saving = settle();
     if (saving) this.#adjusting = saving;
+  }
+
+  /**
+   * Ends the adjustment and saves its proposal, unless it changed nothing.
+   *
+   * @returns the save, or `undefined` where nothing is written.
+   */
+  #settle(key: string): Promise<void> | undefined {
+    const store = this.#deps.surfaceState;
+    const text = selectAdjust(store.getState())?.text;
+    const proposal = endAdjust(store);
+    return proposal ? this.#saveGeometry(key, proposal, text) : undefined;
   }
 
   #cancelDrag(): void {
@@ -749,7 +819,9 @@ export class MarkSelection implements Disposable {
       sortIndex,
       ...(text !== undefined && { text }),
     });
-    this.#write(outcome);
+    this.#write(outcome, (failure, now) =>
+      m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
+    );
     if ((await outcome).kind === "idle") await this.#deps.refreshed();
     end();
   }
@@ -990,12 +1062,19 @@ export class MarkSelection implements Disposable {
    * the notice is raised here, once, naming the reason. Nothing was drawn ahead
    * of Zotero, so a failure needs no undo.
    *
+   * @param message the notice for a failure; a Geometry Edit names itself.
    * @see apps/obsidian/policies/ui-seams.md
    */
-  #write(outcome: Promise<MutationState>): void {
+  #write(
+    outcome: Promise<MutationState>,
+    message: (
+      failure: WriteFailure,
+      now: Temporal.Instant,
+    ) => string = writeFailureMessage,
+  ): void {
     void outcome.then((state) => {
       if (state.kind !== "failed") return;
-      new BaseNotice(writeFailureMessage(state.failure, this.#deps.now()));
+      new BaseNotice(message(state.failure, this.#deps.now()));
     });
   }
 
@@ -1057,6 +1136,31 @@ export class MarkSelection implements Disposable {
     }
     return null;
   }
+}
+
+/** The arrow keys, by the way they point on the page. */
+const ARROWS: Partial<Record<string, Arrow>> = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+};
+
+/** The position a highlight's or underline's placed range stores. */
+function rectsPositionOf(selected: SelectedText): EditablePosition {
+  return {
+    kind: "pdf-rects",
+    pageIndex: selected.pageIndex,
+    rects: selected.rects.map(([x1, y1, x2, y2]) => [x1, y1, x2, y2]),
+    ...(selected.nextPageRects && {
+      nextPageRects: selected.nextPageRects.map(([x1, y1, x2, y2]) => [
+        x1,
+        y1,
+        x2,
+        y2,
+      ]),
+    }),
+  };
 }
 
 function pageBoxOf(page: OverlayPageView): PageBox {
