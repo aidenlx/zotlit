@@ -21,6 +21,7 @@ export type {
   PagePoint,
   RangeAdjustment,
   RangeEnd,
+  RangeStep,
   SelectedText,
   TextLayerSelection,
   TextSelection,

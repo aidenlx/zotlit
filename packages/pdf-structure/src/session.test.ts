@@ -153,4 +153,18 @@ describe("a Reader Session's range adjustment", () => {
     expect(spilled).toMatchObject({ pageIndex: 0, text: "7 7" });
     expect(spilled?.nextPageRects).toHaveLength(1);
   });
+
+  it("reads the next page for an end stepped past its page's last character", async () => {
+    const { source, textCalls } = stubSource();
+    const structure = new PdfTextStructure(source);
+    const seven = { pageIndex: 0, rects: [[72, 694, 78, 708]] as const };
+
+    const stepped = await structure.adjustRange({
+      position: seven,
+      end: "end",
+      step: "right",
+    });
+    expect(textCalls).toEqual([0, 1]);
+    expect(stepped).toMatchObject({ pageIndex: 0, text: "7 7" });
+  });
 });

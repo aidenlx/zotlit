@@ -107,15 +107,19 @@ export class PdfTextStructure {
   }
 
   /**
-   * A highlight or underline with one end dragged to a point, from the
-   * Structured Characters of its page and, where the range or the point
-   * reaches it, the page after; `null` for one they cannot place.
+   * A highlight or underline with one end dragged to a point or stepped from
+   * the keyboard, from the Structured Characters of its page and, where the
+   * range, the point, or a step on its end reaches it, the page after; `null`
+   * for one they cannot place.
    */
   async adjustRange(adjustment: RangeAdjustment): Promise<SelectedText | null> {
-    const { position, point } = adjustment;
+    const { position } = adjustment;
     const spills =
       position.nextPageRects !== undefined ||
-      point.pageIndex === position.pageIndex + 1;
+      ("point" in adjustment
+        ? adjustment.point.pageIndex === position.pageIndex + 1
+        : adjustment.end === "end" &&
+          (adjustment.step === "right" || adjustment.step === "down"));
     const indexes =
       spills && position.pageIndex + 1 < this.#source.numPages
         ? [position.pageIndex, position.pageIndex + 1]

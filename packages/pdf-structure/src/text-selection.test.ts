@@ -564,3 +564,137 @@ describe("a highlight's range dragged by one end", () => {
     });
   });
 });
+
+describe("a highlight's range stepped by one end", () => {
+  // "the" is chars 0–2, "quick" 3–7; "brown" 8–12, "fox" 13–15; "jumps"
+  // 16–20, "over" 21–24.
+  const threeLines = pagesOf(
+    page(
+      0,
+      line("the quick"),
+      line("brown fox", { y: 690 }),
+      line("jumps over", { y: 680 }),
+    ),
+  );
+  const quick = { pageIndex: 0, rects: [[120, 699, 145, 709]] as const };
+  const q = { pageIndex: 0, rects: [[120, 699, 125, 709]] as const };
+
+  it("refuses a step that would leave no character, from either end", () => {
+    expect(
+      adjustRange({ position: q, end: "end", step: "left" }, threeLines),
+    ).toBeNull();
+    expect(
+      adjustRange({ position: q, end: "start", step: "right" }, threeLines),
+    ).toBeNull();
+  });
+
+  it("refuses a step up that would carry the end above the start", () => {
+    // The end stands before "f"; the closest character a line up lies
+    // before the start at "b".
+    const brown = { pageIndex: 0, rects: [[100, 689, 125, 699]] as const };
+    expect(
+      adjustRange({ position: brown, end: "end", step: "up" }, threeLines),
+    ).toBeNull();
+  });
+
+  it("refuses a start stepped back off the Annotation's page", () => {
+    const the = { pageIndex: 0, rects: [[100, 699, 115, 709]] as const };
+    expect(
+      adjustRange({ position: the, end: "start", step: "left" }, threeLines),
+    ).toBeNull();
+  });
+
+  it("moves the end one character right, across the line break", () => {
+    expect(
+      adjustRange({ position: quick, end: "end", step: "right" }, threeLines),
+    ).toEqual({
+      pageIndex: 0,
+      rects: [
+        [120, 699, 145, 709],
+        [100, 689, 105, 699],
+      ],
+      text: "quick b",
+    });
+  });
+
+  it("moves the end one character left", () => {
+    expect(
+      adjustRange({ position: quick, end: "end", step: "left" }, threeLines),
+    ).toEqual({ pageIndex: 0, rects: [[120, 699, 140, 709]], text: "quic" });
+  });
+
+  it("moves the start one character left, the end held", () => {
+    expect(
+      adjustRange({ position: quick, end: "start", step: "left" }, threeLines),
+    ).toEqual({
+      pageIndex: 0,
+      rects: [[110, 699, 145, 709]],
+      text: "e quick",
+    });
+  });
+
+  it("moves the end down to the closest offset on the next line", () => {
+    // The end stands before "q". A line down, "w" and "n" both lie two points
+    // under it, and the first of them wins, as in Zotero's reader.
+    const the = { pageIndex: 0, rects: [[100, 699, 115, 709]] as const };
+    expect(
+      adjustRange({ position: the, end: "end", step: "down" }, threeLines),
+    ).toEqual({
+      pageIndex: 0,
+      rects: [
+        [100, 699, 145, 709],
+        [100, 689, 115, 699],
+      ],
+      text: "the quick bro",
+    });
+  });
+
+  it("moves the end up to the closest offset on the previous line", () => {
+    // The end stands before "f". A line up, "u" and "i" both lie two points
+    // above it, and the first of them wins.
+    const toFox = {
+      pageIndex: 0,
+      rects: [
+        [100, 699, 145, 709],
+        [100, 689, 125, 699],
+      ] as const,
+    };
+    expect(
+      adjustRange({ position: toFox, end: "end", step: "up" }, threeLines),
+    ).toEqual({ pageIndex: 0, rects: [[100, 699, 125, 709]], text: "the q" });
+  });
+
+  describe("over a page break", () => {
+    // Page 0: "end" 0–2, "of" 3–4, "one" 5–7. Page 1: "start" 0–4.
+    const twoPages = pagesOf(
+      page(0, line("end of one")),
+      page(1, line("start of two")),
+    );
+    const ofOne = { pageIndex: 0, rects: [[120, 699, 150, 709]] as const };
+
+    it("gains the next page's first character past the page's end", () => {
+      expect(
+        adjustRange({ position: ofOne, end: "end", step: "right" }, twoPages),
+      ).toEqual({
+        pageIndex: 0,
+        rects: [[120, 699, 150, 709]],
+        nextPageRects: [[100, 699, 105, 709]],
+        text: "of one s",
+      });
+    });
+
+    it("loses the next page's rects when the end steps back onto the first page", () => {
+      const spilled = {
+        ...ofOne,
+        nextPageRects: [[100, 699, 105, 709]] as const,
+      };
+      expect(
+        adjustRange({ position: spilled, end: "end", step: "left" }, twoPages),
+      ).toEqual({
+        pageIndex: 0,
+        rects: [[120, 699, 150, 709]],
+        text: "of one",
+      });
+    });
+  });
+});
