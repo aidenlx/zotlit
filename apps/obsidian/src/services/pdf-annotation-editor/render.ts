@@ -23,6 +23,7 @@ import {
 } from "./geometry-edit";
 import type { Grip, PdfPoint, TextRotation } from "./geometry-edit";
 import type { Point } from "./hit-test";
+import { inkReach } from "./ink-path";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -427,6 +428,11 @@ export interface MarkTarget {
   key: string;
   /** Every box it covers on this page, in the page's own units. */
   rects: readonly PageRect[];
+  /**
+   * An ink mark's strokes, in page units: a point hits it only within `reach`
+   * of one of their segments, and its box in `rects` is the cheap first check.
+   */
+  ink?: { paths: readonly (readonly PagePoint[])[]; reach: number };
 }
 
 /**
@@ -435,17 +441,51 @@ export interface MarkTarget {
  * per mark.
  *
  * Ink and free text carry no per-page rectangles, so each answers with the box
- * it paints: an ink stroke's path bounds and a comment's own rectangle.
+ * it paints: an ink stroke's path bounds, beside the strokes themselves, and a
+ * comment's own rectangle.
  */
 export function markTargets(
   page: OverlayPageView,
   annotations: readonly PdfPageAnnotation[],
 ): MarkTarget[] {
   const unitPage = toPageUnits(page);
-  return annotations.flatMap((placement) => {
+  return annotations.flatMap((placement): MarkTarget[] => {
+    if (isInk(placement)) {
+      const target = inkTarget(unitPage, placement);
+      return target ? [target] : [];
+    }
     const rects = hitRectsOf(unitPage, placement);
     return rects.length === 0 ? [] : [{ key: placement.annotation.key, rects }];
   });
+}
+
+/**
+ * An ink mark as the hit test takes it: its strokes, the reach round them,
+ * and their box grown by half the pen, which is where the Mark Popup hangs.
+ * A single-point dot is a target like any other stroke.
+ */
+function inkTarget(
+  page: OverlayPage,
+  { annotation, position }: PdfPageAnnotation & { position: PdfInkPosition },
+): MarkTarget | null {
+  const paths = position.paths.map((path) => pagePoints(page, path));
+  const points = paths.flat();
+  if (points.length === 0) return null;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const spill = position.width / 2;
+  return {
+    key: annotation.key,
+    rects: [
+      [
+        Math.min(...xs) - spill,
+        Math.min(...ys) - spill,
+        Math.max(...xs) + spill,
+        Math.max(...ys) + spill,
+      ],
+    ],
+    ink: { paths, reach: inkReach(position.width) },
+  };
 }
 
 /**
@@ -588,32 +628,9 @@ function hitRectsOf(
   if (rects.length > 0) {
     return rects.map((rect) => pdfRectToPage(page.viewport, rect));
   }
-  switch (position.kind) {
-    case "pdf-ink":
-      return inkBounds(page, position);
-    case "pdf-text":
-      return position.rects[0] ? [layoutOf(page, position).hit] : [];
-    default:
-      return [];
-  }
-}
-
-function inkBounds(page: OverlayPage, position: PdfInkPosition): PageRect[] {
-  const points = position.paths.flatMap((path) => pagePoints(page, path));
-  if (points.length === 0) return [];
-  // Half the stroke width spills either side of the path, which is what makes a
-  // one-pixel-thin stroke reachable at all.
-  const spill = position.width / 2;
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  return [
-    [
-      Math.min(...xs) - spill,
-      Math.min(...ys) - spill,
-      Math.max(...xs) + spill,
-      Math.max(...ys) + spill,
-    ],
-  ];
+  return position.kind === "pdf-text" && position.rects[0]
+    ? [layoutOf(page, position).hit]
+    : [];
 }
 
 interface PdfPagePlacement extends PdfPageAnnotation {
@@ -752,8 +769,10 @@ function renderImage(
 }
 
 /**
- * One path per stroke, at the width Zotero stored. The width is used raw: it is
- * already in PDF points, which is what the page-unit `viewBox` is measured in.
+ * One path per stroke, at the width Zotero stored, in the stored colour
+ * darkened as Zotero's reader strokes it on screen. The width is used raw: it
+ * is already in PDF points, which is what the page-unit `viewBox` is measured
+ * in.
  */
 function renderInk(
   page: OverlayPage,
@@ -763,23 +782,55 @@ function renderInk(
   const element = page.document.createElementNS(SVG_NS, "path");
   element.setAttribute("d", inkPathOf(page, position));
   element.setAttribute("fill", "none");
-  element.setAttribute("stroke", colorOf(annotation));
+  element.setAttribute("stroke", darkenInk(colorOf(annotation)));
   element.setAttribute("stroke-width", String(position.width));
   element.setAttribute("stroke-linecap", "round");
   element.setAttribute("stroke-linejoin", "round");
   return element;
 }
 
-/** Every stroke of one ink mark as one `d`, which both the pen and the casing
- * under it are drawn from. */
+/**
+ * Every stroke of one ink mark as one `d`, which both the pen and the casing
+ * under it are drawn from. The first point is a line-to as well as a move-to,
+ * as in Zotero's reader, so a single-point stroke draws a round dot.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/page.js#L260-L278
+ */
 function inkPathOf(page: OverlayPage, position: PdfInkPosition): string {
   return position.paths
     .map((path) =>
       pagePoints(page, path)
-        .map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x} ${y}`)
+        .map(
+          ([x, y], index) => `${index === 0 ? `M ${x} ${y} ` : ""}L ${x} ${y}`,
+        )
         .join(" "),
     )
     .join(" ");
+}
+
+/**
+ * How much darker than its stored colour Zotero's reader strokes ink on
+ * screen, in percent. The Excerpt Image keeps the stored colour.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L17
+ */
+const INK_DARKEN_PERCENT = 5;
+
+/**
+ * Zotero's `darkenHex`: each channel scaled down and rounded. A colour that is
+ * not `#rrggbb` — the page's own `currentColor` — is drawn as it is.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/utilities.js#L514-L520
+ */
+function darkenInk(color: string): string {
+  if (!/^#[\da-f]{6}$/i.test(color)) return color;
+  const channels = [1, 3, 5].map((start) =>
+    Math.round(
+      Number.parseInt(color.slice(start, start + 2), 16) *
+        (1 - INK_DARKEN_PERCENT / 100),
+    ),
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**

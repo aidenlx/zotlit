@@ -1,0 +1,174 @@
+import { describe, expect, it } from "vitest";
+
+import { MAX_POSITION_LENGTH } from "@/services/annotation-repository/write";
+
+import {
+  clampToViewBox,
+  fitsPositionBudget,
+  inkReach,
+  keepsSample,
+  nearStroke,
+  smoothPath,
+} from "./ink-path";
+
+/**
+ * Expected vectors are the output of Zotero's own `smoothPath` for each input,
+ * computed once by running the file under Node and inlined here.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/path.js#L1-L49
+ */
+describe("smoothPath", () => {
+  it("keeps a single point as it is, which Zotero draws as a dot", () => {
+    expect(smoothPath([5, 5])).toEqual([5, 5]);
+  });
+
+  it("folds two points under one point apart into the first", () => {
+    expect(smoothPath([0, 0, 0.5, 0])).toEqual([0, 0]);
+  });
+
+  it("drops the last point when it lands under one point from the last kept one", () => {
+    // Zotero's close-point filter runs over the last point too, so the end of
+    // a straight stroke is lost: (8, 0) is 0.5 past (7.5, 0).
+    expect(smoothPath([0, 0, 8, 0])).toEqual([
+      0, 0, 1.5, 0, 3, 0, 5, 0, 6.5, 0, 7.5, 0,
+    ]);
+    expect(smoothPath([0, 0, 4, 8, 8, 0, 12, 8])).toEqual([
+      0, 0, 0.75, 1.5, 1.5, 3, 2.5, 5, 3.5, 6, 4.5, 6, 5.5, 5, 6.5, 3, 7.5, 2,
+      8.5, 2, 9.5, 3, 10.5, 5, 11.25, 6.5, 11.75, 7.5,
+    ]);
+  });
+
+  it("cuts a corner twice and keeps both endpoints when they stand clear", () => {
+    expect(smoothPath([0, 0, 16, 0, 16, 16])).toEqual([
+      0, 0, 1, 0, 3, 0, 6, 0, 10, 0, 13, 1, 15, 3, 16, 6, 16, 10, 16, 13, 16,
+      15, 16, 16,
+    ]);
+  });
+});
+
+describe("keepsSample", () => {
+  it("keeps the first sample of a stroke", () => {
+    expect(keepsSample(undefined, [3, 4])).toBe(true);
+  });
+
+  it("drops a sample under one point from the last kept one", () => {
+    expect(keepsSample([0, 0], [0.6, 0.79])).toBe(false);
+  });
+
+  it("keeps a sample one point or more away", () => {
+    expect(keepsSample([0, 0], [0.6, 0.8])).toBe(true);
+    expect(keepsSample([0, 0], [0, -2])).toBe(true);
+  });
+});
+
+describe("clampToViewBox", () => {
+  const box = [10, 20, 622, 812] as const;
+
+  it("keeps a point inside the box", () => {
+    expect(clampToViewBox([300, 400], box)).toEqual([300, 400]);
+  });
+
+  it("pulls a point past each edge back onto it", () => {
+    expect(clampToViewBox([5, 400], box)).toEqual([10, 400]);
+    expect(clampToViewBox([700, 400], box)).toEqual([622, 400]);
+    expect(clampToViewBox([300, 0], box)).toEqual([300, 20]);
+    expect(clampToViewBox([300, 900], box)).toEqual([300, 812]);
+    expect(clampToViewBox([-1, 1000], box)).toEqual([10, 812]);
+  });
+});
+
+describe("nearStroke", () => {
+  /** One segment from (0, 0) to (10, 0), taken within a reach of 5. */
+  const near = (point: readonly [number, number]) =>
+    nearStroke(
+      point,
+      [
+        [
+          [0, 0],
+          [10, 0],
+        ],
+      ],
+      5,
+    );
+
+  it("measures a point beside a segment square to it", () => {
+    expect(near([4, 4.9])).toBe(true);
+    expect(near([4, -4.9])).toBe(true);
+    expect(near([4, 5.1])).toBe(false);
+  });
+
+  it("measures a point beyond an end to that end", () => {
+    // (13, 3.9) is 4.93 from (10, 0); (13, 4) is exactly 5.
+    expect(near([13, 3.9])).toBe(true);
+    expect(near([13, 4])).toBe(false);
+    expect(near([-3, -4])).toBe(false);
+  });
+
+  it("takes a point on the segment", () => {
+    expect(near([7, 0])).toBe(true);
+    expect(near([10, 0])).toBe(true);
+  });
+
+  it("takes a one-point stroke within the reach of that point", () => {
+    expect(nearStroke([3, 3.9], [[[0, 0]]], 5)).toBe(true);
+    expect(nearStroke([3, 4], [[[0, 0]]], 5)).toBe(false);
+  });
+
+  it("answers for any stroke of the mark", () => {
+    const paths = [
+      [
+        [0, 0],
+        [10, 0],
+      ],
+      [
+        [0, 50],
+        [10, 50],
+      ],
+    ] as const;
+    expect(nearStroke([5, 48], paths, 5)).toBe(true);
+    expect(nearStroke([5, 25], paths, 5)).toBe(false);
+  });
+});
+
+describe("inkReach", () => {
+  it("is the pen's full width", () => {
+    expect(inkReach(30)).toBe(30);
+  });
+
+  it("never falls under Zotero's seven-point floor", () => {
+    expect(inkReach(2)).toBe(7);
+  });
+});
+
+describe("fitsPositionBudget", () => {
+  /**
+   * A position whose written form is exactly `length` characters:
+   * `{"pageIndex":0,"width":2,"paths":[[1,1,…,1]]}` is 37 characters of frame
+   * beside the width, and two per value but the last one; a width of 12 in
+   * place of 2 gives the one character an even length needs.
+   */
+  function positionOfLength(length: number, value = 1) {
+    const width = length % 2 === 0 ? 12 : 2;
+    const count = (length - 36 - String(width).length) / 2;
+    return { pageIndex: 0, width, paths: [Array<number>(count).fill(value)] };
+  }
+
+  it("accepts a position written at the ceiling", () => {
+    expect(fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH))).toBe(
+      true,
+    );
+  });
+
+  it("refuses a position written one character past it", () => {
+    expect(fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH + 1))).toBe(
+      false,
+    );
+  });
+
+  it("measures the position as written, rounded to three decimals", () => {
+    // Raw, each 1.0001 is four characters longer than the "1" it rounds to.
+    expect(
+      fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH, 1.0001)),
+    ).toBe(true);
+  });
+});
