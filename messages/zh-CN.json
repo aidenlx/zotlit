@@ -2328,5 +2328,6 @@
   "pdf_create_popup_comment_hint": "按 Ctrl+Enter（Windows）或 Command+Enter（macOS）保存",
   "pdf_create_popup_copy": "复制所选文本",
   "pdf_create_failed": "标注未创建。{reason}",
+  "pdf_create_reason_no_document": "此 PDF 已关闭。",
   "pdf_adjust_failed": "标注未调整。{reason}"
 }

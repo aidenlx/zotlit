@@ -746,6 +746,9 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (!structure) {
       cancelCapture(this.#deps.surfaceState);
       logger.warn("No text structure stands for this PDF; nothing was created");
+      new BaseNotice(
+        m.pdf_create_failed({ reason: m.pdf_create_reason_no_document() }),
+      );
       return null;
     }
     const { foreground, disarm } = CREATE_EFFECTS[type];
@@ -886,19 +889,23 @@ export class MarkCreation implements CreationGestures, Disposable {
       pageIndex: pending.pageIndex,
       points: path.length / 2,
     });
-    this.#inking = this.#inking
-      .then(() => this.#createInk(pending))
-      .catch((error: unknown) => {
-        logger.warn("An ink stroke was not created", { error });
-      });
+    this.#inking = this.#inking.then(() => this.#createInk(pending));
     this.#creating = this.#inking;
   }
 
-  /** One ink create; its Pending Stroke goes once Zotero answered. */
+  /**
+   * One ink create; its Pending Stroke goes once Zotero answered, and a create
+   * that made nothing says why. The capability can lapse while the stroke
+   * waits behind the creates released before it. Never rejects.
+   */
   async #createInk(pending: PendingStroke): Promise<void> {
     const { id, pageIndex, width, color, paths } = pending;
     let key: string | null = null;
     try {
+      if (!editingLive(this.#capability())) {
+        this.#deps.reportBlockedGesture();
+        return;
+      }
       key = await this.#create({
         type: "ink",
         color,
@@ -906,6 +913,13 @@ export class MarkCreation implements CreationGestures, Disposable {
         text: "",
         position: { pageIndex, width, paths },
       });
+    } catch (error) {
+      logger.warn("An ink stroke was not created", { error });
+      new BaseNotice(
+        m.pdf_create_failed({
+          reason: m.annot_view_write_reason_unknown_outcome(),
+        }),
+      );
     } finally {
       if (key === null) dropPendingStroke(this.#deps.surfaceState, id);
       else settlePendingStroke(this.#deps.surfaceState, { id, key });
