@@ -40,6 +40,20 @@ import {
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
 import {
+  AnnotationHistory,
+  historyFieldsOf,
+  opposite,
+  stillHeldAfterConflict,
+  stillHolds,
+} from "./history";
+import type {
+  HistoryChange,
+  HistoryDirection,
+  HistoryFields,
+  HistoryOutcome,
+  HistoryStep,
+} from "./history";
+import {
   resolvesSilently,
   sameStoredGeometry,
   storedPosition,
@@ -67,6 +81,12 @@ import type {
 } from "./write";
 
 export type { EditingCapability } from "./capability";
+export type {
+  HistoryDirection,
+  HistoryEditKind,
+  HistoryOutcome,
+  HistoryStep,
+} from "./history";
 export type {
   AnnotationDraft,
   GeometryEdit,
@@ -283,6 +303,15 @@ export interface AnnotationRepositoryEvents {
   /** A complete read confirmed that an Annotation no longer exists. */
   "annotation-deleted": (annotationKey: string, attachmentKey: string) => void;
   /**
+   * One Attachment's Annotation History opened, closed, or moved. A consumer
+   * that draws whether an undo or a redo stands re-reads
+   * {@link AnnotationRepository.canUndo} and
+   * {@link AnnotationRepository.canRedo}; no record set is affected.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  "history-changed": (attachmentKey: string) => void;
+  /**
    * Zotero's copy of this Annotation moved under a write, and the card now
    * carries both values with the verbs that resolve them. Raised only for a
    * conflict the user must answer: an equal fresh value settles silently and
@@ -435,6 +464,23 @@ export class AnnotationRepository extends Service<void> {
   readonly #commentDraftSources = new Map<string, string>();
   readonly #commentSaves = new Map<string, CommentSave>();
   readonly #commands = new Map<string, Promise<MutationState>>();
+  /**
+   * One Annotation History per Attachment, held only while a PDF view of the
+   * Attachment keeps it open. An Attachment with no entry records nothing.
+   */
+  readonly #histories = new Map<string, AnnotationHistory>();
+  /**
+   * The Attachments an undo or a redo is running on. It refuses a second press
+   * and keeps that write out of the history, because the step it leaves behind
+   * is the one that steps it back.
+   */
+  readonly #stepping = new Set<string>();
+  /**
+   * How many writes are in flight on each Attachment, which is what the undo
+   * key waits for: a press while a save is still on its way does nothing rather
+   * than stepping past it.
+   */
+  readonly #writesInFlight = new Map<string, number>();
   #commandGeneration = 0;
   /** One explicit revalidation per visible Attachment. */
   readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
@@ -862,6 +908,16 @@ export class AnnotationRepository extends Service<void> {
     attachmentKey: string,
     draft: Omit<AnnotationDraft, "parentKey">,
   ): Promise<CreateOutcome> {
+    return await this.#counted(
+      attachmentKey,
+      this.#createAnnotation(attachmentKey, draft),
+    );
+  }
+
+  async #createAnnotation(
+    attachmentKey: string,
+    draft: Omit<AnnotationDraft, "parentKey">,
+  ): Promise<CreateOutcome> {
     const parsed = parseIndexedKey(attachmentKey);
     if (!parsed) {
       return { kind: "failed", failure: { kind: "unknown-annotation" } };
@@ -1050,6 +1106,71 @@ export class AnnotationRepository extends Service<void> {
     this.#settle(annotationKey, IDLE);
   }
 
+  /**
+   * Open this Attachment's Annotation History, from one PDF view bound to it.
+   * Every surface that writes through this repository records into the history
+   * the Attachment already holds, so a second view of the same Attachment joins
+   * this one rather than starting its own.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  openHistory(attachmentKey: string): void {
+    const standing = this.#histories.get(attachmentKey);
+    if (standing) {
+      standing.hold();
+      return;
+    }
+    this.#histories.set(attachmentKey, new AnnotationHistory());
+    logger.debug("An annotation history opened", { attachmentKey });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Give up one PDF view's hold on this Attachment's Annotation History. The
+   * last view to close ends the history, so an old session can never revert
+   * today's work.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  closeHistory(attachmentKey: string): void {
+    const standing = this.#histories.get(attachmentKey);
+    if (!standing || standing.release() > 0) return;
+    this.#histories.delete(attachmentKey);
+    logger.debug("An annotation history closed", { attachmentKey });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Whether this Attachment's Annotation History holds a step to undo. The
+   * momentary guards — a write in flight, an undo already running — are not
+   * read here, so a verb drawn from this does not flicker under its own write.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  canUndo(attachmentKey: string): boolean {
+    return this.#histories.get(attachmentKey)?.holds("undo") ?? false;
+  }
+
+  /** Whether this Attachment's Annotation History holds a step to redo. */
+  canRedo(attachmentKey: string): boolean {
+    return this.#histories.get(attachmentKey)?.holds("redo") ?? false;
+  }
+
+  /**
+   * Step one confirmed edit back: the platform undo key, and the palette's
+   * "Undo annotation change".
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  async undo(attachmentKey: string): Promise<HistoryOutcome> {
+    return await this.#stepHistory(attachmentKey, "undo");
+  }
+
+  /** Step one undone edit forward again. */
+  async redo(attachmentKey: string): Promise<HistoryOutcome> {
+    return await this.#stepHistory(attachmentKey, "redo");
+  }
+
   on<K extends keyof AnnotationRepositoryEvents>(
     event: K,
     cb: AnnotationRepositoryEvents[K],
@@ -1150,7 +1271,10 @@ export class AnnotationRepository extends Service<void> {
         this.#commands.delete(annotationKey);
       }
     });
-    return await operation;
+    return await this.#counted(
+      this.#holding(annotationKey)?.attachmentKey,
+      operation,
+    );
   }
 
   async #runCommand(
@@ -1270,9 +1394,188 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
+    this.#recordStep(held.attachmentKey, held.record, applied.value);
     this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * Take one History Step in `direction`: compare what the step left in Zotero
+   * with what Zotero holds now, write the far side through this repository's
+   * own verbs, and leave the step that write made on the opposite stack.
+   *
+   * Keys are not queued. A press that meets a guard — no history, a write still
+   * in flight on the Attachment, a step already running, nothing left to step —
+   * does nothing at all rather than waiting for its turn.
+   *
+   * @see apps/obsidian/docs/adr/0059-annotation-history-is-per-attachment-checked-by-field-value-and-restores-under-a-new-key.md
+   */
+  async #stepHistory(
+    attachmentKey: string,
+    direction: HistoryDirection,
+  ): Promise<HistoryOutcome> {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#stepping.has(attachmentKey)) return { kind: "idle" };
+    if ((this.#writesInFlight.get(attachmentKey) ?? 0) > 0)
+      return { kind: "idle" };
+    const step = history.peek(direction);
+    if (!step) return { kind: "idle" };
+    // An undo is a write, so it needs the Editing Capability like any other,
+    // and the existing notice says why it did not run.
+    if (this.#writeBlocked(attachmentKey)) return { kind: "blocked" };
+
+    this.#stepping.add(attachmentKey);
+    try {
+      return await this.#takeStep(step, { attachmentKey, direction, history });
+    } finally {
+      this.#stepping.delete(attachmentKey);
+      this.#emitter.emit("history-changed", attachmentKey);
+    }
+  }
+
+  /**
+   * The field check and the write of one step. Every Annotation the step names
+   * is compared before any of them is written, so a step that cannot be taken
+   * whole is taken not at all.
+   */
+  async #takeStep(
+    step: HistoryStep,
+    {
+      attachmentKey,
+      direction,
+      history,
+    }: {
+      attachmentKey: string;
+      direction: HistoryDirection;
+      history: AnnotationHistory;
+    },
+  ): Promise<HistoryOutcome> {
+    const checked: { change: HistoryChange; record: AnnotationRecord }[] = [];
+    for (const change of step.changes) {
+      const record = this.#holding(change.annotationKey)?.record;
+      if (record && stillHolds(change.after, record)) {
+        checked.push({ change, record });
+        continue;
+      }
+      logger.debug("A history step was dropped: Zotero holds another value", {
+        attachmentKey,
+        annotationKey: change.annotationKey,
+        kind: step.kind,
+        missing: !record,
+      });
+      history.drop(direction);
+      return { kind: "changed", annotationKey: change.annotationKey };
+    }
+
+    const left: HistoryChange[] = [];
+    for (const { change, record } of checked) {
+      const { annotationKey } = change;
+      // The record the write is sent against is the far step's `before`, built
+      // the way every step's is.
+      const before = historyFieldsOf(step.kind, record) ?? change.after;
+      let outcome = await this.#writeFields(annotationKey, change.before);
+      if (
+        outcome.kind === "conflict" &&
+        stillHeldAfterConflict(change.after, outcome.conflict)
+      ) {
+        // The `412` re-read the Annotation and it still holds what the step
+        // left there, so only the version moved: send the write once more.
+        outcome = await this.#writeFields(annotationKey, change.before);
+      }
+      if (outcome.kind === "failed") {
+        // The verb has already refreshed the Attachment; the step goes with it.
+        history.drop(direction);
+        return { kind: "failed", failure: outcome.failure };
+      }
+      if (outcome.kind !== "idle") {
+        this.discardConflict(annotationKey);
+        history.drop(direction);
+        return { kind: "changed", annotationKey };
+      }
+      const settled = this.#holding(annotationKey)?.record;
+      left.push({
+        annotationKey,
+        before,
+        after:
+          (settled ? historyFieldsOf(step.kind, settled) : null) ??
+          change.before,
+      });
+    }
+
+    history.drop(direction);
+    history.push(opposite(direction), { kind: step.kind, changes: left });
+    return { kind: "stepped", annotationKey: left[0]!.annotationKey };
+  }
+
+  /**
+   * Write one side of a History Step through the repository's own verbs, so a
+   * step carries the same version stamping, capability gate, conflict handling,
+   * and failure path as the edit it steps back.
+   */
+  async #writeFields(
+    annotationKey: string,
+    fields: HistoryFields,
+  ): Promise<MutationState> {
+    if (fields.color !== undefined) {
+      return await this.patchColor(annotationKey, fields.color);
+    }
+    return IDLE;
+  }
+
+  /**
+   * Take one confirmed edit into the Attachment's Annotation History.
+   *
+   * Nothing is recorded while no PDF view of the Attachment holds a history
+   * open, and an undo's own write records nothing: the step it leaves behind is
+   * already the one that steps it back.
+   */
+  #recordStep(
+    attachmentKey: string,
+    before: AnnotationRecord,
+    applied: ConfirmedWrite,
+  ): void {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#stepping.has(attachmentKey)) return;
+    if (applied.kind !== "record") return;
+    const was = historyFieldsOf(applied.write, before);
+    const now = historyFieldsOf(applied.write, applied.record);
+    if (!was || !now) return;
+    history.record({
+      kind: applied.write,
+      changes: [{ annotationKey: applied.record.key, before: was, after: now }],
+    });
+    logger.debug("An edit was recorded in the annotation history", {
+      attachmentKey,
+      annotationKey: applied.record.key,
+      kind: applied.write,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Count one write against its Attachment while it is in flight, which is what
+   * the Annotation History's guard reads.
+   *
+   * @param attachmentKey the Attachment the write lands on, or `undefined`
+   *   where no list holds the Annotation and the write will refuse itself.
+   */
+  async #counted<T>(
+    attachmentKey: string | undefined,
+    work: Promise<T>,
+  ): Promise<T> {
+    if (attachmentKey === undefined) return await work;
+    this.#writesInFlight.set(
+      attachmentKey,
+      (this.#writesInFlight.get(attachmentKey) ?? 0) + 1,
+    );
+    try {
+      return await work;
+    } finally {
+      const left = (this.#writesInFlight.get(attachmentKey) ?? 1) - 1;
+      if (left > 0) this.#writesInFlight.set(attachmentKey, left);
+      else this.#writesInFlight.delete(attachmentKey);
+    }
   }
 
   /**

@@ -17,7 +17,15 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import { getDevVaultDir } from "@zotlit/scripts/dev-vault";
 import {
@@ -3790,6 +3798,199 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               cardQuotes("(text)=>text.trimEnd().endsWith('just a few. F')"),
               { expected: "true" },
             ),
+          ).toBe(true);
+        }, 120000);
+      });
+
+      describe("the Annotation History in the reader", () => {
+        const historyKey = "PUPR5FG5";
+        const seeded = ANNOTATIONS.find(({ key }) => key === historyKey)!;
+        const seedColor = seeded.color!;
+        /** The swatch the number row's second key picks. */
+        const picked = "#ff6666";
+        const historyMark = `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')`;
+
+        /**
+         * One chord as Obsidian delivers it, through the view's own Scope.
+         * The Reader Keymap registers there, which a DOM event dispatched on
+         * the container never reaches.
+         *
+         * @returns whether the Scope took the key, which is what Obsidian
+         *   answers by preventing the keystroke's default.
+         */
+        const pressChord = (
+          key: string,
+          modifiers: {
+            ctrlKey?: boolean;
+            metaKey?: boolean;
+            shiftKey?: boolean;
+          },
+        ) =>
+          obJson<{ handled: boolean }>(
+            `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=${pdfView}.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+          );
+
+        /** This host's own undo and redo chords. */
+        const platformKey =
+          process.platform === "darwin" ? "metaKey" : "ctrlKey";
+        const undoKey = () => pressChord("z", { [platformKey]: true });
+        const redoKey = () =>
+          pressChord("z", { [platformKey]: true, shiftKey: true });
+
+        /** Settles when every open PDF view has answered its last history key. */
+        const stepSettled = () =>
+          obEval(
+            vaultId!,
+            "(async()=>{const editor=app.plugins.plugins.zotlit.services.pdfAnnotationEditor;await Promise.all(editor.bindings.map((binding)=>binding.stepped));return 'stepped';})()",
+          );
+
+        /** What the Local API holds for the Annotation right now. */
+        const storedColor = () => annotationColor(api, serverID, historyKey);
+
+        /** Whether ZotLit is showing the notice that names one word of it. */
+        const noticeShows = (fragment: string) =>
+          obEvalUntil(
+            vaultId!,
+            `String([...document.querySelectorAll('.zt-notice')].some((node)=>node.textContent.includes(${JSON.stringify(fragment)})))`,
+            { expected: "true" },
+          );
+
+        /** Takes every notice off screen, so the next one is this test's own. */
+        const clearNotices = () =>
+          obEval(
+            vaultId!,
+            "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+          );
+
+        /** One field, written in Zotero itself, and read back into ZotLit. */
+        async function saveInZotero(
+          field: "annotationColor" | "annotationComment",
+          value: string,
+        ): Promise<void> {
+          await rdp.json(`(async () => {
+            const item = Zotero.Items.getByLibraryAndKey(
+              Zotero.Libraries.userLibraryID,
+              ${JSON.stringify(historyKey)},
+            );
+            item.${field} = ${JSON.stringify(value)};
+            await item.saveTx();
+            return "saved";
+          })()`);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return String(record?.${field === "annotationColor" ? "color" : "comment"});})()`,
+              { expected: value },
+            ),
+          ).toBe(true);
+        }
+
+        /** Selects the highlight by a click on its body, as a researcher would. */
+        async function selectMark(): Promise<void> {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=${historyMark}?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          await obEval(
+            vaultId!,
+            `(function(){${FIRE}${TAP}const mark=${historyMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return 'clicked';})()`,
+          );
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${historyMark}?.classList.contains('is-selected'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }
+
+        /** The colour pick itself: the number row's second key on the selection. */
+        async function pickRed(): Promise<void> {
+          expect(await pressKey("2", {})).toEqual({ prevented: true });
+          expect(
+            await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+        }
+
+        beforeEach(async () => {
+          // A history ends with the last view of its Attachment, so a reopened
+          // view is what gives each test an empty one.
+          await reopenPdfView(vaultId!, attachmentPath);
+          await clearNotices();
+        });
+
+        afterEach(async () => {
+          await obEval(
+            vaultId!,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.patchColor(${JSON.stringify(historyKey)},${JSON.stringify(seedColor)});await repository.patchComment(${JSON.stringify(historyKey)},'');return true;})()`,
+          );
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
+          ).toBe(true);
+        });
+
+        it("puts the colour back for the undo key, and picks it up again for redo", async () => {
+          await selectMark();
+          await pickRed();
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
+          ).toBe(true);
+          // Zotero's own Reader holds the colour the undo wrote.
+          expect(
+            await waitFor(() =>
+              readerAnnotationColor(rdp, historyKey, seedColor),
+            ),
+          ).toBe(true);
+          // The reader landed on the Annotation the step changed.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${historyMark}?.classList.contains('is-selected'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+
+          expect(await redoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+        }, 120000);
+
+        it("leaves a colour Zotero changed alone, and says why", async () => {
+          await selectMark();
+          await pickRed();
+
+          const inZotero = "#5fb236";
+          await saveInZotero("annotationColor", inZotero);
+          await clearNotices();
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(await storedColor()).toBe(inZotero);
+          expect(await noticeShows("changed in Zotero")).toBe(true);
+        }, 120000);
+
+        it("undoes a colour pick Zotero only commented on", async () => {
+          await selectMark();
+          await pickRed();
+
+          await saveInZotero("annotationComment", "Read again in Zotero");
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
           ).toBe(true);
         }, 120000);
       });

@@ -3076,3 +3076,395 @@ it("drops a comment draft holding what Zotero already has", async () => {
     requests.slice(sent).filter(({ method }) => method === "PATCH"),
   ).toHaveLength(0);
 });
+
+// #region annotation history
+
+/**
+ * A Zotero that keeps what a colour patch sends, so every later read answers
+ * the colour the last accepted write asked for. What the Local API holds is the
+ * oracle an undo is read through; nothing here asks the history what it thinks.
+ */
+function zoteroHolding(annotationKey: string) {
+  const seed = ROUGIER_ANNOTATIONS.find(({ key }) => key === annotationKey);
+  if (!seed) throw new Error(`No fixture annotation ${annotationKey}`);
+  let held: WireAnnotation | null = { ...seed };
+  let refuseOnce = false;
+  const list = () =>
+    ROUGIER_ANNOTATIONS.flatMap((entry) =>
+      entry.key === annotationKey ? (held ? [held] : []) : [entry],
+    );
+  return {
+    answers: {
+      children: () => annotationPage(list()),
+      item: () => (held ? annotationItem(held) : notFound()),
+      write: (request) => {
+        if (refuseOnce) {
+          refuseOnce = false;
+          return staleVersion();
+        }
+        const body = JSON.parse(request.body ?? "{}") as {
+          annotationColor?: string;
+        };
+        if (held && typeof body.annotationColor === "string") {
+          held = {
+            ...held,
+            color: body.annotationColor,
+            version: held.version + 1,
+          };
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for the Annotation, or `null` once erased. */
+    get held(): WireAnnotation | null {
+      return held;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(patch: Partial<WireAnnotation>): void {
+      if (held) held = { ...held, ...patch, version: held.version + 1 };
+    },
+    /** An erase in Zotero itself. */
+    eraseInZotero(): void {
+      held = null;
+    },
+    /** Refuse the next write with the `412` a moved object answers. */
+    refuseNextWrite(): void {
+      refuseOnce = true;
+    },
+  };
+}
+
+it("puts the previous colour back when a colour pick is undone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  expect(zotero.held?.color).toBe("#ff6666");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("builds the redo from the undo's own confirmed result", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.undo("RGRPDF24");
+
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#ff6666");
+  // Stepping back and forth compares the two states as often as asked.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({
+    kind: "stepped",
+  });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+});
+
+it("discards the redo steps when a new edit is recorded", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.undo("RGRPDF24");
+
+  await repository.patchColor("PUPR5FG5", "#5fb236");
+
+  expect(repository.canRedo("RGRPDF24")).toBe(false);
+  expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.held?.color).toBe("#5fb236");
+});
+
+it("undoes where Zotero already holds the colour the undo would write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  // Someone put the first colour back in Zotero. The undo's write is refused
+  // over the version it moved, and the re-read finds the very value the undo
+  // asked for: an equal value is a match, so no false conflict appears.
+  zotero.refuseNextWrite();
+  zotero.changeInZotero({ color: "#2ea8e5" });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("undoes a colour pick when Zotero changed another field of it", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.changeInZotero({ comment: "Read again in Zotero" });
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  expect(zotero.held?.comment).toBe("Read again in Zotero");
+});
+
+it("writes nothing and drops the step where Zotero holds another colour", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.changeInZotero({ color: "#5fb236" });
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#5fb236");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops a step whose Annotation Zotero no longer holds", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.eraseInZotero();
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("sends the undo again after a 412 that only moved the version", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  const sent = requests.length;
+
+  zotero.refuseNextWrite();
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+  // The refused write, and the one that landed after the re-read.
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "PATCH"),
+  ).toHaveLength(2);
+});
+
+it("drops the step where the 412 answers a colour changed in Zotero", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  // The list ZotLit holds still says `#ff6666`; Zotero moved under the write.
+  zotero.refuseNextWrite();
+  zotero.changeInZotero({ color: "#5fb236" });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held?.color).toBe("#5fb236");
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops the step and names the failure where the undo does not land", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  let deny = false;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: (request) => (deny ? notFound() : zotero.answers.write(request)),
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  deny = true;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "failed",
+    failure: { kind: "not-found" },
+  });
+  expect(zotero.held?.color).toBe("#ff6666");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("keeps the last 100 steps and drops the oldest first", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  // 101 picks make 101 steps; the first one recorded is the one that goes.
+  const picks = Array.from(
+    { length: 101 },
+    (_unused, index) => `#0000${index.toString(16).padStart(2, "0")}`,
+  );
+  for (const color of picks) await repository.patchColor("PUPR5FG5", color);
+
+  let stepped = 0;
+  while ((await repository.undo("RGRPDF24")).kind === "stepped") stepped += 1;
+
+  expect(stepped).toBe(100);
+  // The oldest step held `#2ea8e5`; with it gone, the walk ends on the first
+  // colour this test picked.
+  expect(zotero.held?.color).toBe(picks[0]);
+});
+
+it("does nothing while a write on the Attachment is still on its way", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const gate = Promise.withResolvers<void>();
+  let holdNext = false;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: async (request) => {
+      if (holdNext) {
+        holdNext = false;
+        await gate.promise;
+      }
+      return zotero.answers.write(request);
+    },
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  holdNext = true;
+  const slow = repository.patchColor("PUPR5FG5", "#5fb236");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  gate.resolve();
+  await slow;
+  // The key was not queued: nothing ran when the save landed.
+  expect(zotero.held?.color).toBe("#5fb236");
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("does nothing while an undo of the same Attachment is running", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const gate = Promise.withResolvers<void>();
+  let holdNext = false;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: async (request) => {
+      if (holdNext) {
+        holdNext = false;
+        await gate.promise;
+      }
+      return zotero.answers.write(request);
+    },
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.patchColor("PUPR5FG5", "#5fb236");
+
+  holdNext = true;
+  const running = repository.undo("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  gate.resolve();
+  expect(await running).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#ff6666");
+});
+
+it("answers blocked and writes nothing without the Editing Capability", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  let running = true;
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    root: () => (running ? rootOk() : localApiDisabled()),
+  });
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  running = false;
+  await repository.probe();
+
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "blocked" });
+  expect(zotero.held?.color).toBe("#ff6666");
+  // The step stands, so the key works again once editing is allowed.
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("records nothing while no PDF view holds a history open", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  repository.openHistory("RGRPDF24");
+
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.held?.color).toBe("#ff6666");
+});
+
+it("shares one history across two views, and ends it with the last", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  const changed: string[] = [];
+  stack.defer(repository.on("history-changed", (key) => changed.push(key)));
+
+  repository.openHistory("RGRPDF24");
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  // The second view closed; the history the first one opened stands.
+  repository.closeHistory("RGRPDF24");
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+
+  repository.closeHistory("RGRPDF24");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.held?.color).toBe("#ff6666");
+  expect(new Set(changed)).toEqual(new Set(["RGRPDF24"]));
+});
+
+it("keeps the history across a Refresh and a change made in Zotero", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHolding("PUPR5FG5");
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+
+  zotero.changeInZotero({ comment: "Noted in Zotero" });
+  await repository.refresh("RGRPDF24");
+
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held?.color).toBe("#2ea8e5");
+});
+
+// #endregion

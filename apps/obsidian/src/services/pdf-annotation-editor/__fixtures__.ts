@@ -1,7 +1,7 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
+import type { HoverParent, Modifier, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -16,6 +16,7 @@ import type {
   AnnotationList,
   AnnotationRecord,
   AnnotationRepositoryEvents,
+  HistoryOutcome,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -32,6 +33,7 @@ import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
 import { mountReaderKeymap } from "./reader-keymap";
+import type { HistoryVerb } from "./reader-keymap";
 import {
   createReaderSurfaceState,
   ingestAnnotations,
@@ -324,6 +326,8 @@ export function annotationReads(
     annotations: records,
   };
   let current = capability;
+  /** How many PDF views hold each Attachment's Annotation History open. */
+  const histories = new Map<string, number>();
   return {
     read: vi.fn(() => Promise.resolve(list)),
     refresh: vi.fn(() => Promise.resolve(list)),
@@ -344,6 +348,26 @@ export function annotationReads(
       return current;
     },
     probe: vi.fn(() => Promise.resolve()),
+    openHistory: vi.fn((attachmentKey: string) => {
+      histories.set(attachmentKey, (histories.get(attachmentKey) ?? 0) + 1);
+    }),
+    closeHistory: vi.fn((attachmentKey: string) => {
+      const left = (histories.get(attachmentKey) ?? 1) - 1;
+      if (left > 0) histories.set(attachmentKey, left);
+      else histories.delete(attachmentKey);
+    }),
+    undo: vi.fn(
+      (_attachmentKey: string): Promise<HistoryOutcome> =>
+        Promise.resolve({ kind: "idle" }),
+    ),
+    redo: vi.fn(
+      (_attachmentKey: string): Promise<HistoryOutcome> =>
+        Promise.resolve({ kind: "idle" }),
+    ),
+    /** The Attachments a history stands open for, and how many views hold each. */
+    get histories(): ReadonlyMap<string, number> {
+      return histories;
+    },
     on: <K extends keyof AnnotationRepositoryEvents>(
       event: K,
       cb: AnnotationRepositoryEvents[K],
@@ -486,6 +510,67 @@ export function annotationEdits() {
   };
 }
 
+const MODIFIER_HELD: Readonly<
+  Record<string, (event: KeyboardEvent) => boolean>
+> = {
+  Ctrl: (event) => event.ctrlKey,
+  Meta: (event) => event.metaKey,
+  Alt: (event) => event.altKey,
+  Shift: (event) => event.shiftKey,
+};
+
+/**
+ * Whether a registration's modifiers are the ones the keystroke carries, as
+ * Obsidian's own keymap compares them: a registration that names none matches
+ * a bare key alone, and one that names `null` matches whatever is held.
+ */
+function heldModifiers(
+  modifiers: Modifier[] | null,
+  event: KeyboardEvent,
+): boolean {
+  if (modifiers === null) return true;
+  return Object.entries(MODIFIER_HELD).every(
+    ([name, held]) => modifiers.includes(name as Modifier) === held(event),
+  );
+}
+
+/**
+ * One keystroke as Obsidian delivers it: the view's Scope hears it first, and
+ * the page hears it only when no handler there took it.
+ *
+ * @param target where the focus sits, which the Scope reads before the page is
+ *   dispatched the event.
+ */
+export function dispatchKey(
+  scope: Scope,
+  init: KeyboardEventInit,
+  target: EventTarget,
+): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  Object.defineProperty(event, "target", { value: target });
+  // The mock Scope records its registrations, in the order made.
+  const { handlers } = scope as unknown as {
+    handlers: {
+      modifiers: Modifier[] | null;
+      key: string | null;
+      func: (evt: KeyboardEvent) => boolean | void;
+    }[];
+  };
+  for (const { modifiers, key, func } of handlers) {
+    if (key !== null && key.toLowerCase() !== event.key.toLowerCase()) continue;
+    if (!heldModifiers(modifiers, event)) continue;
+    if (func(event) !== false) continue;
+    event.preventDefault();
+    return event;
+  }
+  target.dispatchEvent(event);
+  return event;
+}
+
 /** The instant the reader surfaces read their clock at. */
 export const READER_NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 
@@ -511,6 +596,12 @@ export interface ReaderSurfacesOptions {
   textRotation?: MarkSelectionDeps["textRotation"];
   /** Each tool's colour and the ink width; held in memory unless given. */
   colors?: ToolColorStore;
+  /**
+   * The platform the Reader Keymap binds the Annotation History keys for.
+   *
+   * @default false
+   */
+  isMacOS?: boolean;
 }
 
 /**
@@ -529,6 +620,7 @@ export function readerSurfaces({
   adjustRange = async () => null,
   textRotation = () => 0,
   colors = toolColors(),
+  isMacOS = false,
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
   const store = createReaderSurfaceState({
@@ -604,9 +696,17 @@ export function readerSurfaces({
   });
   selection.load();
   const view: { scope: Scope | null; app: typeof app } = { scope: null, app };
-  const unmountKeymap = mountReaderKeymap(view, {
-    escape: () => selection.escape() || creation.escape(),
-  });
+  /** Each press of the Annotation History keys this fixture answered, in order. */
+  const stepped: HistoryVerb[] = [];
+  const unmountKeymap = mountReaderKeymap(
+    view,
+    {
+      escape: () => selection.escape() || creation.escape(),
+      undo: () => stepped.push("undo"),
+      redo: () => stepped.push("redo"),
+    },
+    { isMacOS },
+  );
   const host = new MarkPopupHost({
     parent,
     store,
@@ -638,6 +738,7 @@ export function readerSurfaces({
     navigated,
     revealed,
     revealedWith,
+    stepped,
     /** What a refresh does once the read answers: the records, replaced. */
     replace(next: readonly AnnotationRecord[]) {
       held = next;
@@ -654,28 +755,7 @@ export function readerSurfaces({
      * @param target where the focus sits; the container when not given.
      */
     key(init: KeyboardEventInit, target: EventTarget = containerEl) {
-      const event = new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        ...init,
-      });
-      // The Scope reads the focus before the page is dispatched the event.
-      Object.defineProperty(event, "target", { value: target });
-      // The mock Scope records its registrations, in the order made.
-      const scope = view.scope as unknown as {
-        handlers: {
-          key: string | null;
-          func: (evt: KeyboardEvent) => boolean | void;
-        }[];
-      };
-      for (const { key, func } of scope.handlers) {
-        if (key !== null && key !== event.key) continue;
-        if (func(event) !== false) continue;
-        event.preventDefault();
-        return event;
-      }
-      target.dispatchEvent(event);
-      return event;
+      return dispatchKey(view.scope!, init, target);
     },
     [Symbol.dispose]() {
       unmountKeymap();
