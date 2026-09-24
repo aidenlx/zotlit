@@ -1,13 +1,14 @@
 // What the reader's two gesture modules both read off the surface: whether a
 // point is on screen, where a client point falls on a page, whether the window
-// holds a text selection, Zotero's palette as a menu, and how a captured
-// pointer is let go.
+// holds a text selection, Zotero's palette and the ink widths as a menu, and
+// how a captured pointer is let go.
 //
 // Creation and selection ask the same questions of the same view, so the answer
 // is written once here and neither can drift from the other.
 import { Menu } from "obsidian";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
+import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 
 import type { PdfPoint } from "./geometry-edit";
@@ -15,6 +16,8 @@ import type { PageBox, Point } from "./hit-test";
 import { pageUnitSize } from "./render";
 import type { OverlayPageView } from "./render";
 import { applyTransform, inverseTransform } from "./selection-capture";
+import { INK_WIDTHS } from "./tools";
+import type { InkWidth } from "./tools";
 
 /**
  * Whether a client point falls inside the view's own box. A view with no box at
@@ -82,6 +85,29 @@ export function colorMenu(
   const menu = new Menu();
   buildColorMenu(menu, { color: current, onSelect: onPick });
   return menu;
+}
+
+/**
+ * The ink tool's pen widths, added under the colours of its menu, with the
+ * width in hand checked.
+ */
+export function addInkWidths(
+  menu: Menu,
+  current: InkWidth,
+  onPick: (width: InkWidth) => void,
+): void {
+  menu.addSeparator();
+  menu.addItem((item) =>
+    item.setTitle(m.pdf_toolbar_ink_width()).setIsLabel(true),
+  );
+  for (const width of INK_WIDTHS) {
+    menu.addItem((item) =>
+      item
+        .setTitle(m.pdf_toolbar_ink_width_step({ width: String(width) }))
+        .setChecked(width === current)
+        .onClick(() => onPick(width)),
+    );
+  }
 }
 
 /** The page's padding box, beside the same page measured in its own units. */

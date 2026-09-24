@@ -13,7 +13,11 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
 } from "@/services/library-scope/scope";
-import { annotationToolColorsSchema } from "@/services/pdf-annotation-editor/tools";
+import {
+  annotationToolColorsSchema,
+  DEFAULT_INK_WIDTH,
+  inkWidthSchema,
+} from "@/services/pdf-annotation-editor/tools";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -188,6 +192,8 @@ export const schema = v.object({
    * list for every tool, so the popup offers the same swatches to each.
    */
   "reader.recent-colors": v.array(v.string()),
+  /** The pen width the PDF reader's ink tool draws at, in PDF points. */
+  "reader.ink-width": inkWidthSchema,
 
   "release.previous-version": v.nullable(v.string()),
   "release.notices-enabled": v.boolean(),
@@ -242,6 +248,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "reader.open-file-links": true,
   "reader.annotation-colors": {},
   "reader.recent-colors": [],
+  "reader.ink-width": DEFAULT_INK_WIDTH,
   // Absent until the release check records a launch; see the release service.
   "release.previous-version": null,
   "release.notices-enabled": true,

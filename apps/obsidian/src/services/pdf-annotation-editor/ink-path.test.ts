@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_POSITION_LENGTH } from "@/services/annotation-repository/write";
+import {
+  MAX_POSITION_LENGTH,
+  roundCoordinate,
+} from "@/services/annotation-repository/write";
 
 import {
   clampToViewBox,
@@ -9,6 +12,7 @@ import {
   keepsSample,
   nearStroke,
   smoothPath,
+  StrokeSamples,
 } from "./ink-path";
 
 /**
@@ -170,5 +174,78 @@ describe("fitsPositionBudget", () => {
     expect(
       fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH, 1.0001)),
     ).toBe(true);
+  });
+});
+
+describe("StrokeSamples", () => {
+  const FRAME = { pageIndex: 3, width: 2 };
+
+  /**
+   * A zig-zag scribble down a letter page, row after row: every sample three
+   * points from the last, so each is kept, and the corners keep Zotero's
+   * smoothing from folding the points together.
+   */
+  const scribble = (count: number) =>
+    Array.from({ length: count }, (_, index): [number, number] => {
+      const row = Math.floor(index / 150);
+      const column = index % 150;
+      return [
+        100.123 + 3 * (row % 2 === 0 ? column : 149 - column),
+        700.456 - 12 * row - (index % 2) * 5,
+      ];
+    });
+
+  /** The position Zotero would be sent for these samples as one stroke. */
+  const positionOf = (samples: readonly [number, number][]) => ({
+    ...FRAME,
+    paths: [smoothPath(samples.flat())],
+  });
+
+  it("parts a stroke at the sample that would carry it past the ceiling", () => {
+    const samples = scribble(4000);
+    const stroke = new StrokeSamples(FRAME);
+
+    const parts = samples.flatMap((sample, index) => {
+      const finished = stroke.take(sample);
+      return finished ? [{ index, finished }] : [];
+    });
+
+    // About two thousand of these samples fill one Annotation.
+    expect(parts).toHaveLength(1);
+    const { index, finished } = parts[0]!;
+    // The finished part is every sample before this one, and it fits…
+    expect(finished).toEqual(
+      smoothPath(samples.slice(0, index).flat()).map(roundCoordinate),
+    );
+    expect(fitsPositionBudget(positionOf(samples.slice(0, index)))).toBe(true);
+    // …where this sample would not have.
+    expect(fitsPositionBudget(positionOf(samples.slice(0, index + 1)))).toBe(
+      false,
+    );
+    // The next part begins at this sample.
+    const rest = new StrokeSamples(FRAME);
+    for (const sample of samples.slice(index)) rest.take(sample);
+    expect(stroke.finish()).toEqual(rest.finish());
+  });
+
+  it("keeps a stroke within the ceiling whole", () => {
+    const samples = scribble(600);
+    const stroke = new StrokeSamples(FRAME);
+
+    expect(samples.map((sample) => stroke.take(sample))).toEqual(
+      samples.map(() => null),
+    );
+    expect(stroke.finish()).toEqual(
+      smoothPath(samples.flat()).map(roundCoordinate),
+    );
+  });
+
+  it("drops a sample under one point from the last kept one", () => {
+    const stroke = new StrokeSamples(FRAME);
+
+    stroke.take([10, 10]);
+    stroke.take([10.5, 10]);
+
+    expect(stroke.finish()).toEqual([10, 10]);
   });
 });

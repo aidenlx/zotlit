@@ -25,11 +25,13 @@ import type {
 import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
 import {
+  DEFAULT_INK_WIDTH,
+  INK_WIDTH_SETTING,
   RECENT_COLORS_SETTING,
   resolveToolColors,
   TOOL_COLORS_SETTING,
 } from "./tools";
-import type { AnnotationTool, ToolColorStore } from "./tools";
+import type { AnnotationTool, InkWidth, ToolColorStore } from "./tools";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
@@ -229,12 +231,12 @@ export class PdfAnnotationEditor extends Service<void> {
 }
 
 /**
- * Each tool's colour and the colours used last, read and written through the
- * settings file, so a colour chosen in one PDF is the colour the next one opens
- * with. A choice made before the settings have loaded is dropped rather than
+ * Each tool's colour, the colours used last, and the ink tool's pen width,
+ * read and written through the settings file, so a colour or a width chosen in
+ * one PDF is the one the next one opens with. A choice made before the settings have loaded is dropped rather than
  * written over what is on disk.
  */
-function toolColorStore(
+export function toolColorStore(
   settings: Pick<SettingsService, "current" | "update">,
 ): ToolColorStore {
   return {
@@ -252,6 +254,11 @@ function toolColorStore(
       settings.update({
         [RECENT_COLORS_SETTING]: withRecentColor(stored, color),
       });
+    },
+    inkWidth: () => settings.current?.[INK_WIDTH_SETTING] ?? DEFAULT_INK_WIDTH,
+    setInkWidth: (width: InkWidth) => {
+      if (!settings.current) return;
+      settings.update({ [INK_WIDTH_SETTING]: width });
     },
   };
 }
