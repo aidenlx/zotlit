@@ -4218,6 +4218,75 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           await closeCommentEditor();
         }, 120000);
+
+        describe("and the Annotation Card beside it", () => {
+          /** That Annotation's card, in whichever Annotation View holds it. */
+          const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')).find(Boolean)`;
+
+          /** The card's own colour pick, through the verb its controls run. */
+          async function pickOnCard(color: string): Promise<void> {
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.gestures&&candidate.snapshot.annotations&&candidate.snapshot.annotations.some((record)=>record.key===${JSON.stringify(historyKey)}));if(!view)return 'no card';view.gestures.onSetColor(view.snapshot.annotations.find((record)=>record.key===${JSON.stringify(historyKey)}),${JSON.stringify(color)});return 'picked';})()`,
+                { expected: "picked" },
+              ),
+            ).toBe(true);
+            expect(
+              await waitFor(async () => (await storedColor()) === color),
+            ).toBe(true);
+          }
+
+          /**
+           * One chord on a focused card, through the Annotation View's own
+           * Scope — where Obsidian delivers a key the focused view answers.
+           *
+           * @returns whether the Scope took the key.
+           */
+          const pressOnCard = (
+            key: string,
+            modifiers: {
+              ctrlKey?: boolean;
+              metaKey?: boolean;
+              shiftKey?: boolean;
+            },
+          ) =>
+            obJson<{ handled: boolean }>(
+              `(function(){const card=${card};if(!card)return JSON.stringify({handled:false});const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.containerEl.contains(card));if(!view)return JSON.stringify({handled:false});card.focus();const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=view.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+            );
+
+          /** This host's own undo chord, pressed on the card. */
+          const undoOnCard = () => pressOnCard("z", { [platformKey]: true });
+
+          it("puts back a colour the card picked, for the reader's undo key", async () => {
+            await pickOnCard(picked);
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(
+              await waitFor(async () => (await storedColor()) === seedColor),
+            ).toBe(true);
+            // The card itself shows what the undo wrote.
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${card}?.getAttribute('data-annot-color'))`,
+                { expected: seedColor },
+              ),
+            ).toBe(true);
+          }, 120000);
+
+          it("takes the top step of the Attachment's history for the card's own undo key", async () => {
+            await pickOnCard(picked);
+
+            expect(await undoOnCard()).toEqual({ handled: true });
+
+            expect(
+              await waitFor(async () => (await storedColor()) === seedColor),
+            ).toBe(true);
+          }, 120000);
+        });
       });
 
       // The one place a confirmed write can land: the Local API is serving

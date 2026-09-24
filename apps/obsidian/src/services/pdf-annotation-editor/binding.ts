@@ -27,6 +27,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { themeAttribute } from "@/lib/theme-hooks";
+import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type {
@@ -198,7 +199,7 @@ export interface PdfViewBindingDeps {
  * resolves, and the annotation repository, the attachment resolver, and the
  * Annotation View never see the difference.
  */
-export class PdfViewBinding implements Disposable, HoverParent {
+export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /**
    * The Mark Popup hangs off the binding rather than off the PDF view, so
    * Obsidian's Page Preview on that view keeps its own popover and neither
@@ -339,6 +340,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   get attachment(): AttachmentResolution {
     return this.#attachment;
+  }
+
+  /**
+   * The Attachment whose Annotation History this view steps, which is the one
+   * it shows; `null` while the file it holds names none in Zotero.
+   */
+  get historyAttachment(): string | null {
+    return this.#attachment.kind === "resolved"
+      ? this.#attachment.attachmentKey
+      : null;
   }
 
   /** This PDF view as a Reader Session, for a surface that follows a reader. */
@@ -791,8 +802,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#view,
         {
           escape: () => selection.escape() || creation.escape(),
-          undo: () => this.#stepHistory("undo"),
-          redo: () => this.#stepHistory("redo"),
+          undo: () => this.stepHistory("undo"),
+          redo: () => this.stepHistory("redo"),
         },
         { isMacOS: Platform.isMacOS },
       ),
@@ -1133,14 +1144,15 @@ export class PdfViewBinding implements Disposable, HoverParent {
   }
 
   /**
-   * The undo or redo key, answered for the Attachment this view shows. The
-   * repository decides and writes; this seam renders its answer — the reader
-   * lands on what changed, a step Zotero moved under says so, and a block is
-   * reported the way every other blocked edit gesture is.
+   * The undo or redo verb, answered for the Attachment this view shows — the
+   * reader's own keys, the palette's two commands, and the More options menu.
+   * The repository decides and writes; this seam renders its answer — the
+   * reader lands on what changed, a step Zotero moved under says so, and a
+   * block is reported the way every other blocked edit gesture is.
    *
    * @see apps/obsidian/policies/ui-seams.md
    */
-  #stepHistory(direction: HistoryDirection): void {
+  stepHistory(direction: HistoryDirection): void {
     if (this.#attachment.kind !== "resolved") return;
     const { attachmentKey } = this.#attachment;
     const stepping =

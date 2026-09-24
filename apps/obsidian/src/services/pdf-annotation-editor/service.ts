@@ -3,6 +3,7 @@ import type {
   App,
   FileSystemAdapter,
   PDFFileView,
+  View,
   WorkspaceLeaf,
 } from "obsidian";
 
@@ -106,6 +107,19 @@ export class PdfAnnotationEditor extends Service<void> {
   /** The live binding for each open PDF view, in workspace order. */
   get bindings(): readonly PdfViewBinding[] {
     return [...this.#bindings.values()];
+  }
+
+  /**
+   * The binding one view holds, for a surface that acts on the PDF view a
+   * gesture arrived from — the command palette on the active view, and the
+   * More options menu on the leaf it was opened over.
+   *
+   * @returns that view's binding, or `null` for anything other than a PDF view
+   *   this service bound.
+   */
+  bindingFor(view: View | null | undefined): PdfViewBinding | null {
+    if (!view) return null;
+    return this.#bindings.get(view as PDFFileView) ?? null;
   }
 
   /**

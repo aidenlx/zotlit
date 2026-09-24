@@ -141,10 +141,19 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       data-annot-color={annot.color ?? undefined}
       data-zotero-annotation-key={annot.key}
       data-selected={selected ? "" : undefined}
+      // A card takes focus from a click and holds it, which is what the
+      // Annotation History keys read to know the card is the surface the key
+      // belongs to. It stays out of the tab sequence: a list of hundreds of
+      // cards would otherwise be that many stops on the way past it, and each
+      // card's own controls are the stops that do something.
+      tabIndex={-1}
       onClick={(e) => {
         // A control inside the card already answered this click; the card's
-        // selection is not it.
+        // selection is not it, and the control keeps the focus.
         if (clickClaimed(e)) return;
+        // The list is already where the user clicked, so the focus moves
+        // without scrolling it.
+        e.currentTarget.focus({ preventScroll: true });
         actions.onSelectAnnotation(annot);
       }}
     >
