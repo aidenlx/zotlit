@@ -787,6 +787,7 @@ function imageReader(
   {
     create = async () => ({ kind: "created", annotationKey: "MADE2345" }),
     colors,
+    closed = false,
   }: {
     /** What Zotero answers each create with. */
     create?: (
@@ -794,6 +795,8 @@ function imageReader(
     ) => Promise<CreateOutcome>;
     /** Each tool's colour and the ink width; held in memory unless given. */
     colors?: ToolColorStore;
+    /** Whether the viewer holds no document, so no text structure stands. */
+    closed?: boolean;
   } = {},
 ) {
   vi.useFakeTimers();
@@ -830,7 +833,7 @@ function imageReader(
       }),
     ],
     capability,
-    structure: structure as never,
+    structure: closed ? null : (structure as never),
     annotations: {
       ...annotationEdits(),
       createAnnotation: vi.fn(
@@ -1238,6 +1241,66 @@ it("takes a refused stroke off the page", async () => {
 
   expect(open.drafts).toHaveLength(1);
   expect(open.store.getState().pendingStrokes).toEqual([]);
+});
+
+it("takes a stroke off the page and says why when editing lapsed while it waited", async () => {
+  const answers: (() => void)[] = [];
+  using open = inkReader(undefined, {
+    create: () =>
+      new Promise((resolve) =>
+        answers.push(() =>
+          resolve({ kind: "created", annotationKey: "MADE2345" }),
+        ),
+      ),
+  });
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerdown", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(answers).toHaveLength(1));
+
+  // The second stroke was released while editing was live, and waits.
+  ingestCapability(
+    open.store,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+  answers[0]!();
+  await open.creation.created;
+
+  expect(open.drafts).toHaveLength(1);
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  // The first stroke saved and waits on the read; the second is gone.
+  expect(open.store.getState().pendingStrokes.map(({ key }) => key)).toEqual([
+    "MADE2345",
+  ]);
+});
+
+it("takes a stroke off the page when the viewer holds no document", async () => {
+  using open = inkReader(undefined, { closed: true });
+
+  await open.drag([100, 100], [150, 150]);
+
+  expect(open.drafts).toEqual([]);
+  expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+  expect(open.store.getState().pendingStrokes).toEqual([]);
+});
+
+it("takes a stroke off the page when its create throws, and creates the next", async () => {
+  let throws = true;
+  using open = inkReader(undefined, {
+    create: async () => {
+      if (throws) throw new Error("The request did not run");
+      return { kind: "created", annotationKey: "MADE2345" };
+    },
+  });
+
+  await open.drag([100, 100], [150, 150]);
+  expect(open.store.getState().pendingStrokes).toEqual([]);
+
+  throws = false;
+  await open.drag([200, 200], [250, 250]);
+  expect(open.drafts).toHaveLength(2);
 });
 
 /** The menu label of one ink width. */
