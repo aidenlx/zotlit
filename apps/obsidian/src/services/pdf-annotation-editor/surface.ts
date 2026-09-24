@@ -60,14 +60,18 @@ export function pageContentBox(div: HTMLElement): {
 }
 
 /**
- * Whether the view's own window holds no text selection. The reader opens in
+ * Whether the reader holds no text selection of its own. A selection that
+ * starts elsewhere — in the Mark Popup's comment editor, which hangs outside
+ * the view, or in another pane — is not the page's. The reader opens in
  * pop-out windows, so the selection is read from the container's window rather
  * than the global one.
  *
  * @see apps/obsidian/policies/popout-windows.md
  */
 export function selectionCollapsed(containerEl: HTMLElement): boolean {
-  return containerEl.win.getSelection()?.isCollapsed !== false;
+  const selection = containerEl.win.getSelection();
+  if (!selection || selection.isCollapsed) return true;
+  return !containerEl.contains(selection.anchorNode);
 }
 
 /**

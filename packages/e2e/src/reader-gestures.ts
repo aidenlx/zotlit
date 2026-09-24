@@ -46,6 +46,90 @@ export async function raiseWindow(vaultId: string): Promise<void> {
   ).toBe(true);
 }
 
+/** The Mark Popup's comment editor, as an eval expression. */
+export const POPUP_EDITOR = `document.querySelector('.zt-pdf-mark-popup .cm-content')`;
+
+/**
+ * Declares `send(type, point, extra?)` and `press(point, detail)` in an eval:
+ * the pointer and mouse events a mouse button delivers at a client point.
+ * CodeMirror reads the mouse events, and `detail` counts the clicks of a
+ * double click.
+ */
+const MOUSE = `const send=(type,{x,y},extra)=>{const init={clientX:x,clientY:y,bubbles:true,cancelable:true,composed:true,pointerId:1,button:0,buttons:1,view:window,...extra};document.elementFromPoint(x,y).dispatchEvent(type.startsWith('pointer')?new PointerEvent(type,init):new MouseEvent(type,init));};const press=(point,detail)=>{send('pointerdown',point,{detail});send('mousedown',point,{detail});send('pointerup',point,{detail,buttons:0});send('mouseup',point,{detail,buttons:0});send('click',point,{detail,buttons:0});};`;
+
+/**
+ * Declares `at(from, to)` in an eval, after {@link MOUSE}: the centre of
+ * characters `from` to `to` of `hello world` in the popup's comment editor.
+ */
+const IN_EDITOR = `const text=[...${POPUP_EDITOR}.querySelectorAll('.cm-line')].flatMap((line)=>[...line.childNodes]).map((node)=>node.nodeType===3?node:node.firstChild).find((node)=>node?.textContent.includes('hello'));const at=(from,to)=>{const range=document.createRange();range.setStart(text,from);range.setEnd(text,to);const box=range.getBoundingClientRect();return {x:box.left+box.width/2,y:box.top+box.height/2};};`;
+
+/**
+ * Selects text in the open comment editor of the Mark Popup three ways — a
+ * double click, a drag, and "Select all" from the editor's own context menu —
+ * and expects each selection to land while the editor stays open. The menu is
+ * Obsidian's DOM menu for the run, whatever the vault set.
+ */
+export async function expectEditorKeepsSelections(
+  vaultId: string,
+): Promise<void> {
+  const nativeMenus = await obEval(
+    vaultId,
+    `String(app.vault.getConfig('nativeMenus'))`,
+  );
+  await obEval(vaultId, `app.vault.setConfig('nativeMenus',false)`);
+  try {
+    /** Replaces what the editor holds with `hello world`. */
+    const type = () =>
+      obEval(
+        vaultId,
+        `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'hello world');})()`,
+      );
+    const select = async (gesture: string, selected: string) => {
+      await obEval(vaultId, `(function(){${MOUSE}${IN_EDITOR}${gesture}})()`);
+      expect(
+        await obEvalUntil(vaultId, `String(getSelection())`, {
+          expected: selected,
+        }),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(vaultId, `String(!!${POPUP_EDITOR})`, {
+          expected: "true",
+        }),
+      ).toBe(true);
+    };
+    await type();
+    await select(
+      `const word=at(1,2);press(word,1);press(word,2);send('dblclick',word,{detail:2,buttons:0});`,
+      "hello",
+    );
+    await type();
+    await select(
+      `const from=at(1,2),to=at(8,9);send('pointerdown',from,{detail:1});send('mousedown',from,{detail:1});send('pointermove',to);send('mousemove',to);send('pointerup',to,{buttons:0});send('mouseup',to,{buttons:0});send('click',to,{buttons:0});`,
+      "ello wo",
+    );
+    const selectAll = `[...document.querySelectorAll('.menu .menu-item')].find((item)=>item.textContent.trim()==='Select all')`;
+    await type();
+    await obEval(
+      vaultId,
+      `(function(){${MOUSE}${IN_EDITOR}send('contextmenu',at(1,2),{button:2,buttons:2});})()`,
+    );
+    expect(
+      await obEvalUntil(vaultId, `String(!!${selectAll})`, {
+        expected: "true",
+      }),
+    ).toBe(true);
+    await select(
+      `const box=${selectAll}.getBoundingClientRect();press({x:box.left+box.width/2,y:box.top+box.height/2},1);`,
+      "hello world",
+    );
+  } finally {
+    await obEval(
+      vaultId,
+      `app.vault.setConfig('nativeMenus',${nativeMenus === "true"})`,
+    );
+  }
+}
+
 /**
  * The Sort Index the reader's text structure gives a stored position, through
  * the binding of the view on `attachmentPath` — the value a Geometry Edit is

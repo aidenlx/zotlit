@@ -278,7 +278,8 @@ it("leaves a click that left text selected alone", () => {
   using h = setup();
   vi.mocked(window.getSelection).mockReturnValue({
     isCollapsed: false,
-  } as Selection);
+    anchorNode: h.page.div,
+  } as unknown as Selection);
 
   click(h.page.div, ON_WORD);
 
@@ -291,7 +292,8 @@ it("stands a selected mark down for a live text selection", () => {
 
   vi.mocked(window.getSelection).mockReturnValue({
     isCollapsed: false,
-  } as Selection);
+    anchorNode: h.page.div,
+  } as unknown as Selection);
   document.dispatchEvent(new Event("selectionchange"));
 
   expect(h.selection.selected.size).toBe(0);

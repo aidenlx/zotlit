@@ -9,6 +9,7 @@
 import type { HoverParent } from "obsidian";
 
 import { getLogger } from "@/lib/log";
+import { hasActiveMenu } from "@/lib/menu";
 
 import type { Point } from "./hit-test";
 import { MarkPopup } from "./mark-popup";
@@ -88,9 +89,15 @@ export class MarkPopupHost implements Disposable {
     this.#place({ refresh: false });
   }
 
-  /** Whether a node belongs to the popup, as a press inside it does. */
+  /**
+   * Whether a press on a node belongs to the popup: one inside it, or any press
+   * while a menu opened from inside it stands. That press picks a menu item or
+   * closes the menu, so it does not leave the popup.
+   */
   contains(node: Node | null): boolean {
-    return this.#popup?.hoverEl.contains(node) === true;
+    const hoverEl = this.#popup?.hoverEl;
+    if (!hoverEl) return false;
+    return hoverEl.contains(node) || hasActiveMenu(hoverEl);
   }
 
   /** The pages moved: the popup re-hangs from its anchor, or hides. */

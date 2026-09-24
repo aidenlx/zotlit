@@ -184,6 +184,7 @@ function reader(
       vi.spyOn(window, "getSelection").mockReturnValue({
         rangeCount: 1,
         isCollapsed: false,
+        anchorNode: textLayer,
         getRangeAt: () => range,
         removeAllRanges: () => undefined,
         toString: () => range.toString(),

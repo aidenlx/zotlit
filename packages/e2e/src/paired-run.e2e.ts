@@ -55,8 +55,10 @@ import {
 } from "./paired-zotero.ts";
 import type { ZoteroRdp } from "./paired-zotero.ts";
 import {
+  expectEditorKeepsSelections,
   FIRE,
   pdfViewOf,
+  POPUP_EDITOR,
   raiseWindow,
   recomputedSortIndex,
   TAP,
@@ -1932,6 +1934,45 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         afterEach(image.restore);
 
+        it("keeps the popup's comment editor open through a selection and a menu pick inside it", async () => {
+          await selectImage();
+          await obEval(
+            vaultId!,
+            `document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click()`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+              expected: "true",
+            }),
+          ).toBe(true);
+          const key = await obJson<string>(
+            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+          );
+          try {
+            await expectEditorKeepsSelections(vaultId!);
+          } finally {
+            // A press outside closes the editor, which saves what it holds;
+            // the seed carries no comment, so it is put back either way.
+            await obEval(
+              vaultId!,
+              `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);})()`,
+            );
+            const closed = await obEvalUntil(
+              vaultId!,
+              `String(!!${POPUP_EDITOR})`,
+              { expected: "false" },
+            );
+            await image.settled();
+            await restoreAnnotationComment(api, {
+              serverID,
+              key,
+              annotationKey: imageKey,
+              comment: "",
+            });
+            expect(closed).toBe(true);
+          }
+        });
+
         it("resizes the image from its bottom-right handle and saves on release", async () => {
           const handle = await selectImage();
           const { version } = await image.stored();
@@ -2247,6 +2288,57 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             changed.version,
           );
         }, 180000);
+      });
+
+      it("keeps the create popup's comment sheet open through a selection and a menu pick inside it", async () => {
+        await raiseWindow(vaultId!);
+        const layer = `${pdfView}?.containerEl.querySelector('.page[data-page-number="1"] .textLayer')`;
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return String((${layer})?.textContent.length>0);})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        // A drag on the page as the browser leaves it: the press, the text it
+        // selected, then the release that settles it into the create popup.
+        await obEval(
+          vaultId!,
+          `(function(){${FIRE}const walker=document.createTreeWalker(${layer},NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())&&!(node.data.length>12&&node.parentElement.getBoundingClientRect().height>0));const range=document.createRange();range.setStart(node,0);range.setEnd(node,8);const box=range.getBoundingClientRect();const x=box.left+2,y=box.top+box.height/2;const pressed=fire('pointerdown',x,y);getSelection().removeAllRanges();getSelection().addRange(range);fire('pointerup',x,y,pressed);})()`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(!!document.querySelector('.zt-pdf-mark-popup [data-zt-verb="highlight"]'))`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          vaultId!,
+          `document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click()`,
+        );
+        expect(
+          await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+            expected: "true",
+          }),
+        ).toBe(true);
+        try {
+          await expectEditorKeepsSelections(vaultId!);
+        } finally {
+          // A press outside drops the waiting selection and its draft; nothing
+          // reaches Zotero.
+          await obEval(
+            vaultId!,
+            `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);})()`,
+          );
+        }
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `String(!!document.querySelector('.zt-pdf-mark-popup'))`,
+            { expected: "false" },
+          ),
+        ).toBe(true);
       });
 
       describe("Mark Handles on the seeded ink", () => {
