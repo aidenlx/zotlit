@@ -9,7 +9,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights, underlines, and image annotations, change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
+Create highlights, underlines, image annotations, and ink annotations (drawings), change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
 
 ## Before you edit
 
@@ -45,6 +45,28 @@ Use the image tool to capture a figure, a table, or another area without text.
 3. Release the pointer. The new mark appears, and its card shows the captured area.
 
 The tool turns off after each capture. To cancel a drag, press `Escape`. Press `Escape` again to turn off the tool. A press on an annotation mark selects that mark instead of starting a rectangle.
+
+## Create an ink annotation
+
+Use the ink tool to draw on the page by hand.
+
+1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_ink()} />. The tool starts on blue, Zotero's default ink color.
+2. Press on the page and drag. The stroke follows the pointer.
+3. Release the pointer. The stroke becomes an ink annotation in Zotero, and stays on the page while it saves.
+
+Each stroke is its own annotation. The tool stays active after each stroke, so you can start the next stroke at once. A tap without movement saves a dot. To combine several strokes into one annotation, merge them in Zotero.
+
+The ink tool works with a mouse, a pen tablet, a trackpad, or a finger on a touchscreen. While the tool is active, a touch drag draws instead of scrolling the page. A stroke draws over text and over other annotation marks, so a press on a mark starts a stroke instead of selecting the mark.
+
+A stroke stays on the page where it started, even if the pointer leaves the page. Zotero limits the size of one annotation. When a long stroke reaches that limit, ZotLit saves the part drawn so far and continues the stroke as a new annotation. You do not need to lift the pointer.
+
+To cancel a stroke, press `Escape` before you release the pointer. The tool stays active. Press `Escape` again to turn off the tool. A second finger on the screen during a stroke, as at the start of a pinch zoom, also cancels the stroke.
+
+### Choose the ink color and width
+
+Select the arrow beside <UiLabel name={m.pdf_toolbar_ink()} />. The menu lists the colors, then the widths under <UiLabel name={m.pdf_toolbar_ink_width()} />: 0.5, 1, 2, 3, 5, 8, and 12 pt. A check mark shows the current color and width. The default width is 2 pt.
+
+ZotLit remembers your color and width for other PDFs. A stroke keeps the color and width it started with.
 
 ## Add or edit a comment
 

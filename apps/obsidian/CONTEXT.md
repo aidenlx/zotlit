@@ -345,11 +345,19 @@ A change of an Annotation's position — and, for a highlight or underline, its 
 _Avoid_: move, resize, drag (the gestures, not the edit), position edit
 
 **Creation Toolbar**:
-The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight, underline, or image), its colour, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
+The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight, underline, image, or ink), its colour and, for ink, its pen width, Annotation Mark visibility, and the Editing Capability affordance. Holds the defaults; the Mark Popup decides for one Annotation.
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
+**Ink Stroke**:
+One continuous pointer gesture with the ink tool armed, from press to release, stored as one path of an ink Annotation: its points smoothed as Zotero's reader smooths them, in PDF points on the page it was pressed on. One stroke makes one Annotation; a stroke that reaches the position ceiling ends there as its own Annotation and draws on as a new stroke.
+_Avoid_: path (the stored form), line, drawing, scribble
+
+**Pending Stroke**:
+An Ink Stroke that has been released and rounded, drawn on the page while its create is in flight. It leaves the page in the same update that brings in the created Annotation, or when the create fails.
+_Avoid_: optimistic mark, draft stroke, Annotation Draft (that is a comment)
+
 **Reader Surface State**:
-What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, or a text selection about to become one), and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
+What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, or a text selection about to become one), the live Ink Stroke and the Pending Strokes, and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
 _Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 
 **Annotation Draft**:
