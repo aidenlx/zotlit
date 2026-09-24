@@ -5,6 +5,7 @@ import type {
   AnnotationPositionRaw,
   PdfInkPosition,
   PdfRectsPosition,
+  PdfTextPosition,
 } from "@zotlit/db";
 
 import {
@@ -19,12 +20,24 @@ import {
   proposePosition,
   rangeGripAt,
   rangeHandles,
+  releasedPosition,
   sameGeometry,
 } from "./geometry-edit";
 import type { Grip } from "./geometry-edit";
 
 /** A US Letter page seen from a non-zero origin, as a PDF may describe it. */
 const VIEW_BOX = [10, 20, 622, 812] as const;
+
+/**
+ * A free-text box 100 × 20 points at font size 10, and a fixed-width measure:
+ * every character is half the font size wide, so "hello" is 25 points and a
+ * line is 12 points high. A box is laid out at its own width once it is 20
+ * points high.
+ */
+const TEXT_CONTENT = {
+  comment: "hello",
+  measure: (text: string, fontSize: number) => text.length * fontSize * 0.5,
+};
 
 /** An image region well inside that page, `[x1, y1, x2, y2]` in PDF points. */
 const IMAGE = rects([[100, 300, 300, 500]]);
@@ -45,6 +58,7 @@ function drag(grip: Grip, [dx, dy]: [number, number], confirmed = IMAGE) {
     from,
     to: [from[0] + dx, from[1] + dy],
     viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
   }) as PdfRectsPosition;
   return proposed.rects[0];
 }
@@ -91,6 +105,7 @@ it("keeps the page index and every field but the rect", () => {
     from: [300, 300],
     to: [310, 290],
     viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
   });
 
   expect(proposed).toEqual({
@@ -107,6 +122,7 @@ it("proposes the confirmed geometry for a release that did not move", () => {
     from: [300, 300],
     to: [300, 300],
     viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
   });
 
   expect(sameGeometry(still, IMAGE)).toBe(true);
@@ -169,6 +185,7 @@ function dragInk(
     from,
     to: [from[0] + dx, from[1] + dy],
     viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
   }) as PdfInkPosition;
   const round = (value: number) => Math.round(value * 1e6) / 1e6;
   return {
@@ -440,7 +457,13 @@ function keyImage(
   arrow: "left" | "right" | "up" | "down",
   confirmed = IMAGE,
 ) {
-  const keyed = keyedPosition({ confirmed, edit, arrow, viewBox: VIEW_BOX });
+  const keyed = keyedPosition({
+    confirmed,
+    edit,
+    arrow,
+    viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
+  });
   return keyed && (keyed.proposal as PdfRectsPosition).rects[0];
 }
 
@@ -517,6 +540,7 @@ it("scales ink by five points with its proportions held, about its top-left corn
       edit: "resize",
       arrow,
       viewBox: VIEW_BOX,
+      text: TEXT_CONTENT,
     })!.proposal as PdfInkPosition;
     const round = (value: number) => Math.round(value * 1e6) / 1e6;
     return {
@@ -547,6 +571,7 @@ it("nudges ink by five points, and refuses near the page's edge", () => {
     edit: "nudge",
     arrow: "right",
     viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
   })!.proposal as PdfInkPosition;
   expect(nudged).toEqual(
     ink([
@@ -561,6 +586,7 @@ it("nudges ink by five points, and refuses near the page's edge", () => {
       edit: "nudge",
       arrow: "down",
       viewBox: VIEW_BOX,
+      text: TEXT_CONTENT,
     }),
   ).toBeNull();
 });
@@ -607,4 +633,270 @@ it("clamps the capture to the press page's view box, on every edge", () => {
   expect(
     captureRect({ from: [100, 300], to: [700, 900], viewBox: VIEW_BOX }),
   ).toEqual([100, 300, 622, 812]);
+});
+
+function textAt(rotation = 0, rect = [100, 700, 200, 720]): PdfTextPosition {
+  return parseAnnotationPosition(
+    {
+      pageIndex: 1,
+      rects: [rect],
+      fontSize: 10,
+      rotation,
+    } as unknown as AnnotationPositionRaw,
+    "application/pdf",
+  ) as PdfTextPosition;
+}
+
+/** The text position a drag proposes, for a held grip moved by a delta. */
+function dragText(
+  grip: Grip,
+  [dx, dy]: [number, number],
+  confirmed = textAt(),
+): PdfTextPosition {
+  return roundAll(
+    proposePosition({
+      confirmed,
+      grip,
+      from: [150, 710],
+      to: [150 + dx, 710 + dy],
+      viewBox: VIEW_BOX,
+      text: TEXT_CONTENT,
+    }) as PdfTextPosition,
+  );
+}
+
+function roundAll<T>(value: T): T {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item: unknown) =>
+      typeof item === "number" ? Math.round(item * 1000) / 1000 : item,
+    ),
+  ) as T;
+}
+
+/** Each handle's centre by its grip, rounded. */
+function handlesOf(record: Parameters<typeof handleLayout>[0]) {
+  return Object.fromEntries(
+    handleLayout(record).map(({ grip, at }) => [grip, roundAll(at)]),
+  );
+}
+
+it("lays a free-text box's corner and side handles on its padded rect, with none on its top or foot", () => {
+  expect(handlesOf({ type: "text", position: textAt() })).toEqual({
+    tl: [95, 725],
+    tr: [205, 725],
+    br: [205, 695],
+    bl: [95, 695],
+    l: [95, 710],
+    r: [205, 710],
+  });
+});
+
+it("turns a free-text box's handles with the box, about its centre", () => {
+  // A quarter turn counter-clockwise about (150, 710): the top-left corner,
+  // (-55, 15) from the centre, goes to (-15, -55); the right side's middle,
+  // (55, 0), goes to (0, 55).
+  const handles = handlesOf({ type: "text", position: textAt(90) });
+  expect(handles.tl).toEqual([135, 655]);
+  expect(handles.r).toEqual([150, 765]);
+  expect(handles.l).toEqual([150, 655]);
+});
+
+it("lays no handle on a note, which only moves", () => {
+  const note = rects([[100, 300, 122, 322]]);
+  expect(handleLayout({ type: "note", position: note })).toEqual([]);
+});
+
+it("takes a note's body by its stored rect, and a free-text box's by its padded rect as turned", () => {
+  const note = rects([[100, 300, 122, 322]]);
+  expect(bodyRect({ type: "note", position: note })).toEqual([
+    100, 300, 122, 322,
+  ]);
+  expect(bodyRect({ type: "text", position: textAt() })).toEqual([
+    95, 695, 205, 725,
+  ]);
+  // Turned a quarter, the 110 × 30 padded rect sweeps 30 × 110 about (150, 710).
+  expect(roundAll(bodyRect({ type: "text", position: textAt(90) }))).toEqual([
+    135, 655, 165, 765,
+  ]);
+});
+
+it("moves a note by its body and keeps it on the page", () => {
+  const note = rects([[100, 300, 122, 322]]);
+  expect(drag("body", [12.5, -40], note)).toEqual([112.5, 260, 134.5, 282]);
+  expect(drag("body", [-500, 0], note)).toEqual([10, 300, 32, 322]);
+});
+
+it("moves a free-text box by its body with its font size and turn kept", () => {
+  expect(dragText("body", [12, -40], textAt(30))).toEqual({
+    ...textAt(30),
+    rects: [[112, 660, 212, 680]],
+  });
+});
+
+it("stops a turned free-text box flush with the page by the box it sweeps out", () => {
+  // Turned a quarter, the box sweeps [140, 660, 160, 760]; its left side
+  // meets the view box's 10 after 130 points, while the stored rect runs
+  // off the page.
+  expect(dragText("body", [-500, 0], textAt(90)).rects).toEqual([
+    [-30, 700, 70, 720],
+  ]);
+});
+
+it("widens a free-text box from its right side, font kept, height fitted to its text", () => {
+  // 130 points wide holds "hello" on one 12-point line, hung from the
+  // top-left corner.
+  expect(dragText("r", [30, 70])).toEqual({
+    ...textAt(),
+    rects: [[100, 708, 230, 720]],
+  });
+});
+
+it("never narrows a free-text box below ten points, and fits its text into what is left", () => {
+  // The left side stops 10 short of the right; 10 points hold two letters,
+  // so "hello" takes three lines, 36 high, from the top-left corner.
+  expect(dragText("l", [500, 0]).rects).toEqual([[190, 684, 200, 720]]);
+});
+
+it("moves a widened free-text box back five points inside the page", () => {
+  // The left side reaches -400; one line of "hello" 600 wide reaches past
+  // the inset at 15 by 415, and the box moves right by that.
+  expect(dragText("l", [-500, 0]).rects).toEqual([[15, 708, 615, 720]]);
+});
+
+it("resizes a turned free-text box along its own width", () => {
+  // Turned a quarter, the box's width runs up the page: 30 points up widens
+  // it to 130. Its top-left corner, turned, stays at (140, 660): the 130 × 12
+  // box's top-left, (-65, 6) from its centre, turns to (-6, -65).
+  expect(dragText("r", [0, 30], textAt(90)).rects).toEqual([
+    [81, 719, 211, 731],
+  ]);
+});
+
+it("scales a free-text box from a corner with its proportions held, the opposite corner fixed", () => {
+  // 150 wide at 5:1 is 30 high; the top-left corner (100, 720) stays. The
+  // font scales by 1.5.
+  expect(dragText("br", [50, -300])).toEqual({
+    ...textAt(),
+    fontSize: 15,
+    rects: [[100, 690, 250, 720]],
+  });
+  // 120 wide is 24 high; the bottom-right corner (200, 700) stays.
+  expect(dragText("tl", [-20, 0])).toEqual({
+    ...textAt(),
+    fontSize: 12,
+    rects: [[80, 700, 200, 724]],
+  });
+});
+
+it("scales a turned free-text box from a corner about the opposite corner as turned", () => {
+  // Turned a quarter, the box's width runs up the page: 50 points up is 50
+  // along its width, so 150 × 30 at 15 points. The top-left corner, opposite
+  // the held one, stood at (140, 660): (-50, 10) from the centre (150, 710)
+  // turns to (-10, -50). The new box's top-left, (-75, 15) from its centre,
+  // turns to (-15, -75), so its centre is (155, 735).
+  expect(dragText("br", [0, 50], textAt(90))).toEqual({
+    ...textAt(90),
+    fontSize: 15,
+    rects: [[80, 720, 230, 750]],
+  });
+});
+
+it("rounds a scaled font size down to the half point, as Zotero's drag does", () => {
+  // 108 wide scales 10 points to 10.8, which rounds down to 10.5.
+  expect(dragText("br", [8, 0]).fontSize).toBe(10.5);
+  // The corner stops at ten points wide: 2 high, and the font 1 point.
+  expect(dragText("br", [-500, 0])).toEqual({
+    ...textAt(),
+    fontSize: 1,
+    rects: [[100, 718, 110, 720]],
+  });
+});
+
+it("fits a free-text box to its line when a side drag ends, and leaves a corner's as it is", () => {
+  const proposal = dragText("r", [30, 0]);
+  // One 12-point line: the box takes "hello" and 5 points, 30 wide.
+  expect(
+    roundAll(
+      releasedPosition({
+        proposal,
+        grip: "r",
+        viewBox: VIEW_BOX,
+        text: TEXT_CONTENT,
+      }),
+    ),
+  ).toEqual({ ...textAt(), rects: [[100, 708, 130, 720]] });
+  const scaled = dragText("br", [50, 0]);
+  expect(
+    releasedPosition({
+      proposal: scaled,
+      grip: "br",
+      viewBox: VIEW_BOX,
+      text: TEXT_CONTENT,
+    }),
+  ).toBe(scaled);
+  expect(
+    releasedPosition({
+      proposal: IMAGE,
+      grip: "r",
+      viewBox: VIEW_BOX,
+      text: TEXT_CONTENT,
+    }),
+  ).toBe(IMAGE);
+});
+
+it("reads the Geometry Edit a modified arrow asks of a note or a free-text box", () => {
+  const plain = { shift: false, alt: false, mod: false };
+  expect(keyEdit("note", { ...plain, alt: true })).toEqual({ kind: "nudge" });
+  expect(keyEdit("text", { ...plain, alt: true })).toEqual({ kind: "nudge" });
+  expect(keyEdit("text", { ...plain, shift: true })).toEqual({
+    kind: "resize",
+  });
+});
+
+/** What a key press proposes for the free-text box, or `null` if refused. */
+function keyText(
+  edit: "resize" | "nudge",
+  arrow: "left" | "right" | "up" | "down",
+) {
+  const keyed = keyedPosition({
+    confirmed: textAt(),
+    edit,
+    arrow,
+    viewBox: VIEW_BOX,
+    text: TEXT_CONTENT,
+  });
+  return keyed && { grip: keyed.grip, proposal: roundAll(keyed.proposal) };
+}
+
+it("resizes a free-text box by five points of its right side, fitted to its text, as Zotero's keys do", () => {
+  expect(keyText("resize", "right")).toEqual({
+    grip: "r",
+    proposal: { ...textAt(), rects: [[100, 708, 205, 720]] },
+  });
+  expect(keyText("resize", "left")).toEqual({
+    grip: "r",
+    proposal: { ...textAt(), rects: [[100, 708, 195, 720]] },
+  });
+});
+
+it("scales a free-text box by five points of width about its top-left corner, font rounded to the half point", () => {
+  // 105 wide at 5:1 is 21 high, and 10.5 points of font.
+  expect(keyText("resize", "down")).toEqual({
+    grip: "br",
+    proposal: { ...textAt(), fontSize: 10.5, rects: [[100, 699, 205, 720]] },
+  });
+  // 95 wide is 19 high; 9.5 points of font.
+  expect(keyText("resize", "up")).toEqual({
+    grip: "br",
+    proposal: { ...textAt(), fontSize: 9.5, rects: [[100, 701, 195, 720]] },
+  });
+});
+
+it("nudges a free-text box and a note by five points", () => {
+  expect(keyText("nudge", "right")?.proposal).toEqual({
+    ...textAt(),
+    rects: [[105, 700, 205, 720]],
+  });
+  const note = rects([[100, 300, 122, 322]]);
+  expect(keyImage("nudge", "up", note)).toEqual([100, 305, 122, 327]);
 });

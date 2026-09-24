@@ -1,10 +1,16 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 import type { PdfTextPosition } from "@zotlit/db";
 
 import { viewport } from "./__fixtures__";
-import { freeTextLayout } from "./free-text-layout";
+import {
+  anchorCorner,
+  fitFreeTextBox,
+  freeTextLayout,
+  freeTextLines,
+} from "./free-text-layout";
+import type { FitMode, TextMeasure } from "./free-text-layout";
 
 /** The Fixture's own free-text Annotation, HRK7BG32, in PDF points. */
 const RECT = [398.804, 685.107, 560.804, 702.107] as const;
@@ -149,6 +155,198 @@ it("reaches the whole run it draws, wherever the two are turned", () => {
         Math.max(right - left, bottom - top) >= longer - 0.01,
     }).toEqual({ page, stored, holdsTheRun: true });
   }
+});
+
+/**
+ * A fixed-width font: every character, the space included, is half the font
+ * size wide, so at 10 points each one is 5 points and every expectation below
+ * is a count of characters.
+ */
+const MONO: TextMeasure = (text, fontSize) => text.length * fontSize * 0.5;
+
+describe("breaking free text into lines as Zotero's canvas render does, but not counting a line's trailing space", () => {
+  const at = (text: string, width: number) =>
+    freeTextLines(text, width, { fontSize: 10, measure: MONO });
+
+  it("keeps one empty line for empty text", () => {
+    expect(at("", 100)).toEqual([""]);
+  });
+
+  it("breaks a word too long for the line inside the word", () => {
+    // 22 points hold four 5-point characters; the fifth reaches 25.
+    expect(at("abcdefghij", 22)).toEqual(["abcd", "efgh", "ij"]);
+  });
+
+  it("starts a line at every newline, an empty one included", () => {
+    expect(at("ab cd\nef", 100)).toEqual(["ab cd", "ef"]);
+    expect(at("a\n\nb", 100)).toEqual(["a", "", "b"]);
+  });
+
+  it("wraps between words, not counting the space a line ends on", () => {
+    // "aa bb" is 25 points and fits 27; "aa bb cc" is 40. A line ending on
+    // "aa bb " would reach 30, which Zotero's textarea never counts.
+    expect(at("aa bb cc", 27)).toEqual(["aa bb", "cc"]);
+    expect(at("aa bb", 25)).toEqual(["aa bb"]);
+  });
+});
+
+describe("fitting a free-text box, as Zotero's reader fits it", () => {
+  /** A US Letter page, in PDF points. */
+  const PAGE_BOX = [0, 0, 612, 792] as const;
+
+  /**
+   * At 10 points one line is 12 points high, and a box is laid out at its own
+   * width once it is 20 points high. A box starting 10 points square at
+   * (100, 700) has its top-left corner at (100, 710).
+   */
+  const fit = (
+    text: string,
+    rect: [number, number, number, number] = [100, 700, 110, 710],
+    rotation = 0,
+  ) =>
+    round(
+      fitFreeTextBox(
+        text,
+        { rects: [rect], rotation, fontSize: 10 },
+        { measure: MONO, pageBox: PAGE_BOX },
+      ),
+    );
+
+  it("fits empty text one letter and the padding wide, one line high", () => {
+    // Zotero measures an empty text as "A": 5 points, plus 5 of padding.
+    expect(fit("")).toEqual([100, 698, 110, 710]);
+  });
+
+  it("fits one line to its own width plus 5 points, keeping the top-left corner", () => {
+    // "hello" is 25 points; the box is one 12-point line high, hanging down
+    // from the corner it started at.
+    expect(fit("hello")).toEqual([100, 698, 130, 710]);
+  });
+
+  it("caps a long line at 300 points and wraps it", () => {
+    // Thirteen 9-letter words, 645 points on one line. At 300 points a line
+    // holds six words (59 characters, 295 points), so 6 + 6 + 1: three lines.
+    const text = Array.from({ length: 13 }, () => "abcdefghi").join(" ");
+    expect(fit(text)).toEqual([100, 674, 400, 710]);
+  });
+
+  it("keeps the width of a box two font sizes high and lays the text out in it", () => {
+    // 30 points high, so its 50-point width holds: "aaaa bbbb" is 45 points,
+    // "cccc" goes to a second line, and the box becomes two lines, 24 high.
+    expect(fit("aaaa bbbb cccc", [100, 680, 150, 710])).toEqual([
+      100, 686, 150, 710,
+    ]);
+  });
+
+  it("fits text its newlines make two lines tall to its widest line, with no padding", () => {
+    // "aa" is 10 points and "bbbb" 20. At 20 points the two lines are 24
+    // points high, two font sizes or more, so Zotero's height rule adds no 5
+    // points: the box is 20 wide and 24 high, hanging from (100, 710).
+    expect(fit("aa\nbbbb")).toEqual([100, 686, 120, 710]);
+  });
+
+  it("widens a box sized to its text by what it reaches past the page's left inset", () => {
+    // "hello" fits [2, 698, 32, 710], 3 short of the inset at 5. Zotero adds
+    // that 3 to the width rather than moving the box: 33 wide from x 2.
+    expect(fit("hello", [2, 700, 12, 710])).toEqual([2, 698, 35, 710]);
+  });
+
+  it("leaves a box sized to its text where it is when it reaches past the page's bottom inset", () => {
+    // "hello" fits [100, 0, 130, 12], 5 below the inset at 5. Zotero drops
+    // the vertical move on this path and sizes the box from the same corner.
+    expect(fit("hello", [100, 2, 110, 12])).toEqual([100, 0, 130, 12]);
+  });
+
+  it("keeps the top-left corner of a turned box where it was on the page", () => {
+    // Turned a quarter counter-clockwise about its centre (105, 705), the old
+    // box's top-left corner lands at (100, 700). The new 30 × 12 box, turned
+    // about its own centre (106, 715), puts its top-left corner (91, 721)
+    // there too: (-15, 6) from the centre turns to (-6, -15).
+    expect(fit("hello", [100, 700, 110, 710], 90)).toEqual([91, 709, 121, 721]);
+  });
+
+  it("moves a box of fixed width back 5 points inside the page", () => {
+    // [590, 718, 640, 730] reaches 640, past 612 - 5: it moves 33 left.
+    expect(fit("aa", [590, 700, 640, 730])).toEqual([557, 718, 607, 730]);
+    // [100, 788, 150, 800] reaches 800, past 792 - 5: it moves 13 down.
+    expect(fit("aa", [100, 770, 150, 800])).toEqual([100, 775, 150, 787]);
+  });
+
+  it("narrows a box sized to its text by what it reaches past the page's right inset", () => {
+    // "hello" fits [580, 698, 610, 710], 3 past 607; Zotero narrows the box
+    // rather than moving it, and "hello" still fits 27 points on one line.
+    expect(fit("hello", [580, 700, 590, 710])).toEqual([580, 698, 607, 710]);
+  });
+});
+
+describe("fitting a free-text box after a Geometry Edit, as Zotero's reader fits it", () => {
+  /** A US Letter page, in PDF points. */
+  const PAGE_BOX = [0, 0, 612, 792] as const;
+  const fit = (
+    text: string,
+    rect: [number, number, number, number],
+    mode: FitMode,
+  ) =>
+    round(
+      fitFreeTextBox(
+        text,
+        { rects: [rect], rotation: 0, fontSize: 10 },
+        { measure: MONO, pageBox: PAGE_BOX, mode },
+      ),
+    );
+
+  it("keeps the width of a box one line high while an edge is dragged", () => {
+    // 10 points wide hold two 5-point letters: "hello" breaks into "he",
+    // "ll", "o", three 12-point lines hanging from the top-left corner.
+    expect(fit("hello", [100, 700, 110, 710], "keep-width")).toEqual([
+      100, 674, 110, 710,
+    ]);
+  });
+
+  it("sizes a box one line high to its text without the 300-point cap when an edge drag ends", () => {
+    // Thirteen 9-letter words, 645 points, plus 5: 650 wide from x 100 reaches
+    // 750, 143 past 607, so the box narrows to 507. There a line holds ten
+    // words (99 letters, 495 points), so the text takes two lines.
+    const text = Array.from({ length: 13 }, () => "abcdefghi").join(" ");
+    expect(fit(text, [100, 700, 110, 710], "single-line")).toEqual([
+      100, 686, 607, 710,
+    ]);
+  });
+
+  it("keeps the width of a box two font sizes high when an edge drag ends", () => {
+    expect(fit("hello", [100, 680, 110, 710], "single-line")).toEqual([
+      100, 674, 110, 710,
+    ]);
+  });
+});
+
+describe("anchoring a resized box by one corner", () => {
+  it("keeps the named corner where it was", () => {
+    // The bottom-right corner (200, 700) stays; the box grows up and left.
+    expect(
+      round(
+        anchorCorner([100, 700, 200, 720], [150, 30], {
+          rotation: 0,
+          corner: "br",
+        }),
+      ),
+    ).toEqual([50, 700, 200, 730]);
+  });
+
+  it("keeps the named corner of a turned box where it was on the page", () => {
+    // Turned a quarter counter-clockwise about (150, 710), the old top-left
+    // corner, (-50, 10) from the centre, lands at (140, 660). The new box's
+    // top-left corner, (-75, 15) from its centre, turns to (-15, -75), so the
+    // new centre is (155, 735).
+    expect(
+      round(
+        anchorCorner([100, 700, 200, 720], [150, 30], {
+          rotation: 90,
+          corner: "tl",
+        }),
+      ),
+    ).toEqual([80, 720, 230, 750]);
+  });
 });
 
 /** PDF points carry three decimals; the rest is the float noise of the sum. */

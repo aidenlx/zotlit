@@ -204,6 +204,37 @@ it("sends an ink draft's width and strokes rounded, and no quoted text", () => {
   });
 });
 
+it("sends a text draft's font size and rotation as given, rounding only its box", () => {
+  const object = created(
+    createRequest(
+      "users/0",
+      draft({
+        type: "text",
+        comment: "Two\nlines",
+        text: "",
+        position: {
+          pageIndex: 0,
+          fontSize: 10.123_45,
+          rotation: 12.345_67,
+          rects: [[120.123_45, 610.987_65, 180.5, 640.000_49]],
+        },
+      }),
+      TOKEN,
+    ),
+  );
+
+  expect(object.annotationType).toBe("text");
+  expect(object).not.toHaveProperty("annotationText");
+  // Zotero's reader rounds the rects before a save and nothing else, so a
+  // fractional size or turn reaches Zotero as the reader computed it.
+  expect(JSON.parse(object.annotationPosition as string)).toEqual({
+    pageIndex: 0,
+    fontSize: 10.123_45,
+    rotation: 12.345_67,
+    rects: [[120.123, 610.988, 180.5, 640]],
+  });
+});
+
 it("leaves nextPageRects out of a quote that stayed on one page", () => {
   const object = created(createRequest("users/0", draft(), TOKEN));
 

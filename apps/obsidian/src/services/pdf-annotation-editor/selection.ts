@@ -69,10 +69,12 @@ import {
   RANGE_HANDLE_PADDING,
   rangeGripAt,
   rangeHandles,
+  releasedPosition,
 } from "./geometry-edit";
 import type {
   Arrow,
   EditablePosition,
+  FreeTextContent,
   Grip,
   PdfPoint,
   RangeGrip,
@@ -110,7 +112,13 @@ import type {
   ReaderSurfaceStore,
 } from "./reader-surface-state";
 import { readingOrder, stepReadingOrder } from "./reading-order";
-import { markTargets, unitPointOf, unitsPerPixel } from "./render";
+import {
+  freeTextOf,
+  interfaceFont,
+  markTargets,
+  unitPointOf,
+  unitsPerPixel,
+} from "./render";
 import type { OverlayPageView, PdfPageAnnotation } from "./render";
 import {
   colorMenu,
@@ -139,6 +147,14 @@ export type AnnotationEdits = Pick<
   | "retryCommentDraft"
   | "submitComment"
 >;
+
+/** How a selection taken from outside the reader opens its Mark Popup. */
+export interface SelectOptions {
+  /** Whether the Mark Popup opens over the selection. */
+  popup?: boolean;
+  /** Whether the popup opens on its comment editor. */
+  commenting?: boolean;
+}
 
 /**
  * The gestures the Mark Popup hands to its UI seam, which render and decide
@@ -422,12 +438,14 @@ export class MarkSelection implements Disposable {
    *   passage, not for a popover over a document they have only just arrived
    *   at. The suppression lasts until the next selection, so a page re-render
    *   does not summon the popup the Landing declined.
+   * @param options.commenting whether the popup opens on its comment editor,
+   *   as it does for a note just placed.
    */
   select(
     annotationKey: string | null,
-    { popup = true }: { popup?: boolean } = {},
+    { popup = true, commenting = false }: SelectOptions = {},
   ): void {
-    this.#apply(annotationKey, null, { popup });
+    this.#apply(annotationKey, null, { popup, commenting });
   }
 
   [Symbol.dispose](): void {
@@ -443,7 +461,7 @@ export class MarkSelection implements Disposable {
       point: Point;
       stack: readonly string[];
     } | null = null,
-    { popup = true }: { popup?: boolean } = {},
+    { popup = true, commenting = false }: SelectOptions = {},
   ): void {
     if (key !== this.#selectedKey()) {
       this.#submitAndCloseCommentEditor();
@@ -455,6 +473,7 @@ export class MarkSelection implements Disposable {
     selectMark(this.#deps.surfaceState, key, {
       stack: at?.stack,
       quiet: !popup,
+      commenting,
     });
   }
 
@@ -612,6 +631,7 @@ export class MarkSelection implements Disposable {
         edit: edit.kind,
         arrow,
         viewBox: page.viewport.viewBox,
+        text: this.#textContent(record),
       });
     if (!keyed) return true;
     beginAdjust(store, { grip: keyed.grip, from: [0, 0] });
@@ -734,8 +754,22 @@ export class MarkSelection implements Disposable {
         from: adjust.from,
         to: pdfPointAt(page, dragging.client),
         viewBox: page.viewport.viewBox,
+        text: this.#textContent(record),
       }),
     );
+  }
+
+  /**
+   * What a selected free-text box's height is fitted to: its text, measured
+   * in the font it is drawn in. Every mark's edit takes it; only a free-text
+   * box's measures anything.
+   */
+  #textContent(record: AnnotationRecord): FreeTextContent {
+    const win = this.#deps.containerEl.win;
+    return {
+      comment: freeTextOf(record),
+      measure: (text, fontSize) => interfaceFont(win).measure(text, fontSize),
+    };
   }
 
   /**
@@ -795,9 +829,27 @@ export class MarkSelection implements Disposable {
     const store = this.#deps.surfaceState;
     const settle = () => (key === null ? undefined : this.#settle(key));
     // A text range's last proposal may still be on its way from the document.
-    if (isRangeGrip(selectAdjust(store.getState())?.grip ?? "body")) {
+    const adjust = selectAdjust(store.getState());
+    if (isRangeGrip(adjust?.grip ?? "body")) {
       this.#adjusting = this.#ranging.then(settle);
       return;
+    }
+    // A free-text box whose side was dragged is sized to its text once more.
+    const record = this.#record();
+    const page =
+      record &&
+      isEditablePosition(record.position) &&
+      this.#deps.pageAt(record.position.pageIndex);
+    if (adjust?.phase === "dragging" && record && page) {
+      moveAdjust(
+        store,
+        releasedPosition({
+          proposal: adjust.proposal,
+          grip: adjust.grip,
+          viewBox: page.viewport.viewBox,
+          text: this.#textContent(record),
+        }),
+      );
     }
     const saving = settle();
     if (saving) this.#adjusting = saving;

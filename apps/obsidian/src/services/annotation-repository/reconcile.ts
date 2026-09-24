@@ -56,6 +56,7 @@ export function storedPosition(position: AnnotationPosition): string | null {
   switch (position.kind) {
     case "pdf-rects":
     case "pdf-ink":
+    case "pdf-text":
       return writePosition(position);
     default:
       return null;

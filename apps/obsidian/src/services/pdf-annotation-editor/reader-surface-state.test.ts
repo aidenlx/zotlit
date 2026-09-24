@@ -4,12 +4,16 @@ import type { SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type { CommentDraft } from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
+import type {
+  AnnotationRecord,
+  CommentDraft,
+} from "@/services/annotation-repository/service";
+import { IDLE, writePosition } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
 
 import { annotation, annotationEdits, toolColors } from "./__fixtures__";
 import type { CreationToolbarControl } from "./creation-toolbar";
+import { freeTextLines } from "./free-text-layout";
 import type { EditablePosition } from "./geometry-edit";
 import {
   appendPendingStroke,
@@ -24,8 +28,10 @@ import {
   createReaderSurfaceState,
   dropPendingStroke,
   dropRecord,
+  dropTextDraft,
   endAdjust,
   endCapture,
+  finishTextDraft,
   hideCommentDraft,
   ingestAnnotations,
   ingestCapability,
@@ -35,7 +41,9 @@ import {
   listenAnnotationEvents,
   moveAdjust,
   moveCapture,
+  openTextDraft,
   publishLiveStroke,
+  refitTextDraft,
   sameCapability,
   sameFlat,
   sameFlatList,
@@ -47,10 +55,12 @@ import {
   selectFloatingHead,
   selectMark,
   selectSelectedRow,
+  selectTextDraft,
   setCommenting,
   setInFlight,
   setToolColor,
   settlePendingStroke,
+  settleTextDraft,
   stepStack,
   tick,
 } from "./reader-surface-state";
@@ -267,6 +277,18 @@ it("keeps the comment editor open for a repeat selection of the same mark", () =
 
   selectMark(store, "PARA1111");
   expect(store.getState().floating).toMatchObject({ commenting: false });
+});
+
+it("selects a mark with its comment editor open when asked to", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+
+  selectMark(store, "PARA1111", { commenting: true });
+  expect(store.getState().floating).toMatchObject({
+    key: "PARA1111",
+    quiet: false,
+    commenting: true,
+  });
 });
 
 it("clears a floating surface of either kind, and a null selection clears too", () => {
@@ -681,7 +703,7 @@ it("drops the adjustment with the selection it stood on", () => {
   expect(selectAdjust(store.getState())).toBeNull();
 });
 
-it("adjusts selected ink, and no free-text mark", () => {
+it("adjusts selected ink and a selected free-text mark", () => {
   const stroke = annotation("4PE492KU", "ink", {
     pageIndex: 0,
     width: 2,
@@ -704,7 +726,8 @@ it("adjusts selected ink, and no free-text mark", () => {
 
   selectMark(store, "TEXT1111");
   beginAdjust(store, { grip: "body", from: [150, 110] });
-  expect(selectAdjust(store.getState())).toBeNull();
+  expect(selectAdjust(store.getState())?.proposal).toEqual(typed.position);
+  cancelAdjust(store);
 
   selectMark(store, "4PE492KU");
   beginAdjust(store, { grip: "body", from: [220, 680] });
@@ -841,16 +864,29 @@ it("publishes the Live Stroke beside the floating surface, and clears it", () =>
   expect(store.getState().liveStroke).toBeNull();
 });
 
-it("clears the floating surface when ink is armed, and only then", () => {
-  const store = reader();
-  selectMark(store, "WORD2222");
+it.each(["highlight", "underline", "image"] as const)(
+  "keeps the floating surface when %s is armed",
+  (tool) => {
+    const store = reader();
+    selectMark(store, "WORD2222");
 
-  arm(store, "highlight");
-  expect(selectFloatingHead(store.getState()).key).toBe("WORD2222");
+    arm(store, tool);
 
-  arm(store, "ink");
-  expect(store.getState().floating).toEqual({ kind: "none" });
-});
+    expect(selectFloatingHead(store.getState()).key).toBe("WORD2222");
+  },
+);
+
+it.each(["ink", "note", "text"] as const)(
+  "clears the floating surface when %s is armed",
+  (tool) => {
+    const store = reader();
+    selectMark(store, "WORD2222");
+
+    arm(store, tool);
+
+    expect(store.getState().floating).toEqual({ kind: "none" });
+  },
+);
 
 it("appends Pending Strokes in release order", () => {
   const store = reader();
@@ -981,4 +1017,243 @@ it("drops a failed create's Pending Stroke and leaves the others", () => {
   dropPendingStroke(store, 1);
 
   expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([2]);
+});
+
+/** A text box opened by a click at `[100, 500]` on page one, at 14 points. */
+function drafting() {
+  const store = reader();
+  arm(store, "text");
+  openTextDraft(store, {
+    pageIndex: 0,
+    at: [100, 500],
+    fontSize: 14,
+    color: "#ffd400",
+  });
+  return store;
+}
+
+/** Half a font size per character, so a box is worked out by hand. */
+const FIT = {
+  measure: (text: string, fontSize: number) => (text.length * fontSize) / 2,
+  pageBox: [0, 0, 612, 792],
+};
+
+/** `abcd` typed into {@link drafting}'s box, as Zotero's fit places it. */
+const FITTED = [93, 490.2, 126, 507];
+
+/** The record Zotero answers for {@link drafting}'s box once `abcd` saved. */
+function typed(key: string, overrides: Partial<AnnotationRecord> = {}) {
+  return {
+    ...annotation(key, "text", {
+      pageIndex: 0,
+      fontSize: 14,
+      rotation: 0,
+      rects: [FITTED],
+    }),
+    color: "#ffd400",
+    comment: "abcd",
+    ...overrides,
+  };
+}
+
+it.each(["", " \n\t "])(
+  "discards a Text Draft finished with nothing but %j, and commits nothing",
+  (text) => {
+    const store = drafting();
+    refitTextDraft(store, text, FIT);
+
+    expect(finishTextDraft(store)).toBeNull();
+    expect(store.getState().floating).toEqual({ kind: "none" });
+  },
+);
+
+it("refits nothing while no Text Draft stands", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+  const { floating } = store.getState();
+
+  refitTextDraft(store, "abcd", FIT);
+
+  expect(store.getState().floating).toBe(floating);
+});
+
+it("takes no more typing once a Text Draft is saving, and commits it once", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+  expect(finishTextDraft(store)?.phase).toBe("saving");
+
+  refitTextDraft(store, "abcde", FIT);
+
+  expect(selectTextDraft(store.getState())?.text).toBe("abcd");
+  expect(finishTextDraft(store)).toBeNull();
+});
+
+it("takes a failed create's Text Draft off the page", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+  finishTextDraft(store);
+
+  dropTextDraft(store);
+
+  expect(store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("keeps a saving Text Draft through a read that does not yet hold it", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+  finishTextDraft(store);
+
+  ingestRecords(store, [
+    PARAGRAPH,
+    WORD,
+    typed("TEXT2222", { comment: "abcde" }),
+    typed("TEXT3333", { color: "#ff6666" }),
+  ]);
+
+  expect(selectTextDraft(store.getState())?.phase).toBe("saving");
+});
+
+it("keeps a Text Draft still typing through a read of the very same text", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+
+  ingestRecords(store, [PARAGRAPH, WORD, typed("TEXT1111")]);
+
+  expect(selectTextDraft(store.getState())?.phase).toBe("typing");
+});
+
+it("keeps a Text Draft when a tool is armed, which finishes it instead", () => {
+  const store = drafting();
+
+  arm(store, "note");
+
+  expect(selectTextDraft(store.getState())).not.toBeNull();
+});
+
+it("opens a Text Draft on a font-size square round the press, and stands the tool down in the same update", () => {
+  const store = reader();
+  arm(store, "text");
+  selectMark(store, "WORD2222");
+  const frames: { armed: string | null; kind: string }[] = [];
+  store.subscribe(
+    ({ armed, floating }) => ({ armed, kind: floating.kind }),
+    (frame) => frames.push(frame),
+    { equalityFn: sameFlat },
+  );
+
+  openTextDraft(store, {
+    pageIndex: 0,
+    at: [100, 500],
+    fontSize: 14,
+    color: "#ffd400",
+  });
+
+  expect(frames).toEqual([{ armed: null, kind: "text-draft" }]);
+  expect(selectTextDraft(store.getState())).toEqual({
+    kind: "text-draft",
+    pageIndex: 0,
+    fontSize: 14,
+    color: "#ffd400",
+    rotation: 0,
+    box: [93, 493, 107, 507],
+    text: "",
+    phase: "typing",
+  });
+});
+
+it("refits the box to what is typed, keeping its top-left corner", () => {
+  const store = drafting();
+
+  refitTextDraft(store, "abcd", FIT);
+
+  // Four characters at 7 points, plus Zotero's 5 points; one line of 1.2
+  // font sizes hangs from the corner at [93, 507].
+  const draft = selectTextDraft(store.getState());
+  expect(draft?.text).toBe("abcd");
+  draft?.box.forEach((value, index) =>
+    expect(value).toBeCloseTo(FITTED[index]!, 9),
+  );
+});
+
+it("stores a box as wide as each line the fit measured, once Zotero rounds it", () => {
+  const store = drafting();
+  // Two lines, each a hair over ten points in the draft's font.
+  const measure = (text: string) => text.length * 5.0002;
+  refitTextDraft(store, "ab\ncd", { ...FIT, measure });
+
+  const { box } = selectTextDraft(store.getState())!;
+  const [stored] = JSON.parse(
+    writePosition({ pageIndex: 0, fontSize: 14, rotation: 0, rects: [box] }),
+  ).rects as number[][];
+
+  expect(
+    freeTextLines("ab\ncd", stored![2]! - stored![0]!, {
+      fontSize: 14,
+      measure,
+    }),
+  ).toEqual(["ab", "cd"]);
+});
+
+it("holds a finished Text Draft as saving and hands it to the create", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+
+  const committed = finishTextDraft(store);
+
+  expect(committed).toMatchObject({ text: "abcd", phase: "saving" });
+  expect(selectTextDraft(store.getState())).toBe(committed);
+});
+
+it("swaps a saving Text Draft for its record in one update", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+  finishTextDraft(store);
+  const frames: { records: number; draft: boolean }[] = [];
+  store.subscribe(
+    (state) => ({
+      records: state.records.length,
+      draft: selectTextDraft(state) !== null,
+    }),
+    (frame) => frames.push(frame),
+    { equalityFn: sameFlat },
+  );
+
+  // Zotero stores the rects rounded and the colour as it likes.
+  ingestRecords(store, [
+    PARAGRAPH,
+    WORD,
+    typed("TEXT1111", { color: "#FFD400" }),
+  ]);
+
+  // Never both drawn, and never neither.
+  expect(frames).toEqual([{ records: 3, draft: false }]);
+});
+
+it("drops a settled Text Draft whose record already stands", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+  finishTextDraft(store);
+  // Zotero stored another box than was sent, so no identity matches.
+  ingestRecords(store, [
+    PARAGRAPH,
+    WORD,
+    { ...typed("TEXT1111"), position: typed("X").position, comment: "abcd " },
+  ]);
+  expect(selectTextDraft(store.getState())).not.toBeNull();
+
+  settleTextDraft(store, "TEXT1111");
+
+  expect(store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("swaps a settled Text Draft for the record of its key when the read lands", () => {
+  const store = drafting();
+  refitTextDraft(store, "abcd", FIT);
+  finishTextDraft(store);
+
+  settleTextDraft(store, "TEXT1111");
+  expect(selectTextDraft(store.getState())?.key).toBe("TEXT1111");
+  ingestRecords(store, [PARAGRAPH, WORD, typed("TEXT1111", { comment: "x" })]);
+
+  expect(store.getState().floating).toEqual({ kind: "none" });
 });

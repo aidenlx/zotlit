@@ -9,7 +9,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights, underlines, image annotations, and ink annotations (freehand strokes), change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
+Create highlights, underlines, note annotations, text annotations (text typed on the page), image annotations, and ink annotations (freehand strokes), change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
 
 ## Before you edit
 
@@ -35,6 +35,33 @@ You can keep both applications open. Make changes in one application at a time, 
 The toolbar at the right of the PDF reader provides the same two tools. Select a tool to keep it active, then select text to create marks without using the popup each time. Use the arrow beside a tool to select its color.
 
 To create one highlight in another color, select the text and select a color from the popup. When neither tool is active, a color creates a highlight.
+
+## Create a note annotation
+
+Use the note tool to pin a comment to a spot on the page.
+
+1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_note()} />.
+2. Click the page where the note belongs. The note appears centered on the click, and its popup opens with the comment editor ready.
+3. Type the comment. It saves as any comment does; see [Add or edit a comment](#add-or-edit-a-comment).
+
+The tool turns off after each note, as in Zotero. A click on an annotation mark selects that mark instead of creating a note, and a drag creates nothing.
+
+## Create a text annotation
+
+Use the text tool to type text onto the page itself.
+
+1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_text()} />. The tool turns off when the text box opens.
+2. Click the page where the text starts. A text box opens at the click.
+3. Type the text. Press `Enter` to start a new line. The box grows to one line of up to 300 pt, then wraps, as in Zotero.
+4. Press `Escape` or click outside the box. The text becomes a text annotation in Zotero, and stays on the page while it saves.
+
+A box that you leave empty creates nothing. A click on an annotation mark selects that mark instead of opening a box. Zotero shows the annotation only when you finish typing, because ZotLit creates it once with its text.
+
+### Choose the text color and font size
+
+Select the arrow beside <UiLabel name={m.pdf_toolbar_text()} />. The menu lists the colors, then the sizes under <UiLabel name={m.pdf_toolbar_text_font_size()} />: 10, 12, 14, 18, 24, and 36 pt. A check mark shows the current color and size. The default size is 14 pt.
+
+ZotLit remembers your color and font size for other PDFs.
 
 ## Create an image annotation
 
@@ -91,7 +118,7 @@ The palette button on an annotation card provides the same colors.
 
 ## Adjust an annotation's position
 
-You can move or resize image and ink annotations, and move either end of a highlight or underline. Editing must be enabled. When it is not, a selected mark shows no handles and the keys below do nothing.
+You can move or resize image, ink, and text annotations, move note annotations, and move either end of a highlight or underline. Editing must be enabled. When it is not, a selected mark shows no handles and the keys below do nothing.
 
 1. Select the annotation mark in the PDF. Handles appear on the mark.
 2. Drag a handle, or drag the mark itself. The mark follows the pointer.
@@ -101,29 +128,33 @@ Press `Escape` during a drag to put the mark back without saving. A drag that en
 
 ### Handles for each annotation type
 
-| Annotation type        | Handles                                                                            | Drag                                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Image                  | Eight squares, on the four corners and the four edge midpoints.                    | A corner moves two edges. An edge handle moves one edge. The inside of the image moves the whole rectangle.                            |
-| Ink                    | Four corners, on a box slightly larger than the strokes.                           | A corner scales the drawing. Its proportions stay the same, and the pen width scales with it. The inside of the box moves the drawing. |
-| Highlight or underline | Two narrow strips, at the start of the first line and at the end of the last line. | A strip moves that end of the range one character at a time. The quoted text follows the new range.                                    |
+| Annotation type        | Handles                                                                            | Drag                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Image                  | Eight squares, on the four corners and the four edge midpoints.                    | A corner moves two edges. An edge handle moves one edge. The inside of the image moves the whole rectangle.                                  |
+| Ink                    | Four corners, on a box slightly larger than the strokes.                           | A corner scales the drawing. Its proportions stay the same, and the pen width scales with it. The inside of the box moves the drawing.       |
+| Highlight or underline | Two narrow strips, at the start of the first line and at the end of the last line. | A strip moves that end of the range one character at a time. The quoted text follows the new range.                                          |
+| Text                   | Six squares, on the four corners and the middle of the left and right sides.       | A side handle changes the width and keeps the font size. A corner scales the box and the font size together. The inside of the box moves it. |
+| Note                   | None.                                                                              | The note icon moves the note.                                                                                                                |
 
-An image rectangle stays on its page and keeps at least 10 points on each side. A highlight or underline range keeps at least one character. Its start stays on the annotation's page, and its end can move onto the next page but no further. A drag on the body of a highlight selects text as usual.
+An image rectangle stays on its page and keeps at least 10 points on each side. A text box keeps at least 10 points of width, and its height follows its text after a side handle moves. When you release a side handle on a box of one line, the box fits the width of its text. On a rotated text box, the handles rotate with the box. A highlight or underline range keeps at least one character. Its start stays on the annotation's page, and its end can move onto the next page but no further. A drag on the body of a highlight selects text as usual.
 
 ### Adjust from the keyboard
 
 Select the annotation mark first. Each key press is one step.
 
-| Annotation type        | Keys                                            | Result                                                                          |
-| ---------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
-| Highlight or underline | `Shift+Left arrow`, `Shift+Right arrow`         | Moves the end back or forward by one character.                                 |
-| Highlight or underline | `Shift+Up arrow`, `Shift+Down arrow`            | Moves the end to the nearest character on the line above or below.              |
-| Image                  | `Shift+Right arrow`, `Shift+Left arrow`         | Moves the right edge 5 points out or in.                                        |
-| Image                  | `Shift+Down arrow`, `Shift+Up arrow`            | Moves the bottom edge 5 points down or up.                                      |
-| Ink                    | `Shift+Right arrow`, `Shift+Down arrow`         | Enlarges the drawing by 5 points. The proportions and the top-left corner stay. |
-| Ink                    | `Shift+Left arrow`, `Shift+Up arrow`            | Shrinks the drawing by 5 points. The proportions and the top-left corner stay.  |
-| Image or ink           | `Alt+arrow` (Windows) or `Option+arrow` (macOS) | Moves the mark 5 points in the arrow's direction.                               |
+| Annotation type           | Keys                                            | Result                                                                                    |
+| ------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Highlight or underline    | `Shift+Left arrow`, `Shift+Right arrow`         | Moves the end back or forward by one character.                                           |
+| Highlight or underline    | `Shift+Up arrow`, `Shift+Down arrow`            | Moves the end to the nearest character on the line above or below.                        |
+| Image                     | `Shift+Right arrow`, `Shift+Left arrow`         | Moves the right edge 5 points out or in.                                                  |
+| Image                     | `Shift+Down arrow`, `Shift+Up arrow`            | Moves the bottom edge 5 points down or up.                                                |
+| Ink                       | `Shift+Right arrow`, `Shift+Down arrow`         | Enlarges the drawing by 5 points. The proportions and the top-left corner stay.           |
+| Ink                       | `Shift+Left arrow`, `Shift+Up arrow`            | Shrinks the drawing by 5 points. The proportions and the top-left corner stay.            |
+| Text                      | `Shift+Right arrow`, `Shift+Left arrow`         | Moves the right edge 5 points out or in. The height follows the text.                     |
+| Text                      | `Shift+Down arrow`, `Shift+Up arrow`            | Enlarges or shrinks the box and its font by 5 points of width. The top-left corner stays. |
+| Image, ink, note, or text | `Alt+arrow` (Windows) or `Option+arrow` (macOS) | Moves the mark 5 points in the arrow's direction.                                         |
 
-For a highlight or underline, add `Ctrl` (Windows) or `Command` (macOS) to the `Shift` keys to move the start instead of the end. A key that would leave the range with no characters does nothing. The image keys work as in Zotero's reader.
+For a highlight or underline, add `Ctrl` (Windows) or `Command` (macOS) to the `Shift` keys to move the start instead of the end. A key that would leave the range with no characters does nothing. The `Shift` keys for images and text work as in Zotero's reader, with one difference: `Shift+Up arrow` does not make a text box narrower than 10 points. To move a mark, Zotero's reader uses an arrow key without a modifier. ZotLit uses `Alt+arrow` or `Option+arrow`.
 
 `Alt+arrow` or `Option+arrow` does not move a mark that is within 10 points of the page edge on that side. `Up arrow` and `Down arrow` without a modifier still select the previous or next annotation in reading order.
 

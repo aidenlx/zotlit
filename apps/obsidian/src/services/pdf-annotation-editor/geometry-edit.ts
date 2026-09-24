@@ -7,11 +7,20 @@ import type {
   AnnotationPosition,
   PdfInkPosition,
   PdfRectsPosition,
+  PdfTextPosition,
 } from "@zotlit/db";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import { writePosition } from "@/services/annotation-repository/write";
 
+import {
+  anchorCorner,
+  fitStoredTextBox,
+  turnAbout,
+  turnBy,
+  turnedBounds,
+} from "./free-text-layout";
+import type { Corner, FitMode, TextMeasure } from "./free-text-layout";
 import type { Point } from "./hit-test";
 
 /**
@@ -41,7 +50,20 @@ export function isRangeGrip(grip: Grip): grip is RangeGrip {
 export type PdfPoint = readonly [number, number];
 
 /** A position a Geometry Edit can propose. */
-export type EditablePosition = PdfRectsPosition | PdfInkPosition;
+export type EditablePosition =
+  | PdfRectsPosition
+  | PdfInkPosition
+  | PdfTextPosition;
+
+/**
+ * What a free-text box's height is fitted to after a Geometry Edit: its
+ * comment, measured as it is drawn. Every edit takes it; only a free-text
+ * box's reads it.
+ */
+export interface FreeTextContent {
+  comment: string;
+  measure: TextMeasure;
+}
 
 /** A rect in PDF points, `[x1, y1, x2, y2]`. */
 export type PdfRect = [number, number, number, number];
@@ -53,7 +75,11 @@ export type TextRotation = (pageIndex: number, rect: PdfRect) => number;
 export function isEditablePosition(
   position: AnnotationPosition,
 ): position is EditablePosition {
-  return position.kind === "pdf-rects" || position.kind === "pdf-ink";
+  return (
+    position.kind === "pdf-rects" ||
+    position.kind === "pdf-ink" ||
+    position.kind === "pdf-text"
+  );
 }
 
 /**
@@ -87,6 +113,13 @@ export const HANDLE_RADIUS = 5;
 export const INK_BOX_PADDING = 5;
 
 /**
+ * The narrowest a free-text box may be resized to, in PDF points.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js — `MIN_TEXT_ANNOTATION_WIDTH`
+ */
+export const MIN_TEXT_ANNOTATION_WIDTH = 10;
+
+/**
  * The smallest side an ink scale may leave, in PDF points.
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `ink`
@@ -114,7 +147,12 @@ const PRIORITY: readonly Handle[] = [
  * The Mark Handles a selected mark shows, at PDF points. An image shows four
  * corners and four edge midpoints. Ink shows four corners on its stroke box,
  * padded out, and none while the box lacks a width or a height, which no
- * proportional scale can keep. A mark this build cannot yet adjust shows none.
+ * proportional scale can keep. A free-text box shows four corners and the
+ * middles of its left and right sides on its rect, padded out as ink's box is
+ * and turned with the box about its centre. A note, which only moves, and a
+ * mark this build cannot yet adjust show none.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `getSelectedAnnotationAction`, the `image`, `text` and `ink` branch
  */
 export function handleLayout({
   type,
@@ -133,6 +171,23 @@ export function handleLayout({
       { grip: "br", at: [x2, y1] },
       { grip: "bl", at: [x1, y1] },
     ];
+  }
+  if (type === "text" && position.kind === "pdf-text") {
+    const rect = position.rects[0];
+    if (!rect) return [];
+    const [x1, y1, x2, y2] = pad([rect[0], rect[1], rect[2], rect[3]]);
+    const turned = turnAbout([x1, y1, x2, y2], position.rotation);
+    const ym = (y1 + y2) / 2;
+    return (
+      [
+        ["tl", [x1, y2]],
+        ["tr", [x2, y2]],
+        ["br", [x2, y1]],
+        ["bl", [x1, y1]],
+        ["l", [x1, ym]],
+        ["r", [x2, ym]],
+      ] as const
+    ).map(([grip, at]) => ({ grip, at: turned(at) }));
   }
   if (type !== "image" || position.kind !== "pdf-rects") return [];
   const rect = position.rects[0];
@@ -234,16 +289,38 @@ export function rangeGripAt(
 }
 
 /**
- * Whether a press on the selected mark's body moves it. An image and ink move
- * by their body; the body of a highlight or underline is the text selection's.
+ * What a Geometry Edit may do to each kind of mark: whether a press on its
+ * body, or `Alt` and an arrow, moves it, and whether its handles or `Shift`
+ * and an arrow resize it. The body of a highlight or underline is the text
+ * selection's, and its handles move an end of its range; a note only moves.
  */
+const GEOMETRY_EDITS = {
+  highlight: { moves: false, resizes: false },
+  underline: { moves: false, resizes: false },
+  note: { moves: true, resizes: false },
+  text: { moves: true, resizes: true },
+  image: { moves: true, resizes: true },
+  ink: { moves: true, resizes: true },
+  unknown: { moves: false, resizes: false },
+} as const satisfies Record<
+  AnnotationRecord["type"],
+  { moves: boolean; resizes: boolean }
+>;
+
+/** Whether a press on the selected mark's body moves it. */
 export function movesByBody(type: AnnotationRecord["type"]): boolean {
-  return type === "image" || type === "ink";
+  return GEOMETRY_EDITS[type].moves;
+}
+
+/** Whether a kind of mark can be resized. */
+export function resizes(type: AnnotationRecord["type"]): boolean {
+  return GEOMETRY_EDITS[type].resizes;
 }
 
 /**
  * The box a press on the selected mark's body takes, in PDF points: an image's
- * rect, or ink's stroke box padded out as its handles are.
+ * or a note's rect, ink's stroke box padded out as its handles are, or the box
+ * a free-text rect, padded out the same way, sweeps out as it is turned.
  *
  * @returns `null` for a mark that does not move by its body.
  */
@@ -256,8 +333,15 @@ export function bodyRect({
     const box = inkBox(position);
     return box && pad(box);
   }
-  const rect = position.kind === "pdf-rects" ? position.rects[0] : undefined;
-  return rect ? [rect[0], rect[1], rect[2], rect[3]] : null;
+  const rect =
+    position.kind === "pdf-rects" || position.kind === "pdf-text"
+      ? position.rects[0]
+      : undefined;
+  if (!rect) return null;
+  const box: PdfRect = [rect[0], rect[1], rect[2], rect[3]];
+  return position.kind === "pdf-text"
+    ? [...turnedBounds(pad(box), position.rotation)]
+    : box;
 }
 
 /**
@@ -302,11 +386,16 @@ export function gripAt({
  * for the body the whole rect, carried by the pointer's travel since the press.
  * An edge stops ten points short of the opposite one and at the page's view
  * box; a moved rect stops flush with the view box. Ink moves every stroke point
- * the same way, and scales from a corner as {@link proposeInk} lays out.
+ * the same way, and scales from a corner as {@link proposeInk} lays out. A
+ * free-text box is resized as {@link resizeText} lays out, and moves as a
+ * rect does, stopping where the box it sweeps out as turned meets the view
+ * box.
  *
  * @param options.from where the press fell, in PDF points on the mark's page.
  * @param options.to where the pointer is now, on the same page.
  * @param options.viewBox the page's `[x1, y1, x2, y2]` in PDF points.
+ * @param options.text what a free-text box's height is fitted to after its
+ *   side moves.
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `image`
  */
 export function proposePosition({
@@ -315,12 +404,14 @@ export function proposePosition({
   from,
   to,
   viewBox,
+  text,
 }: {
   confirmed: EditablePosition;
   grip: Grip;
   from: PdfPoint;
   to: PdfPoint;
   viewBox: readonly number[];
+  text: FreeTextContent;
 }): EditablePosition {
   // A text range's end is placed on its characters, not by the travel.
   if (isRangeGrip(grip)) return confirmed;
@@ -333,9 +424,25 @@ export function proposePosition({
   const [left = 0, bottom = 0, right = 0, top = 0] = viewBox;
   const [x1, y1, x2, y2] = rect;
   if (grip === "body") {
-    const mx = clamp(dx, left - x1, right - x2);
-    const my = clamp(dy, bottom - y1, top - y2);
+    const [bx1, by1, bx2, by2] =
+      confirmed.kind === "pdf-text"
+        ? turnedBounds([x1, y1, x2, y2], confirmed.rotation)
+        : rect;
+    const mx = clamp(dx, left - bx1, right - bx2);
+    const my = clamp(dy, bottom - by1, top - by2);
     return { ...confirmed, rects: [[x1 + mx, y1 + my, x2 + mx, y2 + my]] };
+  }
+  if (confirmed.kind === "pdf-text") {
+    // The travel along the box's own width, as Zotero measures the pointer
+    // in the frame the box is turned into.
+    const [along] = turnBy(-confirmed.rotation)(dx, dy);
+    return resizeText(confirmed, {
+      grip,
+      along,
+      round: Math.floor,
+      viewBox,
+      text,
+    });
   }
   const next: [number, number, number, number] = [x1, y1, x2, y2];
   const min = MIN_IMAGE_ANNOTATION_SIZE;
@@ -347,6 +454,33 @@ export function proposePosition({
   else if (grip.includes("t"))
     next[3] = Math.min(Math.max(y2 + dy, y1 + min), top);
   return { ...confirmed, rects: [next] };
+}
+
+/**
+ * The position a released drag saves: a free-text box whose side was dragged
+ * is sized to its text once more, as a comment edit sizes it, but with no
+ * 300-point cap; any other proposal saves as it stands.
+ *
+ * @param options.viewBox the page's `[x1, y1, x2, y2]` in PDF points.
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerUp`, the `resize` branch
+ */
+export function releasedPosition({
+  proposal,
+  grip,
+  viewBox,
+  text,
+}: {
+  proposal: EditablePosition;
+  grip: Grip;
+  viewBox: readonly number[];
+  text: FreeTextContent;
+}): EditablePosition {
+  if (proposal.kind !== "pdf-text" || (grip !== "l" && grip !== "r"))
+    return proposal;
+  return {
+    ...proposal,
+    rects: [fitText(proposal, { text, viewBox, mode: "single-line" })],
+  };
 }
 
 /**
@@ -420,8 +554,8 @@ export type KeyEdit =
 /**
  * Which Geometry Edit a modified arrow key asks of a kind of mark, as
  * Zotero's reader reads its keys: `Shift` moves the end of a highlight's or
- * underline's range, and `Mod`+`Shift` its start; `Shift` resizes an image
- * or ink, and `Alt` nudges it.
+ * underline's range, and `Mod`+`Shift` its start; `Shift` resizes an image,
+ * ink or a free-text box, and `Alt` nudges any mark that moves by its body.
  *
  * @param modifiers the keys held, `mod` being the platform's command key.
  * @returns `null` for a chord that asks no edit of this mark: a plain arrow,
@@ -436,7 +570,8 @@ export function keyEdit(
     return shift && !alt ? { kind: "range", end: mod ? "start" : "end" } : null;
   }
   if (!movesByBody(type) || mod || shift === alt) return null;
-  return shift ? { kind: "resize" } : { kind: "nudge" };
+  if (!shift) return { kind: "nudge" };
+  return resizes(type) ? { kind: "resize" } : null;
 }
 
 /**
@@ -447,7 +582,10 @@ export function keyEdit(
  * image's right edge follows Right and Left and its foot follows Down and
  * Up, held at ten points and the view box as a drag is; ink scales with its
  * proportions held about its top-left corner, Right and Left by five points
- * of width and Down and Up by five points of height.
+ * of width and Down and Up by five points of height. A free-text box's right
+ * side follows Right and Left, held at ten points and fitted to its text as
+ * a drag fits it; Down and Up scale it by five points of width about its
+ * top-left corner, the font rounded to the half point.
  *
  * `nudge` moves the mark by {@link KEY_STEP}, and not at all while the side
  * it moves to stands within a step and a {@link KEY_PADDING} of the view box.
@@ -462,11 +600,13 @@ export function keyedPosition({
   edit,
   arrow,
   viewBox,
+  text,
 }: {
   confirmed: EditablePosition;
   edit: "resize" | "nudge";
   arrow: Arrow;
   viewBox: readonly number[];
+  text: FreeTextContent;
 }): { grip: Grip; proposal: EditablePosition } | null {
   const box =
     confirmed.kind === "pdf-ink"
@@ -483,6 +623,7 @@ export function keyedPosition({
       from: [0, 0],
       to: [dx, dy],
       viewBox,
+      text,
     }),
   });
   if (edit === "nudge") {
@@ -499,6 +640,20 @@ export function keyedPosition({
     if (!allowed) return null;
     const [dx, dy] = ARROW_TRAVEL[arrow];
     return propose("body", [dx * step, dy * step]);
+  }
+  if (confirmed.kind === "pdf-text") {
+    const grip = arrow === "left" || arrow === "right" ? "r" : "br";
+    const along = arrow === "left" || arrow === "up" ? -step : step;
+    return {
+      grip,
+      proposal: resizeText(confirmed, {
+        grip,
+        along,
+        round: Math.round,
+        viewBox,
+        text,
+      }),
+    };
   }
   if (confirmed.kind === "pdf-ink") {
     // The top-left stays: the bottom-right corner is what scales. Down and Up
@@ -579,6 +734,100 @@ function proposeInk(
 }
 
 /**
+ * A free-text box with one handle carried `along` its own width, in the frame
+ * it is turned into. A side changes the width, held at
+ * {@link MIN_TEXT_ANNOTATION_WIDTH}, keeps the font, and fits the height to
+ * the text at that width. A corner sets the width the same way, the height
+ * following with the box's proportions, and scales the font by as much. The
+ * corner or side opposite the held one stays where it stood on the page,
+ * turned as the box is.
+ *
+ * Zotero measures the scale between the two boxes' proportions, which a
+ * corner holds, so it is the ratio of the widths here.
+ *
+ * @param options.round how the scaled font meets the half point: down for a
+ *   drag, to the nearest for a key.
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js — `_handlePointerMove`, the `resize` branch for `text`, and `_handleKeyDown`
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/utilities.js — `adjustRectHeightByRatio`, `getScaleTransform`, `calculateScale`
+ */
+function resizeText(
+  confirmed: PdfTextPosition,
+  {
+    grip,
+    along,
+    round,
+    viewBox,
+    text,
+  }: {
+    grip: Handle;
+    along: number;
+    round: (value: number) => number;
+    viewBox: readonly number[];
+    text: FreeTextContent;
+  },
+): PdfTextPosition {
+  const rect = confirmed.rects[0];
+  if (!rect) return confirmed;
+  const [x1, y1, x2, y2] = rect;
+  const width = x2 - x1;
+  const reached = Math.max(
+    grip.includes("l") ? width - along : width + along,
+    MIN_TEXT_ANNOTATION_WIDTH,
+  );
+  const { rotation, fontSize } = confirmed;
+  const old: PdfRect = [x1, y1, x2, y2];
+  if (grip.length === 2) {
+    const scaled = round(fontSize * (reached / width) * 2) / 2;
+    return {
+      ...confirmed,
+      // Zotero keeps the font a scale rounds to nothing.
+      fontSize: scaled || fontSize,
+      rects: [
+        anchorCorner(old, [reached, (reached * (y2 - y1)) / width], {
+          rotation,
+          corner: OPPOSITE[grip as Corner],
+        }),
+      ],
+    };
+  }
+  // Zotero's `l` holds the bottom-right corner and its `r` the top-left; the
+  // height is the same, so either way the far side stays.
+  const moved = anchorCorner(old, [reached, y2 - y1], {
+    rotation,
+    corner: grip === "l" ? "br" : "tl",
+  });
+  const sided = { ...confirmed, rects: [moved] };
+  return {
+    ...sided,
+    rects: [fitText(sided, { text, viewBox, mode: "keep-width" })],
+  };
+}
+
+/** The corner a corner handle's scale holds still. */
+const OPPOSITE: Record<Corner, Corner> = {
+  tl: "br",
+  tr: "bl",
+  br: "tl",
+  bl: "tr",
+};
+
+/** {@link fitStoredTextBox} over a Geometry Edit's free-text content. */
+function fitText(
+  position: PdfTextPosition,
+  {
+    text,
+    viewBox,
+    mode,
+  }: { text: FreeTextContent; viewBox: readonly number[]; mode: FitMode },
+): PdfRect {
+  return fitStoredTextBox(text.comment, position, {
+    measure: text.measure,
+    pageBox: viewBox,
+    mode,
+  });
+}
+
+/**
  * Every stroke point of an ink position carried through a PDF matrix `[a, b,
  * c, d, e, f]`, and its width by the square root of the area the matrix
  * scales by.
@@ -627,7 +876,7 @@ function inkBox({ paths }: PdfInkPosition): PdfRect | null {
   return box;
 }
 
-/** A box grown by {@link INK_BOX_PADDING} on every side. */
+/** A box grown by {@link INK_BOX_PADDING} on every side, as ink's and free text's are. */
 function pad([x1, y1, x2, y2]: PdfRect): PdfRect {
   const p = INK_BOX_PADDING;
   return [x1 - p, y1 - p, x2 + p, y2 + p];

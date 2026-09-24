@@ -3,7 +3,7 @@
 //
 // One tool per Zotero annotation type, in the order Zotero's own reader shows
 // them, so the group a reader learns here is the group Zotero offers. ZotLit
-// writes four of them today, and the Creation Toolbar seats those four.
+// writes all six, and the Creation Toolbar seats them.
 //
 // The colours are settings rather than view state, so a tool armed in one PDF
 // draws in the same colour in the next one.
@@ -30,23 +30,68 @@ export const ANNOTATION_TOOLS = [
 
 export type AnnotationTool = (typeof ANNOTATION_TOOLS)[number];
 
-/** The tools ZotLit creates today, which are the four an armed tool commits as. */
-export const MARK_TOOLS = ["highlight", "underline", "image", "ink"] as const;
+/** The tools ZotLit creates, which are the ones an armed tool commits as. */
+export const MARK_TOOLS = [
+  "highlight",
+  "underline",
+  "note",
+  "text",
+  "image",
+  "ink",
+] as const;
 
 export type MarkTool = (typeof MARK_TOOLS)[number];
 
 /**
- * The tools a text selection commits as; the image tool takes a rectangle,
- * and the ink tool a stroke.
+ * The gesture each tool creates from: a text selection, a click on a page, a
+ * rectangle dragged on one, or a freehand stroke. What a gesture does in the
+ * reader follows from this table, so a new tool joins by its row here.
  */
-export type TextTool = Exclude<MarkTool, "image" | "ink">;
+export const TOOL_GESTURES = {
+  highlight: "selection",
+  underline: "selection",
+  note: "click",
+  text: "click",
+  image: "rectangle",
+  ink: "stroke",
+} as const satisfies Record<
+  MarkTool,
+  "selection" | "click" | "rectangle" | "stroke"
+>;
+
+type ToolGesture = (typeof TOOL_GESTURES)[MarkTool];
+
+/** The gesture the armed tool takes, or `null` while none is armed. */
+export function gestureOf(armed: MarkTool | null): ToolGesture | null {
+  return armed === null ? null : TOOL_GESTURES[armed];
+}
+
+/** The tools a text selection commits as. */
+export type SelectionTool = {
+  [T in MarkTool]: (typeof TOOL_GESTURES)[T] extends "selection" ? T : never;
+}[MarkTool];
+
+/** Whether a text selection commits as this tool. */
+export function isSelectionTool(tool: MarkTool | null): tool is SelectionTool {
+  return gestureOf(tool) === "selection";
+}
+
+/** The tools that create from a click on a page. */
+export type ClickTool = {
+  [T in MarkTool]: (typeof TOOL_GESTURES)[T] extends "click" ? T : never;
+}[MarkTool];
+
+/** Whether a click on a page creates as this tool. */
+export function isClickTool(tool: MarkTool | null): tool is ClickTool {
+  return gestureOf(tool) === "click";
+}
 
 /**
  * The tool a text selection commits as while a tool is armed: the armed one
  * where it takes text, and highlight where none does.
  */
-export function textToolOf(armed: MarkTool | null): TextTool {
-  return armed === "highlight" || armed === "underline" ? armed : "highlight";
+export function selectionToolOf(armed: MarkTool | null): SelectionTool {
+  return isSelectionTool(armed) ? armed : "highlight";
 }
 
 /** Whether ZotLit can write this tool's Annotation yet. */
@@ -123,9 +168,35 @@ export const INK_WIDTH_SETTING = "reader.ink-width";
 export const inkWidthSchema = v.picklist(INK_WIDTHS);
 
 /**
+ * The font sizes the text tool offers, in PDF points: a short run of Zotero's
+ * own size steps.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L55
+ */
+export const TEXT_FONT_SIZES = [10, 12, 14, 18, 24, 36] as const;
+
+export type TextFontSize = (typeof TEXT_FONT_SIZES)[number];
+
+/**
+ * The font size the text tool starts on, as Zotero's reader starts it.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/reader.js#L171-L206
+ */
+export const DEFAULT_TEXT_FONT_SIZE: TextFontSize = 14;
+
+/** The settings key the text tool's font size is kept under. */
+export const TEXT_FONT_SIZE_SETTING = "reader.text-font-size";
+
+/**
+ * The text tool's font size, as the settings file carries it. A size outside
+ * the offered steps fails, and the settings fall back to the default.
+ */
+export const textFontSizeSchema = v.picklist(TEXT_FONT_SIZES);
+
+/**
  * What the reader reads each tool's colour through, and writes a choice back;
- * the colours used last, which every tool shares; and the ink tool's pen
- * width.
+ * the colours used last, which every tool shares; the ink tool's pen width;
+ * and the text tool's font size.
  */
 export interface ToolColorStore {
   current: () => Readonly<Record<AnnotationTool, string>>;
@@ -137,12 +208,16 @@ export interface ToolColorStore {
   /** The ink tool's pen width, in PDF points. */
   inkWidth: () => InkWidth;
   setInkWidth: (width: InkWidth) => void;
+  /** The text tool's font size, in PDF points. */
+  textFontSize: () => TextFontSize;
+  setTextFontSize: (size: TextFontSize) => void;
 }
 
 /**
- * Each tool's colour, the colours used last, and the ink tool's pen width,
- * read and written through the settings file, so a colour or a width chosen in
- * one PDF is the one the next one opens with. A choice made before the
+ * Each tool's colour, the colours used last, the ink tool's pen width, and the
+ * text tool's font size, read and written through the settings file, so a
+ * colour, a width or a size chosen in one PDF is the one the next one opens
+ * with. A choice made before the
  * settings have loaded is dropped rather than written over what is on disk.
  */
 export function toolColorStore(
@@ -168,6 +243,12 @@ export function toolColorStore(
     setInkWidth: (width: InkWidth) => {
       if (!settings.current) return;
       settings.update({ [INK_WIDTH_SETTING]: width });
+    },
+    textFontSize: () =>
+      settings.current?.[TEXT_FONT_SIZE_SETTING] ?? DEFAULT_TEXT_FONT_SIZE,
+    setTextFontSize: (size: TextFontSize) => {
+      if (!settings.current) return;
+      settings.update({ [TEXT_FONT_SIZE_SETTING]: size });
     },
   };
 }

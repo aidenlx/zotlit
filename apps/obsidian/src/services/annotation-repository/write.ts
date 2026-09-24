@@ -12,6 +12,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
 
 import { capabilityOfFailure } from "./capability";
+import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 
 /**
@@ -190,8 +191,20 @@ export interface InkPosition {
   paths: readonly (readonly number[])[];
 }
 
-/** Every PDF position ZotLit writes: rects, or ink strokes. */
-export type WritablePosition = CreatePosition | InkPosition;
+/**
+ * The box of a free-text Annotation, unrounded, with the font size and turn
+ * its text is laid out at.
+ */
+export interface TextPosition {
+  pageIndex: number;
+  fontSize: number;
+  /** Degrees counter-clockwise, as Zotero stores it. */
+  rotation: number;
+  rects: readonly (readonly number[])[];
+}
+
+/** Every PDF position ZotLit writes: rects, ink strokes, or a text box. */
+export type WritablePosition = CreatePosition | InkPosition | TextPosition;
 
 /**
  * One Geometry Edit, as the reader computed it: the new position, the Sort
@@ -291,7 +304,8 @@ export function roundCoordinate(value: number): number {
 /**
  * The stored position, rounded the way Zotero's reader rounds it before every
  * save: three decimals in PDF user-space points, on rects, ink paths, and ink
- * width alike.
+ * width alike. A text box's font size and rotation are kept as given, as
+ * Zotero keeps them.
  *
  * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/lib/utilities.js#L686-L712
  */
@@ -305,6 +319,14 @@ export function writePosition(position: WritablePosition): string {
       paths: roundAll(position.paths),
     });
   }
+  if ("fontSize" in position) {
+    return JSON.stringify({
+      pageIndex: position.pageIndex,
+      fontSize: position.fontSize,
+      rotation: position.rotation,
+      rects: roundAll(position.rects),
+    });
+  }
   return JSON.stringify({
     pageIndex: position.pageIndex,
     rects: roundAll(position.rects),
@@ -312,6 +334,46 @@ export function writePosition(position: WritablePosition): string {
       nextPageRects: roundAll(position.nextPageRects),
     }),
   });
+}
+
+/**
+ * A fitted box, `[left, bottom, right, top]`, widened out to the thousandths
+ * of a point Zotero stores. A box fitted to its widest line has no room past
+ * it, and rounding its sides to the nearest thousandth could narrow it enough
+ * to wrap that line.
+ */
+export function storedWide([left, bottom, right, top]: readonly [
+  number,
+  number,
+  number,
+  number,
+]): [number, number, number, number] {
+  return [
+    Math.floor(left * POSITION_DECIMALS) / POSITION_DECIMALS,
+    bottom,
+    Math.ceil(right * POSITION_DECIMALS) / POSITION_DECIMALS,
+    top,
+  ];
+}
+
+/**
+ * A text Annotation as Zotero stores it: its rounded position, colour and
+ * text. Two that compare equal are the same stored Annotation.
+ */
+export function textIdentity(
+  position: TextPosition,
+  { color, comment }: { color: string | null; comment: string | null },
+): string {
+  return JSON.stringify([
+    color?.toLowerCase(),
+    comment,
+    writePosition({
+      pageIndex: position.pageIndex,
+      fontSize: position.fontSize,
+      rotation: position.rotation,
+      rects: position.rects,
+    }),
+  ]);
 }
 
 /**
@@ -374,16 +436,27 @@ export function writeFailureReason(
       return m.annot_view_write_reason_conflict();
     case "unknown-outcome":
       return m.annot_view_write_reason_unknown_outcome();
-    default: {
-      const copy = editingCapabilityCopy(
+    default:
+      return blockedReason(
         capabilityOfFailure(failure, () => now),
         now,
       );
-      return copy.detail === null
-        ? copy.label
-        : `${copy.label}. ${copy.detail}`;
-    }
   }
+}
+
+/**
+ * Why a blocked Editing Capability lets no write land, in one clause, as
+ * {@link writeFailureReason} says it for a failure with that capability behind
+ * it.
+ *
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ */
+export function blockedReason(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): string {
+  const copy = editingCapabilityCopy(capability, now);
+  return copy.detail === null ? copy.label : `${copy.label}. ${copy.detail}`;
 }
 
 /**

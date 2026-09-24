@@ -1,7 +1,7 @@
 // What the reader's two gesture modules both read off the surface: whether a
 // point is on screen, where a client point falls on a page, whether the window
-// holds a text selection, Zotero's palette and the ink widths as a menu, and
-// how a captured pointer is let go.
+// holds a text selection, Zotero's palette, the ink widths and the text font
+// sizes as a menu, and how a captured pointer is let go.
 //
 // Creation and selection ask the same questions of the same view, so the answer
 // is written once here and neither can drift from the other.
@@ -16,8 +16,8 @@ import type { PageBox, Point } from "./hit-test";
 import { pageUnitSize } from "./render";
 import type { OverlayPageView } from "./render";
 import { applyTransform, inverseTransform } from "./selection-capture";
-import { INK_WIDTHS } from "./tools";
-import type { InkWidth } from "./tools";
+import { INK_WIDTHS, TEXT_FONT_SIZES } from "./tools";
+import type { InkWidth, TextFontSize } from "./tools";
 
 /**
  * Whether a client point falls inside the view's own box. A view with no box at
@@ -110,6 +110,29 @@ export function addInkWidths(
         .setTitle(m.pdf_toolbar_ink_width_step({ width: String(width) }))
         .setChecked(width === current)
         .onClick(() => onPick(width)),
+    );
+  }
+}
+
+/**
+ * The text tool's font sizes, added under the colours of its menu, with the
+ * size in hand checked.
+ */
+export function addTextFontSizes(
+  menu: Menu,
+  current: TextFontSize,
+  onPick: (size: TextFontSize) => void,
+): void {
+  menu.addSeparator();
+  menu.addItem((item) =>
+    item.setTitle(m.pdf_toolbar_text_font_size()).setIsLabel(true),
+  );
+  for (const size of TEXT_FONT_SIZES) {
+    menu.addItem((item) =>
+      item
+        .setTitle(m.pdf_toolbar_text_font_size_step({ size: String(size) }))
+        .setChecked(size === current)
+        .onClick(() => onPick(size)),
     );
   }
 }

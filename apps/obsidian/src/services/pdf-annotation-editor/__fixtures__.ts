@@ -41,8 +41,17 @@ import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";
 import type { AnnotationEdits, MarkSelectionDeps } from "./selection";
-import { DEFAULT_INK_WIDTH, resolveToolColors } from "./tools";
-import type { AnnotationToolColors, InkWidth, ToolColorStore } from "./tools";
+import {
+  DEFAULT_INK_WIDTH,
+  DEFAULT_TEXT_FONT_SIZE,
+  resolveToolColors,
+} from "./tools";
+import type {
+  AnnotationToolColors,
+  InkWidth,
+  TextFontSize,
+  ToolColorStore,
+} from "./tools";
 
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
@@ -390,6 +399,7 @@ export function toolColors(): ToolColorStore {
   let stored: AnnotationToolColors = {};
   let recent: readonly string[] = [];
   let inkWidth: InkWidth = DEFAULT_INK_WIDTH;
+  let textFontSize: TextFontSize = DEFAULT_TEXT_FONT_SIZE;
   return {
     current: () => resolveToolColors(stored),
     set: (tool, color) => {
@@ -402,6 +412,10 @@ export function toolColors(): ToolColorStore {
     inkWidth: () => inkWidth,
     setInkWidth: (width) => {
       inkWidth = width;
+    },
+    textFontSize: () => textFontSize,
+    setTextFontSize: (size) => {
+      textFontSize = size;
     },
   };
 }
@@ -483,8 +497,11 @@ export interface ReaderSurfacesOptions {
   records: readonly AnnotationRecord[];
   capability?: EditingCapability;
   annotations: AnnotationEdits & AnnotationCreates & AnnotationFacts;
-  /** This document's Structured Characters; `null` until one is open. */
-  structure?: PdfTextStructure | null;
+  /**
+   * This document's Structured Characters; `null` until one is open. As a
+   * function, read on each ask, as the viewer is.
+   */
+  structure?: PdfTextStructure | null | (() => PdfTextStructure | null);
   /** The Sort Index a Geometry Edit is saved with. */
   sortIndex?: (position: PdfPosition) => Promise<string | null>;
   /** The range a text range's dragged end reaches. */
@@ -526,9 +543,13 @@ export function readerSurfaces({
     reportBlockedGesture: vi.fn(),
     allowEditing: vi.fn(),
   };
+  /** Why each create that made nothing said it made nothing, in order. */
+  const reportCreateFailure = vi.fn<(reason: string) => void>();
   const reported: (readonly string[])[] = [];
   const navigated: string[] = [];
   const revealed: string[] = [];
+  /** The options each reveal was asked with, in reveal order. */
+  const revealedWith: { commenting?: boolean }[] = [];
   const popup = {
     contains: (node: Node | null) => host.contains(node),
     sync: () => host.sync(),
@@ -541,10 +562,14 @@ export function readerSurfaces({
     attachmentKey: "RGRPDF24",
     pages: () => [{ pageIndex: 0, view: page }],
     records: () => held,
-    structure: () => structure,
+    structure: typeof structure === "function" ? structure : () => structure,
     repaint: vi.fn(),
-    reveal: (annotationKey) => revealed.push(annotationKey),
+    reveal: (annotationKey, options = {}) => {
+      revealed.push(annotationKey);
+      revealedWith.push(options);
+    },
     reportBlockedGesture: gestures.reportBlockedGesture,
+    reportCreateFailure,
     renderCapability: vi.fn(),
     colors,
     surfaceState: store,
@@ -599,9 +624,11 @@ export function readerSurfaces({
     parent,
     colors,
     gestures,
+    reportCreateFailure,
     reported,
     navigated,
     revealed,
+    revealedWith,
     /** What a refresh does once the read answers: the records, replaced. */
     replace(next: readonly AnnotationRecord[]) {
       held = next;
