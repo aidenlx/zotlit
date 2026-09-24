@@ -821,7 +821,7 @@ const STROKE = {
   color: "#2ea8e5",
 };
 
-it("publishes the live stroke beside the floating surface, and clears it", () => {
+it("publishes the Live Stroke beside the floating surface, and clears it", () => {
   const store = reader();
   selectMark(store, "WORD2222");
   const floating = store.getState().floating;
