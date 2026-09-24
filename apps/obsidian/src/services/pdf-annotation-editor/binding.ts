@@ -23,6 +23,7 @@ import {
   registerMigratingWindowEvent,
 } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
+import { themeAttribute } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type {
@@ -980,8 +981,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
    * touch panning off its pages.
    */
   #showInking(inking: boolean): void {
-    if (inking) this.#view.containerEl.dataset.ztInking = "";
-    else delete this.#view.containerEl.dataset.ztInking;
+    this.#view.containerEl.toggleAttribute(themeAttribute.pdfInking, inking);
   }
 
   /**
