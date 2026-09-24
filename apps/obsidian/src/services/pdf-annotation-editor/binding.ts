@@ -768,6 +768,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       }),
       containerEl: this.#view.containerEl,
       popup,
+      selectionSurfaces: this.#session,
       marks: () => this.#visibleMarks(),
       records: () => this.#records,
       pageAt: (pageIndex) =>

@@ -669,6 +669,9 @@ export class AnnotationView extends ItemView {
       });
     if (!session) return;
     const stack = new DisposableStack();
+    // The cards drive this selection, so a press on them is no click-away:
+    // the card's own click says what becomes selected.
+    stack.defer(session.addSelectionSurface(this.contentEl));
     stack.defer(session.on("target-changed", () => this.#reload()));
     stack.defer(
       session.on("selection-changed", (selected) => {

@@ -337,6 +337,27 @@ it("stands the selection down on a press outside the reader", () => {
   expect(h.popup()).toBeNull();
 });
 
+it("leaves the selection standing for a press on a surface that drives it", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const opened = h.popup();
+  const list = document.body.appendChild(document.createElement("div"));
+  const card = list.appendChild(document.createElement("div"));
+  const release = h.session.addSelectionSurface(list);
+
+  // The card's own click, after this press, says what becomes selected.
+  press(card, { x: 700, y: 50 });
+
+  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect(h.popup()).toBe(opened);
+
+  release();
+  press(card, { x: 700, y: 50 });
+
+  expect(h.selection.selected.size).toBe(0);
+  list.remove();
+});
+
 it("leaves the selection standing for a press inside the popup", () => {
   using h = setup();
   click(h.page.div, ON_WORD);

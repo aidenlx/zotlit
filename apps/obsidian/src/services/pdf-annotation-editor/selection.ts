@@ -4,7 +4,9 @@
 // Marks take no pointer input, so every gesture here is answered from geometry
 // and nothing is hung on a mark's own node. Click-away belongs to this hit test
 // rather than to the popup: the press that opens the popup is not an outside
-// press, and this is the only thing that hides it.
+// press, and this is the only thing that hides it. A surface outside the reader
+// that drives the selection, such as the Annotation View, is not outside either:
+// its own gesture says what the selection becomes.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see https://github.com/aidenlx/zotlit/issues/1148
@@ -38,6 +40,7 @@ import type {
   MutationState,
   WriteFailure,
 } from "@/services/annotation-repository/write";
+import type { ReaderSessionHost } from "@/services/reader-session/session";
 import { conflictPanel } from "@/views/annot-view/card-conflict";
 import {
   commentEditorControls,
@@ -200,6 +203,11 @@ export interface MarkSelectionDeps {
    * standing, and a scroll re-hangs it.
    */
   popup: Pick<MarkPopupHost, "contains" | "sync">;
+  /**
+   * The surfaces outside the reader that drive this selection: a press inside
+   * one leaves the selection standing too.
+   */
+  selectionSurfaces: Pick<ReaderSessionHost, "onSelectionSurface">;
   /** The marks on screen, by page index, as the binding last painted them. */
   marks: () => ReadonlyMap<number, readonly PdfPageAnnotation[]>;
   /** Every Annotation of this Attachment, as the repository last answered. */
@@ -938,15 +946,16 @@ export class MarkSelection implements Disposable {
   }
 
   /**
-   * A press outside the reader and outside the popup stands the selection down.
-   * The press that opens the popup lands inside the reader, so it is never one
-   * of these.
+   * A press outside the reader, the popup and every surface that drives the
+   * selection stands the selection down. The press that opens the popup lands
+   * inside the reader, so it is never one of these.
    */
   #outsidePress(event: PointerEvent): void {
     if (this.#selectedKey() === null) return;
     const target = event.target as Node | null;
     if (this.#deps.containerEl.contains(target)) return;
     if (this.#deps.popup.contains(target)) return;
+    if (this.#deps.selectionSurfaces.onSelectionSurface(target)) return;
     this.#apply(null);
   }
 

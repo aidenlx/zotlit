@@ -23,6 +23,7 @@ import type {
   AttachmentResolution,
   AttachmentResolverEvents,
 } from "@/services/attachment-resolver/service";
+import { ReaderSessionHost } from "@/services/reader-session/session";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -549,6 +550,12 @@ export function readerSurfaces({
   /** Each time the toolbar handed the keyboard to the pages. */
   const focusReader = vi.fn();
   const reported: (readonly string[])[] = [];
+  /** The session a consumer names its selection surfaces on. */
+  const session = new ReaderSessionHost({
+    source: "obsidian-pdf",
+    navigate: vi.fn(),
+    select: vi.fn(),
+  });
   const navigated: string[] = [];
   const revealed: string[] = [];
   /** The options each reveal was asked with, in reveal order. */
@@ -588,6 +595,7 @@ export function readerSurfaces({
     },
     containerEl,
     popup,
+    selectionSurfaces: session,
     marks: () =>
       store.getState().marksVisible ? groupAnnotationsByPage(held) : new Map(),
     records: () => held,
@@ -633,6 +641,7 @@ export function readerSurfaces({
     host,
     selection,
     creation,
+    session,
     parent,
     colors,
     gestures,
@@ -686,6 +695,7 @@ export function readerSurfaces({
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();
       host[Symbol.dispose]();
+      session[Symbol.dispose]();
       listening.dispose();
     },
   };
