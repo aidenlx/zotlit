@@ -86,7 +86,7 @@ function pairedRunBuilder(y: Argv) {
     })
     .option("purge", {
       describe:
-        "restore the exact generated Development Vault seed, and clear the plugin's vault-scoped local storage",
+        "restore the exact generated Development Vault seed, and clear the plugin's vault-scoped local storage and stored excerpt images",
       type: "boolean",
       default: false,
     })

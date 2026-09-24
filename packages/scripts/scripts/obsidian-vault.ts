@@ -457,13 +457,14 @@ async function sync(
     // `--purge` deletes the folder first, so renamed or removed Fixture files
     // drop out too, not just the ones the Fixture Vault still has.
     if (purge) {
-      // Every ZotLit key goes with the folder, so a purged vault holds no
-      // Device Overrides, consent, or view state. Obsidian's own keys stay,
-      // including the trust marker that keeps Restricted Mode off.
+      // Every ZotLit key and database goes with the folder, so a purged vault
+      // holds no Device Overrides, consent, view state, or stored excerpt
+      // images. Obsidian's own keys stay, including the trust marker that
+      // keeps Restricted Mode off.
       const registered = findVaultId(await vaultList(host), abs);
       await purgeVault(abs);
       if (registered) {
-        await clearVaultLocalStorage(registered, host, { keyPrefix: pluginId });
+        await clearVaultStorage(registered, host, { keyPrefix: pluginId });
       }
       await mkdir(abs, { recursive: true });
     }
@@ -743,22 +744,29 @@ async function removeOffline(abs: string): Promise<string | undefined> {
 }
 
 /**
- * Delete vault-scoped local storage through a live window. Obsidian keeps these
- * keys in the shared `app://obsidian.md` origin as `<vaultId>-<key>`, outside
- * the vault folder, so they outlive a folder purge and an unregister alike. A
- * `keyPrefix` narrows the sweep to one owner's keys; the empty default takes
- * every key the vault holds.
+ * Delete vault-scoped local storage and IndexedDB databases through a live
+ * window. Obsidian and ZotLit keep both in the shared `app://obsidian.md`
+ * origin as `<vaultId>-<name>` — ZotLit's device-local excerpt store included —
+ * outside the vault folder, so they outlive a folder purge and an unregister
+ * alike. A `keyPrefix` narrows the sweep to one owner's keys and databases; the
+ * empty default takes every one the vault holds.
  */
-async function clearVaultLocalStorage(
+async function clearVaultStorage(
   vaultId: string,
   host: string,
   { keyPrefix = "" }: { keyPrefix?: string } = {},
 ): Promise<void> {
   const prefix = `${vaultId}-${keyPrefix}`;
+  // A deletion that an open connection blocks still completes once that
+  // connection closes, so `blocked` settles the wait rather than hanging it.
   const cleared = await obEval(
-    `(function(){var p=${JSON.stringify(prefix)};` +
+    `(async function(){var p=${JSON.stringify(prefix)};` +
       `Object.keys(localStorage).filter(function(k){return k.indexOf(p)===0})` +
       `.forEach(function(k){localStorage.removeItem(k)});` +
+      `var databases=await indexedDB.databases();` +
+      `await Promise.all(databases.filter(function(d){return d.name&&d.name.indexOf(p)===0}).map(function(d){` +
+      `return new Promise(function(resolve,reject){var r=indexedDB.deleteDatabase(d.name);` +
+      `r.onsuccess=r.onblocked=function(){resolve()};r.onerror=function(){reject(r.error)}})}));` +
       `return 'ok'})()`,
     host,
   );
@@ -790,12 +798,9 @@ async function removeOnline(abs: string): Promise<string | undefined> {
 
     // localStorage and IndexedDB live in the shared `app://obsidian.md` origin,
     // so a surviving window clears what `vault-remove` leaves behind.
-    await clearVaultLocalStorage(id, host).catch(() => undefined);
+    await clearVaultStorage(id, host).catch(() => undefined);
     await obEval(
-      `(function(){var id=${JSON.stringify(id)};` +
-        `localStorage.removeItem('enable-plugin-'+id);` +
-        `['cache','webview','backup','sync'].forEach(function(n){indexedDB.deleteDatabase(id+'-'+n)});` +
-        `return 'ok'})()`,
+      `localStorage.removeItem('enable-plugin-'+${JSON.stringify(id)});'ok'`,
       host,
     ).catch(() => undefined);
 
@@ -874,7 +879,7 @@ const vaultPathPosition = {
 
 const syncPurgeOption = {
   describe:
-    "delete the Development Vault folder and the plugin's vault-scoped local storage before restoring the complete generated seed",
+    "delete the Development Vault folder, the plugin's vault-scoped local storage, and its stored excerpt images before restoring the complete generated seed",
   type: "boolean",
   default: false,
 } as const;
