@@ -12,17 +12,27 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
       vaultId,
       `(() => {
       const state = ${probe};
-      if (state) { state.service.resolve = state.original; state.leaf?.detach(); delete ${probe}; }
+      if (state) { state.service.resolve = state.original; state.service.stored = state.stored; state.leaf?.detach(); delete ${probe}; }
       return true;
     })()`,
     );
   });
+  // The Development Vault keeps its device-local excerpt store across runs, and
+  // an earlier test's card can still hold this Annotation's image. The trial
+  // starts from a device that holds nothing for it: no stored image, and no
+  // live display read.
   await obEval(
     vaultId,
     `(async () => {
-      const service = app.plugins.plugins.zotlit.services.excerptImage;
+      const services = app.plugins.plugins.zotlit.services;
+      const service = services.excerptImage;
       const original = service.resolve;
-      const state = ${probe} = { service, original, recover: false, calls: 0, completed: 0, leaf: null };
+      const stored = service.stored;
+      const state = ${probe} = { service, original, stored, recover: false, calls: 0, completed: 0, leaf: null };
+      service.stored = async function(request) {
+        if (request.annotation.key === "4PE492KU") return null;
+        return stored.call(this, request);
+      };
       service.resolve = async function(request, signal) {
         if (request.annotation.key !== "4PE492KU") return original.call(this, request, signal);
         state.calls++;
@@ -31,6 +41,7 @@ export async function verifyExcerptRefresh(vaultId: string): Promise<void> {
         state.completed++;
         return result;
       };
+      services.excerptDisplay.clear();
       state.leaf = app.workspace.getLeaf("tab");
       await state.leaf.setViewState({ type: "zotero-annotation-view", state: { followMode: "pinned", previousMode: "active-tab", pinnedItemKey: "RUGIER24" }, active: true });
       await app.workspace.revealLeaf(state.leaf);

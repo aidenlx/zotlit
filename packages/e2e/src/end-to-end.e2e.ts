@@ -12,6 +12,7 @@
 
 import { execFile } from "node:child_process";
 import {
+  access,
   cp,
   mkdir,
   mkdtemp,
@@ -380,6 +381,18 @@ describe.skipIf(!reachable || pairedZotero !== null)("End-to-end Run", () => {
   beforeAll(async () => {
     // The dev build generates this facade; unreachable runs never load it.
     m = await import("@obsidian-messages");
+    // A run that stopped before `afterAll` leaves its vault registered and its
+    // folder in place, and `create` refuses a registered path. Remove both
+    // first, so every run starts from a fresh vault with fresh storage.
+    const stale = await access(join(e2eVaultPath, ".obsidian")).then(
+      () => true,
+      () => false,
+    );
+    await runVaultScript([
+      "remove",
+      e2eVaultPath,
+      ...(stale ? ["--purge"] : []),
+    ]);
     // `create` seeds the target vault from `apps/obsidian/dist-dev`, and falls
     // back to the vault's own plugin folder only when the worktree holds no
     // dev build. Copy the bundle in first, so a run without a dev build still
