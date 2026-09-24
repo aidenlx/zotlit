@@ -9,6 +9,7 @@ import type {
 
 import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import type { InkPosition } from "@/services/annotation-repository/write";
 
 import { freeTextLayout } from "./free-text-layout";
 import type { PagePoint, PageRect, Turn } from "./free-text-layout";
@@ -24,6 +25,7 @@ import {
 import type { Grip, PdfPoint, TextRotation } from "./geometry-edit";
 import type { Point } from "./hit-test";
 import { inkReach } from "./ink-path";
+import type { LiveStroke, PendingStroke } from "./reader-surface-state";
 import { unionOutlinePath } from "./rect-union-outline";
 import "./style.css";
 
@@ -115,6 +117,8 @@ export type OverlayPageView = Pick<PDFPageView, "div"> & {
 export interface AnnotationOverlayOptions {
   /** One page's placements, as {@link groupAnnotationsByPage} keyed them. */
   annotations: readonly PdfPageAnnotation[];
+  /** The Pending Strokes on this page, drawn under every mark. */
+  pending?: readonly PendingStroke[];
   /** The Indexed Keys drawn as selected. */
   selected?: ReadonlySet<string>;
   /** Whether the selected marks carry their Mark Handles: editing is live. */
@@ -148,6 +152,7 @@ export function renderAnnotationOverlay(
   page: OverlayPageView,
   {
     annotations,
+    pending = [],
     selected,
     handles = false,
     textRotation = UPRIGHT,
@@ -157,6 +162,12 @@ export function renderAnnotationOverlay(
 
   const unitPage = toPageUnits(page);
   const overlay = createOverlay(unitPage);
+
+  for (const stroke of pending) {
+    const element = inkStroke(unitPage, stroke);
+    element.classList.add(themeHook.pdfPendingStroke);
+    overlay.append(element);
+  }
 
   for (const placement of annotations) {
     const { annotation } = placement;
@@ -243,6 +254,39 @@ export function renderCapture(
   element.setAttribute("vector-effect", "non-scaling-stroke");
   element.setAttribute("opacity", capturesImage(capture.rect) ? "1" : "0.2");
   overlay.append(element);
+}
+
+/**
+ * Draws the Ink Stroke being drawn on this page, over every mark, or takes it
+ * away for `null`. The stroke is drawn as a saved ink mark is, so the release
+ * that saves it changes no pixel. A stroke already drawn is patched in place,
+ * so each frame rewrites one `d` and builds nothing.
+ *
+ * The overlay is rebuilt on every page render and is absent on a page with
+ * no marks, so this builds one where none stands, and takes back an overlay it
+ * leaves empty.
+ */
+export function renderLiveStroke(
+  page: OverlayPageView,
+  stroke: Omit<LiveStroke, "pageIndex"> | null,
+): void {
+  const held = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
+  const drawn = held?.querySelector(`.${themeHook.pdfLiveStroke}`);
+  if (!stroke) {
+    drawn?.remove();
+    if (held?.childElementCount === 0) held.remove();
+    return;
+  }
+  const unitPage = toPageUnits(page);
+  const fresh = inkStroke(unitPage, { ...stroke, paths: [stroke.path] });
+  if (drawn) {
+    for (const { name, value } of fresh.attributes)
+      drawn.setAttribute(name, value);
+    return;
+  }
+  fresh.classList.add(themeHook.pdfLiveStroke);
+  const overlay = held ?? page.div.appendChild(createOverlay(unitPage));
+  overlay.append(fresh);
 }
 
 /**
@@ -779,11 +823,23 @@ function renderInk(
   annotation: AnnotationRecord,
   position: PdfInkPosition,
 ): SVGPathElement {
+  return inkStroke(page, { ...position, color: colorOf(annotation) });
+}
+
+/**
+ * The one path every ink stroke is drawn with — a saved mark, a Pending
+ * Stroke, and the stroke being drawn — so none of the three can draw the same
+ * points apart from the others.
+ */
+function inkStroke(
+  page: OverlayPage,
+  { paths, width, color }: Omit<InkPosition, "pageIndex"> & { color: string },
+): SVGPathElement {
   const element = page.document.createElementNS(SVG_NS, "path");
-  element.setAttribute("d", inkPathOf(page, position));
+  element.setAttribute("d", inkPathOf(page, { paths }));
   element.setAttribute("fill", "none");
-  element.setAttribute("stroke", darkenInk(colorOf(annotation)));
-  element.setAttribute("stroke-width", String(position.width));
+  element.setAttribute("stroke", darkenInk(color));
+  element.setAttribute("stroke-width", String(width));
   element.setAttribute("stroke-linecap", "round");
   element.setAttribute("stroke-linejoin", "round");
   return element;
@@ -796,7 +852,10 @@ function renderInk(
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/page.js#L260-L278
  */
-function inkPathOf(page: OverlayPage, position: PdfInkPosition): string {
+function inkPathOf(
+  page: OverlayPage,
+  position: Pick<InkPosition, "paths">,
+): string {
   return position.paths
     .map((path) =>
       pagePoints(page, path)

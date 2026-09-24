@@ -2319,6 +2319,7 @@
   "pdf_toolbar_highlight": "高亮",
   "pdf_toolbar_underline": "下划线",
   "pdf_toolbar_image": "选择区域",
+  "pdf_toolbar_ink": "绘图",
   "pdf_toolbar_tool_color": "{tool}颜色",
   "pdf_toolbar_show_marks": "显示 Zotero 标注",
   "pdf_toolbar_hide_marks": "隐藏 Zotero 标注",

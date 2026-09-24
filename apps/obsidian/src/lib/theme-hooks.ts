@@ -72,6 +72,17 @@ export const themeHook = {
    */
   pdfCaptureRect: "zt-pdf-capture-rect",
   /**
+   * The stroke the armed ink tool is drawing on a page, drawn as a saved ink
+   * mark is. It stands in the page's {@link themeHook.pdfAnnotationOverlay}
+   * until the pointer is released or the stroke is discarded.
+   */
+  pdfLiveStroke: "zt-pdf-live-stroke",
+  /**
+   * A released ink stroke drawn on its page while Zotero saves it, under the
+   * Annotation Marks, until the saved mark takes its place.
+   */
+  pdfPendingStroke: "zt-pdf-pending-stroke",
+  /**
    * The always-present Editing Capability affordance in the PDF reader's own
    * toolbar. `data-zt-capability-tone` names the state it is showing —
    * `ready`, `action`, `busy` or `warning`.
@@ -83,7 +94,8 @@ export const themeHook = {
    * carries `data-zt-tool`. Each tool of its tool group is split in two — the
    * toggle under the tool's own name and the chevron that opens its colours
    * under `<tool>-color` — which today is `highlight`, `highlight-color`,
-   * `underline`, `underline-color`, `image` and `image-color`. `visibility`
+   * `underline`, `underline-color`, `image`, `image-color`, `ink` and
+   * `ink-color`. `visibility`
    * stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",

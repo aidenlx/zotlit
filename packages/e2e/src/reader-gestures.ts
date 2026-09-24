@@ -16,11 +16,13 @@ export function pdfViewOf(attachmentPath: string): string {
 }
 
 /**
- * Declares `fire(type, x, y, target?)` in an eval: one pointer event, or the
- * click that follows a release, dispatched as the browser would at a client
- * point — to the node under it unless a target is named — answering that node.
+ * Declares `fire(type, x, y, target?, extra?)` in an eval: one pointer event,
+ * or the click that follows a release, dispatched as the browser would at a
+ * client point — to the node under it unless a target is named — answering
+ * that node. `extra` overrides the event's own fields, such as a second
+ * pointer's `pointerId`.
  */
-export const FIRE = `const fire=(type,x,y,target)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
+export const FIRE = `const fire=(type,x,y,target,extra)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window,...extra};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
 
 /**
  * Declares `tap(x, y)` in an eval, after {@link FIRE}: a press, its release,

@@ -774,7 +774,17 @@ it("refuses an image create from a text selection, and offers the popup instead"
  * the PDF point `(x, 792 - y)`. The highlight on it draws round client
  * `(300, 177)`.
  */
-function imageReader(capability?: EditingCapability) {
+function imageReader(
+  capability?: EditingCapability,
+  {
+    create = async () => ({ kind: "created", annotationKey: "MADE2345" }),
+  }: {
+    /** What Zotero answers each create with. */
+    create?: (
+      draft: Omit<AnnotationDraft, "parentKey">,
+    ) => Promise<CreateOutcome>;
+  } = {},
+) {
   vi.useFakeTimers();
   const containerEl = document.body.createDiv();
   const page = pageView();
@@ -817,7 +827,7 @@ function imageReader(capability?: EditingCapability) {
           draft: Omit<AnnotationDraft, "parentKey">,
         ): Promise<CreateOutcome> => {
           drafts.push(draft);
-          return { kind: "created", annotationKey: "MADE2345" };
+          return await create(draft);
         },
       ),
     },
@@ -829,14 +839,15 @@ function imageReader(capability?: EditingCapability) {
   arm(surfaces.store, "image");
 
   const pointer = (
-    type: "pointerdown" | "pointermove" | "pointerup",
+    type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
     [x, y]: [number, number],
+    pointerId = 1,
   ) =>
     (type === "pointerdown" ? page.div : containerEl).dispatchEvent(
       new PointerEvent(type, {
         clientX: x,
         clientY: y,
-        pointerId: 1,
+        pointerId,
         button: 0,
         bubbles: true,
         cancelable: true,
@@ -961,4 +972,258 @@ it("leaves a press on a mark to the mark while the image tool is armed", async (
     kind: "selected",
     key: "PUPR5FG5",
   });
+});
+
+/**
+ * The image reader with the ink tool armed from its toolbar instead. A client
+ * point `(x, y)` is the PDF point `(x, 792 - y)`.
+ */
+function inkReader(...args: Parameters<typeof imageReader>) {
+  const open = imageReader(...args);
+  open.slot.querySelector<HTMLElement>('[data-zt-tool="ink"]')!.click();
+  return open;
+}
+
+it("creates one ink stroke as Zotero smooths it, and stays armed", async () => {
+  using open = inkReader();
+
+  await open.drag([100, 100], [110, 100]);
+
+  // Two Chaikin passes over (100, 692)–(110, 692) cut at 100.625, 101.875,
+  // 103.75, 106.25, 108.125 and 109.375; the points under one point from the
+  // last kept one — 100.625, and the end at 110 — go.
+  const position = {
+    pageIndex: 0,
+    width: 2,
+    paths: [
+      [
+        100, 692, 101.875, 692, 103.75, 692, 106.25, 692, 108.125, 692, 109.375,
+        692,
+      ],
+    ],
+  };
+  expect(open.structure.sortIndex).toHaveBeenCalledWith(position);
+  expect(open.drafts).toEqual([
+    {
+      type: "ink",
+      color: "#2ea8e5",
+      comment: "",
+      text: "",
+      pageLabel: "1",
+      sortIndex: "00000|000100|00100",
+      position,
+    },
+  ]);
+  expect(open.revealed).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    floating: { kind: "none" },
+    armed: "ink",
+    liveStroke: null,
+  });
+});
+
+it("stores a tap as its one point", async () => {
+  using open = inkReader();
+
+  await open.drag([100, 100], [100.4, 100]);
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 2, paths: [[100, 692]] },
+  ]);
+});
+
+it("keeps a stroke run off the page on the page it began on", async () => {
+  using open = inkReader();
+
+  await open.drag([600, 100], [700, 100]);
+
+  // The move is taken at the page's right edge, x = 612; the smoothing cuts
+  // (600, 612) at 611.25 and drops the end, 0.75 points on.
+  const { position } = open.drafts[0]!;
+  const [path] = "paths" in position ? position.paths : [];
+  expect(Math.max(...path!.filter((_, index) => index % 2 === 0))).toBe(611.25);
+});
+
+it("discards a stroke on Escape and keeps the tool; a second Escape stands it down", async () => {
+  using open = inkReader();
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [150, 150]);
+  open.key("Escape");
+  open.pointer("pointerup", [150, 150]);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState()).toMatchObject({
+    armed: "ink",
+    liveStroke: null,
+    pendingStrokes: [],
+  });
+  open.key("Escape");
+  expect(open.store.getState().armed).toBeNull();
+});
+
+it.each([
+  [
+    "a second pointer's press",
+    (open: ReturnType<typeof inkReader>) =>
+      open.pointer("pointerdown", [200, 200], 2),
+  ],
+  [
+    "a pointer cancel",
+    (open: ReturnType<typeof inkReader>) =>
+      open.pointer("pointercancel", [150, 150]),
+  ],
+  [
+    "a lost capture",
+    (open: ReturnType<typeof inkReader>) =>
+      open.containerEl.dispatchEvent(
+        new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
+      ),
+  ],
+  [
+    "a tool change",
+    (open: ReturnType<typeof inkReader>) => arm(open.store, "highlight"),
+  ],
+])("creates nothing from a stroke %s discarded", async (_, discard) => {
+  using open = inkReader();
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointermove", [150, 150]);
+  discard(open);
+  open.pointer("pointerup", [150, 150]);
+  open.pointer("pointerup", [200, 200], 2);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().liveStroke).toBeNull();
+});
+
+/** The ink reader, armed while editing was live and blocked since. */
+function blockedInkReader() {
+  const open = inkReader();
+  ingestCapability(
+    open.store,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+  return open;
+}
+
+it("reports a press while editing is not live, and draws nothing", async () => {
+  using open = blockedInkReader();
+
+  open.pointer("pointerdown", [100, 100]);
+  expect(open.store.getState().liveStroke).toBeNull();
+  open.pointer("pointerup", [150, 150]);
+  await open.creation.created;
+
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(open.drafts).toEqual([]);
+});
+
+it("leaves a mark unselected under a press while editing is not live", async () => {
+  using open = blockedInkReader();
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+
+  expect(open.store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("saves a stroke in the colour it was pressed in", async () => {
+  using open = inkReader();
+  const pressed = open.store.getState().colors.ink;
+
+  open.pointer("pointerdown", [100, 100]);
+  open.key("5");
+  open.pointer("pointerup", [100, 100]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  expect(open.store.getState().colors.ink).toBe(ANNOTATION_COLORS[4]);
+  expect(pressed).not.toBe(ANNOTATION_COLORS[4]);
+  expect(open.drafts[0]!.color).toBe(pressed);
+});
+
+it("creates an image while an ink stroke still saves", async () => {
+  const inkAnswers: ((outcome: CreateOutcome) => void)[] = [];
+  using open = inkReader(undefined, {
+    create: async (draft) =>
+      draft.type === "ink"
+        ? await new Promise((resolve) => inkAnswers.push(resolve))
+        : { kind: "created", annotationKey: "MADE2345" },
+  });
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  await vi.waitFor(() => expect(inkAnswers).toHaveLength(1));
+
+  arm(open.store, "image");
+  await open.drag([300, 292], [100, 100]);
+
+  expect(open.drafts.map(({ type }) => type)).toEqual(["ink", "image"]);
+  expect(open.revealed).toEqual(["MADE2345"]);
+  inkAnswers[0]!({ kind: "created", annotationKey: "INK12345" });
+});
+
+it("draws over a mark and leaves the mark unselected", async () => {
+  using open = inkReader();
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+  await open.creation.created;
+
+  expect(open.drafts.map(({ type }) => type)).toEqual(["ink"]);
+  expect(open.store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("draws while an earlier stroke saves, and creates in release order", async () => {
+  const answers: (() => void)[] = [];
+  using open = inkReader(undefined, {
+    create: () =>
+      new Promise((resolve) =>
+        answers.push(() =>
+          resolve({ kind: "created", annotationKey: `MADE${answers.length}` }),
+        ),
+      ),
+  });
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerdown", [200, 200]);
+  open.pointer("pointerup", [200, 200]);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The second stroke waits on the first create, and both stay on the page.
+  expect(
+    open.store.getState().pendingStrokes.map(({ paths }) => paths),
+  ).toEqual([[[100, 692]], [[200, 592]]]);
+  answers[0]!();
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(2));
+  answers[1]!();
+  await open.creation.created;
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 2, paths: [[100, 692]] },
+    { pageIndex: 0, width: 2, paths: [[200, 592]] },
+  ]);
+});
+
+it("takes a refused stroke off the page", async () => {
+  using open = inkReader(undefined, {
+    create: async () => ({
+      kind: "failed",
+      failure: { kind: "position-too-large" },
+    }),
+  });
+
+  await open.drag([100, 100], [150, 150]);
+
+  expect(open.drafts).toHaveLength(1);
+  expect(open.store.getState().pendingStrokes).toEqual([]);
 });

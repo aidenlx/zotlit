@@ -178,6 +178,32 @@ it("rounds the stored rects to three decimals, on both pages", () => {
   });
 });
 
+it("sends an ink draft's width and strokes rounded, and no quoted text", () => {
+  const object = created(
+    createRequest(
+      "users/0",
+      draft({
+        type: "ink",
+        text: "",
+        position: {
+          pageIndex: 0,
+          width: 2.000_4,
+          paths: [[120.123_45, 610.987_65, 121.5, 612.000_49]],
+        },
+      }),
+      TOKEN,
+    ),
+  );
+
+  expect(object.annotationType).toBe("ink");
+  expect(object).not.toHaveProperty("annotationText");
+  expect(JSON.parse(object.annotationPosition as string)).toEqual({
+    pageIndex: 0,
+    width: 2,
+    paths: [[120.123, 610.988, 121.5, 612]],
+  });
+});
+
 it("leaves nextPageRects out of a quote that stayed on one page", () => {
   const object = created(createRequest("users/0", draft(), TOKEN));
 

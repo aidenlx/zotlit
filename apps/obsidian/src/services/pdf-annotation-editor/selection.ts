@@ -246,6 +246,8 @@ export class MarkSelection implements Disposable {
   #dragging: { pointerId: number; client: Point } | null = null;
   /** Whether the last press took a Mark Handle, whose click selects nothing. */
   #pressedHandle = false;
+  /** Whether the last press was the armed ink tool's, whose click selects nothing. */
+  #pressedStroke = false;
   #adjusting = Promise.resolve();
   /**
    * The text range the pointer last asked for, which a release waits on so
@@ -285,6 +287,10 @@ export class MarkSelection implements Disposable {
           this.#deps.creation?.grab(event, {
             onMark: () => this.#onMark(event),
           });
+        // The armed ink tool takes every main-button press before any mark
+        // could, as Zotero's reader does, whether or not the press drew.
+        this.#pressedStroke =
+          event.button === 0 && this.#state().armed === "ink";
       }),
     );
     this.#surfaces.use(
@@ -315,6 +321,15 @@ export class MarkSelection implements Disposable {
       registerDomEvent(containerEl, "pointercancel", (event) => {
         if (event.pointerId === this.#dragging?.pointerId) this.#cancelDrag();
         else this.#deps.creation?.cancel(event);
+      }),
+    );
+    // A capture the browser took away without a cancel ends the stroke or the
+    // rectangle it held; a release lets go of its own first, so its loss
+    // matches nothing.
+    this.#surfaces.use(
+      registerDomEvent(containerEl, "lostpointercapture", (event) => {
+        if (event.pointerId !== this.#dragging?.pointerId)
+          this.#deps.creation?.cancel(event);
       }),
     );
     this.#surfaces.use(
@@ -449,6 +464,12 @@ export class MarkSelection implements Disposable {
     // A Mark Handle is a grip, not a mark: its click keeps the selection.
     if (this.#pressedHandle) {
       this.#pressedHandle = false;
+      return;
+    }
+    // A press of the ink tool on a mark — a stroke, a dot, or one that editing
+    // blocked — selects nothing.
+    if (this.#pressedStroke) {
+      this.#pressedStroke = false;
       return;
     }
     const client = { x: event.clientX, y: event.clientY };
