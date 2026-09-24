@@ -23,6 +23,13 @@ export function pdfViewOf(attachmentPath: string): string {
 export const FIRE = `const fire=(type,x,y,target)=>{const node=target??document.elementFromPoint(x,y);const init={clientX:x,clientY:y,bubbles:true,cancelable:true,pointerId:1,button:0,buttons:type==='pointerup'||type==='click'?0:1,view:window};node.dispatchEvent(type==='click'?new MouseEvent(type,init):new PointerEvent(type,init));return node;};`;
 
 /**
+ * Declares `tap(x, y)` in an eval, after {@link FIRE}: a press, its release,
+ * and the click that follows, all at one client point — a mark click as the
+ * browser delivers it.
+ */
+export const TAP = `const tap=(x,y)=>{const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return node;};`;
+
+/**
  * Shows and raises the vault's window. A pointer gesture is hit-tested against
  * the page as laid out, and a hidden or occluded window neither lays out nor
  * paints it.

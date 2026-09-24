@@ -3,6 +3,7 @@
 // what was clicked.
 //
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
+import { nearStroke } from "./ink-path";
 import type { MarkTarget, PageRect } from "./render";
 
 /**
@@ -113,7 +114,8 @@ export function resolveMarkClick({
 
 /**
  * The marks under a point, smallest area first, so the mark inside another is
- * the one a first click takes.
+ * the one a first click takes. An ink mark is under the point only near one of
+ * its strokes, so the empty middle of a circled term takes no click.
  *
  * @returns the Indexed Keys of the marks hit, closest-fitting first.
  */
@@ -123,7 +125,7 @@ export function marksAtPoint(
 ): string[] {
   return targets
     .flatMap((target) =>
-      target.rects.some((rect) => covers(rect, point, pad))
+      hitsTarget(target, point, pad)
         ? [{ key: target.key, area: areaOf(target.rects) }]
         : [],
     )
@@ -182,6 +184,23 @@ export function distance(a: Point, b: Point): number {
 
 function within(point: Point, { point: at, pad }: PagePoint): boolean {
   return distance(point, at) <= pad;
+}
+
+/**
+ * Whether a point takes a mark: inside a rectangle, with the pixel pad, or for
+ * ink, near one of its strokes by Zotero's own rule, with the box grown by the
+ * reach as the cheap first check.
+ */
+function hitsTarget(
+  { rects, ink }: MarkTarget,
+  point: Point,
+  pad: number,
+): boolean {
+  if (!ink) return rects.some((rect) => covers(rect, point, pad));
+  return (
+    rects.some((rect) => covers(rect, point, ink.reach)) &&
+    nearStroke([point.x, point.y], ink.paths, ink.reach)
+  );
 }
 
 function covers(

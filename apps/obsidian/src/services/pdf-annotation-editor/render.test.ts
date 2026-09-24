@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { parseAnnotationPosition } from "@zotlit/db";
 
@@ -8,8 +8,11 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 
 import { annotation, viewport } from "./__fixtures__";
 import { HANDLE_RADIUS } from "./geometry-edit";
+import { markAnchor, marksAtPoint, pagePointOf } from "./hit-test";
+import type { PageBox } from "./hit-test";
 import {
   groupAnnotationsByPage,
+  markTargets,
   patchSelectedMark,
   renderAnnotationOverlay,
   unitPointOf,
@@ -106,14 +109,16 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
     stroke: "#ff6666",
     "stroke-width": "1",
   });
-  // The ink stroke keeps the width Zotero stored, in the page's own points.
+  // The ink stroke keeps the width Zotero stored, in the page's own points,
+  // and is stroked five percent darker than stored, as Zotero's reader does:
+  // #5fb236 is (95, 178, 54), which scales to (90.25, 169.1, 51.3).
   expect(pathOf(page, "TYY6Z6ZF")).toEqual([
     [66.964, 117.652],
     [66.629, 118.74],
   ]);
   expect(attributesOf(page, "TYY6Z6ZF")).toMatchObject({
     fill: "none",
-    stroke: "#5fb236",
+    stroke: "#5aa933",
     "stroke-width": "2",
   });
   // The image is stroked, never filled, so the excerpt underneath stays legible.
@@ -326,6 +331,29 @@ it("casts a selected ink stroke's own path under it, wider, rather than framing 
   );
 });
 
+it("draws a single-point ink stroke as a round dot, in the page's colour when none is stored", () => {
+  const page = pageView();
+
+  renderAnnotationOverlay(page, {
+    annotations: pageAnnotations([
+      record("DOT23456", "ink", {
+        pageIndex: 0,
+        width: 4,
+        paths: [[100, 700]],
+      }),
+    ]),
+  });
+
+  // A move-to alone draws nothing; the line-to to the same point is what the
+  // round cap turns into a dot.
+  expect(attributesOf(page, "DOT23456")).toMatchObject({
+    d: "M 100 92 L 100 92",
+    stroke: "currentColor",
+    "stroke-linecap": "round",
+    "stroke-width": "4",
+  });
+});
+
 it("draws no outline for a mark the caller left unselected", () => {
   const page = pageView();
 
@@ -426,6 +454,82 @@ it("drops an annotation whose position is not a PDF position", () => {
   ]);
 
   expect(grouped.size).toBe(0);
+});
+
+describe("the ink hit test", () => {
+  /**
+   * A square loop 100 points on a side, in PDF points: in page units its
+   * strokes run along x = 100 and 200 and y = 92 and 192, round an empty
+   * middle.
+   */
+  const LOOP = [[100, 600, 200, 600, 200, 700, 100, 700, 100, 600]];
+
+  /** The page laid out at 100 % from the origin: client pixels are page units. */
+  const PAGE_BOX: PageBox = {
+    left: 0,
+    top: 0,
+    width: 612,
+    height: 792,
+    unitWidth: 612,
+    unitHeight: 792,
+  };
+
+  /** The marks a click takes on `PAGE_BOX`. */
+  function clickedAt(
+    records: readonly AnnotationRecord[],
+    x: number,
+    y: number,
+  ): string[] {
+    const at = pagePointOf(PAGE_BOX, { x, y })!;
+    return marksAtPoint(markTargets(pageView(), pageAnnotations(records)), at);
+  }
+
+  const ink = (width: number, paths: number[][]) =>
+    record("4PE492KU", "ink", { pageIndex: 0, width, paths });
+
+  it("takes no click in the empty middle of a loop", () => {
+    expect(clickedAt([ink(2, LOOP)], 150, 142)).toEqual([]);
+    // Ten units inside the bottom stroke is past the seven-point reach.
+    expect(clickedAt([ink(2, LOOP)], 150, 182)).toEqual([]);
+  });
+
+  it("takes a click closer than seven points to a thin stroke", () => {
+    // Zotero's test is strict: exactly the reach away is a miss.
+    expect(clickedAt([ink(2, LOOP)], 150, 192)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(2, LOOP)], 150, 198.5)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(2, LOOP)], 150, 199)).toEqual([]);
+  });
+
+  it("reaches a wide pen's full width from its stroke", () => {
+    expect(clickedAt([ink(30, LOOP)], 150, 221.5)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(30, LOOP)], 150, 222)).toEqual([]);
+  });
+
+  it("measures to the segments, so sparse points still take a click between them", () => {
+    // A 90-degree turn with no vertex along its 100-point arms.
+    const turn = [[100, 600, 200, 600, 200, 700]];
+    expect(clickedAt([ink(2, turn)], 150, 192)).toEqual(["4PE492KU"]);
+  });
+
+  it("takes a click on a single-point dot, and on straight ink with a flat box", () => {
+    expect(clickedAt([ink(4, [[100, 600]])], 103, 195)).toEqual(["4PE492KU"]);
+    expect(clickedAt([ink(4, [[100, 600]])], 100, 199)).toEqual([]);
+    expect(clickedAt([ink(2, [[100, 600, 200, 600]])], 150, 196)).toEqual([
+      "4PE492KU",
+    ]);
+  });
+
+  it("hangs the Mark Popup of a dot under the dot", () => {
+    const [target] = markTargets(
+      pageView(),
+      pageAnnotations([ink(4, [[100, 600]])]),
+    );
+    // The pen's half-width of 2 below y = 192.
+    expect(markAnchor(target?.rects ?? [], PAGE_BOX)).toEqual({
+      x: 100,
+      y: 194,
+    });
+  });
 });
 
 /** An image region on page zero, `[x1, y1, x2, y2]` in PDF points. */
@@ -650,13 +754,13 @@ it("patches a scaled ink stroke, the width of its casing, and its four handles i
   expect(patched).toBe(true);
   expect([...overlay.children]).toEqual(children);
   const mark = markIn(page, "4PE492KU");
-  expect(mark.getAttribute("d")).toBe("M 100 592 L 300 392");
+  expect(mark.getAttribute("d")).toBe("M 100 592 L 100 592 L 300 392");
   expect(mark.getAttribute("stroke-width")).toBe("4");
   // The casing rides the pen's new width, padded 1.5 units either side.
   const casing = overlay.querySelector<SVGElement>(
     `.${themeHook.pdfAnnotationSelectionOutline}`,
   )!;
-  expect(casing.getAttribute("d")).toBe("M 100 592 L 300 392");
+  expect(casing.getAttribute("d")).toBe("M 100 592 L 100 592 L 300 392");
   expect(casing.style.strokeWidth).toBe("7");
   // The bottom-right handle stands five units out from (300, 200).
   expect(handlesIn(page).br).toEqual([300, 592, 10, 10]);
@@ -753,11 +857,15 @@ function pointsOf(
   return names.map((name) => round(mark.getAttribute(name)));
 }
 
-/** An ink mark's path, as its points at PDF-point precision. */
+/**
+ * An ink mark's path, as the points its line-tos draw at PDF-point precision;
+ * each stroke's move-to only puts the pen down on its first point.
+ */
 function pathOf(page: OverlayPageView, key: string): number[][] {
   const commands = markIn(page, key)
     .getAttribute("d")!
-    .split(/(?=[ML])/);
+    .split(/(?=[ML])/)
+    .filter((command) => command.startsWith("L"));
   return commands.map((command) =>
     command.trim().slice(1).trim().split(" ").map(round),
   );

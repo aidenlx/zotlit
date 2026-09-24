@@ -59,6 +59,7 @@ import {
   pdfViewOf,
   raiseWindow,
   recomputedSortIndex,
+  TAP,
   watchExcerptPixels,
 } from "./reader-gestures.ts";
 
@@ -1346,7 +1347,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
           await obEval(
             vaultId!,
-            `(function(){${FIRE}const mark=${imageMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return 'clicked';})()`,
+            `(function(){${FIRE}${TAP}const mark=${imageMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;tap(x,y);return 'clicked';})()`,
           );
           expect(
             await obEvalUntil(
@@ -1753,7 +1754,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
           await obEval(
             vaultId!,
-            `(function(){${FIRE}const mark=${inkMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return 'clicked';})()`,
+            `(function(){${FIRE}${TAP}const mark=${inkMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;tap(x,y);return 'clicked';})()`,
           );
           // Ink scales from its four corners only.
           expect(
@@ -1888,6 +1889,46 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("takes a click on the stroke and none inside the empty middle of the ink", async () => {
+          await ink.settled();
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=${inkMark};if(!mark)return 'no mark';mark.scrollIntoView({block:'center',inline:'center'});return String(mark.getBoundingClientRect().width>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          const selected = `String(${inkMark}?.classList.contains('is-selected'))`;
+
+          // Halfway along the drawn stroke, mapped from page units to the
+          // client by the overlay itself.
+          await obEval(
+            vaultId!,
+            `(function(){${FIRE}${TAP}const mark=${inkMark};const at=mark.getPointAtLength(mark.getTotalLength()/2).matrixTransform(mark.getScreenCTM());tap(at.x,at.y);return true;})()`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, selected, { expected: "true" }),
+          ).toBe(true);
+
+          // The seed is a tick: the top-left of its box, a fifth of the way
+          // in and a tenth of the way down, lies inside the box and some
+          // fifteen points from either arm. No other mark covers it, so the
+          // click is a click-away and deselects.
+          await obEval(
+            vaultId!,
+            `(function(){${FIRE}${TAP}const box=${inkMark}.getBoundingClientRect();const x=box.left+box.width*0.2,y=box.top+box.height*0.1;tap(x,y);return true;})()`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, selected, { expected: "false" }),
+          ).toBe(true);
+          expect(
+            await obEval(
+              vaultId!,
+              `String(${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected').length)`,
+            ),
+          ).toBe("0");
+        }, 120000);
+
         it("scales the ink from its bottom-right corner with its proportions and its pen", async () => {
           const { corner, perX } = await selectInk();
           await using pixels = await watchExcerptPixels(vaultId!);
@@ -1949,7 +1990,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
           await obEval(
             vaultId!,
-            `(function(){${FIRE}const mark=${highlightMarks}[1];if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;const node=fire('pointerdown',x,y);fire('pointerup',x,y,node);fire('click',x,y,node);return 'clicked';})()`,
+            `(function(){${FIRE}${TAP}const mark=${highlightMarks}[1];if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();const x=rect.left+rect.width/2,y=rect.top+rect.height/2;tap(x,y);return 'clicked';})()`,
           );
           expect(
             await obEvalUntil(
