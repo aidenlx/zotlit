@@ -46,6 +46,7 @@ const card: AnnotationRecord = {
   comment: null,
   text: null,
   pageLabel: "3",
+  sortIndex: "00000|000000|00000",
   tags: ["api-tag"],
   version: 9,
   position: { kind: "pdf-rects", pageIndex: 2, rects: [[1, 2, 30, 40]] },

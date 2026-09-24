@@ -1012,6 +1012,39 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
 
       /**
+       * One chord as Obsidian delivers it, through the view's own Scope.
+       * The Reader Keymap registers there, which a DOM event dispatched on
+       * the container never reaches.
+       *
+       * @returns whether the Scope took the key, which is what Obsidian
+       *   answers by preventing the keystroke's default.
+       */
+      const pressChord = (
+        key: string,
+        modifiers: {
+          ctrlKey?: boolean;
+          metaKey?: boolean;
+          shiftKey?: boolean;
+        },
+      ) =>
+        obJson<{ handled: boolean }>(
+          `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=${pdfView}.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+        );
+
+      /** This host's own undo and redo chords. */
+      const platformKey = process.platform === "darwin" ? "metaKey" : "ctrlKey";
+      const undoKey = () => pressChord("z", { [platformKey]: true });
+      const redoKey = () =>
+        pressChord("z", { [platformKey]: true, shiftKey: true });
+
+      /** Settles when every open PDF view has answered its last history key. */
+      const stepSettled = () =>
+        obEval(
+          vaultId!,
+          "(async()=>{const editor=app.plugins.plugins.zotlit.services.pdfAnnotationEditor;await Promise.all(editor.bindings.map((binding)=>binding.stepped));return 'stepped';})()",
+        );
+
+      /**
        * Drags from one client point to another with the pointer held, then
        * releases.
        */
@@ -2777,6 +2810,75 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await pixels.keys()).toContain(imageKey);
         }, 120000);
 
+        it("puts the image's geometry back for the undo key, and drags it out again for redo", async () => {
+          // A history ends with the last view of its Attachment, so a reopened
+          // view gives this test an empty one.
+          await reopenPdfView(vaultId!, attachmentPath);
+          const handle = await selectImage();
+          // Twenty points right and thirty points down the page, the drag the
+          // resize is proved with.
+          await dragPointer(handle, {
+            x: handle.x + 20 * handle.perX,
+            y: handle.y + 30 * handle.perY,
+          });
+          expect(
+            await waitFor(
+              async () =>
+                (await image.stored()).data.annotationPosition !==
+                image.seed.annotationPosition,
+            ),
+          ).toBe(true);
+          await image.settled();
+          const dragged = (await image.stored()).data;
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          // Zotero holds the seeded rect and Sort Index again, read straight
+          // off the Local API.
+          expect(
+            await waitFor(
+              async () =>
+                (await image.stored()).data.annotationPosition ===
+                image.seed.annotationPosition,
+            ),
+          ).toBe(true);
+          await image.settled();
+          expect((await image.stored()).data.annotationSortIndex).toBe(
+            image.seed.annotationSortIndex,
+          );
+          // Zotero's own Reader holds the rect the undo wrote.
+          expect(
+            await waitFor(
+              async () =>
+                (await image.held())?.position ===
+                image.seed.annotationPosition,
+            ),
+          ).toBe(true);
+          // The reader landed on the Annotation the step changed.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${imageMark}?.classList.contains('is-selected'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+
+          expect(await redoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(
+              async () =>
+                (await image.stored()).data.annotationPosition ===
+                dragged.annotationPosition,
+            ),
+          ).toBe(true);
+          expect((await image.stored()).data.annotationSortIndex).toBe(
+            dragged.annotationSortIndex,
+          );
+        }, 120000);
+
         it("writes nothing for a handle released where it was pressed", async () => {
           const handle = await selectImage();
           const { version } = await image.stored();
@@ -3741,6 +3843,56 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("puts the quoted text and the range back for the undo key", async () => {
+          // A history ends with the last view of its Attachment, so a reopened
+          // view gives this test an empty one.
+          await reopenPdfView(vaultId!, attachmentPath);
+          const handle = await selectHighlight();
+          const text = await dragEnd(handle, {
+            word: "Furthermore,",
+            at: 0.99,
+          });
+          expect(text).toBe(`${seedText} Furthermore,`);
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          // Zotero holds the seeded quote, range and Sort Index again.
+          expect(
+            await waitFor(
+              async () =>
+                (await highlight.stored()).data.annotationText === seedText,
+            ),
+          ).toBe(true);
+          await highlight.settled();
+          const stored = await highlight.stored();
+          expect(stored.data.annotationPosition).toBe(
+            highlight.seed.annotationPosition,
+          );
+          expect(stored.data.annotationSortIndex).toBe(
+            highlight.seed.annotationSortIndex,
+          );
+
+          // Zotero's own Reader holds the quote the undo put back, and the
+          // Annotation Card quotes it again.
+          expect(
+            await waitFor(async () => {
+              const held = await highlight.held();
+              return (
+                held?.text === seedText &&
+                held.position === highlight.seed.annotationPosition
+              );
+            }),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              cardQuotes("(text)=>text.trimEnd().endsWith('just a few.')"),
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
         it("keeps one character when the end is dragged back past the start", async () => {
           const handle = await selectHighlight();
           // "automatic." ends the line above the seed's first word, "There".
@@ -3809,40 +3961,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         /** The swatch the number row's second key picks. */
         const picked = "#ff6666";
         const historyMark = `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')`;
-
-        /**
-         * One chord as Obsidian delivers it, through the view's own Scope.
-         * The Reader Keymap registers there, which a DOM event dispatched on
-         * the container never reaches.
-         *
-         * @returns whether the Scope took the key, which is what Obsidian
-         *   answers by preventing the keystroke's default.
-         */
-        const pressChord = (
-          key: string,
-          modifiers: {
-            ctrlKey?: boolean;
-            metaKey?: boolean;
-            shiftKey?: boolean;
-          },
-        ) =>
-          obJson<{ handled: boolean }>(
-            `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=${pdfView}.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
-          );
-
-        /** This host's own undo and redo chords. */
-        const platformKey =
-          process.platform === "darwin" ? "metaKey" : "ctrlKey";
-        const undoKey = () => pressChord("z", { [platformKey]: true });
-        const redoKey = () =>
-          pressChord("z", { [platformKey]: true, shiftKey: true });
-
-        /** Settles when every open PDF view has answered its last history key. */
-        const stepSettled = () =>
-          obEval(
-            vaultId!,
-            "(async()=>{const editor=app.plugins.plugins.zotlit.services.pdfAnnotationEditor;await Promise.all(editor.bindings.map((binding)=>binding.stepped));return 'stepped';})()",
-          );
 
         /** What the Local API holds for the Annotation right now. */
         const storedColor = () => annotationColor(api, serverID, historyKey);

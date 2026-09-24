@@ -268,6 +268,7 @@ export function annotation(
     text: null,
     parentKey: "RGRPDF24",
     pageLabel: "1",
+    sortIndex: "00000|000000|00000",
     tags: [],
     position: parseAnnotationPosition(
       position as AnnotationPositionRaw,

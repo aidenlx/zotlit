@@ -140,6 +140,7 @@ export function createExcerptPreparation(deps: {
                 text: a.text,
                 comment: a.comment,
                 pageLabel: a.pageLabel,
+                sortIndex: a.sortIndex,
                 tags: a.tags,
                 position,
                 version: a.version,

@@ -31,10 +31,12 @@ import type {
   ClientOptions,
   WireAnnotation,
   ZoteroAnswers,
+  ZoteroRequest,
 } from "@/services/zotero-local-api/__fixtures__";
 
 import { AnnotationRepository } from "./service";
 import type { AnnotationList, AnnotationRepositoryDeps } from "./service";
+import type { GeometryEdit } from "./write";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
@@ -133,6 +135,7 @@ it("reads every type the Fixture carries on one attachment, in Zotero's reading 
     text: null,
     parentKey: "RGRPDF24",
     pageLabel: "1",
+    sortIndex: "00000|000191|00088",
     tags: [],
     position: {
       kind: "pdf-text",
@@ -3465,6 +3468,282 @@ it("keeps the history across a Refresh and a change made in Zotero", async () =>
   expect(repository.canUndo("RGRPDF24")).toBe(true);
   expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
   expect(zotero.held?.color).toBe("#2ea8e5");
+});
+
+// #endregion
+
+// #region geometry history
+
+/**
+ * A Zotero that keeps what every patch sends, on any Annotation of the
+ * Attachment: the geometry a Geometry Edit writes and the colour a pick
+ * writes. What the Local API holds is the oracle a Geometry Edit's undo is
+ * read through, field by field.
+ */
+function zoteroHoldingMarks() {
+  const held = new Map(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  const keyed = (request: ZoteroRequest) =>
+    held.get(request.url.pathname.split("/").at(-1) ?? "") ?? null;
+  return {
+    answers: {
+      children: () => annotationPage([...held.values()]),
+      item: (request) => {
+        const record = keyed(request);
+        return record ? annotationItem(record) : notFound();
+      },
+      write: (request) => {
+        const record = keyed(request);
+        const body = JSON.parse(request.body ?? "{}") as {
+          annotationColor?: string;
+          annotationPosition?: string;
+          annotationSortIndex?: string;
+          annotationText?: string;
+        };
+        if (record) {
+          held.set(record.key, {
+            ...record,
+            ...(body.annotationColor !== undefined && {
+              color: body.annotationColor,
+            }),
+            ...(body.annotationPosition !== undefined && {
+              position: JSON.parse(body.annotationPosition) as unknown,
+            }),
+            ...(body.annotationSortIndex !== undefined && {
+              sortIndex: body.annotationSortIndex,
+            }),
+            ...(body.annotationText !== undefined && {
+              text: body.annotationText,
+            }),
+            version: record.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for one Annotation. */
+    held: (annotationKey: string) => held.get(annotationKey) ?? null,
+  };
+}
+
+/** One Fixture Annotation as the Fixture seeded it, the state an undo aims at. */
+function seeded(annotationKey: string): WireAnnotation {
+  const record = ROUGIER_ANNOTATIONS.find(({ key }) => key === annotationKey);
+  if (!record) throw new Error(`No fixture annotation ${annotationKey}`);
+  return record;
+}
+
+/**
+ * Where a Geometry Edit puts each seeded mark, one step at a time: the whole
+ * rectangle a nudge or a drag moved down the page, and the Sort Index the new
+ * place gives it. Written out rather than computed, so the values a write
+ * rounds are the values the Local API is read back for.
+ */
+const MOVES: Readonly<Record<string, readonly GeometryEdit[]>> = {
+  PUPR5FG5: [
+    {
+      position: { pageIndex: 0, rects: [[265.833, 610.202, 374.503, 619.019]] },
+      sortIndex: "00000|002042|00170",
+    },
+    {
+      position: { pageIndex: 0, rects: [[265.833, 609.202, 374.503, 618.019]] },
+      sortIndex: "00000|002043|00170",
+    },
+  ],
+  K3JRFLFQ: [
+    {
+      position: {
+        pageIndex: 0,
+        rects: [
+          [67.011, 611.638, 211.485, 619.77],
+          [58.054, 600.98, 211.489, 609.112],
+          [58.054, 590.321, 153.781, 598.454],
+        ],
+      },
+      sortIndex: "00000|000435|00180",
+    },
+  ],
+};
+
+/** One step of {@link MOVES}, as a Geometry Edit the reader would have made. */
+function moved(annotationKey: string, step = 0): GeometryEdit {
+  const edit = MOVES[annotationKey]?.[step];
+  if (!edit) throw new Error(`No move ${step} for ${annotationKey}`);
+  return edit;
+}
+
+/** The geometry a landed {@link moved} leaves in Zotero. */
+function movedGeometry(annotationKey: string, step = 0) {
+  const { position, sortIndex } = moved(annotationKey, step);
+  return { position, sortIndex };
+}
+
+/**
+ * A clock the test moves itself, for the window a run of keyboard nudges joins
+ * inside. Nothing waits on real time.
+ */
+function clock() {
+  let at = NOW;
+  return {
+    now: () => at,
+    /** The pause between two presses. */
+    pass(milliseconds: number): void {
+      at = at.add({ milliseconds });
+    },
+  };
+}
+
+it("puts the position, Sort Index and quoted text back when a drag is undone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const seed = seeded("PUPR5FG5");
+
+  await repository.patchGeometry("PUPR5FG5", {
+    ...moved("PUPR5FG5"),
+    text: "Identify Your",
+  });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5"),
+    text: "Identify Your",
+  });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    position: seed.position,
+    sortIndex: seed.sortIndex,
+    text: seed.text,
+  });
+
+  expect(await repository.redo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5"),
+    text: "Identify Your",
+  });
+});
+
+it("undoes a run of keyboard nudges inside the window as one step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(200);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 1));
+
+  // One press goes back to where the mark stood before the first nudge.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    position: seeded("PUPR5FG5").position,
+    sortIndex: seeded("PUPR5FG5").sortIndex,
+  });
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("keeps a keyboard nudge made after the window as its own step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(600);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 0));
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    position: seeded("PUPR5FG5").position,
+    sortIndex: seeded("PUPR5FG5").sortIndex,
+  });
+});
+
+it("keeps a keyboard nudge on another Annotation as its own step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5"), "keyboard");
+  time.pass(100);
+  await repository.patchGeometry("K3JRFLFQ", moved("K3JRFLFQ"), "keyboard");
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "K3JRFLFQ",
+  });
+  expect(zotero.held("K3JRFLFQ")).toMatchObject({
+    position: seeded("K3JRFLFQ").position,
+    sortIndex: seeded("K3JRFLFQ").sortIndex,
+  });
+  // The other mark's nudge stands as a step of its own.
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5"));
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("keeps a pointer Geometry Edit out of a run of keyboard nudges", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(100);
+  // A handle drag, inside the window a nudge would have joined in.
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1));
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject(movedGeometry("PUPR5FG5", 0));
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("keeps a colour pick out of a run of keyboard nudges", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroHoldingMarks();
+  const time = clock();
+  const { repository } = await writable(stack, zotero.answers, {
+    repositoryNow: time.now,
+  });
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 0), "keyboard");
+  time.pass(100);
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  time.pass(100);
+  await repository.patchGeometry("PUPR5FG5", moved("PUPR5FG5", 1), "keyboard");
+
+  // Steps of different kinds never merge, so the nudge after the pick is its
+  // own step and undoing it leaves the picked colour alone.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5", 0),
+    color: "#ff6666",
+  });
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.held("PUPR5FG5")).toMatchObject({
+    ...movedGeometry("PUPR5FG5", 0),
+    color: "#2ea8e5",
+  });
 });
 
 // #endregion

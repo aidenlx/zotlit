@@ -50,6 +50,7 @@ import type {
   HistoryChange,
   HistoryDirection,
   HistoryFields,
+  HistoryJoin,
   HistoryOutcome,
   HistoryStep,
 } from "./history";
@@ -153,6 +154,13 @@ export interface AnnotationRecord {
   /** Zotero's printed-page label, as Zotero stored it. */
   pageLabel: string | null;
   /**
+   * The Sort Index Zotero stores. It orders the list, and an undone Geometry
+   * Edit puts it back beside the position it was computed from.
+   *
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  sortIndex: string;
+  /**
    * The Annotation's Zotero tags, by name. Names rather than the numeric tag
    * ids SQLite keeps, because a name is what both sources can supply.
    */
@@ -184,6 +192,13 @@ export interface AnnotationList {
   /** In Zotero's own reading order. */
   annotations: readonly AnnotationRecord[];
 }
+
+/**
+ * What made one Geometry Edit. The Annotation History reads it and nothing
+ * else does: a run of keyboard edits joins into one History Step, and every
+ * pointer gesture is a step of its own.
+ */
+export type GeometryInput = "pointer" | "keyboard";
 
 export type CommentDraftState =
   | { kind: "editing" }
@@ -1029,11 +1044,14 @@ export class AnnotationRepository extends Service<void> {
    *
    * @param annotationKey the Annotation's Indexed Key.
    * @param edit its Sort Index was computed from the unrounded position.
+   * @param input what made the edit. A run of keyboard edits on one Annotation
+   *   is one History Step; a pointer gesture is a step of its own.
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
   async patchGeometry(
     annotationKey: string,
     edit: GeometryEdit,
+    input: GeometryInput = "pointer",
   ): Promise<MutationState> {
     if (writePosition(edit.position).length > MAX_POSITION_LENGTH) {
       logger.debug("A Geometry Edit's position is longer than Zotero accepts", {
@@ -1048,6 +1066,9 @@ export class AnnotationRepository extends Service<void> {
       write: "geometry",
       attempted: edit,
       request: (target, record) => geometryPatch(target, record.type, edit),
+      ...(input === "keyboard" && {
+        join: { input, at: this.#now() },
+      }),
     });
   }
 
@@ -1248,6 +1269,8 @@ export class AnnotationRepository extends Service<void> {
    *   version and type.
    * @param command.settle whether the Annotation is read back after the `204`,
    *   or leaves the list because the write erased it.
+   * @param command.join what a confirmed edit joins the step before it by,
+   *   where the edit came from an input that runs.
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
@@ -1256,6 +1279,7 @@ export class AnnotationRepository extends Service<void> {
     command: WriteAttempt & {
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
+      join?: HistoryJoin;
     },
   ): Promise<MutationState> {
     const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
@@ -1284,6 +1308,7 @@ export class AnnotationRepository extends Service<void> {
       generation: number;
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
+      join?: HistoryJoin;
     },
   ): Promise<MutationState> {
     if (command.generation !== this.#commandGeneration) {
@@ -1394,7 +1419,10 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
-    this.#recordStep(held.attachmentKey, held.record, applied.value);
+    this.#recordStep(held.attachmentKey, held.record, {
+      applied: applied.value,
+      join: command.join,
+    });
     this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
@@ -1520,6 +1548,9 @@ export class AnnotationRepository extends Service<void> {
     if (fields.color !== undefined) {
       return await this.patchColor(annotationKey, fields.color);
     }
+    if (fields.geometry !== undefined) {
+      return await this.patchGeometry(annotationKey, fields.geometry);
+    }
     return IDLE;
   }
 
@@ -1529,11 +1560,16 @@ export class AnnotationRepository extends Service<void> {
    * Nothing is recorded while no PDF view of the Attachment holds a history
    * open, and an undo's own write records nothing: the step it leaves behind is
    * already the one that steps it back.
+   *
+   * @param before the held record the write was sent against.
+   * @param confirmed.applied what Zotero answered the write with.
+   * @param confirmed.join what this edit joins the step before it by, where it
+   *   came from an input that runs.
    */
   #recordStep(
     attachmentKey: string,
     before: AnnotationRecord,
-    applied: ConfirmedWrite,
+    { applied, join }: { applied: ConfirmedWrite; join?: HistoryJoin },
   ): void {
     const history = this.#histories.get(attachmentKey);
     if (!history || this.#stepping.has(attachmentKey)) return;
@@ -1541,14 +1577,16 @@ export class AnnotationRepository extends Service<void> {
     const was = historyFieldsOf(applied.write, before);
     const now = historyFieldsOf(applied.write, applied.record);
     if (!was || !now) return;
-    history.record({
+    const joined = history.record({
       kind: applied.write,
       changes: [{ annotationKey: applied.record.key, before: was, after: now }],
+      ...(join && { join }),
     });
     logger.debug("An edit was recorded in the annotation history", {
       attachmentKey,
       annotationKey: applied.record.key,
       kind: applied.write,
+      joined,
     });
     this.#emitter.emit("history-changed", attachmentKey);
   }
@@ -2540,6 +2578,7 @@ function toRecord(
     text: annotation.text,
     parentKey: attachmentKey,
     pageLabel: annotation.pageLabel,
+    sortIndex: annotation.sortIndex,
     tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
@@ -2556,7 +2595,6 @@ function toRecord(
   };
 }
 
-/** The Sort Index stays with the client: it ordered the list and nothing else reads it. */
 function fromLocalApi({
   key,
   type,
@@ -2565,6 +2603,7 @@ function fromLocalApi({
   text,
   parentKey,
   pageLabel,
+  sortIndex,
   tags,
   position,
   version,
@@ -2582,6 +2621,7 @@ function fromLocalApi({
     text,
     parentKey,
     pageLabel,
+    sortIndex,
     tags,
     position,
     version,

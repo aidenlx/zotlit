@@ -20,6 +20,7 @@ const card: AnnotationRecord = {
   text: null,
   comment: null,
   pageLabel: "1",
+  sortIndex: "00000|000000|00000",
   tags: [],
   version: 2,
   position: { kind: "pdf-rects", pageIndex: 0, rects: [[1, 2, 3, 4]] },
