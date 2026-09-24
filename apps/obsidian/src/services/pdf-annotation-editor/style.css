@@ -88,23 +88,35 @@
 }
 
 /*
- * The armed ink tool shows the crosshair over the pages, marks included, as
- * Zotero's reader does: every press there draws. It outranks the text layer's
- * own cursors, so it is not under `:where()`; the text layer's selector
- * outranks `.textLayer span[role="img"]`.
+ * The armed tool's cursor over the pages, as Zotero's reader shows it: the
+ * text cursor for the tools that commit a text selection, and the crosshair
+ * for the image and ink tools, which draw. A Mark Handle keeps its own cursor
+ * but under the ink tool, which takes every press. The rules outrank the text
+ * layer's own cursors, `.textLayer span[role="img"]` included, so they are
+ * not under `:where()`.
  */
-[data-zt-inking] .pdf-viewer-container,
-[data-zt-inking] .pdf-viewer-container *,
-[data-zt-inking] .pdf-viewer-container .textLayer * {
+[data-zt-armed="highlight"] .pdf-viewer-container,
+[data-zt-armed="highlight"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="underline"] .pdf-viewer-container,
+[data-zt-armed="underline"] .pdf-viewer-container :not([data-zt-cursor]) {
+  cursor: text;
+}
+
+[data-zt-armed="image"] .pdf-viewer-container,
+[data-zt-armed="image"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="ink"] .pdf-viewer-container,
+[data-zt-armed="ink"] .pdf-viewer-container :not([data-zt-cursor]),
+[data-zt-armed="ink"] .pdf-viewer-container [data-zt-cursor] {
   cursor: crosshair;
 }
 
 /*
- * A stroke captures the pointer on the reader, so the reader's own cursor
- * shows while it is drawn; it keeps the crosshair until the release.
+ * A stroke or an image capture holds the pointer on the reader, so the
+ * reader's own cursor shows while it is drawn; it keeps the crosshair until
+ * the release.
  */
-[data-zt-stroking],
-[data-zt-stroking] * {
+[data-zt-drawing],
+[data-zt-drawing] * {
   cursor: crosshair;
 }
 

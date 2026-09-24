@@ -1655,6 +1655,39 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await obEval(vaultId!, cursor)).not.toBe("crosshair");
         }, 120000);
 
+        it("shows each armed tool's cursor over the page, and keeps the image tool's through a capture", async () => {
+          await armInk([150, 355]);
+          const toolOf = (id: string) =>
+            `${pdfView}.containerEl.querySelector('[data-zt-tool="${id}"]')`;
+          // The page itself, and the text layer, whose own rule shows the
+          // text cursor.
+          const cursors = `(function(){const page=${pdfView}.viewer.child.getPage(1).div;return [page,page.querySelector('.textLayer span')].map((node)=>getComputedStyle(node).cursor).join();})()`;
+          const readerCursor = `getComputedStyle(${pdfView}.containerEl).cursor`;
+          const arm = (id: string) =>
+            obEval(
+              vaultId!,
+              `(function(){const tool=${toolOf(id)};tool.click();return tool.getAttribute('aria-pressed');})()`,
+            );
+
+          expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
+          expect(await arm("highlight")).toBe("true");
+          expect(await obEval(vaultId!, cursors)).toBe("text,text");
+          expect(await arm("underline")).toBe("true");
+          expect(await obEval(vaultId!, cursors)).toBe("text,text");
+          expect(await arm("image")).toBe("true");
+          expect(await obEval(vaultId!, cursors)).toBe("crosshair,crosshair");
+
+          // A held capture takes the pointer on the reader, whose own cursor
+          // then shows.
+          await press(CURVE.slice(0, 5));
+          expect(await obEval(vaultId!, readerCursor)).toBe("crosshair");
+          await escape();
+          expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
+
+          expect(await arm("image")).toBe("false");
+          expect(await obEval(vaultId!, cursors)).not.toContain("crosshair");
+        }, 120000);
+
         it("stands down from a toolbar press over a page scrolled under the toolbar", async () => {
           await armInk([150, 355]);
           const before = await annotationKeys();

@@ -96,7 +96,7 @@ import type { PdfSeamProbeResult } from "./seam";
 import { MarkSelection } from "./selection";
 import type { MarkGestures } from "./selection";
 import { pdfPageSource } from "./text-structure";
-import type { ToolColorStore } from "./tools";
+import type { MarkTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -766,11 +766,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
     );
     this.#surfaces.defer(
       state.subscribe(
-        ({ liveStroke }) => liveStroke !== null,
-        (stroking) => this.#showStroking(stroking),
+        (current) =>
+          current.liveStroke !== null || selectCapture(current) !== null,
+        (drawing) => this.#showDrawing(drawing),
       ),
     );
-    this.#surfaces.defer(() => this.#showStroking(false));
+    this.#surfaces.defer(() => this.#showDrawing(false));
     this.#surfaces.defer(
       state.subscribe(
         ({ pendingStrokes }) => pendingStrokes,
@@ -786,12 +787,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
     // decides at contact, so the page takes it before any press.
     this.#surfaces.defer(
       state.subscribe(
-        ({ armed }) => armed === "ink",
-        (inking) => this.#showInking(inking),
+        ({ armed }) => armed,
+        (armed) => this.#showArmed(armed),
         { fireImmediately: true },
       ),
     );
-    this.#surfaces.defer(() => this.#showInking(false));
+    this.#surfaces.defer(() => this.#showArmed(null));
     this.#surfaces.defer(
       state.subscribe(
         ({ capability }) => editingLive(capability),
@@ -974,19 +975,23 @@ export class PdfViewBinding implements Disposable, HoverParent {
   }
 
   /**
-   * Marks the reader while the ink tool is armed, so the stylesheet takes
-   * touch panning off its pages and shows the crosshair over them.
+   * Marks the reader with the armed tool, so the stylesheet shows that tool's
+   * cursor over the pages; and while the ink tool is armed, so it takes touch
+   * panning off them.
    */
-  #showInking(inking: boolean): void {
-    this.#view.containerEl.toggleAttribute(themeAttribute.pdfInking, inking);
+  #showArmed(armed: MarkTool | null): void {
+    const { containerEl } = this.#view;
+    containerEl.toggleAttribute(themeAttribute.pdfInking, armed === "ink");
+    if (armed) containerEl.dataset.ztArmed = armed;
+    else delete containerEl.dataset.ztArmed;
   }
 
   /**
-   * Marks the reader while a Live Stroke stands, so the stylesheet keeps the
-   * crosshair over the captured pointer.
+   * Marks the reader while a Live Stroke or an image capture holds the
+   * pointer, so the stylesheet keeps the crosshair over the captured pointer.
    */
-  #showStroking(stroking: boolean): void {
-    this.#view.containerEl.toggleAttribute("data-zt-stroking", stroking);
+  #showDrawing(drawing: boolean): void {
+    this.#view.containerEl.toggleAttribute("data-zt-drawing", drawing);
   }
 
   /**
