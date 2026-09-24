@@ -8,7 +8,6 @@ import type {
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { isColor, withRecentColor } from "@/lib/annotation-colors";
 import { registerEvent } from "@/lib/disposables";
 import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-borrow";
 import type { ReaderSession } from "@/services/reader-session/session";
@@ -24,14 +23,7 @@ import type {
 } from "./binding";
 import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
-import {
-  DEFAULT_INK_WIDTH,
-  INK_WIDTH_SETTING,
-  RECENT_COLORS_SETTING,
-  resolveToolColors,
-  TOOL_COLORS_SETTING,
-} from "./tools";
-import type { AnnotationTool, InkWidth, ToolColorStore } from "./tools";
+import { toolColorStore } from "./tools";
 
 // Re-exported so a consumer of the reader seam reaches the resolution it binds
 // a view to without naming the resolver service.
@@ -228,37 +220,4 @@ export class PdfAnnotationEditor extends Service<void> {
         this.#emitter.emit("session-added", binding.filePath);
     }
   }
-}
-
-/**
- * Each tool's colour, the colours used last, and the ink tool's pen width,
- * read and written through the settings file, so a colour or a width chosen in
- * one PDF is the one the next one opens with. A choice made before the settings have loaded is dropped rather than
- * written over what is on disk.
- */
-export function toolColorStore(
-  settings: Pick<SettingsService, "current" | "update">,
-): ToolColorStore {
-  return {
-    current: () => resolveToolColors(settings.current?.[TOOL_COLORS_SETTING]),
-    set: (tool: AnnotationTool, color: string) => {
-      const stored = settings.current?.[TOOL_COLORS_SETTING];
-      if (!stored) return;
-      settings.update({ [TOOL_COLORS_SETTING]: { ...stored, [tool]: color } });
-    },
-    recent: () => settings.current?.[RECENT_COLORS_SETTING] ?? [],
-    use: (color: string) => {
-      const stored = settings.current?.[RECENT_COLORS_SETTING];
-      // A colour already first changes nothing, so it writes nothing.
-      if (!stored || isColor(stored[0] ?? null, color)) return;
-      settings.update({
-        [RECENT_COLORS_SETTING]: withRecentColor(stored, color),
-      });
-    },
-    inkWidth: () => settings.current?.[INK_WIDTH_SETTING] ?? DEFAULT_INK_WIDTH,
-    setInkWidth: (width: InkWidth) => {
-      if (!settings.current) return;
-      settings.update({ [INK_WIDTH_SETTING]: width });
-    },
-  };
 }

@@ -10,6 +10,7 @@ import {
   fitsPositionBudget,
   inkReach,
   keepsSample,
+  MAX_POINTS_PER_SAMPLE,
   nearStroke,
   smoothPath,
   StrokeSamples,
@@ -222,10 +223,39 @@ describe("StrokeSamples", () => {
     expect(fitsPositionBudget(positionOf(samples.slice(0, index + 1)))).toBe(
       false,
     );
-    // The next part begins at this sample.
+    // The next part begins where the finished part ends, so the two meet,
+    // and goes on from this sample.
+    const seam = finished.slice(-2) as [number, number];
+    const next = stroke.finish();
+    expect(next.slice(0, 2)).toEqual(seam);
     const rest = new StrokeSamples(FRAME);
-    for (const sample of samples.slice(index)) rest.take(sample);
-    expect(stroke.finish()).toEqual(rest.finish());
+    for (const sample of [seam, ...samples.slice(index)]) rest.take(sample);
+    expect(next).toEqual(rest.finish());
+  });
+
+  it("adds at most MAX_POINTS_PER_SAMPLE smoothed points for one more sample", () => {
+    // A fixed linear congruential sequence: steps from under one point to
+    // twenty, in every direction, so the filter both keeps and drops.
+    let seed = 1_234_567;
+    const random = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed / 2_147_483_648;
+    };
+    for (let run = 0; run < 50; run++) {
+      const raw = [300, 400];
+      let before = smoothPath(raw).length / 2;
+      for (let step = 0; step < 200; step++) {
+        const reach = random() < 0.5 ? 1.5 * random() : 20 * random();
+        const turn = 2 * Math.PI * random();
+        raw.push(
+          raw.at(-2)! + reach * Math.cos(turn),
+          raw.at(-1)! + reach * Math.sin(turn),
+        );
+        const after = smoothPath(raw).length / 2;
+        expect(after - before).toBeLessThanOrEqual(MAX_POINTS_PER_SAMPLE);
+        before = after;
+      }
+    }
   });
 
   it("keeps a stroke within the ceiling whole", () => {

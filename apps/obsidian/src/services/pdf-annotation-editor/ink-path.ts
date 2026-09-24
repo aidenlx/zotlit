@@ -111,17 +111,18 @@ export function fitsPositionBudget(position: InkPosition): boolean {
  * stood, so after two passes the last three smoothed points give way to seven;
  * the close-point filter only drops, and decides the unchanged head as before.
  */
-const MAX_POINTS_PER_SAMPLE = 7;
+export const MAX_POINTS_PER_SAMPLE = 7;
 
 /**
  * The kept samples of one Ink Stroke, which part it where one more sample would
  * carry its written position past the ceiling: the finished part stays within
- * it, and the sample begins the next part.
+ * it, and the next part begins at the finished part's last point, then takes
+ * the sample, so the two parts meet.
  *
  * The written length is measured in full only near the ceiling. Each measure
  * leaves the room still free, and every sample after it spends at most the
- * characters seven points of the stroke's widest coordinate take; while that
- * bound fits in the room, the sample is taken unmeasured.
+ * characters seven points of the widest coordinate take; while that bound fits
+ * in the room, the sample is taken unmeasured.
  */
 export class StrokeSamples {
   readonly #frame;
@@ -129,7 +130,10 @@ export class StrokeSamples {
   #raw: number[] = [];
   /** Characters the written position is known to have left under the ceiling. */
   #room = 0;
-  /** The most characters one coordinate of this stroke is written in. */
+  /**
+   * The most characters one coordinate of any sample taken so far is written
+   * in, the parts before a split included, which only makes the bound wider.
+   */
   #coordinateLength = 0;
 
   /** @param frame the page and the pen width every part is written with. */
@@ -147,23 +151,25 @@ export class StrokeSamples {
    * the last kept one, and otherwise kept.
    *
    * @returns the stroke up to this sample, smoothed and rounded, when the
-   *   sample would have carried it past the ceiling and began the next part
+   *   sample would have carried it past the ceiling and the next part began
    *   instead; `null` otherwise.
    */
   take(point: PdfPoint): number[] | null {
-    const last: PdfPoint | undefined =
-      this.#raw.length > 0 ? [this.#raw.at(-2)!, this.#raw.at(-1)!] : undefined;
-    if (!keepsSample(last, point)) return null;
-    if (this.#fits(point)) {
+    if (!keepsSample(this.#last(), point)) return null;
+    if (this.#spend(point)) {
       this.#raw.push(...point);
       return null;
     }
     const finished = this.finish();
+    const seam: PdfPoint = [finished.at(-2)!, finished.at(-1)!];
     this.#raw = [];
     this.#room = 0;
-    // A lone point always fits, so the next part begins with this sample.
-    this.#fits(point);
-    this.#raw.push(...point);
+    // Measured afresh: a lone point and the one after it always fit.
+    for (const next of [seam, point]) {
+      if (!keepsSample(this.#last(), next)) continue;
+      this.#spend(next);
+      this.#raw.push(...next);
+    }
     return finished;
   }
 
@@ -172,8 +178,19 @@ export class StrokeSamples {
     return smoothPath(this.#raw).map(roundCoordinate);
   }
 
-  /** Whether the stroke with this sample stays within the ceiling. */
-  #fits(point: PdfPoint): boolean {
+  #last(): PdfPoint | undefined {
+    return this.#raw.length > 0
+      ? [this.#raw.at(-2)!, this.#raw.at(-1)!]
+      : undefined;
+  }
+
+  /**
+   * Charges the room for one more sample, and measures the written length in
+   * full once the bound no longer fits in it.
+   *
+   * @returns whether the stroke with this sample stays within the ceiling.
+   */
+  #spend(point: PdfPoint): boolean {
     this.#coordinateLength = Math.max(
       this.#coordinateLength,
       ...point.map(writtenLength),
@@ -204,7 +221,11 @@ function writtenLength(value: number): number {
   return 1 + String(Math.trunc(Math.abs(value)) + 1).length + 1 + 3 + 1;
 }
 
-/** One corner-cutting pass: every segment gives its 1/4 and 3/4 points. */
+/**
+ * One corner-cutting pass: every segment gives its 1/4 and 3/4 points, and
+ * the first and last points stay. {@link MAX_POINTS_PER_SAMPLE} rests on this
+ * shape; a change here changes that bound.
+ */
 function chaikin(points: readonly number[]): readonly number[] {
   if (points.length < 4) return points;
   const smoothed = [points[0]!, points[1]!];

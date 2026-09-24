@@ -25,5 +25,6 @@ it("commits a text selection under the armed ink tool as a highlight", () => {
 it("refuses a stored ink width outside the offered steps", () => {
   expect(v.safeParse(inkWidthSchema, 4).success).toBe(false);
   expect(v.safeParse(inkWidthSchema, "2").success).toBe(false);
-  expect(v.safeParse(inkWidthSchema, 0.5).success).toBe(true);
+  expect(v.safeParse(inkWidthSchema, 0.5).success).toBe(false);
+  expect(v.safeParse(inkWidthSchema, 0.4).success).toBe(true);
 });

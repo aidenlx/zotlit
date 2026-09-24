@@ -600,10 +600,10 @@ export class MarkCreation implements CreationGestures, Disposable {
    * chevron's far edge and grows inward.
    */
   #openColorMenu(tool: MarkTool, node: HTMLElement): void {
-    const menu = colorMenu(this.#state().colors[tool], (hex) =>
+    const { colors } = this.#deps;
+    const menu = colorMenu(colors.current()[tool], (hex) =>
       this.#setColor(tool, hex),
     );
-    const { colors } = this.#deps;
     if (tool === "ink")
       addInkWidths(menu, colors.inkWidth(), (width) =>
         colors.setInkWidth(width),
@@ -832,7 +832,10 @@ export class MarkCreation implements CreationGestures, Disposable {
       win: this.#deps.containerEl.win,
       // The pointer and the tool stay held; only the part drawn so far goes.
       onSplit: (path) =>
-        this.#queueStroke({ pageIndex: page.pageIndex, width, color }, path),
+        this.#queueStroke(
+          { pageIndex: page.pageIndex, width, color },
+          { path, reason: "split" },
+        ),
     });
     logger.trace("An ink stroke began", { pageIndex: page.pageIndex });
   }
@@ -855,7 +858,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         // The colour the stroke was drawn in, whatever the tool took since.
         color: stroke.color,
       },
-      stroke.finish(),
+      { path: stroke.finish(), reason: "release" },
     );
   }
 
@@ -866,7 +869,7 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   #queueStroke(
     stroke: Pick<PendingStroke, "pageIndex" | "width" | "color">,
-    path: number[],
+    { path, reason }: { path: number[]; reason: "release" | "split" },
   ): void {
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
@@ -879,6 +882,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     };
     appendPendingStroke(this.#deps.surfaceState, pending);
     logger.debug("An ink stroke was finished", {
+      reason,
       pageIndex: pending.pageIndex,
       points: path.length / 2,
     });
