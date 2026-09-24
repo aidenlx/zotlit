@@ -485,11 +485,17 @@ export class AnnotationRepository extends Service<void> {
    */
   readonly #histories = new Map<string, AnnotationHistory>();
   /**
-   * The Attachments an undo or a redo is running on. It refuses a second press
-   * and keeps that write out of the history, because the step it leaves behind
-   * is the one that steps it back.
+   * The Attachments an undo or a redo is running on, which refuses a second
+   * press while one runs.
    */
   readonly #stepping = new Set<string>();
+  /**
+   * The Annotations a running step is writing right now. Their confirmations
+   * record no step, because the step the write leaves behind is already the one
+   * that steps it back; every other write confirmed while a step runs — a
+   * comment autosave whose timer came due — is recorded as it always is.
+   */
+  readonly #steppingWrites = new Set<string>();
   /**
    * How many writes are in flight on each Attachment, which is what the undo
    * key waits for: a press while a save is still on its way does nothing rather
@@ -1445,10 +1451,17 @@ export class AnnotationRepository extends Service<void> {
   ): Promise<HistoryOutcome> {
     const history = this.#histories.get(attachmentKey);
     if (!history || this.#stepping.has(attachmentKey)) return { kind: "idle" };
-    if ((this.#writesInFlight.get(attachmentKey) ?? 0) > 0)
-      return { kind: "idle" };
+    if (this.#savePending(attachmentKey)) return { kind: "idle" };
     const step = history.peek(direction);
     if (!step) return { kind: "idle" };
+    // An open Annotation Draft is a session still being shaped, and the
+    // comment editor holding it answers these keys with its own text undo.
+    if (
+      step.changes.some(({ annotationKey }) =>
+        this.commentDraftFor(annotationKey),
+      )
+    )
+      return { kind: "idle" };
     // An undo is a write, so it needs the Editing Capability like any other,
     // and the existing notice says why it did not run.
     if (this.#writeBlocked(attachmentKey)) return { kind: "blocked" };
@@ -1492,7 +1505,7 @@ export class AnnotationRepository extends Service<void> {
         kind: step.kind,
         missing: !record,
       });
-      history.drop(direction);
+      history.drop(direction, step);
       return { kind: "changed", annotationKey: change.annotationKey };
     }
 
@@ -1502,23 +1515,23 @@ export class AnnotationRepository extends Service<void> {
       // The record the write is sent against is the far step's `before`, built
       // the way every step's is.
       const before = historyFieldsOf(step.kind, record) ?? change.after;
-      let outcome = await this.#writeFields(annotationKey, change.before);
+      let outcome = await this.#stepWrite(annotationKey, change.before);
       if (
         outcome.kind === "conflict" &&
         stillHeldAfterConflict(change.after, outcome.conflict)
       ) {
         // The `412` re-read the Annotation and it still holds what the step
         // left there, so only the version moved: send the write once more.
-        outcome = await this.#writeFields(annotationKey, change.before);
+        outcome = await this.#stepWrite(annotationKey, change.before);
       }
       if (outcome.kind === "failed") {
         // The verb has already refreshed the Attachment; the step goes with it.
-        history.drop(direction);
+        history.drop(direction, step);
         return { kind: "failed", failure: outcome.failure };
       }
       if (outcome.kind !== "idle") {
         this.discardConflict(annotationKey);
-        history.drop(direction);
+        history.drop(direction, step);
         return { kind: "changed", annotationKey };
       }
       const settled = this.#holding(annotationKey)?.record;
@@ -1531,7 +1544,7 @@ export class AnnotationRepository extends Service<void> {
       });
     }
 
-    history.drop(direction);
+    history.drop(direction, step);
     history.push(opposite(direction), { kind: step.kind, changes: left });
     return { kind: "stepped", annotationKey: left[0]!.annotationKey };
   }
@@ -1539,19 +1552,28 @@ export class AnnotationRepository extends Service<void> {
   /**
    * Write one side of a History Step through the repository's own verbs, so a
    * step carries the same version stamping, capability gate, conflict handling,
-   * and failure path as the edit it steps back.
+   * and failure path as the edit it steps back. The Annotation is named as the
+   * step's own while the write is away, so what it confirms records no step.
    */
-  async #writeFields(
+  async #stepWrite(
     annotationKey: string,
     fields: HistoryFields,
   ): Promise<MutationState> {
-    if (fields.color !== undefined) {
-      return await this.patchColor(annotationKey, fields.color);
+    this.#steppingWrites.add(annotationKey);
+    try {
+      if (fields.color !== undefined) {
+        return await this.patchColor(annotationKey, fields.color);
+      }
+      if (fields.comment !== undefined) {
+        return await this.patchComment(annotationKey, fields.comment);
+      }
+      if (fields.geometry !== undefined) {
+        return await this.patchGeometry(annotationKey, fields.geometry);
+      }
+      return IDLE;
+    } finally {
+      this.#steppingWrites.delete(annotationKey);
     }
-    if (fields.geometry !== undefined) {
-      return await this.patchGeometry(annotationKey, fields.geometry);
-    }
-    return IDLE;
   }
 
   /**
@@ -1572,8 +1594,16 @@ export class AnnotationRepository extends Service<void> {
     { applied, join }: { applied: ConfirmedWrite; join?: HistoryJoin },
   ): void {
     const history = this.#histories.get(attachmentKey);
-    if (!history || this.#stepping.has(attachmentKey)) return;
+    if (!history || this.#steppingWrites.has(before.key)) return;
     if (applied.kind !== "record") return;
+    if (applied.write === "comment") {
+      this.#recordCommentStep(history, {
+        attachmentKey,
+        before,
+        record: applied.record,
+      });
+      return;
+    }
     const was = historyFieldsOf(applied.write, before);
     const now = historyFieldsOf(applied.write, applied.record);
     if (!was || !now) return;
@@ -1589,6 +1619,89 @@ export class AnnotationRepository extends Service<void> {
       joined,
     });
     this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Take one confirmed comment write into the step its editing session is
+   * shaping. One comment editing session is one History Step: the first save
+   * of a session records the step from the text the comment held when the
+   * session began, every later save moves only its `after`, and a session that
+   * settles on the text it began with leaves no step at all.
+   *
+   * The session is read off the history rather than off the Annotation Draft,
+   * which the repository drops and remakes around each settled save: a comment
+   * write joins the step on top where that step is this Annotation's own
+   * comment, and starts a fresh one otherwise. So a colour pick between two
+   * comment sessions keeps them apart, and the Mark Popup handing the editor
+   * to an Annotation Card keeps them one.
+   */
+  #recordCommentStep(
+    history: AnnotationHistory,
+    {
+      attachmentKey,
+      before,
+      record,
+    }: {
+      attachmentKey: string;
+      /** The record the write was stamped off. */
+      before: AnnotationRecord;
+      /** The record Zotero confirmed. */
+      record: AnnotationRecord;
+    },
+  ): void {
+    const top = history.peek("undo");
+    const open =
+      top?.kind === "comment" &&
+      top.changes.length === 1 &&
+      top.changes[0]!.annotationKey === record.key
+        ? top
+        : null;
+    // A step's own `before` never moves, so the session reads its starting
+    // text from there rather than from the draft's baseline, which the last
+    // save advanced.
+    const origin = open?.changes[0]!.before.comment ?? before.comment ?? "";
+    const after = record.comment ?? "";
+    const step: HistoryStep | null = sameComment(origin, after)
+      ? null
+      : {
+          kind: "comment",
+          changes: [
+            {
+              annotationKey: record.key,
+              before: { comment: origin },
+              after: { comment: after },
+            },
+          ],
+        };
+    if (open) history.reshape(open, step);
+    else if (step) history.record(step);
+    else return;
+    logger.debug("A comment session moved in the annotation history", {
+      attachmentKey,
+      annotationKey: record.key,
+      recorded: !!step,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Whether a save on this Attachment is on its way or still due: a write in
+   * flight, or an Annotation Draft whose autosave timer is armed. A press of
+   * the Annotation History's keys does nothing while one stands, rather than
+   * stepping past a save that would then land on top of it.
+   */
+  #savePending(attachmentKey: string): boolean {
+    if ((this.#writesInFlight.get(attachmentKey) ?? 0) > 0) return true;
+    for (const draft of this.#commentDrafts.values()) {
+      if (draft.attachmentKey !== attachmentKey) continue;
+      const save = this.#commentSaves.get(
+        commentDraftID(draft.serverID, draft.annotationKey),
+      );
+      if (!save) continue;
+      if (save.inFlight || save.idleTimer !== null || save.burstTimer !== null)
+        return true;
+    }
+    return false;
   }
 
   /**

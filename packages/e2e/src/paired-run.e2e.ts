@@ -4111,6 +4111,113 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await waitFor(async () => (await storedColor()) === seedColor),
           ).toBe(true);
         }, 120000);
+
+        /** What the Local API holds for the Annotation's comment right now. */
+        const storedComment = async () =>
+          (await storedAnnotation(api, serverID, historyKey))
+            .annotationComment ?? "";
+
+        /** Opens the Mark Popup's comment editor on the selected Annotation. */
+        async function openCommentEditor(): Promise<void> {
+          await obEval(
+            vaultId!,
+            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+              expected: "true",
+            }),
+          ).toBe(true);
+        }
+
+        /** Replaces what the open editor holds, as typing over a selection does. */
+        const typeComment = (text: string) =>
+          obEval(
+            vaultId!,
+            `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,${JSON.stringify(text)});return true;})()`,
+          );
+
+        /** Escape, which stores the comment and takes the editor off screen. */
+        async function closeCommentEditor(): Promise<void> {
+          await obEval(
+            vaultId!,
+            `(function(){${POPUP_EDITOR}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, `String(!${POPUP_EDITOR})`, {
+              expected: "true",
+            }),
+          ).toBe(true);
+        }
+
+        it("puts a whole comment session back for one press of the undo key", async () => {
+          await selectMark();
+          await openCommentEditor();
+
+          // Two texts, each left to stand until its own autosave landed.
+          await typeComment("Worth");
+          expect(
+            await waitFor(async () => (await storedComment()) === "Worth"),
+          ).toBe(true);
+          await typeComment("Worth citing");
+          expect(
+            await waitFor(
+              async () => (await storedComment()) === "Worth citing",
+            ),
+          ).toBe(true);
+          await closeCommentEditor();
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          // The session went back whole, to the comment from before it began.
+          expect(
+            await waitFor(async () => (await storedComment()) === ""),
+          ).toBe(true);
+
+          expect(await redoKey()).toEqual({ handled: true });
+          await stepSettled();
+          expect(
+            await waitFor(
+              async () => (await storedComment()) === "Worth citing",
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("leaves the undo key to the comment editor's own text undo", async () => {
+          await selectMark();
+          await openCommentEditor();
+          await typeComment("Typed once");
+          expect(
+            await waitFor(async () => (await storedComment()) === "Typed once"),
+          ).toBe(true);
+
+          // A second run typed on, then the platform undo chord, in one turn:
+          // no autosave can come due between them. The chord goes to the
+          // view's own Scope first, as Obsidian sends it, and then to the
+          // editor the focus sits in.
+          const { scoped, typed } = await obJson<{
+            scoped: boolean;
+            typed: string;
+          }>(
+            `(function(){const editor=${POPUP_EDITOR};editor.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'Typed once and twice');const typed=editor.textContent;const make=()=>new KeyboardEvent('keydown',{key:'z',${platformKey}:true,bubbles:true,cancelable:true});const probe=make();Object.defineProperty(probe,'target',{value:editor});const names=[];if(probe.ctrlKey)names.push('Ctrl');if(probe.metaKey)names.push('Meta');const context={modifiers:names.sort().join(','),key:probe.key,vkey:'KeyZ'};const scoped=${pdfView}.scope.handleKey(probe,context)===false;editor.dispatchEvent(make());return JSON.stringify({scoped,typed});})()`,
+          );
+          expect(typed).toBe("Typed once and twice");
+          // The reader left the chord alone.
+          expect(scoped).toBe(false);
+
+          // The editor's own text undo took it back one run.
+          expect(
+            await obEvalUntil(vaultId!, `${POPUP_EDITOR}.textContent`, {
+              expected: "Typed once",
+            }),
+          ).toBe(true);
+          // The Annotation History never heard the key, so Zotero's record
+          // still holds what the session last saved.
+          expect(await storedComment()).toBe("Typed once");
+
+          await closeCommentEditor();
+        }, 120000);
       });
 
       // The one place a confirmed write can land: the Local API is serving

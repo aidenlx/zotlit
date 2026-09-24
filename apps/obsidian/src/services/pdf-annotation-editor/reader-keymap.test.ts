@@ -2,6 +2,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
+import { createCommentEditor } from "@/views/annot-view/comment-editor";
 
 import {
   annotation,
@@ -11,6 +13,7 @@ import {
 } from "./__fixtures__";
 import { historyVerbOf } from "./reader-keymap";
 import type { OverlayPageView } from "./render";
+import { createTextDraftArea } from "./text-draft";
 
 const MARK: AnnotationRecord = annotation("PARA1111", "highlight", {
   pageIndex: 0,
@@ -150,4 +153,49 @@ it("leaves the history keys to a text field they were typed into", () => {
   h.key({ key: "y", ctrlKey: true }, textarea);
 
   expect(h.stepped).toEqual([]);
+});
+
+it("leaves the history keys to the comment editor holding focus", () => {
+  using h = setup(false);
+  const parent = h.containerEl.appendChild(document.createElement("div"));
+  using editor = createCommentEditor({
+    app: editorApp(),
+    parent,
+    text: "Worth citing",
+    readOnly: false,
+    onChange: vi.fn(),
+    onEscape: vi.fn(),
+    onSubmit: vi.fn(),
+    onBlur: vi.fn(),
+  });
+  const { view } = editor;
+  view.dispatch({
+    changes: { from: view.state.doc.length, insert: " twice" },
+    userEvent: "input.type",
+  });
+
+  h.key({ key: "z", ctrlKey: true }, view.contentDOM);
+
+  // The editor's own text undo took the chord: the typed run is gone and the
+  // Annotation History never heard the key.
+  expect(view.state.doc.toString()).toBe("Worth citing");
+  expect(h.stepped).toEqual([]);
+
+  // The very same chord away from the editor is the reader's own.
+  h.key({ key: "z", ctrlKey: true });
+  expect(h.stepped).toEqual(["undo"]);
+});
+
+it("leaves the history keys to a Text Draft holding focus", () => {
+  using h = setup(false);
+  const area = h.containerEl.appendChild(
+    createTextDraftArea(document, { input: vi.fn(), finish: vi.fn() }),
+  );
+
+  h.key({ key: "z", ctrlKey: true }, area);
+  h.key({ key: "y", ctrlKey: true }, area);
+  expect(h.stepped).toEqual([]);
+
+  h.key({ key: "y", ctrlKey: true });
+  expect(h.stepped).toEqual(["redo"]);
 });

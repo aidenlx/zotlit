@@ -3083,52 +3083,84 @@ it("drops a comment draft holding what Zotero already has", async () => {
 // #region annotation history
 
 /**
- * A Zotero that keeps what a colour patch sends, so every later read answers
- * the colour the last accepted write asked for. What the Local API holds is the
- * oracle an undo is read through; nothing here asks the history what it thinks.
+ * A Zotero that keeps what a patch sends, Annotation by Annotation, so every
+ * later read answers the colour and comment the last accepted write asked for.
+ * What the Local API holds is the oracle an undo is read through; nothing here
+ * asks the history what it thinks.
  */
 function zoteroHolding(annotationKey: string) {
-  const seed = ROUGIER_ANNOTATIONS.find(({ key }) => key === annotationKey);
-  if (!seed) throw new Error(`No fixture annotation ${annotationKey}`);
-  let held: WireAnnotation | null = { ...seed };
+  const held = new Map<string, WireAnnotation>(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  if (!held.has(annotationKey)) {
+    throw new Error(`No fixture annotation ${annotationKey}`);
+  }
   let refuseOnce = false;
   const list = () =>
-    ROUGIER_ANNOTATIONS.flatMap((entry) =>
-      entry.key === annotationKey ? (held ? [held] : []) : [entry],
-    );
+    ROUGIER_ANNOTATIONS.flatMap((entry) => {
+      const stored = held.get(entry.key);
+      return stored ? [stored] : [];
+    });
+  /** The item key a route names, which is its last segment. */
+  const keyOf = ({ url }: ZoteroRequest) =>
+    url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
   return {
     answers: {
       children: () => annotationPage(list()),
-      item: () => (held ? annotationItem(held) : notFound()),
+      item: (request) => {
+        const stored = held.get(keyOf(request));
+        return stored ? annotationItem(stored) : notFound();
+      },
       write: (request) => {
         if (refuseOnce) {
           refuseOnce = false;
           return staleVersion();
         }
-        const body = JSON.parse(request.body ?? "{}") as {
-          annotationColor?: string;
-        };
-        if (held && typeof body.annotationColor === "string") {
-          held = {
-            ...held,
-            color: body.annotationColor,
-            version: held.version + 1,
-          };
+        const key = keyOf(request);
+        const stored = held.get(key);
+        const { annotationColor, annotationComment } = JSON.parse(
+          request.body ?? "{}",
+        ) as { annotationColor?: string; annotationComment?: string };
+        const patched =
+          typeof annotationColor === "string" ||
+          typeof annotationComment === "string";
+        if (stored && patched) {
+          held.set(key, {
+            ...stored,
+            ...(typeof annotationColor === "string" && {
+              color: annotationColor,
+            }),
+            ...(typeof annotationComment === "string" && {
+              comment: annotationComment,
+            }),
+            version: stored.version + 1,
+          });
         }
         return writeAccepted();
       },
     } satisfies ZoteroAnswers,
     /** What the Local API holds for the Annotation, or `null` once erased. */
     get held(): WireAnnotation | null {
-      return held;
+      return held.get(annotationKey) ?? null;
+    },
+    /** What it holds for any other Annotation of the same Attachment. */
+    heldOf(key: string): WireAnnotation | null {
+      return held.get(key) ?? null;
     },
     /** An edit made in Zotero itself, beside ZotLit. */
     changeInZotero(patch: Partial<WireAnnotation>): void {
-      if (held) held = { ...held, ...patch, version: held.version + 1 };
+      const stored = held.get(annotationKey);
+      if (stored) {
+        held.set(annotationKey, {
+          ...stored,
+          ...patch,
+          version: stored.version + 1,
+        });
+      }
     },
     /** An erase in Zotero itself. */
     eraseInZotero(): void {
-      held = null;
+      held.delete(annotationKey);
     },
     /** Refuse the next write with the `412` a moved object answers. */
     refuseNextWrite(): void {
@@ -3744,6 +3776,223 @@ it("keeps a colour pick out of a run of keyboard nudges", async () => {
     ...movedGeometry("PUPR5FG5", 0),
     color: "#2ea8e5",
   });
+});
+
+// #endregion
+
+// #region comment editing sessions
+//
+// Each session's autosaves run on the fake clock the idle timer is armed on.
+
+it("makes one step of a comment session, however many times it saved", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    // The Mark Popup types, and an Annotation Card carries the editing on
+    // through the very same verb: the hand-off between them is one session.
+    repository.editComment("PUPR5FG5", "Worth");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Worth");
+    repository.editComment("PUPR5FG5", "Worth citing");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Worth citing");
+    repository.editComment("PUPR5FG5", "Worth citing twice");
+    await repository.submitComment("PUPR5FG5");
+    expect(zotero.held?.comment).toBe("Worth citing twice");
+
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    });
+    // The whole session went back in one press, to the text the draft was born
+    // with rather than the text the last autosave left.
+    expect(zotero.held?.comment).toBe("");
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+
+    expect(await repository.redo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.comment).toBe("Worth citing twice");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records no step for a comment draft discarded before it saved", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Never saved");
+    repository.discardCommentDraft("PUPR5FG5");
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.comment).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records no step where a comment session settles on its starting text", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("HRK7BG32");
+    const seeded = zotero.held!.comment!;
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("HRK7BG32", `${seeded} and slow`);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe(`${seeded} and slow`);
+
+    // The researcher typed the ending away again before leaving the editor.
+    repository.editComment("HRK7BG32", seeded);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe(seeded);
+
+    expect(repository.canUndo("RGRPDF24")).toBe(false);
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.comment).toBe(seeded);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does nothing while the Annotation the top step touches is being edited", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Half typed");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(zotero.held?.comment).toBe("Half typed");
+
+    // The comment editor is open again on the same Annotation, with nothing
+    // typed into it yet, so the keys belong to the editor holding it.
+    repository.editComment("PUPR5FG5");
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.comment).toBe("Half typed");
+
+    // The editor closed, keeping what Zotero holds.
+    repository.discardCommentDraft("PUPR5FG5");
+
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "PUPR5FG5",
+    });
+    expect(zotero.held?.comment).toBe("");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does nothing while an autosave on the Attachment is still due", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+    await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    // Another Annotation of the same Attachment is being typed into, and its
+    // save is armed: the undo waits for it rather than stepping past it.
+    repository.editComment("HRK7BG32", "Still typing");
+
+    expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+    expect(zotero.held?.color).toBe("#ff6666");
+    expect(repository.canUndo("RGRPDF24")).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records a colour pick after a comment session as a step of its own", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const { repository } = await writable(stack, zotero.answers);
+    repository.openHistory("RGRPDF24");
+
+    repository.editComment("PUPR5FG5", "Noted");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await repository.submitComment("PUPR5FG5");
+    await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    expect(await repository.undo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.color).toBe("#2ea8e5");
+    expect(zotero.held?.comment).toBe("Noted");
+
+    expect(await repository.undo("RGRPDF24")).toMatchObject({
+      kind: "stepped",
+    });
+    expect(zotero.held?.comment).toBe("");
+    expect(zotero.held?.color).toBe("#2ea8e5");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("records an autosave that lands while a step runs beside it", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const zotero = zoteroHolding("PUPR5FG5");
+    const seeded = zotero.heldOf("HRK7BG32")!.comment!;
+    const gate = Promise.withResolvers<void>();
+    let holdNext = false;
+    const { repository } = await writable(stack, {
+      ...zotero.answers,
+      write: async (request) => {
+        if (holdNext) {
+          holdNext = false;
+          await gate.promise;
+        }
+        return zotero.answers.write(request);
+      },
+    });
+    repository.openHistory("RGRPDF24");
+    await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    holdNext = true;
+    const undone = repository.undo("RGRPDF24");
+    await vi.advanceTimersByTimeAsync(0);
+    // Another Annotation's comment session saves while the undo's own write is
+    // still away.
+    repository.editComment("HRK7BG32", "Typed meanwhile");
+    await vi.advanceTimersByTimeAsync(1_000);
+    gate.resolve();
+    expect(await undone).toMatchObject({ kind: "stepped" });
+    expect(zotero.held?.color).toBe("#2ea8e5");
+
+    // The session's own step stands beside the undo rather than being lost to
+    // it, so the editor's comment can be stepped back in its turn.
+    await repository.submitComment("HRK7BG32");
+    expect(zotero.heldOf("HRK7BG32")?.comment).toBe("Typed meanwhile");
+    expect(await repository.undo("RGRPDF24")).toEqual({
+      kind: "stepped",
+      annotationKey: "HRK7BG32",
+    });
+    expect(zotero.heldOf("HRK7BG32")?.comment).toBe(seeded);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 // #endregion

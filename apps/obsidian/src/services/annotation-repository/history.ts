@@ -40,6 +40,7 @@ export type HistoryEditKind = "color" | "comment" | "geometry";
 export interface HistoryRecord {
   type: ResolvedAnnotationTypeName;
   color: string | null;
+  comment: string | null;
   position: AnnotationPosition;
   sortIndex: string;
   text: string | null;
@@ -55,6 +56,7 @@ export interface HistoryRecord {
  */
 export interface HistoryFields {
   color?: string;
+  comment?: string;
   geometry?: GeometryEdit;
 }
 
@@ -93,28 +95,34 @@ export interface HistoryStep {
 
 /**
  * The fields a confirmed record carries for an edit of this kind, or `null`
- * where an edit of that kind records no step: a comment session is one step by
- * its own grouping rule, a record Zotero holds no colour for has no colour to
- * put back, and a position no Geometry Edit writes has none either.
+ * where the record holds none to put back: a record Zotero holds no colour for
+ * has no colour to put back, and a position no Geometry Edit writes has none
+ * either.
  */
 export function historyFieldsOf(
   kind: HistoryEditKind,
   record: HistoryRecord,
 ): HistoryFields | null {
-  if (kind === "color") {
-    return record.color === null ? null : { color: record.color };
+  switch (kind) {
+    case "color":
+      return record.color === null ? null : { color: record.color };
+    case "comment":
+      // Zotero stores a cleared comment as no comment, so the empty string is
+      // what an Annotation carrying none is written back as.
+      return { comment: record.comment ?? "" };
+    case "geometry": {
+      const position = writablePosition(record.position);
+      if (!position) return null;
+      const quotes = record.type === "highlight" || record.type === "underline";
+      return {
+        geometry: {
+          position,
+          sortIndex: record.sortIndex,
+          ...(quotes && record.text !== null && { text: record.text }),
+        },
+      };
+    }
   }
-  if (kind !== "geometry") return null;
-  const position = writablePosition(record.position);
-  if (!position) return null;
-  const quotes = record.type === "highlight" || record.type === "underline";
-  return {
-    geometry: {
-      position,
-      sortIndex: record.sortIndex,
-      ...(quotes && record.text !== null && { text: record.text }),
-    },
-  };
 }
 
 /**
@@ -150,6 +158,12 @@ export function stillHolds(
   ) {
     return false;
   }
+  if (
+    fields.comment !== undefined &&
+    !resolvesSilently("comment", fields.comment, record.comment)
+  ) {
+    return false;
+  }
   return (
     fields.geometry === undefined || sameStoredGeometry(fields.geometry, record)
   );
@@ -165,19 +179,25 @@ export function stillHeldAfterConflict(
   fields: HistoryFields,
   conflict: WriteConflict,
 ): boolean {
-  if (conflict.write === "color") {
-    return (
-      fields.color !== undefined &&
-      resolvesSilently("color", fields.color, conflict.fresh)
-    );
+  switch (conflict.write) {
+    case "color":
+      return (
+        fields.color !== undefined &&
+        resolvesSilently("color", fields.color, conflict.fresh)
+      );
+    case "comment":
+      return (
+        fields.comment !== undefined &&
+        resolvesSilently("comment", fields.comment, conflict.fresh)
+      );
+    case "geometry":
+      return (
+        fields.geometry !== undefined &&
+        sameStoredGeometry(fields.geometry, conflict.fresh)
+      );
+    default:
+      return false;
   }
-  if (conflict.write === "geometry") {
-    return (
-      fields.geometry !== undefined &&
-      sameStoredGeometry(fields.geometry, conflict.fresh)
-    );
-  }
-  return false;
 }
 
 /**
@@ -307,9 +327,28 @@ export class AnnotationHistory {
     return this.#stacks[direction].at(-1) ?? null;
   }
 
-  /** Take the top step off one stack, whether it was written or dropped. */
-  drop(direction: HistoryDirection): void {
-    this.#stacks[direction].pop();
+  /**
+   * Take one step off a stack, whether it was written or dropped. The step is
+   * named rather than taken off the top, so an edit recorded while it ran —
+   * a comment autosave that came due — is left where it stands.
+   */
+  drop(direction: HistoryDirection, step: HistoryStep): void {
+    const stack = this.#stacks[direction];
+    const at = stack.lastIndexOf(step);
+    if (at >= 0) stack.splice(at, 1);
+  }
+
+  /**
+   * Move a step on the stack an undo takes from to `next`, or take it out
+   * again where `next` is `null`: one comment editing session shapes a single
+   * step over every save it makes, and a session that settles on the text it
+   * began with leaves none. A step that stack no longer holds is left alone.
+   */
+  reshape(step: HistoryStep, next: HistoryStep | null): void {
+    const stack = this.#stacks.undo;
+    const at = stack.indexOf(step);
+    if (at < 0) return;
+    stack.splice(at, 1, ...(next ? [next] : []));
   }
 
   /** Put the step a taken one left behind on the stack that steps it back. */
