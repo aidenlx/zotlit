@@ -444,7 +444,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (this.#state().armed !== "image") return;
     if (this.#capturing || this.#writing || onMark()) return;
     const client = { x: event.clientX, y: event.clientY };
-    const page = this.#readerPageUnder(client);
+    const page = this.#pressedPage(event);
     if (!page || this.#inSelection(client)) return;
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
@@ -812,7 +812,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   #beginStroke(event: PointerEvent): void {
     if (this.#stroke) return;
     const client = { x: event.clientX, y: event.clientY };
-    const page = this.#readerPageUnder(client);
+    const page = this.#pressedPage(event);
     if (!page) return;
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
@@ -1036,6 +1036,16 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   #pageUnder(client: Point): boolean {
     return this.#readerPageUnder(client) !== null;
+  }
+
+  /**
+   * The page a press landed on. A page scrolled up under the reader's toolbar
+   * still spans the toolbar's press point, so the press's target decides: a
+   * press on the toolbar takes no capture that would keep its click from it.
+   */
+  #pressedPage(event: PointerEvent): ReaderPage | null {
+    const page = this.#readerPageUnder({ x: event.clientX, y: event.clientY });
+    return page?.view.div.contains(event.target as Node | null) ? page : null;
   }
 
   #readerPageUnder({ x, y }: Point): ReaderPage | null {

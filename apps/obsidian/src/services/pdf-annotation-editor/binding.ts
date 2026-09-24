@@ -968,7 +968,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
 
   /**
    * Marks the reader while the ink tool is armed, so the stylesheet takes
-   * touch panning off its pages.
+   * touch panning off its pages and shows the crosshair over them.
    */
   #showInking(inking: boolean): void {
     this.#view.containerEl.toggleAttribute(themeAttribute.pdfInking, inking);

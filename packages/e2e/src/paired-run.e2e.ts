@@ -1629,11 +1629,14 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe("false");
         }, 120000);
 
-        it("takes touch panning off the page container only while armed", async () => {
+        it("takes touch panning off the page container and shows the crosshair only while armed", async () => {
           await armInk([150, 355]);
           const touchAction = `getComputedStyle(${pageContainer}).touchAction`;
+          // Over the text layer, whose own rule shows the text cursor.
+          const cursor = `getComputedStyle(${pdfView}.viewer.child.getPage(1).div.querySelector('.textLayer span')).cursor`;
 
           expect(await obEval(vaultId!, touchAction)).toBe("none");
+          expect(await obEval(vaultId!, cursor)).toBe("crosshair");
           await obEval(
             vaultId!,
             `(function(){${tool}.click();return true;})()`,
@@ -1642,6 +1645,30 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             await obEval(vaultId!, `${tool}.getAttribute('aria-pressed')`),
           ).toBe("false");
           expect(await obEval(vaultId!, touchAction)).not.toBe("none");
+          expect(await obEval(vaultId!, cursor)).not.toBe("crosshair");
+        }, 120000);
+
+        it("stands down from a toolbar press over a page scrolled under the toolbar", async () => {
+          await armInk([150, 355]);
+          const before = await annotationKeys();
+
+          // The press lands on the ink toggle, inside the box of the page
+          // scrolled up under it, and draws no stroke. A stroke would hold
+          // the pointer, which keeps a real click from the toggle.
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){${FIRE}const node=${tool};const box=node.getBoundingClientRect();const x=box.left+box.width/2,y=box.top+box.height/2;const page=${pdfView}.viewer.child.getPage(1).div.getBoundingClientRect();const container=${pdfView}.containerEl;fire('pointerdown',x,y,node);const underPage=page.top<y&&y<page.bottom;fire('pointerup',x,y,node);fire('click',x,y,node);return JSON.stringify({underPage,pending:container.querySelectorAll('.zt-pdf-pending-stroke').length,live:!!${liveStroke},armed:node.getAttribute('aria-pressed')});})()`,
+            ),
+          ).toBe(
+            JSON.stringify({
+              underPage: true,
+              pending: 0,
+              live: false,
+              armed: "false",
+            }),
+          );
+          expect(await annotationKeys()).toEqual(before);
         }, 120000);
 
         it("discards a stroke when a second pointer presses, as a pinch begins", async () => {

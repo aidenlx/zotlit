@@ -87,6 +87,18 @@
   touch-action: none;
 }
 
+/*
+ * The armed ink tool shows the crosshair over the pages, marks included, as
+ * Zotero's reader does: every press there draws. It outranks the text layer's
+ * own cursors, so it is not under `:where()`; the text layer's selector
+ * outranks `.textLayer span[role="img"]`.
+ */
+[data-zt-inking] .pdf-viewer-container,
+[data-zt-inking] .pdf-viewer-container *,
+[data-zt-inking] .pdf-viewer-container .textLayer * {
+  cursor: crosshair;
+}
+
 /* Zotero's highlight reads as ink on paper in either theme. */
 :where(.theme-light .zt-pdf-annotation-highlight) {
   opacity: 0.4;

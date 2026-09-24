@@ -159,7 +159,8 @@ export const themeProperty = {
 export const themeAttribute = {
   /**
    * On the PDF view's container while the ink tool is armed. ZotLit's own rule
-   * under it takes touch panning off the pages, so a finger draws.
+   * under it takes touch panning off the pages, so a finger draws, and shows
+   * the crosshair over them.
    */
   pdfInking: "data-zt-inking",
 } as const;
