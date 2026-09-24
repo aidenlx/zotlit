@@ -11,7 +11,12 @@ import * as v from "valibot";
 
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
-import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import {
+  ANNOTATION_COLORS,
+  isColor,
+  withRecentColor,
+} from "@/lib/annotation-colors";
+import type { SettingsService } from "@/services/settings/service";
 
 /** Every tool of the toggle group, in Zotero's own toolbar order. */
 export const ANNOTATION_TOOLS = [
@@ -97,7 +102,7 @@ export function resolveToolColors(
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L48-L53
  */
-export const INK_WIDTHS = [0.5, 1, 2, 3, 5, 8, 12] as const;
+export const INK_WIDTHS = [0.4, 1, 2, 3, 5, 8, 12] as const;
 
 export type InkWidth = (typeof INK_WIDTHS)[number];
 
@@ -132,4 +137,37 @@ export interface ToolColorStore {
   /** The ink tool's pen width, in PDF points. */
   inkWidth: () => InkWidth;
   setInkWidth: (width: InkWidth) => void;
+}
+
+/**
+ * Each tool's colour, the colours used last, and the ink tool's pen width,
+ * read and written through the settings file, so a colour or a width chosen in
+ * one PDF is the one the next one opens with. A choice made before the
+ * settings have loaded is dropped rather than written over what is on disk.
+ */
+export function toolColorStore(
+  settings: Pick<SettingsService, "current" | "update">,
+): ToolColorStore {
+  return {
+    current: () => resolveToolColors(settings.current?.[TOOL_COLORS_SETTING]),
+    set: (tool: AnnotationTool, color: string) => {
+      const stored = settings.current?.[TOOL_COLORS_SETTING];
+      if (!stored) return;
+      settings.update({ [TOOL_COLORS_SETTING]: { ...stored, [tool]: color } });
+    },
+    recent: () => settings.current?.[RECENT_COLORS_SETTING] ?? [],
+    use: (color: string) => {
+      const stored = settings.current?.[RECENT_COLORS_SETTING];
+      // A colour already first changes nothing, so it writes nothing.
+      if (!stored || isColor(stored[0] ?? null, color)) return;
+      settings.update({
+        [RECENT_COLORS_SETTING]: withRecentColor(stored, color),
+      });
+    },
+    inkWidth: () => settings.current?.[INK_WIDTH_SETTING] ?? DEFAULT_INK_WIDTH,
+    setInkWidth: (width: InkWidth) => {
+      if (!settings.current) return;
+      settings.update({ [INK_WIDTH_SETTING]: width });
+    },
+  };
 }

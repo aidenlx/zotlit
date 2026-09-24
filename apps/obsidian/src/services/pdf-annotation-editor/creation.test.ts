@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { SelectedText, TextSelection } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationDraft,
@@ -27,7 +28,7 @@ import {
 } from "./__fixtures__";
 import { arm, ingestCapability } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
-import { toolColorStore } from "./service";
+import { toolColorStore } from "./tools";
 import type { ToolColorStore } from "./tools";
 
 /** The Fixture's own underline on `rougier-2014.pdf`, in PDF points. */
@@ -1239,6 +1240,10 @@ it("takes a refused stroke off the page", async () => {
   expect(open.store.getState().pendingStrokes).toEqual([]);
 });
 
+/** The menu label of one ink width. */
+const step = (width: number) =>
+  m.pdf_toolbar_ink_width_step({ width: String(width) });
+
 /** The ink tool's chevron menu, opened from the toolbar as a researcher opens it. */
 function inkMenu(open: ReturnType<typeof inkReader>) {
   open.slot.querySelector<HTMLElement>('[data-zt-tool="ink-color"]')!.click();
@@ -1258,26 +1263,21 @@ it("offers the ink widths under the colours, the current one checked, and draws 
   expect(
     menu.items.slice(ANNOTATION_COLORS.length).map(({ title }) => title),
   ).toEqual([
-    "Size",
-    "0.5 pt",
-    "1 pt",
-    "2 pt",
-    "3 pt",
-    "5 pt",
-    "8 pt",
-    "12 pt",
+    m.pdf_toolbar_ink_width(),
+    // Zotero's own width steps, the short run the ink tool offers.
+    ...[0.4, 1, 2, 3, 5, 8, 12].map(step),
   ]);
   expect(menu.items[ANNOTATION_COLORS.length]!.isLabel).toBe(true);
   // One colour and one width stand checked: the ink colour, and width 2.
   expect(menu.checked).toHaveLength(2);
-  expect(menu.checked.at(-1)).toBe("2 pt");
-  menu.pick("5 pt");
+  expect(menu.checked.at(-1)).toBe(step(2));
+  menu.pick(step(5));
   await open.drag([100, 100], [100.4, 100]);
 
   expect(open.drafts.map(({ position }) => position)).toEqual([
     { pageIndex: 0, width: 5, paths: [[100, 692]] },
   ]);
-  expect(inkMenu(open).checked.at(-1)).toBe("5 pt");
+  expect(inkMenu(open).checked.at(-1)).toBe(step(5));
 });
 
 it("keeps the picked ink width in the settings, so the next PDF draws at it", async () => {
@@ -1285,7 +1285,7 @@ it("keeps the picked ink width in the settings, so the next PDF draws at it", as
   expect(toolColorStore(settings).inkWidth()).toBe(2);
   {
     using first = inkReader(undefined, { colors: toolColorStore(settings) });
-    inkMenu(first).pick("8 pt");
+    inkMenu(first).pick(step(8));
   }
 
   expect(settings.current?.["reader.ink-width"]).toBe(8);
@@ -1324,14 +1324,10 @@ it("finishes a stroke that reaches the position ceiling as its own Annotation, a
   expect(writePosition(first!).length).toBeLessThanOrEqual(MAX_POSITION_LENGTH);
   expect(first).toMatchObject({ pageIndex: 0, width: 2 });
   expect(second).toMatchObject({ pageIndex: 0, width: 2 });
-  // The second part begins at a sample of the scribble past the first part's
-  // end, a client point (x, y) being the PDF point (x, 792 - y).
   const firstPath = "paths" in first! ? first.paths[0]! : [];
   const secondPath = "paths" in second! ? second.paths[0]! : [];
-  const start = samples.findIndex(
-    ([x, y]) => x === secondPath[0] && 792 - y === secondPath[1],
-  );
-  expect(start).toBeGreaterThan(0);
+  // The second part begins where the first one ends, so the two meet.
+  expect(secondPath.slice(0, 2)).toEqual(firstPath.slice(-2));
   expect(firstPath.slice(0, 2)).toEqual([samples[0]![0], 792 - samples[0]![1]]);
   expect(open.store.getState()).toMatchObject({
     armed: "ink",
