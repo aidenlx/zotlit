@@ -607,9 +607,35 @@ it("keeps the row's nodes through a mutation announced again unchanged", () => {
   h.annotations.emit("mutation-changed", "WORD2222");
   expect(del()).toBe(drawn);
 
-  h.annotations.mutationFor.mockReturnValue({ kind: "pending" });
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "color",
+  });
   h.annotations.emit("mutation-changed", "WORD2222");
   expect(del()?.getAttribute("aria-disabled")).toBe("true");
+});
+
+it("keeps the row as it stands while a comment write is in flight", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const verbs = () =>
+    [...popup.hoverEl.querySelectorAll<HTMLElement>("[data-zt-verb]")].map(
+      (el) => [
+        el,
+        el.getAttribute("aria-label"),
+        el.getAttribute("aria-disabled"),
+      ],
+    );
+  const drawn = verbs();
+
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "comment",
+  });
+  h.annotations.emit("mutation-changed", "WORD2222");
+
+  expect(verbs()).toEqual(drawn);
 });
 
 const COMMENTED = { ...WORD, comment: "<p>worth quoting</p>" };
@@ -648,7 +674,10 @@ it("draws the comment read-only while a write is pending on it", () => {
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   expect(commentText(popup.hoverEl)?.classList).toContain("zt:cursor-text");
 
-  h.annotations.mutationFor.mockReturnValue({ kind: "pending" });
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "color",
+  });
   h.annotations.emit("mutation-changed", "WORD2222");
 
   expect(commentText(popup.hoverEl)?.classList).not.toContain("zt:cursor-text");

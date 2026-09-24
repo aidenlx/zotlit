@@ -90,7 +90,7 @@ export function cardControls({
   hasComment,
   now,
 }: CardControlsInput): CardControls {
-  const pending = mutation.kind === "pending";
+  const pending = gestureInFlight(mutation);
   const blocked = pending ? null : capabilityBlock(capability, now);
   const control = (label: string): CardControl => {
     if (pending)
@@ -137,8 +137,17 @@ export function editingBlockedReason(
   mutation: MutationState,
   now: Temporal.Instant,
 ): string | null {
-  if (mutation.kind === "pending") return m.annot_view_card_saving();
+  if (gestureInFlight(mutation)) return m.annot_view_card_saving();
   return capabilityBlock(capability, now)?.reason ?? null;
+}
+
+/**
+ * Whether a write in flight stands the verbs down. A comment write does not:
+ * its text is already drawn by the editor, and a verb pressed meanwhile queues
+ * behind it, so disabling the row would only flicker it on every autosave.
+ */
+function gestureInFlight(mutation: MutationState): boolean {
+  return mutation.kind === "pending" && mutation.write !== "comment";
 }
 
 /**
@@ -166,11 +175,13 @@ export function commentEditorControls(
   now: Temporal.Instant,
 ) {
   const available = editingLive(capability);
-  const pending = draft?.state.kind === "pending";
   const oneTime = capability.kind === "writable" && capability.oneTime;
   const manual = !!oneTime || !!draft?.manualSave;
-  // Automatic saving states nothing: the quiet case is the normal one, and a
-  // standing sentence under every editor only competes with the text.
+  // Automatic saving states nothing, in flight or at rest: the quiet case is
+  // the normal one, and a line that comes and goes under the editor with every
+  // pause in typing only competes with the text. Only a save the user pressed
+  // for is waited on, so only that one says so.
+  const pending = manual && draft?.state.kind === "pending";
   let hint: string | null = null;
   if (pending) hint = m.annot_view_card_saving();
   else if (draft?.state.kind === "failed") {

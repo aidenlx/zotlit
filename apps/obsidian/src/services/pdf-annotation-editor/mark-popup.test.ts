@@ -87,7 +87,7 @@ describe("markPopupRow", () => {
   });
 
   it("stands them down while a write of its own is in flight", () => {
-    const built = row({ mutation: { kind: "pending" } });
+    const built = row({ mutation: { kind: "pending", write: "color" } });
     expect(verbs(built).delete).toEqual([true, "Saving to Zotero…"]);
   });
 

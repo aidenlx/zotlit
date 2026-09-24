@@ -32,6 +32,11 @@ import type {
   WireAnnotation,
   ZoteroAnswers,
 } from "@/services/zotero-local-api/__fixtures__";
+import {
+  cardControls,
+  commentEditorControls,
+  editingBlockedReason,
+} from "@/views/annot-view/card-controls";
 
 import { AnnotationRepository } from "./service";
 import type { AnnotationList, AnnotationRepositoryDeps } from "./service";
@@ -2216,7 +2221,10 @@ it("shows a write in flight as pending, and draws no provisional value", async (
 
   const running = repository.patchColor("PUPR5FG5", "#5fb236");
 
-  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "pending" });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({
+    kind: "pending",
+    write: "color",
+  });
   expect(colorOf(repository.peek("RGRPDF24")?.value ?? null, "PUPR5FG5")).toBe(
     "#2ea8e5",
   );
@@ -3075,4 +3083,61 @@ it("drops a comment draft holding what Zotero already has", async () => {
   expect(
     requests.slice(sent).filter(({ method }) => method === "PATCH"),
   ).toHaveLength(0);
+});
+
+it("draws nothing while an automatic comment save is in flight", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const answer = Promise.withResolvers<Response>();
+    let saved = "";
+    const { repository } = await writable(stack, {
+      write: (request) => {
+        saved = String(JSON.parse(request.body ?? "{}").annotationComment);
+        return answer.promise;
+      },
+      item: () =>
+        annotationItem(afterWrite("PUPR5FG5", { comment: saved, version: 21 })),
+    });
+    // What the card and the Mark Popup draw from this Annotation's state.
+    const drawn = () => {
+      const capability = repository.capabilityFor("RGRPDF24");
+      const mutation = repository.mutationFor("PUPR5FG5");
+      const editor = commentEditorControls(
+        capability,
+        repository.commentDraftFor("PUPR5FG5"),
+        NOW,
+      );
+      return {
+        verbs: cardControls({
+          capability,
+          mutation,
+          hasComment: true,
+          now: NOW,
+        }),
+        blocked: editingBlockedReason(capability, mutation, NOW),
+        hint: editor.hint,
+        saveDisabled: editor.saveDisabled,
+      };
+    };
+    repository.editComment("PUPR5FG5", "typed");
+    const resting = drawn();
+    const frames: unknown[] = [];
+    stack.defer(repository.on("mutation-changed", () => frames.push(drawn())));
+    stack.defer(
+      repository.on("comment-draft-changed", () => frames.push(drawn())),
+    );
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    frames.push(drawn());
+    answer.resolve(writeAccepted());
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+    );
+
+    expect(frames.length).toBeGreaterThan(1);
+    for (const frame of frames) expect(frame).toEqual(resting);
+  } finally {
+    vi.useRealTimers();
+  }
 });

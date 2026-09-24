@@ -1193,7 +1193,7 @@ export class AnnotationRepository extends Service<void> {
       });
     }
 
-    this.#settle(annotationKey, { kind: "pending" });
+    this.#settle(annotationKey, { kind: "pending", write: command.write });
     const blocked = this.#writeBlocked(held.attachmentKey);
     if (blocked) {
       return this.#settle(annotationKey, {

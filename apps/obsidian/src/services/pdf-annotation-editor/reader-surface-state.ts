@@ -1111,7 +1111,7 @@ export function selectCreateRowInput({
     colors,
     swatches: offeredSwatches(recentColors, CREATE_POPUP_SWATCHES),
     capability,
-    mutation: floating.inFlight ? { kind: "pending" } : IDLE,
+    mutation: floating.inFlight ? { kind: "pending", write: "create" } : IDLE,
     commenting: floating.commenting,
     now: capabilityAt,
   };
