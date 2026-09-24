@@ -582,6 +582,10 @@ export function readerSurfaces({
   });
   const selection = new MarkSelection({
     app,
+    renderComment: (el, html) => {
+      el.setText(html);
+      return () => el.empty();
+    },
     containerEl,
     popup,
     marks: () =>

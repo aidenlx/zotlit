@@ -20,6 +20,7 @@ import type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
+  CommentNotes,
 } from "./binding";
 import { openFilePathOf, PDF_VIEW_TYPE } from "./seam";
 import type { MarkGestures } from "./selection";
@@ -36,6 +37,7 @@ export type {
   AnnotationReads,
   AttachmentReads,
   CapabilityGestures,
+  CommentNotes,
   PdfViewBinding,
 } from "./binding";
 export type { MarkGestures } from "./selection";
@@ -49,6 +51,8 @@ export interface PdfAnnotationEditorDeps {
   capabilityGestures: CapabilityGestures;
   /** What the Mark Popup's reveal and comment verbs reach in the sidebar. */
   markGestures: Pick<MarkGestures, "revealAnnotation">;
+  /** The Literature Notes a rendered comment's links resolve against. */
+  noteIndex: CommentNotes;
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
   settings: Pick<SettingsService, "current" | "update">;
   /** The clock each binding's cooldown countdown is read against. */
@@ -76,6 +80,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #capabilityGestures;
   readonly #markGestures;
   readonly #toolColors;
+  readonly #noteIndex;
   readonly #now;
   readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
@@ -89,6 +94,7 @@ export class PdfAnnotationEditor extends Service<void> {
     annotations,
     capabilityGestures,
     markGestures,
+    noteIndex,
     settings,
     now = () => Temporal.Now.instant(),
   }: PdfAnnotationEditorDeps) {
@@ -99,6 +105,7 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#capabilityGestures = capabilityGestures;
     this.#markGestures = markGestures;
     this.#toolColors = toolColorStore(settings);
+    this.#noteIndex = noteIndex;
     this.#now = now;
     this.ready = this.#load();
   }
@@ -212,6 +219,7 @@ export class PdfAnnotationEditor extends Service<void> {
         capabilityGestures: this.#capabilityGestures,
         markGestures: this.#markGestures,
         toolColors: this.#toolColors,
+        noteIndex: this.#noteIndex,
         now: this.#now,
       });
       this.#bindings.set(view, binding);

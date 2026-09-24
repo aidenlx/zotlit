@@ -41,11 +41,14 @@ import type {
 import { conflictPanel } from "@/views/annot-view/card-conflict";
 import {
   commentEditorControls,
+  editingBlockedReason,
   editingLive,
   heldCommentDraft,
 } from "@/views/annot-view/card-controls";
+import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
   renderCommentSheet,
+  renderCommentView,
   renderConflictPanel,
   renderHeldDraftPanel,
 } from "@/views/annot-view/comment-sheet";
@@ -190,6 +193,8 @@ export interface MarkSelectionDeps {
   containerEl: HTMLElement;
   /** The app the comment editor takes its keys through. */
   app: App;
+  /** Renders a stored comment as the Annotation Card does. */
+  renderComment: CommentRenderer;
   /**
    * The one popup of this view: a press inside it leaves the selection
    * standing, and a scroll re-hangs it.
@@ -257,6 +262,17 @@ export class MarkSelection implements Disposable {
   /** The row of verbs the popup last built; `null` until one is. */
   #row: HTMLElement | null = null;
   #commentEditor: CommentSheet | null = null;
+  /**
+   * The rendered comment under the row, kept across refreshes while what it
+   * shows stands, so a refresh does not render the Markdown again.
+   */
+  #commentView: {
+    frame: HTMLElement;
+    key: string;
+    html: string;
+    editable: boolean;
+    dispose: () => void;
+  } | null = null;
   #pressedAt: Point | null = null;
   /** The pointer a Geometry Edit holds, and where it last stood. */
   #dragging: { pointerId: number; client: Point } | null = null;
@@ -420,6 +436,7 @@ export class MarkSelection implements Disposable {
         selectFloatingHead,
         ({ kind, commenting }) => {
           if (kind !== "selected" || !commenting) this.#closeCommentEditor();
+          if (kind !== "selected" || commenting) this.#closeCommentView();
         },
         { equalityFn: sameFlat },
       ),
@@ -450,6 +467,7 @@ export class MarkSelection implements Disposable {
 
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
+    this.#closeCommentView();
     this.#surfaces.dispose();
     if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
   }
@@ -967,18 +985,22 @@ export class MarkSelection implements Disposable {
     if (input.commenting) return column;
     // The popup announces a held draft on the same rule the card does, and
     // carries the same verbs: the two surfaces reach one shared draft, so a
-    // decision offered on one is offered on the other.
+    // decision offered on one is offered on the other. Like the card, it
+    // shows the held draft in the stored comment's place.
     const held = heldCommentDraft(
       this.#capability(),
       this.#deps.annotations.commentDraftFor(annotation.key),
       input.now,
     );
     if (held) {
+      this.#closeCommentView();
       renderHeldDraftPanel(column.createDiv(), held, {
         surface: "popup",
         actions: this.#draftActions(annotation),
         onOpen: () => this.#toggleComment(annotation),
       });
+    } else {
+      this.#renderCommentView(column, input);
     }
     if (
       mutation.kind === "conflict" &&
@@ -996,6 +1018,47 @@ export class MarkSelection implements Disposable {
       );
     }
     return column;
+  }
+
+  /**
+   * The stored comment under the row, which a click opens the editor on, as
+   * the card's does. The frame is moved into the new column when a refresh
+   * leaves the comment and its editability as they were.
+   */
+  #renderCommentView(column: HTMLElement, input: MarkPopupRowInput): void {
+    const { annotation } = input;
+    const html = annotation.comment;
+    if (html === null) {
+      this.#closeCommentView();
+      return;
+    }
+    const editable =
+      editingBlockedReason(input.capability, input.mutation, input.now) ===
+      null;
+    const kept = this.#commentView;
+    if (
+      kept?.key === annotation.key &&
+      kept.html === html &&
+      kept.editable === editable
+    ) {
+      column.append(kept.frame);
+      return;
+    }
+    this.#closeCommentView();
+    const frame = column.createDiv();
+    const dispose = renderCommentView(frame, {
+      surface: "popup",
+      render: this.#deps.renderComment,
+      html,
+      editable,
+      onOpen: () => this.#toggleComment(annotation),
+    });
+    this.#commentView = { frame, key: annotation.key, html, editable, dispose };
+  }
+
+  #closeCommentView(): void {
+    this.#commentView?.dispose();
+    this.#commentView = null;
   }
 
   /** The panels' verbs, bound to the repository's own writes. */

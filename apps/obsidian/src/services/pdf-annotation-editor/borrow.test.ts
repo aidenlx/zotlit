@@ -6,6 +6,8 @@ import { FileSystemAdapter, Scope } from "obsidian";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+import { NoteIndexStub } from "@/services/note-index/test-stub";
+
 import {
   annotationReads,
   attachmentReads,
@@ -63,6 +65,7 @@ async function readerRegistry(
     capabilityGestures: capabilityGestures(),
     markGestures: markGestures(),
     settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
   });
   await service.ready;
   return service;

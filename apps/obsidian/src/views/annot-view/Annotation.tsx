@@ -39,6 +39,8 @@ import {
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
 import {
+  commentViewClass,
+  opensCommentEditor,
   renderCommentSheet,
   renderConflictPanel,
   renderHeldDraftPanel,
@@ -429,10 +431,8 @@ function HeldDraftPanel({
 }
 
 /**
- * `markdown-rendered` is what buys the theme's own prose styling: Obsidian
- * declares those rules unlayered, so they outrank the scoped Tailwind preflight.
- * `zt-annot-comment` is the card-scoped hook the view stylesheet compacts them
- * through.
+ * The rendered comment, from the pieces the Mark Popup's own comment view
+ * shares; see {@link commentViewClass}.
  */
 function Comment({
   annot,
@@ -451,17 +451,9 @@ function Comment({
   return (
     <div
       ref={ref}
-      className={cn(
-        "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:text-xs zt:break-words zt:text-foreground zt:select-text",
-        editable && "zt:cursor-text",
-      )}
+      className={commentViewClass("card", editable)}
       onClick={(e) => {
-        // A link keeps its own click, and a click that ends a text selection is
-        // the user copying rather than asking to edit.
-        if (!editable) return;
-        const target = e.target as Node | null;
-        if (target?.instanceOf(HTMLElement) && target.closest("a")) return;
-        if (e.currentTarget.win.getSelection()?.isCollapsed === false) return;
+        if (!editable || !opensCommentEditor(e)) return;
         // Opening the editor is a verb; the card's own click is not that.
         e.stopPropagation();
         actions.onOpenComment(annot);
