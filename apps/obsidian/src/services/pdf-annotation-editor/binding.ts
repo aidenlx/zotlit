@@ -766,6 +766,13 @@ export class PdfViewBinding implements Disposable, HoverParent {
     );
     this.#surfaces.defer(
       state.subscribe(
+        ({ liveStroke }) => liveStroke !== null,
+        (stroking) => this.#showStroking(stroking),
+      ),
+    );
+    this.#surfaces.defer(() => this.#showStroking(false));
+    this.#surfaces.defer(
+      state.subscribe(
         ({ pendingStrokes }) => pendingStrokes,
         (pending, before) => {
           const pages = new Set(
@@ -972,6 +979,14 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   #showInking(inking: boolean): void {
     this.#view.containerEl.toggleAttribute(themeAttribute.pdfInking, inking);
+  }
+
+  /**
+   * Marks the reader while a Live Stroke stands, so the stylesheet keeps the
+   * crosshair over the captured pointer.
+   */
+  #showStroking(stroking: boolean): void {
+    this.#view.containerEl.toggleAttribute("data-zt-stroking", stroking);
   }
 
   /**

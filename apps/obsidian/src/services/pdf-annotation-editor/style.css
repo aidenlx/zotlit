@@ -99,6 +99,15 @@
   cursor: crosshair;
 }
 
+/*
+ * A stroke captures the pointer on the reader, so the reader's own cursor
+ * shows while it is drawn; it keeps the crosshair until the release.
+ */
+[data-zt-stroking],
+[data-zt-stroking] * {
+  cursor: crosshair;
+}
+
 /* Zotero's highlight reads as ink on paper in either theme. */
 :where(.theme-light .zt-pdf-annotation-highlight) {
   opacity: 0.4;

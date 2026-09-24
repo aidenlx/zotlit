@@ -1637,6 +1637,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
           expect(await obEval(vaultId!, touchAction)).toBe("none");
           expect(await obEval(vaultId!, cursor)).toBe("crosshair");
+          // A held stroke captures the pointer on the reader, whose own
+          // cursor then shows.
+          const readerCursor = `getComputedStyle(${pdfView}.containerEl).cursor`;
+          await press([[150, 355]]);
+          expect(await obEval(vaultId!, readerCursor)).toBe("crosshair");
+          await escape();
+          expect(await obEval(vaultId!, readerCursor)).not.toBe("crosshair");
           await obEval(
             vaultId!,
             `(function(){${tool}.click();return true;})()`,
