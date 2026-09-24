@@ -352,12 +352,16 @@ _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 One continuous pointer gesture with the ink tool armed, from press to release, stored as one path of an ink Annotation: its points smoothed as Zotero's reader smooths them, in PDF points on the page it was pressed on.
 _Avoid_: path (the stored form), line, drawing, scribble
 
+**Live Stroke**:
+The Ink Stroke still under the pointer, drawn on its page from the Reader Surface State as the last animation frame smoothed it. At its release it becomes a Pending Stroke; a discarded one goes with nothing created.
+_Avoid_: preview stroke, current stroke
+
 **Pending Stroke**:
 An Ink Stroke that has been released and rounded, drawn on the page while its create is in flight.
 _Avoid_: optimistic mark, draft stroke, Annotation Draft (that is a comment)
 
 **Reader Surface State**:
-What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, or a text selection about to become one), the live Ink Stroke and the Pending Strokes, and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
+What the surfaces of one Reader Session in Obsidian's PDF view draw from: the armed tool, each tool's colour, Annotation Mark visibility, the Editing Capability, the clock a cooldown is read against, the one floating surface (nothing, the selected Annotation Mark, or a text selection about to become one), the Live Stroke and the Pending Strokes, and the Attachment's Annotations with the write state and Annotation Draft of each. One per bound PDF view; outside signals enter it through the binding alone, and each surface redraws only when its own part changed.
 _Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 
 **Annotation Draft**:

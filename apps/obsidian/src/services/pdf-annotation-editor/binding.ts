@@ -214,7 +214,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #painted = new Set<number>();
   /** The page an image capture's rectangle was last drawn on. */
   #capturedOn: number | null = null;
-  /** The page the live ink stroke was last drawn on. */
+  /** The page the Live Stroke was last drawn on. */
   #strokeOn: number | null = null;
   /** The pages the selected mark's last in-place redraw drew it on. */
   #patchedOn: { key: string; pages: ReadonlySet<number> } | null = null;
@@ -950,7 +950,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       renderCapture(page, { rect: capture.rect, color: state.colors.image });
   }
 
-  /** Draws the live ink stroke on its page, as {@link #drawCapture} does. */
+  /** Draws the Live Stroke on its page, as {@link #drawCapture} does. */
   #drawLiveStroke(): void {
     const controller = this.#controller;
     const stroke = this.#surfaceState?.getState().liveStroke ?? null;
@@ -1206,7 +1206,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       handles: this.#handles(),
       textRotation: this.#textRotation,
     });
-    // The rebuild took the capture's rectangle and the live stroke with the
+    // The rebuild took the capture's rectangle and the Live Stroke with the
     // overlay.
     if (this.#capturedOn === pageIndex) this.#drawCapture();
     if (this.#strokeOn === pageIndex) this.#drawLiveStroke();

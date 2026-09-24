@@ -13,7 +13,7 @@ Zotero's reader, its canvas renderer, its Excerpt Image renderer, and its PDF ex
 
 ## Consequences
 
-- The live stroke and the saved mark use one path builder, so the handoff at release does not change the shape. ZotLit shows the smoothed path while drawing, where Zotero shows raw points until pointer-up.
+- The Live Stroke and the saved mark use one path builder, so the handoff at release does not change the shape. ZotLit shows the smoothed path while drawing, where Zotero shows raw points until pointer-up.
 - A stroke whose rounded position would pass the sixty-five-thousand-character ceiling ends there: the finished part is created as its own Annotation, and the stroke continues with the pointer and the tool held, as a new part that begins at the finished part's last point and takes the next sample, so the two Annotations meet. The new part is measured afresh. The length is measured in full only near the ceiling, because one more sample adds at most seven smoothed points.
 - The width is one value per Annotation, chosen from a short set of Zotero's own width steps (0.4, 1, 2, 3, 5, 8, and 12 points) before the press, and fixed for the stroke. Colour is fixed at the press too.
 - Handwriting one word gives several Annotations.
