@@ -2,7 +2,7 @@
 // open PDF view's document, and what a closed or replaced one withdraws.
 
 // @vitest-environment happy-dom
-import { FileSystemAdapter } from "obsidian";
+import { FileSystemAdapter, Scope } from "obsidian";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -33,6 +33,8 @@ function pdfView(path: string | null, reader = pdfReader()) {
     file: path === null ? null : { path },
     viewer: reader.viewer,
     containerEl: document.createElement("div"),
+    // `View.scope` — the Scope Obsidian gives every PDF view.
+    scope: new Scope(),
   };
 }
 

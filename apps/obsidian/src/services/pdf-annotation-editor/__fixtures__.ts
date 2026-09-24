@@ -1,7 +1,7 @@
 // The fake Obsidian PDF reader — viewer host, viewer child, toolbar slot and
 // page view — that both pdf-annotation-editor suites drive the seam through.
 // Needs a DOM, so every consumer runs under `// @vitest-environment happy-dom`.
-import type { HoverParent, PDFPageViewport } from "obsidian";
+import type { HoverParent, PDFPageViewport, Scope } from "obsidian";
 import { vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -31,6 +31,7 @@ import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 import { MarkCreation } from "./creation";
 import type { AnnotationCreates } from "./creation";
 import { MarkPopupHost } from "./mark-popup-host";
+import { mountReaderKeymap } from "./reader-keymap";
 import {
   createReaderSurfaceState,
   ingestAnnotations,
@@ -545,6 +546,8 @@ export function readerSurfaces({
   };
   /** Why each create that made nothing said it made nothing, in order. */
   const reportCreateFailure = vi.fn<(reason: string) => void>();
+  /** Each time the toolbar handed the keyboard to the pages. */
+  const focusReader = vi.fn();
   const reported: (readonly string[])[] = [];
   const navigated: string[] = [];
   const revealed: string[] = [];
@@ -571,6 +574,7 @@ export function readerSurfaces({
     reportBlockedGesture: gestures.reportBlockedGesture,
     reportCreateFailure,
     renderCapability: vi.fn(),
+    focusReader,
     colors,
     surfaceState: store,
     annotations,
@@ -599,6 +603,10 @@ export function readerSurfaces({
     now: () => READER_NOW,
   });
   selection.load();
+  const view: { scope: Scope | null; app: typeof app } = { scope: null, app };
+  const unmountKeymap = mountReaderKeymap(view, {
+    escape: () => selection.escape() || creation.escape(),
+  });
   const host = new MarkPopupHost({
     parent,
     store,
@@ -625,6 +633,7 @@ export function readerSurfaces({
     colors,
     gestures,
     reportCreateFailure,
+    focusReader,
     reported,
     navigated,
     revealed,
@@ -638,7 +647,38 @@ export function readerSurfaces({
     sync() {
       host.sync();
     },
+    /**
+     * One keystroke as Obsidian delivers it: the view's Scope hears it first,
+     * and the page hears it only when no handler there took it.
+     *
+     * @param target where the focus sits; the container when not given.
+     */
+    key(init: KeyboardEventInit, target: EventTarget = containerEl) {
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      // The Scope reads the focus before the page is dispatched the event.
+      Object.defineProperty(event, "target", { value: target });
+      // The mock Scope records its registrations, in the order made.
+      const scope = view.scope as unknown as {
+        handlers: {
+          key: string | null;
+          func: (evt: KeyboardEvent) => boolean | void;
+        }[];
+      };
+      for (const { key, func } of scope.handlers) {
+        if (key !== null && key !== event.key) continue;
+        if (func(event) !== false) continue;
+        event.preventDefault();
+        return event;
+      }
+      target.dispatchEvent(event);
+      return event;
+    },
     [Symbol.dispose]() {
+      unmountKeymap();
       selection[Symbol.dispose]();
       creation[Symbol.dispose]();
       host[Symbol.dispose]();

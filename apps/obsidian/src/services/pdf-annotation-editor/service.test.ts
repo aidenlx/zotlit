@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { FileSystemAdapter } from "obsidian";
+import { FileSystemAdapter, Scope } from "obsidian";
 import { expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -62,6 +62,8 @@ function pdfView(path: string | null, reader = pdfReader()) {
     // `View.containerEl` — public API, and where the reader's own keystrokes
     // reach the binding.
     containerEl: document.createElement("div"),
+    // `View.scope` — the Scope Obsidian gives every PDF view.
+    scope: new Scope(),
   };
 }
 

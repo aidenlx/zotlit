@@ -55,6 +55,7 @@ import type { TextRotation } from "./geometry-edit";
 import { decideMarkLanding } from "./mark-landing";
 import type { MarkLandingMiss, MarkLandingTarget } from "./mark-landing";
 import { MarkPopupHost } from "./mark-popup-host";
+import { mountReaderKeymap } from "./reader-keymap";
 import {
   createReaderSurfaceState,
   ingestAnnotations,
@@ -725,6 +726,11 @@ export class PdfViewBinding implements Disposable, HoverParent {
         this.#capabilitySlot = slot;
         this.#drawCapability(selectCapabilityAffordance(state.getState()));
       },
+      // Obsidian's own way into a view: the PDF view focuses its pages.
+      focusReader: () =>
+        this.#view.app.workspace.setActiveLeaf(this.#view.leaf, {
+          focus: true,
+        }),
       colors: this.#toolColors,
       surfaceState: state,
       annotations: this.#annotations,
@@ -759,6 +765,11 @@ export class PdfViewBinding implements Disposable, HoverParent {
       now: this.#now,
     });
     this.#selection = selection;
+    this.#surfaces.defer(
+      mountReaderKeymap(this.#view, {
+        escape: () => selection.escape() || creation.escape(),
+      }),
+    );
     // A Geometry Edit redraws the one mark it moves; the handles come and go
     // with the capability to save one.
     this.#surfaces.defer(

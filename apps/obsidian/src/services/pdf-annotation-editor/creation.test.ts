@@ -161,6 +161,7 @@ function reader(
     app,
     creation,
     surfaceState,
+    focusReader: reader.focusReader,
     containerEl,
     pageEl,
     drafts,
@@ -214,10 +215,7 @@ function reader(
       );
     },
     press(key: string, target: EventTarget = containerEl) {
-      const event = new KeyboardEvent("keydown", { key, cancelable: true });
-      Object.defineProperty(event, "target", { value: target });
-      creation.key(event);
-      return event;
+      return reader.key({ key }, target);
     },
     popup() {
       return document.querySelector<HTMLElement>(".zt-pdf-mark-popup");
@@ -580,10 +578,46 @@ it("steps back one level on Escape: sheet, then popup, then the armed tool", asy
   ).toBe("false");
 });
 
+it("steps back on Escape wherever the focus sits in the active view", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  open.press("u");
+
+  // The press on a tool left the focus where it was, outside the pages.
+  expect(open.press("Escape", document.body).defaultPrevented).toBe(true);
+
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="underline"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("leaves Escape to the PDF view's own keys when nothing stands to step back", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+
+  expect(open.press("Escape").defaultPrevented).toBe(false);
+});
+
+it("hands the keyboard to the pages on a pointer press on the toolbar", () => {
+  using open = reader();
+  open.creation.mountToolbar(open.slot);
+  const press = new MouseEvent("mousedown", {
+    bubbles: true,
+    cancelable: true,
+  });
+
+  open.slot.querySelector('[data-zt-tool="underline"]')!.dispatchEvent(press);
+
+  expect(press.defaultPrevented).toBe(true);
+  expect(open.focusReader).toHaveBeenCalledOnce();
+});
+
 it("is inert inside a text field", () => {
   using open = reader();
   open.creation.mountToolbar(open.slot);
-  const field = document.body.createEl("input");
+  const field = open.containerEl.createEl("input");
 
   for (const key of ["h", "u", "3", "c", "Escape"]) {
     expect(open.press(key, field).defaultPrevented).toBe(false);
@@ -896,13 +930,7 @@ function imageReader(
       await surfaces.creation.created;
     },
     key(name: string) {
-      containerEl.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: name,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
+      surfaces.key({ key: name });
     },
     [Symbol.dispose]() {
       surfaces[Symbol.dispose]();

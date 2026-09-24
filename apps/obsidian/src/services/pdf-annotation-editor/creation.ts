@@ -24,6 +24,7 @@ import type { App } from "obsidian";
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
+import { registerDomEvent } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { showMenuAtButton } from "@/lib/menu";
@@ -278,6 +279,8 @@ export interface MarkCreationDeps {
   reportCreateFailure: (reason: string) => void;
   /** Draws the Editing Capability affordance into the toolbar's own slot. */
   renderCapability: (slot: HTMLElement) => void;
+  /** Hands the keyboard to the reader's pages. */
+  focusReader: () => void;
   /**
    * Each tool's own colour, the ink tool's pen width and the text tool's font
    * size, which are kept across PDFs rather than per view.
@@ -397,6 +400,15 @@ export class MarkCreation implements CreationGestures, Disposable {
         this.#toolbarActivate(id, node),
       );
     const nodes = draw(selectCreationToolbar(state.getState()));
+    // A pointer press on the toolbar hands the keyboard to the pages rather
+    // than to the control pressed, so the Reader Keymap and the edit keys act
+    // next — and a key pressed after it rings no control the pointer chose.
+    this.#surfaces.use(
+      registerDomEvent(nodes.root, "mousedown", (event) => {
+        event.preventDefault();
+        this.#deps.focusReader();
+      }),
+    );
     this.#surfaces.defer(
       state.subscribe(selectCreationToolbar, draw, {
         equalityFn: sameFlatList,
@@ -491,10 +503,6 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   key(event: KeyboardEvent): void {
     if (inTextEntry(event.target)) return;
-    if (event.key === "Escape") {
-      if (this.#stepBack()) event.preventDefault();
-      return;
-    }
     if (!isEditGesture(event)) return;
     const key = event.key.toLowerCase();
     const tool: SelectionTool | null =
@@ -665,6 +673,15 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   #floating(): Floating {
     return this.#state().floating;
+  }
+
+  /**
+   * Escape, which the Reader Keymap runs once the selected mark left it.
+   *
+   * @returns whether a level was there to step back from.
+   */
+  escape(): boolean {
+    return this.#stepBack();
   }
 
   /**

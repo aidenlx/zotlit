@@ -146,31 +146,21 @@ function click(
   );
 }
 
-/** The one key the reader's own listener hears, as Obsidian delivers it. */
-function key(node: HTMLElement, name: string, target?: HTMLElement): void {
-  (target ?? node).dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key: name,
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
+/** The keyboard the reader surfaces are driven through. */
+type Keyboard = Pick<ReturnType<typeof readerSurfaces>, "key">;
+
+/** One key, as Obsidian delivers it to the reader. */
+function key(h: Keyboard, name: string, target?: HTMLElement): void {
+  h.key({ key: name }, target);
 }
 
 /** One key with modifiers held, as Obsidian delivers it to the reader. */
 function chord(
-  node: HTMLElement,
+  h: Keyboard,
   name: string,
   modifiers: Pick<KeyboardEventInit, "shiftKey" | "altKey" | "metaKey">,
 ): void {
-  node.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key: name,
-      bubbles: true,
-      cancelable: true,
-      ...modifiers,
-    }),
-  );
+  h.key({ key: name, ...modifiers });
 }
 
 beforeEach(() => {
@@ -426,11 +416,11 @@ it("takes the selection a card sends through the Reader Session", () => {
 it("walks reading order with the arrow keys, and brings the reader along", () => {
   using h = setup();
 
-  key(h.containerEl, "ArrowDown");
+  key(h, "ArrowDown");
   expect([...h.selection.selected]).toEqual(["PARA1111"]);
-  key(h.containerEl, "ArrowDown");
+  key(h, "ArrowDown");
   expect([...h.selection.selected]).toEqual(["WORD2222"]);
-  key(h.containerEl, "ArrowUp");
+  key(h, "ArrowUp");
   expect([...h.selection.selected]).toEqual(["PARA1111"]);
   expect(h.navigated).toEqual(["PARA1111", "WORD2222", "PARA1111"]);
 });
@@ -439,20 +429,33 @@ it("deselects on Escape", () => {
   using h = setup();
   click(h.page.div, ON_WORD);
 
-  key(h.containerEl, "Escape");
+  key(h, "Escape");
 
   expect(h.selection.selected.size).toBe(0);
   expect(h.popup()).toBeNull();
+});
+
+it("steps back from the selected mark on Escape before the armed tool", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  key(h, "u");
+
+  key(h, "Escape");
+  expect(h.selection.selected.size).toBe(0);
+  expect(h.store.getState().armed).toBe("underline");
+
+  key(h, "Escape");
+  expect(h.store.getState().armed).toBeNull();
 });
 
 it("sets a colour from the number row, and deletes from the delete key", () => {
   using h = setup();
   click(h.page.div, ON_WORD);
 
-  key(h.containerEl, "3");
+  key(h, "3");
   expect(h.annotations.patchColor).toHaveBeenCalledWith("WORD2222", "#5fb236");
 
-  key(h.containerEl, "Delete");
+  key(h, "Delete");
   expect(h.annotations.deleteAnnotation).toHaveBeenCalledWith("WORD2222");
 });
 
@@ -479,8 +482,8 @@ it("leaves every key to a text field it was typed into", () => {
   click(h.page.div, ON_WORD);
   const field = h.containerEl.appendChild(document.createElement("input"));
 
-  key(h.containerEl, "Escape", field);
-  key(h.containerEl, "3", field);
+  key(h, "Escape", field);
+  key(h, "3", field);
 
   expect([...h.selection.selected]).toEqual(["WORD2222"]);
   expect(h.annotations.patchColor).not.toHaveBeenCalled();
@@ -541,8 +544,8 @@ it("says why an edit key cannot run, rather than writing under a block", () => {
   });
   click(h.page.div, ON_WORD);
 
-  key(h.containerEl, "3");
-  key(h.containerEl, "Delete");
+  key(h, "3");
+  key(h, "Delete");
 
   expect(h.annotations.patchColor).not.toHaveBeenCalled();
   expect(h.annotations.deleteAnnotation).not.toHaveBeenCalled();
@@ -774,7 +777,7 @@ it("cancels a drag on Escape, writes nothing, and keeps the mark selected", asyn
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
-  key(h.containerEl, "Escape");
+  key(h, "Escape");
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
   await h.selection.adjusted;
 
@@ -932,7 +935,7 @@ it("drops a range the document answers after Escape took its drag back", async (
 
   pointer(h.page.div, "pointerdown", QUOTE_END);
   pointer(h.containerEl, "pointermove", { x: 260, y: 486 });
-  key(h.containerEl, "Escape");
+  key(h, "Escape");
   // A fresh press on the same strip, before the first drag's answer lands.
   pointer(h.page.div, "pointerdown", QUOTE_END);
   answer({
@@ -975,7 +978,7 @@ it("leaves a press inside the selected highlight to the text selection", async (
 it("commits one Geometry Edit for Shift+ArrowRight on the selected image, with a recomputed Sort Index", async () => {
   using h = figureSelected();
 
-  chord(h.containerEl, "ArrowRight", { shiftKey: true });
+  chord(h, "ArrowRight", { shiftKey: true });
   await h.selection.adjusted;
 
   // Five points wider, on its right edge.
@@ -997,7 +1000,7 @@ it("commits one Geometry Edit for Shift+ArrowRight on the selected image, with a
 it("nudges the selected image five points down the page for Alt+ArrowDown", async () => {
   using h = figureSelected();
 
-  chord(h.containerEl, "ArrowDown", { altKey: true });
+  chord(h, "ArrowDown", { altKey: true });
   await h.selection.adjusted;
 
   expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
@@ -1015,8 +1018,8 @@ it("keeps walking the reading order with a plain arrow while an image is selecte
   using h = setup([FIGURE, WORD]);
   click(h.page.div, ON_FIGURE);
 
-  key(h.containerEl, "ArrowUp");
-  key(h.containerEl, "ArrowRight");
+  key(h, "ArrowUp");
+  key(h, "ArrowRight");
   await h.selection.adjusted;
 
   expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
@@ -1026,9 +1029,9 @@ it("keeps walking the reading order with a plain arrow while an image is selecte
 it("writes nothing for a Geometry Edit key while editing is not live", async () => {
   using h = figureSelected({ kind: "read-only", reason: "library-read-only" });
 
-  chord(h.containerEl, "ArrowRight", { shiftKey: true });
-  chord(h.containerEl, "ArrowDown", { shiftKey: true });
-  chord(h.containerEl, "ArrowDown", { altKey: true });
+  chord(h, "ArrowRight", { shiftKey: true });
+  chord(h, "ArrowDown", { shiftKey: true });
+  chord(h, "ArrowDown", { altKey: true });
   await h.selection.adjusted;
 
   expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
@@ -1047,7 +1050,7 @@ it("steps a highlight's start for Mod+Shift+ArrowLeft, saving its quoted text", 
     text: "a quote",
   });
 
-  chord(h.containerEl, "ArrowLeft", { shiftKey: true, metaKey: true });
+  chord(h, "ArrowLeft", { shiftKey: true, metaKey: true });
   await h.selection.adjusted;
 
   expect(h.adjustRange).toHaveBeenCalledWith({
@@ -1069,7 +1072,7 @@ it("steps a highlight's start for Mod+Shift+ArrowLeft, saving its quoted text", 
 it("steps a highlight's end for Shift+ArrowDown, and writes nothing for a step the document refuses", async () => {
   using h = quoteSelected();
 
-  chord(h.containerEl, "ArrowDown", { shiftKey: true });
+  chord(h, "ArrowDown", { shiftKey: true });
   await h.selection.adjusted;
 
   expect(h.adjustRange).toHaveBeenCalledWith({

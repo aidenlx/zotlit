@@ -519,6 +519,20 @@ export class MarkSelection implements Disposable {
     }
   }
 
+  /**
+   * Escape on the selected mark, which the Reader Keymap runs ahead of the
+   * creation surfaces: a drag is taken back first, and the selection only
+   * after.
+   *
+   * @returns whether a mark was selected to step back from.
+   */
+  escape(): boolean {
+    if (this.#selectedKey() === null) return false;
+    if (this.#dragging) this.#cancelDrag();
+    else this.#apply(null);
+    return true;
+  }
+
   #key(event: KeyboardEvent): void {
     // A keystroke inside a text field belongs to the field.
     if (inTextEntry(event.target)) return;
@@ -541,13 +555,6 @@ export class MarkSelection implements Disposable {
     }
     const key = this.#selectedKey();
     if (key === null) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      // Escape takes back a drag first, and the selection only after.
-      if (this.#dragging) this.#cancelDrag();
-      else this.#apply(null);
-      return;
-    }
     // `1`–`8` are the palette's own order, so the key and the swatch can never
     // name different colours.
     const swatch = ANNOTATION_COLORS[Number(event.key) - 1];
