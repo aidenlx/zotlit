@@ -7,10 +7,12 @@
 // popup and one click commits. A tool armed from the toolbar: the selection
 // commits at once in that tool's colour and the popup reopens on the new mark.
 // The armed image tool takes a rectangle instead of a selection, and stands
-// down once it has created one.
+// down once it has created one. The armed ink tool takes a freehand stroke,
+// creates it in the background, and stays armed for the next one.
 //
 // @see https://github.com/aidenlx/zotlit/issues/1150
 // @see https://github.com/aidenlx/zotlit/issues/1206
+// @see https://github.com/aidenlx/zotlit/issues/1209
 import type { App } from "obsidian";
 
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
@@ -27,6 +29,7 @@ import type {
   AnnotationRepository,
 } from "@/services/annotation-repository/service";
 import { writeFailureReason } from "@/services/annotation-repository/write";
+import type { InkPosition } from "@/services/annotation-repository/write";
 import {
   commentEditorControls,
   editingLive,
@@ -51,14 +54,17 @@ import type {
 import { captureRect } from "./geometry-edit";
 import type { PdfRect } from "./geometry-edit";
 import type { Point } from "./hit-test";
+import { InkStroke } from "./ink-stroke";
 import { popupColumn } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
 import {
+  appendPendingStroke,
   arm,
   beginCapture,
   cancelCapture,
   captureSelection,
   clearFloating,
+  dropPendingStroke,
   endCapture,
   moveCapture,
   recordColorUse,
@@ -70,12 +76,14 @@ import {
   selectFloatingHead,
   setCommenting,
   setInFlight,
+  settlePendingStroke,
   setToolColor,
   toggleMarks,
 } from "./reader-surface-state";
 import type {
   AnchorAt,
   Floating,
+  PendingStroke,
   ReaderSurfaceState,
   ReaderSurfaceStore,
 } from "./reader-surface-state";
@@ -94,6 +102,9 @@ import { textToolOf } from "./tools";
 import type { MarkTool, TextTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
+
+/** The pen width every ink stroke is drawn at, in PDF points: Zotero's default. */
+const INK_WIDTH = 2;
 
 /** One page of the reader, as selection capture and the anchor read it. */
 export interface ReaderPage {
@@ -119,11 +130,11 @@ export interface CreationGestures {
   key: (event: KeyboardEvent) => void;
   /**
    * A press in the reader that took no Mark Handle, which the armed image
-   * tool may begin a capture from.
+   * tool may begin a capture from, and the armed ink tool a stroke.
    *
    * @param options.onMark whether an Annotation Mark lies under the press,
-   *   which keeps the press the mark's; asked only of a press the tool could
-   *   take.
+   *   which keeps the press the mark's; asked only of a press the image tool
+   *   could take. The ink tool draws over marks.
    */
   grab: (event: PointerEvent, options: { onMark: () => boolean }) => void;
   /** A pointer moved that no Geometry Edit holds. */
@@ -132,9 +143,45 @@ export interface CreationGestures {
   release: (event: PointerEvent) => void;
   /** The browser took back a pointer that no Geometry Edit holds. */
   cancel: (event: PointerEvent) => void;
-  /** Whether an image capture holds the pointer, so no text is selected. */
+  /**
+   * Whether an image capture or an ink stroke holds the pointer, so no text
+   * is selected.
+   */
   readonly capturing: boolean;
 }
+
+/** One Annotation as a gesture decided it, before the text structure placed it. */
+interface MarkDraft {
+  type: MarkTool;
+  color: string;
+  comment: string;
+  /** The quoted text; empty for an image and ink, which quote none. */
+  text: string;
+  position:
+    | {
+        pageIndex: number;
+        rects: SelectedText["rects"];
+        nextPageRects?: SelectedText["rects"];
+      }
+    | InkPosition;
+}
+
+/**
+ * What a create does around its write, by the tool it creates for. A
+ * foreground create holds the reader until Zotero answers — no second text or
+ * image create begins meanwhile — and takes the new mark as the selection; an
+ * ink create runs in the background, selects nothing, and leaves the tool
+ * armed. The image tool stands down once it created, as Zotero's does.
+ */
+const CREATE_EFFECTS: Record<
+  MarkTool,
+  { foreground: boolean; disarm: boolean }
+> = {
+  highlight: { foreground: true, disarm: false },
+  underline: { foreground: true, disarm: false },
+  image: { foreground: true, disarm: true },
+  ink: { foreground: false, disarm: false },
+};
 
 export interface MarkCreationDeps {
   /** The app the comment sheet's editor takes its keys through. */
@@ -182,17 +229,29 @@ export class MarkCreation implements CreationGestures, Disposable {
   /** The comment sheet, whose editor holds the comment until the save. */
   #sheet: CommentSheet | null = null;
   /**
-   * Whether a create is waiting on Zotero, the armed tool's among them, so a
-   * drag released meanwhile makes nothing.
+   * Whether a text or image create is waiting on Zotero, the armed tool's
+   * among them, so a drag released meanwhile makes nothing. An ink create
+   * holds nothing.
    */
   #writing = false;
-  #creating = Promise.resolve();
+  #creating: Promise<unknown> = Promise.resolve();
   #settling = Promise.resolve();
   /** Counts gestures, so a selection placed late never outlives its own. */
   #gesture = 0;
   #pressedOnPage = false;
   /** The pointer an image capture holds, and the page it was pressed on. */
   #capturing: { pointerId: number; page: ReaderPage } | null = null;
+  /** The Ink Stroke the pointer is drawing; `null` while none is. */
+  #stroke: InkStroke | null = null;
+  /**
+   * The pointer whose press discarded another pointer's stroke — the second
+   * finger of a pinch — which draws nothing of its own.
+   */
+  #pinching: number | null = null;
+  /** The ink creates, run one at a time in release order. Never rejects. */
+  #inking = Promise.resolve();
+  /** Tells one Pending Stroke from another. */
+  #strokeSerial = 0;
 
   constructor(deps: MarkCreationDeps) {
     this.#deps = deps;
@@ -207,13 +266,22 @@ export class MarkCreation implements CreationGestures, Disposable {
         { equalityFn: sameFlat },
       ),
     );
+    // A tool change takes the stroke in progress with it.
+    this.#surfaces.defer(
+      deps.surfaceState.subscribe(
+        ({ armed }) => armed,
+        (armed) => {
+          if (armed !== "ink") this.#discardStroke();
+        },
+      ),
+    );
   }
 
   /**
    * Settles when the last create this surface started has run to its end.
    * Already settled while none has run. Never rejects.
    */
-  get created(): Promise<void> {
+  get created(): Promise<unknown> {
     return this.#creating;
   }
 
@@ -253,9 +321,17 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   press(event: PointerEvent): void {
     this.#gesture++;
-    // A second pointer takes back the capture the first one holds.
+    // A second pointer takes back the capture the first one holds, and
+    // discards the stroke it draws: a pinch begins that way.
     if (this.#capturing && event.pointerId !== this.#capturing.pointerId)
       this.#cancelCapture();
+    // Held for this press alone: one that lands outside the reader never
+    // reaches `grab` to clear it.
+    this.#pinching = null;
+    if (this.#stroke && event.pointerId !== this.#stroke.pointerId) {
+      this.#pinching = event.pointerId;
+      this.#discardStroke();
+    }
     const inPopup = this.#deps.popup.contains(event.target as Node);
     // The press that follows a settled selection dismisses its popup, wherever
     // it lands — the popup is only ever opened from a release.
@@ -277,9 +353,9 @@ export class MarkCreation implements CreationGestures, Disposable {
         // The selection can collapse while the page's characters load.
         if (selectionCollapsed(this.#deps.containerEl)) return;
         const { armed, colors } = this.#state();
-        // The image tool takes a rectangle, never a text selection, so a
-        // selection made under it waits in the popup as one made unarmed does.
-        if (armed && armed !== "image") {
+        // The image and ink tools take no text selection, so a selection made
+        // under either waits in the popup as one made unarmed does.
+        if (armed === "highlight" || armed === "underline") {
           // The armed tool commits at once and opens no popup, so the
           // selection never floats.
           this.#creating = this.#create({
@@ -357,7 +433,14 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   grab(event: PointerEvent, { onMark }: { onMark: () => boolean }): void {
-    if (this.#state().armed !== "image" || event.button !== 0) return;
+    const pinching = this.#pinching === event.pointerId;
+    this.#pinching = null;
+    if (event.button !== 0) return;
+    if (this.#state().armed === "ink") {
+      if (!pinching) this.#beginStroke(event);
+      return;
+    }
+    if (this.#state().armed !== "image") return;
     if (this.#capturing || this.#writing || onMark()) return;
     const client = { x: event.clientX, y: event.clientY };
     const page = this.#readerPageUnder(client);
@@ -379,6 +462,10 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   move(event: PointerEvent): void {
+    if (this.#stroke) {
+      if (event.pointerId === this.#stroke.pointerId) this.#stroke.move(event);
+      return;
+    }
     const capturing = this.#capturing;
     const capture = selectCapture(this.#state());
     if (!capturing || event.pointerId !== capturing.pointerId || !capture)
@@ -400,6 +487,10 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   release(event: PointerEvent): void {
+    if (this.#stroke) {
+      if (event.pointerId === this.#stroke.pointerId) this.#releaseStroke();
+      return;
+    }
     const capturing = this.#capturing;
     if (!capturing || event.pointerId !== capturing.pointerId) return;
     this.#capturing = releaseCapture(this.#deps.containerEl, this.#capturing);
@@ -410,15 +501,17 @@ export class MarkCreation implements CreationGestures, Disposable {
 
   cancel(event: PointerEvent): void {
     if (event.pointerId === this.#capturing?.pointerId) this.#cancelCapture();
+    if (event.pointerId === this.#stroke?.pointerId) this.#discardStroke();
   }
 
   get capturing(): boolean {
-    return this.#capturing !== null;
+    return this.#capturing !== null || this.#stroke !== null;
   }
 
   [Symbol.dispose](): void {
     this.#gesture++;
     this.#cancelCapture();
+    this.#discardStroke();
     this.#surfaces.dispose();
     this.#clear();
   }
@@ -441,13 +534,17 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
-   * One step back: an image capture is taken back first, the comment sheet
-   * closes, then the popup with its selection, then the armed tool stands
-   * down.
+   * One step back: an ink stroke or an image capture is taken back first, the
+   * comment sheet closes, then the popup with its selection, then the armed
+   * tool stands down.
    *
    * @returns whether a level was there to step back from.
    */
   #stepBack(): boolean {
+    if (this.#stroke) {
+      this.#discardStroke();
+      return true;
+    }
     const floating = this.#floating();
     if (floating.kind === "capture" && floating.phase !== "saving") {
       this.#cancelCapture();
@@ -471,6 +568,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       case "highlight":
       case "underline":
       case "image":
+      case "ink":
         this.#arm(this.#state().armed === id ? null : id);
         return;
       case "highlight-color":
@@ -481,6 +579,9 @@ export class MarkCreation implements CreationGestures, Disposable {
         return;
       case "image-color":
         this.#openColorMenu("image", node);
+        return;
+      case "ink-color":
+        this.#openColorMenu("ink", node);
         return;
       case "visibility":
         toggleMarks(this.#deps.surfaceState);
@@ -617,35 +718,35 @@ export class MarkCreation implements CreationGestures, Disposable {
     });
   }
 
+  /**
+   * One create through the Zotero Local API, with the Sort Index and the Page
+   * Label from the text structure, and the effects {@link CREATE_EFFECTS}
+   * gives its tool.
+   *
+   * @returns the created Annotation's Indexed Key, or `null` for a create
+   *   that did not run or did not land.
+   */
   async #create({
     type,
     color,
     comment,
     text,
     position,
-  }: {
-    type: MarkTool;
-    color: string;
-    comment: string;
-    /** The quoted text; empty for an image, which quotes none. */
-    text: string;
-    position: {
-      pageIndex: number;
-      rects: SelectedText["rects"];
-      nextPageRects?: SelectedText["rects"];
-    };
-  }): Promise<void> {
+  }: MarkDraft): Promise<string | null> {
     const structure = this.#deps.structure();
     // A blocked gesture is answered by the binding's own edit-gesture listener,
     // which hears every key of the shared edit keymap.
-    if (!editingLive(this.#capability())) return;
+    if (!editingLive(this.#capability())) return null;
     if (!structure) {
       cancelCapture(this.#deps.surfaceState);
       logger.warn("No text structure stands for this PDF; nothing was created");
-      return;
+      return null;
     }
-    this.#writing = true;
-    setInFlight(this.#deps.surfaceState, true);
+    const { foreground, disarm } = CREATE_EFFECTS[type];
+    if (foreground) {
+      this.#writing = true;
+      setInFlight(this.#deps.surfaceState, true);
+    }
     let created = false;
     try {
       const [sortIndex, pageLabel] = await Promise.all([
@@ -673,22 +774,121 @@ export class MarkCreation implements CreationGestures, Disposable {
             reason: writeFailureReason(outcome.failure, this.#deps.now()),
           }),
         );
-        return;
+        return null;
       }
       created = true;
       recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-      this.#deps.reveal(outcome.annotationKey);
-      if (type === "image") this.#arm(null);
+      if (foreground) this.#deps.reveal(outcome.annotationKey);
+      if (disarm) this.#arm(null);
+      return outcome.annotationKey;
     } finally {
-      this.#writing = false;
-      setInFlight(this.#deps.surfaceState, false);
-      // The rectangle stays drawn until Zotero answered, whatever it said.
-      cancelCapture(this.#deps.surfaceState);
-      if (created) {
+      if (foreground) {
+        this.#writing = false;
+        setInFlight(this.#deps.surfaceState, false);
+        // The rectangle stays drawn until Zotero answered, whatever it said.
+        cancelCapture(this.#deps.surfaceState);
+      }
+      if (created && foreground) {
         this.#clear();
         this.#collapse();
       }
     }
+  }
+
+  /**
+   * Begins an Ink Stroke at a press on a page, marks under it included. A
+   * stroke already drawn by another pointer keeps the pointer; a press while
+   * editing is not live draws nothing and says why.
+   */
+  #beginStroke(event: PointerEvent): void {
+    if (this.#stroke) return;
+    const client = { x: event.clientX, y: event.clientY };
+    const page = this.#readerPageUnder(client);
+    if (!page) return;
+    if (!editingLive(this.#capability())) {
+      this.#deps.reportBlockedGesture();
+      return;
+    }
+    // The drag selects no text, and the selection that stood goes, as it
+    // does before Zotero's reader draws.
+    event.preventDefault();
+    this.#collapse();
+    this.#deps.containerEl.setPointerCapture(event.pointerId);
+    this.#stroke = new InkStroke({
+      pointerId: event.pointerId,
+      page,
+      at: client,
+      width: INK_WIDTH,
+      color: this.#state().colors.ink,
+      surfaceState: this.#deps.surfaceState,
+      win: this.#deps.containerEl.win,
+    });
+    logger.trace("An ink stroke began", { pageIndex: page.pageIndex });
+  }
+
+  /**
+   * Ends the stroke at its own pointer's release: it stays on the page as a
+   * Pending Stroke, and its create waits behind the ones released before it.
+   * The capability can lapse while the pointer is down, and that release is
+   * told why it created nothing.
+   */
+  #releaseStroke(): void {
+    const stroke = this.#stroke;
+    if (!stroke) return;
+    this.#stroke = null;
+    releaseCapture(this.#deps.containerEl, stroke);
+    const path = stroke.finish();
+    if (!editingLive(this.#capability())) {
+      this.#deps.reportBlockedGesture();
+      return;
+    }
+    const pending: PendingStroke = {
+      id: ++this.#strokeSerial,
+      pageIndex: stroke.page.pageIndex,
+      paths: [path],
+      width: stroke.width,
+      // The colour the stroke was drawn in, whatever the tool took since.
+      color: stroke.color,
+    };
+    appendPendingStroke(this.#deps.surfaceState, pending);
+    logger.debug("An ink stroke was released", {
+      pageIndex: pending.pageIndex,
+      points: path.length / 2,
+    });
+    this.#inking = this.#inking
+      .then(() => this.#createInk(pending))
+      .catch((error: unknown) => {
+        logger.warn("An ink stroke was not created", { error });
+      });
+    this.#creating = this.#inking;
+  }
+
+  /** One ink create; its Pending Stroke goes once Zotero answered. */
+  async #createInk(pending: PendingStroke): Promise<void> {
+    const { id, pageIndex, width, color, paths } = pending;
+    let key: string | null = null;
+    try {
+      key = await this.#create({
+        type: "ink",
+        color,
+        comment: "",
+        text: "",
+        position: { pageIndex, width, paths },
+      });
+    } finally {
+      if (key === null) dropPendingStroke(this.#deps.surfaceState, id);
+      else settlePendingStroke(this.#deps.surfaceState, { id, key });
+    }
+  }
+
+  /** Takes back the stroke in progress, drawing and creating nothing for it. */
+  #discardStroke(): void {
+    const stroke = this.#stroke;
+    if (!stroke) return;
+    this.#stroke = null;
+    releaseCapture(this.#deps.containerEl, stroke);
+    stroke[Symbol.dispose]();
+    logger.debug("An ink stroke was discarded");
   }
 
   /** Takes back the capture, drawing and creating nothing for it. */

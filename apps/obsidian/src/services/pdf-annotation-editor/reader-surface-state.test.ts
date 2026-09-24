@@ -12,6 +12,7 @@ import { annotation, annotationEdits, toolColors } from "./__fixtures__";
 import type { CreationToolbarControl } from "./creation-toolbar";
 import type { EditablePosition } from "./geometry-edit";
 import {
+  appendPendingStroke,
   arm,
   beginAdjust,
   beginCapture,
@@ -19,7 +20,9 @@ import {
   cancelCapture,
   captureSelection,
   clearFloating,
+  clearLiveStroke,
   createReaderSurfaceState,
+  dropPendingStroke,
   dropRecord,
   endAdjust,
   endCapture,
@@ -32,6 +35,7 @@ import {
   listenAnnotationEvents,
   moveAdjust,
   moveCapture,
+  publishLiveStroke,
   sameCapability,
   sameFlat,
   sameFlatList,
@@ -46,6 +50,7 @@ import {
   setCommenting,
   setInFlight,
   setToolColor,
+  settlePendingStroke,
   stepStack,
   tick,
 } from "./reader-surface-state";
@@ -806,4 +811,169 @@ it("takes the floating surface from a selected mark, and cancels to nothing", ()
 
   cancelCapture(store);
   expect(store.getState().floating).toEqual({ kind: "none" });
+});
+
+/** A stroke released on page one, rounded as a create sends it. */
+const STROKE = {
+  pageIndex: 0,
+  width: 2,
+  paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
+  color: "#2ea8e5",
+};
+
+it("publishes the live stroke beside the floating surface, and clears it", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+  const floating = store.getState().floating;
+  const live = { pageIndex: 0, path: [120, 600], width: 2, color: "#2ea8e5" };
+
+  publishLiveStroke(store, live);
+  expect(store.getState().liveStroke).toEqual(live);
+  // The popup host reads the floating surface alone, which a stroke leaves be.
+  expect(store.getState().floating).toBe(floating);
+
+  clearLiveStroke(store);
+  expect(store.getState().liveStroke).toBeNull();
+});
+
+it("clears the floating surface when ink is armed, and only then", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+
+  arm(store, "highlight");
+  expect(selectFloatingHead(store.getState()).key).toBe("WORD2222");
+
+  arm(store, "ink");
+  expect(store.getState().floating).toEqual({ kind: "none" });
+});
+
+it("appends Pending Strokes in release order", () => {
+  const store = reader();
+
+  appendPendingStroke(store, { id: 1, ...STROKE });
+  appendPendingStroke(store, { id: 2, ...STROKE, pageIndex: 1 });
+
+  expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([1, 2]);
+});
+
+it("swaps a Pending Stroke for its record in one update", () => {
+  const store = reader();
+  appendPendingStroke(store, { id: 1, ...STROKE });
+  const record = annotation("INK11111", "ink", {
+    pageIndex: 0,
+    width: 2,
+    paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
+  });
+  const frames: { records: number; pending: number }[] = [];
+  store.subscribe(
+    ({ records, pendingStrokes }) => ({ records, pendingStrokes }),
+    ({ records, pendingStrokes }) =>
+      frames.push({ records: records.length, pending: pendingStrokes.length }),
+    { equalityFn: sameFlat },
+  );
+
+  ingestRecords(store, [PARAGRAPH, WORD, record]);
+
+  // Never both drawn, and never neither.
+  expect(frames).toEqual([{ records: 3, pending: 0 }]);
+});
+
+it("keeps a Pending Stroke through a read that does not yet hold it", () => {
+  const store = reader();
+  appendPendingStroke(store, { id: 1, ...STROKE });
+  const other = annotation("INK22222", "ink", {
+    pageIndex: 0,
+    width: 2,
+    paths: [[120.5, 600.25, 130.125, 610.5]],
+  });
+
+  ingestRecords(store, [PARAGRAPH, WORD, other]);
+
+  expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([1]);
+});
+
+it.each([
+  ["another colour", { color: "#ff6666" }, 2],
+  ["another pen width", {}, 3],
+])(
+  "keeps a Pending Stroke through a record of its points in %s",
+  (_, colour, width) => {
+    const store = reader();
+    appendPendingStroke(store, { id: 1, ...STROKE });
+    const other = {
+      ...annotation("INK22222", "ink", {
+        pageIndex: 0,
+        width,
+        paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
+      }),
+      ...colour,
+    };
+
+    ingestRecords(store, [PARAGRAPH, WORD, other]);
+
+    expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([1]);
+  },
+);
+
+it("swaps a Pending Stroke for a record that differs only in colour case", () => {
+  const store = reader();
+  appendPendingStroke(store, { id: 1, ...STROKE, color: "#2EA8E5" });
+
+  ingestRecords(store, [
+    PARAGRAPH,
+    WORD,
+    annotation("INK11111", "ink", {
+      pageIndex: 0,
+      width: 2,
+      paths: [[120.5, 600.25, 130.125, 610.5, 140, 606.75]],
+    }),
+  ]);
+
+  expect(store.getState().pendingStrokes).toEqual([]);
+});
+
+it("drops a settled Pending Stroke whose record already stands", () => {
+  const store = reader();
+  appendPendingStroke(store, { id: 1, ...STROKE });
+  // Zotero stored other points than were sent, so no geometry matches.
+  const stored = annotation("INK11111", "ink", {
+    pageIndex: 0,
+    width: 2,
+    paths: [[121, 601]],
+  });
+  ingestRecords(store, [PARAGRAPH, WORD, stored]);
+  expect(store.getState().pendingStrokes).toHaveLength(1);
+
+  settlePendingStroke(store, { id: 1, key: "INK11111" });
+
+  expect(store.getState().pendingStrokes).toEqual([]);
+});
+
+it("swaps a settled Pending Stroke for the record of its key when the read lands", () => {
+  const store = reader();
+  appendPendingStroke(store, { id: 1, ...STROKE });
+
+  settlePendingStroke(store, { id: 1, key: "INK11111" });
+  expect(store.getState().pendingStrokes).toHaveLength(1);
+  ingestRecords(store, [
+    PARAGRAPH,
+    WORD,
+    annotation("INK11111", "ink", {
+      pageIndex: 0,
+      width: 2,
+      paths: [[121, 601]],
+    }),
+  ]);
+
+  expect(store.getState().pendingStrokes).toEqual([]);
+});
+
+it("drops a failed create's Pending Stroke and leaves the others", () => {
+  const store = reader();
+  appendPendingStroke(store, { id: 1, ...STROKE });
+  appendPendingStroke(store, { id: 2, ...STROKE, pageIndex: 1 });
+
+  dropPendingStroke(store, 1);
+
+  expect(store.getState().pendingStrokes.map(({ id }) => id)).toEqual([2]);
 });

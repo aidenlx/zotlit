@@ -23,6 +23,7 @@ const COLORS = {
   highlight: "#ffd400",
   underline: "#2ea8e5",
   image: "#ff6666",
+  ink: "#a28ae5",
 } as const;
 
 /** Both halves of one tool, in the order the toolbar draws them. */
@@ -326,6 +327,22 @@ it("patches changed controls in place rather than rebuilding them", () => {
       icon: expect.stringContaining("lucide-chevron-down"),
     },
     {
+      id: "ink",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#a28ae5",
+      icon: expect.stringContaining("lucide-pencil"),
+    },
+    {
+      id: "ink-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
       id: "visibility",
       pressed: "false",
       disabled: null,
@@ -386,6 +403,8 @@ it("promises the theme hook and the data attribute by their literal names", () =
     "underline-color",
     "image",
     "image-color",
+    "ink",
+    "ink-color",
     "visibility",
   ]);
 });

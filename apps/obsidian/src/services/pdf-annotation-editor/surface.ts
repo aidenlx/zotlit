@@ -149,6 +149,9 @@ export function releaseCapture(
   containerEl: HTMLElement,
   held: { pointerId: number } | null,
 ): null {
-  if (held) containerEl.releasePointerCapture(held.pointerId);
+  // A pointer the browser already took back — a cancel, a lost capture —
+  // holds no capture to let go of.
+  if (held && containerEl.hasPointerCapture(held.pointerId))
+    containerEl.releasePointerCapture(held.pointerId);
   return null;
 }

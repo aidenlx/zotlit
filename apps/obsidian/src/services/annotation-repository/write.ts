@@ -221,7 +221,7 @@ export interface AnnotationDraft {
   pageLabel: string;
   /** Computed from the **unrounded** position, as Zotero's reader does. */
   sortIndex: string;
-  position: CreatePosition;
+  position: WritablePosition;
 }
 
 /** One create request with Zotero's write token as a transport detail. */
@@ -283,6 +283,11 @@ export function createRequest(
   };
 }
 
+/** One PDF coordinate as Zotero stores it: three decimals. */
+export function roundCoordinate(value: number): number {
+  return Math.round(value * POSITION_DECIMALS) / POSITION_DECIMALS;
+}
+
 /**
  * The stored position, rounded the way Zotero's reader rounds it before every
  * save: three decimals in PDF user-space points, on rects, ink paths, and ink
@@ -291,14 +296,12 @@ export function createRequest(
  * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/lib/utilities.js#L686-L712
  */
 export function writePosition(position: WritablePosition): string {
-  const round = (value: number) =>
-    Math.round(value * POSITION_DECIMALS) / POSITION_DECIMALS;
   const roundAll = (rects: readonly (readonly number[])[]) =>
-    rects.map((rect) => rect.map(round));
+    rects.map((rect) => rect.map(roundCoordinate));
   if ("paths" in position) {
     return JSON.stringify({
       pageIndex: position.pageIndex,
-      width: round(position.width),
+      width: roundCoordinate(position.width),
       paths: roundAll(position.paths),
     });
   }

@@ -1025,6 +1025,8 @@ it("keeps the toolbar's nodes across capability announcements, and stands them d
     "underline-color",
     "image",
     "image-color",
+    "ink",
+    "ink-color",
     "visibility",
   ]);
 

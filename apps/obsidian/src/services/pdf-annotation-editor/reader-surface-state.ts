@@ -19,8 +19,11 @@ import type {
   AnnotationRepository,
   CommentDraft,
 } from "@/services/annotation-repository/service";
-import { IDLE } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
+import { IDLE, writePosition } from "@/services/annotation-repository/write";
+import type {
+  InkPosition,
+  MutationState,
+} from "@/services/annotation-repository/write";
 
 import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
@@ -127,6 +130,33 @@ export type Floating =
     }
   | Capture;
 
+/**
+ * The Ink Stroke the pointer is drawing, as the last animation frame smoothed
+ * it. It sits beside the floating surface rather than in it: a stroke opens no
+ * popup and dismisses none.
+ */
+export interface LiveStroke {
+  /** The page the press fell on, which holds the whole stroke. */
+  pageIndex: number;
+  /** The smoothed stroke, a flat `[x0, y0, x1, y1, …]` run in PDF points. */
+  path: readonly number[];
+  /** The pen width, in PDF points. */
+  width: number;
+  color: string;
+}
+
+/**
+ * An Ink Stroke released and rounded, drawn on its page while its create is
+ * in flight, until the read that holds its record takes its place.
+ */
+export interface PendingStroke extends InkPosition {
+  /** Tells one in-flight create's stroke from another's. */
+  id: number;
+  color: string;
+  /** The created Annotation's Indexed Key, once Zotero named it. */
+  key?: string;
+}
+
 export interface ReaderSurfaceState {
   /** The tool a released selection commits with, or `null` while none is armed. */
   armed: MarkTool | null;
@@ -147,6 +177,10 @@ export interface ReaderSurfaceState {
   /** The instant a cooldown's remaining seconds are measured from. */
   now: Temporal.Instant;
   floating: Floating;
+  /** The Ink Stroke being drawn, or `null` while none is. */
+  liveStroke: LiveStroke | null;
+  /** The released Ink Strokes whose creates are in flight, in release order. */
+  pendingStrokes: readonly PendingStroke[];
   /** Every Annotation of this Attachment, as the last read answered them. */
   records: readonly AnnotationRecord[];
   /**
@@ -178,6 +212,8 @@ export function createReaderSurfaceState({
         capabilityAt: now,
         now,
         floating: NONE,
+        liveStroke: null,
+        pendingStrokes: [],
         records: [],
         mutations: new Map(),
         commentDrafts: new Map(),
@@ -186,8 +222,14 @@ export function createReaderSurfaceState({
   );
 }
 
+/**
+ * Arms a tool, or stands the armed one down for `null`. Arming ink clears the
+ * floating surface, so no Mark Handle stands to take a press meant to draw.
+ */
 export function arm(store: ReaderSurfaceStore, tool: MarkTool | null): void {
-  store.setState({ armed: tool });
+  store.setState(
+    tool === "ink" ? { armed: tool, floating: NONE } : { armed: tool },
+  );
 }
 
 /**
@@ -488,9 +530,94 @@ export function ingestRecords(
   store: ReaderSurfaceStore,
   records: readonly AnnotationRecord[],
 ): void {
-  store.setState(({ floating }) => ({
+  store.setState(({ floating, pendingStrokes }) => ({
     records,
     floating: heldBy(floating, records),
+    pendingStrokes: unheldStrokes(pendingStrokes, records),
+  }));
+}
+
+/**
+ * The Pending Strokes a read does not hold yet. A record takes a stroke's
+ * place once it carries the stroke's Indexed Key, or stores the very points,
+ * width and colour the create sent — which is how a read that answers before
+ * the create has returned still swaps the two in one update.
+ *
+ * Two strokes that round to the same points in the same pen — two taps on one
+ * spot — are one stroke to that match: the first record to land takes both,
+ * and the second shows again as its own mark once its record lands.
+ */
+function unheldStrokes(
+  pending: readonly PendingStroke[],
+  records: readonly AnnotationRecord[],
+): readonly PendingStroke[] {
+  if (pending.length === 0) return pending;
+  const keys = new Set(records.map(({ key }) => key));
+  const stored = new Set(
+    records.flatMap(({ position, color }) =>
+      position.kind === "pdf-ink" && color !== null
+        ? [strokeIdentity(position, color)]
+        : [],
+    ),
+  );
+  const unheld = pending.filter(
+    (stroke) =>
+      !(stroke.key !== undefined && keys.has(stroke.key)) &&
+      !stored.has(strokeIdentity(stroke, stroke.color)),
+  );
+  return unheld.length === pending.length ? pending : unheld;
+}
+
+/** A stroke as Zotero stores it: its rounded position, pen and colour. */
+function strokeIdentity(position: InkPosition, color: string): string {
+  return `${color.toLowerCase()} ${writePosition(position)}`;
+}
+
+/** Publishes the stroke as the pointer has drawn it by this frame. */
+export function publishLiveStroke(
+  store: ReaderSurfaceStore,
+  liveStroke: LiveStroke,
+): void {
+  store.setState({ liveStroke });
+}
+
+export function clearLiveStroke(store: ReaderSurfaceStore): void {
+  if (store.getState().liveStroke !== null)
+    store.setState({ liveStroke: null });
+}
+
+export function appendPendingStroke(
+  store: ReaderSurfaceStore,
+  stroke: PendingStroke,
+): void {
+  store.setState(({ pendingStrokes }) => ({
+    pendingStrokes: [...pendingStrokes, stroke],
+  }));
+}
+
+/**
+ * A create answered with the Annotation's Indexed Key. The stroke goes at
+ * once where a read already holds that record; otherwise it carries the key,
+ * and the read that brings the record takes it.
+ */
+export function settlePendingStroke(
+  store: ReaderSurfaceStore,
+  { id, key }: { id: number; key: string },
+): void {
+  store.setState(({ pendingStrokes, records }) => ({
+    pendingStrokes: unheldStrokes(
+      pendingStrokes.map((stroke) =>
+        stroke.id === id ? { ...stroke, key } : stroke,
+      ),
+      records,
+    ),
+  }));
+}
+
+/** Takes a stroke whose create failed, or never ran, off the page. */
+export function dropPendingStroke(store: ReaderSurfaceStore, id: number): void {
+  store.setState(({ pendingStrokes }) => ({
+    pendingStrokes: pendingStrokes.filter((stroke) => stroke.id !== id),
   }));
 }
 

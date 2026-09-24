@@ -70,6 +70,7 @@ import {
   patchSelectedMark,
   renderAnnotationOverlay,
   renderCapture,
+  renderLiveStroke,
   scrollMarkIntoView,
   withPosition,
 } from "./render";
@@ -212,6 +213,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   readonly #painted = new Set<number>();
   /** The page an image capture's rectangle was last drawn on. */
   #capturedOn: number | null = null;
+  /** The page the live ink stroke was last drawn on. */
+  #strokeOn: number | null = null;
   /** The pages the selected mark's last in-place redraw drew it on. */
   #patchedOn: { key: string; pages: ReadonlySet<number> } | null = null;
   #attachment: AttachmentResolution = { kind: "pending" };
@@ -412,6 +415,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   get settled(): Promise<void> {
     return this.#creation?.settled ?? Promise.resolve();
+  }
+
+  /**
+   * Settles when the last create released in this reader has run to its end
+   * — an ink stroke's among them, behind the strokes released before it.
+   * Already settled while none has. Never rejects. A test seam: the
+   * End-to-end Run waits on it; no surface reads it.
+   */
+  get created(): Promise<unknown> {
+    return this.#creation?.created ?? Promise.resolve();
   }
 
   /** Revalidates this PDF surface when Obsidian activates its leaf. */
@@ -752,6 +765,35 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#surfaces.defer(
       state.subscribe(selectCapture, () => this.#drawCapture()),
     );
+    // An ink stroke draws on the page it was pressed on, one `d` per frame;
+    // the strokes saving draw under the marks until their records arrive.
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ liveStroke }) => liveStroke,
+        () => this.#drawLiveStroke(),
+      ),
+    );
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ pendingStrokes }) => pendingStrokes,
+        (pending, before) => {
+          const pages = new Set(
+            [...pending, ...before].map(({ pageIndex }) => pageIndex),
+          );
+          for (const pageIndex of pages) this.#paint(pageIndex);
+        },
+      ),
+    );
+    // A finger on an armed ink tool draws rather than pans, which the browser
+    // decides at contact, so the page takes it before any press.
+    this.#surfaces.defer(
+      state.subscribe(
+        ({ armed }) => armed === "ink",
+        (inking) => this.#showInking(inking),
+        { fireImmediately: true },
+      ),
+    );
+    this.#surfaces.defer(() => this.#showInking(false));
     this.#surfaces.defer(
       state.subscribe(
         ({ capability }) => editingLive(capability),
@@ -915,6 +957,31 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const page = pageViewOf(controller, capture.pageIndex + 1);
     if (page)
       renderCapture(page, { rect: capture.rect, color: state.colors.image });
+  }
+
+  /** Draws the live ink stroke on its page, as {@link #drawCapture} does. */
+  #drawLiveStroke(): void {
+    const controller = this.#controller;
+    const stroke = this.#surfaceState?.getState().liveStroke ?? null;
+    const held = this.#strokeOn;
+    this.#strokeOn = stroke?.pageIndex ?? null;
+    if (!controller) return;
+    if (held !== null && held !== stroke?.pageIndex) {
+      const page = pageViewOf(controller, held + 1);
+      if (page) renderLiveStroke(page, null);
+    }
+    if (!stroke) return;
+    const page = pageViewOf(controller, stroke.pageIndex + 1);
+    if (page) renderLiveStroke(page, stroke);
+  }
+
+  /**
+   * Marks the reader while the ink tool is armed, so the stylesheet takes
+   * touch panning off its pages.
+   */
+  #showInking(inking: boolean): void {
+    if (inking) this.#view.containerEl.dataset.ztInking = "";
+    else delete this.#view.containerEl.dataset.ztInking;
   }
 
   /**
@@ -1139,15 +1206,22 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const page = controller && pageViewOf(controller, pageIndex + 1);
     if (!page) return;
     const annotations = this.#visibleMarks().get(pageIndex) ?? [];
+    const pending = (
+      this.#surfaceState?.getState().pendingStrokes ?? []
+    ).filter((stroke) => stroke.pageIndex === pageIndex);
     renderAnnotationOverlay(page, {
       annotations,
+      pending,
       selected: this.#selection?.selected,
       handles: this.#handles(),
       textRotation: this.#textRotation,
     });
-    // The rebuild took the capture's rectangle with the overlay.
+    // The rebuild took the capture's rectangle and the live stroke with the
+    // overlay.
     if (this.#capturedOn === pageIndex) this.#drawCapture();
-    if (annotations.length > 0) this.#painted.add(pageIndex);
+    if (this.#strokeOn === pageIndex) this.#drawLiveStroke();
+    if (annotations.length > 0 || pending.length > 0)
+      this.#painted.add(pageIndex);
     else this.#painted.delete(pageIndex);
   }
 

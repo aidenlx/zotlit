@@ -3,7 +3,7 @@
 //
 // One tool per Zotero annotation type, in the order Zotero's own reader shows
 // them, so the group a reader learns here is the group Zotero offers. ZotLit
-// writes three of them today, and the Creation Toolbar seats those three.
+// writes four of them today, and the Creation Toolbar seats those four.
 //
 // The colours are settings rather than view state, so a tool armed in one PDF
 // draws in the same colour in the next one.
@@ -25,13 +25,16 @@ export const ANNOTATION_TOOLS = [
 
 export type AnnotationTool = (typeof ANNOTATION_TOOLS)[number];
 
-/** The tools ZotLit creates today, which are the three an armed tool commits as. */
-export const MARK_TOOLS = ["highlight", "underline", "image"] as const;
+/** The tools ZotLit creates today, which are the four an armed tool commits as. */
+export const MARK_TOOLS = ["highlight", "underline", "image", "ink"] as const;
 
 export type MarkTool = (typeof MARK_TOOLS)[number];
 
-/** The tools a text selection commits as; the image tool takes a rectangle. */
-export type TextTool = Exclude<MarkTool, "image">;
+/**
+ * The tools a text selection commits as; the image tool takes a rectangle,
+ * and the ink tool a stroke.
+ */
+export type TextTool = Exclude<MarkTool, "image" | "ink">;
 
 /**
  * The tool a text selection commits as while a tool is armed: the armed one
@@ -46,8 +49,15 @@ export function isMarkTool(tool: AnnotationTool): tool is MarkTool {
   return (MARK_TOOLS as readonly AnnotationTool[]).includes(tool);
 }
 
-/** Zotero's own default, which every tool starts on. */
-export const DEFAULT_TOOL_COLOR = ANNOTATION_COLORS[0]!;
+/**
+ * The colour each tool starts on, as Zotero's reader starts it: the first
+ * swatch, and the fourth for ink.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/reader.js#L178-L203
+ */
+export function defaultToolColor(tool: AnnotationTool): string {
+  return tool === "ink" ? ANNOTATION_COLORS[3]! : ANNOTATION_COLORS[0]!;
+}
 
 /** The settings key each tool's colour is kept under. */
 export const TOOL_COLORS_SETTING = "reader.annotation-colors";
@@ -69,12 +79,15 @@ export type AnnotationToolColors = v.InferOutput<
   typeof annotationToolColorsSchema
 >;
 
-/** Every tool's colour, with Zotero's default standing for one never chosen. */
+/** Every tool's colour, with the tool's own default standing for one never chosen. */
 export function resolveToolColors(
   stored: AnnotationToolColors = {},
 ): Record<AnnotationTool, string> {
   return Object.fromEntries(
-    ANNOTATION_TOOLS.map((tool) => [tool, stored[tool] ?? DEFAULT_TOOL_COLOR]),
+    ANNOTATION_TOOLS.map((tool) => [
+      tool,
+      stored[tool] ?? defaultToolColor(tool),
+    ]),
   ) as Record<AnnotationTool, string>;
 }
 

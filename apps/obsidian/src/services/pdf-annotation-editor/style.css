@@ -75,6 +75,17 @@
   cursor: text;
 }
 
+/*
+ * While the ink tool is armed, a finger on a page draws rather than pans the
+ * reader. The browser reads `touch-action` when a finger lands, so it stands
+ * from arming to disarming rather than for the stroke alone. It is set on the
+ * page container, the element PDF.js scrolls, whose pages take it from there;
+ * the toolbar and the sidebars keep their own touch scrolling.
+ */
+:where([data-zt-inking] .pdf-viewer-container) {
+  touch-action: none;
+}
+
 /* Zotero's highlight reads as ink on paper in either theme. */
 :where(.theme-light .zt-pdf-annotation-highlight) {
   opacity: 0.4;
