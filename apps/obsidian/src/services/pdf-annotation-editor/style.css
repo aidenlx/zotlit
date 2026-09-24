@@ -207,16 +207,25 @@
  */
 :where(.zt-pdf-tool) {
   border-radius: var(--clickable-icon-radius);
-  overflow: hidden;
 }
 
 :where(.zt-pdf-tool.is-active) {
   background-color: var(--background-modifier-active-hover);
 }
 
-/* The seat carries the corners, so the halves meet square and flush. */
-:where(.zt-pdf-tool) > .clickable-icon {
-  border-radius: 0;
+/*
+ * The halves meet square and flush, and each keeps the seat's corners on its
+ * outer side. The seat clips nothing, so the focus ring Obsidian draws outside
+ * a focused half shows whole rather than as a sliver at the seam.
+ */
+:where(.zt-pdf-tool) > .clickable-icon:first-child {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+:where(.zt-pdf-tool) > .clickable-icon:last-child {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
 }
 
 /* The armed tool's own colour stays on its toggle, through the inline style. */
