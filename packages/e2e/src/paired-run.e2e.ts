@@ -1545,6 +1545,55 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("draws at the width picked from the ink seat's menu, and keeps the pick", async () => {
+          const inkWidth = `app.plugins.plugins.zotlit.services.settings.current['reader.ink-width']`;
+          /**
+           * Opens the ink seat's chevron menu and answers its checked items;
+           * with `pick`, selects the width item that begins with that number
+           * first. The menu is DOM only with Obsidian's native menus off.
+           */
+          const inkMenu = (pick?: number) =>
+            obJson<string[]>(
+              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="ink-color"]').click();const items=[...document.querySelectorAll('.menu .menu-item')];const checked=items.filter((item)=>item.querySelector('.mod-checked')).map((item)=>item.textContent.trim());${pick === undefined ? "window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));" : `items.find((item)=>item.textContent.trim().split(/\\s/)[0]===${JSON.stringify(String(pick))}).click();`}return JSON.stringify(checked);})()`,
+            );
+          await using restore = new AsyncDisposableStack();
+          const nativeMenus = await obEval(
+            vaultId!,
+            `String(app.vault.getConfig('nativeMenus'))`,
+          );
+          restore.defer(async () => {
+            await obEval(
+              vaultId!,
+              `(function(){app.plugins.plugins.zotlit.services.settings.update({'reader.ink-width':2});app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+            );
+          });
+          await obEval(
+            vaultId!,
+            `app.vault.setConfig('nativeMenus',false);true`,
+          );
+          await armInk([150, 355]);
+          const before = await annotationKeys();
+
+          // Width 2 stands checked, and the pick is 5.
+          expect((await inkMenu(5)).at(-1)).toMatch(/^2\s/);
+          expect(await obEval(vaultId!, `String(${inkWidth})`)).toBe("5");
+          await press(CURVE);
+          await release(CURVE.at(-1)!);
+
+          const inkKey = await freshKey(before);
+          expect((await storedInk(inkKey)).position.width).toBe(5);
+          // The page draws the new mark at width 5, against the seed's 2.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const mark=(key)=>${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="'+key+'"]')?.getAttribute('stroke-width');return JSON.stringify([mark(${JSON.stringify(inkKey)}),mark('4PE492KU')]);})()`,
+              { expected: JSON.stringify(["5", "2"]) },
+            ),
+          ).toBe(true);
+          // The menu opens on the width picked.
+          expect((await inkMenu()).at(-1)).toMatch(/^5\s/);
+        }, 120000);
+
         it("discards a stroke on Escape and stays armed; a second Escape disarms", async () => {
           await armInk([150, 355]);
           const before = await annotationKeys();
