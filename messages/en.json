@@ -2437,7 +2437,7 @@
   "annot_view_image_unavailable": "Image unavailable",
   "annot_view_image_loading": "Loading image…",
   "annot_view_delete_confirm_title": "Delete annotation?",
-  "annot_view_delete_confirm_content": "Zotero deletes this annotation. ZotLit cannot undo it.",
+  "annot_view_delete_confirm_content": "Zotero deletes this annotation. ZotLit can undo the delete while its PDF is open, but Zotero restores the annotation under a new key and links to the old key stop working.",
   "annot_view_delete_confirm_action": "Delete",
   "annot_view_write_failed": "The edit was not saved. {reason}",
   "annot_view_write_reason_db_source": "ZotLit reads these annotations from the Zotero database, which it cannot edit.",

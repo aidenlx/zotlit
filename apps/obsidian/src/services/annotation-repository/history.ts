@@ -6,8 +6,14 @@ import type {
   ResolvedAnnotationTypeName,
 } from "@zotlit/db";
 
-import { resolvesSilently, sameStoredGeometry } from "./reconcile";
+import {
+  resolvesSilently,
+  sameStoredGeometry,
+  storedPosition,
+} from "./reconcile";
+import { writePosition } from "./write";
 import type {
+  AnnotationDraft,
   GeometryEdit,
   WritablePosition,
   WriteConflict,
@@ -29,9 +35,27 @@ export type HistoryDirection = "undo" | "redo";
 /**
  * Which edit one History Step came from. A step carries its kind, and steps of
  * different kinds never merge, so a colour pick made after a comment session is
- * a step of its own.
+ * a step of its own. `existence` is a create and a delete alike: undoing one
+ * leaves the other, so the two are one kind read in opposite directions.
  */
-export type HistoryEditKind = "color" | "comment" | "geometry";
+export type HistoryEditKind = "color" | "comment" | "existence" | "geometry";
+
+/**
+ * Everything a restore writes back for one Annotation, which is everything a
+ * create sends: Zotero keeps no record of an erased item, so a delete's step
+ * carries the whole Annotation rather than a reference to it.
+ */
+export type HistoryContent = Omit<AnnotationDraft, "parentKey">;
+
+/**
+ * What a confirmed record holds for a create or a delete. Structural, as
+ * {@link HistoryRecord} is, and wider than it because a restore writes every
+ * field rather than comparing one.
+ */
+export interface HistoryRestorable extends HistoryRecord {
+  /** Zotero's printed-page label, which a create sends back with the rest. */
+  pageLabel: string | null;
+}
 
 /**
  * What a confirmed record holds for the fields a History Step compares and
@@ -58,6 +82,13 @@ export interface HistoryFields {
   color?: string;
   comment?: string;
   geometry?: GeometryEdit;
+  /**
+   * Whether Zotero holds the Annotation at all, and what it holds for it:
+   * `null` says Zotero holds no such Annotation, which is what a create's
+   * `before` and a delete's `after` carry. Absent on a step that changed a
+   * field of an Annotation that stood throughout.
+   */
+  content?: HistoryContent | null;
 }
 
 /**
@@ -91,6 +122,65 @@ export interface HistoryStep {
   changes: readonly HistoryChange[];
   /** What a following edit of the same kind joins this step by. */
   join?: HistoryJoin;
+  /**
+   * What joins the confirmed writes of one gesture into this one step, where
+   * that gesture wrote more than one Annotation: an ink stroke split at the
+   * position ceiling creates several Annotations and is still one stroke.
+   * Absent on a step that stands alone.
+   */
+  group?: string;
+}
+
+/**
+ * The Annotation as a restore would write it, or `null` for a record whose
+ * position no create can send — everything outside a PDF, and a shape this
+ * build does not know. A record the Annotation Source answered no Sort Index
+ * for is `null` too: Zotero's create demands one and computes none.
+ */
+export function contentOf(record: HistoryRestorable): HistoryContent | null {
+  const position = writablePosition(record.position);
+  if (!position) return null;
+  return {
+    type: record.type,
+    color: record.color ?? "",
+    comment: record.comment ?? "",
+    text: record.text ?? "",
+    pageLabel: record.pageLabel ?? "",
+    sortIndex: record.sortIndex,
+    position,
+  };
+}
+
+/**
+ * Whether Zotero holds now what a create or a delete left there: the very
+ * Annotation for a step that made one, and no Annotation at all for a step
+ * that erased one. The colour, comment, text and position are compared the way
+ * a Write Conflict compares them, so an equal value is a match.
+ */
+export function sameContent(
+  content: HistoryContent | null,
+  record: HistoryRecord | null,
+): boolean {
+  if (content === null || record === null)
+    return content === null && record === null;
+  const stored = storedPosition(record.position);
+  return (
+    content.type === record.type &&
+    resolvesSilently("color", content.color, record.color) &&
+    sameStringField(content.comment, record.comment) &&
+    sameStringField(content.text, record.text) &&
+    stored !== null &&
+    writePosition(content.position) === stored
+  );
+}
+
+/**
+ * Whether a written string field is what Zotero holds. Zotero stores a cleared
+ * string as no value, so the empty string a create sends and the absent value a
+ * read answers are the same value.
+ */
+function sameStringField(written: string, held: string | null): boolean {
+  return written === (held ?? "");
 }
 
 /**
@@ -106,6 +196,12 @@ export function historyFieldsOf(
   switch (kind) {
     case "color":
       return record.color === null ? null : { color: record.color };
+    case "existence":
+      // A create and a delete each name an Annotation Zotero holds on one side
+      // and none on the other, which a record on its own cannot say. Their
+      // fields are built by contentOf over the whole record a restore writes
+      // back, so there is nothing for one confirmed record to answer here.
+      return null;
     case "comment":
       // Zotero stores a cleared comment as no comment, so the empty string is
       // what an Annotation carrying none is written back as.
@@ -164,6 +260,9 @@ export function stillHolds(
   ) {
     return false;
   }
+  if (fields.content !== undefined && !sameContent(fields.content, record)) {
+    return false;
+  }
   return (
     fields.geometry === undefined || sameStoredGeometry(fields.geometry, record)
   );
@@ -210,6 +309,12 @@ export type HistoryOutcome =
   /** The step was written. */
   | { kind: "stepped"; annotationKey: string }
   /**
+   * The step was written and it took its Annotations off the Attachment, so
+   * there is nothing left to select. The reader clears its selection and comes
+   * back to the page the first of them sat on.
+   */
+  | { kind: "removed"; annotationKey: string; pageIndex: number }
+  /**
    * Zotero holds another value for a field the step names, or no longer holds
    * the Annotation at all. Nothing was written and the step was dropped, so the
    * next press takes the step before it.
@@ -221,13 +326,14 @@ export type HistoryOutcome =
   | { kind: "blocked" };
 
 /**
- * Whether a newly confirmed edit continues the step that stands on the undo
- * stack: the same input made both, on the one same Annotation, inside the join
- * window. Steps of different kinds never meet this, so a colour pick between
- * two nudges ends the run.
+ * Whether a newly confirmed edit continues the run of nudges that stands on the
+ * undo stack: both are Geometry Edits, the same input made them, on the one
+ * same Annotation, inside the join window. A run is a Geometry Edit's own way
+ * of grouping, so no other kind meets this, and steps of different kinds never
+ * merge: a colour pick between two nudges ends the run.
  */
 function joins(standing: HistoryStep, made: HistoryStep): boolean {
-  if (standing.kind !== made.kind) return false;
+  if (made.kind !== "geometry" || standing.kind !== made.kind) return false;
   if (!standing.join || !made.join) return false;
   if (standing.join.input !== made.join.input) return false;
   const [held] = standing.changes;
@@ -236,6 +342,21 @@ function joins(standing: HistoryStep, made: HistoryStep): boolean {
   if (!held || !next || held.annotationKey !== next.annotationKey) return false;
   const since = standing.join.at.until(made.join.at).total("milliseconds");
   return since >= 0 && since < JOIN_WINDOW_MS;
+}
+
+/**
+ * Whether a newly confirmed edit belongs to the gesture the step on top already
+ * holds: both name the one same group, and both are of the one same kind. An
+ * ink stroke split at the position ceiling creates several Annotations and is
+ * still one stroke, so its creates are one step. A step that names no group
+ * stands alone, so no other rule's step is ever drawn into one.
+ */
+function joinsGroup(standing: HistoryStep, made: HistoryStep): boolean {
+  return (
+    standing.kind === made.kind &&
+    made.group !== undefined &&
+    standing.group === made.group
+  );
 }
 
 /**
@@ -305,21 +426,54 @@ export class AnnotationHistory {
    * Take one confirmed edit into the history, which discards what a redo would
    * have put back: history stays a single line, as it does in every editor.
    *
-   * An edit that continues the run the top step holds joins it instead, so a
-   * run of keyboard nudges on one mark costs one press to put back.
+   * An edit that names the group the step on top names joins that step rather
+   * than starting one, so one gesture that wrote several Annotations is one
+   * step and its undo takes them all or none. An edit that continues the run
+   * of nudges the top step holds joins it too, so a run of keyboard nudges on
+   * one mark costs one press to put back. Both rules ask the step on top for
+   * its kind first, so steps of different kinds never merge.
    *
    * @returns whether the edit joined the step that stood.
    */
   record(step: HistoryStep): boolean {
     this.#stacks.redo.length = 0;
     const standing = this.peek("undo");
-    if (!standing || !joins(standing, step)) {
-      this.push("undo", step);
-      return false;
-    }
     const stack = this.#stacks.undo;
-    stack[stack.length - 1] = joinedStep(standing, step);
-    return true;
+    if (standing && joinsGroup(standing, step)) {
+      stack[stack.length - 1] = {
+        ...standing,
+        changes: [...standing.changes, ...step.changes],
+      };
+      return true;
+    }
+    if (standing && joins(standing, step)) {
+      stack[stack.length - 1] = joinedStep(standing, step);
+      return true;
+    }
+    this.push("undo", step);
+    return false;
+  }
+
+  /**
+   * Answer for `to` wherever a step names `from`, in both stacks. Zotero gives
+   * a restored Annotation a new key, and the steps recorded against the old one
+   * describe the Annotation the researcher sees, so they follow it.
+   */
+  rename(from: string, to: string): void {
+    for (const stack of [this.#stacks.undo, this.#stacks.redo]) {
+      for (const [index, step] of stack.entries()) {
+        if (!step.changes.some(({ annotationKey }) => annotationKey === from))
+          continue;
+        stack[index] = {
+          ...step,
+          changes: step.changes.map((change) =>
+            change.annotationKey === from
+              ? { ...change, annotationKey: to }
+              : change,
+          ),
+        };
+      }
+    }
   }
 
   /** The step a press of `direction` would take, left where it is. */
@@ -349,6 +503,9 @@ export class AnnotationHistory {
     const at = stack.indexOf(step);
     if (at < 0) return;
     stack.splice(at, 1, ...(next ? [next] : []));
+    // Moving a step is a newly confirmed edit like any other, so what a redo
+    // would have put back goes: history stays a single line.
+    this.#stacks.redo.length = 0;
   }
 
   /** Put the step a taken one left behind on the stack that steps it back. */

@@ -4287,6 +4287,125 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ).toBe(true);
           }, 120000);
         });
+
+        describe("a create and a delete", () => {
+          /**
+           * The Annotation each of these tests makes for itself. Nothing seeded
+           * is erased here: a restore comes back under a key Zotero picks, so a
+           * deleted seed could never be put back as the Fixture spells it.
+           */
+          const draft = {
+            type: "highlight",
+            color: "#a28ae5",
+            comment: "Annotation History run",
+            text: "Identify Your Message",
+            pageLabel: "1",
+            sortIndex: "00000|000100|00101",
+            position: { pageIndex: 0, rects: [[100, 560, 300, 580]] },
+          };
+
+          const createDraft = () =>
+            obJson<{ kind: string; annotationKey?: string }>(
+              `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(draft)});return JSON.stringify(outcome);})()`,
+            );
+
+          const eraseThrough = (annotationKey: string) =>
+            obJson<{ kind: string }>(
+              `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.deleteAnnotation(${JSON.stringify(annotationKey)});return JSON.stringify(state);})()`,
+            );
+
+          /**
+           * What the Attachment held before this test. Earlier tests in this
+           * tier leave Annotations of their own standing until the suite ends,
+           * so the baseline is taken per test rather than from the Fixture.
+           */
+          let baseline: readonly string[] = [];
+
+          /** The one Annotation this test made, or `null` where it made none. */
+          const extra = async (): Promise<string | null> =>
+            (await madeSince(baseline))[0] ?? null;
+
+          beforeEach(async () => {
+            baseline = await annotationKeys();
+          });
+
+          afterEach(async () => {
+            await eraseAnnotations(rdp, await madeSince(baseline));
+          });
+
+          it("takes back a create, and redoes it under a new key", async () => {
+            const created = await createDraft();
+            expect(created.kind).toBe("created");
+            const madeKey = created.annotationKey!;
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            // Zotero is the oracle: the Annotation is gone from the Attachment.
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+
+            expect(await redoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) !== null)).toBe(
+              true,
+            );
+            const restored = (await extra())!;
+            // Zotero refuses a client-supplied key, so the redo made a new one.
+            expect(restored).not.toBe(madeKey);
+            expect(
+              await storedAnnotation(api, serverID, restored),
+            ).toMatchObject({
+              annotationType: draft.type,
+              annotationColor: draft.color,
+              annotationComment: draft.comment,
+              annotationPageLabel: draft.pageLabel,
+              annotationSortIndex: draft.sortIndex,
+            });
+          }, 120000);
+
+          it("puts a deleted Annotation back under a new key, and redoes the delete", async () => {
+            const created = await createDraft();
+            expect(created.kind).toBe("created");
+            const madeKey = created.annotationKey!;
+            const before = await storedAnnotation(api, serverID, madeKey);
+
+            expect(await eraseThrough(madeKey)).toEqual({ kind: "idle" });
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) !== null)).toBe(
+              true,
+            );
+            const restored = (await extra())!;
+            expect(restored).not.toBe(madeKey);
+            // The colour, the comment and the position all came back with it.
+            expect(
+              await storedAnnotation(api, serverID, restored),
+            ).toMatchObject({
+              annotationType: before.annotationType,
+              annotationColor: before.annotationColor,
+              annotationComment: before.annotationComment,
+              annotationPosition: before.annotationPosition,
+              annotationSortIndex: before.annotationSortIndex,
+            });
+
+            // The redo erases the Annotation the restore made, not the key
+            // Zotero no longer holds.
+            expect(await redoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+          }, 120000);
+        });
       });
 
       // The one place a confirmed write can land: the Local API is serving

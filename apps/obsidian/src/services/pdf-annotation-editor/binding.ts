@@ -1164,6 +1164,8 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       switch (outcome.kind) {
         case "stepped":
           return this.#landOn(outcome.annotationKey);
+        case "removed":
+          return this.#landOnPage(outcome.pageIndex);
         case "changed":
           new BaseNotice(m.annot_history_changed_in_zotero());
           return;
@@ -1205,6 +1207,19 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         return;
       }
       controller.applySubpath(`#page=${pageIndex + 1}`);
+    });
+  }
+
+  /**
+   * Bring the reader back to where the Annotation a History Step took away
+   * was. Nothing is left to select, so the selection goes and Obsidian's own
+   * page jump answers for the scroll.
+   */
+  #landOnPage(pageIndex: number): Promise<void> {
+    return this.refreshed.then(() => {
+      if (this.#surfaces.disposed) return;
+      this.#selection?.select(null, { popup: false });
+      this.#controller?.applySubpath(`#page=${pageIndex + 1}`);
     });
   }
 

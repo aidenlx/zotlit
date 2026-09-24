@@ -3502,6 +3502,302 @@ it("keeps the history across a Refresh and a change made in Zotero", async () =>
   expect(zotero.held?.color).toBe("#2ea8e5");
 });
 
+/**
+ * A Zotero that keeps everything ZotLit writes to it — a colour patch, an
+ * erase, and a create it answers with a key of its own, as Zotero 10 does with
+ * the client-supplied key it refuses. What the Local API holds is the oracle
+ * every assertion below reads through; nothing asks the history what it thinks.
+ */
+function zoteroLibrary() {
+  const held = new Map<string, WireAnnotation>(
+    ROUGIER_ANNOTATIONS.map((entry) => [entry.key, { ...entry }]),
+  );
+  /** The keys this Zotero hands out, in order, for the creates it takes. */
+  const generated = ["MADE2345", "MADE2346", "MADE2347", "MADE2348"];
+  let made = 0;
+  const keyOf = ({ url }: ZoteroRequest): string =>
+    url.pathname.split("/").at(-1) ?? "";
+  const create = (request: ZoteroRequest): Response => {
+    const [body] = JSON.parse(request.body ?? "[]") as {
+      annotationType: string;
+      annotationText?: string;
+      annotationComment: string;
+      annotationColor: string;
+      annotationPageLabel: string;
+      annotationSortIndex: string;
+      annotationPosition: string;
+    }[];
+    const key = generated[made++];
+    if (!body || key === undefined) return createRefused();
+    const record: WireAnnotation = {
+      key,
+      version: 60 + made,
+      type: body.annotationType,
+      ...(body.annotationText !== undefined && { text: body.annotationText }),
+      comment: body.annotationComment,
+      color: body.annotationColor,
+      pageLabel: body.annotationPageLabel,
+      sortIndex: body.annotationSortIndex,
+      position: JSON.parse(body.annotationPosition),
+    };
+    held.set(key, record);
+    return createAccepted(record);
+  };
+  return {
+    answers: {
+      children: () => annotationPage([...held.values()]),
+      item: (request) => {
+        const entry = held.get(keyOf(request));
+        return entry ? annotationItem(entry) : notFound();
+      },
+      write: (request) => {
+        if (request.method === "POST") return create(request);
+        const key = keyOf(request);
+        const entry = held.get(key);
+        if (request.method === "DELETE") {
+          if (!entry) return notFound();
+          held.delete(key);
+          return writeAccepted();
+        }
+        const patch = JSON.parse(request.body ?? "{}") as {
+          annotationColor?: string;
+          annotationComment?: string;
+        };
+        if (entry) {
+          held.set(key, {
+            ...entry,
+            ...(patch.annotationColor !== undefined && {
+              color: patch.annotationColor,
+            }),
+            ...(patch.annotationComment !== undefined && {
+              comment: patch.annotationComment,
+            }),
+            version: entry.version + 1,
+          });
+        }
+        return writeAccepted();
+      },
+    } satisfies ZoteroAnswers,
+    /** What the Local API holds for one Annotation, or `null` once erased. */
+    at(key: string): WireAnnotation | null {
+      return held.get(key) ?? null;
+    },
+    /** An edit made in Zotero itself, beside ZotLit. */
+    changeInZotero(key: string, patch: Partial<WireAnnotation>): void {
+      const entry = held.get(key);
+      if (entry)
+        held.set(key, { ...entry, ...patch, version: entry.version + 1 });
+    },
+    /** An erase in Zotero itself. */
+    eraseInZotero(key: string): void {
+      held.delete(key);
+    },
+    /** An Annotation put back in Zotero itself, out of its trash. */
+    restoreInZotero(key: string): void {
+      const seed = ROUGIER_ANNOTATIONS.find((entry) => entry.key === key);
+      if (seed) held.set(key, { ...seed, version: seed.version + 1 });
+    },
+  };
+}
+
+/** One part of an ink stroke, as the reader hands it to the repository. */
+const INK_DRAFT = {
+  type: "ink",
+  color: "#5fb236",
+  comment: "",
+  text: "",
+  pageLabel: "1",
+  sortIndex: "00000|000040|00100",
+  position: { pageIndex: 0, width: 2, paths: [[10, 20, 11, 21, 12, 22]] },
+} as const;
+
+it("erases the Annotation a create made, and redoes it under a new key", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  const made = await repository.createAnnotation("RGRPDF24", DRAFT);
+  expect(made).toEqual({ kind: "created", annotationKey: "MADE2345" });
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "removed",
+    annotationKey: "MADE2345",
+    pageIndex: 0,
+  });
+  expect(zotero.at("MADE2345")).toBeNull();
+
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2346",
+  });
+  // Zotero names the Annotation itself, so the redo brings it back elsewhere.
+  expect(zotero.at("MADE2345")).toBeNull();
+  expect(zotero.at("MADE2346")).toMatchObject({
+    type: "highlight",
+    color: "#ffd400",
+    text: "Identify Your Message",
+  });
+  expect(repository.canUndo("RGRPDF24")).toBe(true);
+});
+
+it("puts a deleted Annotation back under a new key, with what it held", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const seed = zotero.at("HRK7BG32")!;
+
+  expect(await repository.deleteAnnotation("HRK7BG32")).toEqual({
+    kind: "idle",
+  });
+  expect(zotero.at("HRK7BG32")).toBeNull();
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
+  expect(zotero.at("MADE2345")).toMatchObject({
+    type: seed.type,
+    color: seed.color,
+    comment: seed.comment,
+    pageLabel: seed.pageLabel,
+    sortIndex: seed.sortIndex,
+    position: seed.position,
+  });
+
+  // The redo erases the Annotation the restore made, not the key that is gone.
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "removed",
+    annotationKey: "MADE2345",
+    pageIndex: 0,
+  });
+  expect(zotero.at("MADE2345")).toBeNull();
+});
+
+it("answers for the new key in every step of both stacks after a restore", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  await repository.patchColor("PUPR5FG5", "#ff6666");
+  await repository.deleteAnnotation("PUPR5FG5");
+
+  // The delete comes back first, under a key Zotero picked.
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
+  expect(zotero.at("MADE2345")?.color).toBe("#ff6666");
+
+  // The colour step below it was recorded against the old key and takes the
+  // new one, so the second press puts the first colour back on the restore.
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "MADE2345",
+  });
+  expect(zotero.at("MADE2345")?.color).toBe("#2ea8e5");
+  expect(zotero.at("PUPR5FG5")).toBeNull();
+});
+
+it("takes every Annotation of one gesture in a single step", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  // One stroke split at the position ceiling: two creates, one gesture.
+  await repository.createAnnotation("RGRPDF24", INK_DRAFT, { group: "ink-1" });
+  await repository.createAnnotation(
+    "RGRPDF24",
+    { ...INK_DRAFT, sortIndex: "00000|000040|00101" },
+    { group: "ink-1" },
+  );
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "removed",
+    annotationKey: "MADE2345",
+    pageIndex: 0,
+  });
+  expect(zotero.at("MADE2345")).toBeNull();
+  expect(zotero.at("MADE2346")).toBeNull();
+  // One step held both, so there is nothing left to undo.
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("writes nothing where one Annotation of a gesture moved in Zotero", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.createAnnotation("RGRPDF24", INK_DRAFT, { group: "ink-1" });
+  await repository.createAnnotation(
+    "RGRPDF24",
+    { ...INK_DRAFT, sortIndex: "00000|000040|00101" },
+    { group: "ink-1" },
+  );
+
+  zotero.changeInZotero("MADE2346", { color: "#a28ae5" });
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "MADE2346",
+  });
+  // The first part of the stroke stands: the step is taken whole or not at all.
+  expect(zotero.at("MADE2345")).not.toBeNull();
+  expect(zotero.at("MADE2346")).not.toBeNull();
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "DELETE"),
+  ).toHaveLength(0);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops the step where Zotero already erased the Annotation a create made", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.createAnnotation("RGRPDF24", DRAFT);
+
+  zotero.eraseInZotero("MADE2345");
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "MADE2345",
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "DELETE"),
+  ).toHaveLength(0);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("drops the step where Zotero put the deleted Annotation back itself", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await repository.deleteAnnotation("C94NJNYG");
+
+  // Zotero's own trash gave the note Annotation back while the reader stood
+  // open, so there is nothing for the undo to create.
+  zotero.restoreInZotero("C94NJNYG");
+  await repository.refresh("RGRPDF24");
+  const sent = requests.length;
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "changed",
+    annotationKey: "C94NJNYG",
+  });
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "POST"),
+  ).toHaveLength(0);
+});
+
 // #endregion
 
 // #region geometry history

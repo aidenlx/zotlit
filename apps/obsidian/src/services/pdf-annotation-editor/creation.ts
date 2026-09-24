@@ -338,6 +338,13 @@ export class MarkCreation implements CreationGestures, Disposable {
   #inking = Promise.resolve();
   /** Tells one Pending Stroke from another. */
   #strokeSerial = 0;
+  /** Tells one Ink Stroke from another, so its parts share a History Step. */
+  #inkGroupSerial = 0;
+  /**
+   * What joins every Annotation of the stroke being drawn into one History
+   * Step; `null` while no stroke is being drawn.
+   */
+  #inkGroup: string | null = null;
 
   constructor(deps: MarkCreationDeps) {
     this.#deps = deps;
@@ -1000,6 +1007,9 @@ export class MarkCreation implements CreationGestures, Disposable {
    *   comment editor.
    * @param options.structure the text structure to read, in place of the
    *   one the viewer holds now.
+   * @param options.group what joins this create to the others of one gesture
+   *   in the Annotation History, where one gesture created several
+   *   Annotations.
    * @returns the created Annotation's Indexed Key, or `null` for a create
    *   that did not run or did not land.
    */
@@ -1007,9 +1017,11 @@ export class MarkCreation implements CreationGestures, Disposable {
     { type, color, comment, text, position }: MarkDraft,
     {
       structure: given,
+      group,
       ...reveal
     }: Pick<SelectOptions, "commenting"> & {
       structure?: PdfTextStructure | null;
+      group?: string;
     } = {},
   ): Promise<string | null> {
     const structure = given ?? this.#deps.structure();
@@ -1047,6 +1059,7 @@ export class MarkCreation implements CreationGestures, Disposable {
           sortIndex,
           position,
         },
+        { group },
       );
       if (outcome.kind === "failed") {
         this.#deps.reportCreateFailure(
@@ -1100,6 +1113,10 @@ export class MarkCreation implements CreationGestures, Disposable {
     this.#deps.containerEl.setPointerCapture(event.pointerId);
     const width = this.#deps.colors.inkWidth();
     const color = this.#state().colors.ink;
+    // Every part one stroke is split into is one stroke to the researcher, so
+    // every create it makes joins the one History Step its undo takes back.
+    const group = `ink-${++this.#inkGroupSerial}`;
+    this.#inkGroup = group;
     this.#stroke = new InkStroke({
       pointerId: event.pointerId,
       page,
@@ -1112,7 +1129,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       onSplit: (path) =>
         this.#queueStroke(
           { pageIndex: page.pageIndex, width, color },
-          { path, reason: "split" },
+          { path, reason: "split", group },
         ),
     });
     logger.trace("An ink stroke began", { pageIndex: page.pageIndex });
@@ -1128,6 +1145,8 @@ export class MarkCreation implements CreationGestures, Disposable {
     const stroke = this.#stroke;
     if (!stroke) return;
     this.#stroke = null;
+    const group = this.#inkGroup ?? undefined;
+    this.#inkGroup = null;
     releaseCapture(this.#deps.containerEl, stroke);
     this.#queueStroke(
       {
@@ -1136,7 +1155,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         // The colour the stroke was drawn in, whatever the tool took since.
         color: stroke.color,
       },
-      { path: stroke.finish(), reason: "release" },
+      { path: stroke.finish(), reason: "release", group },
     );
   }
 
@@ -1147,7 +1166,11 @@ export class MarkCreation implements CreationGestures, Disposable {
    */
   #queueStroke(
     stroke: Pick<PendingStroke, "pageIndex" | "width" | "color">,
-    { path, reason }: { path: number[]; reason: "release" | "split" },
+    {
+      path,
+      reason,
+      group,
+    }: { path: number[]; reason: "release" | "split"; group?: string },
   ): void {
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
@@ -1164,7 +1187,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       pageIndex: pending.pageIndex,
       points: path.length / 2,
     });
-    this.#inking = this.#inking.then(() => this.#createInk(pending));
+    this.#inking = this.#inking.then(() => this.#createInk(pending, group));
     this.#creating = this.#inking;
   }
 
@@ -1173,17 +1196,23 @@ export class MarkCreation implements CreationGestures, Disposable {
    * that made nothing says why. The capability can lapse while the stroke
    * waits behind the creates released before it. Never rejects.
    */
-  async #createInk(pending: PendingStroke): Promise<void> {
+  async #createInk(
+    pending: PendingStroke,
+    group: string | undefined,
+  ): Promise<void> {
     const { id, pageIndex, width, color, paths } = pending;
     let key: string | null = null;
     if (editingLive(this.#capability())) {
-      key = await this.#create({
-        type: "ink",
-        color,
-        comment: "",
-        text: "",
-        position: { pageIndex, width, paths },
-      });
+      key = await this.#create(
+        {
+          type: "ink",
+          color,
+          comment: "",
+          text: "",
+          position: { pageIndex, width, paths },
+        },
+        { group },
+      );
     } else {
       this.#deps.reportBlockedGesture();
     }
@@ -1196,6 +1225,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     const stroke = this.#stroke;
     if (!stroke) return;
     this.#stroke = null;
+    this.#inkGroup = null;
     releaseCapture(this.#deps.containerEl, stroke);
     stroke[Symbol.dispose]();
     logger.debug("An ink stroke was discarded");

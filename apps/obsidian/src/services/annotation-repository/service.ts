@@ -41,8 +41,10 @@ import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
 import {
   AnnotationHistory,
+  contentOf,
   historyFieldsOf,
   opposite,
+  sameContent,
   stillHeldAfterConflict,
   stillHolds,
 } from "./history";
@@ -154,8 +156,9 @@ export interface AnnotationRecord {
   /** Zotero's printed-page label, as Zotero stored it. */
   pageLabel: string | null;
   /**
-   * The Sort Index Zotero stores. It orders the list, and an undone Geometry
-   * Edit puts it back beside the position it was computed from.
+   * The Sort Index Zotero stores. It orders the list, an undone Geometry Edit
+   * puts it back beside the position it was computed from, and a restore sends
+   * it back: Zotero's create demands one and computes none.
    *
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
@@ -923,21 +926,27 @@ export class AnnotationRepository extends Service<void> {
    * @param attachmentKey the Attachment's Indexed Key.
    * @param draft everything about the Annotation except its parent, which this
    *   Attachment names; its Sort Index was computed from the unrounded position.
+   * @param options.group what joins this create to the others of one gesture in
+   *   the Annotation History — one ink stroke split at the position ceiling
+   *   creates several Annotations and is still one History Step. A create that
+   *   names none is a step of its own.
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
   async createAnnotation(
     attachmentKey: string,
     draft: Omit<AnnotationDraft, "parentKey">,
+    options: { group?: string } = {},
   ): Promise<CreateOutcome> {
     return await this.#counted(
       attachmentKey,
-      this.#createAnnotation(attachmentKey, draft),
+      this.#createAnnotation(attachmentKey, draft, options.group),
     );
   }
 
   async #createAnnotation(
     attachmentKey: string,
     draft: Omit<AnnotationDraft, "parentKey">,
+    group: string | undefined,
   ): Promise<CreateOutcome> {
     const parsed = parseIndexedKey(attachmentKey);
     if (!parsed) {
@@ -1005,6 +1014,14 @@ export class AnnotationRepository extends Service<void> {
       annotationKey,
       type: whole.type,
     });
+    const content = contentOf(record);
+    if (content) {
+      this.#recordExistence(
+        attachmentKey,
+        { annotationKey, before: { content: null }, after: { content } },
+        group,
+      );
+    }
     this.#emitter.emit("annotations-changed", attachmentKey);
     return { kind: "created", annotationKey };
   }
@@ -1492,6 +1509,13 @@ export class AnnotationRepository extends Service<void> {
       history: AnnotationHistory;
     },
   ): Promise<HistoryOutcome> {
+    if (step.kind === "existence") {
+      return await this.#takeExistenceStep(step, {
+        attachmentKey,
+        direction,
+        history,
+      });
+    }
     const checked: { change: HistoryChange; record: AnnotationRecord }[] = [];
     for (const change of step.changes) {
       const record = this.#holding(change.annotationKey)?.record;
@@ -1577,6 +1601,94 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
+   * One step of creates and deletes, taken in the other direction: what the
+   * step made is erased, and what it erased is created again.
+   *
+   * Every Annotation the step names is compared before any of them is written,
+   * so a stroke split into several Annotations is taken whole or not at all.
+   * Zotero refuses a client-supplied key, so a restore comes back under a new
+   * one and both stacks answer for it from then on.
+   *
+   * @see apps/obsidian/docs/adr/0059-annotation-history-is-per-attachment-checked-by-field-value-and-restores-under-a-new-key.md
+   */
+  async #takeExistenceStep(
+    step: HistoryStep,
+    {
+      attachmentKey,
+      direction,
+      history,
+    }: {
+      attachmentKey: string;
+      direction: HistoryDirection;
+      history: AnnotationHistory;
+    },
+  ): Promise<HistoryOutcome> {
+    for (const change of step.changes) {
+      const record = this.#holding(change.annotationKey)?.record ?? null;
+      if (sameContent(change.after.content ?? null, record)) continue;
+      logger.debug("A history step was dropped: Zotero holds another value", {
+        attachmentKey,
+        annotationKey: change.annotationKey,
+        kind: step.kind,
+        missing: !record,
+      });
+      history.drop(direction, step);
+      return { kind: "changed", annotationKey: change.annotationKey };
+    }
+
+    // The step leaves its stack before the first write rather than after the
+    // last: a restore renames the old key in every step that names it, this
+    // one included, so a step taken off by name afterwards would no longer be
+    // the step this stack holds.
+    history.drop(direction, step);
+
+    const left: HistoryChange[] = [];
+    let removed: { annotationKey: string; pageIndex: number } | null = null;
+    for (const change of step.changes) {
+      const wanted = change.before.content ?? null;
+      const standing = change.after.content;
+      if (wanted === null) {
+        if (!standing) continue;
+        const erased = await this.deleteAnnotation(change.annotationKey);
+        if (erased.kind === "failed") {
+          return { kind: "failed", failure: erased.failure };
+        }
+        if (erased.kind !== "idle") {
+          this.discardConflict(change.annotationKey);
+          return { kind: "changed", annotationKey: change.annotationKey };
+        }
+        removed ??= {
+          annotationKey: change.annotationKey,
+          pageIndex: standing.position.pageIndex,
+        };
+        left.push({
+          annotationKey: change.annotationKey,
+          before: { content: standing },
+          after: { content: null },
+        });
+        continue;
+      }
+      const made = await this.createAnnotation(attachmentKey, wanted);
+      if (made.kind === "failed") {
+        return { kind: "failed", failure: made.failure };
+      }
+      // Zotero named the restored Annotation itself, so every step of both
+      // stacks that asked after the old key asks after this one now.
+      history.rename(change.annotationKey, made.annotationKey);
+      const settled = this.#holding(made.annotationKey)?.record ?? null;
+      left.push({
+        annotationKey: made.annotationKey,
+        before: { content: null },
+        after: { content: (settled && contentOf(settled)) ?? wanted },
+      });
+    }
+
+    history.push(opposite(direction), { ...step, changes: left });
+    if (removed) return { kind: "removed", ...removed };
+    return { kind: "stepped", annotationKey: left[0]!.annotationKey };
+  }
+
+  /**
    * Take one confirmed edit into the Attachment's Annotation History.
    *
    * Nothing is recorded while no PDF view of the Attachment holds a history
@@ -1595,6 +1707,17 @@ export class AnnotationRepository extends Service<void> {
   ): void {
     const history = this.#histories.get(attachmentKey);
     if (!history || this.#steppingWrites.has(before.key)) return;
+    if (applied.kind === "deleted") {
+      const content = contentOf(before);
+      if (content) {
+        this.#recordExistence(attachmentKey, {
+          annotationKey: applied.annotationKey,
+          before: { content },
+          after: { content: null },
+        });
+      }
+      return;
+    }
     if (applied.kind !== "record") return;
     if (applied.write === "comment") {
       this.#recordCommentStep(history, {
@@ -1680,6 +1803,37 @@ export class AnnotationRepository extends Service<void> {
       attachmentKey,
       annotationKey: record.key,
       recorded: !!step,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Take one confirmed create or delete into the Attachment's Annotation
+   * History, under the same rules every other edit is recorded under.
+   *
+   * A restore comes back under a key Zotero picks, which no caller can name in
+   * advance, so a running step keeps its own creates out by the Attachment it
+   * runs on rather than by the Annotation every other kind names.
+   *
+   * @param group what joins this create to the others of one gesture, where one
+   *   gesture created several Annotations.
+   */
+  #recordExistence(
+    attachmentKey: string,
+    change: HistoryChange,
+    group?: string,
+  ): void {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#stepping.has(attachmentKey)) return;
+    history.record({
+      kind: "existence",
+      changes: [change],
+      ...(group !== undefined && { group }),
+    });
+    logger.debug("A create or a delete was recorded in the history", {
+      attachmentKey,
+      annotationKey: change.annotationKey,
+      restores: change.before.content !== null,
     });
     this.#emitter.emit("history-changed", attachmentKey);
   }
@@ -2708,6 +2862,7 @@ function toRecord(
   };
 }
 
+/** The Sort Index comes across: it orders the list, and a restore sends it back. */
 function fromLocalApi({
   key,
   type,
