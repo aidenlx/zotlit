@@ -2463,6 +2463,8 @@
   "pdf_toolbar_image": "Select area",
   "pdf_toolbar_ink": "Draw",
   "pdf_toolbar_tool_color": "{tool} color",
+  "pdf_toolbar_ink_width": "Size",
+  "pdf_toolbar_ink_width_step": "{width} pt",
   "pdf_toolbar_show_marks": "Show Zotero annotations",
   "pdf_toolbar_hide_marks": "Hide Zotero annotations",
   "pdf_create_popup_comment_hint": "Press Ctrl+Enter (Windows) or Command+Enter (macOS) to save",

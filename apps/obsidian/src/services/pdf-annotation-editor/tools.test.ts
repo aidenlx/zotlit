@@ -1,6 +1,7 @@
+import * as v from "valibot";
 import { expect, expectTypeOf, it } from "vitest";
 
-import { resolveToolColors, textToolOf } from "./tools";
+import { inkWidthSchema, resolveToolColors, textToolOf } from "./tools";
 import type { TextTool } from "./tools";
 
 it("starts ink on Zotero's fourth swatch and every other tool on its first", () => {
@@ -19,4 +20,10 @@ it("keeps a chosen ink colour over its default", () => {
 it("commits a text selection under the armed ink tool as a highlight", () => {
   expectTypeOf<"ink">().not.toExtend<TextTool>();
   expect(textToolOf("ink")).toBe("highlight");
+});
+
+it("refuses a stored ink width outside the offered steps", () => {
+  expect(v.safeParse(inkWidthSchema, 4).success).toBe(false);
+  expect(v.safeParse(inkWidthSchema, "2").success).toBe(false);
+  expect(v.safeParse(inkWidthSchema, 0.5).success).toBe(true);
 });

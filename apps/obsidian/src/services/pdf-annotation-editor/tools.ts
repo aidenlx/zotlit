@@ -92,8 +92,35 @@ export function resolveToolColors(
 }
 
 /**
+ * The pen widths the ink tool offers, in PDF points: a short run of Zotero's
+ * own width steps.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L48-L53
+ */
+export const INK_WIDTHS = [0.5, 1, 2, 3, 5, 8, 12] as const;
+
+export type InkWidth = (typeof INK_WIDTHS)[number];
+
+/**
+ * The pen width the ink tool starts on, as Zotero's reader starts it.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/reader.js#L199-L202
+ */
+export const DEFAULT_INK_WIDTH: InkWidth = 2;
+
+/** The settings key the ink tool's pen width is kept under. */
+export const INK_WIDTH_SETTING = "reader.ink-width";
+
+/**
+ * The ink tool's pen width, as the settings file carries it. A width outside
+ * the offered steps fails, and the settings fall back to the default.
+ */
+export const inkWidthSchema = v.picklist(INK_WIDTHS);
+
+/**
  * What the reader reads each tool's colour through, and writes a choice back;
- * and the colours used last, which every tool shares.
+ * the colours used last, which every tool shares; and the ink tool's pen
+ * width.
  */
 export interface ToolColorStore {
   current: () => Readonly<Record<AnnotationTool, string>>;
@@ -102,4 +129,7 @@ export interface ToolColorStore {
   recent: () => readonly string[];
   /** Puts a colour first in the recent list. */
   use: (color: string) => void;
+  /** The ink tool's pen width, in PDF points. */
+  inkWidth: () => InkWidth;
+  setInkWidth: (width: InkWidth) => void;
 }

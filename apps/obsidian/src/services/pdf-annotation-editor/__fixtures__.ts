@@ -41,8 +41,8 @@ import { groupAnnotationsByPage } from "./render";
 import type { OverlayPageView } from "./render";
 import { MarkSelection } from "./selection";
 import type { AnnotationEdits, MarkSelectionDeps } from "./selection";
-import { resolveToolColors } from "./tools";
-import type { AnnotationToolColors, ToolColorStore } from "./tools";
+import { DEFAULT_INK_WIDTH, resolveToolColors } from "./tools";
+import type { AnnotationToolColors, InkWidth, ToolColorStore } from "./tools";
 
 /** One glyph as Obsidian's patched worker answers it, from the 1.14.2 reading. */
 export const GLYPH = {
@@ -389,6 +389,7 @@ export function readerSettings(): Pick<SettingsService, "current" | "update"> {
 export function toolColors(): ToolColorStore {
   let stored: AnnotationToolColors = {};
   let recent: readonly string[] = [];
+  let inkWidth: InkWidth = DEFAULT_INK_WIDTH;
   return {
     current: () => resolveToolColors(stored),
     set: (tool, color) => {
@@ -397,6 +398,10 @@ export function toolColors(): ToolColorStore {
     recent: () => recent,
     use: (color) => {
       recent = withRecentColor(recent, color);
+    },
+    inkWidth: () => inkWidth,
+    setInkWidth: (width) => {
+      inkWidth = width;
     },
   };
 }
@@ -486,6 +491,8 @@ export interface ReaderSurfacesOptions {
   adjustRange?: MarkSelectionDeps["adjustRange"];
   /** The text rotation a range's handles lie across. */
   textRotation?: MarkSelectionDeps["textRotation"];
+  /** Each tool's colour and the ink width; held in memory unless given. */
+  colors?: ToolColorStore;
 }
 
 /**
@@ -503,9 +510,9 @@ export function readerSurfaces({
   sortIndex = async () => null,
   adjustRange = async () => null,
   textRotation = () => 0,
+  colors = toolColors(),
 }: ReaderSurfacesOptions) {
   const parent: HoverParent = { hoverPopover: null };
-  const colors = toolColors();
   const store = createReaderSurfaceState({
     colors: colors.current(),
     capability,

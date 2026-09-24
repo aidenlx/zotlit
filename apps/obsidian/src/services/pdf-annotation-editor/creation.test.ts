@@ -11,6 +11,10 @@ import type {
   AnnotationDraft,
   CreateOutcome,
 } from "@/services/annotation-repository/service";
+import {
+  MAX_POSITION_LENGTH,
+  writePosition,
+} from "@/services/annotation-repository/write";
 import { pressSubmit } from "@/views/annot-view/__fixtures__/editor-app";
 
 import {
@@ -18,10 +22,13 @@ import {
   annotationEdits,
   pageView,
   READER_NOW as NOW,
+  readerSettings,
   readerSurfaces,
 } from "./__fixtures__";
 import { arm, ingestCapability } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
+import { toolColorStore } from "./service";
+import type { ToolColorStore } from "./tools";
 
 /** The Fixture's own underline on `rougier-2014.pdf`, in PDF points. */
 const QUOTE = [
@@ -778,11 +785,14 @@ function imageReader(
   capability?: EditingCapability,
   {
     create = async () => ({ kind: "created", annotationKey: "MADE2345" }),
+    colors,
   }: {
     /** What Zotero answers each create with. */
     create?: (
       draft: Omit<AnnotationDraft, "parentKey">,
     ) => Promise<CreateOutcome>;
+    /** Each tool's colour and the ink width; held in memory unless given. */
+    colors?: ToolColorStore;
   } = {},
 ) {
   vi.useFakeTimers();
@@ -810,6 +820,7 @@ function imageReader(
   };
   const surfaces = readerSurfaces({
     containerEl,
+    colors,
     page: page as unknown as OverlayPageView,
     records: [
       annotation("PUPR5FG5", "highlight", {
@@ -1226,4 +1237,104 @@ it("takes a refused stroke off the page", async () => {
 
   expect(open.drafts).toHaveLength(1);
   expect(open.store.getState().pendingStrokes).toEqual([]);
+});
+
+/** The ink tool's chevron menu, opened from the toolbar as a researcher opens it. */
+function inkMenu(open: ReturnType<typeof inkReader>) {
+  open.slot.querySelector<HTMLElement>('[data-zt-tool="ink-color"]')!.click();
+  const { items } = Menu.instances.at(-1)!;
+  return {
+    checked: items.filter(({ checked }) => checked).map(({ title }) => title),
+    pick: (title: string) =>
+      items.find((item) => item.title === title)!.click(),
+    items,
+  };
+}
+
+it("offers the ink widths under the colours, the current one checked, and draws at the one picked", async () => {
+  using open = inkReader();
+
+  const menu = inkMenu(open);
+  expect(
+    menu.items.slice(ANNOTATION_COLORS.length).map(({ title }) => title),
+  ).toEqual([
+    "Size",
+    "0.5 pt",
+    "1 pt",
+    "2 pt",
+    "3 pt",
+    "5 pt",
+    "8 pt",
+    "12 pt",
+  ]);
+  expect(menu.items[ANNOTATION_COLORS.length]!.isLabel).toBe(true);
+  // One colour and one width stand checked: the ink colour, and width 2.
+  expect(menu.checked).toHaveLength(2);
+  expect(menu.checked.at(-1)).toBe("2 pt");
+  menu.pick("5 pt");
+  await open.drag([100, 100], [100.4, 100]);
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 5, paths: [[100, 692]] },
+  ]);
+  expect(inkMenu(open).checked.at(-1)).toBe("5 pt");
+});
+
+it("keeps the picked ink width in the settings, so the next PDF draws at it", async () => {
+  const settings = readerSettings();
+  expect(toolColorStore(settings).inkWidth()).toBe(2);
+  {
+    using first = inkReader(undefined, { colors: toolColorStore(settings) });
+    inkMenu(first).pick("8 pt");
+  }
+
+  expect(settings.current?.["reader.ink-width"]).toBe(8);
+  using next = inkReader(undefined, { colors: toolColorStore(settings) });
+  await next.drag([100, 100], [100.4, 100]);
+  expect(next.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, width: 8, paths: [[100, 692]] },
+  ]);
+});
+
+it("finishes a stroke that reaches the position ceiling as its own Annotation, and draws on with the pointer held", async () => {
+  using open = inkReader();
+  // A zig-zag scribble of three-point steps, row after row, as long as about
+  // one and a half Annotations hold.
+  const samples = Array.from({ length: 3000 }, (_, index): [number, number] => {
+    const row = Math.floor(index / 150);
+    const column = index % 150;
+    return [
+      100 + 3 * (row % 2 === 0 ? column : 149 - column),
+      60 + 12 * row + (index % 2) * 5,
+    ];
+  });
+
+  open.pointer("pointerdown", samples[0]!);
+  for (const sample of samples.slice(1)) open.pointer("pointermove", sample);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(1));
+
+  // The pointer still draws, and the tool is still armed.
+  expect(open.creation.capturing).toBe(true);
+  expect(open.store.getState()).toMatchObject({ armed: "ink" });
+  open.pointer("pointerup", samples.at(-1)!);
+  await vi.waitFor(() => expect(open.drafts).toHaveLength(2));
+  await open.creation.created;
+
+  const [first, second] = open.drafts.map(({ position }) => position);
+  expect(writePosition(first!).length).toBeLessThanOrEqual(MAX_POSITION_LENGTH);
+  expect(first).toMatchObject({ pageIndex: 0, width: 2 });
+  expect(second).toMatchObject({ pageIndex: 0, width: 2 });
+  // The second part begins at a sample of the scribble past the first part's
+  // end, a client point (x, y) being the PDF point (x, 792 - y).
+  const firstPath = "paths" in first! ? first.paths[0]! : [];
+  const secondPath = "paths" in second! ? second.paths[0]! : [];
+  const start = samples.findIndex(
+    ([x, y]) => x === secondPath[0] && 792 - y === secondPath[1],
+  );
+  expect(start).toBeGreaterThan(0);
+  expect(firstPath.slice(0, 2)).toEqual([samples[0]![0], 792 - samples[0]![1]]);
+  expect(open.store.getState()).toMatchObject({
+    armed: "ink",
+    liveStroke: null,
+  });
 });

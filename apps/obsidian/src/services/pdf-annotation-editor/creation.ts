@@ -91,6 +91,7 @@ import type { OverlayPageView } from "./render";
 import { selectionPagesOf } from "./selection-capture";
 import type { SelectionPage } from "./selection-capture";
 import {
+  addInkWidths,
   colorMenu,
   onScreen,
   pageContentBox,
@@ -102,9 +103,6 @@ import { textToolOf } from "./tools";
 import type { MarkTool, TextTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
-
-/** The pen width every ink stroke is drawn at, in PDF points: Zotero's default. */
-const INK_WIDTH = 2;
 
 /** One page of the reader, as selection capture and the anchor read it. */
 export interface ReaderPage {
@@ -209,7 +207,10 @@ export interface MarkCreationDeps {
   reportBlockedGesture: () => void;
   /** Draws the Editing Capability affordance into the toolbar's own slot. */
   renderCapability: (slot: HTMLElement) => void;
-  /** Each tool's own colour, which is kept across PDFs rather than per view. */
+  /**
+   * Each tool's own colour and the ink tool's pen width, which are kept
+   * across PDFs rather than per view.
+   */
   colors: ToolColorStore;
   /** What this view's surfaces draw from; the toolbar redraws off it alone. */
   surfaceState: ReaderSurfaceStore;
@@ -593,16 +594,21 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
-   * The tool's own colour list, under the chevron half of its split button.
-   * The toolbar sits at the right of the reader's own toolbar, so the menu
-   * lines up with the chevron's far edge and grows inward.
+   * The tool's own colour list, under the chevron half of its split button,
+   * and for the ink tool its pen widths below the colours. The toolbar sits at
+   * the right of the reader's own toolbar, so the menu lines up with the
+   * chevron's far edge and grows inward.
    */
   #openColorMenu(tool: MarkTool, node: HTMLElement): void {
-    showMenuAtButton(
-      colorMenu(this.#state().colors[tool], (hex) => this.#setColor(tool, hex)),
-      node,
-      "end",
+    const menu = colorMenu(this.#state().colors[tool], (hex) =>
+      this.#setColor(tool, hex),
     );
+    const { colors } = this.#deps;
+    if (tool === "ink")
+      addInkWidths(menu, colors.inkWidth(), (width) =>
+        colors.setInkWidth(width),
+      );
+    showMenuAtButton(menu, node, "end");
   }
 
   /**
@@ -814,14 +820,19 @@ export class MarkCreation implements CreationGestures, Disposable {
     event.preventDefault();
     this.#collapse();
     this.#deps.containerEl.setPointerCapture(event.pointerId);
+    const width = this.#deps.colors.inkWidth();
+    const color = this.#state().colors.ink;
     this.#stroke = new InkStroke({
       pointerId: event.pointerId,
       page,
       at: client,
-      width: INK_WIDTH,
-      color: this.#state().colors.ink,
+      width,
+      color,
       surfaceState: this.#deps.surfaceState,
       win: this.#deps.containerEl.win,
+      // The pointer and the tool stay held; only the part drawn so far goes.
+      onSplit: (path) =>
+        this.#queueStroke({ pageIndex: page.pageIndex, width, color }, path),
     });
     logger.trace("An ink stroke began", { pageIndex: page.pageIndex });
   }
@@ -837,21 +848,37 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (!stroke) return;
     this.#stroke = null;
     releaseCapture(this.#deps.containerEl, stroke);
-    const path = stroke.finish();
+    this.#queueStroke(
+      {
+        pageIndex: stroke.page.pageIndex,
+        width: stroke.width,
+        // The colour the stroke was drawn in, whatever the tool took since.
+        color: stroke.color,
+      },
+      stroke.finish(),
+    );
+  }
+
+  /**
+   * Holds a finished stroke on the page as a Pending Stroke, and queues its
+   * create behind the ones finished before it: a stroke at its release, or the
+   * part a long stroke finished at the position ceiling.
+   */
+  #queueStroke(
+    stroke: Pick<PendingStroke, "pageIndex" | "width" | "color">,
+    path: number[],
+  ): void {
     if (!editingLive(this.#capability())) {
       this.#deps.reportBlockedGesture();
       return;
     }
     const pending: PendingStroke = {
+      ...stroke,
       id: ++this.#strokeSerial,
-      pageIndex: stroke.page.pageIndex,
       paths: [path],
-      width: stroke.width,
-      // The colour the stroke was drawn in, whatever the tool took since.
-      color: stroke.color,
     };
     appendPendingStroke(this.#deps.surfaceState, pending);
-    logger.debug("An ink stroke was released", {
+    logger.debug("An ink stroke was finished", {
       pageIndex: pending.pageIndex,
       points: path.length / 2,
     });
