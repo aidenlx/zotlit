@@ -1938,7 +1938,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await selectImage();
           await obEval(
             vaultId!,
-            `document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click()`,
+            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
           );
           expect(
             await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -1955,7 +1955,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             // the seed carries no comment, so it is put back either way.
             await obEval(
               vaultId!,
-              `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);})()`,
+              `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);return true;})()`,
             );
             const closed = await obEvalUntil(
               vaultId!,
@@ -2304,7 +2304,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // selected, then the release that settles it into the create popup.
         await obEval(
           vaultId!,
-          `(function(){${FIRE}const walker=document.createTreeWalker(${layer},NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())&&!(node.data.length>12&&node.parentElement.getBoundingClientRect().height>0));const range=document.createRange();range.setStart(node,0);range.setEnd(node,8);const box=range.getBoundingClientRect();const x=box.left+2,y=box.top+box.height/2;const pressed=fire('pointerdown',x,y);getSelection().removeAllRanges();getSelection().addRange(range);fire('pointerup',x,y,pressed);})()`,
+          `(function(){${FIRE}const walker=document.createTreeWalker(${layer},NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())&&!(node.data.length>12&&node.parentElement.getBoundingClientRect().height>0));const range=document.createRange();range.setStart(node,0);range.setEnd(node,8);const box=range.getBoundingClientRect();const x=box.left+2,y=box.top+box.height/2;const pressed=fire('pointerdown',x,y);getSelection().removeAllRanges();getSelection().addRange(range);fire('pointerup',x,y,pressed);return true;})()`,
         );
         expect(
           await obEvalUntil(
@@ -2315,7 +2315,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         ).toBe(true);
         await obEval(
           vaultId!,
-          `document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click()`,
+          `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
         );
         expect(
           await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
@@ -2329,7 +2329,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // reaches Zotero.
           await obEval(
             vaultId!,
-            `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);})()`,
+            `(function(){${FIRE}const box=document.querySelector('.workspace-ribbon').getBoundingClientRect();fire('pointerdown',box.left+2,box.top+2);return true;})()`,
           );
         }
         expect(

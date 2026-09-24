@@ -76,16 +76,19 @@ export async function expectEditorKeepsSelections(
     vaultId,
     `String(app.vault.getConfig('nativeMenus'))`,
   );
-  await obEval(vaultId, `app.vault.setConfig('nativeMenus',false)`);
+  await obEval(vaultId, `(app.vault.setConfig('nativeMenus',false),true)`);
   try {
     /** Replaces what the editor holds with `hello world`. */
     const type = () =>
       obEval(
         vaultId,
-        `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'hello world');})()`,
+        `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'hello world');return true;})()`,
       );
     const select = async (gesture: string, selected: string) => {
-      await obEval(vaultId, `(function(){${MOUSE}${IN_EDITOR}${gesture}})()`);
+      await obEval(
+        vaultId,
+        `(function(){${MOUSE}${IN_EDITOR}${gesture}return true;})()`,
+      );
       expect(
         await obEvalUntil(vaultId, `String(getSelection())`, {
           expected: selected,
@@ -111,7 +114,7 @@ export async function expectEditorKeepsSelections(
     await type();
     await obEval(
       vaultId,
-      `(function(){${MOUSE}${IN_EDITOR}send('contextmenu',at(1,2),{button:2,buttons:2});})()`,
+      `(function(){${MOUSE}${IN_EDITOR}send('contextmenu',at(1,2),{button:2,buttons:2});return true;})()`,
     );
     expect(
       await obEvalUntil(vaultId, `String(!!${selectAll})`, {
@@ -125,7 +128,7 @@ export async function expectEditorKeepsSelections(
   } finally {
     await obEval(
       vaultId,
-      `app.vault.setConfig('nativeMenus',${nativeMenus === "true"})`,
+      `(app.vault.setConfig('nativeMenus',${nativeMenus === "true"}),true)`,
     );
   }
 }
