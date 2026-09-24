@@ -139,6 +139,22 @@ export async function settledGesture(
 }
 
 /**
+ * Closes the PDF view on `attachmentPath` and opens the PDF again in the same
+ * leaf, in one step, so the view takes a new binding.
+ */
+export async function reopenPdfView(
+  vaultId: string,
+  attachmentPath: string,
+): Promise<void> {
+  expect(
+    await obEval(
+      vaultId,
+      `(async()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(attachmentPath)});const file=leaf.view.file;await leaf.setViewState({type:'empty'});await leaf.openFile(file);return 'reopened';})()`,
+    ),
+  ).toBe("reopened");
+}
+
+/**
  * Declares `fire(type, x, y, target?, extra?)` in an eval: one pointer event,
  * or the click that follows a release, dispatched as the browser would at a
  * client point — to the node under it unless a target is named — answering

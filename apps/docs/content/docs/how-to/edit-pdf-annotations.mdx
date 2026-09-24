@@ -9,7 +9,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Create highlights, underlines, image annotations, and ink annotations (freehand strokes), change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
+Create highlights, underlines, note annotations, text annotations (text typed on the page), image annotations, and ink annotations (freehand strokes), change annotation colors and comments, adjust annotation positions, or delete annotations from Obsidian.
 
 ## Before you edit
 
@@ -35,6 +35,33 @@ You can keep both applications open. Make changes in one application at a time, 
 The toolbar at the right of the PDF reader provides the same two tools. Select a tool to keep it active, then select text to create marks without using the popup each time. Use the arrow beside a tool to select its color.
 
 To create one highlight in another color, select the text and select a color from the popup. When neither tool is active, a color creates a highlight.
+
+## Create a note annotation
+
+Use the note tool to pin a comment to a spot on the page.
+
+1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_note()} />.
+2. Click the page where the note belongs. The note appears centered on the click, and its popup opens with the comment editor ready.
+3. Type the comment. It saves as any comment does; see [Add or edit a comment](#add-or-edit-a-comment).
+
+The tool turns off after each note, as in Zotero. A click on an annotation mark selects that mark instead of creating a note, and a drag creates nothing.
+
+## Create a text annotation
+
+Use the text tool to type text onto the page itself.
+
+1. In the toolbar at the right of the PDF reader, select <UiLabel name={m.pdf_toolbar_text()} />. The tool turns off when the text box opens.
+2. Click the page where the text starts. A text box opens at the click.
+3. Type the text. Press `Enter` to start a new line. The box grows to one line of up to 300 pt, then wraps, as in Zotero.
+4. Press `Escape` or click outside the box. The text becomes a text annotation in Zotero, and stays on the page while it saves.
+
+A box that you leave empty creates nothing. A click on an annotation mark selects that mark instead of opening a box. Zotero shows the annotation only when you finish typing, because ZotLit creates it once with its text.
+
+### Choose the text color and font size
+
+Select the arrow beside <UiLabel name={m.pdf_toolbar_text()} />. The menu lists the colors, then the sizes under <UiLabel name={m.pdf_toolbar_text_font_size()} />: 10, 12, 14, 18, 24, and 36 pt. A check mark shows the current color and size. The default size is 14 pt.
+
+ZotLit remembers your color and font size for other PDFs.
 
 ## Create an image annotation
 

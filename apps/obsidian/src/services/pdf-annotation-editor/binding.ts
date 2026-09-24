@@ -22,7 +22,9 @@ import {
   registerDomEvent,
   registerMigratingWindowEvent,
 } from "@/lib/disposables";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { themeAttribute } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
@@ -64,6 +66,7 @@ import {
   selectCapabilityAffordance,
   selectCapture,
   selectSelectedKey,
+  selectTextDraft,
 } from "./reader-surface-state";
 import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
 import {
@@ -96,6 +99,11 @@ import {
 import type { PdfSeamProbeResult } from "./seam";
 import { MarkSelection } from "./selection";
 import type { MarkGestures } from "./selection";
+import {
+  createTextDraftArea,
+  placeTextDraft,
+  removeTextDraftArea,
+} from "./text-draft";
 import { pdfPageSource } from "./text-structure";
 import type { ToolColorStore } from "./tools";
 
@@ -217,6 +225,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #capturedOn: number | null = null;
   /** The page the Live Stroke was last drawn on. */
   #strokeOn: number | null = null;
+  /** The Text Draft's textarea, kept across page renders; `null` while none stands. */
+  #draftArea: HTMLTextAreaElement | null = null;
   /** The pages the selected mark's last in-place redraw drew it on. */
   #patchedOn: { key: string; pages: ReadonlySet<number> } | null = null;
   #attachment: AttachmentResolution = { kind: "pending" };
@@ -505,7 +515,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       }),
     );
     this.#surfaces.use(
-      registerDomEvent(this.#view.containerEl, "focusin", () => {
+      registerDomEvent(this.#view.containerEl, "focusin", (event) => {
+        // The Text Draft focuses itself as it opens; a read started then would
+        // race the create its finish sends.
+        if (event.target === this.#draftArea) return;
         void this.#annotations.refresh(attachmentKey);
       }),
     );
@@ -705,6 +718,9 @@ export class PdfViewBinding implements Disposable, HoverParent {
         );
       },
       reportBlockedGesture: () => this.#editGesture(),
+      reportCreateFailure: (reason) => {
+        new BaseNotice(m.pdf_create_failed({ reason }));
+      },
       renderCapability: (slot) => {
         this.#capabilitySlot = slot;
         this.#drawCapability(selectCapabilityAffordance(state.getState()));
@@ -759,6 +775,11 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#surfaces.defer(
       state.subscribe(selectCapture, () => this.#drawCapture()),
     );
+    // A Text Draft stands as a textarea over its page until it goes.
+    this.#surfaces.defer(
+      state.subscribe(selectTextDraft, () => this.#drawTextDraft()),
+    );
+    this.#surfaces.defer(() => this.#dropTextDraftArea());
     // An ink stroke draws on the page it was pressed on, one `d` per frame;
     // the strokes saving draw under the marks until their records arrive.
     this.#surfaces.defer(
@@ -952,6 +973,40 @@ export class PdfViewBinding implements Disposable, HoverParent {
     const page = pageViewOf(controller, capture.pageIndex + 1);
     if (page)
       renderCapture(page, { rect: capture.rect, color: state.colors.image });
+  }
+
+  /**
+   * Places the Text Draft's textarea over its page, building it for a new
+   * draft and focusing it; a page render that took it off the page puts it
+   * back, still focused. It goes with the draft.
+   */
+  #drawTextDraft(): void {
+    const controller = this.#controller;
+    const creation = this.#creation;
+    const state = this.#surfaceState?.getState();
+    const draft = state ? selectTextDraft(state) : null;
+    if (!draft || !controller || !creation) {
+      this.#dropTextDraftArea();
+      return;
+    }
+    const page = pageViewOf(controller, draft.pageIndex + 1);
+    if (!page) return;
+    const area = (this.#draftArea ??= createTextDraftArea(page.div.doc, {
+      input: (text) => creation.typeDraft(text),
+      finish: () => creation.finishDraft(),
+    }));
+    placeTextDraft(area, page, {
+      draft,
+      font: interfaceFont(page.div.win),
+    });
+    if (area.parentElement === page.div) return;
+    page.div.append(area);
+    if (draft.phase === "typing") area.focus({ preventScroll: true });
+  }
+
+  #dropTextDraftArea(): void {
+    if (this.#draftArea) removeTextDraftArea(this.#draftArea);
+    this.#draftArea = null;
   }
 
   /** Draws the Live Stroke on its page, as {@link #drawCapture} does. */
@@ -1215,6 +1270,11 @@ export class PdfViewBinding implements Disposable, HoverParent {
     // overlay.
     if (this.#capturedOn === pageIndex) this.#drawCapture();
     if (this.#strokeOn === pageIndex) this.#drawLiveStroke();
+    if (
+      this.#surfaceState &&
+      selectTextDraft(this.#surfaceState.getState())?.pageIndex === pageIndex
+    )
+      this.#drawTextDraft();
     if (annotations.length > 0 || pending.length > 0)
       this.#painted.add(pageIndex);
     else this.#painted.delete(pageIndex);

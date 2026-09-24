@@ -68,6 +68,7 @@ import {
   pdfViewOf,
   raiseWindow,
   recomputedSortIndex,
+  reopenPdfView,
   settledGesture,
   TAP,
   toolButtonOf,
@@ -1793,6 +1794,469 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           });
 
           expect(await annotationKeys()).toEqual(before);
+        }, 120000);
+      });
+
+      describe("the text tool on the first page", () => {
+        const tool = toolButtonOf(pdfView, "text");
+        const clientOf = clientOfFirstPage(pdfView);
+        /** The Text Draft's textarea, as an eval expression. */
+        const draftArea = `${pdfView}.containerEl.querySelector('.zt-pdf-text-draft')`;
+        /**
+         * A PDF point on page one clear of every seeded mark and of the image
+         * the image block may leave: the left column's body text.
+         */
+        const CLEAR = [150, 250] as const;
+        /** The seeded text Annotation's centre, in PDF points on page one. */
+        const SEED_TEXT = [479.804, 693.607] as const;
+
+        /** What each test created, erased once it ends. */
+        const created: string[] = [];
+
+        afterEach(async () => {
+          const erased = created.splice(0);
+          await eraseAnnotations(rdp, erased);
+          await disarmTool(vaultId!, { pdfView, tool: "text" });
+          // The next click on the same spot finds no mark once the page has
+          // let go of the erased ones.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(${JSON.stringify(erased)}.some((key)=>${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key="'+key+'"]')))`,
+              { expected: "false" },
+            ),
+          ).toBe(true);
+        });
+
+        /**
+         * Brings page one on screen in a window that lays it out, with the
+         * PDF point `at` in the middle of the window, and arms the text tool
+         * from the Creation Toolbar.
+         */
+        const armText = (at: readonly [number, number]) =>
+          armToolOnFirstPage(vaultId!, { pdfView, tool: "text", at });
+
+        /**
+         * A click at a PDF point on page one, as the browser delivers it,
+         * answering whether a Text Draft then stands and whether the text
+         * tool is still pressed.
+         */
+        const click = async ([x, y]: readonly [number, number]) =>
+          JSON.parse(
+            await obEval(
+              vaultId!,
+              `(function(){${FIRE}${TAP}${clientOf}const at=clientOf(${x},${y});tap(at.x,at.y);const area=${draftArea};return JSON.stringify({draft:!!area,focused:!!area&&document.activeElement===area,armed:${tool}.getAttribute('aria-pressed')});})()`,
+            ),
+          ) as { draft: boolean; focused: boolean; armed: string };
+
+        /** Declares `type()` in an eval: `text` typed into the Text Draft as an input does. */
+        const TYPE = (text: string) =>
+          `const type=()=>{const area=${draftArea};area.value=${JSON.stringify(text)};area.dispatchEvent(new InputEvent('input',{bubbles:true}));return area;};`;
+
+        /** Types `text` into the Text Draft, and leaves the draft open. */
+        const typeText = (text: string) =>
+          obEval(vaultId!, `(function(){${TYPE(text)}type();return true;})()`);
+
+        /**
+         * Types `text` into the Text Draft as an input does, then presses
+         * Escape in it.
+         */
+        const typeAndEscape = (text: string) =>
+          obEval(
+            vaultId!,
+            `(function(){${TYPE(text)}type().dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          );
+
+        /**
+         * The one text Annotation Zotero holds beyond `before`, once it does,
+         * with the comment it stores.
+         */
+        const freshComment = async (before: readonly string[]) => {
+          const textKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
+          const { annotationType, annotationComment } = await storedAnnotation(
+            api,
+            serverID,
+            textKey,
+          );
+          return { textKey, annotationType, annotationComment };
+        };
+
+        it("creates free text typed on two lines at a click, and stands the tool down at the click", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          // The press opens the draft, focused, and stands the tool down.
+          expect(await click(CLEAR)).toEqual({
+            draft: true,
+            focused: true,
+            armed: "false",
+          });
+          await typeAndEscape("Two lines\nof text");
+
+          const textKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
+          const data = await storedAnnotation(api, serverID, textKey);
+          expect(data).toMatchObject({
+            annotationType: "text",
+            annotationComment: "Two lines\nof text",
+          });
+          const position = JSON.parse(data.annotationPosition) as {
+            pageIndex: number;
+            fontSize: number;
+            rotation: number;
+            rects: number[][];
+          };
+          expect(position).toMatchObject({
+            pageIndex: 0,
+            fontSize: 14,
+            rotation: 0,
+          });
+          expect(position.rects, data.annotationPosition).toHaveLength(1);
+          // Zotero's square at the press anchors the box's top-left corner,
+          // half a font size up and to the left of the click, within the
+          // rounding of the client point the click was dispatched at.
+          const [x, y] = CLEAR;
+          const [left, , , top] = position.rects[0]!;
+          expect(
+            Math.abs(left! - (x - 7)),
+            data.annotationPosition,
+          ).toBeLessThan(0.1);
+          expect(
+            Math.abs(top! - (y + 7)),
+            data.annotationPosition,
+          ).toBeLessThan(0.1);
+          expect(data.annotationSortIndex).toBe(
+            await recomputedSortIndex(vaultId!, {
+              attachmentPath,
+              position: data.annotationPosition,
+            }),
+          );
+
+          // Zotero's open Reader holds it in the same box.
+          let held: { position: string } | null = null;
+          expect(
+            await waitFor(async () => {
+              held = await readerAnnotation({
+                rdp,
+                attachmentKey: attachment.key,
+                annotationKey: textKey,
+              });
+              return held !== null;
+            }),
+          ).toBe(true);
+          expect(JSON.parse(held!.position)).toEqual(position);
+
+          // The page draws it on the two lines typed, the draft gone.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]');return JSON.stringify({lines:mark?[...mark.children].map((line)=>line.textContent):null,draft:!!${draftArea}});})()`,
+              {
+                expected: JSON.stringify({
+                  lines: ["Two lines", "of text"],
+                  draft: false,
+                }),
+              },
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("creates the draft a press elsewhere on the page finishes", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeText("Pressed away");
+          // A click on the page below the draft, with no tool armed: its
+          // press leaves the draft saving.
+          const [x, y] = CLEAR;
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){${FIRE}${clientOf}const at=clientOf(${x},${y - 60});const node=fire('pointerdown',at.x,at.y);const saving=!!${draftArea}?.readOnly;fire('pointerup',at.x,at.y,node);fire('click',at.x,at.y,node);return String(saving);})()`,
+            ),
+          ).toBe("true");
+
+          expect(await freshComment(before)).toMatchObject({
+            annotationType: "text",
+            annotationComment: "Pressed away",
+          });
+        }, 120000);
+
+        it("creates the draft its textarea's blur finishes", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeText("Blurred");
+          // The blur as the window delivers it when the focus leaves: a
+          // window without the system focus fires none for `blur()`.
+          await obEval(
+            vaultId!,
+            `(function(){${draftArea}.dispatchEvent(new FocusEvent('blur'));return true;})()`,
+          );
+
+          expect(await freshComment(before)).toMatchObject({
+            annotationType: "text",
+            annotationComment: "Blurred",
+          });
+        }, 120000);
+
+        it("creates the draft a tool change finishes", async () => {
+          await using restore = new AsyncDisposableStack();
+          restore.defer(async () => {
+            await disarmTool(vaultId!, { pdfView, tool: "note" });
+          });
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeText("Tool changed");
+          await obEval(
+            vaultId!,
+            `(function(){${toolButtonOf(pdfView, "note")}.click();return true;})()`,
+          );
+
+          expect(await freshComment(before)).toMatchObject({
+            annotationType: "text",
+            annotationComment: "Tool changed",
+          });
+        }, 120000);
+
+        it("creates the draft the PDF view closes on", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeText("Closed on");
+          // Closed and opened again in one step, so the next test finds the
+          // view it needs.
+          await reopenPdfView(vaultId!, attachmentPath);
+
+          expect(await freshComment(before)).toMatchObject({
+            annotationType: "text",
+            annotationComment: "Closed on",
+          });
+        }, 120000);
+
+        it("closes the Mark Popup on the saved text with a second Escape", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeAndEscape("Escaped");
+          const { textKey } = await freshComment(before);
+
+          // The saved mark is selected under its popup, and the focus the
+          // textarea held stays in the reader.
+          const reader = `(function(){const container=${pdfView}.containerEl;const mark=container.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]');return JSON.stringify({selected:!!mark?.classList.contains('is-selected'),popup:!!document.querySelector('.zt-pdf-mark-popup'),draft:!!${draftArea},focus:container.contains(document.activeElement)});})()`;
+          expect(
+            await obEvalUntil(vaultId!, reader, {
+              expected: JSON.stringify({
+                selected: true,
+                popup: true,
+                draft: false,
+                focus: true,
+              }),
+            }),
+          ).toBe(true);
+
+          // Escape where the focus is, as the keyboard delivers it.
+          await obEval(
+            vaultId!,
+            "(function(){document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()",
+          );
+          expect(
+            await obEvalUntil(vaultId!, reader, {
+              expected: JSON.stringify({
+                selected: false,
+                popup: false,
+                draft: false,
+                focus: true,
+              }),
+            }),
+          ).toBe(true);
+        }, 120000);
+
+        it("creates nothing from a draft left empty", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          // An empty draft goes in the Escape that finishes it.
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeAndEscape("");
+
+          expect(await obEval(vaultId!, `String(!!${draftArea})`)).toBe(
+            "false",
+          );
+          expect(await annotationKeys()).toEqual(before);
+        }, 120000);
+
+        it("selects the seeded text under a click and creates nothing", async () => {
+          // The seed sits too near the page's top to come to the window's
+          // middle; a point below it, as high as the seeded note, does.
+          await armText([SEED_TEXT[0], 609.393]);
+          const before = await annotationKeys();
+
+          // A click on a mark starts no create, so the selection is the end.
+          expect((await click(SEED_TEXT)).draft).toBe(false);
+
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))`,
+              { expected: JSON.stringify(["HRK7BG32"]) },
+            ),
+          ).toBe(true);
+          expect(await annotationKeys()).toEqual(before);
+        }, 120000);
+
+        it("creates nothing from a click while editing is not live", async () => {
+          await armText(CLEAR);
+          const before = await annotationKeys();
+
+          await whileEditingNotLive(async () => {
+            expect((await click(CLEAR)).draft).toBe(false);
+          });
+
+          expect(await annotationKeys()).toEqual(before);
+        }, 120000);
+
+        it("types at the font size picked from the text seat's menu, and keeps the pick over a reopen of the PDF", async () => {
+          const fontSize = `app.plugins.plugins.zotlit.services.settings.current['reader.text-font-size']`;
+          /**
+           * Opens the text seat's chevron menu and answers the first word of
+           * the checked font-size item; with `pick`, selects the font-size
+           * item that begins with that number. The menu is DOM only with
+           * Obsidian's native menus off.
+           */
+          const textMenu = (pick?: number) =>
+            obEval(
+              vaultId!,
+              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]').click();const items=[...document.querySelectorAll('.menu .menu-item')];const label=items.findIndex((item)=>item.classList.contains('is-label'));const word=(item)=>item.textContent.trim().split(/\\s/)[0];const checked=items.slice(label+1).find((item)=>item.querySelector('.mod-checked'));${pick === undefined ? "" : `items.slice(label+1).find((item)=>word(item)===${JSON.stringify(String(pick))}).click();`}return checked?word(checked):'none';})()`,
+            );
+          /**
+           * Closes the menu with Escape, outside the reader so the reader's
+           * own Escape stands no tool down. The menu hears it only once it
+           * has settled, and a click while it stands lands on it.
+           */
+          const closeMenu = () =>
+            obEvalUntil(
+              vaultId!,
+              "(function(){if(document.querySelector('.menu'))document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return String(document.querySelectorAll('.menu').length);})()",
+              { expected: "0" },
+            );
+          await using restore = new AsyncDisposableStack();
+          const [nativeMenus, size] = (
+            await obEval(
+              vaultId!,
+              `JSON.stringify([app.vault.getConfig('nativeMenus'),${fontSize}])`,
+            ).then((reply) => JSON.parse(reply) as [boolean, number])
+          ).map(String);
+          restore.defer(async () => {
+            await obEval(
+              vaultId!,
+              `(function(){app.plugins.plugins.zotlit.services.settings.update({'reader.text-font-size':${size}});app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+            );
+          });
+          await obEval(
+            vaultId!,
+            `app.vault.setConfig('nativeMenus',false);true`,
+          );
+          const picked = size === "24" ? 18 : 24;
+          await armText(CLEAR);
+
+          // The menu checks the size in hand, and the pick replaces it.
+          expect(await textMenu(picked)).toBe(size);
+
+          // Closed and opened again, the PDF view takes a new binding.
+          await reopenPdfView(vaultId!, attachmentPath);
+          await armText(CLEAR);
+          expect(await textMenu()).toBe(String(picked));
+          expect(await closeMenu()).toBe(true);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeAndEscape("Sized");
+
+          const textKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
+          const data = await storedAnnotation(api, serverID, textKey);
+          expect(
+            (JSON.parse(data.annotationPosition) as { fontSize: number })
+              .fontSize,
+          ).toBe(picked);
+        }, 120000);
+
+        it("creates text in the colour picked from the text seat's menu, and draws it that colour darkened five percent", async () => {
+          const setting = (key: string) =>
+            `app.plugins.plugins.zotlit.services.settings.current[${JSON.stringify(key)}]`;
+          await using restore = new AsyncDisposableStack();
+          const [nativeMenus, colors, recent] = await obEval(
+            vaultId!,
+            `JSON.stringify([app.vault.getConfig('nativeMenus'),${setting("reader.annotation-colors")}??null,${setting("reader.recent-colors")}??null])`,
+          ).then((reply) => JSON.parse(reply) as [boolean, unknown, unknown]);
+          restore.defer(async () => {
+            await obEval(
+              vaultId!,
+              `(function(){app.plugins.plugins.zotlit.services.settings.update({'reader.annotation-colors':${JSON.stringify(colors)}??undefined,'reader.recent-colors':${JSON.stringify(recent)}??undefined});app.vault.setConfig('nativeMenus',${nativeMenus});return true;})()`,
+            );
+          });
+          await obEval(
+            vaultId!,
+            `app.vault.setConfig('nativeMenus',false);true`,
+          );
+          // Zotero's green swatch, which no tool starts on.
+          const green = "#5fb236";
+          await armText(CLEAR);
+
+          // The swatch is picked from the text seat's chevron menu, which
+          // closes on the pick.
+          expect(
+            await obEval(
+              vaultId!,
+              `(function(){${pdfView}.containerEl.querySelector('[data-zt-tool="text-color"]').click();const item=[...document.querySelectorAll('.menu .menu-item')].find((one)=>one.querySelector('[style*=${JSON.stringify(green)}]'));item.click();return String(!!item);})()`,
+            ),
+          ).toBe("true");
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              "String(document.querySelectorAll('.menu').length)",
+              { expected: "0" },
+            ),
+          ).toBe(true);
+          const before = await annotationKeys();
+
+          expect((await click(CLEAR)).draft).toBe(true);
+          await typeAndEscape("Green");
+
+          const textKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
+          expect(
+            (await storedAnnotation(api, serverID, textKey)).annotationColor,
+          ).toBe(green);
+          // Zotero's `darkenHex(green, 5)`: each channel times 0.95, rounded —
+          // 0x5f → 0x5a, 0xb2 → 0xa9, 0x36 → 0x33.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(textKey)}]')?.getAttribute('fill'))`,
+              { expected: "#5aa933" },
+            ),
+          ).toBe(true);
         }, 120000);
       });
 

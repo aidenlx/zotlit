@@ -19,16 +19,24 @@ import type {
   AnnotationRepository,
   CommentDraft,
 } from "@/services/annotation-repository/service";
-import { IDLE, writePosition } from "@/services/annotation-repository/write";
+import {
+  IDLE,
+  storedWide,
+  textIdentity,
+  writePosition,
+} from "@/services/annotation-repository/write";
 import type {
   InkPosition,
   MutationState,
+  TextPosition,
 } from "@/services/annotation-repository/write";
 
 import { createPopupRow } from "./create-popup";
 import type { CreatePopupControl, CreatePopupRowInput } from "./create-popup";
 import { creationToolbar } from "./creation-toolbar";
 import type { CreationToolbarControl } from "./creation-toolbar";
+import { fitFreeTextBox } from "./free-text-layout";
+import type { TextMeasure } from "./free-text-layout";
 import {
   capturesImage,
   isEditablePosition,
@@ -98,9 +106,37 @@ export interface Capture {
 }
 
 /**
+ * A Text Draft: free text the armed text tool opened on a page, typed into
+ * here and created in Zotero once, with its text, when it is finished. It
+ * stays drawn while that create is in flight, until the read that holds its
+ * record takes its place.
+ */
+export interface TextDraft {
+  kind: "text-draft";
+  /** The page the click fell on, which holds the whole box. */
+  pageIndex: number;
+  /** The font size the text is typed at, in PDF points. */
+  fontSize: number;
+  color: string;
+  /** The box's turn, which a new Text Draft never has. */
+  rotation: 0;
+  /** The box fitted to {@link text}, unrounded, in PDF points. */
+  box: PdfRect;
+  text: string;
+  /**
+   * `typing` until the draft is finished, and `saving` once its text was sent
+   * to Zotero.
+   */
+  phase: "typing" | "saving";
+  /** The created Annotation's Indexed Key, once Zotero named it. */
+  key?: string;
+}
+
+/**
  * The one floating surface over the reader: nothing, the selected Annotation
- * Mark, a fresh text selection about to become one, or an image capture being
- * dragged out. Being one union, the two popups can never both stand.
+ * Mark, a fresh text selection about to become one, an image capture being
+ * dragged out, or a Text Draft. Being one union, the two popups can never
+ * both stand.
  */
 export type Floating =
   | { kind: "none" }
@@ -129,7 +165,8 @@ export type Floating =
       /** Whether a create from this selection is waiting on Zotero. */
       inFlight: boolean;
     }
-  | Capture;
+  | Capture
+  | TextDraft;
 
 /**
  * The Ink Stroke the pointer is drawing, as the last animation frame smoothed
@@ -221,12 +258,14 @@ export function createReaderSurfaceState({
 /**
  * Arms a tool, or stands the armed one down for `null`. Arming a tool that
  * takes a click or a stroke clears the floating surface, so no Mark Handle
- * stands to take a press meant to place a mark or to draw.
+ * stands to take a press meant to place a mark or to draw. A Text Draft stays:
+ * the tool change finishes it, which may save it.
  */
 export function arm(store: ReaderSurfaceStore, tool: MarkTool | null): void {
   const gesture = gestureOf(tool);
-  store.setState(
-    gesture === "click" || gesture === "stroke"
+  store.setState(({ floating }) =>
+    (gesture === "click" || gesture === "stroke") &&
+    floating.kind !== "text-draft"
       ? { armed: tool, floating: NONE }
       : { armed: tool },
   );
@@ -505,6 +544,106 @@ export function cancelCapture(store: ReaderSurfaceStore): void {
   if (store.getState().floating.kind === "capture") clearFloating(store);
 }
 
+/**
+ * Opens a Text Draft at a click on a page, which takes the floating surface
+ * from whatever held it, and stands the armed tool down in the same update,
+ * as Zotero's text tool stands down once it has placed its box. The box
+ * starts as Zotero's does: a square one font size wide, centred on the click.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js#L3123-L3151
+ */
+export function openTextDraft(
+  store: ReaderSurfaceStore,
+  {
+    pageIndex,
+    at,
+    fontSize,
+    color,
+  }: Pick<TextDraft, "pageIndex" | "fontSize" | "color"> & {
+    /** Where the click fell, in PDF points on that page. */
+    at: PdfPoint;
+  },
+): void {
+  const [x, y] = at;
+  const half = fontSize / 2;
+  store.setState({
+    armed: null,
+    floating: {
+      kind: "text-draft",
+      pageIndex,
+      fontSize,
+      color,
+      rotation: 0,
+      box: [x - half, y - half, x + half, y + half],
+      text: "",
+      phase: "typing",
+    },
+  });
+}
+
+/**
+ * Takes what the Text Draft now holds, and refits its box to it from the box
+ * it had, as Zotero's reader refits a text box on each edit. A draft that is
+ * saving takes no more typing.
+ *
+ * @param options.pageBox the page's view box, in PDF points.
+ */
+export function refitTextDraft(
+  store: ReaderSurfaceStore,
+  text: string,
+  { measure, pageBox }: { measure: TextMeasure; pageBox: readonly number[] },
+): void {
+  const draft = selectTextDraft(store.getState());
+  if (draft?.phase !== "typing") return;
+  const box = storedWide(
+    fitFreeTextBox(
+      text,
+      {
+        rects: [[...draft.box]],
+        rotation: draft.rotation,
+        fontSize: draft.fontSize,
+      },
+      { measure, pageBox },
+    ),
+  );
+  store.setState({ floating: { ...draft, text, box } });
+}
+
+/**
+ * Finishes the Text Draft. One holding text beyond whitespace is held,
+ * `saving`, while the caller creates it; any other goes.
+ *
+ * @returns the draft to create, or `null` for one that creates nothing.
+ */
+export function finishTextDraft(store: ReaderSurfaceStore): TextDraft | null {
+  const draft = selectTextDraft(store.getState());
+  if (draft?.phase !== "typing") return null;
+  if (draft.text.trim() === "") {
+    clearFloating(store);
+    return null;
+  }
+  const saving: TextDraft = { ...draft, phase: "saving" };
+  store.setState({ floating: saving });
+  return saving;
+}
+
+/**
+ * A create answered with the Annotation's Indexed Key. The draft goes at once
+ * where a read already holds that record; otherwise it carries the key, and
+ * the read that brings the record takes it.
+ */
+export function settleTextDraft(store: ReaderSurfaceStore, key: string): void {
+  store.setState(({ floating, records }) => {
+    if (floating.kind !== "text-draft") return {};
+    return { floating: heldBy({ ...floating, key }, records) };
+  });
+}
+
+/** Takes a Text Draft whose create failed, or never ran, off the page. */
+export function dropTextDraft(store: ReaderSurfaceStore): void {
+  if (store.getState().floating.kind === "text-draft") clearFloating(store);
+}
+
 /** Opens or closes the comment editor or sheet of whatever is floating. */
 export function setCommenting(
   store: ReaderSurfaceStore,
@@ -514,6 +653,7 @@ export function setCommenting(
   if (
     floating.kind === "none" ||
     floating.kind === "capture" ||
+    floating.kind === "text-draft" ||
     floating.commenting === commenting
   )
     return;
@@ -628,15 +768,43 @@ export function dropPendingStroke(store: ReaderSurfaceStore, id: number): void {
   }));
 }
 
-/** What floats, stood down if it is a selection the records no longer hold. */
+/**
+ * What floats, stood down if it is a selection the records no longer hold, or
+ * a saving Text Draft they now hold. A record takes a draft's place once it
+ * carries the draft's Indexed Key, or stores the very box, colour and text the
+ * create sent, which is how a read that answers before the create has
+ * returned still swaps the two in one update.
+ */
 function heldBy(
   floating: Floating,
   records: readonly AnnotationRecord[],
 ): Floating {
-  return floating.kind === "selected" &&
-    !records.some(({ key }) => key === floating.key)
+  if (floating.kind === "selected")
+    return records.some(({ key }) => key === floating.key) ? floating : NONE;
+  if (floating.kind !== "text-draft" || floating.phase !== "saving")
+    return floating;
+  const identity = textIdentity(textDraftPosition(floating), {
+    color: floating.color,
+    comment: floating.text,
+  });
+  return records.some(
+    (record) =>
+      record.key === floating.key ||
+      (record.position.kind === "pdf-text" &&
+        textIdentity(record.position, record) === identity),
+  )
     ? NONE
     : floating;
+}
+
+/** The text position a Text Draft is created at: its fitted box, unrounded. */
+export function textDraftPosition({
+  pageIndex,
+  fontSize,
+  rotation,
+  box,
+}: TextDraft): TextPosition & { rects: [PdfRect] } {
+  return { pageIndex, fontSize, rotation, rects: [box] };
 }
 
 /**
@@ -821,6 +989,13 @@ export function selectFloatingHead({
     key: floating.kind === "selected" ? floating.key : null,
     commenting: "commenting" in floating && floating.commenting,
   };
+}
+
+/** The Text Draft on a page, or `null` while none stands. */
+export function selectTextDraft({
+  floating,
+}: ReaderSurfaceState): TextDraft | null {
+  return floating.kind === "text-draft" ? floating : null;
 }
 
 /** The image capture being dragged out, or `null` while none stands. */

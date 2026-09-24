@@ -895,7 +895,7 @@ const INK_AND_TEXT_DARKEN_PERCENT = 5;
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/utilities.js#L514-L520
  */
-function darken(color: string): string {
+export function darken(color: string): string {
   if (!/^#[\da-f]{6}$/i.test(color)) return color;
   const channels = [1, 3, 5].map((start) =>
     Math.round(

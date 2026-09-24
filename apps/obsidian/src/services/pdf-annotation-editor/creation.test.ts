@@ -3,7 +3,12 @@ import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { SelectedText, TextSelection } from "@zotlit/pdf-structure";
+import { PdfTextStructure } from "@zotlit/pdf-structure";
+import type {
+  PdfPageSource,
+  SelectedText,
+  TextSelection,
+} from "@zotlit/pdf-structure";
 
 import { ANNOTATION_COLORS } from "@/lib/annotation-colors";
 import * as m from "@/lib/i18n/generated/messages";
@@ -12,7 +17,9 @@ import type {
   AnnotationDraft,
   CreateOutcome,
 } from "@/services/annotation-repository/service";
+import type { TextPosition } from "@/services/annotation-repository/write";
 import {
+  blockedReason,
   MAX_POSITION_LENGTH,
   writePosition,
 } from "@/services/annotation-repository/write";
@@ -26,7 +33,7 @@ import {
   readerSettings,
   readerSurfaces,
 } from "./__fixtures__";
-import { arm, ingestCapability } from "./reader-surface-state";
+import { arm, ingestCapability, selectTextDraft } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 import { toolColorStore } from "./tools";
 import type { ToolColorStore } from "./tools";
@@ -788,6 +795,7 @@ function imageReader(
     create = async () => ({ kind: "created", annotationKey: "MADE2345" }),
     colors,
     closed = false,
+    structure: given,
   }: {
     /** What Zotero answers each create with. */
     create?: (
@@ -797,6 +805,8 @@ function imageReader(
     colors?: ToolColorStore;
     /** Whether the viewer holds no document, so no text structure stands. */
     closed?: boolean;
+    /** The text structure the viewer holds on each ask, in place of the stub below. */
+    structure?: () => PdfTextStructure | null;
   } = {},
 ) {
   vi.useFakeTimers();
@@ -819,6 +829,8 @@ function imageReader(
   } as never);
   const drafts: Omit<AnnotationDraft, "parentKey">[] = [];
   const structure = {
+    page: vi.fn(async () => ({})),
+    pageLabels: vi.fn(async () => ["1"]),
     sortIndex: vi.fn(async () => "00000|000100|00100"),
     pageLabel: vi.fn(async () => "1"),
   };
@@ -833,7 +845,7 @@ function imageReader(
       }),
     ],
     capability,
-    structure: closed ? null : (structure as never),
+    structure: closed ? null : (given ?? (structure as never)),
     annotations: {
       ...annotationEdits(),
       createAnnotation: vi.fn(
@@ -994,7 +1006,7 @@ it("leaves a press on a mark to the mark while the image tool is armed", async (
  * point `(x, y)` is the PDF point `(x, 792 - y)`.
  */
 function toolReader(
-  tool: "note" | "ink",
+  tool: "note" | "text" | "ink",
   ...args: Parameters<typeof imageReader>
 ) {
   const open = imageReader(...args);
@@ -1541,4 +1553,152 @@ it("finishes a stroke that reaches the position ceiling as its own Annotation, a
     armed: "ink",
     liveStroke: null,
   });
+});
+
+/**
+ * A 2D context that sets each character half a font size wide. happy-dom has
+ * no canvas to measure the interface font with.
+ */
+function halfEmContext() {
+  let fontSize = 0;
+  return {
+    set font(font: string) {
+      fontSize = Number.parseFloat(font);
+    },
+    measureText: (text: string) => ({ width: (text.length * fontSize) / 2 }),
+  };
+}
+
+/**
+ * Opens a Text Draft with a click on page one, and types `text` into it as
+ * its textarea's input hands it on, measured by {@link halfEmContext}.
+ */
+function typeDraft(open: ReturnType<typeof toolReader>, text: string) {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    halfEmContext() as never,
+  );
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  open.creation.typeDraft(text);
+}
+
+/**
+ * One text page with no characters, read from a document the view can close.
+ * After `close()` the viewer holds no document, as Obsidian's own unload
+ * leaves it before ZotLit's disposal runs, and every read rejects, as PDF.js
+ * rejects on a destroyed document.
+ */
+function closingDocument() {
+  let closed = false;
+  const read = async <T>(value: T): Promise<T> => {
+    if (closed) throw new Error("Worker was destroyed");
+    return value;
+  };
+  const source: PdfPageSource = {
+    numPages: 1,
+    getViewBox: () => read([0, 0, 612, 792]),
+    getTextItems: () => read([]),
+    getCatalogPageLabels: () => read(null),
+  };
+  const structure = new PdfTextStructure(source);
+  return {
+    structure: () => (closed ? null : structure),
+    /** Settles once the reads a click on page one started have answered. */
+    read: async () => {
+      await Promise.all([structure.page(0), structure.pageLabels()]);
+    },
+    close: () => {
+      closed = true;
+    },
+  };
+}
+
+it("says why when a Text Draft's create throws, and takes the draft off the page", async () => {
+  using open = toolReader("text", undefined, {
+    create: async () => {
+      throw new Error("The request did not run");
+    },
+  });
+
+  typeDraft(open, "Typed");
+  open.key("Escape");
+  await open.creation.created;
+
+  expect(open.drafts).toHaveLength(1);
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.annot_view_write_reason_unknown_outcome()],
+  ]);
+  expect(selectTextDraft(open.store.getState())).toBeNull();
+});
+
+it("says why when no document stands to create a Text Draft from", async () => {
+  using open = toolReader("text", undefined, { closed: true });
+
+  typeDraft(open, "Typed");
+  open.key("Escape");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [m.pdf_create_reason_no_document()],
+  ]);
+  expect(selectTextDraft(open.store.getState())).toBeNull();
+});
+
+it("says why a Text Draft finished after editing lapsed was not created", async () => {
+  using open = toolReader("text");
+  const lapsed: EditingCapability = {
+    kind: "read-only",
+    reason: "zotero-unavailable",
+  };
+
+  typeDraft(open, "Typed");
+  ingestCapability(open.store, lapsed, NOW);
+  open.key("Escape");
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  // The typed text is lost, so the create failure names the block.
+  expect(open.reportCreateFailure.mock.calls).toEqual([
+    [blockedReason(lapsed, NOW)],
+  ]);
+  expect(open.gestures.reportBlockedGesture).not.toHaveBeenCalled();
+  expect(selectTextDraft(open.store.getState())).toBeNull();
+});
+
+it("creates a Text Draft finished as the view closes, from the page it read at the click", async () => {
+  const document_ = closingDocument();
+  const open = toolReader("text", undefined, {
+    structure: document_.structure,
+  });
+  {
+    using _closing = open;
+    typeDraft(open, "Typed");
+    // The reads the click started run to their end before the view closes.
+    await document_.read();
+    document_.close();
+  }
+  await open.creation.created;
+
+  expect(open.reportCreateFailure).not.toHaveBeenCalled();
+  expect(open.drafts).toEqual([
+    {
+      type: "text",
+      color: open.store.getState().colors.text,
+      comment: "Typed",
+      text: "",
+      pageLabel: "1",
+      sortIndex: expect.stringMatching(/^00000\|/),
+      position: {
+        pageIndex: 0,
+        fontSize: 14,
+        rotation: 0,
+        rects: [expect.any(Array)],
+      },
+    },
+  ]);
+  // The box the typing refit: five characters half a font size wide, and
+  // Zotero's five points past them.
+  const [box] = (open.drafts[0]!.position as TextPosition).rects;
+  expect(box![2]! - box![0]!).toBeCloseTo(40, 2);
 });

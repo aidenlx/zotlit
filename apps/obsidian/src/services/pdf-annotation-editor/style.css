@@ -211,3 +211,49 @@
   max-inline-size: 100%;
   min-inline-size: 0;
 }
+
+/*
+ * The Text Draft is typed straight onto the page, as Zotero's text box is:
+ * none of the form-field look Obsidian gives every textarea reaches it, and
+ * its lines wrap only where a word no longer fits, as the saved mark's do.
+ * Obsidian's own textarea rules are unlayered and reach `:hover` and `:focus`,
+ * so these name the element and each of those states. text-draft.ts sets
+ * its box, turn, font and colour as the `--zt-text-draft-*` properties read
+ * here. The font is pinned as the measure assumes and the saved mark draws it;
+ * `line-height` is `LINE_HEIGHT` in free-text-layout.ts.
+ */
+textarea.zt-pdf-text-draft,
+textarea.zt-pdf-text-draft:hover,
+textarea.zt-pdf-text-draft:focus,
+textarea.zt-pdf-text-draft:focus-visible,
+textarea.zt-pdf-text-draft:active {
+  position: absolute;
+  z-index: 5;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  left: var(--zt-text-draft-left);
+  top: var(--zt-text-draft-top);
+  width: var(--zt-text-draft-width);
+  height: var(--zt-text-draft-height);
+  min-width: var(--zt-text-draft-font-size);
+  min-height: var(--zt-text-draft-font-size);
+  transform: rotate(var(--zt-text-draft-angle))
+    scale(var(--zt-text-draft-scale));
+  transform-origin: 0 0;
+  font-family: var(--zt-text-draft-font-family);
+  font-size: var(--zt-text-draft-font-size);
+  font-weight: normal;
+  font-style: normal;
+  letter-spacing: 0;
+  line-height: 1.2;
+  color: var(--zt-text-draft-color);
+}

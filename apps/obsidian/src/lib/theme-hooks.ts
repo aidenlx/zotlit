@@ -83,6 +83,12 @@ export const themeHook = {
    */
   pdfPendingStroke: "zt-pdf-pending-stroke",
   /**
+   * The textarea a Text Draft is typed into, over its page, in the text
+   * tool's colour darkened as a saved text mark is drawn. It stands until the
+   * draft is discarded or its saved mark takes its place.
+   */
+  pdfTextDraft: "zt-pdf-text-draft",
+  /**
    * The always-present Editing Capability affordance in the PDF reader's own
    * toolbar. `data-zt-capability-tone` names the state it is showing —
    * `ready`, `action`, `busy` or `warning`.
@@ -94,8 +100,8 @@ export const themeHook = {
    * carries `data-zt-tool`. Each tool of its tool group is split in two — the
    * toggle under the tool's own name and the chevron that opens its colours
    * under `<tool>-color` — which today is `highlight`, `highlight-color`,
-   * `underline`, `underline-color`, `note`, `note-color`, `image`,
-   * `image-color`, `ink` and `ink-color`. `visibility`
+   * `underline`, `underline-color`, `note`, `note-color`, `text`,
+   * `text-color`, `image`, `image-color`, `ink` and `ink-color`. `visibility`
    * stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",

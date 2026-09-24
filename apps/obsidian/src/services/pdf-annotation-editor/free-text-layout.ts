@@ -90,7 +90,7 @@ export function freeTextLayout(
 }
 
 /** Where the page's own turn points the reading direction, in degrees. */
-function readingAngle(
+export function readingAngle(
   toPagePoint: ToPagePoint,
   left: number,
   top: number,

@@ -53,18 +53,18 @@ export interface MarkPopupHostDeps {
   parent: HoverParent;
   store: ReaderSurfaceStore;
   /**
-   * What each floating kind draws, and where it hangs. An image capture has
-   * no popup.
+   * What each floating kind draws, and where it hangs. An image capture and a
+   * Text Draft have no popup.
    */
   variants: Record<
-    Exclude<Floating["kind"], "none" | "capture">,
+    Exclude<Floating["kind"], "none" | "capture" | "text-draft">,
     MarkPopupVariant
   >;
 }
 
 /**
  * Opens the popup for a floating variant with an anchor, and hides it for
- * none, an image capture, a quiet selection, a selection whose grip is held
+ * none, an image capture, a Text Draft, a quiet selection, a selection whose grip is held
  * and not yet saving, or an anchor of `null`. A change of variant kind, of
  * selected key, or of commenting rebuilds the row; any other change to what
  * floats or to its row refreshes it, which is what keeps an editor alive.
@@ -111,6 +111,7 @@ export class MarkPopupHost implements Disposable {
     const variant =
       floating.kind === "none" ||
       floating.kind === "capture" ||
+      floating.kind === "text-draft" ||
       (floating.kind === "selected" &&
         (floating.quiet ||
           (floating.adjust !== undefined &&
@@ -162,7 +163,12 @@ export class MarkPopupHost implements Disposable {
   #render(content: HTMLElement): void {
     const state = this.#deps.store.getState();
     const { floating } = state;
-    if (floating.kind === "none" || floating.kind === "capture") return;
+    if (
+      floating.kind === "none" ||
+      floating.kind === "capture" ||
+      floating.kind === "text-draft"
+    )
+      return;
     const head = selectFloatingHead(state);
     if (!sameFlat(this.#built, head)) {
       content.empty();

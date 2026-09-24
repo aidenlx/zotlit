@@ -34,3 +34,9 @@ it("promises the PDF reader's mode attributes by literal name", () => {
     inking: "data-zt-inking",
   });
 });
+
+it("promises the Text Draft hook by literal name", () => {
+  expect({ textDraft: themeHook.pdfTextDraft }).toEqual({
+    textDraft: "zt-pdf-text-draft",
+  });
+});

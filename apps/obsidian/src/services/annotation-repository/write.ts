@@ -12,6 +12,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
 
 import { capabilityOfFailure } from "./capability";
+import type { EditingCapability } from "./capability";
 import { editingCapabilityCopy } from "./capability-copy";
 
 /**
@@ -336,6 +337,46 @@ export function writePosition(position: WritablePosition): string {
 }
 
 /**
+ * A fitted box, `[left, bottom, right, top]`, widened out to the thousandths
+ * of a point Zotero stores. A box fitted to its widest line has no room past
+ * it, and rounding its sides to the nearest thousandth could narrow it enough
+ * to wrap that line.
+ */
+export function storedWide([left, bottom, right, top]: readonly [
+  number,
+  number,
+  number,
+  number,
+]): [number, number, number, number] {
+  return [
+    Math.floor(left * POSITION_DECIMALS) / POSITION_DECIMALS,
+    bottom,
+    Math.ceil(right * POSITION_DECIMALS) / POSITION_DECIMALS,
+    top,
+  ];
+}
+
+/**
+ * A text Annotation as Zotero stores it: its rounded position, colour and
+ * text. Two that compare equal are the same stored Annotation.
+ */
+export function textIdentity(
+  position: TextPosition,
+  { color, comment }: { color: string | null; comment: string | null },
+): string {
+  return JSON.stringify([
+    color?.toLowerCase(),
+    comment,
+    writePosition({
+      pageIndex: position.pageIndex,
+      fontSize: position.fontSize,
+      rotation: position.rotation,
+      rects: position.rects,
+    }),
+  ]);
+}
+
+/**
  * A delete, whose precondition is a header rather than a body: Zotero's
  * single-object delete reads `If-Unmodified-Since-Version` alone and answers
  * `428` without it.
@@ -395,16 +436,27 @@ export function writeFailureReason(
       return m.annot_view_write_reason_conflict();
     case "unknown-outcome":
       return m.annot_view_write_reason_unknown_outcome();
-    default: {
-      const copy = editingCapabilityCopy(
+    default:
+      return blockedReason(
         capabilityOfFailure(failure, () => now),
         now,
       );
-      return copy.detail === null
-        ? copy.label
-        : `${copy.label}. ${copy.detail}`;
-    }
   }
+}
+
+/**
+ * Why a blocked Editing Capability lets no write land, in one clause, as
+ * {@link writeFailureReason} says it for a failure with that capability behind
+ * it.
+ *
+ * @param now the instant a cooldown's remaining seconds are measured from.
+ */
+export function blockedReason(
+  capability: EditingCapability,
+  now: Temporal.Instant,
+): string {
+  const copy = editingCapabilityCopy(capability, now);
+  return copy.detail === null ? copy.label : `${copy.label}. ${copy.detail}`;
 }
 
 /**
