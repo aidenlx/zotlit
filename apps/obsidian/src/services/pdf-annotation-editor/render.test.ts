@@ -251,6 +251,47 @@ describe("free text", () => {
       "hard :(",
     ]);
   });
+
+  it("patches its lines as a resize moves and narrows its box", () => {
+    const page = pageView();
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Making figures is hard :(", [398.804, 668.507, 560.804, 702.107]),
+      ]),
+      selected: new Set(["HRK7BG32"]),
+      handles: true,
+    });
+    const mark = markIn(page, "HRK7BG32");
+
+    const patched = patchSelectedMark(
+      page,
+      pageAnnotations([
+        text("Making figures is hard :(", [490.804, 651.707, 560.804, 702.107]),
+      ])[0]!,
+      { handles: true, font: MONO },
+    );
+
+    expect(patched).toBe(true);
+    expect(markIn(page, "HRK7BG32")).toBe(mark);
+    // The left side moved to 490.804, and 70 points wrap the text in three.
+    expect(linesOf(page, "HRK7BG32")).toEqual([
+      ["Making", 490.804, 103.893],
+      ["figures is", 490.804, 120.693],
+      ["hard :(", 490.804, 137.493],
+    ]);
+    // What a full render of the new box draws, node for node.
+    const redrawn = pageView();
+    renderAnnotationOverlay(redrawn, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Making figures is hard :(", [490.804, 651.707, 560.804, 702.107]),
+      ]),
+      selected: new Set(["HRK7BG32"]),
+      handles: true,
+    });
+    expect(overlayIn(page).outerHTML).toBe(overlayIn(redrawn).outerHTML);
+  });
 });
 
 it.each(ROTATIONS)(

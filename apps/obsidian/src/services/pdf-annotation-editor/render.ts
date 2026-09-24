@@ -340,17 +340,29 @@ export function patchSelectedMark(
   ];
   const outline = renderSelectionOutline(unitPage, placement);
   const fresh = [
-    ...markNodes(unitPage, placement, handles),
+    ...markNodes(unitPage, placement, handles).map((mark) => {
+      mark.classList.add(SELECTED_CLASS);
+      return mark;
+    }),
     ...(outline ? [outline] : []),
     ...(handles ? renderHandles(page, placement, textRotation) : []),
   ];
   if (held.length === 0 || held.length !== fresh.length) return false;
-  held.forEach((node, index) => {
-    for (const { name, value } of fresh[index]!.attributes) {
-      if (name !== "class") node.setAttribute(name, value);
-    }
-  });
+  held.forEach((node, index) => mirrorNode(node, fresh[index]!));
   return true;
+}
+
+/**
+ * Makes a held node draw what a freshly built one draws: the same attributes,
+ * none left over, and the same children, such as a free-text run's lines.
+ */
+function mirrorNode(node: Element, fresh: Element): void {
+  for (const name of node.getAttributeNames()) {
+    if (!fresh.hasAttribute(name)) node.removeAttribute(name);
+  }
+  for (const { name, value } of fresh.attributes)
+    node.setAttribute(name, value);
+  node.replaceChildren(...fresh.childNodes);
 }
 
 /**
