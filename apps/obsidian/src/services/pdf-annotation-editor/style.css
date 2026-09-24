@@ -77,10 +77,11 @@
 
 /*
  * While the ink tool is armed, a finger on a page draws rather than pans the
- * reader. The browser reads `touch-action` when a finger lands, so it stands
- * from arming to disarming rather than for the stroke alone. It is set on the
- * page container, the element PDF.js scrolls, whose pages take it from there;
- * the toolbar and the sidebars keep their own touch scrolling.
+ * reader. The reader carries `data-zt-inking` (`themeAttribute.pdfInking`)
+ * from arming to disarming rather than for the stroke alone, because the
+ * browser reads `touch-action` when a finger lands. It is set on the page
+ * container, the element PDF.js scrolls, whose pages take it from there; the
+ * toolbar and the sidebars keep their own touch scrolling.
  */
 :where([data-zt-inking] .pdf-viewer-container) {
   touch-action: none;

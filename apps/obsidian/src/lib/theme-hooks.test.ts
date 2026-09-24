@@ -7,7 +7,7 @@
 // @see apps/obsidian/policies/theme-hooks.md
 import { expect, it } from "vitest";
 
-import { themeHook } from "./theme-hooks";
+import { themeAttribute, themeHook } from "./theme-hooks";
 
 it("promises the Annotation View hooks by literal name", () => {
   expect({
@@ -26,5 +26,11 @@ it("promises the Chooser hooks by literal name", () => {
   }).toEqual({
     popup: "zt-chooser",
     trigger: "zt-chooser-trigger",
+  });
+});
+
+it("promises the PDF reader's mode attributes by literal name", () => {
+  expect({ inking: themeAttribute.pdfInking }).toEqual({
+    inking: "data-zt-inking",
   });
 });

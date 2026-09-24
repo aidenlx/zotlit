@@ -150,3 +150,16 @@ export const themeProperty = {
   /** The line colour of a citation edge in the graph views. */
   graphCitationLink: "--zt-graph-citation-link-color",
 } as const;
+
+/**
+ * The stable attributes ZotLit sets on a host element while a mode stands, for
+ * a rule that applies only then. Each is present with an empty value, or
+ * absent.
+ */
+export const themeAttribute = {
+  /**
+   * On the PDF view's container while the ink tool is armed. ZotLit's own rule
+   * under it takes touch panning off the pages, so a finger draws.
+   */
+  pdfInking: "data-zt-inking",
+} as const;
