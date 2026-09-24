@@ -140,6 +140,14 @@ export type AnnotationEdits = Pick<
   | "submitComment"
 >;
 
+/** How a selection taken from outside the reader opens its Mark Popup. */
+export interface SelectOptions {
+  /** Whether the Mark Popup opens over the selection. */
+  popup?: boolean;
+  /** Whether the popup opens on its comment editor. */
+  commenting?: boolean;
+}
+
 /**
  * The gestures the Mark Popup hands to its UI seam, which render and decide
  * nothing themselves.
@@ -422,12 +430,14 @@ export class MarkSelection implements Disposable {
    *   passage, not for a popover over a document they have only just arrived
    *   at. The suppression lasts until the next selection, so a page re-render
    *   does not summon the popup the Landing declined.
+   * @param options.commenting whether the popup opens on its comment editor,
+   *   as it does for a note just placed.
    */
   select(
     annotationKey: string | null,
-    { popup = true }: { popup?: boolean } = {},
+    { popup = true, commenting = false }: SelectOptions = {},
   ): void {
-    this.#apply(annotationKey, null, { popup });
+    this.#apply(annotationKey, null, { popup, commenting });
   }
 
   [Symbol.dispose](): void {
@@ -443,7 +453,7 @@ export class MarkSelection implements Disposable {
       point: Point;
       stack: readonly string[];
     } | null = null,
-    { popup = true }: { popup?: boolean } = {},
+    { popup = true, commenting = false }: SelectOptions = {},
   ): void {
     if (key !== this.#selectedKey()) {
       this.#submitAndCloseCommentEditor();
@@ -455,6 +465,7 @@ export class MarkSelection implements Disposable {
     selectMark(this.#deps.surfaceState, key, {
       stack: at?.stack,
       quiet: !popup,
+      commenting,
     });
   }
 

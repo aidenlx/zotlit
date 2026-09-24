@@ -529,6 +529,8 @@ export function readerSurfaces({
   const reported: (readonly string[])[] = [];
   const navigated: string[] = [];
   const revealed: string[] = [];
+  /** The options each reveal was asked with, in reveal order. */
+  const revealedWith: { commenting?: boolean }[] = [];
   const popup = {
     contains: (node: Node | null) => host.contains(node),
     sync: () => host.sync(),
@@ -543,7 +545,10 @@ export function readerSurfaces({
     records: () => held,
     structure: () => structure,
     repaint: vi.fn(),
-    reveal: (annotationKey) => revealed.push(annotationKey),
+    reveal: (annotationKey, options = {}) => {
+      revealed.push(annotationKey);
+      revealedWith.push(options);
+    },
     reportBlockedGesture: gestures.reportBlockedGesture,
     renderCapability: vi.fn(),
     colors,
@@ -602,6 +607,7 @@ export function readerSurfaces({
     reported,
     navigated,
     revealed,
+    revealedWith,
     /** What a refresh does once the read answers: the records, replaced. */
     replace(next: readonly AnnotationRecord[]) {
       held = next;

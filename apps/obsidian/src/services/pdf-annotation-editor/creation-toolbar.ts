@@ -79,6 +79,7 @@ export interface CreationToolbarProps {
 const TOOL_FACE: Record<MarkTool, { icon: IconName; label: () => string }> = {
   highlight: { icon: "highlighter", label: m.pdf_toolbar_highlight },
   underline: { icon: "underline", label: m.pdf_toolbar_underline },
+  note: { icon: "sticky-note", label: m.pdf_toolbar_note },
   image: { icon: "square-dashed-mouse-pointer", label: m.pdf_toolbar_image },
   ink: { icon: "pencil", label: m.pdf_toolbar_ink },
 };

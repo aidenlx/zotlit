@@ -22,6 +22,7 @@ const NOW = Temporal.Instant.from("2026-09-17T10:00:00Z");
 const COLORS = {
   highlight: "#ffd400",
   underline: "#2ea8e5",
+  note: "#5fb236",
   image: "#ff6666",
   ink: "#a28ae5",
 } as const;
@@ -82,6 +83,14 @@ it("splits every tool in two, then mark visibility, and nothing else", () => {
     ...MARK_TOOLS.flatMap(halves),
     "visibility",
   ]);
+});
+
+it("seats the tools in Zotero's toolbar order, note between underline and image", () => {
+  expect(
+    model()
+      .filter(({ id }) => !id.endsWith("-color"))
+      .map(({ id }) => id),
+  ).toEqual(["highlight", "underline", "note", "image", "ink", "visibility"]);
 });
 
 it("shows each tool's own colour on its toggle, so underline is a peer of highlight", () => {
@@ -311,6 +320,22 @@ it("patches changed controls in place rather than rebuilding them", () => {
       icon: expect.stringContaining("lucide-chevron-down"),
     },
     {
+      id: "note",
+      pressed: "false",
+      disabled: "true",
+      tooltip: why,
+      color: "#5fb236",
+      icon: expect.stringContaining("lucide-sticky-note"),
+    },
+    {
+      id: "note-color",
+      pressed: null,
+      disabled: "true",
+      tooltip: why,
+      color: "",
+      icon: expect.stringContaining("lucide-chevron-down"),
+    },
+    {
       id: "image",
       pressed: "false",
       disabled: "true",
@@ -401,6 +426,8 @@ it("promises the theme hook and the data attribute by their literal names", () =
     "highlight-color",
     "underline",
     "underline-color",
+    "note",
+    "note-color",
     "image",
     "image-color",
     "ink",

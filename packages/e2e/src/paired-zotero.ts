@@ -1,7 +1,8 @@
 // Everything the Paired Run scenario needs from the Zotero half of a Paired
 // Run: the two reachability probes that decide whether it runs, a Zotero Local
-// API client, and the RDP levers its authorization tiers pull. One module,
-// because every part of it describes the same running Zotero.
+// API client, the RDP levers its authorization tiers pull, and the RDP reads
+// and erases of Annotations the reader tests take. One module, because every
+// part of it describes the same running Zotero.
 //
 // The wire facts this drives — the browser-traffic refusal, the authorize
 // endpoint's outcomes, the single-use consumption rule, the rate limit — are
@@ -10,6 +11,7 @@
 import { regex } from "arkregex";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { expect } from "vitest";
 
 import { getFixtureLayout, livePairedZotero } from "@zotlit/scripts/fixture";
 import type { FixtureLayout } from "@zotlit/scripts/fixture";
@@ -543,4 +545,86 @@ export async function readerSettled(
     throw new Error(
       `the Zotero Reader never settled on ${annotationKey}: ${pending.join(", ") || "version moving"}`,
     );
+}
+
+/**
+ * The Annotations Zotero holds on an item, by key, read over RDP.
+ *
+ * @param item the Zotero item as an RDP expression.
+ */
+export function heldAnnotationKeys(
+  rdp: ZoteroRdp,
+  item: string,
+): Promise<string[]> {
+  return rdp.json<string[]>(`${item}.getAnnotations().map(({ key }) => key)`);
+}
+
+/**
+ * The one Annotation Zotero holds on `item` beyond `before`, once it does.
+ * Every fresh key is handed to `created` before the count is asserted, so a
+ * test that made more than one still erases them all.
+ */
+export async function freshAnnotationKey(
+  rdp: ZoteroRdp,
+  {
+    item,
+    before,
+    created,
+  }: {
+    item: string;
+    before: readonly string[];
+    created: (keys: readonly string[]) => void;
+  },
+): Promise<string> {
+  let fresh: string[] = [];
+  expect(
+    await waitFor(async () => {
+      fresh = (await heldAnnotationKeys(rdp, item)).filter(
+        (key) => !before.includes(key),
+      );
+      return fresh.length > 0;
+    }),
+  ).toBe(true);
+  created(fresh);
+  expect(fresh).toHaveLength(1);
+  return fresh[0]!;
+}
+
+/** The fields of one Annotation a create test reads from the Local API. */
+export interface StoredAnnotation {
+  annotationType: string;
+  annotationColor: string;
+  annotationComment: string;
+  annotationPosition: string;
+  annotationPageLabel: string;
+  annotationSortIndex: string;
+}
+
+/** One Annotation's fields, as the Local API answers them. */
+export async function storedAnnotation(
+  baseUrl: string,
+  serverID: string,
+  key: string,
+): Promise<StoredAnnotation> {
+  const reply = await zoteroFetch(baseUrl, `users/0/items/${key}`, {
+    headers: { "Zotero-Server-ID": serverID },
+  });
+  return ((await reply.json()) as { data: StoredAnnotation }).data;
+}
+
+/** Erases Annotations from Zotero by key, over RDP; a key already gone is skipped. */
+export async function eraseAnnotations(
+  rdp: ZoteroRdp,
+  keys: readonly string[],
+): Promise<void> {
+  await rdp.json(`(async () => {
+    for (const key of ${JSON.stringify(keys)}) {
+      const item = Zotero.Items.getByLibraryAndKey(
+        Zotero.Libraries.userLibraryID,
+        key,
+      );
+      if (item) await item.eraseTx();
+    }
+    return "erased";
+  })()`);
 }

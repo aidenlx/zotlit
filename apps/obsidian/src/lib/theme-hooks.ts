@@ -94,8 +94,8 @@ export const themeHook = {
    * carries `data-zt-tool`. Each tool of its tool group is split in two — the
    * toggle under the tool's own name and the chevron that opens its colours
    * under `<tool>-color` — which today is `highlight`, `highlight-color`,
-   * `underline`, `underline-color`, `image`, `image-color`, `ink` and
-   * `ink-color`. `visibility`
+   * `underline`, `underline-color`, `note`, `note-color`, `image`,
+   * `image-color`, `ink` and `ink-color`. `visibility`
    * stands outside the group.
    */
   pdfCreationToolbar: "zt-pdf-creation-toolbar",

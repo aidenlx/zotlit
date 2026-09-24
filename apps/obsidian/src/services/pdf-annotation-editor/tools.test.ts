@@ -28,3 +28,9 @@ it("refuses a stored ink width outside the offered steps", () => {
   expect(v.safeParse(inkWidthSchema, 0.5).success).toBe(false);
   expect(v.safeParse(inkWidthSchema, 0.4).success).toBe(true);
 });
+
+it("starts note on Zotero's first swatch, and commits a text selection under it as a highlight", () => {
+  expect(resolveToolColors().note).toBe("#ffd400");
+  expectTypeOf<"note">().not.toExtend<TextTool>();
+  expect(textToolOf("note")).toBe("highlight");
+});

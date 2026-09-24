@@ -42,6 +42,7 @@ import type {
 } from "./geometry-edit";
 import { markPopupRow } from "./mark-popup";
 import type { MarkPopupRowInput, MarkPopupVerb } from "./mark-popup";
+import { gestureOf } from "./tools";
 import type { AnnotationTool, MarkTool, ToolColorStore } from "./tools";
 
 /** Where the create popup hangs, as a fraction of its page box, so a zoom keeps it. */
@@ -218,12 +219,16 @@ export function createReaderSurfaceState({
 }
 
 /**
- * Arms a tool, or stands the armed one down for `null`. Arming ink clears the
- * floating surface, so no Mark Handle stands to take a press meant to draw.
+ * Arms a tool, or stands the armed one down for `null`. Arming a tool that
+ * takes a click or a stroke clears the floating surface, so no Mark Handle
+ * stands to take a press meant to place a mark or to draw.
  */
 export function arm(store: ReaderSurfaceStore, tool: MarkTool | null): void {
+  const gesture = gestureOf(tool);
   store.setState(
-    tool === "ink" ? { armed: tool, floating: NONE } : { armed: tool },
+    gesture === "click" || gesture === "stroke"
+      ? { armed: tool, floating: NONE }
+      : { armed: tool },
   );
 }
 
@@ -288,11 +293,17 @@ const NONE: Floating = { kind: "none" };
  * @param options.stack the marks under the point that selected it, smallest
  *   first; the mark alone where no point did.
  * @param options.quiet whether the popup stays closed until the next selection.
+ * @param options.commenting whether the comment editor opens with the
+ *   selection, as it does for a note just placed.
  */
 export function selectMark(
   store: ReaderSurfaceStore,
   key: string | null,
-  { stack, quiet = false }: { stack?: readonly string[]; quiet?: boolean } = {},
+  {
+    stack,
+    quiet = false,
+    commenting = false,
+  }: { stack?: readonly string[]; quiet?: boolean; commenting?: boolean } = {},
 ): void {
   store.setState(({ floating }) => {
     if (key === null) return { floating: NONE };
@@ -305,9 +316,10 @@ export function selectMark(
         index: held.indexOf(key),
         quiet,
         commenting:
-          floating.kind === "selected" &&
-          floating.key === key &&
-          floating.commenting,
+          commenting ||
+          (floating.kind === "selected" &&
+            floating.key === key &&
+            floating.commenting),
       },
     };
   });

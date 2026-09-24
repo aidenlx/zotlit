@@ -3,7 +3,7 @@
 //
 // One tool per Zotero annotation type, in the order Zotero's own reader shows
 // them, so the group a reader learns here is the group Zotero offers. ZotLit
-// writes four of them today, and the Creation Toolbar seats those four.
+// writes five of them today, and the Creation Toolbar seats those five.
 //
 // The colours are settings rather than view state, so a tool armed in one PDF
 // draws in the same colour in the next one.
@@ -30,23 +30,56 @@ export const ANNOTATION_TOOLS = [
 
 export type AnnotationTool = (typeof ANNOTATION_TOOLS)[number];
 
-/** The tools ZotLit creates today, which are the four an armed tool commits as. */
-export const MARK_TOOLS = ["highlight", "underline", "image", "ink"] as const;
+/** The tools ZotLit creates today, which are the five an armed tool commits as. */
+export const MARK_TOOLS = [
+  "highlight",
+  "underline",
+  "note",
+  "image",
+  "ink",
+] as const;
 
 export type MarkTool = (typeof MARK_TOOLS)[number];
 
 /**
- * The tools a text selection commits as; the image tool takes a rectangle,
- * and the ink tool a stroke.
+ * The gesture each tool creates from: a text selection, a click on a page, a
+ * rectangle dragged on one, or a freehand stroke. What a gesture does in the
+ * reader follows from this table, so a new tool joins by its row here.
  */
-export type TextTool = Exclude<MarkTool, "image" | "ink">;
+export const TOOL_GESTURES = {
+  highlight: "selection",
+  underline: "selection",
+  note: "click",
+  image: "rectangle",
+  ink: "stroke",
+} as const satisfies Record<
+  MarkTool,
+  "selection" | "click" | "rectangle" | "stroke"
+>;
+
+type ToolGesture = (typeof TOOL_GESTURES)[MarkTool];
+
+/** The gesture the armed tool takes, or `null` while none is armed. */
+export function gestureOf(armed: MarkTool | null): ToolGesture | null {
+  return armed === null ? null : TOOL_GESTURES[armed];
+}
+
+/** The tools a text selection commits as. */
+export type TextTool = {
+  [T in MarkTool]: (typeof TOOL_GESTURES)[T] extends "selection" ? T : never;
+}[MarkTool];
+
+/** Whether a text selection commits as this tool. */
+export function isTextTool(tool: MarkTool | null): tool is TextTool {
+  return gestureOf(tool) === "selection";
+}
 
 /**
  * The tool a text selection commits as while a tool is armed: the armed one
  * where it takes text, and highlight where none does.
  */
 export function textToolOf(armed: MarkTool | null): TextTool {
-  return armed === "highlight" || armed === "underline" ? armed : "highlight";
+  return isTextTool(armed) ? armed : "highlight";
 }
 
 /** Whether ZotLit can write this tool's Annotation yet. */

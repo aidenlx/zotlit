@@ -990,17 +990,158 @@ it("leaves a press on a mark to the mark while the image tool is armed", async (
 });
 
 /**
- * The image reader with the ink tool armed from its toolbar instead. A client
+ * The image reader with another tool armed from its toolbar instead. A client
  * point `(x, y)` is the PDF point `(x, 792 - y)`.
  */
-function inkReader(...args: Parameters<typeof imageReader>) {
+function toolReader(
+  tool: "note" | "ink",
+  ...args: Parameters<typeof imageReader>
+) {
   const open = imageReader(...args);
-  open.slot.querySelector<HTMLElement>('[data-zt-tool="ink"]')!.click();
+  open.slot.querySelector<HTMLElement>(`[data-zt-tool="${tool}"]`)!.click();
   return open;
 }
 
+it("places a 22-point note centred on a click, opens its comment, and stands the tool down", async () => {
+  using open = toolReader("note");
+
+  // Released within the click slop: the note sits on the press point.
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [102, 101]);
+  await open.creation.created;
+
+  const position = { pageIndex: 0, rects: [[89, 681, 111, 703]] };
+  expect(open.structure.sortIndex).toHaveBeenCalledWith(position);
+  expect(open.drafts).toEqual([
+    {
+      type: "note",
+      color: "#ffd400",
+      comment: "",
+      text: "",
+      pageLabel: "1",
+      sortIndex: "00000|000100|00100",
+      position,
+    },
+  ]);
+  expect(open.revealed).toEqual(["MADE2345"]);
+  expect(open.revealedWith).toEqual([{ commenting: true }]);
+  expect(open.store.getState().armed).toBeNull();
+  expect(
+    open.slot
+      .querySelector('[data-zt-tool="note"]')
+      ?.getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it("leaves a note by the page edge unclamped, as Zotero does", async () => {
+  using open = toolReader("note");
+
+  open.pointer("pointerdown", [5, 787]);
+  open.pointer("pointerup", [5, 787]);
+  await open.creation.created;
+
+  expect(open.drafts.map(({ position }) => position)).toEqual([
+    { pageIndex: 0, rects: [[-6, -6, 16, 16]] },
+  ]);
+});
+
+it("creates no note from a drag, and stays armed", async () => {
+  using open = toolReader("note");
+
+  await open.drag([100, 100], [140, 100]);
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().armed).toBe("note");
+});
+
+it("takes a note press from the browser, so a drag under it selects no text", () => {
+  using open = toolReader("note");
+
+  const pressTaken = !open.pointer("pointerdown", [100, 100]);
+  const selectStart = new Event("selectstart", {
+    bubbles: true,
+    cancelable: true,
+  });
+  open.containerEl.dispatchEvent(selectStart);
+
+  expect(pressTaken).toBe(true);
+  expect(selectStart.defaultPrevented).toBe(true);
+});
+
+it.each([
+  [
+    "a second pointer's press",
+    (open: ReturnType<typeof imageReader>) =>
+      open.pointer("pointerdown", [200, 200], 2),
+  ],
+  [
+    "a pointer cancel",
+    (open: ReturnType<typeof imageReader>) =>
+      open.pointer("pointercancel", [100, 100]),
+  ],
+  [
+    "a lost capture",
+    (open: ReturnType<typeof imageReader>) =>
+      open.containerEl.dispatchEvent(
+        new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
+      ),
+  ],
+  [
+    "a tool change",
+    (open: ReturnType<typeof imageReader>) => arm(open.store, "highlight"),
+  ],
+  [
+    "the tool standing down",
+    (open: ReturnType<typeof imageReader>) => open.key("Escape"),
+  ],
+])("creates no note from a press %s discarded", async (_, discard) => {
+  using open = toolReader("note");
+
+  open.pointer("pointerdown", [100, 100]);
+  discard(open);
+  open.pointer("pointerup", [100, 100]);
+  open.pointer("pointerup", [200, 200], 2);
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+});
+
+it("reports a note press while editing is not live, and creates nothing", async () => {
+  // Armed while editing was live, and blocked since.
+  using open = toolReader("note");
+  ingestCapability(
+    open.store,
+    { kind: "read-only", reason: "zotero-unavailable" },
+    NOW,
+  );
+
+  open.pointer("pointerdown", [100, 100]);
+  open.pointer("pointerup", [100, 100]);
+  await open.creation.created;
+
+  expect(open.gestures.reportBlockedGesture).toHaveBeenCalledOnce();
+  expect(open.drafts).toEqual([]);
+});
+
+it("leaves a press on a mark to the mark while the note tool is armed", async () => {
+  using open = toolReader("note");
+
+  open.pointer("pointerdown", [300, 177]);
+  open.pointer("pointerup", [300, 177]);
+  open.containerEl.dispatchEvent(
+    new MouseEvent("click", { clientX: 300, clientY: 177, bubbles: true }),
+  );
+  await open.creation.created;
+
+  expect(open.drafts).toEqual([]);
+  expect(open.store.getState().floating).toMatchObject({
+    kind: "selected",
+    key: "PUPR5FG5",
+  });
+});
+
 it("creates one ink stroke as Zotero smooths it, and stays armed", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   await open.drag([100, 100], [110, 100]);
 
@@ -1038,7 +1179,7 @@ it("creates one ink stroke as Zotero smooths it, and stays armed", async () => {
 });
 
 it("stores a tap as its one point", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   await open.drag([100, 100], [100.4, 100]);
 
@@ -1048,7 +1189,7 @@ it("stores a tap as its one point", async () => {
 });
 
 it("keeps a stroke run off the page on the page it began on", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   await open.drag([600, 100], [700, 100]);
 
@@ -1060,7 +1201,7 @@ it("keeps a stroke run off the page on the page it began on", async () => {
 });
 
 it("discards a stroke on Escape and keeps the tool; a second Escape stands it down", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   open.pointer("pointerdown", [100, 100]);
   open.pointer("pointermove", [150, 150]);
@@ -1081,27 +1222,27 @@ it("discards a stroke on Escape and keeps the tool; a second Escape stands it do
 it.each([
   [
     "a second pointer's press",
-    (open: ReturnType<typeof inkReader>) =>
+    (open: ReturnType<typeof imageReader>) =>
       open.pointer("pointerdown", [200, 200], 2),
   ],
   [
     "a pointer cancel",
-    (open: ReturnType<typeof inkReader>) =>
+    (open: ReturnType<typeof imageReader>) =>
       open.pointer("pointercancel", [150, 150]),
   ],
   [
     "a lost capture",
-    (open: ReturnType<typeof inkReader>) =>
+    (open: ReturnType<typeof imageReader>) =>
       open.containerEl.dispatchEvent(
         new PointerEvent("lostpointercapture", { pointerId: 1, bubbles: true }),
       ),
   ],
   [
     "a tool change",
-    (open: ReturnType<typeof inkReader>) => arm(open.store, "highlight"),
+    (open: ReturnType<typeof imageReader>) => arm(open.store, "highlight"),
   ],
 ])("creates nothing from a stroke %s discarded", async (_, discard) => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   open.pointer("pointerdown", [100, 100]);
   open.pointer("pointermove", [150, 150]);
@@ -1116,7 +1257,7 @@ it.each([
 
 /** The ink reader, armed while editing was live and blocked since. */
 function blockedInkReader() {
-  const open = inkReader();
+  const open = toolReader("ink");
   ingestCapability(
     open.store,
     { kind: "read-only", reason: "zotero-unavailable" },
@@ -1150,7 +1291,7 @@ it("leaves a mark unselected under a press while editing is not live", async () 
 });
 
 it("saves a stroke in the colour it was pressed in", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
   const pressed = open.store.getState().colors.ink;
 
   open.pointer("pointerdown", [100, 100]);
@@ -1165,7 +1306,7 @@ it("saves a stroke in the colour it was pressed in", async () => {
 
 it("creates an image while an ink stroke still saves", async () => {
   const inkAnswers: ((outcome: CreateOutcome) => void)[] = [];
-  using open = inkReader(undefined, {
+  using open = toolReader("ink", undefined, {
     create: async (draft) =>
       draft.type === "ink"
         ? await new Promise((resolve) => inkAnswers.push(resolve))
@@ -1184,7 +1325,7 @@ it("creates an image while an ink stroke still saves", async () => {
 });
 
 it("draws over a mark and leaves the mark unselected", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   open.pointer("pointerdown", [300, 177]);
   open.pointer("pointerup", [300, 177]);
@@ -1199,7 +1340,7 @@ it("draws over a mark and leaves the mark unselected", async () => {
 
 it("draws while an earlier stroke saves, and creates in release order", async () => {
   const answers: (() => void)[] = [];
-  using open = inkReader(undefined, {
+  using open = toolReader("ink", undefined, {
     create: () =>
       new Promise((resolve) =>
         answers.push(() =>
@@ -1230,7 +1371,7 @@ it("draws while an earlier stroke saves, and creates in release order", async ()
 });
 
 it("takes a refused stroke off the page", async () => {
-  using open = inkReader(undefined, {
+  using open = toolReader("ink", undefined, {
     create: async () => ({
       kind: "failed",
       failure: { kind: "position-too-large" },
@@ -1245,7 +1386,7 @@ it("takes a refused stroke off the page", async () => {
 
 it("takes a stroke off the page and says why when editing lapsed while it waited", async () => {
   const answers: (() => void)[] = [];
-  using open = inkReader(undefined, {
+  using open = toolReader("ink", undefined, {
     create: () =>
       new Promise((resolve) =>
         answers.push(() =>
@@ -1277,7 +1418,7 @@ it("takes a stroke off the page and says why when editing lapsed while it waited
 });
 
 it("takes a stroke off the page when the viewer holds no document", async () => {
-  using open = inkReader(undefined, { closed: true });
+  using open = toolReader("ink", undefined, { closed: true });
 
   await open.drag([100, 100], [150, 150]);
 
@@ -1288,7 +1429,7 @@ it("takes a stroke off the page when the viewer holds no document", async () => 
 
 it("takes a stroke off the page when its create throws, and creates the next", async () => {
   let throws = true;
-  using open = inkReader(undefined, {
+  using open = toolReader("ink", undefined, {
     create: async () => {
       if (throws) throw new Error("The request did not run");
       return { kind: "created", annotationKey: "MADE2345" };
@@ -1308,7 +1449,7 @@ const step = (width: number) =>
   m.pdf_toolbar_ink_width_step({ width: String(width) });
 
 /** The ink tool's chevron menu, opened from the toolbar as a researcher opens it. */
-function inkMenu(open: ReturnType<typeof inkReader>) {
+function inkMenu(open: ReturnType<typeof toolReader>) {
   open.slot.querySelector<HTMLElement>('[data-zt-tool="ink-color"]')!.click();
   const { items } = Menu.instances.at(-1)!;
   return {
@@ -1320,7 +1461,7 @@ function inkMenu(open: ReturnType<typeof inkReader>) {
 }
 
 it("offers the ink widths under the colours, the current one checked, and draws at the one picked", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
 
   const menu = inkMenu(open);
   expect(
@@ -1347,12 +1488,16 @@ it("keeps the picked ink width in the settings, so the next PDF draws at it", as
   const settings = readerSettings();
   expect(toolColorStore(settings).inkWidth()).toBe(2);
   {
-    using first = inkReader(undefined, { colors: toolColorStore(settings) });
+    using first = toolReader("ink", undefined, {
+      colors: toolColorStore(settings),
+    });
     inkMenu(first).pick(step(8));
   }
 
   expect(settings.current?.["reader.ink-width"]).toBe(8);
-  using next = inkReader(undefined, { colors: toolColorStore(settings) });
+  using next = toolReader("ink", undefined, {
+    colors: toolColorStore(settings),
+  });
   await next.drag([100, 100], [100.4, 100]);
   expect(next.drafts.map(({ position }) => position)).toEqual([
     { pageIndex: 0, width: 8, paths: [[100, 692]] },
@@ -1360,7 +1505,7 @@ it("keeps the picked ink width in the settings, so the next PDF draws at it", as
 });
 
 it("finishes a stroke that reaches the position ceiling as its own Annotation, and draws on with the pointer held", async () => {
-  using open = inkReader();
+  using open = toolReader("ink");
   // A zig-zag scribble of three-point steps, row after row, as long as about
   // one and a half Annotations hold.
   const samples = Array.from({ length: 3000 }, (_, index): [number, number] => {

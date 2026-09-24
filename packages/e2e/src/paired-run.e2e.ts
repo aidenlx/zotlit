@@ -41,7 +41,10 @@ import {
   clickAuthorizationDialog,
   denyAnyAuthorizationDialog,
   dismissAuthorizationDialog,
+  eraseAnnotations,
+  freshAnnotationKey,
   grantRememberedKey,
+  heldAnnotationKeys,
   openZoteroRdp,
   probePairedRun,
   readerAnnotation,
@@ -49,17 +52,25 @@ import {
   readServerID,
   resetAuthorizations,
   restorePrompt,
+  storedAnnotation,
   stubPrompt,
   waitForAuthorizationDialog,
   zoteroFetch,
 } from "./paired-zotero.ts";
 import type { ZoteroRdp } from "./paired-zotero.ts";
 import {
+  armToolOnFirstPage,
+  capabilityOf,
+  clientOfFirstPage,
+  disarmTool,
   FIRE,
+  pageContainerOf,
   pdfViewOf,
   raiseWindow,
   recomputedSortIndex,
+  settledGesture,
   TAP,
+  toolButtonOf,
   watchExcerptPixels,
 } from "./reader-gestures.ts";
 
@@ -885,6 +896,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
       /** The Obsidian PDF view on the Fixture Attachment, as an eval expression. */
       const pdfView = pdfViewOf(attachmentPath);
+      /** The Attachment's Annotations as Zotero holds them, by key. */
+      const annotationKeys = () => heldAnnotationKeys(rdp, ATTACHMENT_ITEM);
 
       /** One seeded Annotation as the Local API answers it. */
       interface StoredMark {
@@ -1085,40 +1098,17 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       }, 120000);
 
       describe("the image tool on the first page", () => {
-        const tool = `${pdfView}.containerEl.querySelector('[data-zt-tool="image"]')`;
-        /**
-         * A PDF point on page one as a client point, through the overlay the
-         * page draws: its box on screen over its own `viewBox`, which is the
-         * frame a drag on the page is measured in.
-         */
-        const clientOf = `const clientOf=(x,y)=>{const overlay=${pdfView}.viewer.child.getPage(1).div.querySelector('.zt-pdf-annotation-overlay');const box=overlay.getBoundingClientRect();const view=overlay.viewBox.baseVal;return {x:box.left+(x-view.x)*box.width/view.width,y:box.top+(view.y+view.height-y)*box.height/view.height};};`;
+        const tool = toolButtonOf(pdfView, "image");
+        const clientOf = clientOfFirstPage(pdfView);
 
-        /** The Attachment's Annotations as Zotero holds them, by key. */
-        const annotationKeys = () =>
-          rdp.json<string[]>(
-            `${ATTACHMENT_ITEM}.getAnnotations().map(({ key }) => key)`,
-          );
+        afterEach(() => disarmTool(vaultId!, { pdfView, tool: "image" }));
 
         /**
          * Brings page one on screen in a window that lays it out, and arms the
          * image tool from the Creation Toolbar.
          */
-        async function armOnFirstPage(): Promise<void> {
-          await raiseWindow(vaultId!);
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return String(!!view.viewer.child.getPage(1)?.div.querySelector('.zt-pdf-annotation-overlay'));})()`,
-              { expected: "true" },
-            ),
-          ).toBe(true);
-          expect(
-            await obEval(
-              vaultId!,
-              `(function(){const tool=${tool};if(tool.getAttribute('aria-pressed')!=='true')tool.click();return tool.getAttribute('aria-pressed');})()`,
-            ),
-          ).toBe("true");
-        }
+        const armOnFirstPage = () =>
+          armToolOnFirstPage(vaultId!, { pdfView, tool: "image" });
 
         /**
          * Drags a rectangle between two PDF points on page one, clear of every
@@ -1139,26 +1129,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           // Drawn in full while the pointer is down: both sides pass ten points.
           expect(await drag([80, 220], [220, 120])).toEqual({ preview: "1" });
 
-          let fresh: string[] = [];
-          expect(
-            await waitFor(async () => {
-              fresh = (await annotationKeys()).filter(
-                (key) => !before.includes(key),
-              );
-              return fresh.length > 0;
-            }),
-          ).toBe(true);
-          expect(fresh).toHaveLength(1);
-          const capturedKey = fresh[0]!;
-          cleanup.defer(async () => {
-            await rdp.json(`(async () => {
-              const item = Zotero.Items.getByLibraryAndKey(
-                Zotero.Libraries.userLibraryID,
-                ${JSON.stringify(capturedKey)},
-              );
-              if (item) await item.eraseTx();
-              return "erased";
-            })()`);
+          const capturedKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => cleanup.defer(() => eraseAnnotations(rdp, keys)),
           });
 
           // Zotero holds an image at the dragged rect, read off the Local API.
@@ -1259,16 +1233,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       });
 
       describe("the ink tool on the first page", () => {
-        const tool = `${pdfView}.containerEl.querySelector('[data-zt-tool="ink"]')`;
+        const tool = toolButtonOf(pdfView, "ink");
         const liveStroke = `${pdfView}.containerEl.querySelector('.zt-pdf-live-stroke')`;
-        /** The reader's page container, which scrolls the pages. */
-        const pageContainer = `${pdfView}.viewer.child.pdfViewer.pdfViewer.container`;
-        /**
-         * A PDF point on page one as a client point, through the overlay the
-         * page draws: its box on screen over its own `viewBox`, which is the
-         * frame a stroke on the page is measured in.
-         */
-        const clientOf = `const clientOf=(x,y)=>{const overlay=${pdfView}.viewer.child.getPage(1).div.querySelector('.zt-pdf-annotation-overlay');const box=overlay.getBoundingClientRect();const view=overlay.viewBox.baseVal;return {x:box.left+(x-view.x)*box.width/view.width,y:box.top+(view.y+view.height-y)*box.height/view.height};};`;
+        const clientOf = clientOfFirstPage(pdfView);
 
         /**
          * Half an ellipse of thirteen PDF points on page one, from (100, 340)
@@ -1283,12 +1250,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ] as const;
         });
 
-        /** The Attachment's Annotations as Zotero holds them, by key. */
-        const annotationKeys = () =>
-          rdp.json<string[]>(
-            `${ATTACHMENT_ITEM}.getAnnotations().map(({ key }) => key)`,
-          );
-
         /** What each test created, erased once it ends. */
         const created: string[] = [];
 
@@ -1301,20 +1262,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               { rdp, attachmentKey: attachment.key, annotationKey },
               { api, serverID, image: true },
             );
-          await rdp.json(`(async () => {
-            for (const key of ${JSON.stringify(keys)}) {
-              const item = Zotero.Items.getByLibraryAndKey(
-                Zotero.Libraries.userLibraryID,
-                key,
-              );
-              if (item) await item.eraseTx();
-            }
-            return "erased";
-          })()`);
-          await obEval(
-            vaultId!,
-            `(function(){const tool=${tool};if(tool?.getAttribute('aria-pressed')==='true')tool.click();return true;})()`,
-          );
+          await eraseAnnotations(rdp, keys);
+          await disarmTool(vaultId!, { pdfView, tool: "ink" });
         });
 
         /**
@@ -1322,37 +1271,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
          * PDF point `at` in the middle of the window, and arms the ink tool
          * from the Creation Toolbar.
          */
-        async function armInk([x, y]: readonly [
-          number,
-          number,
-        ]): Promise<void> {
-          await raiseWindow(vaultId!);
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;return String(!!view.viewer.child.getPage(1)?.div.querySelector('.zt-pdf-annotation-overlay'));})()`,
-              { expected: "true" },
-            ),
-          ).toBe(true);
-          await obEval(
-            vaultId!,
-            `(function(){${clientOf}const at=clientOf(${x},${y});${pageContainer}.scrollTop+=at.y-innerHeight/2;return true;})()`,
-          );
-          // Measured in its own eval, once the scroll has laid the page out.
-          expect(
-            await obEvalUntil(
-              vaultId!,
-              `(function(){${clientOf}const at=clientOf(${x},${y});return String(Math.abs(at.y-innerHeight/2)<innerHeight/4&&!!document.elementFromPoint(at.x,at.y));})()`,
-              { expected: "true" },
-            ),
-          ).toBe(true);
-          expect(
-            await obEval(
-              vaultId!,
-              `(function(){const tool=${tool};if(tool.getAttribute('aria-pressed')!=='true')tool.click();return tool.getAttribute('aria-pressed');})()`,
-            ),
-          ).toBe("true");
-        }
+        const armInk = (at: readonly [number, number]) =>
+          armToolOnFirstPage(vaultId!, { pdfView, tool: "ink", at });
 
         /**
          * Presses on the first PDF point and moves through the rest, with
@@ -1386,20 +1306,12 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
 
         /** The one Annotation Zotero holds beyond `before`, once it does. */
-        async function freshKey(before: readonly string[]): Promise<string> {
-          let fresh: string[] = [];
-          expect(
-            await waitFor(async () => {
-              fresh = (await annotationKeys()).filter(
-                (key) => !before.includes(key),
-              );
-              return fresh.length > 0;
-            }),
-          ).toBe(true);
-          created.push(...fresh);
-          expect(fresh).toHaveLength(1);
-          return fresh[0]!;
-        }
+        const freshKey = (before: readonly string[]) =>
+          freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
 
         /** An ink Annotation as the Local API answers it. */
         async function storedInk(key: string) {
@@ -1631,7 +1543,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         it("takes touch panning off the page container only while armed", async () => {
           await armInk([150, 355]);
-          const touchAction = `getComputedStyle(${pageContainer}).touchAction`;
+          const touchAction = `getComputedStyle(${pageContainerOf(pdfView)}).touchAction`;
 
           expect(await obEval(vaultId!, touchAction)).toBe("none");
           await obEval(
@@ -1716,6 +1628,170 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               expected: "writable",
             }),
           ).toBe(true);
+          expect(await annotationKeys()).toEqual(before);
+        }, 120000);
+      });
+
+      /**
+       * Runs `gesture` with the Local API turned off, so editing is not live,
+       * and answers once editing is live again with the Local API back on.
+       */
+      const whileEditingNotLive = async (gesture: () => Promise<void>) => {
+        {
+          await using restoreLocalApi = new AsyncDisposableStack();
+          restoreLocalApi.defer(async () => {
+            await setLocalApi(rdp, true);
+          });
+          await setLocalApi(rdp, false);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              capabilityOf(attachment.key, "reason"),
+              {
+                expected: "local-api-disabled",
+              },
+            ),
+          ).toBe(true);
+
+          await gesture();
+          await settledGesture(vaultId!, attachmentPath);
+        }
+        expect(
+          await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
+            expected: "writable",
+          }),
+        ).toBe(true);
+      };
+
+      describe("the note tool on the first page", () => {
+        const tool = toolButtonOf(pdfView, "note");
+        const clientOf = clientOfFirstPage(pdfView);
+        /**
+         * A PDF point on page one clear of every seeded mark and of the image
+         * the image block may leave: the left column's body text.
+         */
+        const CLEAR = [150, 250] as const;
+        /** The seeded note's centre, in PDF points on page one. */
+        const SEED_NOTE = [577.901, 609.393] as const;
+
+        /** What each test created, erased once it ends. */
+        const created: string[] = [];
+
+        afterEach(async () => {
+          await eraseAnnotations(rdp, created.splice(0));
+          await disarmTool(vaultId!, { pdfView, tool: "note" });
+        });
+
+        /**
+         * Brings page one on screen in a window that lays it out, with the
+         * PDF point `at` in the middle of the window, and arms the note tool
+         * from the Creation Toolbar.
+         */
+        const armNote = (at: readonly [number, number]) =>
+          armToolOnFirstPage(vaultId!, { pdfView, tool: "note", at });
+
+        /** A click at a PDF point on page one, as the browser delivers it. */
+        const click = ([x, y]: readonly [number, number]) =>
+          obEval(
+            vaultId!,
+            `(function(){${FIRE}${TAP}${clientOf}const at=clientOf(${x},${y});tap(at.x,at.y);return true;})()`,
+          );
+
+        it("places a note centred on a click, opens its comment, and stands the tool down", async () => {
+          await armNote(CLEAR);
+          const before = await annotationKeys();
+
+          await click(CLEAR);
+
+          const noteKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
+          const data = await storedAnnotation(api, serverID, noteKey);
+          expect(data).toMatchObject({
+            annotationType: "note",
+            annotationColor: "#ffd400",
+            annotationPageLabel: "1",
+            annotationComment: "",
+          });
+          const position = JSON.parse(data.annotationPosition) as {
+            pageIndex: number;
+            rects: number[][];
+          };
+          expect(position.pageIndex).toBe(0);
+          expect(position.rects, data.annotationPosition).toHaveLength(1);
+          // A 22-point square centred on the click, within the rounding of
+          // the client point the click was dispatched at.
+          const [x, y] = CLEAR;
+          [x - 11, y - 11, x + 11, y + 11].forEach((value, index) =>
+            expect(
+              Math.abs(position.rects[0]![index]! - value),
+              data.annotationPosition,
+            ).toBeLessThan(0.1),
+          );
+          expect(position.rects[0]![2]! - position.rects[0]![0]!).toBeCloseTo(
+            22,
+            2,
+          );
+          expect(position.rects[0]![3]! - position.rects[0]![1]!).toBeCloseTo(
+            22,
+            2,
+          );
+          expect(data.annotationSortIndex).toBe(
+            await recomputedSortIndex(vaultId!, {
+              attachmentPath,
+              position: data.annotationPosition,
+            }),
+          );
+
+          // Zotero's open Reader holds it.
+          expect(await waitFor(() => readerHoldsAnnotation(rdp, noteKey))).toBe(
+            true,
+          );
+          // The page draws the note glyph, selected; the Mark Popup is open
+          // with its comment sheet focused; the tool stood down.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(noteKey)}]');const focused=document.activeElement;return JSON.stringify({glyph:!!mark?.classList.contains('zt-pdf-annotation-note-icon'),selected:!!mark?.classList.contains('is-selected'),sheet:!!focused?.closest('.popover')&&!!focused?.closest('.cm-content'),armed:${tool}.getAttribute('aria-pressed')});})()`,
+              {
+                expected: JSON.stringify({
+                  glyph: true,
+                  selected: true,
+                  sheet: true,
+                  armed: "false",
+                }),
+              },
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("selects the seeded note under a click and creates nothing", async () => {
+          await armNote(SEED_NOTE);
+          const before = await annotationKeys();
+
+          // A click on a mark starts no create, so the selection is the end.
+          await click(SEED_NOTE);
+
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))`,
+              { expected: JSON.stringify(["C94NJNYG"]) },
+            ),
+          ).toBe(true);
+          expect(await annotationKeys()).toEqual(before);
+        }, 120000);
+
+        it("creates nothing from a click while editing is not live", async () => {
+          await armNote(CLEAR);
+          const before = await annotationKeys();
+
+          await whileEditingNotLive(async () => {
+            await click(CLEAR);
+          });
+
           expect(await annotationKeys()).toEqual(before);
         }, 120000);
       });

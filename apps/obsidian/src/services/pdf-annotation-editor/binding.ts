@@ -696,10 +696,12 @@ export class PdfViewBinding implements Disposable, HoverParent {
       records: () => this.#records,
       structure: () => this.#structure(),
       repaint: () => this.#repaint(),
-      reveal: (annotationKey) => {
+      reveal: (annotationKey, { commenting } = {}) => {
         // The create dropped the Attachment's list, so the mark exists once the
         // refresh it started has answered.
-        void this.refreshed.then(() => this.#selection?.select(annotationKey));
+        void this.refreshed.then(() =>
+          this.#selection?.select(annotationKey, { commenting }),
+        );
       },
       reportBlockedGesture: () => this.#editGesture(),
       renderCapability: (slot) => {

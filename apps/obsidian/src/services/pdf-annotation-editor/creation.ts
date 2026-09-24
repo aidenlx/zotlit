@@ -1,18 +1,20 @@
 // Creating a highlight or an underline from a text selection in Obsidian's PDF
-// reader, and an image from a rectangle dragged on a page: the Creation
-// Toolbar's defaults, the Mark Popup in create mode, the keys that commit
-// without the mouse, and the one command that writes.
+// reader, a note from a click on a page, and an image from a rectangle dragged
+// on a page: the Creation Toolbar's defaults, the Mark Popup in create mode,
+// the keys that commit without the mouse, and the one command that writes.
 //
 // Two speeds of one commit path. Nothing armed: a settled selection opens the
 // popup and one click commits. A tool armed from the toolbar: the selection
 // commits at once in that tool's colour and the popup reopens on the new mark.
-// The armed image tool takes a rectangle instead of a selection, and stands
-// down once it has created one. The armed ink tool takes a freehand stroke,
+// The armed note tool places a note at a click, opens it on its comment, and
+// stands down. The armed image tool takes a rectangle instead of a selection,
+// and stands down once it has created one. The armed ink tool takes a freehand stroke,
 // creates it in the background, and stays armed for the next one.
 //
 // @see https://github.com/aidenlx/zotlit/issues/1150
 // @see https://github.com/aidenlx/zotlit/issues/1206
 // @see https://github.com/aidenlx/zotlit/issues/1209
+// @see https://github.com/aidenlx/zotlit/issues/1214
 import type { App } from "obsidian";
 
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
@@ -52,7 +54,8 @@ import type {
   CreationToolbarNodes,
 } from "./creation-toolbar";
 import { captureRect } from "./geometry-edit";
-import type { PdfRect } from "./geometry-edit";
+import type { PdfPoint, PdfRect } from "./geometry-edit";
+import { CLICK_SLOP, distance } from "./hit-test";
 import type { Point } from "./hit-test";
 import { InkStroke } from "./ink-stroke";
 import { popupColumn } from "./mark-popup";
@@ -88,6 +91,7 @@ import type {
   ReaderSurfaceStore,
 } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
+import type { SelectOptions } from "./selection";
 import { selectionPagesOf } from "./selection-capture";
 import type { SelectionPage } from "./selection-capture";
 import {
@@ -99,10 +103,17 @@ import {
   selectionCollapsed,
   releaseCapture,
 } from "./surface";
-import { textToolOf } from "./tools";
+import { MARK_TOOLS, gestureOf, isTextTool, textToolOf } from "./tools";
 import type { MarkTool, TextTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
+
+/**
+ * The side of the square a note is stored as, in PDF points: Zotero's.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L27
+ */
+const NOTE_SIZE = 22;
 
 /** One page of the reader, as selection capture and the anchor read it. */
 export interface ReaderPage {
@@ -127,12 +138,13 @@ export interface CreationGestures {
   /** A keystroke the selected-mark keymap did not take. */
   key: (event: KeyboardEvent) => void;
   /**
-   * A press in the reader that took no Mark Handle, which the armed image
-   * tool may begin a capture from, and the armed ink tool a stroke.
+   * A press in the reader that took no Mark Handle, which the armed note tool
+   * may place a note from, the armed image tool begin a capture from, and the
+   * armed ink tool a stroke.
    *
    * @param options.onMark whether an Annotation Mark lies under the press,
-   *   which keeps the press the mark's; asked only of a press the image tool
-   *   could take. The ink tool draws over marks.
+   *   which keeps the press the mark's; asked only of a press the note or the
+   *   image tool could take. The ink tool draws over marks.
    */
   grab: (event: PointerEvent, options: { onMark: () => boolean }) => void;
   /** A pointer moved that no Geometry Edit holds. */
@@ -166,10 +178,11 @@ interface MarkDraft {
 
 /**
  * What a create does around its write, by the tool it creates for. A
- * foreground create holds the reader until Zotero answers — no second text or
- * image create begins meanwhile — and takes the new mark as the selection; an
- * ink create runs in the background, selects nothing, and leaves the tool
- * armed. The image tool stands down once it created, as Zotero's does.
+ * foreground create holds the reader until Zotero answers — no second text,
+ * note or image create begins meanwhile — and takes the new mark as the
+ * selection; an ink create runs in the background, selects nothing, and leaves
+ * the tool armed. The note and image tools stand down once they created, as
+ * Zotero's do.
  */
 const CREATE_EFFECTS: Record<
   MarkTool,
@@ -177,6 +190,7 @@ const CREATE_EFFECTS: Record<
 > = {
   highlight: { foreground: true, disarm: false },
   underline: { foreground: true, disarm: false },
+  note: { foreground: true, disarm: true },
   image: { foreground: true, disarm: true },
   ink: { foreground: false, disarm: false },
 };
@@ -198,8 +212,15 @@ export interface MarkCreationDeps {
   structure: () => PdfTextStructure | null;
   /** Redraws the overlays after the mark visibility changed. */
   repaint: () => void;
-  /** Takes the new mark as the selection, so the popup reopens on it. */
-  reveal: (annotationKey: string) => void;
+  /**
+   * Takes the new mark as the selection, so the popup reopens on it.
+   *
+   * @param options.commenting whether the popup opens on its comment editor.
+   */
+  reveal: (
+    annotationKey: string,
+    options?: Pick<SelectOptions, "commenting">,
+  ) => void;
   /**
    * A press met a block on this Attachment. The seam probes Zotero and says
    * why, once per reason per capability episode.
@@ -230,7 +251,7 @@ export class MarkCreation implements CreationGestures, Disposable {
   /** The comment sheet, whose editor holds the comment until the save. */
   #sheet: CommentSheet | null = null;
   /**
-   * Whether a text or image create is waiting on Zotero, the armed tool's
+   * Whether a text, note or image create is waiting on Zotero, the armed tool's
    * among them, so a drag released meanwhile makes nothing. An ink create
    * holds nothing.
    */
@@ -240,6 +261,19 @@ export class MarkCreation implements CreationGestures, Disposable {
   /** Counts gestures, so a selection placed late never outlives its own. */
   #gesture = 0;
   #pressedOnPage = false;
+  /**
+   * The press the armed note tool took, which places a note at its release
+   * within the click slop while the tool stays armed; `null` while none
+   * stands.
+   */
+  #notePress: {
+    pointerId: number;
+    pageIndex: number;
+    /** The press point in PDF points, which the note is centred on. */
+    at: PdfPoint;
+    /** The press point on screen, which the release's travel is measured from. */
+    client: Point;
+  } | null = null;
   /** The pointer an image capture holds, and the page it was pressed on. */
   #capturing: { pointerId: number; page: ReaderPage } | null = null;
   /** The Ink Stroke the pointer is drawing; `null` while none is. */
@@ -267,12 +301,13 @@ export class MarkCreation implements CreationGestures, Disposable {
         { equalityFn: sameFlat },
       ),
     );
-    // A tool change takes the stroke in progress with it.
+    // A tool change takes the stroke or the note press in progress with it.
     this.#surfaces.defer(
       deps.surfaceState.subscribe(
         ({ armed }) => armed,
         (armed) => {
           if (armed !== "ink") this.#discardStroke();
+          this.#dropNotePress();
         },
       ),
     );
@@ -333,6 +368,12 @@ export class MarkCreation implements CreationGestures, Disposable {
       this.#pinching = event.pointerId;
       this.#discardStroke();
     }
+    // A second pointer discards the note press the first one holds, and
+    // places nothing of its own.
+    if (this.#notePress && event.pointerId !== this.#notePress.pointerId) {
+      this.#pinching = event.pointerId;
+      this.#dropNotePress();
+    }
     const inPopup = this.#deps.popup.contains(event.target as Node);
     // The press that follows a settled selection dismisses its popup, wherever
     // it lands — the popup is only ever opened from a release.
@@ -354,9 +395,9 @@ export class MarkCreation implements CreationGestures, Disposable {
         // The selection can collapse while the page's characters load.
         if (selectionCollapsed(this.#deps.containerEl)) return;
         const { armed, colors } = this.#state();
-        // The image and ink tools take no text selection, so a selection made
-        // under either waits in the popup as one made unarmed does.
-        if (armed === "highlight" || armed === "underline") {
+        // Only a selection tool takes a text selection: one made under the
+        // note, image or ink tool waits in the popup as one made unarmed does.
+        if (isTextTool(armed)) {
           // The armed tool commits at once and opens no popup, so the
           // selection never floats.
           this.#creating = this.#create({
@@ -437,12 +478,13 @@ export class MarkCreation implements CreationGestures, Disposable {
     const pinching = this.#pinching === event.pointerId;
     this.#pinching = null;
     if (event.button !== 0) return;
-    if (this.#state().armed === "ink") {
+    const gesture = gestureOf(this.#state().armed);
+    if (gesture === "stroke") {
       if (!pinching) this.#beginStroke(event);
       return;
     }
-    if (this.#state().armed !== "image") return;
-    if (this.#capturing || this.#writing || onMark()) return;
+    if (gesture !== "click" && gesture !== "rectangle") return;
+    if (pinching || this.#capturing || this.#writing || onMark()) return;
     const client = { x: event.clientX, y: event.clientY };
     const page = this.#readerPageUnder(client);
     if (!page || this.#inSelection(client)) return;
@@ -451,10 +493,21 @@ export class MarkCreation implements CreationGestures, Disposable {
       return;
     }
     // The press selects no text, and drops the selection that stood, as
-    // Zotero's reader does before it draws a rectangle.
+    // Zotero's reader does before it draws a rectangle. The container holds
+    // the pointer, so a release off it still ends the gesture.
     event.preventDefault();
     this.#collapse();
     this.#deps.containerEl.setPointerCapture(event.pointerId);
+    if (gesture === "click") {
+      // Only a click places the note; a drag places nothing.
+      this.#notePress = {
+        pointerId: event.pointerId,
+        pageIndex: page.pageIndex,
+        at: pdfPointAt(page.view, client),
+        client,
+      };
+      return;
+    }
     this.#capturing = { pointerId: event.pointerId, page };
     beginCapture(this.#deps.surfaceState, {
       pageIndex: page.pageIndex,
@@ -492,6 +545,17 @@ export class MarkCreation implements CreationGestures, Disposable {
       if (event.pointerId === this.#stroke.pointerId) this.#releaseStroke();
       return;
     }
+    const note = this.#notePress;
+    if (note && event.pointerId === note.pointerId) {
+      this.#notePress = releaseCapture(this.#deps.containerEl, note);
+      const travel = distance(note.client, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+      if (travel < CLICK_SLOP)
+        this.#creating = this.#createNote(note.pageIndex, note.at);
+      return;
+    }
     const capturing = this.#capturing;
     if (!capturing || event.pointerId !== capturing.pointerId) return;
     this.#capturing = releaseCapture(this.#deps.containerEl, this.#capturing);
@@ -501,16 +565,22 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   cancel(event: PointerEvent): void {
+    if (event.pointerId === this.#notePress?.pointerId) this.#dropNotePress();
     if (event.pointerId === this.#capturing?.pointerId) this.#cancelCapture();
     if (event.pointerId === this.#stroke?.pointerId) this.#discardStroke();
   }
 
   get capturing(): boolean {
-    return this.#capturing !== null || this.#stroke !== null;
+    return (
+      this.#capturing !== null ||
+      this.#stroke !== null ||
+      this.#notePress !== null
+    );
   }
 
   [Symbol.dispose](): void {
     this.#gesture++;
+    this.#dropNotePress();
     this.#cancelCapture();
     this.#discardStroke();
     this.#surfaces.dispose();
@@ -565,32 +635,19 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   #toolbarActivate(id: string, node: HTMLElement): void {
-    switch (id) {
-      case "highlight":
-      case "underline":
-      case "image":
-      case "ink":
-        this.#arm(this.#state().armed === id ? null : id);
-        return;
-      case "highlight-color":
-        this.#openColorMenu("highlight", node);
-        return;
-      case "underline-color":
-        this.#openColorMenu("underline", node);
-        return;
-      case "image-color":
-        this.#openColorMenu("image", node);
-        return;
-      case "ink-color":
-        this.#openColorMenu("ink", node);
-        return;
-      case "visibility":
-        toggleMarks(this.#deps.surfaceState);
-        this.#deps.repaint();
-        return;
-      default:
-        return;
+    if (id === "visibility") {
+      toggleMarks(this.#deps.surfaceState);
+      this.#deps.repaint();
+      return;
     }
+    // A tool's own button arms it; its chevron, `<tool>-color`, opens its
+    // colours.
+    const tool = MARK_TOOLS.find(
+      (candidate) => id === candidate || id === `${candidate}-color`,
+    );
+    if (!tool) return;
+    if (id === tool) this.#arm(this.#state().armed === tool ? null : tool);
+    else this.#openColorMenu(tool, node);
   }
 
   /**
@@ -704,6 +761,36 @@ export class MarkCreation implements CreationGestures, Disposable {
   }
 
   /**
+   * One note, a {@link NOTE_SIZE}-point square centred on the press point in
+   * the note tool's colour, as Zotero places one: not clamped to the page. It
+   * opens on its comment, and the tool stands down, as Zotero's does. The
+   * capability can lapse while the pointer is down, and that release is told
+   * why it created nothing.
+   *
+   * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/pdf-view.js#L3104-L3122
+   */
+  async #createNote(pageIndex: number, [x, y]: PdfPoint): Promise<void> {
+    if (!editingLive(this.#capability())) {
+      this.#deps.reportBlockedGesture();
+      return;
+    }
+    const half = NOTE_SIZE / 2;
+    await this.#create(
+      {
+        type: "note",
+        color: this.#state().colors.note,
+        comment: "",
+        text: "",
+        position: {
+          pageIndex,
+          rects: [[x - half, y - half, x + half, y + half]],
+        },
+      },
+      { commenting: true },
+    );
+  }
+
+  /**
    * One image, from the rectangle a capture was released on, in the image
    * tool's colour. The tool stands down once it is created, as Zotero's does.
    * The capability can lapse while the pointer is down, and that release is
@@ -729,16 +816,15 @@ export class MarkCreation implements CreationGestures, Disposable {
    * Label from the text structure, and the effects {@link CREATE_EFFECTS}
    * gives its tool.
    *
+   * @param reveal.commenting whether the new mark's popup opens on its
+   *   comment editor.
    * @returns the created Annotation's Indexed Key, or `null` for a create
    *   that did not run or did not land.
    */
-  async #create({
-    type,
-    color,
-    comment,
-    text,
-    position,
-  }: MarkDraft): Promise<string | null> {
+  async #create(
+    { type, color, comment, text, position }: MarkDraft,
+    reveal: Pick<SelectOptions, "commenting"> = {},
+  ): Promise<string | null> {
     const structure = this.#deps.structure();
     // A blocked gesture is answered by the binding's own edit-gesture listener,
     // which hears every key of the shared edit keymap.
@@ -787,7 +873,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       }
       created = true;
       recordColorUse(this.#deps.surfaceState, this.#deps.colors, color);
-      if (foreground) this.#deps.reveal(outcome.annotationKey);
+      if (foreground) this.#deps.reveal(outcome.annotationKey, reveal);
       if (disarm) this.#arm(null);
       return outcome.annotationKey;
     } finally {
@@ -934,6 +1020,11 @@ export class MarkCreation implements CreationGestures, Disposable {
     releaseCapture(this.#deps.containerEl, stroke);
     stroke[Symbol.dispose]();
     logger.debug("An ink stroke was discarded");
+  }
+
+  /** Takes back the note press, placing nothing for it. */
+  #dropNotePress(): void {
+    this.#notePress = releaseCapture(this.#deps.containerEl, this.#notePress);
   }
 
   /** Takes back the capture, drawing and creating nothing for it. */

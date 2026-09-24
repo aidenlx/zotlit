@@ -269,6 +269,18 @@ it("keeps the comment editor open for a repeat selection of the same mark", () =
   expect(store.getState().floating).toMatchObject({ commenting: false });
 });
 
+it("selects a mark with its comment editor open when asked to", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+
+  selectMark(store, "PARA1111", { commenting: true });
+  expect(store.getState().floating).toMatchObject({
+    key: "PARA1111",
+    quiet: false,
+    commenting: true,
+  });
+});
+
 it("clears a floating surface of either kind, and a null selection clears too", () => {
   const store = reader();
   selectMark(store, "WORD2222");
@@ -841,7 +853,7 @@ it("publishes the Live Stroke beside the floating surface, and clears it", () =>
   expect(store.getState().liveStroke).toBeNull();
 });
 
-it("clears the floating surface when ink is armed, and only then", () => {
+it("clears the floating surface when ink or note is armed, and only then", () => {
   const store = reader();
   selectMark(store, "WORD2222");
 
@@ -849,6 +861,10 @@ it("clears the floating surface when ink is armed, and only then", () => {
   expect(selectFloatingHead(store.getState()).key).toBe("WORD2222");
 
   arm(store, "ink");
+  expect(store.getState().floating).toEqual({ kind: "none" });
+
+  selectMark(store, "WORD2222");
+  arm(store, "note");
   expect(store.getState().floating).toEqual({ kind: "none" });
 });
 
