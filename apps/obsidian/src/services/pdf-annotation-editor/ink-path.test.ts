@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_POSITION_LENGTH,
   roundCoordinate,
+  writePosition,
 } from "@/services/annotation-repository/write";
 
 import {
   clampToViewBox,
-  fitsPositionBudget,
   inkReach,
   keepsSample,
   MAX_POINTS_PER_SAMPLE,
@@ -145,39 +145,6 @@ describe("inkReach", () => {
   });
 });
 
-describe("fitsPositionBudget", () => {
-  /**
-   * A position whose written form is exactly `length` characters:
-   * `{"pageIndex":0,"width":2,"paths":[[1,1,…,1]]}` is 37 characters of frame
-   * beside the width, and two per value but the last one; a width of 12 in
-   * place of 2 gives the one character an even length needs.
-   */
-  function positionOfLength(length: number, value = 1) {
-    const width = length % 2 === 0 ? 12 : 2;
-    const count = (length - 36 - String(width).length) / 2;
-    return { pageIndex: 0, width, paths: [Array<number>(count).fill(value)] };
-  }
-
-  it("accepts a position written at the ceiling", () => {
-    expect(fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH))).toBe(
-      true,
-    );
-  });
-
-  it("refuses a position written one character past it", () => {
-    expect(fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH + 1))).toBe(
-      false,
-    );
-  });
-
-  it("measures the position as written, rounded to three decimals", () => {
-    // Raw, each 1.0001 is four characters longer than the "1" it rounds to.
-    expect(
-      fitsPositionBudget(positionOfLength(MAX_POSITION_LENGTH, 1.0001)),
-    ).toBe(true);
-  });
-});
-
 describe("StrokeSamples", () => {
   const FRAME = { pageIndex: 3, width: 2 };
 
@@ -196,11 +163,10 @@ describe("StrokeSamples", () => {
       ];
     });
 
-  /** The position Zotero would be sent for these samples as one stroke. */
-  const positionOf = (samples: readonly [number, number][]) => ({
-    ...FRAME,
-    paths: [smoothPath(samples.flat())],
-  });
+  /** Whether these samples, sent to Zotero as one stroke, fit the ceiling. */
+  const fits = (samples: readonly [number, number][]) =>
+    writePosition({ ...FRAME, paths: [smoothPath(samples.flat())] }).length <=
+    MAX_POSITION_LENGTH;
 
   it("parts a stroke at the sample that would carry it past the ceiling", () => {
     const samples = scribble(4000);
@@ -218,11 +184,9 @@ describe("StrokeSamples", () => {
     expect(finished).toEqual(
       smoothPath(samples.slice(0, index).flat()).map(roundCoordinate),
     );
-    expect(fitsPositionBudget(positionOf(samples.slice(0, index)))).toBe(true);
+    expect(fits(samples.slice(0, index))).toBe(true);
     // …where this sample would not have.
-    expect(fitsPositionBudget(positionOf(samples.slice(0, index + 1)))).toBe(
-      false,
-    );
+    expect(fits(samples.slice(0, index + 1))).toBe(false);
     // The next part begins where the finished part ends, so the two meet,
     // and goes on from this sample.
     const seam = finished.slice(-2) as [number, number];

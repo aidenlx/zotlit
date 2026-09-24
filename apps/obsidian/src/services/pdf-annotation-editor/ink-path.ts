@@ -1,12 +1,13 @@
-// The pure geometry of an ink stroke in PDF points: Zotero's smoothing, the
-// sample filter and page clamp a stroke is drawn with, the distance its hit
-// test measures, and the size ceiling its write must fit under.
+// An ink stroke in PDF points. Pure geometry: Zotero's smoothing, the sample
+// filter and page clamp a stroke is drawn with, and the distance its hit test
+// measures. Beside it, `StrokeSamples`, the one stateful piece: the kept
+// samples of a stroke being drawn, parted where the written position would
+// pass the size ceiling.
 import {
   MAX_POSITION_LENGTH,
   roundCoordinate,
   writePosition,
 } from "@/services/annotation-repository/write";
-import type { InkPosition } from "@/services/annotation-repository/write";
 
 import type { PdfPoint } from "./geometry-edit";
 
@@ -23,7 +24,8 @@ const INK_REACH_FLOOR = 7;
  * A stroke's flat `[x0, y0, x1, y1, …]` run as Zotero stores it: two Chaikin
  * passes that keep the first and the last point, then the points under one
  * PDF point from the last kept one dropped. That filter runs over the last
- * point too, so a stroke's end can be lost.
+ * point too, so a stroke's end can be lost. Exported as the tests' oracle
+ * seam; `StrokeSamples` is what draws with it.
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/path.js#L1-L49
  */
@@ -34,6 +36,7 @@ export function smoothPath(points: readonly number[]): number[] {
 /**
  * Whether a raw pointer sample joins the stroke: the first always does, and
  * any later one only once it is a PDF point or more from the last kept one.
+ * Exported as the tests' oracle seam; `StrokeSamples` is what filters with it.
  */
 export function keepsSample(
   last: PdfPoint | undefined,
@@ -50,8 +53,9 @@ export function keepsSample(
  */
 export function clampToViewBox(
   [x, y]: PdfPoint,
-  [x1, y1, x2, y2]: readonly [number, number, number, number],
+  viewBox: readonly number[],
 ): PdfPoint {
+  const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = viewBox;
   return [Math.min(Math.max(x, x1), x2), Math.min(Math.max(y, y1), y2)];
 }
 
@@ -95,14 +99,6 @@ function distanceToSegment(point: PdfPoint, a: PdfPoint, b: PdfPoint): number {
     1,
   );
   return apart(point, [a[0] + t * dx, a[1] + t * dy]);
-}
-
-/**
- * Whether the position, rounded and written as a create sends it, stays
- * within the ceiling the repository enforces.
- */
-export function fitsPositionBudget(position: InkPosition): boolean {
-  return writePosition(position).length <= MAX_POSITION_LENGTH;
 }
 
 /**

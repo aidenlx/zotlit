@@ -825,7 +825,12 @@ it("publishes the live stroke beside the floating surface, and clears it", () =>
   const store = reader();
   selectMark(store, "WORD2222");
   const floating = store.getState().floating;
-  const live = { pageIndex: 0, path: [120, 600], width: 2, color: "#2ea8e5" };
+  const live = {
+    pageIndex: 0,
+    paths: [[120, 600]],
+    width: 2,
+    color: "#2ea8e5",
+  };
 
   publishLiveStroke(store, live);
   expect(store.getState().liveStroke).toEqual(live);

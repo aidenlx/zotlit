@@ -132,16 +132,11 @@ export type Floating =
 
 /**
  * The Ink Stroke the pointer is drawing, as the last animation frame smoothed
- * it. It sits beside the floating surface rather than in it: a stroke opens no
- * popup and dismisses none.
+ * it: one path, unrounded, on the page the press fell on. It sits beside the
+ * floating surface rather than in it: a stroke opens no popup and dismisses
+ * none.
  */
-export interface LiveStroke {
-  /** The page the press fell on, which holds the whole stroke. */
-  pageIndex: number;
-  /** The smoothed stroke, a flat `[x0, y0, x1, y1, …]` run in PDF points. */
-  path: readonly number[];
-  /** The pen width, in PDF points. */
-  width: number;
+export interface LiveStroke extends InkPosition {
   color: string;
 }
 

@@ -5,7 +5,7 @@ import type { Point } from "./hit-test";
 import { clampToViewBox, StrokeSamples } from "./ink-path";
 import { clearLiveStroke, publishLiveStroke } from "./reader-surface-state";
 import type { ReaderSurfaceStore } from "./reader-surface-state";
-import { drawnBoxOf, pdfPointOf, unitsOf } from "./surface";
+import { pdfPointAt } from "./surface";
 
 export interface InkStrokeOptions {
   /** The pointer that pressed, which alone moves and ends the stroke. */
@@ -99,14 +99,8 @@ export class InkStroke implements Disposable {
    */
   #take(client: Point): void {
     const { view } = this.page;
-    const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = view.viewport.viewBox;
     const finished = this.#samples.take(
-      clampToViewBox(pdfPointOf(view, unitsOf(drawnBoxOf(view), client)), [
-        x1,
-        y1,
-        x2,
-        y2,
-      ]),
+      clampToViewBox(pdfPointAt(view, client), view.viewport.viewBox),
     );
     if (!finished) return;
     this.#options.onSplit(finished);
@@ -116,7 +110,7 @@ export class InkStroke implements Disposable {
   #publish(): void {
     publishLiveStroke(this.#options.surfaceState, {
       pageIndex: this.page.pageIndex,
-      path: this.#samples.path,
+      paths: [this.#samples.path],
       width: this.width,
       color: this.color,
     });

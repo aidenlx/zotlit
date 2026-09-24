@@ -278,7 +278,7 @@ export function renderLiveStroke(
     return;
   }
   const unitPage = toPageUnits(page);
-  const fresh = inkStroke(unitPage, { ...stroke, paths: [stroke.path] });
+  const fresh = inkStroke(unitPage, stroke);
   if (drawn) {
     for (const { name, value } of fresh.attributes)
       drawn.setAttribute(name, value);
