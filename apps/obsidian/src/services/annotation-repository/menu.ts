@@ -46,8 +46,8 @@ export function registerAnnotationHistoryFileMenu(
     plugin.app.workspace.on("file-menu", (menu, _file, source, leaf) => {
       if (source !== "more-options" || !leaf) return;
       const surface = deps.surfaceFor(leaf);
-      const attachmentKey = surface?.historyAttachment;
-      if (!surface || !attachmentKey) return;
+      const attachmentKey = surface?.historyAttachment ?? null;
+      if (!surface || attachmentKey === null) return;
 
       for (const direction of HISTORY_DIRECTIONS) {
         menu.addItem((item) =>

@@ -5,10 +5,7 @@ import type { Scope } from "obsidian";
 import { registerKeymap } from "@/lib/disposables";
 import type { HistoryDirection } from "@/services/annotation-repository/service";
 import { inTextEntry } from "@/services/pdf-annotation-editor/capability-affordance";
-import {
-  historyChords,
-  historyVerbOf,
-} from "@/services/pdf-annotation-editor/reader-keymap";
+import { historyVerbOf } from "@/services/pdf-annotation-editor/reader-keymap";
 
 /** The Annotation Card, as the card's own DOM names it. */
 const CARD_SELECTOR = ".zt-annot-card";
@@ -37,6 +34,11 @@ export function onAnnotationCard(target: EventTarget | null): boolean {
  * of the view — the header, the filter bar, the attachment picker — leaves
  * them to Obsidian, so only a keystroke on a card steps the history.
  *
+ * A catch-all, because it is the one registration Obsidian's keymap goes on
+ * past when it acts on nothing: a keyed one ends the search either way, and
+ * would take these chords from every command bound to them while the view is
+ * the active leaf.
+ *
  * @param platform.isMacOS which chords the Annotation History answers, read
  *   from the host by the caller so this module reads none.
  * @returns the disposer that takes the chords off the Scope again.
@@ -46,19 +48,13 @@ export function mountCardHistoryKeys(
   step: (direction: HistoryDirection) => void,
   platform: { isMacOS: boolean },
 ): Disposable {
-  const keys = new DisposableStack();
-  for (const { modifiers, key } of historyChords(platform.isMacOS)) {
-    keys.use(
-      registerKeymap(scope, [...modifiers], key, (event) => {
-        if (inTextEntry(event.target)) return;
-        if (!onAnnotationCard(event.target)) return;
-        const verb = historyVerbOf(event, platform.isMacOS);
-        if (!verb) return;
-        // A held key steps once: a repeat would walk the whole history.
-        if (!event.repeat) step(verb);
-        return false;
-      }),
-    );
-  }
-  return keys;
+  return registerKeymap(scope, null, null, (event) => {
+    if (inTextEntry(event.target)) return;
+    if (!onAnnotationCard(event.target)) return;
+    const verb = historyVerbOf(event, platform.isMacOS);
+    if (!verb) return;
+    // A held key steps once: a repeat would walk the whole history.
+    if (!event.repeat) step(verb);
+    return false;
+  });
 }

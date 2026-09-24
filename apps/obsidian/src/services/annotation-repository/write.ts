@@ -64,6 +64,12 @@ export type WriteConflict =
   | {
       write: "geometry";
       attempted: GeometryEdit;
+      /**
+       * What made the refused edit, which "Apply again" sends it again as: a
+       * nudge re-sent by hand is still a nudge, and joins the run it belongs
+       * to.
+       */
+      input: GeometryInput;
       /** The geometry Zotero holds now. */
       fresh: { position: AnnotationPosition; text: string | null };
     };
@@ -205,6 +211,30 @@ export interface TextPosition {
 
 /** Every PDF position ZotLit writes: rects, ink strokes, or a text box. */
 export type WritablePosition = CreatePosition | InkPosition | TextPosition;
+
+/**
+ * A read position as a write sends it, or `null` for a position no write ever
+ * proposes — an EPUB or snapshot selector, or one this plugin could not parse.
+ */
+export function writablePosition(
+  position: AnnotationPosition,
+): WritablePosition | null {
+  switch (position.kind) {
+    case "pdf-rects":
+    case "pdf-ink":
+    case "pdf-text":
+      return position;
+    default:
+      return null;
+  }
+}
+
+/**
+ * What made one Geometry Edit. The Annotation History reads it and nothing
+ * else does: a run of keyboard edits joins into one History Step, and every
+ * pointer gesture is a step of its own.
+ */
+export type GeometryInput = "pointer" | "keyboard";
 
 /**
  * One Geometry Edit, as the reader computed it: the new position, the Sort

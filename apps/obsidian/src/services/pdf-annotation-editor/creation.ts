@@ -147,6 +147,23 @@ const logger = getLogger("pdf-annotation-editor");
  */
 const NOTE_SIZE = 22;
 
+/**
+ * Tells one Ink Stroke from every other, so the parts of one stroke share a
+ * History Step and no two strokes ever do.
+ *
+ * The counter stands outside the surfaces, because an Annotation History is
+ * one per Attachment and two PDF views of that Attachment write into it: a
+ * serial kept per view would name the first stroke of each view alike, and one
+ * undo press would take both strokes.
+ */
+let inkGroupSerial = 0;
+
+/** The name the next Ink Stroke's creates are joined into one step by. */
+function nextInkGroup(): string {
+  inkGroupSerial += 1;
+  return `ink-${inkGroupSerial}`;
+}
+
 /** A press the armed note or text tool holds until its release. */
 interface ClickPress {
   pointerId: number;
@@ -338,8 +355,6 @@ export class MarkCreation implements CreationGestures, Disposable {
   #inking = Promise.resolve();
   /** Tells one Pending Stroke from another. */
   #strokeSerial = 0;
-  /** Tells one Ink Stroke from another, so its parts share a History Step. */
-  #inkGroupSerial = 0;
   /**
    * What joins every Annotation of the stroke being drawn into one History
    * Step; `null` while no stroke is being drawn.
@@ -1115,7 +1130,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     const color = this.#state().colors.ink;
     // Every part one stroke is split into is one stroke to the researcher, so
     // every create it makes joins the one History Step its undo takes back.
-    const group = `ink-${++this.#inkGroupSerial}`;
+    const group = nextInkGroup();
     this.#inkGroup = group;
     this.#stroke = new InkStroke({
       pointerId: event.pointerId,

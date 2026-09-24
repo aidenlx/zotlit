@@ -2569,7 +2569,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           state: { kind: string };
           announced: string[];
         }>(
-          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex});return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer');return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
         );
         expect(outcome.state.kind).toBe("idle");
         expect(outcome.announced).toEqual([imageKey]);
@@ -4095,7 +4095,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           await stepSettled();
 
           expect(await storedColor()).toBe(inZotero);
-          expect(await noticeShows("changed in Zotero")).toBe(true);
+          // The whole of `annot_history_changed_in_zotero`, because the
+          // fragment "changed in Zotero" belongs to two other notices as well.
+          expect(
+            await noticeShows(
+              "This annotation changed in Zotero, so ZotLit left it as it is.",
+            ),
+          ).toBe(true);
         }, 120000);
 
         it("undoes a colour pick Zotero only commented on", async () => {

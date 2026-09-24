@@ -76,6 +76,7 @@ import type {
   AnnotationDraft,
   ConflictedWrite,
   GeometryEdit,
+  GeometryInput,
   MutationState,
   WriteConflict,
   WriteFailure,
@@ -93,6 +94,7 @@ export type {
 export type {
   AnnotationDraft,
   GeometryEdit,
+  GeometryInput,
   MutationState,
   WriteConflict,
   WriteFailure,
@@ -195,13 +197,6 @@ export interface AnnotationList {
   /** In Zotero's own reading order. */
   annotations: readonly AnnotationRecord[];
 }
-
-/**
- * What made one Geometry Edit. The Annotation History reads it and nothing
- * else does: a run of keyboard edits joins into one History Step, and every
- * pointer gesture is a step of its own.
- */
-export type GeometryInput = "pointer" | "keyboard";
 
 export type CommentDraftState =
   | { kind: "editing" }
@@ -397,7 +392,7 @@ interface HeldAnnotation {
 /** What one command asks Zotero for, which a conflict puts beside the fresh record. */
 type WriteAttempt =
   | { write: Exclude<ConflictedWrite, "geometry">; attempted: string | null }
-  | { write: "geometry"; attempted: GeometryEdit };
+  | { write: "geometry"; attempted: GeometryEdit; input: GeometryInput };
 
 type ConfirmedWrite =
   | {
@@ -491,7 +486,7 @@ export class AnnotationRepository extends Service<void> {
    * The Attachments an undo or a redo is running on, which refuses a second
    * press while one runs.
    */
-  readonly #stepping = new Set<string>();
+  readonly #steppingAttachments = new Set<string>();
   /**
    * The Annotations a running step is writing right now. Their confirmations
    * record no step, because the step the write leaves behind is already the one
@@ -776,17 +771,19 @@ export class AnnotationRepository extends Service<void> {
     save.queued = false;
     const operation = this.#submitComment(annotationKey, draft, submittedText);
     save.inFlight = operation;
-    void operation.then((outcome) => {
-      save.inFlight = null;
-      save.submittedText = null;
-      if (
-        outcome.kind === "idle" &&
-        save.queued &&
-        this.#commentDrafts.has(id)
-      ) {
-        void this.submitComment(annotationKey, { automatic: true });
-      }
-    });
+    void operation.then(
+      (outcome) => {
+        this.#saveSettled(save);
+        if (
+          outcome.kind === "idle" &&
+          save.queued &&
+          this.#commentDrafts.has(id)
+        ) {
+          void this.submitComment(annotationKey, { automatic: true });
+        }
+      },
+      this.#saveRejected(save, annotationKey),
+    );
     return operation;
   }
 
@@ -832,17 +829,19 @@ export class AnnotationRepository extends Service<void> {
     save.queued = false;
     const operation = this.#retryCommentDraft(annotationKey, draft);
     save.inFlight = operation;
-    void operation.then((outcome) => {
-      save.inFlight = null;
-      save.submittedText = null;
-      if (
-        outcome.kind === "idle" &&
-        save.queued &&
-        this.#commentDrafts.has(id)
-      ) {
-        void this.submitComment(annotationKey, { automatic: true });
-      }
-    });
+    void operation.then(
+      (outcome) => {
+        this.#saveSettled(save);
+        if (
+          outcome.kind === "idle" &&
+          save.queued &&
+          this.#commentDrafts.has(id)
+        ) {
+          void this.submitComment(annotationKey, { automatic: true });
+        }
+      },
+      this.#saveRejected(save, annotationKey),
+    );
     return operation;
   }
 
@@ -1074,7 +1073,7 @@ export class AnnotationRepository extends Service<void> {
   async patchGeometry(
     annotationKey: string,
     edit: GeometryEdit,
-    input: GeometryInput = "pointer",
+    input: GeometryInput,
   ): Promise<MutationState> {
     if (writePosition(edit.position).length > MAX_POSITION_LENGTH) {
       logger.debug("A Geometry Edit's position is longer than Zotero accepts", {
@@ -1088,6 +1087,7 @@ export class AnnotationRepository extends Service<void> {
     return await this.#command(annotationKey, {
       write: "geometry",
       attempted: edit,
+      input,
       request: (target, record) => geometryPatch(target, record.type, edit),
       ...(input === "keyboard" && {
         join: { input, at: this.#now() },
@@ -1134,7 +1134,13 @@ export class AnnotationRepository extends Service<void> {
       case "delete":
         return await this.deleteAnnotation(annotationKey);
       case "geometry":
-        return await this.patchGeometry(annotationKey, conflict.attempted);
+        return await this.patchGeometry(
+          annotationKey,
+          conflict.attempted,
+          // The re-send is the very edit the conflict refused, so a nudge goes
+          // again as a nudge and the run it belongs to stays one step.
+          conflict.input,
+        );
     }
   }
 
@@ -1185,19 +1191,23 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * Whether this Attachment's Annotation History holds a step to undo. The
-   * momentary guards — a write in flight, an undo already running — are not
-   * read here, so a verb drawn from this does not flicker under its own write.
+   * Whether this Attachment's Annotation History holds a step to undo, and
+   * nothing standing turns that press away. The momentary guards — a write in
+   * flight, an undo already running — are not read here, so a verb drawn from
+   * this does not flicker under its own write. An open Annotation Draft on the
+   * step's own Annotation is read, because it stands for as long as the
+   * comment editor is open: a menu row drawn enabled under one would do
+   * nothing, and say nothing.
    *
    * @param attachmentKey the Attachment's Indexed Key.
    */
   canUndo(attachmentKey: string): boolean {
-    return this.#histories.get(attachmentKey)?.holds("undo") ?? false;
+    return this.#stepStands(attachmentKey, "undo");
   }
 
   /** Whether this Attachment's Annotation History holds a step to redo. */
   canRedo(attachmentKey: string): boolean {
-    return this.#histories.get(attachmentKey)?.holds("redo") ?? false;
+    return this.#stepStands(attachmentKey, "redo");
   }
 
   /**
@@ -1467,29 +1477,44 @@ export class AnnotationRepository extends Service<void> {
     direction: HistoryDirection,
   ): Promise<HistoryOutcome> {
     const history = this.#histories.get(attachmentKey);
-    if (!history || this.#stepping.has(attachmentKey)) return { kind: "idle" };
+    if (!history || this.#steppingAttachments.has(attachmentKey))
+      return { kind: "idle" };
     if (this.#savePending(attachmentKey)) return { kind: "idle" };
     const step = history.peek(direction);
-    if (!step) return { kind: "idle" };
-    // An open Annotation Draft is a session still being shaped, and the
-    // comment editor holding it answers these keys with its own text undo.
-    if (
-      step.changes.some(({ annotationKey }) =>
-        this.commentDraftFor(annotationKey),
-      )
-    )
-      return { kind: "idle" };
+    if (!step || this.#beingEdited(step)) return { kind: "idle" };
     // An undo is a write, so it needs the Editing Capability like any other,
     // and the existing notice says why it did not run.
     if (this.#writeBlocked(attachmentKey)) return { kind: "blocked" };
 
-    this.#stepping.add(attachmentKey);
+    this.#steppingAttachments.add(attachmentKey);
     try {
       return await this.#takeStep(step, { attachmentKey, direction, history });
     } finally {
-      this.#stepping.delete(attachmentKey);
+      this.#steppingAttachments.delete(attachmentKey);
       this.#emitter.emit("history-changed", attachmentKey);
     }
+  }
+
+  /**
+   * Whether a step stands in this direction that a press would actually take:
+   * what {@link AnnotationRepository.canUndo} and
+   * {@link AnnotationRepository.canRedo} answer, and what every surface that
+   * draws a verb reads.
+   */
+  #stepStands(attachmentKey: string, direction: HistoryDirection): boolean {
+    const step = this.#histories.get(attachmentKey)?.peek(direction);
+    return !!step && !this.#beingEdited(step);
+  }
+
+  /**
+   * Whether an Annotation Draft is open on an Annotation this step changes. An
+   * open draft is a session still being shaped, and the comment editor holding
+   * it answers these keys with its own text undo.
+   */
+  #beingEdited(step: HistoryStep): boolean {
+    return step.changes.some(({ annotationKey }) =>
+      this.commentDraftFor(annotationKey),
+    );
   }
 
   /**
@@ -1549,7 +1574,11 @@ export class AnnotationRepository extends Service<void> {
         outcome = await this.#stepWrite(annotationKey, change.before);
       }
       if (outcome.kind === "failed") {
-        // The verb has already refreshed the Attachment; the step goes with it.
+        // A write Zotero refused has already refreshed the Attachment; one
+        // refused before it left ZotLit — an Annotation no list holds, a
+        // source that moved, an Editing Capability that lapsed since the press
+        // — leaves the Attachment as it stands. Nothing of the step reached
+        // Zotero either way, so the step goes with the failure.
         history.drop(direction, step);
         return { kind: "failed", failure: outcome.failure };
       }
@@ -1592,7 +1621,13 @@ export class AnnotationRepository extends Service<void> {
         return await this.patchComment(annotationKey, fields.comment);
       }
       if (fields.geometry !== undefined) {
-        return await this.patchGeometry(annotationKey, fields.geometry);
+        // A step's own write joins nothing: the step it leaves behind is
+        // already the one that steps it back.
+        return await this.patchGeometry(
+          annotationKey,
+          fields.geometry,
+          "pointer",
+        );
       }
       return IDLE;
     } finally {
@@ -1754,9 +1789,11 @@ export class AnnotationRepository extends Service<void> {
    * The session is read off the history rather than off the Annotation Draft,
    * which the repository drops and remakes around each settled save: a comment
    * write joins the step on top where that step is this Annotation's own
-   * comment, and starts a fresh one otherwise. So a colour pick between two
-   * comment sessions keeps them apart, and the Mark Popup handing the editor
-   * to an Annotation Card keeps them one.
+   * comment and the write was stamped off the text it left in Zotero, and
+   * starts a fresh one otherwise. So a colour pick between two comment
+   * sessions keeps them apart, a comment changed in Zotero between two saves
+   * keeps them apart too, and the Mark Popup handing the editor to an
+   * Annotation Card keeps them one.
    */
   #recordCommentStep(
     history: AnnotationHistory,
@@ -1776,7 +1813,13 @@ export class AnnotationRepository extends Service<void> {
     const open =
       top?.kind === "comment" &&
       top.changes.length === 1 &&
-      top.changes[0]!.annotationKey === record.key
+      top.changes[0]!.annotationKey === record.key &&
+      // The write was stamped off the very text that step left in Zotero, so
+      // the two saves are one session. A comment changed in Zotero between
+      // them moves the record the next write is stamped off: that session is
+      // over, and a fresh step starts holding the foreign text, so one press
+      // puts that back rather than the text the session began with.
+      sameComment(before.comment, top.changes[0]!.after.comment ?? null)
         ? top
         : null;
     // A step's own `before` never moves, so the session reads its starting
@@ -1824,7 +1867,7 @@ export class AnnotationRepository extends Service<void> {
     group?: string,
   ): void {
     const history = this.#histories.get(attachmentKey);
-    if (!history || this.#stepping.has(attachmentKey)) return;
+    if (!history || this.#steppingAttachments.has(attachmentKey)) return;
     history.record({
       kind: "existence",
       changes: [change],
@@ -2262,6 +2305,29 @@ export class AnnotationRepository extends Service<void> {
       save.burstTimer = null;
       void this.submitComment(draft.annotationKey, { automatic: true });
     }, COMMENT_BURST_SAVE_MS);
+  }
+
+  /**
+   * Let go of a save that has settled, whatever it left: `#savePending` reads
+   * this, and a save still named there turns away every Annotation History
+   * press on the Attachment.
+   */
+  #saveSettled(save: CommentSave): void {
+    save.inFlight = null;
+    save.submittedText = null;
+  }
+
+  /**
+   * The same, for a save whose promise rejected. Nothing else answers a
+   * rejection — the Local API seam answers a `failure` value rather than
+   * throwing — so without this the Attachment's history would be shut for the
+   * rest of the session.
+   */
+  #saveRejected(save: CommentSave, annotationKey: string): () => void {
+    return () => {
+      logger.debug("A comment save rejected, and is let go", { annotationKey });
+      this.#saveSettled(save);
+    };
   }
 
   #clearCommentTimers(save: CommentSave): void {
@@ -2742,7 +2808,12 @@ function conflictOf(
     const fresh = { position: record.position, text: record.text };
     return sameStoredGeometry(attempt.attempted, fresh)
       ? null
-      : { write: "geometry", attempted: attempt.attempted, fresh };
+      : {
+          write: "geometry",
+          attempted: attempt.attempted,
+          input: attempt.input,
+          fresh,
+        };
   }
   const { write, attempted } = attempt;
   const fresh = freshValueOf(record, write);

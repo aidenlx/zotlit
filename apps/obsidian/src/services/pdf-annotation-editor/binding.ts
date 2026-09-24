@@ -1159,7 +1159,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       direction === "undo"
         ? this.#annotations.undo(attachmentKey)
         : this.#annotations.redo(attachmentKey);
-    this.#stepping = stepping.then((outcome) => {
+    const answered = stepping.then((outcome) => {
       if (this.#surfaces.disposed) return;
       switch (outcome.kind) {
         case "stepped":
@@ -1179,6 +1179,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
           return;
       }
     });
+    // Chained rather than replaced, so a second press in flight leaves this
+    // settling behind both rather than behind the later one alone. Settled
+    // rather than resolved, so it answers however each press ended.
+    this.#stepping = Promise.allSettled([this.#stepping, answered]).then(
+      () => undefined,
+    );
   }
 
   /**
@@ -1218,6 +1224,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   #landOnPage(pageIndex: number): Promise<void> {
     return this.refreshed.then(() => {
       if (this.#surfaces.disposed) return;
+      // A Landing left waiting by an earlier press names an Annotation this
+      // step erased, so it goes rather than selecting one on the next render.
+      this.#landing = null;
       this.#selection?.select(null, { popup: false });
       this.#controller?.applySubpath(`#page=${pageIndex + 1}`);
     });

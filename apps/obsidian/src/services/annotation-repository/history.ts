@@ -11,11 +11,10 @@ import {
   sameStoredGeometry,
   storedPosition,
 } from "./reconcile";
-import { writePosition } from "./write";
+import { writablePosition, writePosition } from "./write";
 import type {
   AnnotationDraft,
   GeometryEdit,
-  WritablePosition,
   WriteConflict,
   WriteFailure,
 } from "./write";
@@ -134,8 +133,7 @@ export interface HistoryStep {
 /**
  * The Annotation as a restore would write it, or `null` for a record whose
  * position no create can send — everything outside a PDF, and a shape this
- * build does not know. A record the Annotation Source answered no Sort Index
- * for is `null` too: Zotero's create demands one and computes none.
+ * build does not know.
  */
 export function contentOf(record: HistoryRestorable): HistoryContent | null {
   const position = writablePosition(record.position);
@@ -195,6 +193,8 @@ export function historyFieldsOf(
 ): HistoryFields | null {
   switch (kind) {
     case "color":
+      // Zotero stores a colour on every Annotation it makes, so a record
+      // holding none has no colour to put back and records no step at all.
       return record.color === null ? null : { color: record.color };
     case "existence":
       // A create and a delete each name an Annotation Zotero holds on one side
@@ -222,24 +222,6 @@ export function historyFieldsOf(
 }
 
 /**
- * A read position as a Geometry Edit writes it, or `null` for a position no
- * Geometry Edit ever proposes — an EPUB or snapshot selector, or one this
- * plugin could not parse.
- */
-function writablePosition(
-  position: AnnotationPosition,
-): WritablePosition | null {
-  switch (position.kind) {
-    case "pdf-rects":
-    case "pdf-ink":
-    case "pdf-text":
-      return position;
-    default:
-      return null;
-  }
-}
-
-/**
  * Whether the record Zotero holds now still carries what a step left there.
  * An equal value is a match, as it is for a Write Conflict, so an undo whose
  * value Zotero already holds meets no false conflict.
@@ -248,25 +230,33 @@ export function stillHolds(
   fields: HistoryFields,
   record: HistoryRecord,
 ): boolean {
-  if (
-    fields.color !== undefined &&
-    !resolvesSilently("color", fields.color, record.color)
-  ) {
-    return false;
-  }
-  if (
-    fields.comment !== undefined &&
-    !resolvesSilently("comment", fields.comment, record.comment)
-  ) {
-    return false;
-  }
-  if (fields.content !== undefined && !sameContent(fields.content, record)) {
-    return false;
-  }
-  return (
-    fields.geometry === undefined || sameStoredGeometry(fields.geometry, record)
-  );
+  return Object.values(FIELD_CHECKS).every((holds) => holds(fields, record));
 }
+
+/**
+ * How each field a History Step can carry is compared with the record Zotero
+ * holds now. One entry per field of {@link HistoryFields}, so a field added
+ * there is checked or the compiler names it. A field the step does not carry
+ * is nothing to compare, and holds.
+ */
+const FIELD_CHECKS: {
+  readonly [K in keyof Required<HistoryFields>]: (
+    fields: HistoryFields,
+    record: HistoryRecord,
+  ) => boolean;
+} = {
+  color: (fields, record) =>
+    fields.color === undefined ||
+    resolvesSilently("color", fields.color, record.color),
+  comment: (fields, record) =>
+    fields.comment === undefined ||
+    resolvesSilently("comment", fields.comment, record.comment),
+  content: (fields, record) =>
+    fields.content === undefined || sameContent(fields.content, record),
+  geometry: (fields, record) =>
+    fields.geometry === undefined ||
+    sameStoredGeometry(fields.geometry, record),
+};
 
 /**
  * Whether the record a `412` answered with still carries what a step left
@@ -327,15 +317,14 @@ export type HistoryOutcome =
 
 /**
  * Whether a newly confirmed edit continues the run of nudges that stands on the
- * undo stack: both are Geometry Edits, the same input made them, on the one
- * same Annotation, inside the join window. A run is a Geometry Edit's own way
- * of grouping, so no other kind meets this, and steps of different kinds never
+ * undo stack: both are Geometry Edits an input that runs made, on the one same
+ * Annotation, inside the join window. A run is a Geometry Edit's own way of
+ * grouping, so no other kind meets this, and steps of different kinds never
  * merge: a colour pick between two nudges ends the run.
  */
 function joins(standing: HistoryStep, made: HistoryStep): boolean {
   if (made.kind !== "geometry" || standing.kind !== made.kind) return false;
   if (!standing.join || !made.join) return false;
-  if (standing.join.input !== made.join.input) return false;
   const [held] = standing.changes;
   const [next] = made.changes;
   if (standing.changes.length !== 1 || made.changes.length !== 1) return false;

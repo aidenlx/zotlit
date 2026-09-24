@@ -191,6 +191,8 @@ export class AnnotationView extends ItemView implements HistorySurface {
   /** Counts the annotation reads, so a slower one never lands after a later one. */
   #reads = 0;
   #reading = Promise.resolve();
+  /** Whether the view has closed, which the work it started away reads. */
+  #closed = false;
 
   /**
    * Settles once the list on screen matches the last read this view started.
@@ -289,9 +291,17 @@ export class AnnotationView extends ItemView implements HistorySurface {
         ? this.#deps.annotations.undo(attachmentKey)
         : this.#deps.annotations.redo(attachmentKey);
     void stepping.then((outcome) => {
+      // The view can close while the step is away, and a closed view neither
+      // scrolls nor speaks.
+      if (this.#closed) return;
       switch (outcome.kind) {
         case "stepped":
           return this.#scrollToCard([outcome.annotationKey]);
+        case "removed":
+          // The step took its Annotations off the Attachment, so this view
+          // has no card left to bring into view. The reader that holds the
+          // PDF lands on the page they sat on.
+          return;
         case "changed":
           new BaseNotice(m.annot_history_changed_in_zotero());
           return;
@@ -304,6 +314,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
           this.#deps.reportBlockedGesture(attachmentKey);
           return;
         case "idle":
+          return;
+        default:
+          // A new outcome must be answered here rather than fall through.
+          outcome satisfies never;
           return;
       }
     });
@@ -562,6 +576,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   protected override async onClose(): Promise<void> {
+    this.#closed = true;
     const editingCommentKey = this.#store.getState().editingCommentKey;
     if (editingCommentKey) {
       void this.#deps.annotations.submitComment(editingCommentKey, {

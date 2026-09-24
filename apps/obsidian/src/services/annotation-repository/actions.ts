@@ -44,9 +44,11 @@ export function historyCommandName(direction: HistoryDirection): string {
 }
 
 /**
- * Whether a step stands in this direction for this Attachment. It reads what
- * the history holds rather than whether a step could run this instant, so an
- * entry drawn from it does not flicker under its own write.
+ * Whether a step stands in this direction for this Attachment, and would be
+ * taken. The momentary guards a press meets are not read, so an entry drawn
+ * from this does not flicker under its own write; the guards that stand for as
+ * long as the researcher is at work — a comment editor open on the step's own
+ * Annotation — are, so no entry is offered for a press that would do nothing.
  *
  * @param attachmentKey the Attachment's Indexed Key.
  */
