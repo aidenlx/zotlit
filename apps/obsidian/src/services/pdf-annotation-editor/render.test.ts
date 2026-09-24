@@ -19,7 +19,7 @@ import {
   unitsPerPixel,
   withPosition,
 } from "./render";
-import type { OverlayPageView } from "./render";
+import type { MeasuredFont, OverlayPageView } from "./render";
 
 /** The same page, described from a non-zero origin, as a PDF may do. */
 const OFFSET_BOX = [10, 20, 622, 812] as const;
@@ -32,6 +32,16 @@ const FIXTURE_COLORS: Record<string, string> = {
   FDRFQ7C2: "#ffd400",
   TYY6Z6ZF: "#5fb236",
   HRK7BG32: "#a28ae5",
+};
+
+/**
+ * A fixed-width font: every character is 0.4 font sizes wide, 5.6 points at
+ * 14, so the Fixture's 25-character comment is 140 points and fits its
+ * 162-point box on one line.
+ */
+const MONO: MeasuredFont = {
+  family: "monospace",
+  measure: (text, fontSize) => text.length * fontSize * 0.4,
 };
 
 /** One rectangle near the top of the page, in PDF points. */
@@ -61,6 +71,7 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([
       record("PUPR5FG5", "highlight", {
         pageIndex: 0,
@@ -156,11 +167,90 @@ it("draws all six Zotero annotation types with the primitive each one calls for"
   ]);
   expect(note.lastElementChild!.getAttribute("fill")).toBeNull();
   expect(note.lastElementChild!.getAttribute("stroke")).toBeNull();
-  // The free text is the comment, at the size Zotero stored.
-  expect(markIn(page, "HRK7BG32").textContent).toBe(
-    "Making figures is hard :(",
-  );
-  expect(attributesOf(page, "HRK7BG32")["font-size"]).toBe("14");
+  // The free text is the comment on one line, at the size Zotero stored,
+  // filled five percent darker than stored as Zotero's reader draws it:
+  // #a28ae5 is (162, 138, 229), which scales to (153.9, 131.1, 217.55).
+  expect(linesOf(page, "HRK7BG32")).toEqual([
+    ["Making figures is hard :(", 398.804, 103.893],
+  ]);
+  expect(attributesOf(page, "HRK7BG32")).toMatchObject({
+    "font-size": "14",
+    fill: "#9a83da",
+  });
+});
+
+describe("free text", () => {
+  /** A text Annotation in the Fixture's box, its top edge at y 702.107. */
+  const text = (comment: string, rect: readonly number[]) => ({
+    ...record("HRK7BG32", "text", {
+      pageIndex: 0,
+      fontSize: 14,
+      rotation: 0,
+      rects: [rect],
+    }),
+    comment,
+  });
+
+  it("starts a line at each newline, each 1.2 font sizes below the last", () => {
+    const page = pageView();
+
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Two\nlines", [398.804, 668.507, 560.804, 702.107]),
+      ]),
+    });
+
+    // The first baseline hangs one font size below the top edge,
+    // 792 - 702.107 + 14; the next one 16.8 below that.
+    expect(linesOf(page, "HRK7BG32")).toEqual([
+      ["Two", 398.804, 103.893],
+      ["lines", 398.804, 120.693],
+    ]);
+  });
+
+  it("stacks the lines across the reading direction on a page turned a quarter", () => {
+    const page = pageView(viewport({ rotation: 90 }));
+
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Two\nlines", [398.804, 668.507, 560.804, 702.107]),
+      ]),
+    });
+
+    // A quarter turn maps PDF (x, y) to page (y, x), so the baseline start,
+    // PDF (398.804, 702.107 - 14), lands at (688.107, 398.804), and one point
+    // along the run moves y by one: the run reads down, turned 90 degrees
+    // about that start. The lines are laid out unturned, 16.8 apart, and the
+    // turn carries the second one to the left of the first.
+    expect(attributesOf(page, "HRK7BG32").transform).toBe(
+      "rotate(90 688.107 398.804)",
+    );
+    expect(linesOf(page, "HRK7BG32")).toEqual([
+      ["Two", 688.107, 398.804],
+      ["lines", 688.107, 415.604],
+    ]);
+  });
+
+  it("wraps the text at the width of its box", () => {
+    const page = pageView();
+
+    renderAnnotationOverlay(page, {
+      font: MONO,
+      annotations: pageAnnotations([
+        text("Making figures is hard :(", [398.804, 651.707, 468.804, 702.107]),
+      ]),
+    });
+
+    // 70 points hold 12 characters: "Making figures" is 14, "figures is" 10,
+    // "figures is hard" 15.
+    expect(linesOf(page, "HRK7BG32").map(([line]) => line)).toEqual([
+      "Making",
+      "figures is",
+      "hard :(",
+    ]);
+  });
 });
 
 it.each(ROTATIONS)(
@@ -169,6 +259,7 @@ it.each(ROTATIONS)(
     const page = pageView(viewport({ rotation }));
 
     renderAnnotationOverlay(page, {
+      font: MONO,
       annotations: pageAnnotations([highlight()]),
     });
 
@@ -184,6 +275,7 @@ it("carries the page's own `/UserUnit` into the page-unit box", () => {
   const page = pageView(viewport({ userUnit: 0.5 }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -197,6 +289,7 @@ it("measures from the page box's own origin rather than from zero", () => {
   const page = pageView(viewport({ box: OFFSET_BOX }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -208,6 +301,7 @@ it("builds the same overlay at every zoom step", () => {
   const markup = (scale: number) => {
     const page = pageView(viewport({ scale }));
     renderAnnotationOverlay(page, {
+      font: MONO,
       annotations: pageAnnotations([highlight()]),
     });
     return overlayIn(page).outerHTML;
@@ -228,6 +322,7 @@ it("divides the built viewport out when the seam offers no rebuild", () => {
   const page = pageView({ ...built, clone: undefined });
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -246,9 +341,11 @@ it("draws a spilled-over mark on the next page from that page's own rectangles",
   const annotations = groupAnnotationsByPage([spilled]);
 
   renderAnnotationOverlay(first, {
+    font: MONO,
     annotations: annotations.get(0) ?? [],
   });
   renderAnnotationOverlay(second, {
+    font: MONO,
     annotations: annotations.get(1) ?? [],
   });
 
@@ -263,6 +360,7 @@ it("paints marks that take no pointer input, last in the page", () => {
   page.div.append(textLayer);
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
     selected: new Set(["PUPR5FG5"]),
   });
@@ -300,6 +398,7 @@ it("casts a selected ink stroke's own path under it, wider, rather than framing 
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([
       record("TYY6Z6ZF", "ink", {
         pageIndex: 0,
@@ -335,6 +434,7 @@ it("draws a single-point ink stroke as a round dot, in the page's colour when no
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([
       record("DOT23456", "ink", {
         pageIndex: 0,
@@ -358,6 +458,7 @@ it("draws no outline for a mark the caller left unselected", () => {
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
@@ -369,10 +470,11 @@ it("draws no outline for a mark the caller left unselected", () => {
 it("leaves the page as it found it when the annotations are gone", () => {
   const page = pageView();
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
-  renderAnnotationOverlay(page, { annotations: [] });
+  renderAnnotationOverlay(page, { font: MONO, annotations: [] });
 
   expect(page.div.childElementCount).toBe(0);
 });
@@ -381,6 +483,7 @@ it("draws nothing for a type whose stored position is not the shape it pairs wit
   const page = pageView();
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     // An ink position under a highlight: a pairing Zotero never writes.
     annotations: pageAnnotations([
       record("PUPR5FG5", "highlight", {
@@ -559,6 +662,7 @@ it("draws eight Mark Handles on the selected image, five pixels either side", ()
   const page = pageView(viewport({ scale: 2 }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([figure()]),
     selected: new Set(["FDRFQ7C2"]),
     handles: true,
@@ -591,6 +695,7 @@ it("draws each Mark Handle where a press on it is measured, on a page turned a q
   const page = pageView(viewport({ rotation: 90, scale: 1.5 }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([figure()]),
     selected: new Set(["FDRFQ7C2"]),
     handles: true,
@@ -614,6 +719,7 @@ it("draws no Mark Handle while editing is not live, or off the selection", () =>
   }) => {
     const page = pageView();
     renderAnnotationOverlay(page, {
+      font: MONO,
       annotations: pageAnnotations([figure(), highlight()]),
       ...options,
     });
@@ -636,6 +742,7 @@ it("draws a selected highlight's two end strips, three pixels either side of its
   const page = pageView(viewport({ scale: 2 }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
     selected: new Set(["PUPR5FG5"]),
     handles: true,
@@ -659,6 +766,7 @@ it("turns a selected range's strips, and their cursor, with the text under them"
   const page = pageView(viewport({ scale: 2 }));
 
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
     selected: new Set(["PUPR5FG5"]),
     handles: true,
@@ -683,6 +791,7 @@ it("draws a spilled-over range's start on its first page and its end on the next
   const drawnOn = (pageIndex: number) => {
     const page = pageView();
     renderAnnotationOverlay(page, {
+      font: MONO,
       annotations: grouped.get(pageIndex) ?? [],
       selected: new Set(["PUPR5FG5"]),
       handles: true,
@@ -697,6 +806,7 @@ it("draws a spilled-over range's start on its first page and its end on the next
 it("patches the selected mark, its outline, and its handles in place", () => {
   const page = pageView();
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([figure(), highlight()]),
     selected: new Set(["FDRFQ7C2"]),
     handles: true,
@@ -710,6 +820,7 @@ it("patches the selected mark, its outline, and its handles in place", () => {
     pageAnnotations([figure([100, 280, 340, 500])])[0]!,
     {
       handles: true,
+      font: MONO,
     },
   );
 
@@ -734,6 +845,7 @@ it("patches a scaled ink stroke, the width of its casing, and its four handles i
     record("4PE492KU", "ink", { pageIndex: 0, width, paths });
   const page = pageView();
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([stroke([[100, 300, 200, 400]], 2)]),
     selected: new Set(["4PE492KU"]),
     handles: true,
@@ -748,7 +860,7 @@ it("patches a scaled ink stroke, the width of its casing, and its four handles i
   const patched = patchSelectedMark(
     page,
     pageAnnotations([stroke([[100, 200, 300, 400]], 4)])[0]!,
-    { handles: true },
+    { handles: true, font: MONO },
   );
 
   expect(patched).toBe(true);
@@ -786,11 +898,15 @@ it("draws a proposed position in the mark's own place in its page's list", () =>
 it("patches nothing on a page whose overlay holds no such mark", () => {
   const page = pageView();
   renderAnnotationOverlay(page, {
+    font: MONO,
     annotations: pageAnnotations([highlight()]),
   });
 
   expect(
-    patchSelectedMark(page, pageAnnotations([figure()])[0]!, { handles: true }),
+    patchSelectedMark(page, pageAnnotations([figure()])[0]!, {
+      handles: true,
+      font: MONO,
+    }),
   ).toBe(false);
 });
 
@@ -869,6 +985,18 @@ function pathOf(page: OverlayPageView, key: string): number[][] {
   return commands.map((command) =>
     command.trim().slice(1).trim().split(" ").map(round),
   );
+}
+
+/** A free-text mark's lines, each beside where its baseline starts. */
+function linesOf(
+  page: OverlayPageView,
+  key: string,
+): [string, number, number][] {
+  return [...markIn(page, key).children].map((line) => [
+    line.textContent ?? "",
+    round(line.getAttribute("x")),
+    round(line.getAttribute("y")),
+  ]);
 }
 
 function attributesOf(

@@ -103,8 +103,13 @@ import {
   selectionCollapsed,
   releaseCapture,
 } from "./surface";
-import { MARK_TOOLS, gestureOf, isTextTool, textToolOf } from "./tools";
-import type { MarkTool, TextTool, ToolColorStore } from "./tools";
+import {
+  MARK_TOOLS,
+  gestureOf,
+  isSelectionTool,
+  selectionToolOf,
+} from "./tools";
+import type { MarkTool, SelectionTool, ToolColorStore } from "./tools";
 
 const logger = getLogger("pdf-annotation-editor");
 
@@ -397,7 +402,7 @@ export class MarkCreation implements CreationGestures, Disposable {
         const { armed, colors } = this.#state();
         // Only a selection tool takes a text selection: one made under the
         // note, image or ink tool waits in the popup as one made unarmed does.
-        if (isTextTool(armed)) {
+        if (isSelectionTool(armed)) {
           // The armed tool commits at once and opens no popup, so the
           // selection never floats.
           this.#creating = this.#create({
@@ -439,7 +444,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     }
     if (!isEditGesture(event)) return;
     const key = event.key.toLowerCase();
-    const tool: TextTool | null =
+    const tool: SelectionTool | null =
       key === "h" ? "highlight" : key === "u" ? "underline" : null;
     const swatch = ANNOTATION_COLORS[Number(key) - 1];
     const waiting = this.#floating().kind === "create";
@@ -457,7 +462,7 @@ export class MarkCreation implements CreationGestures, Disposable {
     if (swatch !== undefined) {
       event.preventDefault();
       const { armed } = this.#state();
-      if (waiting) this.#commit(textToolOf(armed), swatch);
+      if (waiting) this.#commit(selectionToolOf(armed), swatch);
       else if (live) this.#setColor(armed ?? "highlight", swatch);
       return;
     }
@@ -691,7 +696,7 @@ export class MarkCreation implements CreationGestures, Disposable {
               surface: "popup",
               value: "",
               onSubmit: () => {
-                const tool = textToolOf(this.#state().armed);
+                const tool = selectionToolOf(this.#state().armed);
                 this.#commit(tool, this.#state().colors[tool]);
               },
               onCancel: () => setCommenting(this.#deps.surfaceState, false),
@@ -714,7 +719,7 @@ export class MarkCreation implements CreationGestures, Disposable {
       case "color": {
         // A colour chosen in the popup becomes that tool's colour, so the
         // toolbar and the popup never disagree.
-        const tool = textToolOf(this.#state().armed);
+        const tool = selectionToolOf(this.#state().armed);
         this.#setColor(tool, action.color);
         this.#commit(tool, action.color);
         return;
@@ -749,7 +754,7 @@ export class MarkCreation implements CreationGestures, Disposable {
    *
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
-  #commit(type: TextTool, color: string): void {
+  #commit(type: SelectionTool, color: string): void {
     const floating = this.#floating();
     if (floating.kind !== "create" || this.#writing) return;
     this.#creating = this.#create({

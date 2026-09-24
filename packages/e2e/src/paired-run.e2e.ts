@@ -1796,6 +1796,104 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
       });
 
+      describe("free text on the first page", () => {
+        /** A text mark's lines, as the page draws them. */
+        const linesOf = (key: string) =>
+          `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]');if(!mark)return 'none';return JSON.stringify([...mark.children].map((line)=>[line.textContent,Number(line.getAttribute('y')).toFixed(3),Number(line.getComputedTextLength().toFixed(3))]));})()`;
+
+        /** What each test created, erased once it ends. */
+        const created: string[] = [];
+
+        afterEach(async () => {
+          await eraseAnnotations(rdp, created.splice(0));
+        });
+
+        it("draws the seeded free text on one line inside its box", async () => {
+          await raiseWindow(vaultId!);
+          const { position } = seededMark("HRK7BG32", { image: false }).seeded;
+          if (!("fontSize" in position)) throw new Error("HRK7BG32 is text");
+          const [left, , right] = position.rects[0]!;
+          let lines: [string, string, number][] = [];
+          expect(
+            await waitFor(async () => {
+              const answer = await obEval(vaultId!, linesOf("HRK7BG32"));
+              if (!answer.startsWith("[")) return false;
+              lines = JSON.parse(answer) as typeof lines;
+              // A page not yet laid out measures its text as nothing.
+              return lines.every(([, , length]) => length > 0);
+            }),
+          ).toBe(true);
+          expect(lines.map(([line]) => line)).toEqual([
+            "Making figures is hard :(",
+          ]);
+          // The box was fitted to the comment in Zotero's font; the page
+          // draws it in Obsidian's, and the run still ends inside the box.
+          expect(lines[0]![2]).toBeLessThanOrEqual(right! - left!);
+        }, 120000);
+
+        it("draws a two-line text Annotation from Zotero as two lines", async () => {
+          await raiseWindow(vaultId!);
+          const before = await heldAnnotationKeys(rdp, ATTACHMENT_ITEM);
+          const apiKey = await obJson<string>(
+            "JSON.stringify(JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')).key)",
+          );
+          // Written straight through the Local API, so the page draws a text
+          // Annotation Zotero holds, not one ZotLit shaped. The box is 40
+          // points high, room for two 14-point lines.
+          const written = await zoteroFetch(api, "users/0/items", {
+            method: "POST",
+            headers: {
+              "Zotero-Server-ID": serverID,
+              "Zotero-API-Key": apiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify([
+              {
+                annotationType: "text",
+                itemType: "annotation",
+                parentItem: attachment.key,
+                annotationComment: "Two\nlines",
+                annotationColor: "#ff6666",
+                annotationPageLabel: "1",
+                annotationSortIndex: "00000|000000|00602",
+                annotationPosition: JSON.stringify({
+                  pageIndex: 0,
+                  fontSize: 14,
+                  rotation: 0,
+                  rects: [[60, 150, 200, 190]],
+                }),
+              },
+            ]),
+          });
+          expect(written.status).toBe(200);
+          const textKey = await freshAnnotationKey(rdp, {
+            item: ATTACHMENT_ITEM,
+            before,
+            created: (keys) => created.push(...keys),
+          });
+          await obEval(
+            vaultId!,
+            `(async()=>{await app.plugins.plugins.zotlit.services.annotationRepository.refresh(${JSON.stringify(attachment.key)});return true;})()`,
+          );
+
+          // Each line starts 1.2 font sizes, 16.8 points, below the last.
+          let lines: [string, string, number][] = [];
+          expect(
+            await waitFor(async () => {
+              const answer = await obEval(vaultId!, linesOf(textKey));
+              if (!answer.startsWith("[")) return false;
+              lines = JSON.parse(answer) as typeof lines;
+              return lines.length > 0;
+            }),
+          ).toBe(true);
+          expect(lines.map(([line]) => line)).toEqual(["Two", "lines"]);
+          expect(Number(lines[1]![1]) - Number(lines[0]![1])).toBeCloseTo(
+            16.8,
+            3,
+          );
+        }, 120000);
+      });
+
       it("saves a Geometry Edit on the seeded image through one repository write", async () => {
         const imageKey = "FDRFQ7C2";
         const image = seededMark(imageKey, { image: true });

@@ -17,13 +17,13 @@ import type { MutationState } from "@/services/annotation-repository/write";
 import { editingBlockedReason } from "@/views/annot-view/card-controls";
 
 import { markPopupControl } from "./mark-popup";
-import { textToolOf } from "./tools";
-import type { AnnotationTool, MarkTool, TextTool } from "./tools";
+import { selectionToolOf } from "./tools";
+import type { AnnotationTool, MarkTool, SelectionTool } from "./tools";
 
 /** What a pressed control of the create-mode row asks for. */
 export type CreatePopupAction =
   /** Create the selection as this mark, in that tool's own colour. */
-  | { kind: "tool"; tool: TextTool }
+  | { kind: "tool"; tool: SelectionTool }
   /** Create the selection in this colour, with the armed tool. */
   | { kind: "color"; color: string }
   /** Open or close the comment sheet. */
@@ -86,7 +86,7 @@ export function createPopupRow({
   now,
 }: CreatePopupRowInput): readonly CreatePopupControl[] {
   const blocked = editingBlockedReason(capability, mutation, now);
-  const tool = textToolOf(armed);
+  const tool = selectionToolOf(armed);
   const creating = (
     control: Omit<CreatePopupControl, "disabled" | "tooltip"> & {
       label: string;

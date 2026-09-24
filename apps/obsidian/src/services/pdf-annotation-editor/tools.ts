@@ -65,12 +65,12 @@ export function gestureOf(armed: MarkTool | null): ToolGesture | null {
 }
 
 /** The tools a text selection commits as. */
-export type TextTool = {
+export type SelectionTool = {
   [T in MarkTool]: (typeof TOOL_GESTURES)[T] extends "selection" ? T : never;
 }[MarkTool];
 
 /** Whether a text selection commits as this tool. */
-export function isTextTool(tool: MarkTool | null): tool is TextTool {
+export function isSelectionTool(tool: MarkTool | null): tool is SelectionTool {
   return gestureOf(tool) === "selection";
 }
 
@@ -78,8 +78,8 @@ export function isTextTool(tool: MarkTool | null): tool is TextTool {
  * The tool a text selection commits as while a tool is armed: the armed one
  * where it takes text, and highlight where none does.
  */
-export function textToolOf(armed: MarkTool | null): TextTool {
-  return isTextTool(armed) ? armed : "highlight";
+export function selectionToolOf(armed: MarkTool | null): SelectionTool {
+  return isSelectionTool(armed) ? armed : "highlight";
 }
 
 /** Whether ZotLit can write this tool's Annotation yet. */

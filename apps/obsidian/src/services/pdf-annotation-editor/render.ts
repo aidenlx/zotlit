@@ -11,8 +11,13 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 import type { InkPosition } from "@/services/annotation-repository/write";
 
-import { freeTextLayout } from "./free-text-layout";
-import type { PagePoint, PageRect, Turn } from "./free-text-layout";
+import { freeTextLayout, freeTextLines, LINE_HEIGHT } from "./free-text-layout";
+import type {
+  PagePoint,
+  PageRect,
+  TextMeasure,
+  Turn,
+} from "./free-text-layout";
 import {
   capturesImage,
   gripCursor,
@@ -129,6 +134,11 @@ export interface AnnotationOverlayOptions {
    * @default upright text, for a caller that holds no rotation
    */
   textRotation?: TextRotation;
+  /**
+   * The font free text is drawn and measured in: Obsidian's interface font,
+   * from {@link interfaceFont}, resolved once per paint.
+   */
+  font: MeasuredFont;
 }
 
 const UPRIGHT: TextRotation = () => 0;
@@ -156,11 +166,12 @@ export function renderAnnotationOverlay(
     selected,
     handles = false,
     textRotation = UPRIGHT,
+    font,
   }: AnnotationOverlayOptions,
 ): void {
   page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`)?.remove();
 
-  const unitPage = toPageUnits(page);
+  const unitPage = drawingPageOf(page, font);
   const overlay = createOverlay(unitPage);
 
   for (const stroke of pending) {
@@ -305,11 +316,14 @@ export function patchSelectedMark(
   {
     handles,
     textRotation = UPRIGHT,
-  }: Pick<AnnotationOverlayOptions, "textRotation"> & { handles: boolean },
+    font,
+  }: Pick<AnnotationOverlayOptions, "textRotation" | "font"> & {
+    handles: boolean;
+  },
 ): boolean {
   const overlay = page.div.querySelector(`.${themeHook.pdfAnnotationOverlay}`);
   if (!overlay) return false;
-  const unitPage = toPageUnits(page);
+  const unitPage = drawingPageOf(page, font);
   const { key } = placement.annotation;
   const held = [
     ...[
@@ -345,7 +359,7 @@ export function patchSelectedMark(
  * stand, so its cursor shows the move.
  */
 function markNodes(
-  page: OverlayPage,
+  page: DrawingPage,
   placement: PdfPageAnnotation,
   handles: boolean,
 ): SVGElement[] {
@@ -687,7 +701,7 @@ interface PdfPagePlacement extends PdfPageAnnotation {
  * Zotero never writes — draws nothing.
  */
 function marksFor(
-  page: OverlayPage,
+  page: DrawingPage,
   { annotation, position, rects }: PdfPageAnnotation,
 ): SVGElement[] {
   switch (annotation.type) {
@@ -838,7 +852,7 @@ function inkStroke(
   const element = page.document.createElementNS(SVG_NS, "path");
   element.setAttribute("d", inkPathOf(page, { paths }));
   element.setAttribute("fill", "none");
-  element.setAttribute("stroke", darkenInk(color));
+  element.setAttribute("stroke", darken(color));
   element.setAttribute("stroke-width", String(width));
   element.setAttribute("stroke-linecap", "round");
   element.setAttribute("stroke-linejoin", "round");
@@ -868,12 +882,12 @@ function inkPathOf(
 }
 
 /**
- * How much darker than its stored colour Zotero's reader strokes ink on
- * screen, in percent. The Excerpt Image keeps the stored colour.
+ * How much darker than its stored colour Zotero's reader draws ink and free
+ * text on screen, in percent. The Excerpt Image keeps the stored colour.
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/defines.js#L17
  */
-const INK_DARKEN_PERCENT = 5;
+const INK_AND_TEXT_DARKEN_PERCENT = 5;
 
 /**
  * Zotero's `darkenHex`: each channel scaled down and rounded. A colour that is
@@ -881,37 +895,97 @@ const INK_DARKEN_PERCENT = 5;
  *
  * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/pdf/lib/utilities.js#L514-L520
  */
-function darkenInk(color: string): string {
+function darken(color: string): string {
   if (!/^#[\da-f]{6}$/i.test(color)) return color;
   const channels = [1, 3, 5].map((start) =>
     Math.round(
       Number.parseInt(color.slice(start, start + 2), 16) *
-        (1 - INK_DARKEN_PERCENT / 100),
+        (1 - INK_AND_TEXT_DARKEN_PERCENT / 100),
     ),
   );
   return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**
- * The comment typed onto the page, at the stored font size and rotation. Zotero
- * lays the same text out in a wrapping textarea; one run is the approximation
- * this milestone accepts.
+ * The comment typed onto the page, broken into the lines its box holds, at the
+ * stored font size and rotation, in the stored colour darkened as Zotero's
+ * reader draws it on screen. Each line is one `tspan` placed in the run's own
+ * unturned frame, so the run's turns carry every line into the box.
  */
 function renderText(
-  page: OverlayPage,
+  page: DrawingPage,
   annotation: AnnotationRecord,
   position: PdfTextPosition,
 ): SVGTextElement {
+  const { family, measure } = page.font;
   const element = page.document.createElementNS(SVG_NS, "text");
   const { baseline, turns } = layoutOf(page, position);
+  const [left, , right] = position.rects[0]!;
+  const lines = freeTextLines(
+    annotation.comment ?? annotation.text ?? "",
+    Math.abs(right! - left!),
+    { fontSize: position.fontSize, measure },
+  );
   element.setAttribute("x", String(baseline[0]));
   element.setAttribute("y", String(baseline[1]));
-  element.setAttribute("fill", colorOf(annotation));
+  element.setAttribute("fill", darken(colorOf(annotation)));
   element.setAttribute("font-size", String(position.fontSize));
+  element.setAttribute("font-family", family);
+  // What the measure assumes, so a page ancestor cannot widen the drawn run.
+  element.setAttribute("font-weight", "normal");
+  element.setAttribute("font-style", "normal");
+  element.setAttribute("letter-spacing", "0");
   const turn = transformOf(turns);
   if (turn !== undefined) element.setAttribute("transform", turn);
-  element.textContent = annotation.comment ?? annotation.text ?? "";
+  element.append(
+    ...lines.map((line, index) => {
+      const tspan = page.document.createElementNS(SVG_NS, "tspan");
+      tspan.setAttribute("x", String(baseline[0]));
+      tspan.setAttribute(
+        "y",
+        String(baseline[1] + index * LINE_HEIGHT * position.fontSize),
+      );
+      tspan.textContent = line;
+      return tspan;
+    }),
+  );
   return element;
+}
+
+/** The font free text is drawn in, and the width of a run in it. */
+export interface MeasuredFont {
+  /** The CSS font family, as resolved in the document. */
+  family: string;
+  measure: TextMeasure;
+}
+
+const measureContexts = new WeakMap<Document, CanvasRenderingContext2D>();
+
+/**
+ * Obsidian's interface font, as the document resolves it, and a measure over
+ * it: the one font a saved text mark, a Text Draft, and the box fitted to it
+ * are all laid out in, so the three break the same text into the same lines.
+ * Zotero's reader uses its own interface font the same way.
+ *
+ * @see https://github.com/zotero/reader/blob/df215c60334d2d0c7b1fbc9f3959b66afc1ced83/src/common/reader.js#L54
+ */
+export function interfaceFont(window_: Window): MeasuredFont {
+  const document_ = window_.document;
+  const { fontFamily: family } = window_.getComputedStyle(document_.body);
+  return {
+    family,
+    measure: (text, fontSize) => {
+      let context = measureContexts.get(document_);
+      if (!context) {
+        const created = document_.createElement("canvas").getContext("2d");
+        if (!created) throw new Error("No 2D canvas to measure text with");
+        context = created;
+        measureContexts.set(document_, context);
+      }
+      context.font = `${fontSize}px ${family}`;
+      return context.measureText(text).width;
+    },
+  };
 }
 
 /** A turn list as SVG writes it, applied from the last one to the first. */
@@ -948,6 +1022,15 @@ interface OverlayPage {
     PDFPageViewport,
     "width" | "height" | "rotation" | "convertToViewportPoint"
   >;
+}
+
+/** The page a mark is drawn on: page units, and the font free text is in. */
+interface DrawingPage extends OverlayPage {
+  font: MeasuredFont;
+}
+
+function drawingPageOf(page: OverlayPageView, font: MeasuredFont): DrawingPage {
+  return { ...toPageUnits(page), font };
 }
 
 /**

@@ -190,8 +190,20 @@ export interface InkPosition {
   paths: readonly (readonly number[])[];
 }
 
-/** Every PDF position ZotLit writes: rects, or ink strokes. */
-export type WritablePosition = CreatePosition | InkPosition;
+/**
+ * The box of a free-text Annotation, unrounded, with the font size and turn
+ * its text is laid out at.
+ */
+export interface TextPosition {
+  pageIndex: number;
+  fontSize: number;
+  /** Degrees counter-clockwise, as Zotero stores it. */
+  rotation: number;
+  rects: readonly (readonly number[])[];
+}
+
+/** Every PDF position ZotLit writes: rects, ink strokes, or a text box. */
+export type WritablePosition = CreatePosition | InkPosition | TextPosition;
 
 /**
  * One Geometry Edit, as the reader computed it: the new position, the Sort
@@ -291,7 +303,8 @@ export function roundCoordinate(value: number): number {
 /**
  * The stored position, rounded the way Zotero's reader rounds it before every
  * save: three decimals in PDF user-space points, on rects, ink paths, and ink
- * width alike.
+ * width alike. A text box's font size and rotation are kept as given, as
+ * Zotero keeps them.
  *
  * @see https://github.com/zotero/reader/blob/132bb787937a540a09513415fd507654eb0e88f9/src/pdf/lib/utilities.js#L686-L712
  */
@@ -303,6 +316,14 @@ export function writePosition(position: WritablePosition): string {
       pageIndex: position.pageIndex,
       width: roundCoordinate(position.width),
       paths: roundAll(position.paths),
+    });
+  }
+  if ("fontSize" in position) {
+    return JSON.stringify({
+      pageIndex: position.pageIndex,
+      fontSize: position.fontSize,
+      rotation: position.rotation,
+      rects: roundAll(position.rects),
     });
   }
   return JSON.stringify({

@@ -68,6 +68,7 @@ import {
 import type { Adjustment, ReaderSurfaceStore } from "./reader-surface-state";
 import {
   groupAnnotationsByPage,
+  interfaceFont,
   patchSelectedMark,
   renderAnnotationOverlay,
   renderCapture,
@@ -917,6 +918,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
         !patchSelectedMark(page, placement, {
           handles: this.#handles(),
           textRotation: this.#textRotation,
+          font: interfaceFont(page.div.win),
         })
       )
         this.#paint(pageIndex);
@@ -1207,6 +1209,7 @@ export class PdfViewBinding implements Disposable, HoverParent {
       selected: this.#selection?.selected,
       handles: this.#handles(),
       textRotation: this.#textRotation,
+      font: interfaceFont(page.div.win),
     });
     // The rebuild took the capture's rectangle and the Live Stroke with the
     // overlay.
