@@ -87,6 +87,8 @@ const pairedWorkspaceRoot =
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
 /** Its vault-relative path: the Fixture declares it as a `vault`-rooted link. */
 const attachmentPath = attachment.path!;
+/** Every Annotation the Fixture seeds, by key. */
+const SEEDED_KEYS = ANNOTATIONS.map(({ key }) => key);
 /** One Annotation the Fixture Spec declares on it, as a read oracle. */
 const seededAnnotation = ANNOTATIONS.find(
   ({ parentItemID }) => parentItemID === attachment.itemID,
@@ -824,6 +826,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         pdfDigestBefore = await digestAttachmentPdf();
         // A digest of nothing would make the closing assertion vacuous.
         expect(pdfDigestBefore).toHaveLength(64);
+        // A run stopped before its own cleanup, or a create that landed after
+        // its test stopped waiting, leaves an Annotation where this run's
+        // tools press: the press then selects it and creates nothing.
+        await eraseAnnotations(rdp, await madeSince(SEEDED_KEYS));
         // Zotero's Reader is opened on the Attachment before anything is
         // written, so "visible in the Zotero Reader" is a claim about a reader
         // that was already showing the document when the write landed.
@@ -901,6 +907,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       const pdfView = pdfViewOf(attachmentPath);
       /** The Attachment's Annotations as Zotero holds them, by key. */
       const annotationKeys = () => heldAnnotationKeys(rdp, ATTACHMENT_ITEM);
+      /** The Attachment's Annotations beyond `held`, by key. */
+      const madeSince = async (held: readonly string[]) =>
+        (await annotationKeys()).filter((key) => !held.includes(key));
 
       /** One seeded Annotation as the Local API answers it. */
       interface StoredMark {
@@ -1293,11 +1302,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ] as const;
         });
 
-        /** What each test created, erased once it ends. */
-        const created: string[] = [];
+        /**
+         * What the Attachment held when this group began. Each test ends by
+         * erasing everything beyond it, a create that landed after the test
+         * stopped waiting for it included.
+         */
+        let held: readonly string[] = [];
+        beforeAll(async () => {
+          held = await annotationKeys();
+        });
 
         afterEach(async () => {
-          const keys = created.splice(0);
+          const keys = await madeSince(held);
           // Zotero's Reader renders a new ink's Excerpt Image and saves it
           // onto the item, which would put an item erased first back.
           for (const annotationKey of keys)
@@ -1353,7 +1369,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
 
         /** An ink Annotation as the Local API answers it. */
@@ -1537,12 +1552,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await inkMenu(picked)).toBe(width);
 
           // Closed and opened again, the PDF view takes a new binding.
-          expect(
-            await obEval(
-              vaultId!,
-              `(async()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(attachmentPath)});const file=leaf.view.file;await leaf.setViewState({type:'empty'});await leaf.openFile(file);return 'reopened';})()`,
-            ),
-          ).toBe("reopened");
+          await reopenPdfView(vaultId!, attachmentPath);
           await armInk([150, 355]);
           expect(await inkMenu()).toBe(String(picked));
           const before = await annotationKeys();
@@ -1799,11 +1809,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         /** The seeded note's centre, in PDF points on page one. */
         const SEED_NOTE = [577.901, 609.393] as const;
 
-        /** What each test created, erased once it ends. */
-        const created: string[] = [];
+        /**
+         * What the Attachment held when this group began. Each test ends by
+         * erasing everything beyond it, a create that landed after the test
+         * stopped waiting for it included.
+         */
+        let held: readonly string[] = [];
+        beforeAll(async () => {
+          held = await annotationKeys();
+        });
 
         afterEach(async () => {
-          await eraseAnnotations(rdp, created.splice(0));
+          await eraseAnnotations(rdp, await madeSince(held));
           await disarmTool(vaultId!, { pdfView, tool: "note" });
         });
 
@@ -1831,7 +1848,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const noteKey = await freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
           const data = await storedAnnotation(api, serverID, noteKey);
           expect(data).toMatchObject({
@@ -1934,11 +1950,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         /** The seeded text Annotation's centre, in PDF points on page one. */
         const SEED_TEXT = [479.804, 693.607] as const;
 
-        /** What each test created, erased once it ends. */
-        const created: string[] = [];
+        /**
+         * What the Attachment held when this group began. Each test ends by
+         * erasing everything beyond it, a create that landed after the test
+         * stopped waiting for it included.
+         */
+        let held: readonly string[] = [];
+        beforeAll(async () => {
+          held = await annotationKeys();
+        });
 
         afterEach(async () => {
-          const erased = created.splice(0);
+          const erased = await madeSince(held);
           await eraseAnnotations(rdp, erased);
           await disarmTool(vaultId!, { pdfView, tool: "text" });
           // The next click on the same spot finds no mark once the page has
@@ -1999,7 +2022,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textKey = await freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
           const { annotationType, annotationComment } = await storedAnnotation(
             api,
@@ -2024,7 +2046,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textKey = await freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
           const data = await storedAnnotation(api, serverID, textKey);
           expect(data).toMatchObject({
@@ -2313,7 +2334,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textKey = await freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
           const data = await storedAnnotation(api, serverID, textKey);
           expect(
@@ -2367,7 +2387,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textKey = await freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
           expect(
             (await storedAnnotation(api, serverID, textKey)).annotationColor,
@@ -2389,11 +2408,18 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         const linesOf = (key: string) =>
           `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const mark=view.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(key)}]');if(!mark)return 'none';return JSON.stringify([...mark.children].map((line)=>[line.textContent,Number(line.getAttribute('y')).toFixed(3),Number(line.getComputedTextLength().toFixed(3))]));})()`;
 
-        /** What each test created, erased once it ends. */
-        const created: string[] = [];
+        /**
+         * What the Attachment held when this group began. Each test ends by
+         * erasing everything beyond it, a create that landed after the test
+         * stopped waiting for it included.
+         */
+        let held: readonly string[] = [];
+        beforeAll(async () => {
+          held = await annotationKeys();
+        });
 
         afterEach(async () => {
-          await eraseAnnotations(rdp, created.splice(0));
+          await eraseAnnotations(rdp, await madeSince(held));
         });
 
         it("draws the seeded free text on one line inside its box", async () => {
@@ -2457,7 +2483,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           const textKey = await freshAnnotationKey(rdp, {
             item: ATTACHMENT_ITEM,
             before,
-            created: (keys) => created.push(...keys),
           });
           await obEval(
             vaultId!,

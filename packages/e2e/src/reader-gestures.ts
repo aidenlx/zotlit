@@ -139,8 +139,10 @@ export async function settledGesture(
 }
 
 /**
- * Closes the PDF view on `attachmentPath` and opens the PDF again in the same
- * leaf, in one step, so the view takes a new binding.
+ * Closes the PDF view on `attachmentPath` that {@link pdfViewOf} answers and
+ * opens the PDF again in the same leaf, in one step, so the view takes a new
+ * binding. A background tab can hold the same PDF, and closing that one would
+ * leave the view under test open.
  */
 export async function reopenPdfView(
   vaultId: string,
@@ -149,7 +151,7 @@ export async function reopenPdfView(
   expect(
     await obEval(
       vaultId,
-      `(async()=>{const leaf=app.workspace.getLeavesOfType('pdf').find(({view})=>view.file?.path===${JSON.stringify(attachmentPath)});const file=leaf.view.file;await leaf.setViewState({type:'empty'});await leaf.openFile(file);return 'reopened';})()`,
+      `(async()=>{const leaf=${pdfViewOf(attachmentPath)}.leaf;const file=leaf.view.file;await leaf.setViewState({type:'empty'});await leaf.openFile(file);return 'reopened';})()`,
     ),
   ).toBe("reopened");
 }

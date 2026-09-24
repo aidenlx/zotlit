@@ -561,8 +561,8 @@ export function heldAnnotationKeys(
 
 /**
  * The one Annotation Zotero holds on `item` beyond `before`, once it does.
- * Every fresh key is handed to `created` before the count is asserted, so a
- * test that made more than one still erases them all.
+ * Every fresh key is handed to `created`, where given, before the count is
+ * asserted, so a test that made more than one still erases them all.
  */
 export async function freshAnnotationKey(
   rdp: ZoteroRdp,
@@ -573,7 +573,7 @@ export async function freshAnnotationKey(
   }: {
     item: string;
     before: readonly string[];
-    created: (keys: readonly string[]) => void;
+    created?: (keys: readonly string[]) => void;
   },
 ): Promise<string> {
   let fresh: string[] = [];
@@ -585,7 +585,7 @@ export async function freshAnnotationKey(
       return fresh.length > 0;
     }),
   ).toBe(true);
-  created(fresh);
+  created?.(fresh);
   expect(fresh).toHaveLength(1);
   return fresh[0]!;
 }
