@@ -349,11 +349,11 @@ The controls ZotLit adds to the reader's own toolbar: the armed tool (highlight,
 _Avoid_: reader toolbar (that is Obsidian's), PDF toolbar, tool bar
 
 **Ink Stroke**:
-One continuous pointer gesture with the ink tool armed, from press to release, stored as one path of an ink Annotation: its points smoothed as Zotero's reader smooths them, in PDF points on the page it was pressed on. One stroke makes one Annotation; a stroke that reaches the position ceiling ends there as its own Annotation and draws on as a new stroke.
+One continuous pointer gesture with the ink tool armed, from press to release, stored as one path of an ink Annotation: its points smoothed as Zotero's reader smooths them, in PDF points on the page it was pressed on.
 _Avoid_: path (the stored form), line, drawing, scribble
 
 **Pending Stroke**:
-An Ink Stroke that has been released and rounded, drawn on the page while its create is in flight. It leaves the page in the same update that brings in the created Annotation, or when the create fails.
+An Ink Stroke that has been released and rounded, drawn on the page while its create is in flight.
 _Avoid_: optimistic mark, draft stroke, Annotation Draft (that is a comment)
 
 **Reader Surface State**:
