@@ -9,9 +9,8 @@ import type {
   CommentDraft,
 } from "@/services/annotation-repository/service";
 import { IDLE, writePosition } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
 
-import { annotation, annotationEdits, toolColors } from "./__fixtures__";
+import { annotation, repositoryOver, toolColors } from "./__fixtures__";
 import type { CreationToolbarControl } from "./creation-toolbar";
 import { freeTextLines } from "./free-text-layout";
 import type { EditablePosition } from "./geometry-edit";
@@ -196,11 +195,11 @@ it("changes only that tool's toggle on a colour change, and keeps the colour", (
   expect(colors.current().underline).toBe(chosen);
 });
 
-const PARAGRAPH = annotation("PARA1111", "highlight", {
+const PARAGRAPH = annotation("PARA7777", "highlight", {
   pageIndex: 0,
   rects: [[100, 600, 500, 640]],
 });
-const WORD = annotation("WORD2222", "highlight", {
+const WORD = annotation("WRDS2222", "highlight", {
   pageIndex: 0,
   rects: [[200, 610, 240, 630]],
 });
@@ -242,12 +241,12 @@ function draft(
 it("selects a mark from the stack under a point, at its place in it", () => {
   const store = reader();
 
-  selectMark(store, "PARA1111", { stack: ["WORD2222", "PARA1111"] });
+  selectMark(store, "PARA7777", { stack: ["WRDS2222", "PARA7777"] });
 
   expect(store.getState().floating).toEqual({
     kind: "selected",
-    key: "PARA1111",
-    stack: ["WORD2222", "PARA1111"],
+    key: "PARA7777",
+    stack: ["WRDS2222", "PARA7777"],
     index: 1,
     quiet: false,
     commenting: false,
@@ -258,32 +257,32 @@ it("selects a mark from the stack under a point, at its place in it", () => {
 it("holds a Landing's selection quiet, and the next selection loud", () => {
   const store = reader();
 
-  selectMark(store, "WORD2222", { quiet: true });
+  selectMark(store, "WRDS2222", { quiet: true });
   expect(store.getState().floating).toMatchObject({
-    key: "WORD2222",
-    stack: ["WORD2222"],
+    key: "WRDS2222",
+    stack: ["WRDS2222"],
     quiet: true,
   });
 
-  selectMark(store, "PARA1111");
+  selectMark(store, "PARA7777");
   expect(store.getState().floating).toMatchObject({ quiet: false });
 });
 
 it("keeps the comment editor open for a repeat selection of the same mark", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
 
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   expect(store.getState().floating).toMatchObject({ commenting: true });
 
-  selectMark(store, "PARA1111");
+  selectMark(store, "PARA7777");
   expect(store.getState().floating).toMatchObject({ commenting: false });
 });
 
 it("opens the tag editor in place of the comment editor, and the reverse", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
 
   setTagging(store, true);
@@ -301,27 +300,27 @@ it("opens the tag editor in place of the comment editor, and the reverse", () =>
 
 it("keeps the tag editor open for a repeat selection of the same mark only", () => {
   const store = reader();
-  const stack = ["WORD2222", "PARA1111"];
-  selectMark(store, "WORD2222", { stack });
+  const stack = ["WRDS2222", "PARA7777"];
+  selectMark(store, "WRDS2222", { stack });
   setTagging(store, true);
 
-  selectMark(store, "WORD2222", { stack });
+  selectMark(store, "WRDS2222", { stack });
   expect(selectFloatingHead(store.getState()).tagging).toBe(true);
 
   stepStack(store);
   expect(selectFloatingHead(store.getState())).toMatchObject({
-    key: "PARA1111",
+    key: "PARA7777",
     tagging: false,
   });
 });
 
 it("selects a mark with its comment editor open when asked to", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
 
-  selectMark(store, "PARA1111", { commenting: true });
+  selectMark(store, "PARA7777", { commenting: true });
   expect(store.getState().floating).toMatchObject({
-    key: "PARA1111",
+    key: "PARA7777",
     quiet: false,
     commenting: true,
   });
@@ -329,7 +328,7 @@ it("selects a mark with its comment editor open when asked to", () => {
 
 it("clears a floating surface of either kind, and a null selection clears too", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   clearFloating(store);
   expect(store.getState().floating).toEqual({ kind: "none" });
 
@@ -340,7 +339,7 @@ it("clears a floating surface of either kind, and a null selection clears too", 
 
 it("lets a captured selection take the place of a selected mark", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
 
   captureSelection(store, { captured: CAPTURED, anchorAt: ANCHOR_AT });
@@ -356,19 +355,19 @@ it("lets a captured selection take the place of a selected mark", () => {
 
 it("steps forward through the stack and wraps, closing the editor", () => {
   const store = reader();
-  selectMark(store, "WORD2222", { stack: ["WORD2222", "PARA1111"] });
+  selectMark(store, "WRDS2222", { stack: ["WRDS2222", "PARA7777"] });
   setCommenting(store, true);
 
   stepStack(store);
   expect(store.getState().floating).toMatchObject({
-    key: "PARA1111",
+    key: "PARA7777",
     index: 1,
     commenting: false,
   });
 
   stepStack(store);
   expect(store.getState().floating).toMatchObject({
-    key: "WORD2222",
+    key: "WRDS2222",
     index: 0,
   });
 });
@@ -398,10 +397,10 @@ it("leaves nothing floating when commenting or in-flight is set on none", () => 
 
 it("stands the selection down when the next read no longer holds its Annotation", () => {
   const store = reader();
-  selectMark(store, "PARA1111");
+  selectMark(store, "PARA7777");
 
   ingestRecords(store, [PARAGRAPH]);
-  expect(store.getState().floating).toMatchObject({ key: "PARA1111" });
+  expect(store.getState().floating).toMatchObject({ key: "PARA7777" });
 
   ingestRecords(store, [WORD]);
   expect(store.getState().floating).toEqual({ kind: "none" });
@@ -410,27 +409,29 @@ it("stands the selection down when the next read no longer holds its Annotation"
 
 it("drops a deleted Annotation, its selection, and what was held on it at once", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
-  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
-  ingestCommentDraft(store, "WORD2222", draft("WORD2222"));
-  ingestMutation(store, "PARA1111", { kind: "pending", write: "color" });
+  selectMark(store, "WRDS2222");
+  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
+  ingestCommentDraft(store, "WRDS2222", draft("WRDS2222"));
+  ingestMutation(store, "PARA7777", { kind: "pending", write: "color" });
 
-  dropRecord(store, "WORD2222");
+  dropRecord(store, "WRDS2222");
 
   const { records, floating, mutations, commentDrafts } = store.getState();
   expect(records).toEqual([PARAGRAPH]);
   expect(floating).toEqual({ kind: "none" });
-  expect([...mutations.keys()]).toEqual(["PARA1111"]);
+  expect([...mutations.keys()]).toEqual(["PARA7777"]);
   expect(commentDrafts.size).toBe(0);
 });
 
-it("takes a read's records with the drafts and write states that stood before it", () => {
+it("takes a read's records with the drafts and write states that stood before it", async () => {
+  await using stack = new AsyncDisposableStack();
   const store = reader();
-  const repository = annotationEdits();
-  repository.editComment("WORD2222", "worth quoting");
-  repository.mutationFor.mockImplementation(
-    (key): MutationState =>
-      key === "PARA1111" ? { kind: "pending", write: "color" } : IDLE,
+  const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
+  zotero.holdWrites();
+  void repository.patchColor("PARA7777", "#ff6666");
+  repository.editComment("WRDS2222", "worth quoting");
+  await vi.waitFor(() =>
+    expect(repository.mutationFor("PARA7777").kind).toBe("pending"),
   );
 
   ingestAnnotations(store, [PARAGRAPH, WORD], repository);
@@ -438,70 +439,94 @@ it("takes a read's records with the drafts and write states that stood before it
   const { records, mutations, commentDrafts } = store.getState();
   expect(records).toEqual([PARAGRAPH, WORD]);
   expect([...mutations]).toEqual([
-    ["PARA1111", { kind: "pending", write: "color" }],
+    ["PARA7777", { kind: "pending", write: "color" }],
   ]);
-  expect(commentDrafts.get("WORD2222")?.text).toBe("worth quoting");
+  expect(commentDrafts.get("WRDS2222")?.text).toBe("worth quoting");
 });
 
-it("takes the four per-Annotation announcements until it is disposed", () => {
+it("takes a write's state and a comment draft as the repository announces them", async () => {
+  await using stack = new AsyncDisposableStack();
   const store = reader();
-  selectMark(store, "WORD2222");
-  const repository = annotationEdits();
-  const listening = listenAnnotationEvents(store, repository);
+  const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
+  using _listening = listenAnnotationEvents(store, repository);
+  const release = zotero.holdWrites();
 
-  repository.mutationFor.mockReturnValue({ kind: "pending", write: "color" });
-  repository.emit("mutation-changed", "PARA1111");
-  repository.editComment("WORD2222", "worth quoting");
-  repository.emit("comment-draft-changed", "WORD2222");
-  expect(store.getState().mutations.get("PARA1111")).toEqual({
-    kind: "pending",
-    write: "color",
-  });
-  expect(store.getState().commentDrafts.get("WORD2222")?.text).toBe(
+  const saving = repository.patchColor("PARA7777", "#ff6666");
+  repository.editComment("WRDS2222", "worth quoting");
+  await vi.waitFor(() =>
+    expect(store.getState().mutations.get("PARA7777")).toEqual({
+      kind: "pending",
+      write: "color",
+    }),
+  );
+  expect(store.getState().commentDrafts.get("WRDS2222")?.text).toBe(
     "worth quoting",
   );
 
-  repository.hideCommentDraft();
-  repository.emit("comment-draft-hidden", "WORD2222");
-  expect(store.getState().commentDrafts.has("WORD2222")).toBe(false);
-  repository.emit("annotation-deleted", "WORD2222");
-  expect(store.getState().floating).toEqual({ kind: "none" });
+  release();
+  await saving;
+  expect(store.getState().mutations.has("PARA7777")).toBe(false);
+});
+
+it("drops the selected mark Zotero erased while it held a draft", async () => {
+  await using stack = new AsyncDisposableStack();
+  const store = reader();
+  selectMark(store, "WRDS2222");
+  const { repository, zotero } = await repositoryOver(stack, [PARAGRAPH, WORD]);
+  using _listening = listenAnnotationEvents(store, repository);
+  repository.editComment("WRDS2222", "worth quoting");
+
+  zotero.eraseInZotero("WRDS2222");
+  await repository.refresh("RGRPDF24");
+
+  const { records, floating, commentDrafts } = store.getState();
+  expect(records).toEqual([PARAGRAPH]);
+  expect(floating).toEqual({ kind: "none" });
+  expect(commentDrafts.has("WRDS2222")).toBe(false);
+});
+
+it("takes no announcement once disposed", async () => {
+  await using stack = new AsyncDisposableStack();
+  const store = reader();
+  const { repository } = await repositoryOver(stack, [PARAGRAPH, WORD]);
+  const listening = listenAnnotationEvents(store, repository);
 
   listening[Symbol.dispose]();
-  repository.emit("annotation-deleted", "PARA1111");
-  expect(store.getState().records).toEqual([PARAGRAPH]);
+  repository.editComment("WRDS2222", "worth quoting");
+
+  expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
 });
 
 it("holds what a write left on an Annotation, and forgets it once idle", () => {
   const store = reader();
 
-  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
-  expect(store.getState().mutations.get("WORD2222")).toEqual({
+  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
+  expect(store.getState().mutations.get("WRDS2222")).toEqual({
     kind: "pending",
     write: "color",
   });
 
-  ingestMutation(store, "WORD2222", IDLE);
-  expect(store.getState().mutations.has("WORD2222")).toBe(false);
+  ingestMutation(store, "WRDS2222", IDLE);
+  expect(store.getState().mutations.has("WRDS2222")).toBe(false);
 });
 
 it("fires no row subscriber for a mutation announced again unchanged", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
-  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
+  selectMark(store, "WRDS2222");
+  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
   const row = vi.fn();
   store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
 
-  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
+  ingestMutation(store, "WRDS2222", { kind: "pending", write: "color" });
   expect(row).not.toHaveBeenCalled();
 
-  ingestMutation(store, "WORD2222", IDLE);
+  ingestMutation(store, "WRDS2222", IDLE);
   expect(row).toHaveBeenCalledOnce();
 });
 
 it("fires the row subscriber for a change to the stored tags, not a re-read", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   const tagged = (names: string[]): AnnotationRecord => ({
     ...WORD,
     tags: names,
@@ -520,104 +545,103 @@ it("fires the row subscriber for a change to the stored tags, not a re-read", ()
 
 it("fires no row subscriber for a mutation on an Annotation not selected", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   const row = vi.fn();
   store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
 
-  ingestMutation(store, "PARA1111", { kind: "pending", write: "color" });
+  ingestMutation(store, "PARA7777", { kind: "pending", write: "color" });
 
   expect(row).not.toHaveBeenCalled();
 });
 
 it("holds a comment draft, and forgets one the repository dropped", () => {
   const store = reader();
-  const held = draft("WORD2222");
+  const held = draft("WRDS2222");
 
-  ingestCommentDraft(store, "WORD2222", held);
-  expect(store.getState().commentDrafts.get("WORD2222")).toBe(held);
+  ingestCommentDraft(store, "WRDS2222", held);
+  expect(store.getState().commentDrafts.get("WRDS2222")).toBe(held);
 
-  ingestCommentDraft(store, "WORD2222", null);
-  expect(store.getState().commentDrafts.has("WORD2222")).toBe(false);
+  ingestCommentDraft(store, "WRDS2222", null);
+  expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
 });
 
 it("keeps the editor open when an ordinary draft settles and is dropped", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
-  ingestCommentDraft(store, "WORD2222", draft("WORD2222"));
+  ingestCommentDraft(store, "WRDS2222", draft("WRDS2222"));
 
-  ingestCommentDraft(store, "WORD2222", null);
+  ingestCommentDraft(store, "WRDS2222", null);
 
   expect(store.getState().floating).toMatchObject({ commenting: true });
 });
 
 it("closes the editor when the selected draft turns into a Write Conflict", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
 
   ingestCommentDraft(
     store,
-    "WORD2222",
-    draft("WORD2222", { kind: "conflict", fresh: "theirs" }),
+    "WRDS2222",
+    draft("WRDS2222", { kind: "conflict", fresh: "theirs" }),
   );
 
   expect(store.getState().floating).toMatchObject({
-    key: "WORD2222",
+    key: "WRDS2222",
     commenting: false,
   });
 });
 
 it("closes the editor when a database switch hides the selected draft", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
-  ingestCommentDraft(store, "WORD2222", draft("WORD2222"));
+  ingestCommentDraft(store, "WRDS2222", draft("WRDS2222"));
 
-  hideCommentDraft(store, "WORD2222");
+  hideCommentDraft(store, "WRDS2222");
 
-  expect(store.getState().commentDrafts.has("WORD2222")).toBe(false);
+  expect(store.getState().commentDrafts.has("WRDS2222")).toBe(false);
   expect(store.getState().floating).toMatchObject({ commenting: false });
 });
 
-it("closes the tag editor alone when a database switch hides its draft", () => {
+it("closes the editors when a database switch hides their drafts", async () => {
+  await using stack = new AsyncDisposableStack();
   const store = reader();
-  selectMark(store, "WORD2222");
-  setTagging(store, true);
-  const repository = annotationEdits();
+  selectMark(store, "WRDS2222");
+  const zotero = await repositoryOver(stack, [PARAGRAPH, WORD]);
+  const { repository } = zotero;
   using _listening = listenAnnotationEvents(store, repository);
-  repository.editComment("WORD2222", "worth quoting");
-  repository.tagDraftFor.mockReturnValue({
-    annotationKey: "WORD2222",
-    attachmentKey: "RGRPDF24",
-    serverID: "test",
-    baseline: [],
-    names: ["to read"],
-    state: { kind: "editing" },
-  });
-  repository.emit("comment-draft-changed", "WORD2222");
+  repository.editComment("WRDS2222", "worth quoting");
+  setCommenting(store, true);
+  repository.editTags("WRDS2222", ["to read"]);
+  setTagging(store, true);
+  expect(store.getState().tagDrafts.get("WRDS2222")?.names).toEqual([
+    "to read",
+  ]);
 
-  // The one announcement names the Annotation, not the draft: the repository
-  // still answers the comment draft, so only the tag draft was hidden.
-  repository.tagDraftFor.mockReturnValue(null);
-  repository.emit("comment-draft-hidden", "WORD2222");
+  await zotero.switchDatabase();
 
   const { tagDrafts, commentDrafts, floating } = store.getState();
-  expect(tagDrafts.has("WORD2222")).toBe(false);
-  expect(commentDrafts.get("WORD2222")?.text).toBe("worth quoting");
-  expect(floating).toMatchObject({ key: "WORD2222", tagging: false });
+  expect(tagDrafts.has("WRDS2222")).toBe(false);
+  expect(commentDrafts.has("WRDS2222")).toBe(false);
+  expect(floating).toMatchObject({
+    key: "WRDS2222",
+    commenting: false,
+    tagging: false,
+  });
 });
 
 it("leaves another Annotation's editor alone when a draft is hidden", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   setCommenting(store, true);
 
-  hideCommentDraft(store, "PARA1111");
+  hideCommentDraft(store, "PARA7777");
   ingestCommentDraft(
     store,
-    "PARA1111",
-    draft("PARA1111", { kind: "conflict", fresh: "theirs" }),
+    "PARA7777",
+    draft("PARA7777", { kind: "conflict", fresh: "theirs" }),
   );
 
   expect(store.getState().floating).toMatchObject({ commenting: true });
@@ -625,8 +649,8 @@ it("leaves another Annotation's editor alone when a draft is hidden", () => {
 
 it("draws the selected row from the record, its mutation, and its stack", () => {
   const store = reader();
-  selectMark(store, "PARA1111", { stack: ["WORD2222", "PARA1111"] });
-  ingestMutation(store, "PARA1111", { kind: "pending", write: "color" });
+  selectMark(store, "PARA7777", { stack: ["WRDS2222", "PARA7777"] });
+  ingestMutation(store, "PARA7777", { kind: "pending", write: "color" });
 
   const row = selectSelectedRow(store.getState());
 
@@ -643,7 +667,7 @@ it("draws the selected row from the record, its mutation, and its stack", () => 
     ["reveal", false],
   ]);
   expect(row.at(-1)).toMatchObject({
-    key: "PARA1111",
+    key: "PARA7777",
     color: "#2ea8e5",
     stackIndex: 1,
     stackTotal: 2,
@@ -788,7 +812,7 @@ it("drops the adjustment with the selection it stood on", () => {
   const { store } = adjusting();
   beginAdjust(store, { grip: "r", from: [570, 569] });
 
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
 
   expect(selectAdjust(store.getState())).toBeNull();
 });
@@ -910,7 +934,7 @@ it("notifies no one for a capture move that changes nothing", () => {
 it("takes the floating surface from a selected mark, and cancels to nothing", () => {
   const store = reader();
   ingestRecords(store, [PARAGRAPH, WORD]);
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
 
   beginCapture(store, { pageIndex: 0, from: [100, 500] });
   expect(selectFloatingHead(store.getState())).toEqual({
@@ -937,7 +961,7 @@ const STROKE = {
 
 it("publishes the Live Stroke beside the floating surface, and clears it", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   const floating = store.getState().floating;
   const live = {
     pageIndex: 0,
@@ -959,11 +983,11 @@ it.each(["highlight", "underline", "image"] as const)(
   "keeps the floating surface when %s is armed",
   (tool) => {
     const store = reader();
-    selectMark(store, "WORD2222");
+    selectMark(store, "WRDS2222");
 
     arm(store, tool);
 
-    expect(selectFloatingHead(store.getState()).key).toBe("WORD2222");
+    expect(selectFloatingHead(store.getState()).key).toBe("WRDS2222");
   },
 );
 
@@ -971,7 +995,7 @@ it.each(["ink", "note", "text"] as const)(
   "clears the floating surface when %s is armed",
   (tool) => {
     const store = reader();
-    selectMark(store, "WORD2222");
+    selectMark(store, "WRDS2222");
 
     arm(store, tool);
 
@@ -1160,7 +1184,7 @@ it.each(["", " \n\t "])(
 
 it("refits nothing while no Text Draft stands", () => {
   const store = reader();
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   const { floating } = store.getState();
 
   refitTextDraft(store, "abcd", FIT);
@@ -1224,7 +1248,7 @@ it("keeps a Text Draft when a tool is armed, which finishes it instead", () => {
 it("opens a Text Draft on a font-size square round the press, and stands the tool down in the same update", () => {
   const store = reader();
   arm(store, "text");
-  selectMark(store, "WORD2222");
+  selectMark(store, "WRDS2222");
   const frames: { armed: string | null; kind: string }[] = [];
   store.subscribe(
     ({ armed, floating }) => ({ armed, kind: floating.kind }),

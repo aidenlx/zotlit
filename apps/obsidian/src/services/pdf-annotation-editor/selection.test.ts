@@ -6,21 +6,20 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
+import { AbortError } from "@/lib/abort-error";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
-import type {
-  AnnotationRecord,
-  TagDraft,
-} from "@/services/annotation-repository/service";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
+import { libraryReadOnly } from "@/services/zotero-local-api/__fixtures__";
 
 import {
   annotation,
-  annotationEdits,
   pageView,
   READER_NOW,
-  readerSurfaces,
+  readerOverZotero,
   viewport,
 } from "./__fixtures__";
+import type { readerSurfaces } from "./__fixtures__";
 import { ingestCapability, setCommenting } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
@@ -31,11 +30,11 @@ import type { OverlayPageView } from "./render";
  * y 162 to y 182 — which is where every client coordinate below comes from,
  * since the seeded page box is the page's own size at its own origin.
  */
-const PARAGRAPH = annotation("PARA1111", "highlight", {
+const PARAGRAPH = annotation("PARA7777", "highlight", {
   pageIndex: 0,
   rects: [[100, 600, 500, 640]],
 });
-const WORD = annotation("WORD2222", "highlight", {
+const WORD = annotation("WRDS2222", "highlight", {
   pageIndex: 0,
   rects: [[200, 610, 240, 630]],
 });
@@ -66,12 +65,14 @@ function rect({
     }) as DOMRect;
 }
 
-function setup(
+async function setup(
   records: readonly AnnotationRecord[] = [PARAGRAPH, WORD],
   capability: EditingCapability = { kind: "writable" },
 ) {
   vi.useFakeTimers();
+  const stack = new AsyncDisposableStack();
   const containerEl = document.body.appendChild(document.createElement("div"));
+  stack.defer(() => containerEl.remove());
   containerEl.getBoundingClientRect = rect({
     left: 0,
     top: 0,
@@ -87,17 +88,15 @@ function setup(
     height: 792,
   });
 
-  const annotations = annotationEdits();
   const sortIndex = vi.fn(async () => "00000|000012|00517");
   const adjustRange = vi.fn(
     async (_adjustment: RangeAdjustment): Promise<SelectedText | null> => null,
   );
-  const reader = readerSurfaces({
+  const reader = await readerOverZotero(stack, {
     containerEl,
     page: page as unknown as OverlayPageView,
     records,
     capability,
-    annotations: { ...annotations, createAnnotation: vi.fn() },
     sortIndex,
     adjustRange,
   });
@@ -106,16 +105,22 @@ function setup(
     ...reader,
     containerEl,
     page,
-    annotations,
     sortIndex,
     adjustRange,
     popup() {
       return reader.parent.hoverPopover as { staticPos: unknown } | null;
     },
-    [Symbol.dispose]() {
-      reader[Symbol.dispose]();
-      containerEl.remove();
+    /** Every write Zotero was sent, in order: its method, key and body. */
+    writes() {
+      return reader.requests
+        .filter(({ method }) => method !== "GET")
+        .map(({ method, url, body }) => ({
+          method,
+          key: url.pathname.split("/").at(-1),
+          body: body === null ? null : (JSON.parse(body) as unknown),
+        }));
     },
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
   };
 }
 
@@ -129,6 +134,30 @@ function press(node: HTMLElement, { x, y }: { x: number; y: number }): void {
 function commentView(root: HTMLElement): EditorView | null {
   const dom = root.querySelector<HTMLElement>(".cm-editor");
   return dom && EditorView.findFromDOM(dom);
+}
+
+type Harness = Awaited<ReturnType<typeof setup>>;
+
+/**
+ * Waits until no write stands pending on one Annotation. The reader asks for
+ * a write in the gesture's own task, and the write is pending from then until
+ * it settles, so once none is, every write the gesture sent has reached
+ * Zotero: a write missing after it was never sent.
+ */
+async function settled(h: Harness, annotationKey: string): Promise<void> {
+  await vi.waitFor(() =>
+    expect(h.repository.mutationFor(annotationKey).kind).not.toBe("pending"),
+  );
+}
+
+/**
+ * Waits for the list the reader's re-read answers. An announcement draws the
+ * list the repository holds at once, and the read it starts draws another
+ * after it, so call this right after the announcement.
+ */
+async function reread(h: Harness): Promise<void> {
+  const drawn = h.store.getState().records;
+  await vi.waitFor(() => expect(h.store.getState().records).not.toBe(drawn));
 }
 
 /** One whole gesture: press and release at the same point unless told otherwise. */
@@ -179,17 +208,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("takes the smallest mark under a click, and announces the selection", () => {
-  using h = setup();
+it("takes the smallest mark under a click, and announces the selection", async () => {
+  await using h = await setup();
 
   click(h.page.div, ON_WORD);
 
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
-  expect(h.reported).toEqual([["WORD2222"]]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+  expect(h.reported).toEqual([["WRDS2222"]]);
 });
 
-it("reads a click against the page inside its border, not the border box", () => {
-  using h = setup();
+it("reads a click against the page inside its border, not the border box", async () => {
+  await using h = await setup();
   // The desktop reader draws a border round the page, as wide as the zoom
   // makes it: the content box is the page's own size, inside that border.
   h.page.div.getBoundingClientRect = rect({
@@ -207,11 +236,11 @@ it("reads a click against the page inside its border, not the border box", () =>
   // paragraph.
   click(h.page.div, { x: 216, y: 192 });
 
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
 });
 
-it("opens the popup at the bottom centre of the mark, and keeps one popup", () => {
-  using h = setup();
+it("opens the popup at the bottom centre of the mark, and keeps one popup", async () => {
+  await using h = await setup();
 
   click(h.page.div, ON_WORD);
 
@@ -224,29 +253,29 @@ it("opens the popup at the bottom centre of the mark, and keeps one popup", () =
   expect(opened?.staticPos).toEqual({ x: 300, y: 192 });
 });
 
-it("steps through the stack under one point, and wraps", () => {
-  using h = setup();
+it("steps through the stack under one point, and wraps", async () => {
+  await using h = await setup();
 
   click(h.page.div, ON_WORD);
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
   click(h.page.div, ON_WORD);
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
   click(h.page.div, ON_WORD);
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
 });
 
-it("steps the stack forward from the popup's own stepper", () => {
-  using h = setup();
+it("steps the stack forward from the popup's own stepper", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='stack']")!.click();
 
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
 });
 
-it("opens the mark's colours under the popup verb that opened them", () => {
-  using h = setup();
+it("opens the mark's colours under the popup verb that opened them", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   const verb = popup.hoverEl.querySelector<HTMLElement>(
@@ -260,8 +289,8 @@ it("opens the mark's colours under the popup verb that opened them", () => {
   expect(menu.items).not.toHaveLength(0);
 });
 
-it("leaves a drag across a mark to the browser's own text selection", () => {
-  using h = setup();
+it("leaves a drag across a mark to the browser's own text selection", async () => {
+  await using h = await setup();
 
   click(h.page.div, ON_WORD, { from: { x: 200, y: 172 } });
 
@@ -269,8 +298,8 @@ it("leaves a drag across a mark to the browser's own text selection", () => {
   expect(h.reported).toEqual([]);
 });
 
-it("leaves a click that left text selected alone", () => {
-  using h = setup();
+it("leaves a click that left text selected alone", async () => {
+  await using h = await setup();
   vi.mocked(window.getSelection).mockReturnValue({
     isCollapsed: false,
     anchorNode: h.page.div,
@@ -281,8 +310,8 @@ it("leaves a click that left text selected alone", () => {
   expect(h.selection.selected.size).toBe(0);
 });
 
-it("stands a selected mark down for a live text selection", () => {
-  using h = setup();
+it("stands a selected mark down for a live text selection", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
 
   vi.mocked(window.getSelection).mockReturnValue({
@@ -295,8 +324,8 @@ it("stands a selected mark down for a live text selection", () => {
   expect(h.popup()).toBeNull();
 });
 
-it("gives a plain click to the PDF's own link, and Alt to the mark beneath", () => {
-  using h = setup();
+it("gives a plain click to the PDF's own link, and Alt to the mark beneath", async () => {
+  await using h = await setup();
   const link = h.page.div.appendChild(document.createElement("a"));
   link.href = "#page=4";
 
@@ -304,22 +333,22 @@ it("gives a plain click to the PDF's own link, and Alt to the mark beneath", () 
   expect(h.selection.selected.size).toBe(0);
 
   click(link, ON_WORD, { altKey: true });
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
 });
 
-it("treats a click that reaches no mark as the click-away", () => {
-  using h = setup();
+it("treats a click that reaches no mark as the click-away", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
 
   click(h.page.div, ON_PAGE);
 
   expect(h.selection.selected.size).toBe(0);
-  expect(h.reported).toEqual([["WORD2222"], []]);
+  expect(h.reported).toEqual([["WRDS2222"], []]);
   expect(h.popup()).toBeNull();
 });
 
-it("keeps the popup open through the press that retargets it", () => {
-  using h = setup();
+it("keeps the popup open through the press that retargets it", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const opened = h.popup();
 
@@ -328,11 +357,11 @@ it("keeps the popup open through the press that retargets it", () => {
   click(h.page.div, ON_WORD);
 
   expect(h.popup()).toBe(opened);
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
 });
 
-it("stands the selection down on a press outside the reader", () => {
-  using h = setup();
+it("stands the selection down on a press outside the reader", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   h.popup();
 
@@ -342,8 +371,8 @@ it("stands the selection down on a press outside the reader", () => {
   expect(h.popup()).toBeNull();
 });
 
-it("leaves the selection standing for a press on a surface that drives it", () => {
-  using h = setup();
+it("leaves the selection standing for a press on a surface that drives it", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const opened = h.popup();
   const list = document.body.appendChild(document.createElement("div"));
@@ -353,7 +382,7 @@ it("leaves the selection standing for a press on a surface that drives it", () =
   // The card's own click, after this press, says what becomes selected.
   press(card, { x: 700, y: 50 });
 
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
   expect(h.popup()).toBe(opened);
 
   release();
@@ -363,18 +392,18 @@ it("leaves the selection standing for a press on a surface that drives it", () =
   list.remove();
 });
 
-it("leaves the selection standing for a press inside the popup", () => {
-  using h = setup();
+it("leaves the selection standing for a press inside the popup", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
   press(popup.hoverEl, { x: 220, y: 190 });
 
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
 });
 
-it("re-anchors the popup when the page is rendered again", () => {
-  using h = setup();
+it("re-anchors the popup when the page is rendered again", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const opened = h.popup();
 
@@ -391,8 +420,8 @@ it("re-anchors the popup when the page is rendered again", () => {
   expect(opened?.staticPos).toEqual({ x: 440, y: 364 });
 });
 
-it("hides the popup when the mark scrolls out, and keeps the selection", () => {
-  using h = setup();
+it("hides the popup when the mark scrolls out, and keeps the selection", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   expect(h.popup()).not.toBeNull();
 
@@ -405,7 +434,7 @@ it("hides the popup when the mark scrolls out, and keeps the selection", () => {
   h.containerEl.dispatchEvent(new Event("scroll"));
 
   expect(h.popup()).toBeNull();
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
 
   h.page.div.getBoundingClientRect = rect({
     left: 0,
@@ -418,41 +447,41 @@ it("hides the popup when the mark scrolls out, and keeps the selection", () => {
   expect(h.popup()?.staticPos).toEqual({ x: 220, y: 182 });
 });
 
-it("drops a selection whose Annotation the last read retired", () => {
-  using h = setup();
+it("drops a selection whose Annotation the last read retired", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
 
-  h.replace([PARAGRAPH]);
-  h.sync();
+  h.zotero.eraseInZotero("WRDS2222");
+  await h.repository.refresh("RGRPDF24");
 
-  expect(h.selection.selected.size).toBe(0);
-  expect(h.reported).toEqual([["WORD2222"], []]);
+  await vi.waitFor(() => expect(h.selection.selected.size).toBe(0));
+  expect(h.reported).toEqual([["WRDS2222"], []]);
 });
 
-it("takes the selection a card sends through the Reader Session", () => {
-  using h = setup();
+it("takes the selection a card sends through the Reader Session", async () => {
+  await using h = await setup();
 
-  h.selection.select("PARA1111");
+  h.selection.select("PARA7777");
 
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
-  expect(h.reported).toEqual([["PARA1111"]]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
+  expect(h.reported).toEqual([["PARA7777"]]);
   expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
 });
 
-it("walks reading order with the arrow keys, and brings the reader along", () => {
-  using h = setup();
+it("walks reading order with the arrow keys, and brings the reader along", async () => {
+  await using h = await setup();
 
   key(h, "ArrowDown");
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
   key(h, "ArrowDown");
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
   key(h, "ArrowUp");
-  expect([...h.selection.selected]).toEqual(["PARA1111"]);
-  expect(h.navigated).toEqual(["PARA1111", "WORD2222", "PARA1111"]);
+  expect([...h.selection.selected]).toEqual(["PARA7777"]);
+  expect(h.navigated).toEqual(["PARA7777", "WRDS2222", "PARA7777"]);
 });
 
-it("deselects on Escape", () => {
-  using h = setup();
+it("deselects on Escape", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
 
   key(h, "Escape");
@@ -461,8 +490,8 @@ it("deselects on Escape", () => {
   expect(h.popup()).toBeNull();
 });
 
-it("steps back from the selected mark on Escape before the armed tool", () => {
-  using h = setup();
+it("steps back from the selected mark on Escape before the armed tool", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   key(h, "u");
 
@@ -474,21 +503,23 @@ it("steps back from the selected mark on Escape before the armed tool", () => {
   expect(h.store.getState().armed).toBeNull();
 });
 
-it("sets a colour from the number row, and deletes from the delete key", () => {
-  using h = setup();
+it("sets a colour from the number row, and deletes from the delete key", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
 
   key(h, "3");
-  expect(h.annotations.patchColor).toHaveBeenCalledWith("WORD2222", "#5fb236");
+  await vi.waitFor(() =>
+    expect(h.zotero.at("WRDS2222")?.color).toBe("#5fb236"),
+  );
 
   key(h, "Delete");
-  expect(h.annotations.deleteAnnotation).toHaveBeenCalledWith("WORD2222");
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
 });
 
-it("leaves a modified colour key to whatever else holds it", () => {
+it("leaves a modified colour key to whatever else holds it", async () => {
   // `Alt`+`1` is no edit gesture for the block's notice, so it recolours
   // nothing here either: one keystroke, one answer.
-  using h = setup();
+  await using h = await setup();
   click(h.page.div, ON_WORD);
 
   h.containerEl.dispatchEvent(
@@ -499,72 +530,85 @@ it("leaves a modified colour key to whatever else holds it", () => {
       cancelable: true,
     }),
   );
+  await settled(h, "WRDS2222");
 
-  expect(h.annotations.patchColor).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
 });
 
-it("leaves every key to a text field it was typed into", () => {
-  using h = setup();
+it("leaves every key to a text field it was typed into", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const field = h.containerEl.appendChild(document.createElement("input"));
 
   key(h, "Escape", field);
   key(h, "3", field);
+  await settled(h, "WRDS2222");
 
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
-  expect(h.annotations.patchColor).not.toHaveBeenCalled();
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+  expect(h.writes()).toEqual([]);
 });
 
-it("hands the reveal verb to the Annotation Card", () => {
-  using h = setup();
+it("hands the reveal verb to the Annotation Card", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='reveal']")!.click();
 
-  expect(h.gestures.revealAnnotation).toHaveBeenCalledWith("WORD2222", {
+  expect(h.gestures.revealAnnotation).toHaveBeenCalledWith("WRDS2222", {
     comment: false,
   });
 });
 
-it("deletes from the popup's own verb", () => {
-  using h = setup();
+it("deletes from the popup's own verb", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='delete']")!.click();
 
-  expect(h.annotations.deleteAnnotation).toHaveBeenCalledWith("WORD2222");
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
 });
 
-it("closes a comment editor when a database switch hides its draft", () => {
-  using h = setup();
+it("closes a comment editor when a database switch hides its draft", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
   expect(commentView(popup.hoverEl)).not.toBeNull();
 
-  h.annotations.hideCommentDraft();
-  h.annotations.emit("comment-draft-hidden", "WORD2222");
+  await h.switchDatabase();
 
   expect(commentView(popup.hoverEl)).toBeNull();
-  expect(h.annotations.submitComment).not.toHaveBeenCalled();
+  await settled(h, "WRDS2222");
+  expect(h.writes()).toEqual([]);
 });
 
-it("keeps a comment editor open when an ordinary draft settles", () => {
-  using h = setup();
+it("keeps a comment editor open when an ordinary draft settles", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  const editor = commentView(popup.hoverEl)!;
+  editor.dispatch({
+    changes: { from: 0, insert: "worth quoting" },
+    userEvent: "input.type",
+  });
 
-  h.annotations.hideCommentDraft();
-  h.annotations.emit("comment-draft-changed", "WORD2222");
+  // The autosave comes due, and the draft goes once Zotero holds its text.
+  await vi.advanceTimersByTimeAsync(1_000);
+  await vi.waitFor(() =>
+    expect(h.zotero.at("WRDS2222")?.comment).toBe("worth quoting"),
+  );
+  await vi.waitFor(() =>
+    expect(h.store.getState().commentDrafts.has("WRDS2222")).toBe(false),
+  );
 
-  expect(commentView(popup.hoverEl)).not.toBeNull();
+  expect(commentView(popup.hoverEl)).toBe(editor);
 });
 
-it("says why an edit key cannot run, rather than writing under a block", () => {
-  using h = setup([PARAGRAPH, WORD], {
+it("says why an edit key cannot run, rather than writing under a block", async () => {
+  await using h = await setup([PARAGRAPH, WORD], {
     kind: "read-only",
     reason: "library-read-only",
   });
@@ -572,14 +616,14 @@ it("says why an edit key cannot run, rather than writing under a block", () => {
 
   key(h, "3");
   key(h, "Delete");
+  await settled(h, "WRDS2222");
 
-  expect(h.annotations.patchColor).not.toHaveBeenCalled();
-  expect(h.annotations.deleteAnnotation).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
   expect(h.gestures.reportBlockedGesture).toHaveBeenCalledTimes(1);
 });
 
-it("leaves nothing behind once the binding disposes it", () => {
-  const h = setup();
+it("leaves nothing behind once the binding disposes it", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   expect(h.popup()).not.toBeNull();
 
@@ -587,24 +631,28 @@ it("leaves nothing behind once the binding disposes it", () => {
 
   expect(h.parent.hoverPopover).toBeNull();
   click(h.page.div, ON_WORD);
-  expect(h.reported).toEqual([["WORD2222"]]);
-  h.containerEl.remove();
+  expect(h.reported).toEqual([["WRDS2222"]]);
 });
 
-it("stands the selection down at once when its Annotation is deleted", () => {
-  using h = setup();
+it("stands the selection down at once when its Annotation is deleted", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
-  expect(h.popup()).not.toBeNull();
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  // A comment draft stands on the mark, so the repository announces the
+  // deletion itself.
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
+  expect(h.store.getState().commentDrafts.has("WRDS2222")).toBe(true);
 
-  h.annotations.emit("annotation-deleted", "WORD2222");
+  h.zotero.eraseInZotero("WRDS2222");
+  await h.repository.refresh("RGRPDF24");
 
   expect(h.selection.selected.size).toBe(0);
   expect(h.popup()).toBeNull();
-  expect(h.reported).toEqual([["WORD2222"], []]);
+  expect(h.reported).toEqual([["WRDS2222"], []]);
 });
 
-it("takes a draft typed in the Annotation View into the open editor, keeping the caret", () => {
-  using h = setup();
+it("takes a draft typed in the Annotation View into the open editor, keeping the caret", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='comment']")!.click();
@@ -614,35 +662,43 @@ it("takes a draft typed in the Annotation View into the open editor, keeping the
     selection: { anchor: 2 },
   });
 
-  h.annotations.editComment("WORD2222", "worth quoting");
-  h.annotations.emit("comment-draft-changed", "WORD2222");
+  h.repository.editComment("WRDS2222", "worth quoting");
 
   expect(commentView(popup.hoverEl)).toBe(editor);
   expect(editor.state.doc.toString()).toBe("worth quoting");
   expect(editor.state.selection.main.head).toBe(2);
 });
 
-it("keeps the row's nodes through a mutation announced again unchanged", () => {
-  using h = setup();
+it("keeps the row's nodes through a write on another mark", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   const del = () =>
     popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='delete']");
   const drawn = del();
+  const release = h.zotero.holdWrites();
 
-  h.annotations.emit("mutation-changed", "WORD2222");
+  // A write on the other mark is announced, and leaves this row as it was.
+  const recolouring = h.repository.patchColor("PARA7777", "#5fb236");
+  await reread(h);
+  expect(h.store.getState().mutations.get("PARA7777")?.kind).toBe("pending");
   expect(del()).toBe(drawn);
 
-  h.annotations.mutationFor.mockReturnValue({
-    kind: "pending",
-    write: "color",
-  });
-  h.annotations.emit("mutation-changed", "WORD2222");
-  expect(del()?.getAttribute("aria-disabled")).toBe("true");
+  // This mark's own write stands its delete verb down.
+  key(h, "3");
+  await vi.waitFor(() =>
+    expect(del()?.getAttribute("aria-disabled")).toBe("true"),
+  );
+
+  release();
+  await recolouring;
+  await settled(h, "WRDS2222");
 });
 
-it("keeps the row as it stands while a comment write is in flight", () => {
-  using h = setup();
+it("keeps the row as it stands while a comment write is in flight", async () => {
+  // A mark that holds a comment already, so the comment the write proposes
+  // is drawn under the same verbs.
+  await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   const verbs = () =>
@@ -653,15 +709,20 @@ it("keeps the row as it stands while a comment write is in flight", () => {
         el.getAttribute("aria-disabled"),
       ],
     );
+  h.repository.editComment("WRDS2222", "<p>worth citing</p>");
   const drawn = verbs();
+  const release = h.zotero.holdWrites();
 
-  h.annotations.mutationFor.mockReturnValue({
+  const saving = h.repository.submitComment("WRDS2222");
+  await reread(h);
+  expect(h.store.getState().mutations.get("WRDS2222")).toEqual({
     kind: "pending",
     write: "comment",
   });
-  h.annotations.emit("mutation-changed", "WORD2222");
 
   expect(verbs()).toEqual(drawn);
+  release();
+  await saving;
 });
 
 const COMMENTED = { ...WORD, comment: "<p>worth quoting</p>" };
@@ -671,19 +732,19 @@ function commentText(root: HTMLElement): HTMLElement | null {
   return root.querySelector<HTMLElement>(".zt-annot-comment");
 }
 
-it("shows the stored comment under the row, and none for a mark without one", () => {
-  using h = setup([PARAGRAPH, COMMENTED]);
+it("shows the stored comment under the row, and none for a mark without one", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
   expect(commentText(popup.hoverEl)?.textContent).toBe("<p>worth quoting</p>");
 
-  h.selection.select("PARA1111");
+  h.selection.select("PARA7777");
   expect(commentText(popup.hoverEl)).toBeNull();
 });
 
-it("opens the comment editor in the comment's place on a click on it", () => {
-  using h = setup([PARAGRAPH, COMMENTED]);
+it("opens the comment editor in the comment's place on a click on it", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
@@ -694,24 +755,29 @@ it("opens the comment editor in the comment's place on a click on it", () => {
   expect(commentText(popup.hoverEl)).toBeNull();
 });
 
-it("draws the comment read-only while a write is pending on it", () => {
-  using h = setup([PARAGRAPH, COMMENTED]);
+it("draws the comment read-only while a write is pending on it", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED]);
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   expect(commentText(popup.hoverEl)?.classList).toContain("zt:cursor-text");
+  const release = h.zotero.holdWrites();
 
-  h.annotations.mutationFor.mockReturnValue({
-    kind: "pending",
-    write: "color",
-  });
-  h.annotations.emit("mutation-changed", "WORD2222");
+  key(h, "3");
 
-  expect(commentText(popup.hoverEl)?.classList).not.toContain("zt:cursor-text");
+  await vi.waitFor(() =>
+    expect(commentText(popup.hoverEl)?.classList).not.toContain(
+      "zt:cursor-text",
+    ),
+  );
   expect(commentText(popup.hoverEl)?.textContent).toBe("<p>worth quoting</p>");
+  release();
+  await settled(h, "WRDS2222");
 });
 
-it("shows a blocked comment without opening its editor", () => {
-  using h = setup([PARAGRAPH, COMMENTED], { kind: "authorization-required" });
+it("shows a blocked comment without opening its editor", async () => {
+  await using h = await setup([PARAGRAPH, COMMENTED], {
+    kind: "authorization-required",
+  });
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
 
@@ -721,151 +787,177 @@ it("shows a blocked comment without opening its editor", () => {
   expect(commentView(popup.hoverEl)).toBeNull();
 });
 
-it("selects a landed mark without a popup, and opens one for the next selection", () => {
-  using h = setup();
+it("selects a landed mark without a popup, and opens one for the next selection", async () => {
+  await using h = await setup();
 
-  h.selection.select("WORD2222", { popup: false });
+  h.selection.select("WRDS2222", { popup: false });
   h.sync();
 
-  expect([...h.selection.selected]).toEqual(["WORD2222"]);
-  expect(h.reported).toEqual([["WORD2222"]]);
+  expect([...h.selection.selected]).toEqual(["WRDS2222"]);
+  expect(h.reported).toEqual([["WRDS2222"]]);
   expect(h.popup()).toBeNull();
 
-  h.selection.select("PARA1111");
+  h.selection.select("PARA7777");
   expect(h.popup()?.staticPos).toEqual({ x: 300, y: 192 });
 });
 
-/** A tag session's draft, as the repository starts it for the word mark. */
-const WORD_TAGS: TagDraft = {
-  annotationKey: "WORD2222",
-  attachmentKey: "ABCD2345",
-  serverID: "test",
-  baseline: [],
-  names: [],
-  state: { kind: "editing" },
-};
+/** The tag editor's field in the popup, or `null` while none is open. */
+function tagInput(root: HTMLElement): HTMLInputElement | null {
+  return root.querySelector<HTMLInputElement>(".zt-annot-tag-input");
+}
 
-it("saves a tag session once as it ends, from the tag verb or a new selection", () => {
-  using h = setup();
+it("saves a tag session once as it ends, from the tag verb or a new selection", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
-  h.annotations.editTags.mockReturnValue(WORD_TAGS);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   const verb = () =>
     popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!;
 
   verb().click();
   expect(h.store.getState().floating).toMatchObject({ tagging: true });
-  expect(h.annotations.submitTags).not.toHaveBeenCalled();
+  tagInput(popup.hoverEl)!.value = "figure";
+  await settled(h, "WRDS2222");
+  expect(h.writes()).toEqual([]);
 
   verb().click();
   expect(h.store.getState().floating).toMatchObject({ tagging: false });
-  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222", {
-    automatic: true,
-  });
+  await vi.waitFor(() =>
+    expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]),
+  );
+  expect(h.writes()).toHaveLength(1);
 
   verb().click();
-  h.selection.select("PARA1111");
-  expect(h.annotations.submitTags).toHaveBeenCalledTimes(2);
-  expect(h.annotations.submitTags).toHaveBeenLastCalledWith("WORD2222", {
-    automatic: true,
-  });
+  tagInput(popup.hoverEl)!.value = "method";
+  h.selection.select("PARA7777");
+  await vi.waitFor(() =>
+    expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure", "method"]),
+  );
+  expect(h.writes()).toHaveLength(2);
 });
 
-it("closes only the tag editor for Escape, and keeps the selection", () => {
-  using h = setup();
+it("closes only the tag editor for Escape, and keeps the selection", async () => {
+  await using h = await setup([PARAGRAPH, { ...WORD, tags: ["figure"] }]);
   click(h.page.div, ON_WORD);
-  h.annotations.editTags.mockReturnValue(WORD_TAGS);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+  // The chip's own remove button takes the one tag off.
+  popup.hoverEl.querySelector<HTMLElement>(".zt-annot-tag-remove")!.click();
 
   // The Reader Keymap runs this for an Escape outside a text field, such as
   // one on a chip's remove button.
   expect(h.selection.escape()).toBe(true);
 
   expect(h.store.getState().floating).toMatchObject({
-    key: "WORD2222",
+    key: "WRDS2222",
     tagging: false,
   });
-  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222", {
-    automatic: true,
-  });
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")?.tags).toEqual([]));
+  expect(h.writes()).toHaveLength(1);
 });
 
-it("takes no typed name into a tag draft a database switch hid", () => {
-  using h = setup();
-  click(h.page.div, ON_WORD);
-  h.annotations.editTags.mockReturnValue(WORD_TAGS);
-  h.annotations.tagDraftFor.mockReturnValue(WORD_TAGS);
-  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
-  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
-  h.annotations.emit("comment-draft-changed", "WORD2222");
-  popup.hoverEl.querySelector<HTMLInputElement>(".zt-annot-tag-input")!.value =
-    "typed before the switch";
-
-  h.annotations.tagDraftFor.mockReturnValue(null);
-  h.annotations.emit("comment-draft-hidden", "WORD2222");
-
-  expect(h.store.getState().floating).toMatchObject({ tagging: false });
-  expect(popup.hoverEl.querySelector(".zt-annot-tag-input")).toBeNull();
-  // Only the session's own start: the typed name starts no second draft.
-  expect(h.annotations.editTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
-});
-
-it("opens no tag editor while no tag session can start", () => {
-  using h = setup();
+it("takes no typed name into a tag draft a database switch hid", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
+  expect(h.store.getState().tagDrafts.has("WRDS2222")).toBe(true);
+  tagInput(popup.hoverEl)!.value = "typed before the switch";
+
+  await h.switchDatabase();
+
+  // The other database's list has no such mark, so the selection may end too.
+  expect(h.store.getState().floating).not.toMatchObject({ tagging: true });
+  expect(tagInput(popup.hoverEl)).toBeNull();
+  // The typed name starts no second draft, and nothing reaches Zotero.
+  expect(h.store.getState().tagDrafts.has("WRDS2222")).toBe(false);
+  await settled(h, "WRDS2222");
+  expect(h.writes()).toEqual([]);
+});
+
+it("opens no tag editor while no tag session can start", async () => {
+  await using h = await setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  // Zotero quits, and the repository learns it before the reader does.
+  h.zotero.quit();
+  await h.repository.probe();
 
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
 
   expect(h.store.getState().floating).toMatchObject({ tagging: false });
+  expect(tagInput(popup.hoverEl)).toBeNull();
 });
 
-it("binds the held tags panel to Save tags and Discard, and keeps it through a refresh", () => {
-  using h = setup([PARAGRAPH, WORD], { kind: "writable" });
-  h.annotations.tagDraftFor.mockReturnValue({
-    ...WORD_TAGS,
-    names: ["figure"],
-    manualSave: true,
-    held: true,
-  });
-  h.annotations.emit("comment-draft-changed", "WORD2222");
+it("binds the held tags panel to Save tags and Discard, and keeps it through a refresh", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
   const popup = h.popup() as unknown as { hoverEl: HTMLElement };
   const button = (label: string) =>
     [...popup.hoverEl.querySelectorAll("button")].find(
       (el) => el.textContent === label,
     );
+  /** One tag session whose save loses its reply, which holds its draft. */
+  async function holdTag(name: string): Promise<void> {
+    const verb = () =>
+      popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!;
+    verb().click();
+    tagInput(popup.hoverEl)!.value = name;
+    h.zotero.answerNextWrite(() =>
+      Promise.reject(new AbortError("reader closed")),
+    );
+    verb().click();
+    await vi.waitFor(() =>
+      expect(button(m.annot_view_tags_save())).toBeDefined(),
+    );
+  }
+
+  await holdTag("figure");
   const save = button(m.annot_view_tags_save());
   expect(save).toBeDefined();
 
   // A comment write in flight refreshes the popup, and the held panel it
   // draws again is the same, so a click between press and release lands.
-  h.annotations.mutationFor.mockReturnValue({
+  const release = h.zotero.holdWrites();
+  h.repository.editComment("WRDS2222", "worth quoting");
+  const commenting = h.repository.submitComment("WRDS2222");
+  await reread(h);
+  expect(h.store.getState().mutations.get("WRDS2222")).toEqual({
     kind: "pending",
     write: "comment",
   });
-  h.annotations.emit("mutation-changed", "WORD2222");
   expect(button(m.annot_view_tags_save())).toBe(save);
+  release();
+  await commenting;
 
   save!.click();
   // Save tags carries no `automatic`, so the held draft is written.
-  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
-  button(m.annot_view_comment_discard())!.click();
-  expect(h.annotations.discardTagDraft).toHaveBeenCalledExactlyOnceWith(
-    "WORD2222",
+  await vi.waitFor(() =>
+    expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]),
+  );
+  await vi.waitFor(() =>
+    expect(button(m.annot_view_tags_save())).toBeUndefined(),
   );
 
+  await holdTag("method");
   // Editing that needs Allow editing puts the reader's own route on the panel.
   ingestCapability(h.store, { kind: "authorization-required" }, READER_NOW);
   button(m.capability_enable_editing())!.click();
   expect(h.gestures.allowEditing).toHaveBeenCalledOnce();
+
+  button(m.annot_view_comment_discard())!.click();
+  await vi.waitFor(() =>
+    expect(button(m.annot_view_tags_save())).toBeUndefined(),
+  );
+  await settled(h, "WRDS2222");
+  expect(h.zotero.at("WRDS2222")?.tags).toEqual(["figure"]);
 });
 
-it("falls back to the row, and closes the editor, when no draft can be started", () => {
-  using h = setup();
+it("falls back to the row, and closes the editor, when no draft can be started", async () => {
+  await using h = await setup();
   click(h.page.div, ON_WORD);
-  h.annotations.editComment.mockReturnValue(null as never);
+  // Zotero quits, and the repository learns it before the reader does.
+  h.zotero.quit();
+  await h.repository.probe();
 
   setCommenting(h.store, true);
 
@@ -905,41 +997,47 @@ function pointer(
   );
 }
 
+/**
+ * Waits until the last Geometry Edit's write reached Zotero. The selection
+ * settles `adjusted` once it has asked for the write, or ended without one,
+ * and the write is pending on the mark from that ask until Zotero answers.
+ */
+async function geometrySaved(h: Harness, annotationKey: string): Promise<void> {
+  await h.selection.adjusted;
+  await settled(h, annotationKey);
+}
+
 /** The figure selected by a click on its body, as a researcher selects it. */
-function figureSelected(capability?: EditingCapability) {
-  const h = setup([FIGURE], capability);
+async function figureSelected(capability?: EditingCapability) {
+  const h = await setup([FIGURE], capability);
   click(h.page.div, ON_FIGURE);
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
   return h;
 }
 
 it("saves a handle drag on release, with the Sort Index of the new position", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   pointer(h.containerEl, "pointermove", { x: 320, y: 500 });
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
-  // Nothing is written while the pointer moves.
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  // Nothing is asked while the pointer moves: a write is pending from its ask.
+  expect(h.repository.mutationFor("FIGR3333").kind).toBe("idle");
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
+  expect(h.writes()).toHaveLength(1);
 
   // Forty points right and twenty-five down the page, which is twenty-five
   // points toward the foot in PDF space.
-  const position = {
+  expect(h.sortIndex).toHaveBeenCalledWith({
     kind: "pdf-rects",
     pageIndex: 0,
     rects: [[100, 275, 340, 500]],
-  };
-  expect(h.sortIndex).toHaveBeenCalledWith(position);
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "FIGR3333",
-    {
-      position,
-      sortIndex: "00000|000012|00517",
-    },
-    "pointer",
-  );
+  });
+  expect(h.zotero.at("FIGR3333")).toMatchObject({
+    position: { pageIndex: 0, rects: [[100, 275, 340, 500]] },
+    sortIndex: "00000|000012|00517",
+  });
   // The adjustment ends once the write settled, and the mark stays selected.
   expect(h.store.getState().floating).toEqual(
     expect.not.objectContaining({ adjust: expect.anything() }),
@@ -948,25 +1046,17 @@ it("saves a handle drag on release, with the Sort Index of the new position", as
 });
 
 it("moves the selected image by its body", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   pointer(h.page.div, "pointerdown", ON_FIGURE);
   pointer(h.containerEl, "pointermove", { x: 230, y: 382 });
   pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "FIGR3333",
-    {
-      position: {
-        kind: "pdf-rects",
-        pageIndex: 0,
-        rects: [[130, 310, 330, 510]],
-      },
-      sortIndex: "00000|000012|00517",
-    },
-    "pointer",
-  );
+  expect(h.zotero.at("FIGR3333")).toMatchObject({
+    position: { pageIndex: 0, rects: [[130, 310, 330, 510]] },
+    sortIndex: "00000|000012|00517",
+  });
 });
 
 it("moves the selected ink by its body, from anywhere in its padded stroke box", async () => {
@@ -977,7 +1067,7 @@ it("moves the selected ink by its body, from anywhere in its padded stroke box",
     width: 2,
     paths: [[100, 300, 200, 400]],
   });
-  using h = setup([stroke]);
+  await using h = await setup([stroke]);
   click(h.page.div, { x: 150, y: 442 });
   expect([...h.selection.selected]).toEqual(["INK44444"]);
 
@@ -986,25 +1076,16 @@ it("moves the selected ink by its body, from anywhere in its padded stroke box",
   pointer(h.page.div, "pointerdown", { x: 150, y: 496 });
   pointer(h.containerEl, "pointermove", { x: 180, y: 476 });
   pointer(h.containerEl, "pointerup", { x: 180, y: 476 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "INK44444");
 
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "INK44444",
-    {
-      position: {
-        kind: "pdf-ink",
-        pageIndex: 0,
-        width: 2,
-        paths: [[130, 320, 230, 420]],
-      },
-      sortIndex: "00000|000012|00517",
-    },
-    "pointer",
-  );
+  expect(h.zotero.at("INK44444")).toMatchObject({
+    position: { pageIndex: 0, width: 2, paths: [[130, 320, 230, 420]] },
+    sortIndex: "00000|000012|00517",
+  });
 });
 
 it("writes nothing for a release that did not move, and keeps the selection", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   expect(h.popup()).toBeNull();
@@ -1012,30 +1093,30 @@ it("writes nothing for a release that did not move, and keeps the selection", as
   h.page.div.dispatchEvent(
     new MouseEvent("click", { clientX: 300, clientY: 492, bubbles: true }),
   );
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
   // The popup the press hid hangs again from the mark.
   expect(h.popup()).not.toBeNull();
 });
 
 it("cancels a drag on Escape, writes nothing, and keeps the mark selected", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
   key(h, "Escape");
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
   expect(h.store.getState().floating).toMatchObject({ key: "FIGR3333" });
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
 });
 
 it("hides the Mark Popup during a drag and hangs it again on release", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
   expect(h.popup()).not.toBeNull();
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
@@ -1049,23 +1130,23 @@ it("hides the Mark Popup during a drag and hangs it again on release", async () 
 });
 
 it("takes a press on a handle as an ordinary click while editing is not live", async () => {
-  using h = figureSelected({ kind: "read-only", reason: "library-read-only" });
+  await using h = await figureSelected({
+    kind: "read-only",
+    reason: "library-read-only",
+  });
 
   pointer(h.page.div, "pointerdown", { x: 299, y: 491 });
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
   pointer(h.containerEl, "pointerup", { x: 340, y: 517 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
 });
 
 it("snaps a refused write back to the confirmed geometry", async () => {
-  using h = figureSelected();
-  h.annotations.patchGeometry.mockResolvedValue({
-    kind: "failed",
-    failure: { kind: "position-too-large" },
-  });
+  await using h = await figureSelected();
+  h.zotero.answerNextWrite(() => libraryReadOnly());
 
   pointer(h.page.div, "pointerdown", BOTTOM_RIGHT);
   pointer(h.containerEl, "pointermove", { x: 340, y: 517 });
@@ -1073,9 +1154,19 @@ it("snaps a refused write back to the confirmed geometry", async () => {
   expect(h.store.getState().floating).toMatchObject({
     adjust: { phase: "saving" },
   });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
+  // Zotero keeps the confirmed geometry, and the mark draws it again.
+  expect(h.zotero.at("FIGR3333")?.position).toMatchObject({
+    rects: [[100, 300, 300, 500]],
+  });
+  await vi.waitFor(() =>
+    expect(
+      h.store.getState().records.find(({ key }) => key === "FIGR3333")
+        ?.position,
+    ).toMatchObject({ rects: [[100, 300, 300, 500]] }),
+  );
 });
 
 it("takes a press on a handle where it is drawn on a page turned a quarter turn", async () => {
@@ -1083,7 +1174,7 @@ it("takes a press on a handle where it is drawn on a page turned a quarter turn"
   // and 612 high, which the seeded box draws one unit to the pixel: the
   // figure spans x 300–500 and y 100–300, and its bottom-right corner, PDF
   // (300, 300), stands at (300, 300), where render.test.ts sees it drawn.
-  using h = setup([FIGURE]);
+  await using h = await setup([FIGURE]);
   h.page.viewport = viewport({ rotation: 90, scale: 1.5 });
   h.page.div.getBoundingClientRect = rect({
     left: 0,
@@ -1097,41 +1188,33 @@ it("takes a press on a handle where it is drawn on a page turned a quarter turn"
   pointer(h.page.div, "pointerdown", { x: 300, y: 300 });
   pointer(h.containerEl, "pointermove", { x: 310, y: 320 });
   pointer(h.containerEl, "pointerup", { x: 310, y: 320 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
   // Ten units right is ten points up PDF's y, and twenty down is twenty
   // points along its x: the corner moves to (320, 310).
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "FIGR3333",
-    {
-      position: {
-        kind: "pdf-rects",
-        pageIndex: 0,
-        rects: [[100, 310, 320, 500]],
-      },
-      sortIndex: "00000|000012|00517",
-    },
-    "pointer",
-  );
+  expect(h.zotero.at("FIGR3333")).toMatchObject({
+    position: { pageIndex: 0, rects: [[100, 310, 320, 500]] },
+    sortIndex: "00000|000012|00517",
+  });
 });
 
 it("leaves a drag beside the selected image to the text selection", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   pointer(h.page.div, "pointerdown", { x: 400, y: 392 });
   pointer(h.containerEl, "pointermove", { x: 450, y: 392 });
   pointer(h.containerEl, "pointerup", { x: 450, y: 392 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
 });
 
 /**
  * A highlight on page one from x 100 to 200 and, counted from the page foot,
  * y 300 to 312 — client y 480 to 492 — so its end strip stands on x 200.
  */
-const QUOTE = annotation("QUOT5555", "highlight", {
+const QUOTE = annotation("QUTE5555", "highlight", {
   pageIndex: 0,
   rects: [[100, 300, 200, 312]],
 });
@@ -1139,15 +1222,15 @@ const ON_QUOTE = { x: 150, y: 486 };
 const QUOTE_END = { x: 201, y: 486 };
 
 /** The quote selected by a click on it, as a researcher selects it. */
-function quoteSelected() {
-  const h = setup([QUOTE]);
+async function quoteSelected() {
+  const h = await setup([QUOTE]);
   click(h.page.div, ON_QUOTE);
-  expect([...h.selection.selected]).toEqual(["QUOT5555"]);
+  expect([...h.selection.selected]).toEqual(["QUTE5555"]);
   return h;
 }
 
 it("saves a range's end dragged along the text, with its quoted text", async () => {
-  using h = quoteSelected();
+  await using h = await quoteSelected();
   h.adjustRange.mockResolvedValue({
     pageIndex: 0,
     rects: [[100, 300, 260, 312]],
@@ -1158,30 +1241,22 @@ it("saves a range's end dragged along the text, with its quoted text", async () 
   pointer(h.containerEl, "pointermove", { x: 260, y: 486 });
   // Released before the document answered: the save waits for the answer.
   pointer(h.containerEl, "pointerup", { x: 260, y: 486 });
-  await h.selection.adjusted;
+  await geometrySaved(h, "QUTE5555");
 
   expect(h.adjustRange).toHaveBeenCalledWith({
     position: QUOTE.position,
     end: "end",
     point: { pageIndex: 0, x: 260, y: 306 },
   });
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "QUOT5555",
-    {
-      position: {
-        kind: "pdf-rects",
-        pageIndex: 0,
-        rects: [[100, 300, 260, 312]],
-      },
-      sortIndex: "00000|000012|00517",
-      text: "the quote, one word longer",
-    },
-    "pointer",
-  );
+  expect(h.zotero.at("QUTE5555")).toMatchObject({
+    position: { pageIndex: 0, rects: [[100, 300, 260, 312]] },
+    sortIndex: "00000|000012|00517",
+    text: "the quote, one word longer",
+  });
 });
 
 it("drops a range the document answers after Escape took its drag back", async () => {
-  using h = quoteSelected();
+  await using h = await quoteSelected();
   let answer!: (selected: SelectedText) => void;
   h.adjustRange.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -1208,7 +1283,7 @@ it("drops a range the document answers after Escape took its drag back", async (
 });
 
 it("hides the Mark Popup at the press on a range's end, before the document answers", async () => {
-  using h = quoteSelected();
+  await using h = await quoteSelected();
   expect(h.popup()).not.toBeNull();
 
   pointer(h.page.div, "pointerdown", QUOTE_END);
@@ -1220,7 +1295,7 @@ it("hides the Mark Popup at the press on a range's end, before the document answ
 });
 
 it("leaves a press inside the selected highlight to the text selection", async () => {
-  using h = quoteSelected();
+  await using h = await quoteSelected();
 
   pointer(h.page.div, "pointerdown", ON_QUOTE);
   pointer(h.containerEl, "pointermove", { x: 180, y: 486 });
@@ -1232,73 +1307,63 @@ it("leaves a press inside the selected highlight to the text selection", async (
 });
 
 it("commits one Geometry Edit for Shift+ArrowRight on the selected image, with a recomputed Sort Index", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   chord(h, "ArrowRight", { shiftKey: true });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
   // Five points wider, on its right edge.
-  const position = {
+  expect(h.sortIndex).toHaveBeenCalledWith({
     kind: "pdf-rects",
     pageIndex: 0,
     rects: [[100, 300, 305, 500]],
-  };
-  expect(h.sortIndex).toHaveBeenCalledWith(position);
-  expect(h.annotations.patchGeometry).toHaveBeenCalledTimes(1);
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "FIGR3333",
-    {
-      position,
-      sortIndex: "00000|000012|00517",
-    },
-    "keyboard",
-  );
+  });
+  expect(h.writes()).toHaveLength(1);
+  expect(h.zotero.at("FIGR3333")).toMatchObject({
+    position: { pageIndex: 0, rects: [[100, 300, 305, 500]] },
+    sortIndex: "00000|000012|00517",
+  });
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
 
 it("nudges the selected image five points down the page for Alt+ArrowDown", async () => {
-  using h = figureSelected();
+  await using h = await figureSelected();
 
   chord(h, "ArrowDown", { altKey: true });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "FIGR3333",
-    {
-      position: {
-        kind: "pdf-rects",
-        pageIndex: 0,
-        rects: [[100, 295, 300, 495]],
-      },
-      sortIndex: "00000|000012|00517",
-    },
-    "keyboard",
-  );
+  expect(h.zotero.at("FIGR3333")).toMatchObject({
+    position: { pageIndex: 0, rects: [[100, 295, 300, 495]] },
+    sortIndex: "00000|000012|00517",
+  });
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
 
 it("keeps walking the reading order with a plain arrow while an image is selected", async () => {
-  using h = setup([FIGURE, WORD]);
+  await using h = await setup([FIGURE, WORD]);
   click(h.page.div, ON_FIGURE);
 
   key(h, "ArrowUp");
   key(h, "ArrowRight");
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
   expect([...h.selection.selected]).not.toEqual(["FIGR3333"]);
 });
 
 it("writes nothing for a Geometry Edit key while editing is not live", async () => {
-  using h = figureSelected({ kind: "read-only", reason: "library-read-only" });
+  await using h = await figureSelected({
+    kind: "read-only",
+    reason: "library-read-only",
+  });
 
   chord(h, "ArrowRight", { shiftKey: true });
   chord(h, "ArrowDown", { shiftKey: true });
   chord(h, "ArrowDown", { altKey: true });
-  await h.selection.adjusted;
+  await geometrySaved(h, "FIGR3333");
 
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
@@ -1307,7 +1372,7 @@ it("steps a highlight's start for Mod+Shift+ArrowLeft, saving its quoted text", 
   vi.spyOn(Keymap, "isModifier").mockImplementation(
     (event, modifier) => modifier === "Mod" && event.metaKey,
   );
-  using h = quoteSelected();
+  await using h = await quoteSelected();
   h.adjustRange.mockResolvedValue({
     pageIndex: 0,
     rects: [[95, 300, 200, 312]],
@@ -1315,40 +1380,32 @@ it("steps a highlight's start for Mod+Shift+ArrowLeft, saving its quoted text", 
   });
 
   chord(h, "ArrowLeft", { shiftKey: true, metaKey: true });
-  await h.selection.adjusted;
+  await geometrySaved(h, "QUTE5555");
 
   expect(h.adjustRange).toHaveBeenCalledWith({
     position: QUOTE.position,
     end: "start",
     step: "left",
   });
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
-    "QUOT5555",
-    {
-      position: {
-        kind: "pdf-rects",
-        pageIndex: 0,
-        rects: [[95, 300, 200, 312]],
-      },
-      sortIndex: "00000|000012|00517",
-      text: "a quote",
-    },
-    "keyboard",
-  );
+  expect(h.zotero.at("QUTE5555")).toMatchObject({
+    position: { pageIndex: 0, rects: [[95, 300, 200, 312]] },
+    sortIndex: "00000|000012|00517",
+    text: "a quote",
+  });
 });
 
 it("steps a highlight's end for Shift+ArrowDown, and writes nothing for a step the document refuses", async () => {
-  using h = quoteSelected();
+  await using h = await quoteSelected();
 
   chord(h, "ArrowDown", { shiftKey: true });
-  await h.selection.adjusted;
+  await geometrySaved(h, "QUTE5555");
 
   expect(h.adjustRange).toHaveBeenCalledWith({
     position: QUOTE.position,
     end: "end",
     step: "down",
   });
-  expect(h.annotations.patchGeometry).not.toHaveBeenCalled();
+  expect(h.writes()).toEqual([]);
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
-  expect([...h.selection.selected]).toEqual(["QUOT5555"]);
+  expect([...h.selection.selected]).toEqual(["QUTE5555"]);
 });
