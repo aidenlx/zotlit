@@ -2,6 +2,8 @@
 
 Amends [ADR 0054](0054-held-reads-serve-the-old-answer-until-a-fresh-read-replaces-it.md).
 
+The annotation repository also runs its writes as mutations on this client; [ADR 0064](../../apps/obsidian/docs/adr/0064-surfaces-draw-pending-proposals-from-query-core-mutation-variables.md) draws their variables as Pending Proposals and pins Query Core's focus.
+
 ADR 0054 introduced Held Reads on a hand-rolled store in the plugin. The annotation repository (aidenlx/zotlit#824) needs a second engine with the same serve-old-value rules plus a mutation cache, abort signals, and prefix invalidation, which the store lacks. Rather than grow the store into a second query library, we decided that Held Reads are realized on **`@tanstack/query-core`**, and the hand-rolled store is deleted. The Held Read stays the domain concept and the term; a Held Read is now a projection of a query's state, built by one plugin-wide query-client service that every owner receives through the container.
 
 ## Rules that differ from ADR 0054
