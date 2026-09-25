@@ -1,19 +1,27 @@
-// Minimal Firefox RDP client for evaluating JS in Zotero's parent (chrome)
-// process over the remote debugging port the dev server already enables.
+// Minimal Firefox Remote Debugging Protocol client for evaluating JS in
+// Zotero's parent (chrome) process over the remote debugging port a Paired Run
+// enables. The expression runs in that process's console scope, so `Zotero`,
+// `Services`, etc. are in scope.
 //
-// Usage:
-//   node scripts/debug/rdp-eval.ts <port> "<expression>"
-//
-// The expression runs in the browser/parent process console scope, so
-// `Zotero`, `Services`, etc. are in scope. Return a JSON-serializable value
-// (wrap multi-statement logic in an IIFE) to read it back here.
+// Every wait on the socket is bounded: a Zotero that stops answering fails the
+// call instead of holding its caller forever.
 
 import { randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
 import type { Socket } from "node:net";
-import { pathToFileURL } from "node:url";
 
 const BYTE_COLON = 0x3a;
+
+/** How long a listener gets to prove it speaks RDP before we give up on it. */
+const GREETING_TIMEOUT_MS = 5000;
+
+/** Default deadline for one request's reply. */
+export const RDP_CALL_TIMEOUT_MS = 30_000;
+
+const ASYNC_POLL_MS = 100;
+const ASYNC_POLL_ATTEMPTS = 100;
+/** How long {@link evalAsync} polls for an async result by default. */
+export const ASYNC_EVAL_TIMEOUT_MS = ASYNC_POLL_MS * ASYNC_POLL_ATTEMPTS;
 
 export interface Packet {
   from?: string;
@@ -21,16 +29,29 @@ export interface Packet {
   [key: string]: unknown;
 }
 
+interface Waiter {
+  match(p: Packet): boolean;
+  resolve(p: Packet): void;
+  reject(error: Error): void;
+}
+
 class Rdp {
   readonly #socket: Socket;
   #buf = Buffer.alloc(0);
-  #waiters: Array<(p: Packet) => boolean> = [];
+  #waiters: Waiter[] = [];
 
   constructor(socket: Socket) {
     this.#socket = socket;
     socket.on("data", (chunk: Buffer) => {
       this.#buf = Buffer.concat([this.#buf, chunk]);
       this.#drain();
+    });
+    // A closed socket answers nothing more; fail what still waits at once.
+    socket.on("close", () => {
+      for (const waiter of this.#waiters) {
+        waiter.reject(new Error("Zotero closed the RDP connection"));
+      }
+      this.#waiters = [];
     });
   }
 
@@ -45,7 +66,11 @@ class Rdp {
       const body = this.#buf.subarray(start, start + len).toString("utf8");
       this.#buf = this.#buf.subarray(start + len);
       const packet = JSON.parse(body) as Packet;
-      this.#waiters = this.#waiters.filter((w) => !w(packet));
+      this.#waiters = this.#waiters.filter((w) => {
+        if (!w.match(packet)) return true;
+        w.resolve(packet);
+        return false;
+      });
     }
   }
 
@@ -54,21 +79,33 @@ class Rdp {
     this.#socket.write(`${Buffer.byteLength(json)}:${json}`);
   }
 
-  /** Resolve with the next packet matching `match`. */
-  next(match: (p: Packet) => boolean): Promise<Packet> {
-    return new Promise((resolve) => {
-      this.#waiters.push((p) => {
-        if (!match(p)) return false;
+  /** Resolve with the next packet matching `match`, or reject at the deadline. */
+  next(match: (p: Packet) => boolean, timeoutMs: number): Promise<Packet> {
+    const { promise, resolve, reject } = Promise.withResolvers<Packet>();
+    const waiter: Waiter = {
+      match,
+      resolve: (p) => {
+        clearTimeout(timer);
         resolve(p);
-        return true;
-      });
-    });
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    };
+    const timer = setTimeout(() => {
+      this.#waiters = this.#waiters.filter((w) => w !== waiter);
+      reject(new Error(`Zotero sent no reply within ${timeoutMs} ms`));
+    }, timeoutMs);
+    this.#waiters.push(waiter);
+    return promise;
   }
 
   async request(
     req: { to: string; type: string } & Record<string, unknown>,
+    timeoutMs: number,
   ): Promise<Packet> {
-    const reply = this.next((p) => p.from === req.to);
+    const reply = this.next((p) => p.from === req.to, timeoutMs);
     this.send(req);
     return reply;
   }
@@ -78,42 +115,46 @@ class Rdp {
   }
 }
 
-/** How long a listener gets to prove it speaks RDP before we give up on it. */
-const GREETING_TIMEOUT_MS = 5000;
-
-function connect(port: number, host = "127.0.0.1"): Promise<Rdp> {
+function connect(port: number, host: string): Promise<Rdp> {
   return new Promise((resolve, reject) => {
     const socket = createConnection({ port, host });
     const rdp = new Rdp(socket);
     // Something else may be listening on a port a previous Zotero used. It
-    // will never send the root greeting, so without this the connect hangs
-    // instead of failing, and a caller probing for a live Zotero never gets
-    // its answer.
-    const timer = setTimeout(() => {
-      rdp.close();
-      reject(new Error(`no RDP greeting from ${host}:${port}`));
-    }, GREETING_TIMEOUT_MS);
-    const settle = (outcome: () => void): void => {
-      clearTimeout(timer);
-      outcome();
-    };
+    // will never send the root greeting, so the greeting deadline turns that
+    // into a failed connect, and a caller probing for a live Zotero gets its
+    // answer.
     socket.once("error", (error: Error) => {
-      settle(() => reject(error));
+      rdp.close();
+      reject(error);
     });
     // Root actor greets us first.
     rdp
-      .next((p) => p.from === "root")
+      .next((p) => p.from === "root", GREETING_TIMEOUT_MS)
       .then(
-        () => settle(() => resolve(rdp)),
-        (error: unknown) => settle(() => reject(error)),
+        () => resolve(rdp),
+        (error: unknown) => {
+          rdp.close();
+          reject(
+            new Error(`no RDP greeting from ${host}:${port}`, { cause: error }),
+          );
+        },
       );
   });
 }
 
-async function getParentConsoleActor(rdp: Rdp): Promise<string> {
-  const proc = await rdp.request({ to: "root", type: "getProcess", id: 0 });
+async function getParentConsoleActor(
+  rdp: Rdp,
+  timeoutMs: number,
+): Promise<string> {
+  const proc = await rdp.request(
+    { to: "root", type: "getProcess", id: 0 },
+    timeoutMs,
+  );
   const descriptor = (proc.processDescriptor ?? proc.form) as { actor: string };
-  const target = await rdp.request({ to: descriptor.actor, type: "getTarget" });
+  const target = await rdp.request(
+    { to: descriptor.actor, type: "getTarget" },
+    timeoutMs,
+  );
   const form = (target.process ?? target.frame ?? target.form) as {
     consoleActor: string;
   };
@@ -125,11 +166,16 @@ async function getParentConsoleActor(rdp: Rdp): Promise<string> {
   return form.consoleActor;
 }
 
-function evalJS(rdp: Rdp, consoleActor: string, text: string): Promise<Packet> {
+function evalJS(
+  rdp: Rdp,
+  text: string,
+  { consoleActor, timeoutMs }: { consoleActor: string; timeoutMs: number },
+): Promise<Packet> {
   // evaluateJSAsync replies with { resultID }, then emits a separate
   // evaluationResult packet carrying the actual value.
   const resultEvent = rdp.next(
     (p) => p.from === consoleActor && p.type === "evaluationResult",
+    timeoutMs,
   );
   rdp.send({ to: consoleActor, type: "evaluateJSAsync", text });
   return resultEvent;
@@ -150,7 +196,9 @@ interface AsyncEvalOptions {
 /**
  * Evaluate an `async` expression. The webconsole actor here won't transform
  * top-level `await`, so the body is run inside an async function that stashes
- * its JSON result on a global; we then poll that global synchronously.
+ * its JSON result on a global; we then poll that global synchronously. A
+ * rejection stores "ERR:" and the error with its stack — Gecko's `stack`
+ * leaves out the message.
  */
 export async function evalAsync(
   evaluate: Evaluate,
@@ -158,8 +206,8 @@ export async function evalAsync(
   options: AsyncEvalOptions = {},
 ): Promise<Packet> {
   const pause = options.pause ?? sleep;
-  const pollAttempts = options.pollAttempts ?? 100;
-  const pollMs = options.pollMs ?? 100;
+  const pollAttempts = options.pollAttempts ?? ASYNC_POLL_ATTEMPTS;
+  const pollMs = options.pollMs ?? ASYNC_POLL_MS;
   const resultTtlMs = options.resultTtlMs ?? 60_000;
   const resultKey = `__zlEvalResult_${randomUUID()}`;
   const resultRef = `globalThis[${JSON.stringify(resultKey)}]`;
@@ -167,7 +215,7 @@ export async function evalAsync(
     `${resultRef} = undefined;
      (async () => {
        try { ${resultRef} = JSON.stringify(await (async () => (${body}))()); }
-       catch (e) { ${resultRef} = "ERR:" + (e && e.stack || e); }
+       catch (e) { ${resultRef} = "ERR:" + (e && e.stack ? e + "\\n" + e.stack : e); }
        finally { setTimeout(() => { delete ${resultRef}; }, ${resultTtlMs}); }
      })();
      "started"`,
@@ -202,15 +250,21 @@ export interface RdpSession extends Disposable {
  * Attach to the debugging port a Paired Run's Zotero listens on. Rejects when
  * nothing answers there, so a caller probing for a live Zotero treats the
  * rejection as "no Zotero", not as a failure of its own.
+ *
+ * `timeoutMs` bounds each reply; {@link evalAsync} bounds its own polling.
  */
 export async function openRdpSession(
   port: number,
-  host = "127.0.0.1",
+  {
+    host = "127.0.0.1",
+    timeoutMs = RDP_CALL_TIMEOUT_MS,
+  }: { host?: string; timeoutMs?: number } = {},
 ): Promise<RdpSession> {
   const rdp = await connect(port, host);
   try {
-    const consoleActor = await getParentConsoleActor(rdp);
-    const evaluate: Evaluate = (text) => evalJS(rdp, consoleActor, text);
+    const consoleActor = await getParentConsoleActor(rdp, timeoutMs);
+    const evaluate: Evaluate = (text) =>
+      evalJS(rdp, text, { consoleActor, timeoutMs });
     return {
       evaluate,
       evaluateAsync: (body) => evalAsync(evaluate, body),
@@ -222,40 +276,4 @@ export async function openRdpSession(
     rdp.close();
     throw error;
   }
-}
-
-async function main(): Promise<void> {
-  const [, , portArg, expr] = process.argv;
-  const port = Number(portArg);
-  if (!Number.isInteger(port) || !expr) {
-    console.error(
-      'Usage: node scripts/debug/rdp-eval.ts <port> "<expression>"',
-    );
-    process.exit(2);
-  }
-
-  const isAsync = expr.startsWith("await ");
-  using session = await openRdpSession(port);
-  const res = isAsync
-    ? await session.evaluateAsync(expr.slice("await ".length))
-    : await session.evaluate(expr);
-  if (res.exception || res.exceptionMessage) {
-    console.error(
-      "EXCEPTION:",
-      JSON.stringify(res.exceptionMessage ?? res.exception, null, 2),
-    );
-  }
-  console.log(
-    typeof res.result === "string"
-      ? res.result
-      : JSON.stringify(res.result, null, 2),
-  );
-}
-
-const entrypoint = process.argv[1];
-if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
-  main().catch((error: unknown) => {
-    console.error(error);
-    process.exit(1);
-  });
 }

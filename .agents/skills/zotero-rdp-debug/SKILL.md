@@ -1,81 +1,43 @@
 ---
 name: zotero-rdp-debug
 description: |
-  Ground truth from the running Zotero plugin over RDP. Use when inspecting
-  runtime state in Zotero, diagnosing why an observer or notifier misfires,
-  or verifying the plugin's outbound HTTP notifications. Also covers "debug
-  the plugin" or "check it in Zotero."
+  Ground truth from the running Zotero plugin over RDP. Use to inspect Zotero runtime state,
+  to diagnose an observer or notifier that misfires, or to verify the plugin's outbound HTTP
+  notifications. Also covers "debug the plugin" or "check it in Zotero."
 ---
 
 # Debug the Zotero plugin over RDP
 
-Source tells you what should happen. Ground truth from the running app tells you what does
-happen. `apps/zotero/scripts/debug/rdp-eval.ts` evaluates JavaScript in Zotero's parent
-(chrome) process over the Firefox Remote Debugging Protocol — the same scope where `Zotero`,
-`Services`, and the plugin run.
+Source tells you what should happen; the running app tells you what does. Evaluate in
+Zotero's parent process with `packages/scripts/scripts/zotero-rdp.ts` (written `zotero-rdp.ts`
+below), run from the repo root.
 
-## 1. Start or reuse a Paired Run
-
-Launch Zotero on the Fixture profile via `pnpm fixture dev` — see the Fixture guide
-(`docs/fixture.md`, "Run a Paired Run") for prerequisites and options. The session enables
-RDP and hot-reloads the companion on source changes.
-
-If a session is already running, reuse its log and port — a second launch fails because the
-Fixture database cannot be opened by two Zotero processes.
-
-A Paired Run reports its RDP port two ways. The ready report prints `Zotero RDP port <n>`, and
-the run writes `.scratch/acceptance-fixture/paired-zotero.json`, which names the running process and
-its port. Read the port from that report:
-
-```bash
-pnpm fixture dev > .scratch/fixture-dev.log 2>&1 &
-until [ -f .scratch/acceptance-fixture/paired-zotero.json ]; do sleep 2; done
-PORT=$(node -p 'require("./.scratch/acceptance-fixture/paired-zotero.json").debuggerPort')
-```
-
-## 2. Evaluate JavaScript
-
-```bash
-node apps/zotero/scripts/debug/rdp-eval.ts "$PORT" '<expression>'
-```
-
-Return JSON-serializable values; non-serializable objects (DOM nodes, class instances) come
-back as grip previews — reduce to plain data inside the expression.
-
-**Sync:**
-
-```bash
-node apps/zotero/scripts/debug/rdp-eval.ts "$PORT" \
-  'JSON.stringify({ version: Zotero.version, readers: Zotero.Reader._readers.length })'
-```
-
-**Async** — prefix with `await `. The harness wraps the expression in an async function:
-
-```bash
-node apps/zotero/scripts/debug/rdp-eval.ts "$PORT" \
-  'await Zotero.Items.getAll(1)'
-```
-
-For multi-step async, wrap in an IIFE: `'await (async () => { ...; return result; })()'`.
-
-Eval can also drive the app — open readers, select tabs, save items — firing the same
-notifiers and observers as real user actions.
-
-Exceptions are reported on stderr with the stack.
+1. **Contract** — run `zotero-rdp.ts --help`. Done when you know how it finds the port, how
+   to write a sync and an async expression, and what its exit codes mean.
+2. **Paired Run** — reuse a running one: the Fixture database admits one Zotero, so a second
+   launch fails. Otherwise start one in the background — it keeps running after readiness
+   (prerequisites: `docs/fixture.md`, "Run a Paired Run"):
+   `pnpm fixture dev > .scratch/fixture-dev.log 2>&1 &`. Done when `zotero-rdp.ts 'Zotero.version'` prints a version — the
+   Fixture's Zotero, which can differ from the source checkout.
+3. **Probe** — evaluate until the runtime answers your question. Eval can also drive the app
+   (open readers, select tabs, save items) and fires the same notifiers and observers as a
+   user action does.
+4. **Stop** — once the question is answered, stop a Paired Run you started. Send SIGINT to
+   the whole process group of `pnpm fixture dev`, as `Ctrl-C` does:
+   `kill -INT -- -<pgid>`. SIGINT to the inner `fixture.ts` process alone leaves the run and
+   its Zotero up. Leave a reused run up. Done when `zotero-rdp.ts 'Zotero.version'` reports
+   no live Paired Run.
 
 ## Gotchas
 
-- **Parent-process scope.** `Zotero` and `Services` are global. Reach reader iframe contents
-  through `Zotero.Reader` and `_iframeWindow`.
-- **`Zotero.Prefs.get` prepends `extensions.zotero.`** unless the second arg is `true`.
-  `Zotero.Prefs.get("extensions.zotlit.notify")` silently returns `undefined`; use
+- **`Zotero.Prefs.get` prepends `extensions.zotero.`** unless the second argument is `true`.
+  `Zotero.Prefs.get("extensions.zotlit.notify")` returns `undefined`; use
   `Zotero.Prefs.get("extensions.zotlit.notify", true)`.
-- **Notifier types are validated.** Unknown type strings throw. If an observer never fires,
-  confirm `Zotero.Notifier.trigger` is called for that event/type in the Zotero source.
-- **Check the installed version.** `rdp-eval.ts "$PORT" 'Zotero.version'` — the Fixture's
-  Zotero may differ from the source checkout.
+- **Notifier types are validated.** An unknown type string throws. When an observer never
+  fires, confirm in the Zotero source that `Zotero.Notifier.trigger` runs for that event and
+  type.
 
-## Outbound HTTP verification
+## Outbound HTTP
 
-When debugging whether outbound notifications leave Zotero, see
+When the question is whether a notification leaves Zotero, follow
 [capture-server.md](capture-server.md).

@@ -11,7 +11,7 @@ node apps/zotero/scripts/debug/capture-server.ts 9091 > .scratch/capture.log 2>&
 until rg -q "listening" .scratch/capture.log; do sleep 1; done
 ```
 
-Trigger the behaviour via `rdp-eval.ts` and read `.scratch/capture.log`. Each `POST /notify` body
+Trigger the behaviour via `packages/scripts/scripts/zotero-rdp.ts` and read `.scratch/capture.log`. Each `POST /notify` body
 is logged with a timestamp — a line appearing is end-to-end proof the plugin dispatched; an
 empty log means it did not (check prefs, enablement flags, and observer registration).
 

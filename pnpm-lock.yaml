@@ -896,9 +896,6 @@ importers:
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../scripts
-      '@zotlit/zotero':
-        specifier: workspace:*
-        version: link:../../apps/zotero
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
