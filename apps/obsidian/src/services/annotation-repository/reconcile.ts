@@ -2,7 +2,7 @@
 
 import type { AnnotationPosition } from "@zotlit/db";
 
-import { wireColor, writePosition } from "./write";
+import { wireColor, writablePosition, writePosition } from "./write";
 import type { ConflictedWrite, GeometryEdit } from "./write";
 
 /**
@@ -53,12 +53,6 @@ export function sameStoredGeometry(
  * position no Geometry Edit writes.
  */
 export function storedPosition(position: AnnotationPosition): string | null {
-  switch (position.kind) {
-    case "pdf-rects":
-    case "pdf-ink":
-    case "pdf-text":
-      return writePosition(position);
-    default:
-      return null;
-  }
+  const writable = writablePosition(position);
+  return writable === null ? null : writePosition(writable);
 }

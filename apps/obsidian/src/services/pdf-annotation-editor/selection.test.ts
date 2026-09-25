@@ -800,10 +800,14 @@ it("saves a handle drag on release, with the Sort Index of the new position", as
     rects: [[100, 275, 340, 500]],
   };
   expect(h.sortIndex).toHaveBeenCalledWith(position);
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
-    position,
-    sortIndex: "00000|000012|00517",
-  });
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "FIGR3333",
+    {
+      position,
+      sortIndex: "00000|000012|00517",
+    },
+    "pointer",
+  );
   // The adjustment ends once the write settled, and the mark stays selected.
   expect(h.store.getState().floating).toEqual(
     expect.not.objectContaining({ adjust: expect.anything() }),
@@ -819,14 +823,18 @@ it("moves the selected image by its body", async () => {
   pointer(h.containerEl, "pointerup", { x: 230, y: 382 });
   await h.selection.adjusted;
 
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
-    position: {
-      kind: "pdf-rects",
-      pageIndex: 0,
-      rects: [[130, 310, 330, 510]],
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "FIGR3333",
+    {
+      position: {
+        kind: "pdf-rects",
+        pageIndex: 0,
+        rects: [[130, 310, 330, 510]],
+      },
+      sortIndex: "00000|000012|00517",
     },
-    sortIndex: "00000|000012|00517",
-  });
+    "pointer",
+  );
 });
 
 it("moves the selected ink by its body, from anywhere in its padded stroke box", async () => {
@@ -848,15 +856,19 @@ it("moves the selected ink by its body, from anywhere in its padded stroke box",
   pointer(h.containerEl, "pointerup", { x: 180, y: 476 });
   await h.selection.adjusted;
 
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("INK44444", {
-    position: {
-      kind: "pdf-ink",
-      pageIndex: 0,
-      width: 2,
-      paths: [[130, 320, 230, 420]],
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "INK44444",
+    {
+      position: {
+        kind: "pdf-ink",
+        pageIndex: 0,
+        width: 2,
+        paths: [[130, 320, 230, 420]],
+      },
+      sortIndex: "00000|000012|00517",
     },
-    sortIndex: "00000|000012|00517",
-  });
+    "pointer",
+  );
 });
 
 it("writes nothing for a release that did not move, and keeps the selection", async () => {
@@ -957,14 +969,18 @@ it("takes a press on a handle where it is drawn on a page turned a quarter turn"
 
   // Ten units right is ten points up PDF's y, and twenty down is twenty
   // points along its x: the corner moves to (320, 310).
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
-    position: {
-      kind: "pdf-rects",
-      pageIndex: 0,
-      rects: [[100, 310, 320, 500]],
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "FIGR3333",
+    {
+      position: {
+        kind: "pdf-rects",
+        pageIndex: 0,
+        rects: [[100, 310, 320, 500]],
+      },
+      sortIndex: "00000|000012|00517",
     },
-    sortIndex: "00000|000012|00517",
-  });
+    "pointer",
+  );
 });
 
 it("leaves a drag beside the selected image to the text selection", async () => {
@@ -1017,15 +1033,19 @@ it("saves a range's end dragged along the text, with its quoted text", async () 
     end: "end",
     point: { pageIndex: 0, x: 260, y: 306 },
   });
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("QUOT5555", {
-    position: {
-      kind: "pdf-rects",
-      pageIndex: 0,
-      rects: [[100, 300, 260, 312]],
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "QUOT5555",
+    {
+      position: {
+        kind: "pdf-rects",
+        pageIndex: 0,
+        rects: [[100, 300, 260, 312]],
+      },
+      sortIndex: "00000|000012|00517",
+      text: "the quote, one word longer",
     },
-    sortIndex: "00000|000012|00517",
-    text: "the quote, one word longer",
-  });
+    "pointer",
+  );
 });
 
 it("drops a range the document answers after Escape took its drag back", async () => {
@@ -1093,10 +1113,14 @@ it("commits one Geometry Edit for Shift+ArrowRight on the selected image, with a
   };
   expect(h.sortIndex).toHaveBeenCalledWith(position);
   expect(h.annotations.patchGeometry).toHaveBeenCalledTimes(1);
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
-    position,
-    sortIndex: "00000|000012|00517",
-  });
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "FIGR3333",
+    {
+      position,
+      sortIndex: "00000|000012|00517",
+    },
+    "keyboard",
+  );
   expect(h.store.getState().floating).not.toHaveProperty("adjust");
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
@@ -1107,14 +1131,18 @@ it("nudges the selected image five points down the page for Alt+ArrowDown", asyn
   chord(h, "ArrowDown", { altKey: true });
   await h.selection.adjusted;
 
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("FIGR3333", {
-    position: {
-      kind: "pdf-rects",
-      pageIndex: 0,
-      rects: [[100, 295, 300, 495]],
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "FIGR3333",
+    {
+      position: {
+        kind: "pdf-rects",
+        pageIndex: 0,
+        rects: [[100, 295, 300, 495]],
+      },
+      sortIndex: "00000|000012|00517",
     },
-    sortIndex: "00000|000012|00517",
-  });
+    "keyboard",
+  );
   expect([...h.selection.selected]).toEqual(["FIGR3333"]);
 });
 
@@ -1162,15 +1190,19 @@ it("steps a highlight's start for Mod+Shift+ArrowLeft, saving its quoted text", 
     end: "start",
     step: "left",
   });
-  expect(h.annotations.patchGeometry).toHaveBeenCalledWith("QUOT5555", {
-    position: {
-      kind: "pdf-rects",
-      pageIndex: 0,
-      rects: [[95, 300, 200, 312]],
+  expect(h.annotations.patchGeometry).toHaveBeenCalledWith(
+    "QUOT5555",
+    {
+      position: {
+        kind: "pdf-rects",
+        pageIndex: 0,
+        rects: [[95, 300, 200, 312]],
+      },
+      sortIndex: "00000|000012|00517",
+      text: "a quote",
     },
-    sortIndex: "00000|000012|00517",
-    text: "a quote",
-  });
+    "keyboard",
+  );
 });
 
 it("steps a highlight's end for Shift+ArrowDown, and writes nothing for a step the document refuses", async () => {

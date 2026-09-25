@@ -2295,7 +2295,7 @@
   "annot_view_image_unavailable": "图像不可用",
   "annot_view_image_loading": "正在加载图像…",
   "annot_view_delete_confirm_title": "删除标注？",
-  "annot_view_delete_confirm_content": "Zotero 将删除此标注。ZotLit 无法撤销此操作。",
+  "annot_view_delete_confirm_content": "Zotero 将删除此标注。只要该 PDF 仍在 Obsidian 中打开，ZotLit 就能撤销此删除。恢复后的标注会获得新的 Zotero 标识符，指向旧标识符的链接将失效。",
   "annot_view_delete_confirm_action": "删除",
   "annot_view_write_failed": "编辑未保存。{reason}",
   "annot_view_write_reason_db_source": "ZotLit 从 Zotero 数据库读取这些标注，无法编辑。",

@@ -1,4 +1,5 @@
 // One open Obsidian PDF view bound to the Zotero attachment it shows.
+import { Platform } from "obsidian";
 import type {
   FileSystemAdapter,
   HoverParent,
@@ -26,12 +27,15 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { themeAttribute } from "@/lib/theme-hooks";
+import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type {
   AnnotationRecord,
   AnnotationRepository,
+  HistoryDirection,
 } from "@/services/annotation-repository/service";
+import { writeFailureMessage } from "@/services/annotation-repository/write";
 import type {
   AttachmentResolution,
   AttachmentResolver,
@@ -131,6 +135,7 @@ export type AnnotationReads = Pick<
   AnnotationRepository,
   | "capability"
   | "capabilityFor"
+  | "closeHistory"
   | "commentDraftFor"
   | "createAnnotation"
   | "deleteAnnotation"
@@ -138,13 +143,16 @@ export type AnnotationReads = Pick<
   | "editComment"
   | "mutationFor"
   | "on"
+  | "openHistory"
   | "patchColor"
   | "patchGeometry"
   | "probe"
   | "read"
+  | "redo"
   | "refresh"
   | "retryCommentDraft"
   | "submitComment"
+  | "undo"
 >;
 
 /** What a binding names its Attachment through, and hears a re-resolution on. */
@@ -199,7 +207,7 @@ export interface PdfViewBindingDeps {
  * resolves, and the annotation repository, the attachment resolver, and the
  * Annotation View never see the difference.
  */
-export class PdfViewBinding implements Disposable, HoverParent {
+export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   /**
    * The Mark Popup hangs off the binding rather than off the PDF view, so
    * Obsidian's Page Preview on that view keeps its own popover and neither
@@ -297,6 +305,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
   #capabilitySlot: HTMLElement | null = null;
   #toolbarMounted = false;
   #gesturing = Promise.resolve();
+  /** The Annotation History press this view is answering; settled while none is. */
+  #stepping = Promise.resolve();
 
   constructor({
     view,
@@ -352,6 +362,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
    */
   get attachment(): AttachmentResolution {
     return this.#attachment;
+  }
+
+  /**
+   * The Attachment whose Annotation History this view steps, which is the one
+   * it shows; `null` while the file it holds names none in Zotero.
+   */
+  get historyAttachment(): string | null {
+    return this.#attachment.kind === "resolved"
+      ? this.#attachment.attachmentKey
+      : null;
   }
 
   /** This PDF view as a Reader Session, for a surface that follows a reader. */
@@ -444,6 +464,16 @@ export class PdfViewBinding implements Disposable, HoverParent {
   }
 
   /**
+   * Settles when the last Annotation History press in this reader has been
+   * answered — the write sent, the step dropped, or the press turned away by a
+   * guard — and the reader has landed on what it changed. Already settled while
+   * none has run. Never rejects.
+   */
+  get stepped(): Promise<void> {
+    return this.#stepping;
+  }
+
+  /**
    * Settles when the last text selection released in this reader has been
    * placed on the page's characters, or refused. Already settled while none
    * has. Never rejects.
@@ -530,6 +560,10 @@ export class PdfViewBinding implements Disposable, HoverParent {
       return;
     }
     const { attachmentKey } = this.#attachment;
+    // Two views of one Attachment share one history, and the last of them to
+    // close ends it, so the open is matched on the surfaces stack.
+    this.#annotations.openHistory(attachmentKey);
+    this.#surfaces.defer(() => this.#annotations.closeHistory(attachmentKey));
     this.#mountSelection(attachmentKey);
     this.#mountToolbar();
     this.#surfaces.defer(
@@ -559,10 +593,8 @@ export class PdfViewBinding implements Disposable, HoverParent {
    * marks do not place — a position this build draws nowhere — moves nothing.
    */
   #navigate(annotationKey: string): void {
-    const pageIndex = [...this.#marks].find(([, annotations]) =>
-      annotations.some((mark) => mark.annotation.key === annotationKey),
-    )?.[0];
-    if (pageIndex === undefined || !this.#controller) {
+    const pageIndex = pageOfMark(this.#marks, annotationKey);
+    if (pageIndex === null || !this.#controller) {
       logger.debug("No page holds this annotation", {
         path: this.filePath,
         annotationKey,
@@ -794,9 +826,15 @@ export class PdfViewBinding implements Disposable, HoverParent {
     });
     this.#selection = selection;
     this.#surfaces.defer(
-      mountReaderKeymap(this.#view, {
-        escape: () => selection.escape() || creation.escape(),
-      }),
+      mountReaderKeymap(
+        this.#view,
+        {
+          escape: () => selection.escape() || creation.escape(),
+          undo: () => this.stepHistory("undo"),
+          redo: () => this.stepHistory("redo"),
+        },
+        { isMacOS: Platform.isMacOS },
+      ),
     );
     // A Geometry Edit redraws the one mark it moves; the handles come and go
     // with the capability to save one.
@@ -1134,6 +1172,95 @@ export class PdfViewBinding implements Disposable, HoverParent {
   }
 
   /**
+   * The undo or redo verb, answered for the Attachment this view shows — the
+   * reader's own keys, the palette's two commands, and the More options menu.
+   * The repository decides and writes; this seam renders its answer — the
+   * reader lands on what changed, a step Zotero moved under says so, and a
+   * block is reported the way every other blocked edit gesture is.
+   *
+   * @see apps/obsidian/policies/ui-seams.md
+   */
+  stepHistory(direction: HistoryDirection): void {
+    if (this.#attachment.kind !== "resolved") return;
+    const { attachmentKey } = this.#attachment;
+    const stepping =
+      direction === "undo"
+        ? this.#annotations.undo(attachmentKey)
+        : this.#annotations.redo(attachmentKey);
+    const answered = stepping.then((outcome) => {
+      if (this.#surfaces.disposed) return;
+      switch (outcome.kind) {
+        case "stepped":
+          return this.#landOn(outcome.annotationKey);
+        case "removed":
+          return this.#landOnPage(outcome.pageIndex);
+        case "changed":
+          new BaseNotice(m.annot_history_changed_in_zotero());
+          return;
+        case "failed":
+          new BaseNotice(writeFailureMessage(outcome.failure, this.#now()));
+          return;
+        case "blocked":
+          this.#editGesture();
+          return;
+        case "idle":
+          return;
+      }
+    });
+    // Chained rather than replaced, so a second press in flight leaves this
+    // settling behind both rather than behind the later one alone. Settled
+    // rather than resolved, so it answers however each press ended.
+    this.#stepping = Promise.allSettled([this.#stepping, answered]).then(
+      () => undefined,
+    );
+  }
+
+  /**
+   * Bring the reader to the Annotation a History Step changed, once the marks
+   * on screen match the read that step announced.
+   *
+   * A page PDF.js has not built yet is reached by Obsidian's own page jump,
+   * and the render it triggers is what the waiting Landing lands on — the
+   * Annotation Anchor's own path.
+   */
+  #landOn(annotationKey: string): Promise<void> {
+    return this.refreshed.then(() => {
+      if (this.#surfaces.disposed) return;
+      const controller = this.#controller;
+      const pageIndex = pageOfMark(this.#marks, annotationKey);
+      if (pageIndex === null || !controller) {
+        logger.debug("No page holds this annotation", {
+          path: this.filePath,
+          annotationKey,
+        });
+        return;
+      }
+      this.#landing = { annotationKey, pageIndex };
+      if (renderedPagesOf(controller).includes(pageIndex)) {
+        this.#applyLanding();
+        return;
+      }
+      controller.applySubpath(`#page=${pageIndex + 1}`);
+    });
+  }
+
+  /**
+   * Bring the reader back to where the Annotation a History Step took away
+   * was. Nothing is left to select, so the selection goes and Obsidian's own
+   * page jump answers for the scroll.
+   */
+  #landOnPage(pageIndex: number): Promise<void> {
+    return this.refreshed.then(() => {
+      if (this.#surfaces.disposed) return;
+      // A Landing left waiting by an earlier press names an Annotation this
+      // step erased, so it goes rather than selecting one on the next render.
+      this.#landing = null;
+      this.#selection?.select(null, { popup: false });
+      this.#controller?.applySubpath(`#page=${pageIndex + 1}`);
+    });
+  }
+
+  /**
    * Decide the Anchor this view's leaf carries, and act on it. The Annotation's
    * own page wins over the page the link recorded, so a link written before the
    * PDF was replaced still lands on its passage.
@@ -1367,6 +1494,21 @@ export class PdfViewBinding implements Disposable, HoverParent {
     this.#probes.record([result]);
     if (!this.supported) this[Symbol.dispose]();
   }
+}
+
+/**
+ * The first page that draws an Annotation, which is the page the reader scrolls
+ * to for it; `null` where no page on screen draws it.
+ */
+function pageOfMark(
+  marks: ReadonlyMap<number, readonly PdfPageAnnotation[]>,
+  key: string,
+): number | null {
+  for (const [pageIndex, placements] of marks) {
+    if (placements.some(({ annotation }) => annotation.key === key))
+      return pageIndex;
+  }
+  return null;
 }
 
 /** The pages that draw an Annotation, by its Indexed Key. */

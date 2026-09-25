@@ -868,6 +868,8 @@ function imageReader(
     removeAllRanges: () => undefined,
   } as never);
   const drafts: Omit<AnnotationDraft, "parentKey">[] = [];
+  /** What joined each create to the gesture that made it, in create order. */
+  const groups: (string | undefined)[] = [];
   const structure = {
     page: vi.fn(async () => ({})),
     pageLabels: vi.fn(async () => ["1"]),
@@ -892,8 +894,10 @@ function imageReader(
         async (
           _key: string,
           draft: Omit<AnnotationDraft, "parentKey">,
+          options?: { group?: string },
         ): Promise<CreateOutcome> => {
           drafts.push(draft);
+          groups.push(options?.group);
           return await create(draft);
         },
       ),
@@ -925,6 +929,7 @@ function imageReader(
     containerEl,
     slot,
     drafts,
+    groups,
     structure,
     pointer,
     /** One drag from a client point to another, released there. */
@@ -1222,6 +1227,22 @@ it("creates one ink stroke as Zotero smooths it, and stays armed", async () => {
     armed: "ink",
     liveStroke: null,
   });
+});
+
+it("names every stroke its own group, in one reader and across two", async () => {
+  using one = toolReader("ink");
+  await one.drag([100, 100], [110, 100]);
+  await one.drag([100, 120], [110, 120]);
+
+  // A second PDF view of the same Attachment writes into the one Annotation
+  // History, so a group it names alike would draw its first stroke into the
+  // other view's step and one undo press would take both.
+  using other = toolReader("ink");
+  await other.drag([100, 140], [110, 140]);
+
+  const named = [...one.groups, ...other.groups];
+  expect(named.filter((group) => group !== undefined)).toHaveLength(3);
+  expect(new Set(named).size).toBe(3);
 });
 
 it("stores a tap as its one point", async () => {

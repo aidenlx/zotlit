@@ -376,6 +376,14 @@ _Avoid_: pending write (the draft has not been submitted), cached comment
 A conflict between the user's intended Annotation change and a different change in Zotero since the user started editing. It requires a choice between the competing values; a Zotero value already equal to the intended one is no conflict.
 _Avoid_: 412 (also a changed server or a reused write token), version mismatch, stale write, merge conflict
 
+**Annotation History**:
+The ephemeral, ordered record of ZotLit's own confirmed edits to one Attachment's Annotations that can be undone and redone. It lives while a PDF view of that Attachment is open; Zotero keeps no such record.
+_Avoid_: undo stack, edit log, history (alone; Obsidian's workspace History is navigation)
+
+**History Step**:
+One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, or one comment editing session — held as the before and after values of the fields it changed on each Annotation it touched.
+_Avoid_: history point, undo entry, transaction
+
 **Sort Index**:
 The reading-order key Zotero keeps on every Annotation. For a PDF it names the page, the nearest character in that page's Structured Characters, and the distance from the page top. ZotLit computes it at creation and recomputes it on a Geometry Edit, the one edit Zotero's own reader recomputes it for.
 _Avoid_: sort key, reading position, annotation order

@@ -17,7 +17,15 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import { getDevVaultDir } from "@zotlit/scripts/dev-vault";
 import {
@@ -1001,6 +1009,39 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       const pressKey = (key: string, modifiers: Record<string, boolean>) =>
         obJson<{ prevented: boolean }>(
           `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});${pdfView}.containerEl.dispatchEvent(event);return JSON.stringify({prevented:event.defaultPrevented});})()`,
+        );
+
+      /**
+       * One chord as Obsidian delivers it, through the view's own Scope.
+       * The Reader Keymap registers there, which a DOM event dispatched on
+       * the container never reaches.
+       *
+       * @returns whether the Scope took the key, which is what Obsidian
+       *   answers by preventing the keystroke's default.
+       */
+      const pressChord = (
+        key: string,
+        modifiers: {
+          ctrlKey?: boolean;
+          metaKey?: boolean;
+          shiftKey?: boolean;
+        },
+      ) =>
+        obJson<{ handled: boolean }>(
+          `(function(){const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=${pdfView}.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+        );
+
+      /** This host's own undo and redo chords. */
+      const platformKey = process.platform === "darwin" ? "metaKey" : "ctrlKey";
+      const undoKey = () => pressChord("z", { [platformKey]: true });
+      const redoKey = () =>
+        pressChord("z", { [platformKey]: true, shiftKey: true });
+
+      /** Settles when every open PDF view has answered its last history key. */
+      const stepSettled = () =>
+        obEval(
+          vaultId!,
+          "(async()=>{const editor=app.plugins.plugins.zotlit.services.pdfAnnotationEditor;await Promise.all(editor.bindings.map((binding)=>binding.stepped));return 'stepped';})()",
         );
 
       /**
@@ -2528,7 +2569,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           state: { kind: string };
           announced: string[];
         }>(
-          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex});return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
+          `(async()=>{const s=app.plugins.plugins.zotlit.services;const binding=s.pdfAnnotationEditor.bindings.find(b=>b.filePath===${JSON.stringify(attachmentPath)});const announced=[];const off=s.annotationRepository.on('excerpt-pixels-changed',(record)=>announced.push(record.key));try{const position=${JSON.stringify(edited)};const sortIndex=await binding.sortIndex(position);const state=await s.annotationRepository.patchGeometry(${JSON.stringify(imageKey)},{position,sortIndex},'pointer');return JSON.stringify({sortIndex,state,announced});}finally{off();}})()`,
         );
         expect(outcome.state.kind).toBe("idle");
         expect(outcome.announced).toEqual([imageKey]);
@@ -2767,6 +2808,75 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
           expect(await pixels.keys()).toContain(imageKey);
+        }, 120000);
+
+        it("puts the image's geometry back for the undo key, and drags it out again for redo", async () => {
+          // A history ends with the last view of its Attachment, so a reopened
+          // view gives this test an empty one.
+          await reopenPdfView(vaultId!, attachmentPath);
+          const handle = await selectImage();
+          // Twenty points right and thirty points down the page, the drag the
+          // resize is proved with.
+          await dragPointer(handle, {
+            x: handle.x + 20 * handle.perX,
+            y: handle.y + 30 * handle.perY,
+          });
+          expect(
+            await waitFor(
+              async () =>
+                (await image.stored()).data.annotationPosition !==
+                image.seed.annotationPosition,
+            ),
+          ).toBe(true);
+          await image.settled();
+          const dragged = (await image.stored()).data;
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          // Zotero holds the seeded rect and Sort Index again, read straight
+          // off the Local API.
+          expect(
+            await waitFor(
+              async () =>
+                (await image.stored()).data.annotationPosition ===
+                image.seed.annotationPosition,
+            ),
+          ).toBe(true);
+          await image.settled();
+          expect((await image.stored()).data.annotationSortIndex).toBe(
+            image.seed.annotationSortIndex,
+          );
+          // Zotero's own Reader holds the rect the undo wrote.
+          expect(
+            await waitFor(
+              async () =>
+                (await image.held())?.position ===
+                image.seed.annotationPosition,
+            ),
+          ).toBe(true);
+          // The reader landed on the Annotation the step changed.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${imageMark}?.classList.contains('is-selected'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+
+          expect(await redoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(
+              async () =>
+                (await image.stored()).data.annotationPosition ===
+                dragged.annotationPosition,
+            ),
+          ).toBe(true);
+          expect((await image.stored()).data.annotationSortIndex).toBe(
+            dragged.annotationSortIndex,
+          );
         }, 120000);
 
         it("writes nothing for a handle released where it was pressed", async () => {
@@ -3733,6 +3843,56 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           ).toBe(true);
         }, 120000);
 
+        it("puts the quoted text and the range back for the undo key", async () => {
+          // A history ends with the last view of its Attachment, so a reopened
+          // view gives this test an empty one.
+          await reopenPdfView(vaultId!, attachmentPath);
+          const handle = await selectHighlight();
+          const text = await dragEnd(handle, {
+            word: "Furthermore,",
+            at: 0.99,
+          });
+          expect(text).toBe(`${seedText} Furthermore,`);
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          // Zotero holds the seeded quote, range and Sort Index again.
+          expect(
+            await waitFor(
+              async () =>
+                (await highlight.stored()).data.annotationText === seedText,
+            ),
+          ).toBe(true);
+          await highlight.settled();
+          const stored = await highlight.stored();
+          expect(stored.data.annotationPosition).toBe(
+            highlight.seed.annotationPosition,
+          );
+          expect(stored.data.annotationSortIndex).toBe(
+            highlight.seed.annotationSortIndex,
+          );
+
+          // Zotero's own Reader holds the quote the undo put back, and the
+          // Annotation Card quotes it again.
+          expect(
+            await waitFor(async () => {
+              const held = await highlight.held();
+              return (
+                held?.text === seedText &&
+                held.position === highlight.seed.annotationPosition
+              );
+            }),
+          ).toBe(true);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              cardQuotes("(text)=>text.trimEnd().endsWith('just a few.')"),
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }, 120000);
+
         it("keeps one character when the end is dragged back past the start", async () => {
           const handle = await selectHighlight();
           // "automatic." ends the line above the seed's first word, "There".
@@ -3792,6 +3952,596 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
             ),
           ).toBe(true);
         }, 120000);
+      });
+
+      describe("the Annotation History in the reader", () => {
+        const historyKey = "PUPR5FG5";
+        const seeded = ANNOTATIONS.find(({ key }) => key === historyKey)!;
+        const seedColor = seeded.color!;
+        /** The swatch the number row's second key picks. */
+        const picked = "#ff6666";
+        const historyMark = `${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')`;
+
+        /** What the Local API holds for the Annotation right now. */
+        const storedColor = () => annotationColor(api, serverID, historyKey);
+
+        /**
+         * Settles once ZotLit holds no write and no open draft on the
+         * Annotation. Zotero answers the Local API a moment before ZotLit has
+         * read its own write back, and an undo key pressed in that moment is
+         * turned away, not queued.
+         */
+        async function writeSettled(): Promise<void> {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(historyKey)}));})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }
+
+        /** Whether ZotLit is showing the notice that names one word of it. */
+        const noticeShows = (fragment: string) =>
+          obEvalUntil(
+            vaultId!,
+            `String([...document.querySelectorAll('.zt-notice')].some((node)=>node.textContent.includes(${JSON.stringify(fragment)})))`,
+            { expected: "true" },
+          );
+
+        /** Takes every notice off screen, so the next one is this test's own. */
+        const clearNotices = () =>
+          obEval(
+            vaultId!,
+            "(function(){for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+          );
+
+        /** One field, written in Zotero itself, and read back into ZotLit. */
+        async function saveInZotero(
+          field: "annotationColor" | "annotationComment",
+          value: string,
+        ): Promise<void> {
+          await rdp.json(`(async () => {
+            const item = Zotero.Items.getByLibraryAndKey(
+              Zotero.Libraries.userLibraryID,
+              ${JSON.stringify(historyKey)},
+            );
+            item.${field} = ${JSON.stringify(value)};
+            await item.saveTx();
+            return "saved";
+          })()`);
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return String(record?.${field === "annotationColor" ? "color" : "comment"});})()`,
+              { expected: value },
+            ),
+          ).toBe(true);
+        }
+
+        /** Selects the highlight by a click on its body, as a researcher would. */
+        async function selectMark(): Promise<void> {
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=${historyMark}?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+          await obEval(
+            vaultId!,
+            `(function(){${FIRE}${TAP}const mark=${historyMark};if(mark.classList.contains('is-selected'))return 'selected';const rect=mark.getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return 'clicked';})()`,
+          );
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${historyMark}?.classList.contains('is-selected'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+        }
+
+        /** The colour pick itself: the number row's second key on the selection. */
+        async function pickRed(): Promise<void> {
+          expect(await pressKey("2", {})).toEqual({ prevented: true });
+          expect(
+            await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+          await writeSettled();
+        }
+
+        beforeEach(async () => {
+          // A history ends with the last view of its Attachment, so a reopened
+          // view is what gives each test an empty one.
+          await reopenPdfView(vaultId!, attachmentPath);
+          await clearNotices();
+        });
+
+        afterEach(async () => {
+          await obEval(
+            vaultId!,
+            `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;await repository.patchColor(${JSON.stringify(historyKey)},${JSON.stringify(seedColor)});await repository.patchComment(${JSON.stringify(historyKey)},'');return true;})()`,
+          );
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
+          ).toBe(true);
+        });
+
+        it("puts the colour back for the undo key, and picks it up again for redo", async () => {
+          await selectMark();
+          await pickRed();
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
+          ).toBe(true);
+          // Zotero's own Reader holds the colour the undo wrote.
+          expect(
+            await waitFor(() =>
+              readerAnnotationColor(rdp, historyKey, seedColor),
+            ),
+          ).toBe(true);
+          // The reader landed on the Annotation the step changed.
+          expect(
+            await obEvalUntil(
+              vaultId!,
+              `String(!!${historyMark}?.classList.contains('is-selected'))`,
+              { expected: "true" },
+            ),
+          ).toBe(true);
+
+          expect(await redoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(async () => (await storedColor()) === picked),
+          ).toBe(true);
+        }, 120000);
+
+        it("leaves a colour Zotero changed alone, and says why", async () => {
+          await selectMark();
+          await pickRed();
+
+          const inZotero = "#5fb236";
+          await saveInZotero("annotationColor", inZotero);
+          await clearNotices();
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(await storedColor()).toBe(inZotero);
+          // The whole of `annot_history_changed_in_zotero`, because the
+          // fragment "changed in Zotero" belongs to two other notices as well.
+          expect(
+            await noticeShows(
+              "This annotation changed in Zotero, so ZotLit left it as it is.",
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("undoes a colour pick Zotero only commented on", async () => {
+          await selectMark();
+          await pickRed();
+
+          await saveInZotero("annotationComment", "Read again in Zotero");
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
+          ).toBe(true);
+        }, 120000);
+
+        it("keeps the step while editing is not live, and takes it once editing is back", async () => {
+          await selectMark();
+          await pickRed();
+
+          await whileEditingNotLive(async () => {
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+          });
+          expect(await storedColor()).toBe(picked);
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+          expect(
+            await waitFor(async () => (await storedColor()) === seedColor),
+          ).toBe(true);
+        }, 120000);
+
+        describe("from the command palette", () => {
+          /**
+           * Whether the palette offers one command while the PDF view is the
+           * active view, as the palette asks before it lists it.
+           */
+          const offered = (id: string) =>
+            obEval(
+              vaultId!,
+              `(function(){const view=${pdfView};app.workspace.setActiveLeaf(view.leaf,{focus:true});return String(app.commands.findCommand(${JSON.stringify(`zotlit:${id}`)}).checkCallback(true));})()`,
+            );
+
+          /** Runs one command with the PDF view as the active view. */
+          const run = (id: string) =>
+            obEval(
+              vaultId!,
+              `(function(){const view=${pdfView};app.workspace.setActiveLeaf(view.leaf,{focus:true});return String(app.commands.executeCommandById(${JSON.stringify(`zotlit:${id}`)}));})()`,
+            );
+
+          it("offers redo only once an undo stands, and takes each step", async () => {
+            await selectMark();
+            await pickRed();
+            expect(await offered("undo-annotation-change")).toBe("true");
+            // A new edit leaves nothing to redo.
+            expect(await offered("redo-annotation-change")).toBe("false");
+
+            expect(await run("undo-annotation-change")).toBe("true");
+            await stepSettled();
+            expect(
+              await waitFor(async () => (await storedColor()) === seedColor),
+            ).toBe(true);
+            expect(await offered("redo-annotation-change")).toBe("true");
+
+            expect(await run("redo-annotation-change")).toBe("true");
+            await stepSettled();
+            expect(
+              await waitFor(async () => (await storedColor()) === picked),
+            ).toBe(true);
+          }, 120000);
+        });
+
+        /** What the Local API holds for the Annotation's comment right now. */
+        const storedComment = async () =>
+          (await storedAnnotation(api, serverID, historyKey))
+            .annotationComment ?? "";
+
+        /** Opens the Mark Popup's comment editor on the selected Annotation. */
+        async function openCommentEditor(): Promise<void> {
+          await obEval(
+            vaultId!,
+            `(document.querySelector('.zt-pdf-mark-popup [data-zt-verb="comment"]').click(),true)`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, `String(!!${POPUP_EDITOR})`, {
+              expected: "true",
+            }),
+          ).toBe(true);
+        }
+
+        /** Replaces what the open editor holds, as typing over a selection does. */
+        const typeComment = (text: string) =>
+          obEval(
+            vaultId!,
+            `(function(){${POPUP_EDITOR}.focus();document.execCommand('selectAll');document.execCommand('insertText',false,${JSON.stringify(text)});return true;})()`,
+          );
+
+        /** Escape, which stores the comment and takes the editor off screen. */
+        async function closeCommentEditor(): Promise<void> {
+          await obEval(
+            vaultId!,
+            `(function(){${POPUP_EDITOR}.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()`,
+          );
+          expect(
+            await obEvalUntil(vaultId!, `String(!${POPUP_EDITOR})`, {
+              expected: "true",
+            }),
+          ).toBe(true);
+          await writeSettled();
+        }
+
+        it("puts a whole comment session back for one press of the undo key", async () => {
+          await selectMark();
+          await openCommentEditor();
+
+          // Two texts, each left to stand until its own autosave landed.
+          await typeComment("Worth");
+          expect(
+            await waitFor(async () => (await storedComment()) === "Worth"),
+          ).toBe(true);
+          await typeComment("Worth citing");
+          expect(
+            await waitFor(
+              async () => (await storedComment()) === "Worth citing",
+            ),
+          ).toBe(true);
+          await closeCommentEditor();
+
+          expect(await undoKey()).toEqual({ handled: true });
+          await stepSettled();
+
+          // The session went back whole, to the comment from before it began.
+          expect(
+            await waitFor(async () => (await storedComment()) === ""),
+          ).toBe(true);
+
+          expect(await redoKey()).toEqual({ handled: true });
+          await stepSettled();
+          expect(
+            await waitFor(
+              async () => (await storedComment()) === "Worth citing",
+            ),
+          ).toBe(true);
+        }, 120000);
+
+        it("leaves the undo key to the comment editor's own text undo", async () => {
+          await selectMark();
+          await openCommentEditor();
+          await typeComment("Typed once");
+          expect(
+            await waitFor(async () => (await storedComment()) === "Typed once"),
+          ).toBe(true);
+
+          // A second run typed on, then the platform undo chord, in one turn:
+          // no autosave can come due between them. The chord goes to the
+          // view's own Scope first, as Obsidian sends it, and then to the
+          // editor the focus sits in.
+          const { scoped, typed } = await obJson<{
+            scoped: boolean;
+            typed: string;
+          }>(
+            `(function(){const editor=${POPUP_EDITOR};editor.focus();document.execCommand('selectAll');document.execCommand('insertText',false,'Typed once and twice');const typed=editor.textContent;const make=()=>new KeyboardEvent('keydown',{key:'z',${platformKey}:true,bubbles:true,cancelable:true});const probe=make();Object.defineProperty(probe,'target',{value:editor});const names=[];if(probe.ctrlKey)names.push('Ctrl');if(probe.metaKey)names.push('Meta');const context={modifiers:names.sort().join(','),key:probe.key,vkey:'KeyZ'};const scoped=${pdfView}.scope.handleKey(probe,context)===false;editor.dispatchEvent(make());return JSON.stringify({scoped,typed});})()`,
+          );
+          expect(typed).toBe("Typed once and twice");
+          // The reader left the chord alone.
+          expect(scoped).toBe(false);
+
+          // The editor's own text undo took it back one run.
+          expect(
+            await obEvalUntil(vaultId!, `${POPUP_EDITOR}.textContent`, {
+              expected: "Typed once",
+            }),
+          ).toBe(true);
+          // The Annotation History never heard the key, so Zotero's record
+          // still holds what the session last saved.
+          expect(await storedComment()).toBe("Typed once");
+
+          await closeCommentEditor();
+        }, 120000);
+
+        describe("and the Annotation Card beside it", () => {
+          /** That Annotation's card, in whichever Annotation View holds it. */
+          const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(historyKey)}]')).find(Boolean)`;
+
+          /** The card's own colour pick, through the verb its controls run. */
+          async function pickOnCard(color: string): Promise<void> {
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.gestures&&candidate.snapshot.annotations&&candidate.snapshot.annotations.some((record)=>record.key===${JSON.stringify(historyKey)}));if(!view)return 'no card';view.gestures.onSetColor(view.snapshot.annotations.find((record)=>record.key===${JSON.stringify(historyKey)}),${JSON.stringify(color)});return 'picked';})()`,
+                { expected: "picked" },
+              ),
+            ).toBe(true);
+            expect(
+              await waitFor(async () => (await storedColor()) === color),
+            ).toBe(true);
+            await writeSettled();
+          }
+
+          /**
+           * One chord on a focused card, through the Annotation View's own
+           * Scope — where Obsidian delivers a key the focused view answers.
+           *
+           * @returns whether the Scope took the key.
+           */
+          const pressOnCard = (
+            key: string,
+            modifiers: {
+              ctrlKey?: boolean;
+              metaKey?: boolean;
+              shiftKey?: boolean;
+            },
+          ) =>
+            obJson<{ handled: boolean }>(
+              `(function(){const card=${card};if(!card)return JSON.stringify({handled:false});const view=app.workspace.getLeavesOfType('zotero-annotation-view').map((leaf)=>leaf.view).find((candidate)=>candidate.containerEl.contains(card));if(!view)return JSON.stringify({handled:false});card.focus();const event=new KeyboardEvent('keydown',{key:${JSON.stringify(key)},...${JSON.stringify(modifiers)},bubbles:true,cancelable:true});Object.defineProperty(event,'target',{value:card});const names=[];if(event.ctrlKey)names.push('Ctrl');if(event.metaKey)names.push('Meta');if(event.altKey)names.push('Alt');if(event.shiftKey)names.push('Shift');const context={modifiers:names.sort().join(','),key:event.key,vkey:'Key'+event.key.toUpperCase()};const handled=view.scope.handleKey(event,context)===false;return JSON.stringify({handled});})()`,
+            );
+
+          /** This host's own undo chord, pressed on the card. */
+          const undoOnCard = () => pressOnCard("z", { [platformKey]: true });
+
+          it("puts back a colour the card picked, for the reader's undo key", async () => {
+            await pickOnCard(picked);
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(
+              await waitFor(async () => (await storedColor()) === seedColor),
+            ).toBe(true);
+            // The card itself shows what the undo wrote.
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `String(${card}?.getAttribute('data-annot-color'))`,
+                { expected: seedColor },
+              ),
+            ).toBe(true);
+          }, 120000);
+
+          it("takes the top step of the Attachment's history for the card's own undo key", async () => {
+            await pickOnCard(picked);
+
+            expect(await undoOnCard()).toEqual({ handled: true });
+
+            expect(
+              await waitFor(async () => (await storedColor()) === seedColor),
+            ).toBe(true);
+          }, 120000);
+        });
+
+        describe("a create and a delete", () => {
+          /**
+           * The Annotation each of these tests makes for itself. Nothing seeded
+           * is erased here: a restore comes back under a key Zotero picks, so a
+           * deleted seed could never be put back as the Fixture spells it.
+           */
+          const draft = {
+            type: "highlight",
+            color: "#a28ae5",
+            comment: "Annotation History run",
+            text: "Identify Your Message",
+            pageLabel: "1",
+            sortIndex: "00000|000100|00101",
+            position: { pageIndex: 0, rects: [[100, 560, 300, 580]] },
+          };
+
+          const createDraft = () =>
+            obJson<{ kind: string; annotationKey?: string }>(
+              `(async()=>{const outcome=await app.plugins.plugins.zotlit.services.annotationRepository.createAnnotation(${JSON.stringify(attachment.key)},${JSON.stringify(draft)});return JSON.stringify(outcome);})()`,
+            );
+
+          const eraseThrough = (annotationKey: string) =>
+            obJson<{ kind: string }>(
+              `(async()=>{const state=await app.plugins.plugins.zotlit.services.annotationRepository.deleteAnnotation(${JSON.stringify(annotationKey)});return JSON.stringify(state);})()`,
+            );
+
+          /**
+           * What the Attachment held before this test. Earlier tests in this
+           * tier leave Annotations of their own standing until the suite ends,
+           * so the baseline is taken per test rather than from the Fixture.
+           */
+          let baseline: readonly string[] = [];
+
+          /** The one Annotation this test made, or `null` where it made none. */
+          const extra = async (): Promise<string | null> =>
+            (await madeSince(baseline))[0] ?? null;
+
+          beforeEach(async () => {
+            baseline = await annotationKeys();
+          });
+
+          afterEach(async () => {
+            await eraseAnnotations(rdp, await madeSince(baseline));
+          });
+
+          it("takes back a create, and redoes it under a new key", async () => {
+            const created = await createDraft();
+            expect(created.kind).toBe("created");
+            const madeKey = created.annotationKey!;
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            // Zotero is the oracle: the Annotation is gone from the Attachment.
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+
+            expect(await redoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) !== null)).toBe(
+              true,
+            );
+            const restored = (await extra())!;
+            // Zotero refuses a client-supplied key, so the redo made a new one.
+            expect(restored).not.toBe(madeKey);
+            expect(
+              await storedAnnotation(api, serverID, restored),
+            ).toMatchObject({
+              annotationType: draft.type,
+              annotationColor: draft.color,
+              annotationComment: draft.comment,
+              annotationPageLabel: draft.pageLabel,
+              annotationSortIndex: draft.sortIndex,
+            });
+          }, 120000);
+
+          it("takes back a note the tool placed, and leaves nothing selected", async () => {
+            /** Body text in the left column, clear of every seeded mark. */
+            const CLEAR = [150, 250] as const;
+            await armToolOnFirstPage(vaultId!, {
+              pdfView,
+              tool: "note",
+              at: CLEAR,
+            });
+            await obEval(
+              vaultId!,
+              `(function(){${FIRE}${TAP}${clientOfFirstPage(pdfView)}const at=clientOf(${CLEAR[0]},${CLEAR[1]});tap(at.x,at.y);return true;})()`,
+            );
+            const noteKey = await freshAnnotationKey(rdp, {
+              item: ATTACHMENT_ITEM,
+              before: baseline,
+            });
+            const selectedMarks = `JSON.stringify([...${pdfView}.containerEl.querySelectorAll('.zt-pdf-annotation-mark.is-selected')].map((mark)=>mark.dataset.zoteroAnnotationKey))`;
+            expect(
+              await obEvalUntil(vaultId!, selectedMarks, {
+                expected: JSON.stringify([noteKey]),
+              }),
+            ).toBe(true);
+
+            // The note opens its comment sheet, and a sheet left open keeps
+            // the undo key for its own text; Escape closes it.
+            await obEval(
+              vaultId!,
+              "(function(){document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));return true;})()",
+            );
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!${POPUP_EDITOR}&&repository.mutationFor(${JSON.stringify(noteKey)}).kind==='idle'&&!repository.commentDraftFor(${JSON.stringify(noteKey)}));})()`,
+                { expected: "true" },
+              ),
+            ).toBe(true);
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+            // The reader landed where the note was, with nothing selected
+            // and no mark left for it.
+            expect(
+              await obEvalUntil(
+                vaultId!,
+                `(function(){const selected=${selectedMarks};const mark=${pdfView}.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(noteKey)}]');return JSON.stringify({selected:JSON.parse(selected),mark:!!mark});})()`,
+                { expected: JSON.stringify({ selected: [], mark: false }) },
+              ),
+            ).toBe(true);
+          }, 120000);
+
+          it("puts a deleted Annotation back under a new key, and redoes the delete", async () => {
+            const created = await createDraft();
+            expect(created.kind).toBe("created");
+            const madeKey = created.annotationKey!;
+            const before = await storedAnnotation(api, serverID, madeKey);
+
+            expect(await eraseThrough(madeKey)).toEqual({ kind: "idle" });
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+
+            expect(await undoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) !== null)).toBe(
+              true,
+            );
+            const restored = (await extra())!;
+            expect(restored).not.toBe(madeKey);
+            // The colour, the comment and the position all came back with it.
+            expect(
+              await storedAnnotation(api, serverID, restored),
+            ).toMatchObject({
+              annotationType: before.annotationType,
+              annotationColor: before.annotationColor,
+              annotationComment: before.annotationComment,
+              annotationPosition: before.annotationPosition,
+              annotationSortIndex: before.annotationSortIndex,
+            });
+
+            // The redo erases the Annotation the restore made, not the key
+            // Zotero no longer holds.
+            expect(await redoKey()).toEqual({ handled: true });
+            await stepSettled();
+
+            expect(await waitFor(async () => (await extra()) === null)).toBe(
+              true,
+            );
+          }, 120000);
+        });
       });
 
       // The one place a confirmed write can land: the Local API is serving

@@ -40,6 +40,23 @@ import {
 import { capabilityReason, editingCapabilityOf } from "./capability";
 import type { EditingCapability } from "./capability";
 import {
+  AnnotationHistory,
+  contentOf,
+  historyFieldsOf,
+  opposite,
+  sameContent,
+  stillHeldAfterConflict,
+  stillHolds,
+} from "./history";
+import type {
+  HistoryChange,
+  HistoryDirection,
+  HistoryFields,
+  HistoryJoin,
+  HistoryOutcome,
+  HistoryStep,
+} from "./history";
+import {
   resolvesSilently,
   sameStoredGeometry,
   storedPosition,
@@ -59,6 +76,7 @@ import type {
   AnnotationDraft,
   ConflictedWrite,
   GeometryEdit,
+  GeometryInput,
   MutationState,
   WriteConflict,
   WriteFailure,
@@ -68,8 +86,15 @@ import type {
 
 export type { EditingCapability } from "./capability";
 export type {
+  HistoryDirection,
+  HistoryEditKind,
+  HistoryOutcome,
+  HistoryStep,
+} from "./history";
+export type {
   AnnotationDraft,
   GeometryEdit,
+  GeometryInput,
   MutationState,
   WriteConflict,
   WriteFailure,
@@ -132,6 +157,14 @@ export interface AnnotationRecord {
   parentKey: string;
   /** Zotero's printed-page label, as Zotero stored it. */
   pageLabel: string | null;
+  /**
+   * The Sort Index Zotero stores. It orders the list, an undone Geometry Edit
+   * puts it back beside the position it was computed from, and a restore sends
+   * it back: Zotero's create demands one and computes none.
+   *
+   * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
+   */
+  sortIndex: string;
   /**
    * The Annotation's Zotero tags, by name. Names rather than the numeric tag
    * ids SQLite keeps, because a name is what both sources can supply.
@@ -283,6 +316,15 @@ export interface AnnotationRepositoryEvents {
   /** A complete read confirmed that an Annotation no longer exists. */
   "annotation-deleted": (annotationKey: string, attachmentKey: string) => void;
   /**
+   * One Attachment's Annotation History opened, closed, or moved. A consumer
+   * that draws whether an undo or a redo stands re-reads
+   * {@link AnnotationRepository.canUndo} and
+   * {@link AnnotationRepository.canRedo}; no record set is affected.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  "history-changed": (attachmentKey: string) => void;
+  /**
    * Zotero's copy of this Annotation moved under a write, and the card now
    * carries both values with the verbs that resolve them. Raised only for a
    * conflict the user must answer: an equal fresh value settles silently and
@@ -350,7 +392,7 @@ interface HeldAnnotation {
 /** What one command asks Zotero for, which a conflict puts beside the fresh record. */
 type WriteAttempt =
   | { write: Exclude<ConflictedWrite, "geometry">; attempted: string | null }
-  | { write: "geometry"; attempted: GeometryEdit };
+  | { write: "geometry"; attempted: GeometryEdit; input: GeometryInput };
 
 type ConfirmedWrite =
   | {
@@ -435,6 +477,29 @@ export class AnnotationRepository extends Service<void> {
   readonly #commentDraftSources = new Map<string, string>();
   readonly #commentSaves = new Map<string, CommentSave>();
   readonly #commands = new Map<string, Promise<MutationState>>();
+  /**
+   * One Annotation History per Attachment, held only while a PDF view of the
+   * Attachment keeps it open. An Attachment with no entry records nothing.
+   */
+  readonly #histories = new Map<string, AnnotationHistory>();
+  /**
+   * The Attachments an undo or a redo is running on, which refuses a second
+   * press while one runs.
+   */
+  readonly #steppingAttachments = new Set<string>();
+  /**
+   * The Annotations a running step is writing right now. Their confirmations
+   * record no step, because the step the write leaves behind is already the one
+   * that steps it back; every other write confirmed while a step runs — a
+   * comment autosave whose timer came due — is recorded as it always is.
+   */
+  readonly #steppingWrites = new Set<string>();
+  /**
+   * How many writes are in flight on each Attachment, which is what the undo
+   * key waits for: a press while a save is still on its way does nothing rather
+   * than stepping past it.
+   */
+  readonly #writesInFlight = new Map<string, number>();
   #commandGeneration = 0;
   /** One explicit revalidation per visible Attachment. */
   readonly #refreshes = new Map<string, Promise<AnnotationList | null>>();
@@ -706,17 +771,19 @@ export class AnnotationRepository extends Service<void> {
     save.queued = false;
     const operation = this.#submitComment(annotationKey, draft, submittedText);
     save.inFlight = operation;
-    void operation.then((outcome) => {
-      save.inFlight = null;
-      save.submittedText = null;
-      if (
-        outcome.kind === "idle" &&
-        save.queued &&
-        this.#commentDrafts.has(id)
-      ) {
-        void this.submitComment(annotationKey, { automatic: true });
-      }
-    });
+    void operation.then(
+      (outcome) => {
+        this.#saveSettled(save);
+        if (
+          outcome.kind === "idle" &&
+          save.queued &&
+          this.#commentDrafts.has(id)
+        ) {
+          void this.submitComment(annotationKey, { automatic: true });
+        }
+      },
+      this.#saveRejected(save, annotationKey),
+    );
     return operation;
   }
 
@@ -762,17 +829,19 @@ export class AnnotationRepository extends Service<void> {
     save.queued = false;
     const operation = this.#retryCommentDraft(annotationKey, draft);
     save.inFlight = operation;
-    void operation.then((outcome) => {
-      save.inFlight = null;
-      save.submittedText = null;
-      if (
-        outcome.kind === "idle" &&
-        save.queued &&
-        this.#commentDrafts.has(id)
-      ) {
-        void this.submitComment(annotationKey, { automatic: true });
-      }
-    });
+    void operation.then(
+      (outcome) => {
+        this.#saveSettled(save);
+        if (
+          outcome.kind === "idle" &&
+          save.queued &&
+          this.#commentDrafts.has(id)
+        ) {
+          void this.submitComment(annotationKey, { automatic: true });
+        }
+      },
+      this.#saveRejected(save, annotationKey),
+    );
     return operation;
   }
 
@@ -856,11 +925,27 @@ export class AnnotationRepository extends Service<void> {
    * @param attachmentKey the Attachment's Indexed Key.
    * @param draft everything about the Annotation except its parent, which this
    *   Attachment names; its Sort Index was computed from the unrounded position.
+   * @param options.group what joins this create to the others of one gesture in
+   *   the Annotation History — one ink stroke split at the position ceiling
+   *   creates several Annotations and is still one History Step. A create that
+   *   names none is a step of its own.
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
   async createAnnotation(
     attachmentKey: string,
     draft: Omit<AnnotationDraft, "parentKey">,
+    options: { group?: string } = {},
+  ): Promise<CreateOutcome> {
+    return await this.#counted(
+      attachmentKey,
+      this.#createAnnotation(attachmentKey, draft, options.group),
+    );
+  }
+
+  async #createAnnotation(
+    attachmentKey: string,
+    draft: Omit<AnnotationDraft, "parentKey">,
+    group: string | undefined,
   ): Promise<CreateOutcome> {
     const parsed = parseIndexedKey(attachmentKey);
     if (!parsed) {
@@ -928,6 +1013,14 @@ export class AnnotationRepository extends Service<void> {
       annotationKey,
       type: whole.type,
     });
+    const content = contentOf(record);
+    if (content) {
+      this.#recordExistence(
+        attachmentKey,
+        { annotationKey, before: { content: null }, after: { content } },
+        group,
+      );
+    }
     this.#emitter.emit("annotations-changed", attachmentKey);
     return { kind: "created", annotationKey };
   }
@@ -973,11 +1066,14 @@ export class AnnotationRepository extends Service<void> {
    *
    * @param annotationKey the Annotation's Indexed Key.
    * @param edit its Sort Index was computed from the unrounded position.
+   * @param input what made the edit. A run of keyboard edits on one Annotation
+   *   is one History Step; a pointer gesture is a step of its own.
    * @see apps/obsidian/docs/adr/0040-the-sort-index-and-page-label-are-computed-in-obsidian-from-a-port-of-zoteros-text-structure.md
    */
   async patchGeometry(
     annotationKey: string,
     edit: GeometryEdit,
+    input: GeometryInput,
   ): Promise<MutationState> {
     if (writePosition(edit.position).length > MAX_POSITION_LENGTH) {
       logger.debug("A Geometry Edit's position is longer than Zotero accepts", {
@@ -991,7 +1087,11 @@ export class AnnotationRepository extends Service<void> {
     return await this.#command(annotationKey, {
       write: "geometry",
       attempted: edit,
+      input,
       request: (target, record) => geometryPatch(target, record.type, edit),
+      ...(input === "keyboard" && {
+        join: { input, at: this.#now() },
+      }),
     });
   }
 
@@ -1034,7 +1134,13 @@ export class AnnotationRepository extends Service<void> {
       case "delete":
         return await this.deleteAnnotation(annotationKey);
       case "geometry":
-        return await this.patchGeometry(annotationKey, conflict.attempted);
+        return await this.patchGeometry(
+          annotationKey,
+          conflict.attempted,
+          // The re-send is the very edit the conflict refused, so a nudge goes
+          // again as a nudge and the run it belongs to stays one step.
+          conflict.input,
+        );
     }
   }
 
@@ -1048,6 +1154,75 @@ export class AnnotationRepository extends Service<void> {
     if (this.#mutations.get(annotationKey)?.kind !== "conflict") return;
     logger.debug("A write conflict was discarded", { annotationKey });
     this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * Open this Attachment's Annotation History, from one PDF view bound to it.
+   * Every surface that writes through this repository records into the history
+   * the Attachment already holds, so a second view of the same Attachment joins
+   * this one rather than starting its own.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  openHistory(attachmentKey: string): void {
+    const standing = this.#histories.get(attachmentKey);
+    if (standing) {
+      standing.hold();
+      return;
+    }
+    this.#histories.set(attachmentKey, new AnnotationHistory());
+    logger.debug("An annotation history opened", { attachmentKey });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Give up one PDF view's hold on this Attachment's Annotation History. The
+   * last view to close ends the history, so an old session can never revert
+   * today's work.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  closeHistory(attachmentKey: string): void {
+    const standing = this.#histories.get(attachmentKey);
+    if (!standing || standing.release() > 0) return;
+    this.#histories.delete(attachmentKey);
+    logger.debug("An annotation history closed", { attachmentKey });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Whether this Attachment's Annotation History holds a step to undo, and
+   * nothing standing turns that press away. The momentary guards — a write in
+   * flight, an undo already running — are not read here, so a verb drawn from
+   * this does not flicker under its own write. An open Annotation Draft on the
+   * step's own Annotation is read, because it stands for as long as the
+   * comment editor is open: a menu row drawn enabled under one would do
+   * nothing, and say nothing.
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  canUndo(attachmentKey: string): boolean {
+    return this.#stepStands(attachmentKey, "undo");
+  }
+
+  /** Whether this Attachment's Annotation History holds a step to redo. */
+  canRedo(attachmentKey: string): boolean {
+    return this.#stepStands(attachmentKey, "redo");
+  }
+
+  /**
+   * Step one confirmed edit back: the platform undo key, and the palette's
+   * "Undo annotation change".
+   *
+   * @param attachmentKey the Attachment's Indexed Key.
+   */
+  async undo(attachmentKey: string): Promise<HistoryOutcome> {
+    return await this.#stepHistory(attachmentKey, "undo");
+  }
+
+  /** Step one undone edit forward again. */
+  async redo(attachmentKey: string): Promise<HistoryOutcome> {
+    return await this.#stepHistory(attachmentKey, "redo");
   }
 
   on<K extends keyof AnnotationRepositoryEvents>(
@@ -1127,6 +1302,8 @@ export class AnnotationRepository extends Service<void> {
    *   version and type.
    * @param command.settle whether the Annotation is read back after the `204`,
    *   or leaves the list because the write erased it.
+   * @param command.join what a confirmed edit joins the step before it by,
+   *   where the edit came from an input that runs.
    * @see apps/obsidian/docs/adr/0034-the-annotation-source-is-atomic-per-attachment.md
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
@@ -1135,6 +1312,7 @@ export class AnnotationRepository extends Service<void> {
     command: WriteAttempt & {
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
+      join?: HistoryJoin;
     },
   ): Promise<MutationState> {
     const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
@@ -1150,7 +1328,10 @@ export class AnnotationRepository extends Service<void> {
         this.#commands.delete(annotationKey);
       }
     });
-    return await operation;
+    return await this.#counted(
+      this.#holding(annotationKey)?.attachmentKey,
+      operation,
+    );
   }
 
   async #runCommand(
@@ -1160,6 +1341,7 @@ export class AnnotationRepository extends Service<void> {
       generation: number;
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
+      join?: HistoryJoin;
     },
   ): Promise<MutationState> {
     if (command.generation !== this.#commandGeneration) {
@@ -1270,9 +1452,478 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
+    this.#recordStep(held.attachmentKey, held.record, {
+      applied: applied.value,
+      join: command.join,
+    });
     this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#settle(annotationKey, IDLE);
+  }
+
+  /**
+   * Take one History Step in `direction`: compare what the step left in Zotero
+   * with what Zotero holds now, write the far side through this repository's
+   * own verbs, and leave the step that write made on the opposite stack.
+   *
+   * Keys are not queued. A press that meets a guard — no history, a write still
+   * in flight on the Attachment, a step already running, nothing left to step —
+   * does nothing at all rather than waiting for its turn.
+   *
+   * @see apps/obsidian/docs/adr/0059-annotation-history-is-per-attachment-checked-by-field-value-and-restores-under-a-new-key.md
+   */
+  async #stepHistory(
+    attachmentKey: string,
+    direction: HistoryDirection,
+  ): Promise<HistoryOutcome> {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#steppingAttachments.has(attachmentKey))
+      return { kind: "idle" };
+    if (this.#savePending(attachmentKey)) return { kind: "idle" };
+    const step = history.peek(direction);
+    if (!step || this.#beingEdited(step)) return { kind: "idle" };
+    // An undo is a write, so it needs the Editing Capability like any other,
+    // and the existing notice says why it did not run.
+    if (this.#writeBlocked(attachmentKey)) return { kind: "blocked" };
+
+    this.#steppingAttachments.add(attachmentKey);
+    try {
+      return await this.#takeStep(step, { attachmentKey, direction, history });
+    } finally {
+      this.#steppingAttachments.delete(attachmentKey);
+      this.#emitter.emit("history-changed", attachmentKey);
+    }
+  }
+
+  /**
+   * Whether a step stands in this direction that a press would actually take:
+   * what {@link AnnotationRepository.canUndo} and
+   * {@link AnnotationRepository.canRedo} answer, and what every surface that
+   * draws a verb reads.
+   */
+  #stepStands(attachmentKey: string, direction: HistoryDirection): boolean {
+    const step = this.#histories.get(attachmentKey)?.peek(direction);
+    return !!step && !this.#beingEdited(step);
+  }
+
+  /**
+   * Whether an Annotation Draft is open on an Annotation this step changes. An
+   * open draft is a session still being shaped, and the comment editor holding
+   * it answers these keys with its own text undo.
+   */
+  #beingEdited(step: HistoryStep): boolean {
+    return step.changes.some(({ annotationKey }) =>
+      this.commentDraftFor(annotationKey),
+    );
+  }
+
+  /**
+   * The field check and the write of one step. Every Annotation the step names
+   * is compared before any of them is written, so a step that cannot be taken
+   * whole is taken not at all.
+   */
+  async #takeStep(
+    step: HistoryStep,
+    {
+      attachmentKey,
+      direction,
+      history,
+    }: {
+      attachmentKey: string;
+      direction: HistoryDirection;
+      history: AnnotationHistory;
+    },
+  ): Promise<HistoryOutcome> {
+    if (step.kind === "existence") {
+      return await this.#takeExistenceStep(step, {
+        attachmentKey,
+        direction,
+        history,
+      });
+    }
+    const checked: { change: HistoryChange; record: AnnotationRecord }[] = [];
+    for (const change of step.changes) {
+      const record = this.#holding(change.annotationKey)?.record;
+      if (record && stillHolds(change.after, record)) {
+        checked.push({ change, record });
+        continue;
+      }
+      logger.debug("A history step was dropped: Zotero holds another value", {
+        attachmentKey,
+        annotationKey: change.annotationKey,
+        kind: step.kind,
+        missing: !record,
+      });
+      history.drop(direction, step);
+      return { kind: "changed", annotationKey: change.annotationKey };
+    }
+
+    const left: HistoryChange[] = [];
+    for (const { change, record } of checked) {
+      const { annotationKey } = change;
+      // The record the write is sent against is the far step's `before`, built
+      // the way every step's is.
+      const before = historyFieldsOf(step.kind, record) ?? change.after;
+      let outcome = await this.#stepWrite(annotationKey, change.before);
+      if (
+        outcome.kind === "conflict" &&
+        stillHeldAfterConflict(change.after, outcome.conflict)
+      ) {
+        // The `412` re-read the Annotation and it still holds what the step
+        // left there, so only the version moved: send the write once more.
+        outcome = await this.#stepWrite(annotationKey, change.before);
+      }
+      if (outcome.kind === "failed") {
+        // A write Zotero refused has already refreshed the Attachment; one
+        // refused before it left ZotLit — an Annotation no list holds, a
+        // source that moved, an Editing Capability that lapsed since the press
+        // — leaves the Attachment as it stands. Nothing of the step reached
+        // Zotero either way, so the step goes with the failure.
+        history.drop(direction, step);
+        return { kind: "failed", failure: outcome.failure };
+      }
+      if (outcome.kind !== "idle") {
+        this.discardConflict(annotationKey);
+        history.drop(direction, step);
+        return { kind: "changed", annotationKey };
+      }
+      const settled = this.#holding(annotationKey)?.record;
+      left.push({
+        annotationKey,
+        before,
+        after:
+          (settled ? historyFieldsOf(step.kind, settled) : null) ??
+          change.before,
+      });
+    }
+
+    history.drop(direction, step);
+    history.push(opposite(direction), { kind: step.kind, changes: left });
+    return { kind: "stepped", annotationKey: left[0]!.annotationKey };
+  }
+
+  /**
+   * Write one side of a History Step through the repository's own verbs, so a
+   * step carries the same version stamping, capability gate, conflict handling,
+   * and failure path as the edit it steps back. The Annotation is named as the
+   * step's own while the write is away, so what it confirms records no step.
+   */
+  async #stepWrite(
+    annotationKey: string,
+    fields: HistoryFields,
+  ): Promise<MutationState> {
+    this.#steppingWrites.add(annotationKey);
+    try {
+      if (fields.color !== undefined) {
+        return await this.patchColor(annotationKey, fields.color);
+      }
+      if (fields.comment !== undefined) {
+        return await this.patchComment(annotationKey, fields.comment);
+      }
+      if (fields.geometry !== undefined) {
+        // A step's own write joins nothing: the step it leaves behind is
+        // already the one that steps it back.
+        return await this.patchGeometry(
+          annotationKey,
+          fields.geometry,
+          "pointer",
+        );
+      }
+      return IDLE;
+    } finally {
+      this.#steppingWrites.delete(annotationKey);
+    }
+  }
+
+  /**
+   * One step of creates and deletes, taken in the other direction: what the
+   * step made is erased, and what it erased is created again.
+   *
+   * Every Annotation the step names is compared before any of them is written,
+   * so a stroke split into several Annotations is taken whole or not at all.
+   * Zotero refuses a client-supplied key, so a restore comes back under a new
+   * one and both stacks answer for it from then on.
+   *
+   * @see apps/obsidian/docs/adr/0059-annotation-history-is-per-attachment-checked-by-field-value-and-restores-under-a-new-key.md
+   */
+  async #takeExistenceStep(
+    step: HistoryStep,
+    {
+      attachmentKey,
+      direction,
+      history,
+    }: {
+      attachmentKey: string;
+      direction: HistoryDirection;
+      history: AnnotationHistory;
+    },
+  ): Promise<HistoryOutcome> {
+    for (const change of step.changes) {
+      const record = this.#holding(change.annotationKey)?.record ?? null;
+      if (sameContent(change.after.content ?? null, record)) continue;
+      logger.debug("A history step was dropped: Zotero holds another value", {
+        attachmentKey,
+        annotationKey: change.annotationKey,
+        kind: step.kind,
+        missing: !record,
+      });
+      history.drop(direction, step);
+      return { kind: "changed", annotationKey: change.annotationKey };
+    }
+
+    // The step leaves its stack before the first write rather than after the
+    // last: a restore renames the old key in every step that names it, this
+    // one included, so a step taken off by name afterwards would no longer be
+    // the step this stack holds.
+    history.drop(direction, step);
+
+    const left: HistoryChange[] = [];
+    let removed: { annotationKey: string; pageIndex: number } | null = null;
+    for (const change of step.changes) {
+      const wanted = change.before.content ?? null;
+      const standing = change.after.content;
+      if (wanted === null) {
+        if (!standing) continue;
+        const erased = await this.deleteAnnotation(change.annotationKey);
+        if (erased.kind === "failed") {
+          return { kind: "failed", failure: erased.failure };
+        }
+        if (erased.kind !== "idle") {
+          this.discardConflict(change.annotationKey);
+          return { kind: "changed", annotationKey: change.annotationKey };
+        }
+        removed ??= {
+          annotationKey: change.annotationKey,
+          pageIndex: standing.position.pageIndex,
+        };
+        left.push({
+          annotationKey: change.annotationKey,
+          before: { content: standing },
+          after: { content: null },
+        });
+        continue;
+      }
+      const made = await this.createAnnotation(attachmentKey, wanted);
+      if (made.kind === "failed") {
+        return { kind: "failed", failure: made.failure };
+      }
+      // Zotero named the restored Annotation itself, so every step of both
+      // stacks that asked after the old key asks after this one now.
+      history.rename(change.annotationKey, made.annotationKey);
+      const settled = this.#holding(made.annotationKey)?.record ?? null;
+      left.push({
+        annotationKey: made.annotationKey,
+        before: { content: null },
+        after: { content: (settled && contentOf(settled)) ?? wanted },
+      });
+    }
+
+    history.push(opposite(direction), { ...step, changes: left });
+    if (removed) return { kind: "removed", ...removed };
+    return { kind: "stepped", annotationKey: left[0]!.annotationKey };
+  }
+
+  /**
+   * Take one confirmed edit into the Attachment's Annotation History.
+   *
+   * Nothing is recorded while no PDF view of the Attachment holds a history
+   * open, and an undo's own write records nothing: the step it leaves behind is
+   * already the one that steps it back.
+   *
+   * @param before the held record the write was sent against.
+   * @param confirmed.applied what Zotero answered the write with.
+   * @param confirmed.join what this edit joins the step before it by, where it
+   *   came from an input that runs.
+   */
+  #recordStep(
+    attachmentKey: string,
+    before: AnnotationRecord,
+    { applied, join }: { applied: ConfirmedWrite; join?: HistoryJoin },
+  ): void {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#steppingWrites.has(before.key)) return;
+    if (applied.kind === "deleted") {
+      const content = contentOf(before);
+      if (content) {
+        this.#recordExistence(attachmentKey, {
+          annotationKey: applied.annotationKey,
+          before: { content },
+          after: { content: null },
+        });
+      }
+      return;
+    }
+    if (applied.kind !== "record") return;
+    if (applied.write === "comment") {
+      this.#recordCommentStep(history, {
+        attachmentKey,
+        before,
+        record: applied.record,
+      });
+      return;
+    }
+    const was = historyFieldsOf(applied.write, before);
+    const now = historyFieldsOf(applied.write, applied.record);
+    if (!was || !now) return;
+    const joined = history.record({
+      kind: applied.write,
+      changes: [{ annotationKey: applied.record.key, before: was, after: now }],
+      ...(join && { join }),
+    });
+    logger.debug("An edit was recorded in the annotation history", {
+      attachmentKey,
+      annotationKey: applied.record.key,
+      kind: applied.write,
+      joined,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Take one confirmed comment write into the step its editing session is
+   * shaping. One comment editing session is one History Step: the first save
+   * of a session records the step from the text the comment held when the
+   * session began, every later save moves only its `after`, and a session that
+   * settles on the text it began with leaves no step at all.
+   *
+   * The session is read off the history rather than off the Annotation Draft,
+   * which the repository drops and remakes around each settled save: a comment
+   * write joins the step on top where that step is this Annotation's own
+   * comment and the write was stamped off the text it left in Zotero, and
+   * starts a fresh one otherwise. So a colour pick between two comment
+   * sessions keeps them apart, a comment changed in Zotero between two saves
+   * keeps them apart too, and the Mark Popup handing the editor to an
+   * Annotation Card keeps them one.
+   */
+  #recordCommentStep(
+    history: AnnotationHistory,
+    {
+      attachmentKey,
+      before,
+      record,
+    }: {
+      attachmentKey: string;
+      /** The record the write was stamped off. */
+      before: AnnotationRecord;
+      /** The record Zotero confirmed. */
+      record: AnnotationRecord;
+    },
+  ): void {
+    const top = history.peek("undo");
+    const open =
+      top?.kind === "comment" &&
+      top.changes.length === 1 &&
+      top.changes[0]!.annotationKey === record.key &&
+      // The write was stamped off the very text that step left in Zotero, so
+      // the two saves are one session. A comment changed in Zotero between
+      // them moves the record the next write is stamped off: that session is
+      // over, and a fresh step starts holding the foreign text, so one press
+      // puts that back rather than the text the session began with.
+      sameComment(before.comment, top.changes[0]!.after.comment ?? null)
+        ? top
+        : null;
+    // A step's own `before` never moves, so the session reads its starting
+    // text from there rather than from the draft's baseline, which the last
+    // save advanced.
+    const origin = open?.changes[0]!.before.comment ?? before.comment ?? "";
+    const after = record.comment ?? "";
+    const step: HistoryStep | null = sameComment(origin, after)
+      ? null
+      : {
+          kind: "comment",
+          changes: [
+            {
+              annotationKey: record.key,
+              before: { comment: origin },
+              after: { comment: after },
+            },
+          ],
+        };
+    if (open) history.reshape(open, step);
+    else if (step) history.record(step);
+    else return;
+    logger.debug("A comment session moved in the annotation history", {
+      attachmentKey,
+      annotationKey: record.key,
+      recorded: !!step,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Take one confirmed create or delete into the Attachment's Annotation
+   * History, under the same rules every other edit is recorded under.
+   *
+   * A restore comes back under a key Zotero picks, which no caller can name in
+   * advance, so a running step keeps its own creates out by the Attachment it
+   * runs on rather than by the Annotation every other kind names.
+   *
+   * @param group what joins this create to the others of one gesture, where one
+   *   gesture created several Annotations.
+   */
+  #recordExistence(
+    attachmentKey: string,
+    change: HistoryChange,
+    group?: string,
+  ): void {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#steppingAttachments.has(attachmentKey)) return;
+    history.record({
+      kind: "existence",
+      changes: [change],
+      ...(group !== undefined && { group }),
+    });
+    logger.debug("A create or a delete was recorded in the history", {
+      attachmentKey,
+      annotationKey: change.annotationKey,
+      restores: change.before.content !== null,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Whether a save on this Attachment is on its way or still due: a write in
+   * flight, or an Annotation Draft whose autosave timer is armed. A press of
+   * the Annotation History's keys does nothing while one stands, rather than
+   * stepping past a save that would then land on top of it.
+   */
+  #savePending(attachmentKey: string): boolean {
+    if ((this.#writesInFlight.get(attachmentKey) ?? 0) > 0) return true;
+    for (const draft of this.#commentDrafts.values()) {
+      if (draft.attachmentKey !== attachmentKey) continue;
+      const save = this.#commentSaves.get(
+        commentDraftID(draft.serverID, draft.annotationKey),
+      );
+      if (!save) continue;
+      if (save.inFlight || save.idleTimer !== null || save.burstTimer !== null)
+        return true;
+    }
+    return false;
+  }
+
+  /**
+   * Count one write against its Attachment while it is in flight, which is what
+   * the Annotation History's guard reads.
+   *
+   * @param attachmentKey the Attachment the write lands on, or `undefined`
+   *   where no list holds the Annotation and the write will refuse itself.
+   */
+  async #counted<T>(
+    attachmentKey: string | undefined,
+    work: Promise<T>,
+  ): Promise<T> {
+    if (attachmentKey === undefined) return await work;
+    this.#writesInFlight.set(
+      attachmentKey,
+      (this.#writesInFlight.get(attachmentKey) ?? 0) + 1,
+    );
+    try {
+      return await work;
+    } finally {
+      const left = (this.#writesInFlight.get(attachmentKey) ?? 1) - 1;
+      if (left > 0) this.#writesInFlight.set(attachmentKey, left);
+      else this.#writesInFlight.delete(attachmentKey);
+    }
   }
 
   /**
@@ -1654,6 +2305,29 @@ export class AnnotationRepository extends Service<void> {
       save.burstTimer = null;
       void this.submitComment(draft.annotationKey, { automatic: true });
     }, COMMENT_BURST_SAVE_MS);
+  }
+
+  /**
+   * Let go of a save that has settled, whatever it left: `#savePending` reads
+   * this, and a save still named there turns away every Annotation History
+   * press on the Attachment.
+   */
+  #saveSettled(save: CommentSave): void {
+    save.inFlight = null;
+    save.submittedText = null;
+  }
+
+  /**
+   * The same, for a save whose promise rejected. Nothing else answers a
+   * rejection — the Local API seam answers a `failure` value rather than
+   * throwing — so without this the Attachment's history would be shut for the
+   * rest of the session.
+   */
+  #saveRejected(save: CommentSave, annotationKey: string): () => void {
+    return () => {
+      logger.debug("A comment save rejected, and is let go", { annotationKey });
+      this.#saveSettled(save);
+    };
   }
 
   #clearCommentTimers(save: CommentSave): void {
@@ -2134,7 +2808,12 @@ function conflictOf(
     const fresh = { position: record.position, text: record.text };
     return sameStoredGeometry(attempt.attempted, fresh)
       ? null
-      : { write: "geometry", attempted: attempt.attempted, fresh };
+      : {
+          write: "geometry",
+          attempted: attempt.attempted,
+          input: attempt.input,
+          fresh,
+        };
   }
   const { write, attempted } = attempt;
   const fresh = freshValueOf(record, write);
@@ -2237,6 +2916,7 @@ function toRecord(
     text: annotation.text,
     parentKey: attachmentKey,
     pageLabel: annotation.pageLabel,
+    sortIndex: annotation.sortIndex,
     tags: annotation.tags,
     position: parseAnnotationPosition(annotation.position, contentType),
     version: annotation.version,
@@ -2253,7 +2933,7 @@ function toRecord(
   };
 }
 
-/** The Sort Index stays with the client: it ordered the list and nothing else reads it. */
+/** The Sort Index comes across: it orders the list, and a restore sends it back. */
 function fromLocalApi({
   key,
   type,
@@ -2262,6 +2942,7 @@ function fromLocalApi({
   text,
   parentKey,
   pageLabel,
+  sortIndex,
   tags,
   position,
   version,
@@ -2279,6 +2960,7 @@ function fromLocalApi({
     text,
     parentKey,
     pageLabel,
+    sortIndex,
     tags,
     position,
     version,

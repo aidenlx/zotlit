@@ -5,6 +5,7 @@ description: "Create, change, adjust, and delete Zotero PDF annotations while re
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
@@ -160,7 +161,7 @@ For a highlight or underline, add `Ctrl` (Windows) or `Command` (macOS) to the `
 
 ### How the change saves
 
-Each drag release and each key press is one change. ZotLit sends it to Zotero at once. ZotLit also updates the annotation's place in the annotation list order, and for a highlight or underline, its quoted text. Zotero's reader and sidebar show the new position, and the image in the annotation view refreshes. ZotLit and Zotero cannot undo this change.
+Each drag release and each key press is one change. ZotLit sends it to Zotero at once. ZotLit also updates the annotation's place in the annotation list order, and for a highlight or underline, its quoted text. Zotero's reader and sidebar show the new position, and the image in the annotation view refreshes. To put the mark back where it was, see [Undo and redo a change](#undo-and-redo-a-change).
 
 If the annotation changed in Zotero while you adjusted it, the annotation card shows <UiLabel name={m.annot_view_conflict_title()} /> and says that the position changed in Zotero. For a highlight or underline, the card also shows the Zotero quote beside yours. Select <UiLabel name={m.annot_view_conflict_apply_again()} /> to save your position over the Zotero one, or <UiLabel name={m.annot_view_conflict_discard()} /> to keep the Zotero position. Until you select one, the mark shows the Zotero position.
 
@@ -173,7 +174,48 @@ If Zotero refuses the change, the mark returns to its saved position, and a noti
 3. Select <UiLabel name={m.annot_view_menu_delete()} />.
 4. In the confirmation dialog, select <UiLabel name={m.annot_view_delete_confirm_action()} />.
 
-The annotation is deleted from Zotero. ZotLit cannot undo this action.
+The annotation is deleted from Zotero. You can undo the deletion while the PDF is still open in Obsidian, but the restored annotation comes back under a new Zotero key. See [Undo and redo a change](#undo-and-redo-a-change).
+
+## Undo and redo a change
+
+While a PDF is open in Obsidian, ZotLit remembers the annotation changes it saved to Zotero for that PDF: creations, deletions, colors, comments, and positions. Undo asks Zotero for the previous value, and redo asks for the change again. Both are ordinary edits, so Zotero must be running and editing must be enabled.
+
+| Platform          | Undo        | Redo                       |
+| ----------------- | ----------- | -------------------------- |
+| macOS             | `Command+Z` | `Command+Shift+Z`          |
+| Windows and Linux | `Ctrl+Z`    | `Ctrl+Y` or `Ctrl+Shift+Z` |
+
+The keys work anywhere in the PDF view, and in the annotation view on a card you selected, as long as the PDF is open. Inside a comment editor or a text box you are typing in, the same keys undo your typing instead. A held key steps once.
+
+The command palette carries <Command inline name={m.command_undo_annotation_change_name()} /> and <Command inline name={m.command_redo_annotation_change_name()} />. Neither has a shortcut of its own, so you can assign one. The PDF view's More options menu carries the same two entries, shown dimmed when there is nothing to step that way.
+
+### What counts as one step
+
+Each creation, deletion, color change, and drag is one step. One ink stroke is one step, even where ZotLit saved a long stroke as more than one annotation.
+
+The comment text you save on one annotation is also one step, however many times it saved while you typed, and undo takes it back to the comment you started from. A change to anything else ends that step, and so does a change to that comment in Zotero, so the next comment you type on the same annotation starts a new one. A comment you leave as you found it records no step.
+
+A run of keyboard nudges on one mark is one step while the presses are less than half a second apart. A pause longer than that, or a change of any other kind, starts a new step.
+
+### What the history covers
+
+The history belongs to the PDF, not to the window. Two views of the same PDF, and the annotation view beside them, share one history in the order you made the changes. A change to another PDF is never in it.
+
+ZotLit records a change only while a view of that PDF is open, and the history ends when you close the last one. Reopening the PDF starts an empty history, so an earlier session can never revert today's work. Refreshing the data, reloading the annotations, and changes made in Zotero all leave the history standing. A new change after an undo discards the steps you could have redone. The history holds the last 100 steps and is never written to disk.
+
+After each step, the PDF view selects the annotation that changed and scrolls to it. When the step removed an annotation, the view clears the selection and returns to the page the annotation was on.
+
+### When undo stops
+
+Before it writes, ZotLit checks that Zotero still holds what your change left there. If that annotation changed in Zotero since — by hand, by sync, or from another device — ZotLit writes nothing, drops that step, and shows <UiLabel name={m.annot_history_changed_in_zotero()} />. Press undo again to try the step before it. A Zotero change to a different field of the same annotation does not stop the undo, and neither does a Zotero value that already equals the one the undo would write.
+
+Undo and redo do nothing while a change is still saving, or while you have unsaved comment text on an annotation the step would change. When editing is not enabled, they show the same notice as any other blocked edit.
+
+### A restored annotation gets a new key
+
+Zotero cannot bring a deleted annotation back under its old key. When you undo a deletion, or redo a creation you undid, Zotero creates the annotation again with its color, comment, text, and position, but under a new Zotero key.
+
+Links in your notes, excerpt images, and `obsidian://` URIs that name the old key no longer resolve. ZotLit shows no notice for this. Pull the restored annotation into the note again, or update the key by hand.
 
 ## See also
 

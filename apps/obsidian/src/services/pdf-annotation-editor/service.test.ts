@@ -13,6 +13,7 @@ import {
   annotationReads,
   attachmentReads,
   capabilityGestures,
+  dispatchKey,
   failedIn,
   markGestures,
   pageView,
@@ -143,6 +144,16 @@ function markedKeys(page: { div: HTMLElement }): (string | undefined)[] {
     ...page.div.querySelectorAll<SVGElement>("[data-zotero-annotation-key]"),
   ].map((mark) => mark.dataset.zoteroAnnotationKey);
 }
+
+// The Reader Keymap binds the Annotation History keys for the host platform,
+// which every binding these tests build reads as it mounts.
+beforeEach(() => {
+  setMockPlatform({ isMacOS: false });
+});
+
+afterEach(() => {
+  resetMockPlatform();
+});
 
 it("binds an open PDF view, resolves its vault path, and unbinds on unload", async () => {
   const reader = pdfReader();
@@ -1207,4 +1218,86 @@ it("probes before a blocked keystroke is answered, and stays out of the way othe
   await press("h");
   expect(annotations.probe).toHaveBeenCalledTimes(2);
   expect(gestures.reportBlockedGesture).toHaveBeenCalledTimes(2);
+});
+
+it("opens one Annotation History per Attachment and ends it with the last view", async () => {
+  const first = pdfView("attachments/rougier-2014.pdf");
+  const second = pdfView("attachments/rougier-2014.pdf");
+  const annotations = annotationReads();
+  const open = [{ view: first }, { view: second }];
+  const { app, relayout } = workspace(open);
+  const service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: capabilityGestures(),
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+
+  {
+    await using _service = service;
+    await service.ready;
+
+    // Two views of one Attachment share one history.
+    expect(annotations.histories).toEqual(new Map([["ABCD2345", 2]]));
+
+    open.pop();
+    relayout();
+    expect(annotations.histories).toEqual(new Map([["ABCD2345", 1]]));
+  }
+
+  // Plugin unload closed the last view, and the history ended with it.
+  expect(annotations.histories).toEqual(new Map());
+});
+
+it("lands on the Annotation an undo changed, and reports one Zotero moved", async () => {
+  const reader = pdfReader();
+  const view = pdfView("attachments/rougier-2014.pdf", reader);
+  const annotations = annotationReads([HIGHLIGHT]);
+  const gestures = capabilityGestures();
+  const { app } = workspace([{ view }]);
+
+  await using service = new PdfAnnotationEditor({
+    app,
+    attachments: attachmentReads(RESOLVED),
+    annotations,
+    capabilityGestures: gestures,
+    markGestures: markGestures(),
+    settings: readerSettings(),
+    noteIndex: new NoteIndexStub(),
+  });
+  await service.ready;
+  const binding = service.bindings[0]!;
+  await binding.refreshed;
+  reader.renderFirstPage();
+  await binding.probed;
+
+  annotations.undo.mockResolvedValueOnce({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  dispatchKey(view.scope, { key: "z", ctrlKey: true }, view.containerEl);
+  await binding.stepped;
+
+  expect(annotations.undo).toHaveBeenCalledExactlyOnceWith("ABCD2345");
+  // Mark Landing: the Annotation the step changed is the one selected.
+  expect(selectedKeys(reader.page)).toEqual(["PUPR5FG5"]);
+
+  // Editing that is not allowed now reports itself the way every other
+  // blocked edit gesture does.
+  annotations.redo.mockResolvedValueOnce({ kind: "blocked" });
+  annotations.setCapability({
+    kind: "read-only",
+    reason: "local-api-disabled",
+  });
+  dispatchKey(view.scope, { key: "y", ctrlKey: true }, view.containerEl);
+  await binding.stepped;
+  await binding.gestured;
+
+  expect(annotations.redo).toHaveBeenCalledExactlyOnceWith("ABCD2345");
+  expect(gestures.reportBlockedGesture).toHaveBeenCalledExactlyOnceWith(
+    "ABCD2345",
+  );
 });

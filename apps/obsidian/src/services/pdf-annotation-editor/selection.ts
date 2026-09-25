@@ -31,6 +31,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
   CommentDraft,
+  GeometryInput,
 } from "@/services/annotation-repository/service";
 import {
   writeFailureMessage,
@@ -645,7 +646,7 @@ export class MarkSelection implements Disposable {
             return;
           }
           moveAdjust(store, rectsPositionOf(selected), selected.text);
-          return this.#settle(record.key);
+          return this.#settle(record.key, "keyboard");
         })
         .catch((error: unknown) => {
           cancelAdjust(store);
@@ -669,7 +670,7 @@ export class MarkSelection implements Disposable {
     if (!keyed) return true;
     beginAdjust(store, { grip: keyed.grip, from: [0, 0] });
     moveAdjust(store, keyed.proposal);
-    const saving = this.#settle(record.key);
+    const saving = this.#settle(record.key, "keyboard");
     if (saving) this.#adjusting = saving;
     return true;
   }
@@ -860,7 +861,8 @@ export class MarkSelection implements Disposable {
     this.#dragging = releaseCapture(this.#deps.containerEl, this.#dragging);
     const key = this.#selectedKey();
     const store = this.#deps.surfaceState;
-    const settle = () => (key === null ? undefined : this.#settle(key));
+    const settle = () =>
+      key === null ? undefined : this.#settle(key, "pointer");
     // A text range's last proposal may still be on its way from the document.
     const adjust = selectAdjust(store.getState());
     if (isRangeGrip(adjust?.grip ?? "body")) {
@@ -891,13 +893,17 @@ export class MarkSelection implements Disposable {
   /**
    * Ends the adjustment and saves its proposal, unless it changed nothing.
    *
+   * @param input what made the edit, which the Annotation History groups a run
+   *   of keyboard edits by.
    * @returns the save, or `undefined` where nothing is written.
    */
-  #settle(key: string): Promise<void> | undefined {
+  #settle(key: string, input: GeometryInput): Promise<void> | undefined {
     const store = this.#deps.surfaceState;
     const text = selectAdjust(store.getState())?.text;
     const proposal = endAdjust(store);
-    return proposal ? this.#saveGeometry(key, proposal, text) : undefined;
+    return proposal
+      ? this.#saveGeometry(key, proposal, { text, input })
+      : undefined;
   }
 
   #cancelDrag(): void {
@@ -915,7 +921,7 @@ export class MarkSelection implements Disposable {
   async #saveGeometry(
     key: string,
     proposal: EditablePosition,
-    text?: string,
+    { text, input }: { text?: string; input: GeometryInput },
   ): Promise<void> {
     const store = this.#deps.surfaceState;
     const end = () => {
@@ -933,11 +939,15 @@ export class MarkSelection implements Disposable {
       end();
       return;
     }
-    const outcome = this.#deps.annotations.patchGeometry(key, {
-      position: proposal,
-      sortIndex,
-      ...(text !== undefined && { text }),
-    });
+    const outcome = this.#deps.annotations.patchGeometry(
+      key,
+      {
+        position: proposal,
+        sortIndex,
+        ...(text !== undefined && { text }),
+      },
+      input,
+    );
     this.#write(outcome, (failure, now) =>
       m.pdf_adjust_failed({ reason: writeFailureReason(failure, now) }),
     );

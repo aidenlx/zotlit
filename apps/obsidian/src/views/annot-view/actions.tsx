@@ -225,8 +225,9 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
-   * Nothing ZotLit holds can put a deleted Annotation back, so the erase asks
-   * once against the card the user can see.
+   * An erase leaves Zotero holding nothing, and the Annotation History puts it
+   * back only under a new key, so the delete asks once against the card the
+   * user can see.
    *
    * @see apps/obsidian/policies/ui-seams.md
    */
