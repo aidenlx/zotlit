@@ -187,9 +187,14 @@ async function startRenderProbe(
   stack.defer(() => disposeRenderProbe(vaultId));
   if ((await obEval(vaultId, "String(!!app.__zotlitExcerptProbe)")) === "true")
     await disposeRenderProbe(vaultId);
+  // The resolution ends by destroying its PDF.js document, which terminates
+  // that document's Web Worker. A memory dump requested while the worker exits
+  // waits out Chromium's 15 s dump timeout and rejects, and the next request
+  // answers at once; no event says when the worker is gone. So the `after`
+  // sample asks once more after a rejection, well inside `result()`'s wait.
   await obEval(
     vaultId,
-    `(async()=>{if(app.__zotlitExcerptProbe)throw new Error('Excerpt probe already active');const service=app.plugins.plugins.zotlit.services.excerptImage;const diagnostics=service.rendererDiagnostics;if(!diagnostics)throw new Error('Excerpt renderer diagnostics unavailable');diagnostics.hold(${JSON.stringify(phase)});const request=${requestScript(index)};request.sourceScope+=':probe:'+${JSON.stringify(phase)}+':'+performance.now();const state={settled:false,outcome:null,originalToBlob:HTMLCanvasElement.prototype.toBlob,controller:new AbortController(),diagnostics,service,request,before:await process.getProcessMemoryInfo(),after:null,completion:null};app.__zotlitExcerptProbe=state;state.completion=service.resolve(request,state.controller.signal).then(value=>{state.outcome={kind:value.kind};},error=>{state.outcome={name:error?.name??String(error)};}).finally(async()=>{state.after=await process.getProcessMemoryInfo().catch(()=>null);state.settled=true;});void state.completion;return true;})()`,
+    `(async()=>{if(app.__zotlitExcerptProbe)throw new Error('Excerpt probe already active');const service=app.plugins.plugins.zotlit.services.excerptImage;const diagnostics=service.rendererDiagnostics;if(!diagnostics)throw new Error('Excerpt renderer diagnostics unavailable');diagnostics.hold(${JSON.stringify(phase)});const request=${requestScript(index)};request.sourceScope+=':probe:'+${JSON.stringify(phase)}+':'+performance.now();const state={settled:false,outcome:null,originalToBlob:HTMLCanvasElement.prototype.toBlob,controller:new AbortController(),diagnostics,service,request,before:await process.getProcessMemoryInfo(),after:null,completion:null};app.__zotlitExcerptProbe=state;state.completion=service.resolve(request,state.controller.signal).then(value=>{state.outcome={kind:value.kind};},error=>{state.outcome={name:error?.name??String(error)};}).finally(async()=>{state.after=await process.getProcessMemoryInfo().catch(()=>process.getProcessMemoryInfo()).catch(()=>null);state.settled=true;});void state.completion;return true;})()`,
   );
   expect(
     await obEvalUntil(
