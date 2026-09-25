@@ -10,7 +10,6 @@ import {
 } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, RefObject } from "react";
 
-import { tagTypeToName } from "@zotlit/db";
 import type { ResolvedAnnotationTypeName } from "@zotlit/db";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -63,7 +62,7 @@ import {
   useToggleSelectedTag,
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
-import { TagEditor } from "./tag-editor";
+import { autoTags, TagEditor } from "./tag-editor";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -385,15 +384,6 @@ function useTagSession(annot: AnnotationRecord) {
       actions.onSaveTags(annot);
     },
   };
-}
-
-/** The names Zotero holds as automatic tags on this Annotation. */
-function autoTags(annot: AnnotationRecord): ReadonlySet<string> {
-  return new Set(
-    annot.tagDetails
-      ?.filter(({ type }) => tagTypeToName(type) === "auto")
-      .map(({ name }) => name),
-  );
 }
 
 /**

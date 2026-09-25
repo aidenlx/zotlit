@@ -1316,6 +1316,85 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           .toEqual([typed, kept]);
       }, 120000);
 
+      it("adds and removes tags from the Mark Popup, and Zotero holds the list", async () => {
+        // The Mark Popup's tag verb opens the same inline editor under the
+        // comment; its second press ends the session with its one write. As on
+        // the card, the session ends through the verb: a window without the
+        // system focus sends no focus events.
+        const mark = `${pdfView}?.containerEl.querySelector('.zt-pdf-annotation-mark[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')`;
+        const popup = "document.querySelector('.zt-pdf-mark-popup')";
+        const section = `${popup}?.querySelector('[data-zt-section=tags]')`;
+        const { editorOpen, editorChips, type, remove } = tagEditorIn(section);
+        const pressVerb = () =>
+          obEvalUntil(
+            vaultId!,
+            `(function(){const verb=${popup}?.querySelector('[data-zt-verb=tags]');if(!verb)return 'absent';verb.click();return 'pressed';})()`,
+            { expected: "pressed" },
+          );
+        /** The read-only chips under the comment, by name, while no editor is open. */
+        const popupTags = () =>
+          obJson<string[] | null>(
+            `JSON.stringify((${section})?.querySelector('.zt-annot-tag-input')?null:[...((${section})?.querySelectorAll(':scope > div > span')??[])].map(chip=>chip.textContent).sort())`,
+          );
+        const storedTags = () => annotationTags(api, serverID, createdKey);
+        const poll = { timeout: 10_000, interval: 250 };
+        const kept = "End-to-end Run tag, kept whole";
+        const removed = "End-to-end Run tag left typed";
+        const added = "End-to-end Run tag from the popup";
+        // The case's own tags, whatever the cases before it left.
+        await setAnnotationTags(rdp, createdKey, [
+          { tag: removed },
+          { tag: kept },
+        ]);
+
+        // A click on the mark's body selects it, as a researcher would. A
+        // seeded underline lies under the same point, so the popup's stepper
+        // walks the stack to the created mark.
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const view=${pdfView};if(!view)return 'no view';view.viewer.child.pdfViewer.pdfViewer.currentPageNumber=1;const rect=(${mark})?.getBoundingClientRect();return String(!!rect&&rect.width>0);})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        await obEval(
+          vaultId!,
+          `(function(){${FIRE}${TAP}const rect=(${mark}).getBoundingClientRect();tap(rect.left+rect.width/2,rect.top+rect.height/2);return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){if(!${popup})return 'no popup';if((${mark})?.classList.contains('is-selected'))return 'selected';${popup}.querySelector('[data-zt-verb=stack]')?.click();return 'stepped';})()`,
+            { expected: "selected" },
+          ),
+        ).toBe(true);
+        // The tags show read-only under the comment.
+        await expect.poll(popupTags, poll).toEqual([removed, kept].toSorted());
+
+        expect(await pressVerb()).toBe(true);
+        expect(await editorOpen()).toBe(true);
+        // Each chip is the signal that the gesture landed.
+        await type(added, { enter: true });
+        await expect.poll(editorChips, poll).toContain(added);
+        expect(await remove(removed)).toBe("removed");
+        await expect.poll(editorChips, poll).not.toContain(removed);
+        // Nothing reaches Zotero while the session stands.
+        expect(await storedTags()).toStrictEqual([`${removed}:0`, `${kept}:0`]);
+        expect(await pressVerb()).toBe(true);
+
+        await expect
+          .poll(storedTags, poll)
+          .toEqual([`${added}:0`, `${kept}:0`]);
+        // The popup closes onto the confirmed tags, and the selection stays.
+        await expect.poll(popupTags, poll).toEqual([added, kept].toSorted());
+        expect(
+          await obEval(
+            vaultId!,
+            `String(!!(${mark})?.classList.contains('is-selected'))`,
+          ),
+        ).toBe("true");
+      }, 120000);
+
       describe("the image tool on the first page", () => {
         const tool = toolButtonOf(pdfView, "image");
         const clientOf = clientOfFirstPage(pdfView);
@@ -4509,25 +4588,8 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               cardTagEditor(historyKey);
             const storedTags = () => annotationTags(api, serverID, historyKey);
 
-            /** Sets the tags in Zotero itself, and waits until ZotLit reads them. */
-            async function setTagsInZotero(tags: readonly WireTag[]) {
-              await rdp.json(`(async () => {
-                const item = Zotero.Items.getByLibraryAndKey(
-                  Zotero.Libraries.userLibraryID,
-                  ${JSON.stringify(historyKey)},
-                );
-                item.setTags(${JSON.stringify(tags)});
-                await item.saveTx();
-                return "saved";
-              })()`);
-              expect(
-                await obEvalUntil(
-                  vaultId!,
-                  `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
-                  { expected: JSON.stringify(spelledTags(tags)) },
-                ),
-              ).toBe(true);
-            }
+            const setTagsInZotero = (tags: readonly WireTag[]) =>
+              setAnnotationTags(rdp, historyKey, tags);
 
             /**
              * The toggle's second press, which ends the session and saves it
@@ -5945,6 +6007,33 @@ async function annotationTags(
 }
 
 /**
+ * Sets one Annotation's tags in Zotero itself, and waits until ZotLit reads
+ * them.
+ */
+async function setAnnotationTags(
+  rdp: ZoteroRdp,
+  annotationKey: string,
+  tags: readonly WireTag[],
+): Promise<void> {
+  await rdp.json(`(async () => {
+    const item = Zotero.Items.getByLibraryAndKey(
+      Zotero.Libraries.userLibraryID,
+      ${JSON.stringify(annotationKey)},
+    );
+    item.setTags(${JSON.stringify(tags)});
+    await item.saveTx();
+    return "saved";
+  })()`);
+  expect(
+    await obEvalUntil(
+      vaultId!,
+      `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(annotationKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
+      { expected: JSON.stringify(spelledTags(tags)) },
+    ),
+  ).toBe(true);
+}
+
+/**
  * One Annotation Card's tag gestures, through the card's own controls: the tag
  * toggle and a click on the tag row's empty space open the editor, Enter adds
  * the typed name, a chip's remove button drops it, and the toggle's second
@@ -5957,6 +6046,7 @@ async function annotationTags(
 function cardTagEditor(annotationKey: string) {
   const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]')).find(Boolean)`;
   return {
+    ...tagEditorIn(card),
     /** One click on a part of the card, once the card draws it. */
     press: (target: string) =>
       obEvalUntil(
@@ -5966,27 +6056,38 @@ function cardTagEditor(annotationKey: string) {
       ),
     /** The tag toggle in the card's action bar. */
     toggle: ".clickable-icon:has(svg.lucide-tag)",
-    editorOpen: () =>
-      obEvalUntil(
-        vaultId!,
-        `String(!!(${card})?.querySelector('.zt-annot-tag-input'))`,
-        { expected: "true" },
-      ),
     /** The names the card draws while no session is open. */
     cardTags: () =>
       obJson<string[]>(
         `JSON.stringify([...((${card})?.querySelectorAll('[aria-pressed]')??[])].map(chip=>chip.textContent))`,
       ),
+  };
+}
+
+/**
+ * The inline tag editor inside one surface, the Annotation Card or the Mark
+ * Popup: one editor component, so one set of gestures reaches both.
+ *
+ * @param root an expression for the element that holds the editor.
+ */
+function tagEditorIn(root: string) {
+  return {
+    editorOpen: () =>
+      obEvalUntil(
+        vaultId!,
+        `String(!!(${root})?.querySelector('.zt-annot-tag-input'))`,
+        { expected: "true" },
+      ),
     /** The names the open editor draws as chips. */
     editorChips: () =>
       obJson<string[]>(
-        `JSON.stringify([...((${card})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
+        `JSON.stringify([...((${root})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
       ),
     /** Text typed into the tag field; `enter` presses Enter after it. */
     type: (text: string, { enter }: { enter: boolean }) =>
       obEval(
         vaultId!,
-        `(function(){const field=(${card}).querySelector('.zt-annot-tag-input');field.value=${JSON.stringify(text)};field.dispatchEvent(new Event('input',{bubbles:true}));if(${enter})field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return 'typed';})()`,
+        `(function(){const field=(${root}).querySelector('.zt-annot-tag-input');field.value=${JSON.stringify(text)};field.dispatchEvent(new Event('input',{bubbles:true}));if(${enter})field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return 'typed';})()`,
       ),
     /**
      * One chip's remove button. The chip is found by its name part, because
@@ -5995,7 +6096,7 @@ function cardTagEditor(annotationKey: string) {
     remove: (name: string) =>
       obEval(
         vaultId!,
-        `(function(){const chip=[...(${card}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
+        `(function(){const chip=[...(${root}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
       ),
   };
 }

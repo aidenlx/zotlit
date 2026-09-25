@@ -141,6 +141,7 @@ export type AnnotationReads = Pick<
   | "deleteAnnotation"
   | "discardCommentDraft"
   | "editComment"
+  | "editTags"
   | "mutationFor"
   | "on"
   | "openHistory"
@@ -152,6 +153,8 @@ export type AnnotationReads = Pick<
   | "refresh"
   | "retryCommentDraft"
   | "submitComment"
+  | "submitTags"
+  | "tagDraftFor"
   | "undo"
 >;
 
@@ -197,6 +200,8 @@ export interface PdfViewBindingDeps {
   toolColors: ToolColorStore;
   /** The Literature Notes a rendered comment's links resolve against. */
   noteIndex: CommentNotes;
+  /** The tag names of an Annotation's Library, which the tag editor suggests. */
+  libraryTagNames: (annotationKey: string) => readonly string[];
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -225,6 +230,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #markGestures;
   readonly #toolColors;
   readonly #noteIndex;
+  readonly #libraryTagNames;
   readonly #now;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /**
@@ -320,6 +326,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     markGestures,
     toolColors,
     noteIndex,
+    libraryTagNames,
     now = () => Temporal.Now.instant(),
   }: PdfViewBindingDeps) {
     this.#view = view;
@@ -330,6 +337,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#markGestures = markGestures;
     this.#toolColors = toolColors;
     this.#noteIndex = noteIndex;
+    this.#libraryTagNames = libraryTagNames;
     this.#now = now;
   }
 
@@ -801,6 +809,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         component: this.#view,
         getSourcePath: () => this.#commentSourcePath(),
       }),
+      libraryTagNames: this.#libraryTagNames,
       containerEl: this.#view.containerEl,
       popup,
       selectionSurfaces: this.#session,
@@ -913,6 +922,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
         selected: {
           anchor: () => selection.anchor(),
           render: (content) => selection.renderPopup(content),
+          release: () => selection.releasePopup(),
         },
         create: {
           anchor: () => creation.anchor(),

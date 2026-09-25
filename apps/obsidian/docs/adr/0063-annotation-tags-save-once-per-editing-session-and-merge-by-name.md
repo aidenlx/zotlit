@@ -21,5 +21,6 @@ The tag draft follows ADR 0048's comment rules for authorization and failure, as
 
 - While the Editing Capability is off, the tag toggle and the tag verb are disabled with a short reason, as [ADR 0047](0047-annotation-reading-is-continuous-and-editing-is-an-added-capability.md) requires. The chips still show, and a chip click still toggles the Annotation Filter.
 - A card whose new tags no longer satisfy the Annotation Filter leaves the list when the save is confirmed.
+- In the Mark Popup, a session also ends on the tag verb's second press, when the selection moves to another mark, when the popup hides, and when the editor unmounts, as it does when the PDF view closes. Each end saves the session once. The tag editor and the comment editor are mutually exclusive in the Mark Popup: opening one closes the other, and the comment editor stores its text first.
 - The creation Mark Popup has no tag verb. The popup reopens on the new mark, where tags can be added. Tags in the create request can come later without a change to this model.
 - Tag names are suggested from the tags of the Annotation's Library.

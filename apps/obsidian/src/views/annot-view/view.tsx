@@ -18,7 +18,6 @@ import {
   getAttachmentByKey,
   getItemRefByID,
   getItemsByKey,
-  getLibraryTagNames,
   getLibraries,
   isChildItemFields,
   parseIndexedKey,
@@ -48,6 +47,7 @@ import {
   IDLE,
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
+import { libraryTagNames } from "@/services/database/library-tag-names";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
@@ -376,7 +376,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
-      libraryTagNames: (annot) => this.#libraryTagNames(annot),
+      libraryTagNames: (annot) => libraryTagNames(this.#deps.db, annot.key),
       getState: () => this.#store.getState(),
       setSelectedAttachmentKey: (key) =>
         this.#store.setState({ selectedAttachmentKey: key }),
@@ -1217,26 +1217,6 @@ export class AnnotationView extends ItemView implements HistorySurface {
         error,
       });
       return null;
-    }
-  }
-
-  /**
-   * The tag names in use in the Annotation's Library, which the tag editor
-   * suggests. The Zotero database answers them, so a tag saved moments ago
-   * joins once the database has caught up.
-   */
-  #libraryTagNames(annot: AnnotationRecord): readonly string[] {
-    if (this.#deps.db.state !== "ready") return [];
-    try {
-      const client = this.#deps.db.client;
-      const library = resolveIndexedKeyLibrary(client, annot.key);
-      return library ? getLibraryTagNames(client, library.libraryID) : [];
-    } catch (error) {
-      logger.warn("Failed to read a library's tag names", {
-        annotationKey: annot.key,
-        error,
-      });
-      return [];
     }
   }
 

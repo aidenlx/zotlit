@@ -10,12 +10,14 @@ import type { App } from "obsidian";
 import { useId, useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 
+import { tagTypeToName } from "@zotlit/db";
 import { TagsInput, useTagsInput } from "@zotlit/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { useObsidianApp } from "@/lib/app-context";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
+import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
 import { tagChipVariants } from "./tag-chip";
 
@@ -33,16 +35,30 @@ export interface TagEditorProps {
   onClose: () => void;
   /**
    * Where the editor puts its own end of the session, for a gesture outside
-   * it, such as the card's tag toggle. That end adds the typed text first.
+   * it, such as the card's tag toggle. That end adds the typed text first,
+   * unless `withText` is `false`, as for Escape.
    */
-  endRef: RefObject<(() => void) | null>;
+  endRef: RefObject<((withText?: boolean) => void) | null>;
+  /**
+   * What focus may move within without ending the session; the editor itself
+   * by default. The Mark Popup passes its content, so its own verbs stand
+   * beside the editor.
+   */
+  within?: HTMLElement;
+  /**
+   * Where the editor puts Obsidian's suggestion popup while it shows, for a
+   * surface that stands down on a press outside itself: the popup hangs
+   * outside the editor, and a press on a suggestion picks it.
+   */
+  suggestRef?: RefObject<HTMLElement | null>;
 }
 
 /**
  * One tag editing session, drawn in place of the tag chips. Enter adds the
  * typed name and a comma stays part of it. Focus leaving the editor, the
  * editor going away, or {@link TagEditorProps.endRef} ends the session with
- * the typed text added; Escape ends it without that text.
+ * the typed text added; Escape anywhere in the editor ends it without that
+ * text. After the end, a change such as a late pick changes nothing.
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
@@ -54,6 +70,8 @@ export function TagEditor({
   onChange,
   onClose,
   endRef,
+  within,
+  suggestRef,
 }: TagEditorProps) {
   return (
     <TagsInput.Root
@@ -108,6 +126,8 @@ export function TagEditor({
         libraryNames={libraryNames}
         onClose={onClose}
         endRef={endRef}
+        within={within}
+        suggestRef={suggestRef}
       />
     </TagsInput.Root>
   );
@@ -122,7 +142,12 @@ function TagField({
   libraryNames,
   onClose,
   endRef,
-}: Pick<TagEditorProps, "saving" | "libraryNames" | "onClose" | "endRef">) {
+  within,
+  suggestRef,
+}: Pick<
+  TagEditorProps,
+  "saving" | "libraryNames" | "onClose" | "endRef" | "within" | "suggestRef"
+>) {
   const app = useObsidianApp();
   const { value, add } = useTagsInput();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -134,10 +159,16 @@ function TagField({
    * disables both end the same session.
    */
   const ended = useRef(false);
-  const endSession = useRef<(withText: boolean) => void>(() => {});
   // The suggester and the focus listener outlive renders; they read these.
-  const latest = useRef({ value, add, onClose, libraryNames });
-  latest.current = { value, add, onClose, libraryNames };
+  const latest = useRef({
+    value,
+    add,
+    onClose,
+    libraryNames,
+    within,
+    suggestRef,
+  });
+  latest.current = { value, add, onClose, libraryNames, within, suggestRef };
 
   useLayoutEffect(() => {
     const input = inputRef.current;
@@ -158,20 +189,39 @@ function TagField({
     suggest.current = new TagSuggest(app, input, {
       names: () => library,
       taken: () => latest.current.value,
-      pick: (name) => latest.current.add(name),
+      // A pick that lands after the end, such as a click on a suggestion
+      // that outlived its editor, adds nothing.
+      pick: (name) => {
+        if (!ended.current) latest.current.add(name);
+      },
+      shown: (el) => {
+        const ref = latest.current.suggestRef;
+        if (ref) ref.current = el;
+      },
     });
     // Focus moving between the field and a remove button stays inside the
     // session; focus leaving the editor ends it.
     const leave = (event: FocusEvent) => {
-      if (editor.contains(event.relatedTarget as Node | null)) return;
+      const bound = latest.current.within ?? editor;
+      if (bound.contains(event.relatedTarget as Node | null)) return;
       end(true);
     };
+    // Escape closes the editor alone, never a surface around it, wherever in
+    // the editor focus stands: the field or a chip's remove button. With the
+    // suggestion popup open, Escape is the popup's.
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || suggest.current?.showing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      end(false);
+    };
     editor.addEventListener("focusout", leave as EventListener);
-    endSession.current = end;
-    endRef.current = () => end(true);
+    editor.addEventListener("keydown", escape as EventListener);
+    endRef.current = (withText = true) => end(withText);
     input.focus({ preventScroll: true });
     return () => {
       editor.removeEventListener("focusout", leave as EventListener);
+      editor.removeEventListener("keydown", escape as EventListener);
       suggest.current?.close();
       suggest.current = null;
       endRef.current = null;
@@ -182,16 +232,10 @@ function TagField({
   }, [app, endRef]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
-    const open = suggest.current?.showing ?? false;
     // The popup answers Enter with the highlighted name, which is the typed
     // text itself until the user moves to a Library name.
-    if (event.key === "Enter" && open) event.preventDefault();
-    if (event.key === "Escape" && !open) {
-      // Escape closes the editor alone, never a surface around it.
+    if (event.key === "Enter" && suggest.current?.showing)
       event.preventDefault();
-      event.stopPropagation();
-      endSession.current(false);
-    }
   };
 
   return (
@@ -228,6 +272,8 @@ interface TagSuggestSource {
   /** The names the Annotation already carries, which are no addition. */
   taken(): readonly string[];
   pick(name: string): void;
+  /** The popup's element as it shows, and `null` as it closes. */
+  shown(el: HTMLElement | null): void;
 }
 
 /**
@@ -253,11 +299,13 @@ class TagSuggest extends AbstractInputSuggest<string> {
   override open(): void {
     super.open();
     this.#open = true;
+    this.#source.shown(this.suggestEl);
   }
 
   override close(): void {
     super.close();
     this.#open = false;
+    this.#source.shown(null);
   }
 
   override getSuggestions(query: string): string[] {
@@ -283,4 +331,13 @@ class TagSuggest extends AbstractInputSuggest<string> {
     this.#source.pick(name);
     this.close();
   }
+}
+
+/** The names Zotero holds as automatic tags on this Annotation. */
+export function autoTags(annot: AnnotationRecord): ReadonlySet<string> {
+  return new Set(
+    annot.tagDetails
+      ?.filter(({ type }) => tagTypeToName(type) === "auto")
+      .map(({ name }) => name),
+  );
 }

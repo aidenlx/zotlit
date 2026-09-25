@@ -98,6 +98,7 @@ import type { HitPage, MarkSelectionPoint, PageBox, Point } from "./hit-test";
 import { markPopupRow, popupColumn, renderMarkPopupRow } from "./mark-popup";
 import type { MarkPopupControlId, MarkPopupRowInput } from "./mark-popup";
 import type { MarkPopupHost } from "./mark-popup-host";
+import { MarkPopupTags, tagSectionShows } from "./mark-popup-tags";
 import {
   beginAdjust,
   cancelAdjust,
@@ -110,8 +111,10 @@ import {
   selectMark,
   selectSelectedDraft,
   selectSelectedKey,
+  selectSelectedTagDraft,
   recordColorUse,
   setCommenting,
+  setTagging,
   stepStack,
 } from "./reader-surface-state";
 import type {
@@ -149,10 +152,12 @@ export type AnnotationEdits = Pick<
   | "deleteAnnotation"
   | "discardCommentDraft"
   | "editComment"
+  | "editTags"
   | "patchColor"
   | "patchGeometry"
   | "retryCommentDraft"
   | "submitComment"
+  | "submitTags"
 >;
 
 /** How a selection taken from outside the reader opens its Mark Popup. */
@@ -200,6 +205,8 @@ export interface MarkSelectionDeps {
   app: App;
   /** Renders a stored comment as the Annotation Card does. */
   renderComment: CommentRenderer;
+  /** The tag names of an Annotation's Library, which the tag editor suggests. */
+  libraryTagNames: (annotationKey: string) => readonly string[];
   /**
    * The one popup of this view: a press inside it leaves the selection
    * standing, and a scroll re-hangs it.
@@ -283,6 +290,8 @@ export class MarkSelection implements Disposable {
     editable: boolean;
     dispose: () => void;
   } | null = null;
+  /** The popup's tag section, while it stands in the popup's content. */
+  #tags: MarkPopupTags | null = null;
   #pressedAt: Point | null = null;
   /** The pointer a Geometry Edit holds, and where it last stood. */
   #dragging: { pointerId: number; client: Point } | null = null;
@@ -441,12 +450,19 @@ export class MarkSelection implements Disposable {
     );
     // The editor goes with the episode it was opened for: a closed editor, a
     // stepped or dropped selection, and a hidden or conflicting draft alike.
+    // A tag editing session is saved as it ends, however it ends.
     this.#surfaces.defer(
       state.subscribe(
         selectFloatingHead,
-        ({ kind, commenting }) => {
+        (head, previous) => {
+          const { kind, commenting } = head;
           if (kind !== "selected" || !commenting) this.#closeCommentEditor();
           if (kind !== "selected" || commenting) this.#closeCommentView();
+          if (!previous.tagging || previous.key === null) return;
+          if (head.tagging && head.key === previous.key) return;
+          // The editor adds the text still typed before the save reads it.
+          this.#tags?.end();
+          this.#submitTags(previous.key);
         },
         { equalityFn: sameFlat },
       ),
@@ -478,6 +494,8 @@ export class MarkSelection implements Disposable {
   [Symbol.dispose](): void {
     this.#submitAndCloseCommentEditor();
     this.#closeCommentView();
+    this.#endTagSession();
+    this.releasePopup();
     this.#surfaces.dispose();
     if (this.#selectedKey() !== null) selectMark(this.#deps.surfaceState, null);
   }
@@ -550,12 +568,15 @@ export class MarkSelection implements Disposable {
   /**
    * Escape on the selected mark, which the Reader Keymap runs ahead of the
    * creation surfaces: a drag is taken back first, and the selection only
-   * after.
+   * after. An open tag editor closes alone, as Escape inside it does, though
+   * focus stands on a chip's remove button or a verb beside it.
    *
    * @returns whether a mark was selected to step back from.
    */
   escape(): boolean {
     if (this.#selectedKey() === null) return false;
+    if (selectFloatingHead(this.#state()).tagging && this.#tags?.end(false))
+      return true;
     if (this.#dragging) this.#cancelDrag();
     else this.#apply(null);
     return true;
@@ -966,6 +987,8 @@ export class MarkSelection implements Disposable {
     const target = event.target as Node | null;
     if (this.#deps.containerEl.contains(target)) return;
     if (this.#deps.popup.contains(target)) return;
+    // The tag editor's suggestion popup hangs outside the Mark Popup.
+    if (this.#tags?.contains(target)) return;
     if (this.#deps.selectionSurfaces.onSelectionSurface(target)) return;
     this.#apply(null);
   }
@@ -979,14 +1002,86 @@ export class MarkSelection implements Disposable {
   renderPopup(content: HTMLElement): void {
     const input = selectSelectedRowInput(this.#state());
     if (!input) return;
-    if (input.commenting && content.firstChild && this.#commentEditor) {
-      if (this.#row) this.#renderVerbs(this.#row, input);
+    const editing =
+      (input.commenting && this.#commentEditor !== null) ||
+      (input.tagging && this.#tags !== null);
+    const built = this.#row?.parentElement;
+    if (content.firstChild && editing && this.#row && built) {
+      this.#renderVerbs(this.#row, input);
       this.#updateCommentControls();
+      this.#renderTags(content, built, input);
       return;
     }
     this.#closeCommentEditor();
     const column = this.#renderRow(content, input);
     if (input.commenting) this.#renderCommentEditor(column, input);
+    this.#renderTags(content, column, input);
+  }
+
+  /**
+   * The popup's content goes, for a rebuild or a hide: the tag section's
+   * Preact root is unmounted with it.
+   */
+  releasePopup(): void {
+    this.#dropTags();
+  }
+
+  /**
+   * The tag section under the comment: the tags read-only, or the tag editor
+   * in their place. It is mounted into the column as it appears, moved into
+   * each new column a refresh builds, and rendered again in place. A section
+   * already in the column stays where it is, so the field keeps its focus.
+   */
+  #renderTags(
+    content: HTMLElement,
+    column: HTMLElement,
+    input: MarkPopupRowInput,
+  ): void {
+    const { annotation, tagging } = input;
+    const draft = selectSelectedTagDraft(this.#state());
+    const shows = tagSectionShows({ annotation, draft, tagging });
+    if (this.#tags && (!shows || this.#tags.key !== annotation.key))
+      this.#dropTags();
+    if (!shows) return;
+    this.#tags ??= new MarkPopupTags(column, this.#deps.app, annotation.key);
+    this.#tags.moveTo(column);
+    const { annotations, surfaceState } = this.#deps;
+    this.#tags.render({
+      annotation,
+      draft,
+      tagging,
+      libraryNames: () => this.#deps.libraryTagNames(annotation.key),
+      onChange: (names) => {
+        // A change that lands once no session stands and its draft is gone —
+        // a database switch hid it, or its save already settled — would start
+        // a session that nothing saves.
+        const state = this.#state();
+        if (
+          !selectFloatingHead(state).tagging &&
+          !state.tagDrafts.has(annotation.key)
+        )
+          return;
+        annotations.editTags(annotation.key, names);
+      },
+      onClose: () => setTagging(surfaceState, false),
+      within: content,
+    });
+  }
+
+  /**
+   * The tag section goes, and its Preact root is unmounted. Unmounting ends
+   * an open editor's session, which can rebuild the popup and drop the
+   * section again before this returns, so the field is cleared first.
+   */
+  #dropTags(): void {
+    const tags = this.#tags;
+    this.#tags = null;
+    tags?.[Symbol.dispose]();
+  }
+
+  /** Save the tag editing session that just ended on one Annotation. */
+  #submitTags(annotationKey: string): void {
+    this.#write(this.#deps.annotations.submitTags(annotationKey));
   }
 
   #renderVerbs(row: HTMLElement, input: MarkPopupRowInput): void {
@@ -1194,6 +1289,9 @@ export class MarkSelection implements Disposable {
       case "comment":
         this.#toggleComment(annotation);
         return;
+      case "tags":
+        this.#toggleTags(annotation);
+        return;
       case "copy":
         if (annotation.text === null) return;
         void toast.promise(navigator.clipboard.writeText(annotation.text), {
@@ -1221,6 +1319,29 @@ export class MarkSelection implements Disposable {
     } else if (this.#deps.annotations.editComment(annotation.key)) {
       setCommenting(this.#deps.surfaceState, true);
     }
+  }
+
+  /**
+   * The tag verb is a toggle: pressed again, it ends the session, which saves
+   * it. The tag editor opens in place of the comment editor, which stores what
+   * it holds first.
+   */
+  #toggleTags(annotation: AnnotationRecord): void {
+    if (selectFloatingHead(this.#state()).tagging) {
+      this.#endTagSession();
+      return;
+    }
+    if (!this.#deps.annotations.editTags(annotation.key)) return;
+    this.#submitCommentEditor(annotation, true);
+    setTagging(this.#deps.surfaceState, true);
+  }
+
+  /**
+   * Closes the tag editor, which saves its session. The editor's own end adds
+   * the typed text first; a popup that stands hidden has no editor to end.
+   */
+  #endTagSession(): void {
+    if (!this.#tags?.end()) setTagging(this.#deps.surfaceState, false);
   }
 
   #recolor(key: string, color: string): void {
