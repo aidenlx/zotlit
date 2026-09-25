@@ -55,14 +55,12 @@ export function editingCapabilityCopy(
       return {
         icon: "pencil",
         tone: "ready",
-        label: capability.oneTime
-          ? m.capability_one_time()
-          : m.capability_writable(),
+        label: m.capability_writable(),
         detail: null,
         spinning: false,
       };
     case "authorization-required":
-      // The same icon as writable: the control stays live, and the gesture is
+      // The same icon as writable: the control stays live, and Allow editing is
       // what opens Zotero's dialog.
       return {
         icon: "pencil",

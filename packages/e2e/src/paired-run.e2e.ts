@@ -198,7 +198,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
     await restorePrompt(rdp);
     if (native === null || secret === null) {
       await resetAuthorizations(rdp);
-      await stubPrompt(rdp, { allow: true, remember: false });
+      await stubPrompt(rdp, { allow: true, remember: true });
       return;
     }
     const key = await grantRememberedKey(api, rdp, {
@@ -487,63 +487,6 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       );
       expect(written.status).toBe(204);
       expect(written.headers.get("Last-Modified-Version")).not.toBeNull();
-    });
-
-    it("consumes a one-time key on its first authenticated request", async () => {
-      // Zotero's own docstring says a non-remembered key dies on its first
-      // *successful* use. It does not: `consumeLocalAPIKey` splices the entry
-      // out during the key lookup, before the endpoint runs. So a client that
-      // retries a refused write cannot reuse the key — it needs a second
-      // dialog. Driven here with a write Zotero refuses on a precondition.
-      await resetAuthorizations(rdp);
-      await stubPrompt(rdp, { allow: true, remember: false });
-      const granted = await authorize(api, { serverID, appName: APP_NAME });
-      expect(granted.status).toBe(200);
-      const key = (granted.body as { key: string }).key;
-
-      const stale = await zoteroFetch(
-        api,
-        `users/0/items/${seededAnnotation.key}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Zotero-Server-ID": serverID,
-            "Zotero-API-Key": key,
-            "Content-Type": "application/json",
-            // A version Zotero cannot be holding, so the write is refused
-            // after the key lookup has already spent the key.
-            "If-Unmodified-Since-Version": "0",
-          },
-          body: JSON.stringify({ annotationComment: "never stored" }),
-        },
-      );
-      expect(stale.status).toBe(412);
-
-      const retried = await zoteroFetch(
-        api,
-        `users/0/items/${seededAnnotation.key}`,
-        {
-          method: "GET",
-          headers: { "Zotero-Server-ID": serverID, "Zotero-API-Key": key },
-        },
-      );
-      const second = await zoteroFetch(
-        api,
-        `users/0/items/${seededAnnotation.key}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Zotero-Server-ID": serverID,
-            "Zotero-API-Key": key,
-            "Content-Type": "application/json",
-            "If-Unmodified-Since-Version": String(
-              ((await retried.json()) as { version: number }).version,
-            ),
-          },
-          body: JSON.stringify({ annotationComment: "never stored" }),
-        },
-      );
-      expect(second.status).toBe(401);
     });
   });
 

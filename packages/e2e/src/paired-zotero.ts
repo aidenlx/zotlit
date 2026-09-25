@@ -5,8 +5,8 @@
 // part of it describes the same running Zotero.
 //
 // The wire facts this drives — the browser-traffic refusal, the authorize
-// endpoint's outcomes, the single-use consumption rule, the rate limit — are
-// the ones docs/fixture.md § "Trial the Zotero Local API" documents.
+// endpoint's outcomes, the rate limit — are the ones docs/fixture.md § "Trial
+// the Zotero Local API" documents.
 
 import { regex } from "arkregex";
 import { readFile } from "node:fs/promises";

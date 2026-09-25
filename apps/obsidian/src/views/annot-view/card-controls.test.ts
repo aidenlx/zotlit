@@ -20,11 +20,8 @@ import type { CardBlock, CardControls } from "./card-controls";
 
 const NOW = Temporal.Instant.from("2026-09-16T15:52:21Z");
 
-/** Both grant lifetimes enable mutation controls. */
-const LIVE: EditingCapability[] = [
-  { kind: "writable" },
-  { kind: "writable", oneTime: true },
-];
+/** The one capability that enables mutation controls. */
+const LIVE: EditingCapability = { kind: "writable" };
 
 /** Every other capability, each with a reason a surface can show in place. */
 const BLOCKED: EditingCapability[] = [
@@ -70,15 +67,13 @@ function blocks(controls: CardControls): (CardBlock | null)[] {
 }
 
 it("keeps every verb live where a gesture reaches Zotero, each naming itself", () => {
-  for (const capability of LIVE) {
-    const controls = controlsOf(capability);
+  const controls = controlsOf(LIVE);
 
-    expect(states(controls)).toEqual([false, false, false]);
-    expect(blocks(controls)).toEqual([null, null, null]);
-    // Three verbs, three names: a live control's tooltip is what it does.
-    expect(new Set(tooltips(controls)).size).toBe(3);
-    expect(tooltips(controls).every((text) => text.length > 0)).toBe(true);
-  }
+  expect(states(controls)).toEqual([false, false, false]);
+  expect(blocks(controls)).toEqual([null, null, null]);
+  // Three verbs, three names: a live control's tooltip is what it does.
+  expect(new Set(tooltips(controls)).size).toBe(3);
+  expect(tooltips(controls).every((text) => text.length > 0)).toBe(true);
 });
 
 it("keeps a verb the capability blocks pressable, so its press reaches the reason", () => {
@@ -189,7 +184,11 @@ it("says a comment is saving only where the user pressed to save it", () => {
     hint: null,
   });
   expect(
-    commentEditorControls({ kind: "writable", oneTime: true }, draft, NOW),
+    commentEditorControls(
+      { kind: "writable" },
+      { ...draft, manualSave: true },
+      NOW,
+    ),
   ).toMatchObject({ saveDisabled: true, hint: m.annot_view_card_saving() });
 });
 
@@ -235,14 +234,6 @@ it("shows the current save outcome and preserves a manual recovery action", () =
     text: "Research note",
     state: { kind: "editing" },
   };
-  expect(
-    commentEditorControls({ kind: "writable", oneTime: true }, draft, NOW),
-  ).toEqual({
-    readOnly: false,
-    saveDisabled: false,
-    manual: true,
-    hint: m.annot_view_comment_one_time(),
-  });
   expect(
     commentEditorControls(
       { kind: "authorization-required" },
@@ -353,10 +344,12 @@ describe("the held-draft panel", () => {
 
   it("gives the accent to the way out, and never to Discard", () => {
     const accent = (capability: EditingCapability) =>
-      heldCommentDraft(capability, draft, NOW)?.actions.find(
-        (action) => action.primary,
-      )?.kind ?? null;
-    expect(accent({ kind: "writable", oneTime: true })).toBe("save");
+      heldCommentDraft(
+        capability,
+        { ...draft, manualSave: true },
+        NOW,
+      )?.actions.find((action) => action.primary)?.kind ?? null;
+    expect(accent({ kind: "writable" })).toBe("save");
     // Saving is refused, so the grant that ends the refusal takes the accent.
     expect(accent({ kind: "authorization-required" })).toBe("allow-editing");
     expect(
@@ -365,10 +358,9 @@ describe("the held-draft panel", () => {
   });
 
   it("carries a way out of every state it announces", () => {
-    expect(kinds({ kind: "writable", oneTime: true }, draft)).toEqual([
-      "save",
-      "discard",
-    ]);
+    expect(kinds({ kind: "writable" }, { ...draft, manualSave: true })).toEqual(
+      ["save", "discard"],
+    );
     expect(kinds({ kind: "authorization-required" }, draft)).toEqual([
       "save",
       "allow-editing",

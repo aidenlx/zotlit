@@ -15,7 +15,7 @@ import type {
  * @see https://github.com/aidenlx/zotlit/issues/1139 — "Editing Capability and degraded states"
  */
 export type EditingCapability =
-  | { kind: "writable"; oneTime?: boolean }
+  | { kind: "writable" }
   | { kind: "authorization-required" }
   | { kind: "authorizing" }
   | { kind: "cooldown"; retryAfter: Temporal.Instant }
@@ -70,8 +70,7 @@ export function editingCapabilityOf(
   if (writes.authorizing) return { kind: "authorizing" };
   switch (state.kind) {
     case "available": {
-      if (state.authorized)
-        return { kind: "writable", ...(writes.oneTime && { oneTime: true }) };
+      if (state.authorized) return { kind: "writable" };
       const { cooldownUntil } = writes;
       return cooldownUntil !== null &&
         Temporal.Instant.compare(cooldownUntil, now()) > 0
@@ -110,6 +109,10 @@ export function capabilityOfFailure(
       return { kind: "read-only", reason: "library-read-only" };
     case "unauthorized":
     case "denied":
+    // Zotero granted a key that ZotLit discarded, which leaves the session as
+    // a Deny does (ADR 0062).
+    case "not-remembered":
+    case "not-saved":
       return { kind: "authorization-required" };
     case "cooldown":
       return { kind: "cooldown", retryAfter: now().add(failure.retryAfter) };

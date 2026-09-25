@@ -239,6 +239,8 @@ function commentDraftAfterWrite(
             draft: {
               ...current,
               baseline: submittedText,
+              // A save that landed ends the hold, so newer text autosaves.
+              manualSave: false,
               state: { kind: "editing" },
             },
           };
@@ -719,7 +721,6 @@ export class AnnotationRepository extends Service<void> {
           attachmentKey: held!.attachmentKey,
           serverID: source!.serverID,
           baseline,
-          ...(capability.oneTime && { manualSave: true }),
           text: text ?? baseline,
           state: { kind: "editing" } as const,
         };
@@ -753,18 +754,19 @@ export class AnnotationRepository extends Service<void> {
       this.#dropCommentDraft(annotationKey);
       return Promise.resolve(IDLE);
     }
-    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
+    // Text typed while a save is in flight queues behind it, even behind the
+    // Save comment pressed on a held draft, which that save's success ends.
     if (save.inFlight) {
       save.queued = draft.text !== save.submittedText;
       return save.inFlight;
     }
+    if (automatic && !this.#canAutosave(draft)) return Promise.resolve(IDLE);
     const capability = this.capabilityFor(draft.attachmentKey);
     if (capability.kind !== "writable")
       return Promise.resolve({
         kind: "failed",
         failure: this.#writeBlocked(draft.attachmentKey)!,
       });
-    draft.manualSave = !!capability.oneTime;
     const submittedText = draft.text;
     this.#setCommentDraft(draft, { kind: "pending" });
     save.submittedText = submittedText;
@@ -2282,19 +2284,17 @@ export class AnnotationRepository extends Service<void> {
 
   #canAutosave(draft: CommentDraft): boolean {
     const capability = this.capabilityFor(draft.attachmentKey);
-    return (
-      !draft.manualSave && capability.kind === "writable" && !capability.oneTime
-    );
+    return !draft.manualSave && capability.kind === "writable";
   }
 
   #scheduleCommentSave(draft: CommentDraft): void {
-    if (!this.#canAutosave(draft)) return;
     const id = commentDraftID(draft.serverID, draft.annotationKey);
     const save = this.#commentSave(id);
     if (save.inFlight) {
       save.queued = draft.text !== save.submittedText;
       return;
     }
+    if (!this.#canAutosave(draft)) return;
     if (sameComment(draft.text, draft.baseline)) return;
     if (save.idleTimer !== null) clearTimeout(save.idleTimer);
     save.idleTimer = setTimeout(() => {

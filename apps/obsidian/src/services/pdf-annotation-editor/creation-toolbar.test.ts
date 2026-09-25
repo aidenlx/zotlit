@@ -170,22 +170,17 @@ it.each([
   },
 );
 
-it.each([
-  { kind: "writable" },
-  { kind: "writable", oneTime: true },
-] satisfies EditingCapability[])(
-  "enables editing tools with an available grant",
-  (capability) => {
-    const live = model({ armed: "highlight", capability }).filter(
-      ({ disabled }) => !disabled,
-    );
+it("enables editing tools with an available grant", () => {
+  const live = model({
+    armed: "highlight",
+    capability: { kind: "writable" },
+  }).filter(({ disabled }) => !disabled);
 
-    expect(live.map(({ id }) => id)).toEqual([
-      ...MARK_TOOLS.flatMap(halves),
-      "visibility",
-    ]);
-  },
-);
+  expect(live.map(({ id }) => id)).toEqual([
+    ...MARK_TOOLS.flatMap(halves),
+    "visibility",
+  ]);
+});
 
 it("never stands mark visibility down, because it changes nothing in Zotero", () => {
   const capability = {

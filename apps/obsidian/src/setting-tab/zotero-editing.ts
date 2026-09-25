@@ -215,11 +215,7 @@ function renderEditingRow(
 async function enableEditing(ctx: SettingTabContext): Promise<void> {
   const result = await ctx.writeAuthorization.authorize();
   if ("failure" in result) return;
-  new BaseNotice(
-    result.value.remembered
-      ? m.notice_zotero_editing_enabled()
-      : m.notice_zotero_editing_once(),
-  );
+  new BaseNotice(m.notice_zotero_editing_enabled());
 }
 
 function applyAction(
