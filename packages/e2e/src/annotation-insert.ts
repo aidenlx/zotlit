@@ -140,7 +140,7 @@ export async function verifyAnnotationInsert(
         if (mode === "success") {
           const folder = join(
             await getWorkspaceRoot(import.meta.dirname),
-            "tmp/notes",
+            ".scratch/e2e-screenshots",
           );
           await mkdir(folder, { recursive: true });
           await cli([
