@@ -7,6 +7,7 @@
     "#fixture": "./lib/fixture/build.ts",
     "#fixture/*": "./lib/fixture/*.ts",
     "#obsidian-manifest": "./lib/obsidian-manifest.ts",
+    "#obsidian-cdp": "./lib/obsidian-cdp.ts",
     "#obsidian-cli": "./lib/obsidian-cli.ts",
     "#obsidian-host-readiness": "./lib/obsidian-host-readiness.ts",
     "#paired-zotero": "./lib/fixture/paired-zotero.ts",
