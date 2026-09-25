@@ -278,7 +278,12 @@ export default class ZotLitPlugin extends Plugin {
         excerptImage: services.excerptImage,
         excerptDisplay: services.excerptDisplay,
         annotations: services.annotationRepository,
-        writeAuthorization: services.zoteroLocalApi,
+        writeAuthorization: {
+          allowEditing: () => services.capabilityNotices.allowEditing(),
+          forgetAuthorization: () =>
+            services.zoteroLocalApi.forgetAuthorization(),
+          remembered: () => services.zoteroLocalApi.remembered(),
+        },
         template: services.template,
         release: services.release,
         pandocEngine: services.pandocEngine,
@@ -400,7 +405,7 @@ export default class ZotLitPlugin extends Plugin {
       pdfReaders: services.pdfAnnotationEditor,
       annotations: services.annotationRepository,
       excerptDisplay: services.excerptDisplay,
-      showEditingCapability: () => void services.zoteroLocalApi.authorize(),
+      allowEditing: () => void services.capabilityNotices.allowEditing(),
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
       zoteroPref: services.zoteroPref,

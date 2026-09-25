@@ -175,8 +175,7 @@ export function commentEditorControls(
   now: Temporal.Instant,
 ) {
   const available = editingLive(capability);
-  const oneTime = capability.kind === "writable" && capability.oneTime;
-  const manual = !!oneTime || !!draft?.manualSave;
+  const manual = !!draft?.manualSave;
   // Automatic saving states nothing, in flight or at rest: the quiet case is
   // the normal one, and a line that comes and goes under the editor with every
   // pause in typing only competes with the text. Only a save the user pressed
@@ -199,7 +198,6 @@ export function commentEditorControls(
   // The capability's own sentence, which names the state and the gesture that
   // ends it. A line of its own here could only restate it more vaguely.
   else if (!available) hint = capabilityBlock(capability, now)?.reason ?? null;
-  else if (oneTime) hint = m.annot_view_comment_one_time();
   // A draft waiting on a manual save says so with its Save comment button.
   // A sentence restating the button is one line the card does not need.
   return {

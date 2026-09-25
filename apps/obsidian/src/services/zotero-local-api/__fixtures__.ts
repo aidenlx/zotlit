@@ -215,7 +215,7 @@ export interface ZoteroAnswers {
    * `POST /api/local/authorize` — Zotero's Write Authorization dialog, as the
    * endpoint reports whichever button the user pressed.
    *
-   * @default Allow, a One-time Authorization
+   * @default Always Allow, a Remembered Authorization
    */
   authorize?: (request: ZoteroRequest) => Response | Promise<Response>;
   /**
@@ -256,7 +256,8 @@ export function fakeZotero(answers: ZoteroAnswers = {}): {
       return untilAborted((answers.root ?? rootOk)(), init?.signal);
     }
     if (url.pathname === "/api/local/authorize") {
-      const authorize = answers.authorize ?? (() => authorized());
+      const authorize =
+        answers.authorize ?? (() => authorized({ remember: true }));
       return untilAborted(authorize(request), init?.signal);
     }
     if (url.pathname.endsWith("/children")) {
@@ -557,9 +558,7 @@ export function keyRejected(): Response {
 }
 
 /**
- * RECORDED — `412` from this database: the object moved since it was read. The
- * key that carried the request is spent all the same, which is why this answer
- * appears in a test about a One-time Authorization.
+ * RECORDED — `412` from this database: the object moved since it was read.
  *
  * This is the **header** precondition's wording, which a `DELETE` produces. A
  * `PATCH`, whose precondition is in the body, answers `item version mismatch:

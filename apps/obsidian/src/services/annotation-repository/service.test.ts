@@ -6,6 +6,7 @@ import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { AbortError } from "@/lib/abort-error";
+import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseEvents } from "@/services/database/service";
 import { excerptFingerprint } from "@/services/excerpt-image/contract";
 import { QueryClientService } from "@/services/query-client/service";
@@ -1159,50 +1160,12 @@ it("keeps a failed autosave for explicit editing without replaying it", async ()
   }
 });
 
-it("saves a one-time comment only after explicit submission", async () => {
-  vi.useFakeTimers();
-  try {
-    await using stack = new AsyncDisposableStack();
-    const { repository, localApi, requests } = await writable(
-      stack,
-      {
-        authorize: () => authorized({ remember: false }),
-        item: () =>
-          annotationItem(
-            afterWrite("PUPR5FG5", {
-              comment: "Finished comment",
-              version: 20,
-            }),
-          ),
-      },
-      { key: undefined },
-    );
-    await localApi.authorize();
-    const sent = requests.length;
-    repository.editComment("PUPR5FG5", "Finished comment");
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(requests.slice(sent)).toEqual([]);
-    await repository.submitComment("PUPR5FG5", { automatic: true });
-    expect(requests.slice(sent)).toEqual([]);
-    expect(await repository.submitComment("PUPR5FG5")).toEqual({
-      kind: "idle",
-    });
-    expect(
-      requests.slice(sent).filter(({ method }) => method === "PATCH"),
-    ).toHaveLength(1);
-    expect(repository.capabilityFor("RGRPDF24")).toEqual({
-      kind: "authorization-required",
-    });
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
 it("retains a paused draft until an explicit save after authorization returns", async () => {
   vi.useFakeTimers();
   try {
     await using stack = new AsyncDisposableStack();
     const { repository, localApi, requests } = await writable(stack, {
+      authorize: () => authorized({ remember: true }),
       item: () =>
         annotationItem(
           afterWrite("PUPR5FG5", { comment: "Keep these words", version: 20 }),
@@ -1219,12 +1182,61 @@ it("retains a paused draft until an explicit save after authorization returns", 
     await vi.advanceTimersByTimeAsync(30_000);
     await repository.submitComment("PUPR5FG5", { automatic: true });
     expect(requests.slice(sent)).toEqual([]);
-    expect(await repository.submitComment("PUPR5FG5")).toEqual({
-      kind: "idle",
-    });
+    const saving = repository.submitComment("PUPR5FG5");
+    // The save the user pressed is the one the editor says it waits on.
+    expect(
+      commentEditorControls(
+        repository.capabilityFor("RGRPDF24"),
+        repository.commentDraftFor("PUPR5FG5"),
+        NOW,
+      ).hint,
+    ).toBe(m.annot_view_card_saving());
+    expect(await saving).toEqual({ kind: "idle" });
     expect(
       requests.slice(sent).filter(({ method }) => method === "PATCH"),
     ).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("saves text typed during a held draft's save once that save lands", async () => {
+  vi.useFakeTimers();
+  try {
+    await using stack = new AsyncDisposableStack();
+    const first = Promise.withResolvers<Response>();
+    const submitted: string[] = [];
+    let version = 20;
+    const { repository, localApi } = await writable(stack, {
+      authorize: () => authorized({ remember: true }),
+      write: (request) => {
+        submitted.push(JSON.parse(request.body ?? "{}").annotationComment);
+        return submitted.length === 1 ? first.promise : writeAccepted();
+      },
+      item: () =>
+        annotationItem(
+          afterWrite("PUPR5FG5", {
+            comment: submitted.at(-1),
+            version: version++,
+          }),
+        ),
+    });
+    repository.editComment("PUPR5FG5", "Held words");
+    await localApi.forgetAuthorization();
+    await localApi.authorize();
+
+    const saving = repository.submitComment("PUPR5FG5");
+    await vi.waitFor(() => expect(submitted).toEqual(["Held words"]));
+    repository.editComment("PUPR5FG5", "Held words, and more");
+    first.resolve(writeAccepted());
+    expect(await saving).toEqual({ kind: "idle" });
+
+    await vi.waitFor(() =>
+      expect(submitted).toEqual(["Held words", "Held words, and more"]),
+    );
+    await vi.waitFor(() =>
+      expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+    );
   } finally {
     vi.useRealTimers();
   }

@@ -100,6 +100,18 @@ export type LocalApiFailure =
   | { kind: "unauthorized" }
   /** `403 {"denied":true}` — the user refused the authorization dialog. */
   | { kind: "denied" }
+  /**
+   * Zotero answered the authorization dialog with Allow (`remember: false`), a
+   * single-use key that ZotLit discards unsent.
+   *
+   * @see apps/obsidian/docs/adr/0062-editing-requires-a-remembered-authorization-and-allow-leaves-zotlit-read-only.md
+   */
+  | { kind: "not-remembered" }
+  /**
+   * Zotero answered Always Allow, but SecretStorage could not save the key, so
+   * ZotLit discards it unsent.
+   */
+  | { kind: "not-saved" }
   /** `403 Write access denied` — the target library is not editable. */
   | { kind: "library-read-only" }
   /** `412` from this server: the object moved since it was read. */

@@ -89,14 +89,14 @@ export const themeHook = {
    */
   pdfTextDraft: "zt-pdf-text-draft",
   /**
-   * The always-present Editing Capability affordance in the PDF reader's own
-   * toolbar. `data-zt-capability-tone` names the state it is showing —
-   * `ready`, `action`, `busy` or `warning`.
+   * The editing indicator in the PDF reader's own toolbar, a status line
+   * shown only while ZotLit waits for Zotero and during a cooldown, and never
+   * a button. `data-zt-capability-tone` is `busy` in both states.
    */
   pdfCapability: "zt-pdf-capability",
   /**
    * The Creation Toolbar in the PDF reader's own right toolbar slot, which
-   * also holds the Editing Capability affordance. Each control inside it
+   * also holds the editing indicator. Each control inside it
    * carries `data-zt-tool`. Each tool of its tool group is split in two — the
    * toggle under the tool's own name and the chevron that opens its colours
    * under `<tool>-color` — which today is `highlight`, `highlight-color`,
