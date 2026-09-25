@@ -51,7 +51,7 @@ async function fixture(
   await using stack = new AsyncDisposableStack();
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
-    "tmp/outcome-scope-tests",
+    ".scratch/outcome-scope-tests",
   );
   await mkdir(parent, { recursive: true });
   const root = await mkdtemp(join(parent, "run-"));

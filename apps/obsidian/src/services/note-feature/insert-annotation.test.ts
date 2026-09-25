@@ -55,7 +55,7 @@ const card: AnnotationRecord = {
 async function fixture(mode: string) {
   const parent = join(
     await getWorkspaceRoot(import.meta.dirname),
-    "tmp/insert-tests",
+    ".scratch/insert-tests",
   );
   await mkdir(parent, { recursive: true });
   const root = await mkdtemp(`${parent}/vault-`);
