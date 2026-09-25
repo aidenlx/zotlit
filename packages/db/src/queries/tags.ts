@@ -112,3 +112,31 @@ export function resolveItemTagsByIDs(
   }
   return result;
 }
+
+const libraryTagNamesQuery = defineQuery<{ libraryID: number }>()(
+  (db, { placeholder }) =>
+    db.query.itemTags.findMany({
+      where: {
+        item: { libraryID: placeholder("libraryID"), deletedItem: false },
+      },
+      columns: {},
+      with: { tag: { columns: { name: true } } },
+    }),
+);
+
+/**
+ * Every Tag name in use on one Library's items, each name once, in name order.
+ * Zotero's `tags` table holds no library, so a name counts for a Library only
+ * while an item there carries it.
+ */
+export function getLibraryTagNames(
+  db: NodeDatabaseClient,
+  libraryID: number,
+): string[] {
+  return distinct(
+    libraryTagNamesQuery
+      .prepared(db)
+      .all({ libraryID })
+      .map((row) => row.tag.name),
+  ).toSorted((a, b) => a.localeCompare(b));
+}

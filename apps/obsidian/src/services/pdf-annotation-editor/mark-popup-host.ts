@@ -43,6 +43,12 @@ export interface MarkPopupVariant {
    */
   render: (content: HTMLElement) => void;
   /**
+   * Runs as the content this variant last filled goes: before a rebuild
+   * empties it, and as the popup hides. What the variant mounted in it, such
+   * as a Preact root, is let go here.
+   */
+  release?: () => void;
+  /**
    * Runs once the anchor reads `null` and the popup has hidden, for a variant
    * that cannot outlive its place on screen.
    */
@@ -67,8 +73,13 @@ export interface MarkPopupHostDeps {
  * Opens the popup for a floating variant with an anchor, and hides it for
  * none, an image capture, a Text Draft, a quiet selection, a selection whose grip is held
  * and not yet saving, or an anchor of `null`. A change of variant kind, of
- * selected key, or of commenting rebuilds the row; any other change to what
+ * selected key, of commenting, or of tagging rebuilds the row; any other change to what
  * floats or to its row refreshes it, which is what keeps an editor alive.
+ *
+ * A rebuild releases what the variant mounted in the content, such as the tag
+ * section's Preact root, before it empties it; a hide releases it too. A
+ * refresh keeps that root: the variant renders it again, in place while an
+ * editor is open, or moved into the new column the refresh builds.
  */
 export class MarkPopupHost implements Disposable {
   readonly #deps;
@@ -142,6 +153,7 @@ export class MarkPopupHost implements Disposable {
         kind: head.kind,
         key: head.key,
         commenting: head.commenting,
+        tagging: head.tagging,
       });
     if (!anchor) {
       this.#hide();
@@ -161,8 +173,10 @@ export class MarkPopupHost implements Disposable {
     });
     popup.register(() => {
       if (this.#popup !== popup) return;
+      const built = this.#built;
       this.#popup = null;
       this.#built = null;
+      this.#release(built);
     });
     this.#popup = popup;
   }
@@ -177,18 +191,34 @@ export class MarkPopupHost implements Disposable {
     )
       return;
     const head = selectFloatingHead(state);
-    if (!sameFlat(this.#built, head)) {
-      content.empty();
+    const built = this.#built;
+    if (!sameFlat(built, head)) {
       this.#built = head;
+      this.#release(built);
+      content.empty();
     }
     this.#deps.variants[floating.kind].render(content);
   }
 
+  /**
+   * The fields are cleared before the release: letting go of the content can
+   * end an editor's session, and the store change that follows must find no
+   * popup to refresh.
+   */
   #hide(): void {
     const popup = this.#popup;
+    const built = this.#built;
     this.#popup = null;
     this.#built = null;
+    this.#release(built);
     popup?.hide();
+  }
+
+  /** Lets the variant the content was built for go of what it holds. */
+  #release(built: FloatingHead | null): void {
+    const kind = built?.kind;
+    if (kind === "selected" || kind === "create")
+      this.#deps.variants[kind].release?.();
   }
 }
 

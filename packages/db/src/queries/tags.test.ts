@@ -8,6 +8,7 @@ import { tagTypeToName } from "@/lib/zt-tag";
 import { createFixtureSchema } from "@/test-utils";
 
 import {
+  getLibraryTagNames,
   getTagsByItemIDs,
   resolveItemTags,
   resolveItemTagsByIDs,
@@ -87,6 +88,18 @@ describe("getTagsByItemIDs", () => {
     );
 
     expect(item2Alpha?.tag).toBe(item1Alpha?.tag);
+  });
+});
+
+describe("getLibraryTagNames", () => {
+  it("names each tag used in one library once, in name order", () => {
+    // `delta` is only on a deleted item, so it is not in use.
+    expect(getLibraryTagNames(db, 1)).toEqual(["alpha", "beta", "gamma"]);
+  });
+
+  it("leaves out the tags of other libraries", () => {
+    expect(getLibraryTagNames(db, 2)).toEqual(["alpha"]);
+    expect(getLibraryTagNames(db, 3)).toEqual([]);
   });
 });
 

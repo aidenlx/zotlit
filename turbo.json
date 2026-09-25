@@ -55,6 +55,7 @@
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
+        "@zotlit/ui#build",
         "@zotlit/workbench#build",
         "@zotlit/zotero-types#build",
         "@zotlit/docs#generate:messages",
@@ -73,6 +74,7 @@
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
+        "@zotlit/ui#build",
         "@zotlit/workbench#build",
         "@zotlit/zotero-types#build"
       ]

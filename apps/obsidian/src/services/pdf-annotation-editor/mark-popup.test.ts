@@ -2,6 +2,7 @@
 import type { HoverParent } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -28,6 +29,7 @@ function row(
     capability?: EditingCapability;
     mutation?: MutationState;
     stack?: { index: number; total: number };
+    tagging?: boolean;
   } = {},
 ): MarkPopupRow {
   return markPopupRow({
@@ -36,6 +38,7 @@ function row(
     mutation: overrides.mutation ?? IDLE,
     stack: overrides.stack ?? { index: 0, total: 1 },
     commenting: false,
+    tagging: overrides.tagging ?? false,
     now: NOW,
   });
 }
@@ -50,10 +53,11 @@ function verbs(
 }
 
 describe("markPopupRow", () => {
-  it("draws one row of verbs: colour, comment, copy, delete, reveal", () => {
+  it("draws one row of verbs: colour, comment, tags, copy, delete, reveal", () => {
     expect(row().verbs.map(({ id, icon }) => [id, icon])).toEqual([
       ["color", "palette"],
       ["comment", "message-square-plus"],
+      ["tags", "tag"],
       ["copy", "copy"],
       ["delete", "trash-2"],
       ["reveal", "panel-right-open"],
@@ -72,7 +76,31 @@ describe("markPopupRow", () => {
     expect(row().color).toBe("#2ea8e5");
   });
 
-  it("stands the three writes down under a block, and says why in each", () => {
+  it("says which tag verb it is, and presses it while the tag editor is open", () => {
+    const tagged = { ...HIGHLIGHT, tags: ["to read"] };
+    const tagVerb = (built: MarkPopupRow) =>
+      built.verbs.find(({ id }) => id === "tags");
+    expect(tagVerb(row())).toEqual({
+      id: "tags",
+      icon: "tag",
+      pressed: false,
+      tooltip: m.annot_view_card_add_tags(),
+      disabled: false,
+    });
+    expect(tagVerb(row({ annotation: tagged, tagging: true }))).toMatchObject({
+      tooltip: m.annot_view_card_edit_tags(),
+      pressed: true,
+    });
+  });
+
+  it("keeps the tag verb live while a tag session's save is in flight", () => {
+    const built = row({
+      mutation: { kind: "pending", write: "tags", session: true },
+    });
+    expect(verbs(built).tags).toEqual([false, m.annot_view_card_add_tags()]);
+  });
+
+  it("stands the writes down under a block, and says why in each", () => {
     const built = row({
       capability: { kind: "read-only", reason: "library-read-only" },
     });
@@ -80,6 +108,7 @@ describe("markPopupRow", () => {
     expect(verbs(built)).toEqual({
       color: [true, reason],
       comment: [true, reason],
+      tags: [true, reason],
       copy: [false, "Copy annotation text"],
       delete: [true, reason],
       reveal: [false, "Reveal in the annotation view"],
@@ -89,6 +118,7 @@ describe("markPopupRow", () => {
   it("stands them down while a write of its own is in flight", () => {
     const built = row({ mutation: { kind: "pending", write: "color" } });
     expect(verbs(built).delete).toEqual([true, "Saving to Zotero…"]);
+    expect(verbs(built).tags).toEqual([true, m.annot_view_card_saving()]);
   });
 
   it("keeps copying off a mark that carries no text", () => {
@@ -124,6 +154,7 @@ describe("renderMarkPopupRow", () => {
     expect(controls(node)).toEqual([
       "color",
       "comment",
+      "tags",
       "copy",
       "delete",
       "reveal",
@@ -137,7 +168,7 @@ describe("renderMarkPopupRow", () => {
   it("replaces what the row held, so a redraw leaves no second row", () => {
     const { node } = draw(row());
     renderMarkPopupRow(node, row({ stack: { index: 0, total: 2 } }), () => {});
-    expect(controls(node)).toHaveLength(6);
+    expect(controls(node)).toHaveLength(7);
   });
 
   it("gives the palette the Annotation's own colour", () => {

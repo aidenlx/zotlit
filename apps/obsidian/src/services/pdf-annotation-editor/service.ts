@@ -54,6 +54,8 @@ export interface PdfAnnotationEditorDeps {
   markGestures: Pick<MarkGestures, "revealAnnotation">;
   /** The Literature Notes a rendered comment's links resolve against. */
   noteIndex: CommentNotes;
+  /** The tag names of an Annotation's Library, which the tag editor suggests. */
+  libraryTagNames: (annotationKey: string) => readonly string[];
   /** Where each annotation tool's colour is kept, so it holds across PDFs. */
   settings: Pick<SettingsService, "current" | "update">;
   /** The clock each binding's cooldown countdown is read against. */
@@ -82,6 +84,7 @@ export class PdfAnnotationEditor extends Service<void> {
   readonly #markGestures;
   readonly #toolColors;
   readonly #noteIndex;
+  readonly #libraryTagNames;
   readonly #now;
   readonly #emitter = createNanoEvents<PdfAnnotationEditorEvents>();
   readonly #bindings = new Map<PDFFileView, PdfViewBinding>();
@@ -96,6 +99,7 @@ export class PdfAnnotationEditor extends Service<void> {
     capabilityGestures,
     markGestures,
     noteIndex,
+    libraryTagNames,
     settings,
     now = () => Temporal.Now.instant(),
   }: PdfAnnotationEditorDeps) {
@@ -107,6 +111,7 @@ export class PdfAnnotationEditor extends Service<void> {
     this.#markGestures = markGestures;
     this.#toolColors = toolColorStore(settings);
     this.#noteIndex = noteIndex;
+    this.#libraryTagNames = libraryTagNames;
     this.#now = now;
     this.ready = this.#load();
   }
@@ -234,6 +239,7 @@ export class PdfAnnotationEditor extends Service<void> {
         markGestures: this.#markGestures,
         toolColors: this.#toolColors,
         noteIndex: this.#noteIndex,
+        libraryTagNames: this.#libraryTagNames,
         now: this.#now,
       });
       this.#bindings.set(view, binding);

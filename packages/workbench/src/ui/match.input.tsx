@@ -1,29 +1,30 @@
 // Hosts can attach their native typing suggestions to the shared text control.
 import { useEffect, useId, useRef } from "react";
-import type { ComponentProps, RefObject } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 
 import { useWorkbenchHost } from "./host";
 
-export function MatchInput({
-  inputRef: providedRef,
-  suggestions = [],
-  hint,
-  onChange,
-  onAccept,
-  ...props
-}: Omit<ComponentProps<"input">, "onChange" | "list" | "ref"> & {
-  inputRef?: RefObject<HTMLInputElement | null>;
-  suggestions?: readonly string[];
-  hint?: (value: string) => string | null;
-  onChange: (value: string) => void;
-  onAccept?: (value: string) => void;
-}) {
+/**
+ * Attaches the host's typing suggestions to `inputRef`'s input.
+ * @returns For a host without typing suggestions, the `list` attribute for the
+ * input and the `<datalist>` it names; otherwise no `list` and no element.
+ */
+export function useInputSuggestions(
+  inputRef: RefObject<HTMLInputElement | null>,
+  {
+    suggestions = [],
+    hint,
+    onSelect,
+  }: {
+    suggestions?: readonly string[];
+    hint?: (value: string) => string | null;
+    onSelect: (value: string) => void;
+  },
+): { list: string | undefined; datalist: ReactNode } {
   const host = useWorkbenchHost();
-  const localRef = useRef<HTMLInputElement>(null);
-  const inputRef = providedRef ?? localRef;
   const id = useId();
-  const latest = useRef({ suggestions, hint, onChange, onAccept });
-  latest.current = { suggestions, hint, onChange, onAccept };
+  const latest = useRef({ suggestions, hint, onSelect });
+  latest.current = { suggestions, hint, onSelect };
   useEffect(() => {
     const input = inputRef.current;
     if (!input || !host.inputSuggestions) return;
@@ -44,13 +45,40 @@ export function MatchInput({
           );
       },
       onSelect(value) {
-        latest.current.onChange(value);
-        latest.current.onAccept?.(value);
+        latest.current.onSelect(value);
       },
     });
     return () => popup.close();
   }, [host, inputRef]);
   const fallback = !host.inputSuggestions && suggestions.length > 0;
+  return {
+    list: fallback ? id : undefined,
+    datalist: fallback && (
+      <datalist id={id}>
+        {suggestions.map((value) => (
+          <option key={value} value={value} />
+        ))}
+      </datalist>
+    ),
+  };
+}
+
+export function MatchInput({
+  suggestions,
+  hint,
+  onChange,
+  ...props
+}: Omit<ComponentProps<"input">, "onChange" | "list" | "ref"> & {
+  suggestions?: readonly string[];
+  hint?: (value: string) => string | null;
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { list, datalist } = useInputSuggestions(inputRef, {
+    suggestions,
+    hint,
+    onSelect: onChange,
+  });
   return (
     <>
       <input
@@ -58,16 +86,10 @@ export function MatchInput({
         ref={inputRef}
         type="text"
         autoComplete="off"
-        list={fallback ? id : undefined}
+        list={list}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
-      {fallback && (
-        <datalist id={id}>
-          {suggestions.map((value) => (
-            <option key={value} value={value} />
-          ))}
-        </datalist>
-      )}
+      {datalist}
     </>
   );
 }

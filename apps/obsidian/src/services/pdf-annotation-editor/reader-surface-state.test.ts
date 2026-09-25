@@ -57,6 +57,7 @@ import {
   selectSelectedRow,
   selectTextDraft,
   setCommenting,
+  setTagging,
   setInFlight,
   setToolColor,
   settlePendingStroke,
@@ -250,6 +251,7 @@ it("selects a mark from the stack under a point, at its place in it", () => {
     index: 1,
     quiet: false,
     commenting: false,
+    tagging: false,
   });
 });
 
@@ -277,6 +279,40 @@ it("keeps the comment editor open for a repeat selection of the same mark", () =
 
   selectMark(store, "PARA1111");
   expect(store.getState().floating).toMatchObject({ commenting: false });
+});
+
+it("opens the tag editor in place of the comment editor, and the reverse", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+  setCommenting(store, true);
+
+  setTagging(store, true);
+  expect(store.getState().floating).toMatchObject({
+    commenting: false,
+    tagging: true,
+  });
+
+  setCommenting(store, true);
+  expect(store.getState().floating).toMatchObject({
+    commenting: true,
+    tagging: false,
+  });
+});
+
+it("keeps the tag editor open for a repeat selection of the same mark only", () => {
+  const store = reader();
+  const stack = ["WORD2222", "PARA1111"];
+  selectMark(store, "WORD2222", { stack });
+  setTagging(store, true);
+
+  selectMark(store, "WORD2222", { stack });
+  expect(selectFloatingHead(store.getState()).tagging).toBe(true);
+
+  stepStack(store);
+  expect(selectFloatingHead(store.getState())).toMatchObject({
+    key: "PARA1111",
+    tagging: false,
+  });
 });
 
 it("selects a mark with its comment editor open when asked to", () => {
@@ -425,6 +461,7 @@ it("takes the four per-Annotation announcements until it is disposed", () => {
     "worth quoting",
   );
 
+  repository.hideCommentDraft();
   repository.emit("comment-draft-hidden", "WORD2222");
   expect(store.getState().commentDrafts.has("WORD2222")).toBe(false);
   repository.emit("annotation-deleted", "WORD2222");
@@ -459,6 +496,25 @@ it("fires no row subscriber for a mutation announced again unchanged", () => {
   expect(row).not.toHaveBeenCalled();
 
   ingestMutation(store, "WORD2222", IDLE);
+  expect(row).toHaveBeenCalledOnce();
+});
+
+it("fires the row subscriber for a change to the stored tags, not a re-read", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+  const tagged = (names: string[]): AnnotationRecord => ({
+    ...WORD,
+    tags: names,
+    tagDetails: names.map((name) => ({ name, type: 0 })),
+  });
+  ingestRecords(store, [PARAGRAPH, tagged(["to read"])]);
+  const row = vi.fn();
+  store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
+
+  ingestRecords(store, [PARAGRAPH, tagged(["to read"])]);
+  expect(row).not.toHaveBeenCalled();
+
+  ingestRecords(store, [PARAGRAPH, tagged(["to read", "method"])]);
   expect(row).toHaveBeenCalledOnce();
 });
 
@@ -524,6 +580,34 @@ it("closes the editor when a database switch hides the selected draft", () => {
   expect(store.getState().floating).toMatchObject({ commenting: false });
 });
 
+it("closes the tag editor alone when a database switch hides its draft", () => {
+  const store = reader();
+  selectMark(store, "WORD2222");
+  setTagging(store, true);
+  const repository = annotationEdits();
+  using _listening = listenAnnotationEvents(store, repository);
+  repository.editComment("WORD2222", "worth quoting");
+  repository.tagDraftFor.mockReturnValue({
+    annotationKey: "WORD2222",
+    attachmentKey: "RGRPDF24",
+    serverID: "test",
+    baseline: [],
+    names: ["to read"],
+    state: { kind: "editing" },
+  });
+  repository.emit("comment-draft-changed", "WORD2222");
+
+  // The one announcement names the Annotation, not the draft: the repository
+  // still answers the comment draft, so only the tag draft was hidden.
+  repository.tagDraftFor.mockReturnValue(null);
+  repository.emit("comment-draft-hidden", "WORD2222");
+
+  const { tagDrafts, commentDrafts, floating } = store.getState();
+  expect(tagDrafts.has("WORD2222")).toBe(false);
+  expect(commentDrafts.get("WORD2222")?.text).toBe("worth quoting");
+  expect(floating).toMatchObject({ key: "WORD2222", tagging: false });
+});
+
 it("leaves another Annotation's editor alone when a draft is hidden", () => {
   const store = reader();
   selectMark(store, "WORD2222");
@@ -553,6 +637,7 @@ it("draws the selected row from the record, its mutation, and its stack", () => 
   ).toEqual([
     ["color", true],
     ["comment", true],
+    ["tags", true],
     ["copy", true],
     ["delete", true],
     ["reveal", false],
@@ -832,6 +917,7 @@ it("takes the floating surface from a selected mark, and cancels to nothing", ()
     kind: "capture",
     key: null,
     commenting: false,
+    tagging: false,
   });
   // A capture has no comment to open.
   setCommenting(store, true);

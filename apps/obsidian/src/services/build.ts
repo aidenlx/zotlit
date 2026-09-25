@@ -1,6 +1,7 @@
 import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { nodeFetch } from "@/lib/node-fetch";
 import { revealSetting } from "@/lib/open-settings";
+import { libraryTagNames } from "@/services/database/library-tag-names";
 import {
   createProfileCreator,
   createProfileImporter,
@@ -239,6 +240,7 @@ export function buildServices(
         attachmentResolver,
         annotationRepository,
         capabilityNotices,
+        db,
         noteIndex,
         settings,
       }) => {
@@ -247,6 +249,8 @@ export function buildServices(
           attachments: attachmentResolver,
           annotations: annotationRepository,
           noteIndex,
+          libraryTagNames: (annotationKey) =>
+            libraryTagNames(db, annotationKey),
           settings,
           capabilityGestures: {
             reportBlockedGesture: (attachmentKey) =>

@@ -95,7 +95,11 @@ export {
   getItemIDByCitekey,
   type LibraryCitekey,
 } from "./queries/citekey";
-export { resolveItemTags, type TagMemo } from "./queries/tags";
+export {
+  getLibraryTagNames,
+  resolveItemTags,
+  type TagMemo,
+} from "./queries/tags";
 export { getRelatedKeysByItemID } from "./queries/item-relations";
 export { CollectionCache, type TemplateCollection } from "./lib/zt-collection";
 export {
@@ -108,7 +112,12 @@ export {
   getAnnotViewAttachments,
   type AnnotViewAttachment,
 } from "./queries/annot-view";
-export { type ItemTag, type TemplateTag, tagTypeToName } from "./lib/zt-tag";
+export {
+  type ItemTag,
+  type TagType,
+  type TemplateTag,
+  tagTypeToName,
+} from "./lib/zt-tag";
 export { type Attachment } from "./lib/zt-attach";
 export {
   getCollectionIDByKey,

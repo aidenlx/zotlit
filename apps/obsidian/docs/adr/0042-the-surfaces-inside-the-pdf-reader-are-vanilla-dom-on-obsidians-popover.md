@@ -28,3 +28,9 @@ While editing is live, the Mark Handles of the selected Annotation Mark and the 
 ## Amendment: several Annotation Marks can be selected
 
 With the Card Selection owned by the Annotation View ([ADR 0061](0061-the-annotation-view-owns-its-card-selection.md)), the reader paints `is-selected` on every mark in a Card Selection of several. The Mark Popup and the Mark Handles stay for a single selected mark, so the popup's anchor is still one mark's union rect. The PDF gains no multi-select gesture: a mark click selects that mark alone. The reader's colour keys and Delete act on every selected mark, and ↑/↓ reduce a selection of several to one mark.
+
+## Amendment: the Mark Popup's tag section is a Preact island
+
+Accepted 2026-09-25. Annotation Tags are shown and edited inline in the Annotation Card and in the Mark Popup through one composition, `TagsInput` from `@zotlit/ui` ([root ADR 0061](../../../../docs/adr/0061-shared-ui-parts-are-unstyled-compositions-in-zotlit-ui.md)). The Mark Popup renders its tag section, the chips and the inline editor, as a Preact root in its own element under the popup column: the pattern held available above. The row, the comment view, and the comment sheet stay vanilla DOM, and the Annotation Marks and the Creation Toolbar have no Preact. The island mounts when the tag section appears and unmounts when the popup rebuilds its content or hides, under the binding's disposer.
+
+A vanilla builder shared the way the comment sheet is shared was rejected. The same parts also serve the Workbench's Match conditions, which is a React tree on the web and a Preact tree in Obsidian, so only a JSX composition has one copy of the key, focus, and duplicate rules for all three consumers. The reader rule narrows from "no reader code imports Preact" to "only the Mark Popup's tag section imports Preact".

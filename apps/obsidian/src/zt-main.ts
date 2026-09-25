@@ -31,6 +31,7 @@ import { addCitekeyEditorActions } from "./services/citekey-editor/actions";
 import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candidates";
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
+import { libraryTagNames } from "./services/database/library-tag-names";
 import { reapReadClones } from "./services/database/reap-temps";
 import { savedExcerptRequest } from "./services/excerpt-image/request";
 import { addGraphCitationsActions } from "./services/graph-citations/actions";
@@ -408,6 +409,8 @@ export default class ZotLitPlugin extends Plugin {
       allowEditing: () => void services.capabilityNotices.allowEditing(),
       reportBlockedGesture: (attachmentKey) =>
         services.capabilityNotices.reportBlockedGesture(attachmentKey),
+      libraryTagNames: (annotationKey) =>
+        libraryTagNames(services.db, annotationKey),
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,

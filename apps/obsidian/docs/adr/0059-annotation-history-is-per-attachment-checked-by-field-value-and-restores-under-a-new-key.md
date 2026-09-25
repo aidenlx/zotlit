@@ -1,5 +1,7 @@
 # Annotation History is per Attachment, checked by field value when undone, and restores under a new key
 
+Amended by [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md): the undo of a tag editing session reverses its added and removed names against the current tags instead of checking field values.
+
 The Geometry Edit and ink specs (#1200, #1207) left undo out because "Zotero holds no history, and neither does ZotLit". ZotLit now keeps an Annotation History: an ephemeral record of its own confirmed edits, one per Attachment, recorded in the annotation repository that every surface already writes through. It starts when the first PDF view of the Attachment opens and ends when the last one closes. A History Step holds the before and after values of the fields it changed, taken from confirmed records, so a failed write never enters it. An undo is an ordinary write through the same verbs: it first compares the step's after values with the current confirmed record, writes the before values when they match, and otherwise drops that one step with a notice. Redo is built from the undo's confirmed result, and a new edit clears it.
 
 ## Considered Options

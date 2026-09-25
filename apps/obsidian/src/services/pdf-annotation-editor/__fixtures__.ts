@@ -17,6 +17,7 @@ import type {
   AnnotationRecord,
   AnnotationRepositoryEvents,
   HistoryOutcome,
+  TagDraft,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -338,7 +339,11 @@ export function annotationReads(
     commentDraftFor: vi.fn(() => null),
     editComment: vi.fn(() => null),
     submitComment: vi.fn(() => Promise.resolve(IDLE)),
+    tagDraftFor: vi.fn(() => null),
+    editTags: vi.fn(() => null),
+    submitTags: vi.fn(() => Promise.resolve(IDLE)),
     discardCommentDraft: vi.fn(),
+    discardTagDraft: vi.fn(),
     retryCommentDraft: vi.fn(() => Promise.resolve(IDLE)),
     patchColor: vi.fn(() => Promise.resolve(IDLE)),
     patchGeometry: vi.fn(() => Promise.resolve(IDLE)),
@@ -499,7 +504,11 @@ export function annotationEdits() {
     }),
     submitComment: vi.fn(async () => IDLE),
     discardCommentDraft: vi.fn(),
+    discardTagDraft: vi.fn(),
     retryCommentDraft: vi.fn(async () => IDLE),
+    tagDraftFor: vi.fn((): TagDraft | null => null),
+    editTags: vi.fn((): TagDraft | null => null),
+    submitTags: vi.fn(async (): Promise<MutationState> => IDLE),
     on: vi.fn(on),
     hideCommentDraft() {
       commentDraft = null;
@@ -700,6 +709,7 @@ export function readerSurfaces({
       el.setText(html);
       return () => el.empty();
     },
+    libraryTagNames: () => [],
     containerEl,
     popup,
     selectionSurfaces: session,
@@ -741,6 +751,7 @@ export function readerSurfaces({
       selected: {
         anchor: () => selection.anchor(),
         render: (content) => selection.renderPopup(content),
+        release: () => selection.releasePopup(),
       },
       create: {
         anchor: () => creation.anchor(),

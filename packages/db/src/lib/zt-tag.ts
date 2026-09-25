@@ -29,8 +29,12 @@ export interface ItemTag {
   type: TagType;
 }
 
-export function tagTypeToName(type: TagType): TagTypeName | "unknown" {
-  const name = TAG_TYPE[type];
+/**
+ * The name of a tag type. It takes any number, because a Zotero reply can name
+ * a type that Zotero added after this mapping was written.
+ */
+export function tagTypeToName(type: number): TagTypeName | "unknown" {
+  const name = (TAG_TYPE as Partial<Record<number, TagTypeName>>)[type];
   if (name) return name;
 
   logger.warn("Unknown tag type {type}", { type });

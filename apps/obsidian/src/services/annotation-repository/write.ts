@@ -6,10 +6,12 @@
 import type {
   AnnotationPosition,
   ResolvedAnnotationTypeName,
+  TagType,
 } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { LocalApiFailure } from "@/services/zotero-local-api/service";
+import type { WireTag } from "@/services/zotero-local-api/wire";
 
 import { capabilityOfFailure } from "./capability";
 import type { EditingCapability } from "./capability";
@@ -74,8 +76,14 @@ export type WriteConflict =
       fresh: { position: AnnotationPosition; text: string | null };
     };
 
-/** Which write is in flight: one of the four editing verbs, or a create. */
-export type PendingWrite = ConflictedWrite | "create";
+/**
+ * Which write is in flight: one of the four editing verbs, a create, or one
+ * tag editing session's save. A tag save never stands in a Write Conflict: its
+ * names merge into the tags Zotero holds.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export type PendingWrite = ConflictedWrite | "create" | "tags";
 
 /**
  * What a write left on one Annotation. `pending` names its write, because not
@@ -83,13 +91,15 @@ export type PendingWrite = ConflictedWrite | "create";
  * never as a provisional value. A comment write shows as nothing: its text
  * stands in the comment draft the editor already draws, and any verb pressed
  * meanwhile queues behind it, so the save is a background sync the user only
- * hears about when it fails.
+ * hears about when it fails. A tag editing session's own save is marked
+ * `session`: the tag editor shows it as saving. A tag undo or redo carries no
+ * mark, and is a gesture's write like any other.
  *
  * A conflict stands on one Annotation and carries both values the card offers.
  */
 export type MutationState =
   | { kind: "idle" }
-  | { kind: "pending"; write: PendingWrite }
+  | { kind: "pending"; write: PendingWrite; session?: true }
   | { kind: "conflict"; conflict: WriteConflict }
   | { kind: "failed"; failure: WriteFailure };
 
@@ -151,6 +161,104 @@ export function commentPatch(
   comment: string,
 ): WriteRequest {
   return patch(target, { annotationComment: comment });
+}
+
+/** One Annotation Tag as Zotero stores it: a name and the tag's type. */
+export interface AnnotationTag {
+  name: string;
+  /**
+   * Zotero's own number, which a tag write sends back unchanged. It is wider
+   * than the db's `TagType`, because a Zotero reply can name a type that
+   * Zotero added after that mapping was written.
+   */
+  type: number;
+}
+
+/** The type Zotero stores for a tag the user adds by hand. */
+export const MANUAL_TAG_TYPE = 0 satisfies TagType;
+
+/**
+ * What one change to an Annotation's tags added and removed. A tag editing
+ * session names its tags by name; a History Step holds them with their types.
+ */
+export interface TagChange<T extends string | AnnotationTag = string> {
+  added: readonly T[];
+  removed: readonly T[];
+}
+
+/**
+ * The tags one side holds and the other lacks, compared by name. Names
+ * compare case-sensitively, as Zotero's do.
+ *
+ * @param before the names a session started from, or the tags a write was
+ *   built against.
+ * @param after the names it ends on, or the tags Zotero confirmed.
+ * @returns what went from `before` to `after`.
+ */
+export function tagChange<T extends string | AnnotationTag>(
+  before: readonly T[],
+  after: readonly T[],
+): TagChange<T> {
+  return {
+    added: after.filter((tag) => !hasTag(before, tag)),
+    removed: before.filter((tag) => !hasTag(after, tag)),
+  };
+}
+
+/** Whether a change adds and removes no name at all. */
+export function noTagChange({
+  added,
+  removed,
+}: TagChange<string | AnnotationTag>): boolean {
+  return added.length === 0 && removed.length === 0;
+}
+
+/**
+ * One change applied to the tags Zotero holds now. A kept tag keeps its type,
+ * an added name is manual, an added tag keeps the type it carries, and an
+ * automatic tag can be removed. A tag that Zotero added or removed beside the
+ * change is left as Zotero holds it, so the merge never needs a Write
+ * Conflict.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export function mergeTags(
+  current: readonly AnnotationTag[],
+  { added, removed }: TagChange<string | AnnotationTag>,
+): AnnotationTag[] {
+  const kept = current.filter((tag) => !hasTag(removed, tag));
+  const fresh = added.filter((tag) => !hasTag(kept, tag)).map(typedTag);
+  return [...kept, ...fresh];
+}
+
+function hasTag(
+  tags: readonly (string | AnnotationTag)[],
+  tag: string | AnnotationTag,
+): boolean {
+  const name = tagName(tag);
+  return tags.some((other) => tagName(other) === name);
+}
+
+function tagName(tag: string | AnnotationTag): string {
+  return typeof tag === "string" ? tag : tag.name;
+}
+
+/** A bare name is a tag the user adds, which is a manual tag. */
+function typedTag(tag: string | AnnotationTag): AnnotationTag {
+  return typeof tag === "string" ? { name: tag, type: MANUAL_TAG_TYPE } : tag;
+}
+
+/**
+ * A tag change, which sends the whole list: Zotero replaces an item's tags
+ * with the list a patch names, so a list with one tag left out removes it.
+ */
+export function tagsPatch(
+  target: WriteTarget,
+  tags: readonly AnnotationTag[],
+): WriteRequest {
+  return patch(target, {
+    tags: tags.map(({ name, type }) => ({ tag: name, type })),
+  });
 }
 
 /**
@@ -504,7 +612,7 @@ export function blockedReason(
  */
 function patch(
   target: WriteTarget,
-  fields: Readonly<Record<string, string>>,
+  fields: Readonly<Record<string, string | readonly WireTag[]>>,
 ): WriteRequest {
   return {
     path: itemPath(target),

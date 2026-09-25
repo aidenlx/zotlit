@@ -13,6 +13,7 @@ import type {
   CommentDraft,
   EditingCapability,
   MutationState,
+  TagDraft,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 
@@ -57,6 +58,13 @@ export interface AnnotState {
    * none is. One at a time: the editor takes the caret.
    */
   editingCommentKey: string | null;
+  /** Shared tag drafts currently observed by this view. */
+  tagDrafts: ReadonlyMap<string, TagDraft>;
+  /**
+   * The Annotation whose tags are open in its card's editor; `null` while
+   * none is. A draft still saving keeps its editor open after this clears.
+   */
+  editingTagsKey: string | null;
   /** Indexed Keys of the Annotations selected in the reader the view follows. */
   selectedAnnotationKeys: readonly string[];
   /**
@@ -127,6 +135,8 @@ export function createAnnotStore() {
         mutations: new Map(),
         commentDrafts: new Map(),
         editingCommentKey: null,
+        tagDrafts: new Map(),
+        editingTagsKey: null,
         selectedAnnotationKeys: [],
         itemKey: null,
         itemDisplay: null,
@@ -182,6 +192,12 @@ export function useMutation(annotationKey: string): MutationState {
 export function useSetEditingComment(): (key: string | null) => void {
   const store = useAnnotStoreApi();
   return (key) => store.setState({ editingCommentKey: key });
+}
+
+/** Opens one card's tag editor, or closes the one that is open. */
+export function useSetEditingTags(): (key: string | null) => void {
+  const store = useAnnotStoreApi();
+  return (key) => store.setState({ editingTagsKey: key });
 }
 
 /**

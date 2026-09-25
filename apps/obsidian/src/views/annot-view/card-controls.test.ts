@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
-import type { CommentDraft } from "@/services/annotation-repository/service";
+import type {
+  CommentDraft,
+  TagDraft,
+} from "@/services/annotation-repository/service";
 import type { MutationState } from "@/services/annotation-repository/write";
 import { IDLE } from "@/services/annotation-repository/write";
 
@@ -15,6 +18,7 @@ import {
   commentEditorControls,
   editingBlockedReason,
   heldCommentDraft,
+  heldTagDraft,
 } from "./card-controls";
 import type { CardBlock, CardControls } from "./card-controls";
 
@@ -45,7 +49,13 @@ function controlsOf(
   capability: EditingCapability,
   mutation: MutationState = { kind: "idle" },
 ): CardControls {
-  return cardControls({ capability, mutation, hasComment: false, now: NOW });
+  return cardControls({
+    capability,
+    mutation,
+    hasComment: false,
+    hasTags: false,
+    now: NOW,
+  });
 }
 
 function states(controls: CardControls): boolean[] {
@@ -225,6 +235,68 @@ it("names the comment verb for what pressing it would do", () => {
   );
 });
 
+it("gives the tag toggle the comment toggle's enabled state and blocked reason", () => {
+  expect(controlsOf(LIVE).tags).toEqual({
+    disabled: false,
+    blocked: null,
+    tooltip: m.annot_view_card_add_tags(),
+  });
+  for (const capability of BLOCKED) {
+    const copy = editingCapabilityCopy(capability, NOW);
+    // Pressable, so the press raises the notice that states the reason.
+    expect(controlsOf(capability).tags).toEqual({
+      disabled: false,
+      blocked: {
+        reason: copy.detail ?? copy.label,
+        action:
+          capability.kind === "authorization-required" ? "allow-editing" : null,
+      },
+      tooltip: m.annot_view_card_add_tags(),
+    });
+  }
+  expect(
+    controlsOf({ kind: "writable" }, { kind: "pending", write: "color" }).tags,
+  ).toEqual({
+    disabled: true,
+    blocked: null,
+    tooltip: m.annot_view_card_saving(),
+  });
+});
+
+it("keeps every verb live while a tag session saves, since that save is no gesture", () => {
+  const tags = { kind: "pending", write: "tags", session: true } as const;
+
+  expect(controlsOf({ kind: "writable" }, tags)).toEqual(
+    controlsOf({ kind: "writable" }),
+  );
+  expect(editingBlockedReason({ kind: "writable" }, tags, NOW)).toBeNull();
+});
+
+it("stands every verb down while a tag undo or redo is in flight", () => {
+  const step = { kind: "pending", write: "tags" } as const;
+
+  expect(controlsOf({ kind: "writable" }, step)).toEqual(
+    controlsOf({ kind: "writable" }, { kind: "pending", write: "color" }),
+  );
+  expect(editingBlockedReason({ kind: "writable" }, step, NOW)).toBe(
+    m.annot_view_card_saving(),
+  );
+});
+
+it("names the tag toggle for what pressing it would do", () => {
+  const tooltip = (hasTags: boolean) =>
+    cardControls({
+      capability: { kind: "writable" },
+      mutation: IDLE,
+      hasComment: false,
+      hasTags,
+      now: NOW,
+    }).tags.tooltip;
+
+  expect(tooltip(false)).toBe(m.annot_view_card_add_tags());
+  expect(tooltip(true)).toBe(m.annot_view_card_edit_tags());
+});
+
 it("shows the current save outcome and preserves a manual recovery action", () => {
   const draft: CommentDraft = {
     annotationKey: "PUPR5FG5",
@@ -392,6 +464,87 @@ describe("the held-draft panel", () => {
         label: m.annot_view_comment_save(),
         enabled: false,
         primary: false,
+      },
+      {
+        kind: "discard",
+        label: m.annot_view_comment_discard(),
+        enabled: true,
+        primary: false,
+      },
+    ]);
+  });
+});
+
+describe("the held tags panel", () => {
+  const draft: TagDraft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: ["review"],
+    names: ["review", "figure"],
+    state: { kind: "editing" },
+    manualSave: true,
+    held: true,
+  };
+
+  it("stays quiet while a session is open, a save is in flight, or nothing changed", () => {
+    // A session open on either surface: Save tags there would cut it short.
+    expect(
+      heldTagDraft({ kind: "writable" }, { ...draft, held: false }, NOW),
+    ).toBeNull();
+    expect(
+      heldTagDraft({ kind: "writable" }, { ...draft, names: ["review"] }, NOW),
+    ).toBeNull();
+    expect(
+      heldTagDraft(
+        { kind: "writable" },
+        { ...draft, state: { kind: "pending" } },
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("states each hold with the comment's reason line and offers Save tags", () => {
+    const reason = (capability: EditingCapability, held: TagDraft) =>
+      heldTagDraft(capability, held, NOW)?.reason;
+    expect(
+      reason(
+        { kind: "writable" },
+        {
+          ...draft,
+          state: { kind: "failed", failure: { kind: "unreachable" } },
+        },
+      ),
+    ).toBe(m.annot_view_comment_unconfirmed());
+    const unavailable: EditingCapability = {
+      kind: "read-only",
+      reason: "zotero-unavailable",
+    };
+    expect(reason(unavailable, draft)).toBe(
+      editingCapabilityCopy(unavailable, NOW).detail,
+    );
+    const refused = heldTagDraft(
+      { kind: "authorization-required" },
+      {
+        ...draft,
+        state: { kind: "failed", failure: { kind: "unauthorized" } },
+      },
+      NOW,
+    );
+    expect(refused?.reason).toBe(m.capability_authorization_required_detail());
+    expect(refused?.names).toEqual(["review", "figure"]);
+    expect(refused?.actions).toEqual([
+      {
+        kind: "save",
+        label: m.annot_view_tags_save(),
+        enabled: false,
+        primary: false,
+      },
+      {
+        kind: "allow-editing",
+        label: m.capability_enable_editing(),
+        enabled: true,
+        primary: true,
       },
       {
         kind: "discard",
