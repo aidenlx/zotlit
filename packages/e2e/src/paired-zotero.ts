@@ -402,6 +402,11 @@ export function readerAnnotation({
  * - two Local API reads, one poll apart, agree on the version, with the
  *   Reader state holding at both.
  *
+ * For an image or ink, it then waits out the second of the last write.
+ * Zotero stamps a modification to the second, and the Reader renders an
+ * Annotation again only for a later stamp than its last render, so a next write
+ * in that second would leave the Reader with no image forever.
+ *
  * @param options.image whether the Annotation carries an Excerpt Image the
  *   Reader renders; a highlight or underline has none to wait for.
  * @throws when the Reader does not settle within the poll's bound.
@@ -498,6 +503,15 @@ export async function readerSettled(
     throw new Error(
       `the Zotero Reader never settled on ${annotationKey}: ${pending.join(", ") || "version moving"}; ${JSON.stringify(scene)}`,
     );
+  }
+  if (image) {
+    await rdp.json<boolean>(`(async () => {
+      const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, ${key});
+      while (Zotero.Date.dateToSQL(new Date(), true) <= item.dateModified) {
+        await Zotero.Promise.delay(50);
+      }
+      return true;
+    })()`);
   }
 }
 
