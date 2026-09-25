@@ -288,6 +288,14 @@ _Avoid_: annotation item, annotation row
 The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note.
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
 
+**Quoted Text**:
+The document text a highlight or underline Annotation carries, with Zotero's inline rich-text formatting. Zotero extracts it from the page when the range is made or changed, and the user may correct it by hand; no other Annotation type has one.
+_Avoid_: excerpt (that is the card's block or the Child-Note snapshot), highlight text, annotation text, extracted text
+
+**Text Edit**:
+A change of an Annotation's Quoted Text alone, typed by the user; the position, text range and Sort Index stay. A later Geometry Edit replaces the typed text with the text of the new range, as Zotero's own reader does.
+_Avoid_: excerpt edit, quote edit, highlight text edit
+
 **Excerpt Image**:
 The raster image representation of an image or ink Annotation's PDF region, including its ink strokes where applicable. A ZotLit Excerpt Image and a Zotero Excerpt Image have separate ownership; an image embedded in a Child Note belongs to that note's frozen snapshot.
 _Avoid_: cache image, cache PNG, annotation image (ambiguous with an image Annotation)
@@ -341,7 +349,7 @@ A grip drawn on the selected Annotation Mark, while editing is live, that begins
 _Avoid_: resize handle (a highlight's handles move an end of its range), grip, control point
 
 **Geometry Edit**:
-A change of an Annotation's position — and, for a highlight or underline, its text range and quoted text — saved to Zotero with a recomputed Sort Index. The page and the Page Label stay.
+A change of an Annotation's position — and, for a highlight or underline, its text range and Quoted Text — saved to Zotero with a recomputed Sort Index. The page and the Page Label stay.
 _Avoid_: move, resize, drag (the gestures, not the edit), position edit
 
 **Creation Toolbar**:
@@ -369,7 +377,7 @@ What the surfaces of one Reader Session in Obsidian's PDF view draw from: the ar
 _Avoid_: reader store, toolbar state, view state (that is the Annotation View's)
 
 **Annotation Draft**:
-The shared unsaved comment for one Annotation, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
+The shared unsaved comment or Quoted Text for one Annotation, one draft per field, with the text the user started from and their current text. The Annotation View and Mark Popup access the same draft before a confirmed change in Zotero.
 _Avoid_: pending write (the draft has not been submitted), cached comment
 
 **Write Conflict**:
@@ -381,7 +389,7 @@ The ephemeral, ordered record of ZotLit's own confirmed edits to one Attachment'
 _Avoid_: undo stack, edit log, history (alone; Obsidian's workspace History is navigation)
 
 **History Step**:
-One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, or one comment editing session — held as the before and after values of the fields it changed on each Annotation it touched.
+One user action in the Annotation History — a create, a delete, a colour pick, a Geometry Edit, one comment editing session, or one Text Edit session — held as the before and after values of the fields it changed on each Annotation it touched.
 _Avoid_: history point, undo entry, transaction
 
 **Sort Index**:
