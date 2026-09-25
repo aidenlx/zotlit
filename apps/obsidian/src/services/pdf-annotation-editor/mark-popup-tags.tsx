@@ -110,7 +110,14 @@ export class MarkPopupTags implements Disposable {
   readonly #suggest: RefObject<HTMLElement | null> = { current: null };
 
   constructor(column: HTMLElement, app: App, key: string) {
-    this.el = column.createDiv({ attr: { "data-zt-section": "tags" } });
+    // The inset and width every block under the row takes, so the chips share
+    // the comment's edge and wrap at the row's width. A block above already
+    // leaves its own inset, so the section draws up to it and reads as part of
+    // the Annotation's content; straight under the row, it keeps the column gap.
+    this.el = column.createDiv({
+      cls: "zt:w-0 zt:min-w-[max(100%,12em)] zt:px-1.5 zt:pb-1.5 zt:not-nth-2:-mt-1",
+      attr: { "data-zt-section": "tags" },
+    });
     this.key = key;
     this.#app = app;
     this.#root = createRoot(this.el);
