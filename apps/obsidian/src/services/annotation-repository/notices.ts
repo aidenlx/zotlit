@@ -180,7 +180,7 @@ export class CapabilityNotices extends Service<void> {
     // A card that settled back to any other state has no conflict standing on
     // it, so the next one is news rather than the same one twice.
     stack.defer(
-      this.#capabilities.on("mutation-changed", (annotationKey) => {
+      this.#capabilities.on("annotation-changed", (annotationKey) => {
         if (this.#capabilities.mutationFor(annotationKey).kind === "conflict") {
           return;
         }

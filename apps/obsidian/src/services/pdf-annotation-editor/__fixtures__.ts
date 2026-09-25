@@ -21,10 +21,10 @@ import type {
   AnnotationList,
   AnnotationRecord,
   AnnotationRepositoryEvents,
+  AnnotationState,
   HistoryOutcome,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
-import type { MutationState } from "@/services/annotation-repository/write";
 import type {
   AttachmentResolution,
   AttachmentResolverEvents,
@@ -346,11 +346,18 @@ export function annotationReads(
     })),
     refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
-    mutationFor: vi.fn((): MutationState => IDLE),
+    annotationState: vi.fn(
+      (): AnnotationState => ({
+        mutation: IDLE,
+        commentDraft: null,
+        tagDraft: null,
+        hidden: false,
+        gone: false,
+      }),
+    ),
     commentDraftFor: vi.fn(() => null),
     editComment: vi.fn(() => null),
     submitComment: vi.fn(() => Promise.resolve(IDLE)),
-    tagDraftFor: vi.fn(() => null),
     editTags: vi.fn(() => null),
     submitTags: vi.fn(() => Promise.resolve(IDLE)),
     discardCommentDraft: vi.fn(),

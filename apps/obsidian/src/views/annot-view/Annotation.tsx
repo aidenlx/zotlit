@@ -37,6 +37,8 @@ import {
   editingLive,
   heldCommentDraft,
   heldTagDraft,
+  shownComment,
+  shownTagNames,
   tagEditorControls,
 } from "./card-controls";
 import type { CardControl, CardControls, HeldDraft } from "./card-controls";
@@ -440,7 +442,7 @@ function TagSlot({
       // action bar's claim of that same press.
       <div onClick={(e) => claimClick(e)}>
         <TagEditor
-          names={session.draft?.names ?? annot.tags}
+          names={shownTagNames(annot, draft)}
           auto={auto}
           hint={editor.hint}
           libraryNames={() => actions.libraryTagNames(annot)}
@@ -466,10 +468,7 @@ function TagSlot({
   }
   return (
     <TagRow
-      // While a tag draft stands unsaved, the row shows its names, as the Mark
-      // Popup does, so the two surfaces show the same unsaved change; a saving
-      // draft's names are the record's Pending Proposal.
-      names={draft && draft.state.kind !== "pending" ? draft.names : annot.tags}
+      names={shownTagNames(annot, draft)}
       onOpen={editable ? session.start : undefined}
     />
   );
@@ -649,9 +648,8 @@ function Comment({
 function CommentEditor({ annot }: { annot: AnnotationRecord }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
-  const stored = annot.comment ?? "";
-  const text = useAnnotStore(
-    (state) => state.commentDrafts.get(annot.key)?.text ?? stored,
+  const text = useAnnotStore((state) =>
+    shownComment(annot, state.commentDrafts.get(annot.key) ?? null),
   );
   const capability = useAnnotStore((state) => state.capability);
   const draft = useAnnotStore(

@@ -18,6 +18,7 @@ import type {
   AnnotationRecord,
   AnnotationRepository,
   CommentDraft,
+  AnnotationState,
   TagDraft,
 } from "@/services/annotation-repository/service";
 import {
@@ -865,7 +866,7 @@ export function dropRecord(store: ReaderSurfaceStore, key: string): void {
 /** What the per-Annotation facts are read and announced through. */
 export type AnnotationFacts = Pick<
   AnnotationRepository,
-  "commentDraftFor" | "mutationFor" | "on" | "tagDraftFor"
+  "annotationState" | "on"
 >;
 
 /**
@@ -879,15 +880,13 @@ export function ingestAnnotations(
 ): void {
   ingestRecords(store, records);
   for (const { key } of records) {
-    ingestMutation(store, key, annotations.mutationFor(key));
-    ingestCommentDraft(store, key, annotations.commentDraftFor(key));
-    ingestTagDraft(store, key, annotations.tagDraftFor(key));
+    ingestAnnotationState(store, key, annotations.annotationState(key));
   }
 }
 
 /**
  * Takes what the repository announces about one Annotation — what a write left
- * on it, its comment draft, and its deletion — into the state.
+ * on it, its drafts, and its deletion — into the state.
  *
  * @returns what stops the listening.
  */
@@ -897,31 +896,40 @@ export function listenAnnotationEvents(
 ): DisposableStack {
   const listening = new DisposableStack();
   listening.defer(
-    annotations.on("mutation-changed", (key) =>
-      ingestMutation(store, key, annotations.mutationFor(key)),
+    annotations.on("annotation-changed", (key) =>
+      ingestAnnotationState(store, key, annotations.annotationState(key)),
     ),
   );
-  listening.defer(
-    annotations.on("comment-draft-changed", (key) => {
-      ingestCommentDraft(store, key, annotations.commentDraftFor(key));
-      ingestTagDraft(store, key, annotations.tagDraftFor(key));
-    }),
-  );
-  // One announcement for either draft: the one hidden is the one the
-  // repository no longer answers for the database that began it.
-  listening.defer(
-    annotations.on("comment-draft-hidden", (key) => {
-      const { commentDrafts, tagDrafts } = store.getState();
-      if (hidden(commentDrafts.get(key), annotations.commentDraftFor(key)))
-        hideCommentDraft(store, key);
-      if (hidden(tagDrafts.get(key), annotations.tagDraftFor(key)))
-        hideTagDraft(store, key);
-    }),
-  );
-  listening.defer(
-    annotations.on("annotation-deleted", (key) => dropRecord(store, key)),
-  );
   return listening;
+}
+
+/**
+ * Takes one Annotation's whole state. A gone Annotation leaves with all it
+ * held; a draft a database switch hid closes its editor, where a draft that
+ * ended with its save leaves the editor as it stands.
+ */
+function ingestAnnotationState(
+  store: ReaderSurfaceStore,
+  key: string,
+  state: AnnotationState,
+): void {
+  if (state.gone) {
+    dropRecord(store, key);
+    return;
+  }
+  // Only a draft this state still holds is hidden: the switch closes its
+  // editor once, not every editor opened on the Annotation after it.
+  if (state.hidden) {
+    const { commentDrafts, tagDrafts } = store.getState();
+    const comment = commentDrafts.get(key);
+    const tags = tagDrafts.get(key);
+    if (comment && hidden(comment, state.commentDraft))
+      hideCommentDraft(store, key);
+    if (tags && hidden(tags, state.tagDraft)) hideTagDraft(store, key);
+  }
+  ingestMutation(store, key, state.mutation);
+  ingestCommentDraft(store, key, state.commentDraft);
+  ingestTagDraft(store, key, state.tagDraft);
 }
 
 /**
@@ -1000,14 +1008,14 @@ function hideTagDraft(store: ReaderSurfaceStore, key: string): void {
 }
 
 /**
- * Whether the repository hid a draft: it answers none for the Annotation, or
- * one that another database began.
+ * Whether the repository hid a held draft: it answers none for the Annotation,
+ * or one that another database began.
  */
 function hidden(
-  held: { serverID: string } | undefined,
+  held: { serverID: string },
   now: { serverID: string } | null,
 ): boolean {
-  return now === null || (held !== undefined && now.serverID !== held.serverID);
+  return now === null || now.serverID !== held.serverID;
 }
 
 function withDraft<T>(

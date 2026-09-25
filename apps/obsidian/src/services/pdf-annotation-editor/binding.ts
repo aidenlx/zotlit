@@ -134,6 +134,7 @@ const COUNTDOWN_INTERVAL = Temporal.Duration.from({ seconds: 1 });
  */
 export type AnnotationReads = Pick<
   AnnotationRepository,
+  | "annotationState"
   | "capability"
   | "capabilityFor"
   | "closeHistory"
@@ -144,7 +145,6 @@ export type AnnotationReads = Pick<
   | "discardTagDraft"
   | "editComment"
   | "editTags"
-  | "mutationFor"
   | "on"
   | "openHistory"
   | "patchColor"
@@ -157,7 +157,6 @@ export type AnnotationReads = Pick<
   | "retryCommentDraft"
   | "submitComment"
   | "submitTags"
-  | "tagDraftFor"
   | "undo"
 >;
 

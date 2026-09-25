@@ -131,6 +131,7 @@ export interface AnnotViewDeps {
    */
   annotations: Pick<
     AnnotationRepository,
+    | "annotationState"
     | "capability"
     | "capabilityFor"
     | "commentDraftFor"
@@ -138,7 +139,6 @@ export interface AnnotViewDeps {
     | "discardCommentDraft"
     | "discardTagDraft"
     | "discardConflict"
-    | "mutationFor"
     | "on"
     | "patchColor"
     | "editComment"
@@ -552,43 +552,34 @@ export class AnnotationView extends ItemView implements HistorySurface {
         },
       ),
     );
+    // One snapshot per Annotation: what a write left on it, its drafts, and
+    // whether a complete read found it gone, which ends its editors.
     this.register(
-      this.#deps.annotations.on("mutation-changed", (annotationKey) => {
-        const mutations = new Map(this.#store.getState().mutations);
-        mutations.set(
-          annotationKey,
-          this.#deps.annotations.mutationFor(annotationKey),
-        );
-        this.#store.setState({ mutations });
-      }),
-    );
-    this.register(
-      this.#deps.annotations.on("comment-draft-changed", (annotationKey) => {
+      this.#deps.annotations.on("annotation-changed", (annotationKey) => {
         const state = this.#store.getState();
+        const now = this.#deps.annotations.annotationState(annotationKey);
+        const mutations = new Map(state.mutations);
+        mutations.set(annotationKey, now.mutation);
         const commentDrafts = new Map(state.commentDrafts);
-        const draft = this.#deps.annotations.commentDraftFor(annotationKey);
-        if (draft) commentDrafts.set(annotationKey, draft);
+        if (now.commentDraft)
+          commentDrafts.set(annotationKey, now.commentDraft);
         else commentDrafts.delete(annotationKey);
         const tagDrafts = new Map(state.tagDrafts);
-        const tagDraft = this.#deps.annotations.tagDraftFor(annotationKey);
-        const ended = tagDraft ? undefined : tagDrafts.get(annotationKey);
-        if (tagDraft) tagDrafts.set(annotationKey, tagDraft);
+        const ended = now.tagDraft ? undefined : tagDrafts.get(annotationKey);
+        if (now.tagDraft) tagDrafts.set(annotationKey, now.tagDraft);
         else tagDrafts.delete(annotationKey);
         this.#store.setState({
+          mutations,
           commentDrafts,
           tagDrafts,
           ...(ended && this.#heldList(ended.attachmentKey)),
+          ...(now.gone &&
+            state.editingCommentKey === annotationKey && {
+              editingCommentKey: null,
+            }),
+          ...(now.gone &&
+            state.editingTagsKey === annotationKey && { editingTagsKey: null }),
         });
-      }),
-    );
-    this.register(
-      this.#deps.annotations.on("annotation-deleted", (annotationKey) => {
-        if (this.#store.getState().editingCommentKey === annotationKey) {
-          this.#store.setState({ editingCommentKey: null });
-        }
-        if (this.#store.getState().editingTagsKey === annotationKey) {
-          this.#store.setState({ editingTagsKey: null });
-        }
       }),
     );
 
