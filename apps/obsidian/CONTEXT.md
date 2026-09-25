@@ -688,16 +688,12 @@ A check of the Zotero Local API's availability and Zotero Server ID. It describe
 _Avoid_: ping, health check, handshake, api.ready (the Better BibTeX probe used by Pandoc export)
 
 **Write Authorization**:
-The grant Zotero issues to ZotLit, on the user's Allow or Always Allow in Zotero's own dialog, that permits writes through the Zotero Local API. Reads need none; Write Authorization gates writes alone. Zotero decides it; ZotLit only asks and remembers.
-_Avoid_: login, API key (user-facing; keys are the mechanism, not the grant), permission (overloaded with Approved Attachment Root), token
+The grant Zotero issues to ZotLit, on the user's Always Allow in Zotero's own dialog, that permits writes through the Zotero Local API. Zotero's Allow issues a single-use key that ZotLit refuses, so Allow grants no Write Authorization. Reads need none; Write Authorization gates writes alone. Zotero decides it; ZotLit only asks and remembers.
+_Avoid_: login, API key (user-facing; keys are the mechanism, not the grant), permission (overloaded with Approved Attachment Root), token, One-time Authorization (Allow grants none)
 
 **Remembered Authorization** _(Write Authorization)_:
 A Write Authorization granted with Always Allow: it stays valid until Zotero clears it or the user removes ZotLit's copy. ZotLit keeps one per vault × device, bound to the Zotero Server ID that granted it, and treats it as a candidate until a write succeeds.
 _Avoid_: persistent key, stored credential, saved login
-
-**One-time Authorization** _(Write Authorization)_:
-A Write Authorization granted with Allow: Zotero consumes it on the first authenticated write attempt, whether or not that write succeeds. ZotLit holds it in memory for that one attempt only.
-_Avoid_: single-use key, session key, temporary key
 
 **Client Name**:
 The stable string, `ZotLit for Obsidian`, under which ZotLit asks Zotero for Write Authorization and which Zotero shows in its dialog. One name for every vault.
