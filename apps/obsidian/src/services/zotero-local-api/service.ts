@@ -84,9 +84,8 @@ export type LocalApiState =
       kind: "available";
       source: LocalApiSource;
       /**
-       * Whether a Write Authorization is in hand for {@link source}: a
-       * Remembered one in Obsidian's Keychain, or a One-time Authorization this
-       * session was granted and has not spent.
+       * Whether a Remembered Authorization for {@link source} is in
+       * SecretStorage.
        */
       authorized: boolean;
     }
@@ -100,24 +99,12 @@ export type LocalApiState =
  * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
  */
 export interface WriteAuthorizationState {
-  /** The available grant permits one authenticated write. */
-  oneTime?: boolean;
   /** A gesture is at Zotero's dialog now. */
   authorizing: boolean;
   /** Zotero refused a write to this Attachment's library this session. */
   libraryReadOnly: boolean;
   /** When Zotero's dialog rate limit lifts, or null while none is running. */
   cooldownUntil: Temporal.Instant | null;
-}
-
-/** What one authorization gesture ended with. */
-export interface Authorization {
-  /**
-   * Whether the grant outlives the write that spends it — Always Allow, or a
-   * Remembered Authorization that was already in hand. `false` is a One-time
-   * Authorization, good for one authenticated request.
-   */
-  remembered: boolean;
 }
 
 export interface ZoteroLocalApiEvents {
@@ -218,17 +205,12 @@ export class ZoteroLocalApiClient extends Service<void> {
   #moved = false;
   /**
    * The one authorization request in flight, and the gestures waiting on it, so
-   * an edit gesture and the settings action raise one dialog between them.
+   * two presses of Allow editing raise one dialog between them.
    */
   #authorizing: {
     gestures: Gestures;
-    result: Promise<LocalApiResult<Authorization>>;
+    result: Promise<LocalApiResult<void>>;
   } | null = null;
-  /**
-   * A One-time Authorization, held for the one authenticated request that
-   * spends it and never written down.
-   */
-  #oneTime: string | null = null;
   /**
    * The libraries Zotero refused a write to this session, as the route names
    * them. Cleared by the next Capability Probe.
@@ -300,7 +282,6 @@ export class ZoteroLocalApiClient extends Service<void> {
     const parsed =
       attachmentKey === null ? null : parseIndexedKey(attachmentKey);
     return {
-      ...(this.#oneTime !== null && { oneTime: true }),
       authorizing: this.#authorizing !== null,
       libraryReadOnly:
         parsed !== null && this.#readOnlyLibraries.has(libraryPath(parsed)),
@@ -323,15 +304,17 @@ export class ZoteroLocalApiClient extends Service<void> {
    * authorization is answered without a dialog. Concurrent gestures join the
    * one request in flight.
    *
+   * Only Always Allow enables editing. An Allow answers `not-remembered`, and an
+   * Always Allow whose key SecretStorage cannot save answers `not-saved`; both
+   * keys are discarded unsent.
+   *
    * The request itself is unbounded: Zotero's dialog waits for the user, so
    * only the gesture ends it. `signal` is that gesture; the request is aborted
    * once every gesture waiting on it has been abandoned.
    *
    * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
    */
-  async authorize(
-    signal?: AbortSignal,
-  ): Promise<LocalApiResult<Authorization>> {
+  async authorize(signal?: AbortSignal): Promise<LocalApiResult<void>> {
     const running = this.#authorizing;
     if (running) {
       running.gestures.join(signal);
@@ -355,7 +338,6 @@ export class ZoteroLocalApiClient extends Service<void> {
    */
   async forgetAuthorization(): Promise<void> {
     await this.#credentials.forget();
-    this.#oneTime = null;
     this.#setAuthorized(false);
   }
 
@@ -366,12 +348,10 @@ export class ZoteroLocalApiClient extends Service<void> {
    *
    * The key is read here and never held: a Remembered Authorization comes fresh
    * from the store at every call, so one the user deleted in Obsidian's Keychain
-   * is simply gone. A One-time Authorization is spent by this call whatever it
-   * answers — Zotero removes a single-use key at the key lookup, before the
-   * endpoint runs, so a write that then fails has still consumed it.
+   * is simply gone.
    *
    * No dialog opens from here. A call with no key in hand is refused as
-   * `unauthorized` without reaching Zotero; the gesture authorizes first.
+   * `unauthorized` without reaching Zotero; Allow editing authorizes first.
    *
    * @param options.library the library the write targets, as the route spells
    *   it, so a refusal marks that one read-only for the session.
@@ -395,8 +375,11 @@ export class ZoteroLocalApiClient extends Service<void> {
       return { failure: { kind: "library-read-only" } };
     }
     const { serverID } = state.source;
-    const key = await this.#takeKey(serverID);
-    if (key === null) return { failure: { kind: "unauthorized" } };
+    const key = await this.#credentials.read(serverID);
+    if (key === null) {
+      this.#setAuthorized(false);
+      return { failure: { kind: "unauthorized" } };
+    }
 
     const reply = await this.#send(path, {
       serverID,
@@ -660,11 +643,6 @@ export class ZoteroLocalApiClient extends Service<void> {
       serverID,
       schemaVersion: reply.headers.get("zotero-schema-version"),
     });
-    // A key belongs to the database that issued it, so one held for another
-    // database is dropped rather than spent against this one.
-    if (this.#serverID !== null && this.#serverID !== serverID) {
-      this.#oneTime = null;
-    }
     return {
       kind: "available",
       source: { kind: "zotero-local-api", serverID },
@@ -676,21 +654,15 @@ export class ZoteroLocalApiClient extends Service<void> {
    * One authorization gesture, from the probe it starts with to the grant or
    * the refusal it ends on.
    */
-  async #authorize(
-    signal: AbortSignal,
-  ): Promise<LocalApiResult<Authorization>> {
+  async #authorize(signal: AbortSignal): Promise<LocalApiResult<void>> {
     await this.#reprobe("authorization gesture");
     const state = this.#state;
     if (state.kind !== "available") {
       return { failure: noSessionFailure(state) };
     }
     // An authorization already in hand is the answer; raising Zotero's dialog
-    // for it would cost the user a click and spend a rate-limit slot. A
-    // One-time Authorization the last gesture won is in hand too, and the
-    // gesture that joins it is told what it really holds.
-    if (state.authorized) {
-      return { value: { remembered: this.#oneTime === null } };
-    }
+    // for it would cost the user a click and spend a rate-limit slot.
+    if (state.authorized) return { value: undefined };
 
     const cooling = this.#cooling();
     if (cooling) return { failure: cooling };
@@ -708,37 +680,39 @@ export class ZoteroLocalApiClient extends Service<void> {
 
     const grant = readGrant(reply.value.text);
     if ("failure" in grant) return grant;
-    return { value: await this.#granted(serverID, grant.value) };
+    return await this.#granted(serverID, grant.value);
   }
 
   /**
-   * What Zotero granted, kept where its lifetime says it belongs.
+   * What Zotero granted, kept only when it outlives the write that spends it.
    *
-   * A remembered grant goes to the keystore and is never held here; a one-time
-   * grant is held for the one request that spends it. A keystore that refuses
-   * the write leaves the grant standing rather than losing it — the session
-   * spends the key once and the next gesture asks again.
+   * An Always Allow goes to SecretStorage and is never held here. An Allow, and
+   * an Always Allow that SecretStorage refuses, are discarded unsent: every write
+   * reads its key from SecretStorage, so a key kept nowhere is never used.
+   *
+   * @see apps/obsidian/docs/adr/0062-editing-requires-a-remembered-authorization-and-allow-leaves-zotlit-read-only.md
    */
   async #granted(
     serverID: string,
     grant: AuthorizationGrant,
-  ): Promise<Authorization> {
-    if (grant.remember) {
-      try {
-        await this.#credentials.remember(serverID, grant.key);
-        this.#oneTime = null;
-        this.#setAuthorized(true);
-        return { remembered: true };
-      } catch (error) {
-        logger.warn("The write authorization could not be remembered", {
-          error,
-        });
-      }
+  ): Promise<LocalApiResult<void>> {
+    if (!grant.remember) {
+      logger.debug("Zotero answered Allow, which ZotLit does not keep", {
+        serverID,
+      });
+      return { failure: { kind: "not-remembered" } };
     }
-    logger.debug("Zotero granted a one-time write authorization", { serverID });
-    this.#oneTime = grant.key;
+    try {
+      await this.#credentials.remember(serverID, grant.key);
+    } catch (error) {
+      logger.warn("The write authorization could not be saved", {
+        serverID,
+        error,
+      });
+      return { failure: { kind: "not-saved" } };
+    }
     this.#setAuthorized(true);
-    return { remembered: false };
+    return { value: undefined };
   }
 
   /** What a refused authorization leaves behind, beside the failure itself. */
@@ -763,23 +737,6 @@ export class ZoteroLocalApiClient extends Service<void> {
       return null;
     }
     return { kind: "cooldown", retryAfter: now.until(until) };
-  }
-
-  /**
-   * The key the next authenticated request carries. A One-time Authorization is
-   * spent here, by the request that is about to send it, because that is where
-   * Zotero spends it too.
-   */
-  async #takeKey(serverID: string): Promise<string | null> {
-    const oneTime = this.#oneTime;
-    if (oneTime === null) {
-      const key = await this.#credentials.read(serverID);
-      if (key === null) this.#setAuthorized(false);
-      return key;
-    }
-    this.#oneTime = null;
-    this.#setAuthorized(await this.#hasKey(serverID));
-    return oneTime;
   }
 
   /**
@@ -809,7 +766,6 @@ export class ZoteroLocalApiClient extends Service<void> {
     if (failure.kind === "unauthorized") {
       logger.debug("Zotero no longer honours this write authorization");
       await this.#credentials.forget();
-      this.#oneTime = null;
       this.#setAuthorized(false);
       return;
     }
@@ -820,9 +776,8 @@ export class ZoteroLocalApiClient extends Service<void> {
     }
   }
 
-  /** Whether any key is in hand for `serverID`, one-time or remembered. */
+  /** Whether a Remembered Authorization is stored for `serverID`. */
   async #hasKey(serverID: string): Promise<boolean> {
-    if (this.#oneTime !== null) return true;
     return (await this.#credentials.read(serverID)) !== null;
   }
 

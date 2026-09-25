@@ -267,7 +267,7 @@ Use this trial to measure both effects on one Fixture:
      "http://127.0.0.1:<port>/api/local/authorize"
    ```
 
-   The response holds a 32-character `key`. **Allow** keeps that key for one successful write. **Always Allow** keeps it for more. A denial answers `403` with `{"denied": true}`. Zotero accepts five dialog requests each minute and answers further requests with `429`.
+   The response holds a 32-character `key`. With **Allow**, the response says `"remember": false`, and Zotero spends the key on the first authenticated request, whether that request succeeds or fails. With **Always Allow**, the response says `"remember": true`, and the key stays valid until you clear it. ZotLit keeps only a key from **Always Allow**. A denial answers `403` with `{"denied": true}`. Zotero accepts five dialog requests each minute and answers further requests with `429`.
 
 6. Write with that key. Replace `<item-key>` and `<version>` with the values from step 2:
 

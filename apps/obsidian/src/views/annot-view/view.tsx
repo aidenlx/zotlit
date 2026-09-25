@@ -149,8 +149,8 @@ export interface AnnotViewDeps {
     | "submitComment"
     | "undo"
   >;
-  /** The Editing Capability affordance's click, which the UI seam owns. */
-  showEditingCapability: () => void;
+  /** Allow editing, from every entry the view offers, which the UI seam owns. */
+  allowEditing: () => void;
   /**
    * An edit gesture met a block on this Attachment, which the one notice
    * ledger answers — the same seam the reader's blocked keystrokes reach.
@@ -392,7 +392,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       onPinItem: () => this.#pickItemToPin(),
       onUnpin: () => this.#unpin(),
       onEnableLiveUpdates: () => this.#enableLiveUpdates(),
-      onAllowEditing: () => this.#deps.showEditingCapability(),
+      onAllowEditing: () => this.#deps.allowEditing(),
       onSelectAnnotation: (annot) => this.#selectAnnotation(annot.key),
       onDragStart: drag,
       insertAnnotation: (annotation) => {

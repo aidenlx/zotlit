@@ -18,7 +18,14 @@ Keep Zotero running while you edit. ZotLit sends each change to Zotero and canno
 
 Open the item's PDF in Obsidian. See [Open an item's PDF in Obsidian](/docs/how-to/open-pdf-in-obsidian) for the available entry points.
 
-Before the first edit, select <UiLabel name={m.capability_enable_editing()} /> in the PDF reader toolbar or the annotation view. ZotLit opens <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />. On the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />, then answer the permission dialog in Zotero.
+Before the first edit, give ZotLit permission to change annotations in Zotero. <UiLabel name={m.capability_enable_editing()} /> is in two places:
+
+- In the annotation view, select the mode button at the start of the view's toolbar, then select <UiLabel name={m.capability_enable_editing()} />.
+- In <SettingsPath page={m.settings_page_zotero()} setting={m.settings_zotero_connection_heading()} />, on the <UiLabel name={m.settings_zotero_editing_name()} /> row, select <UiLabel name={m.settings_zotero_editing_enable()} />.
+
+Zotero opens its permission dialog at once. In the dialog, choose **Always Allow**. ZotLit edits only with a permission that Zotero remembers, so **Allow** leaves editing off. To decline, choose **Deny**.
+
+While Zotero waits for your answer, the PDF reader toolbar shows <UiLabel name={m.capability_authorizing()} />.
 
 <Callout type="warn" title="Edit one annotation in one application at a time">
   Zotero has a [known defect](https://github.com/aidenlx/zotlit/issues/1165) when edits to the same annotation overlap in Zotero and Obsidian. One comment can silently overwrite the other even when both applications report a successful save. A deletion in Obsidian can also remove an annotation that Zotero just updated.

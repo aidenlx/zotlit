@@ -1,6 +1,7 @@
 import type { App, PluginManifest } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
+import type { CapabilityNotices } from "@/services/annotation-repository/notices";
 import type { AnnotationRepository } from "@/services/annotation-repository/service";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -64,11 +65,15 @@ export type AnnotationCapabilityActions = Pick<
   "capability" | "on" | "probe"
 >;
 
-/** The Write Authorization the "Zotero editing" row grants and forgets. */
+/**
+ * The Write Authorization the "Zotero editing" row asks for, through the one
+ * Allow editing every entry shares, and forgets.
+ */
 export type WriteAuthorizationActions = Pick<
   ZoteroLocalApiClient,
-  "authorize" | "forgetAuthorization" | "remembered"
->;
+  "forgetAuthorization" | "remembered"
+> &
+  Pick<CapabilityNotices, "allowEditing">;
 
 /** The attachment-import surface the setting tab needs: read and edit the grants. */
 export type AttachmentImportActions = Pick<

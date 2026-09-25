@@ -185,7 +185,8 @@ export interface MarkGestures {
    */
   reportBlockedGesture: () => void;
   /**
-   * Ask Zotero for editing again, from the held-draft panel's "Allow editing".
+   * Open the "Zotero editing" settings row, whose Allow editing asks Zotero,
+   * from the held-draft panel's "Allow editing".
    * A button answers every press, so it does not go through the blocked-gesture
    * notice, which speaks once per reason per episode.
    */

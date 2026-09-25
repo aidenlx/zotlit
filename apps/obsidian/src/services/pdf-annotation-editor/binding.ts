@@ -170,7 +170,10 @@ export interface CapabilityGestures {
    * behind it. The seam says why, once per reason per capability episode.
    */
   reportBlockedGesture: (attachmentKey: string) => void;
-  /** Ask Zotero for editing again, from a gesture that names the grant itself. */
+  /**
+   * Open the "Zotero editing" settings row, whose Allow editing asks Zotero,
+   * from a gesture that names the grant itself.
+   */
   allowEditing: () => void;
 }
 
@@ -1160,9 +1163,9 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
    * open — and only what survives it is worth a notice.
    */
   #editGesture(): void {
-    // A gesture that can still act carries its own answer: under
-    // `authorization-required` the create opens Zotero's dialog and goes on, so
-    // a notice saying the edit was blocked would contradict it.
+    // A gesture that can still act carries its own answer, so a notice saying
+    // the edit was blocked would contradict it. No gesture opens Zotero's
+    // dialog; only Allow editing does.
     if (editingLive(this.#capability())) return;
     this.#gesturing = this.#annotations.probe().then(() => {
       if (this.#surfaces.disposed) return;
