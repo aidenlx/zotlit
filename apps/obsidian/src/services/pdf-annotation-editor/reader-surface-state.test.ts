@@ -430,9 +430,6 @@ it("takes a read's records with the drafts and write states that stood before it
   zotero.holdWrites();
   void repository.patchColor("PARA7777", "#ff6666");
   repository.editComment("WRDS2222", "worth quoting");
-  await vi.waitFor(() =>
-    expect(repository.mutationFor("PARA7777").kind).toBe("pending"),
-  );
 
   ingestAnnotations(store, [PARAGRAPH, WORD], repository);
 
@@ -453,12 +450,10 @@ it("takes a write's state and a comment draft as the repository announces them",
 
   const saving = repository.patchColor("PARA7777", "#ff6666");
   repository.editComment("WRDS2222", "worth quoting");
-  await vi.waitFor(() =>
-    expect(store.getState().mutations.get("PARA7777")).toEqual({
-      kind: "pending",
-      write: "color",
-    }),
-  );
+  expect(store.getState().mutations.get("PARA7777")).toEqual({
+    kind: "pending",
+    write: "color",
+  });
   expect(store.getState().commentDrafts.get("WRDS2222")?.text).toBe(
     "worth quoting",
   );

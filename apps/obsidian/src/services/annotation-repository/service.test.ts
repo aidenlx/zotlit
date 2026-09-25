@@ -2263,18 +2263,12 @@ it("shows a write in flight as pending, and draws its Pending Proposal at once",
     }),
   );
 
-  const sending = new Promise<void>((resolve) => {
-    const off = repository.on("mutation-changed", () => {
-      off();
-      resolve();
-    });
-  });
-
   // Zotero stores lower case, so the proposal is drawn as Zotero will answer.
   const running = repository.patchColor("PUPR5FG5", "#5FB236");
 
+  // The write and its proposal both stand in the task that asked for it.
   expect(announced).toEqual(["#5fb236"]);
-  await sending;
+  expect(states).toEqual(["pending"]);
   expect(repository.mutationFor("PUPR5FG5")).toEqual({
     kind: "pending",
     write: "color",
@@ -2291,6 +2285,32 @@ it("shows a write in flight as pending, and draws its Pending Proposal at once",
   expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
     "#5fb236",
   );
+});
+
+it("stays pending from the first write to the last of a queue on one Annotation", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, zotero.answers);
+  const states: string[] = [];
+  stack.defer(
+    repository.on("mutation-changed", (key) => {
+      states.push(repository.mutationFor(key).kind);
+    }),
+  );
+  const release = zotero.holdWrites();
+
+  const first = repository.patchColor("PUPR5FG5", "#ff6666");
+  const second = repository.patchComment("PUPR5FG5", "Queued behind it");
+  release();
+  await Promise.all([first, second]);
+
+  // The verbs never come back between the two writes.
+  expect(states.at(-1)).toBe("idle");
+  expect(states.slice(0, -1).every((kind) => kind === "pending")).toBe(true);
+  expect(zotero.at("PUPR5FG5")).toMatchObject({
+    color: "#ff6666",
+    comment: "Queued behind it",
+  });
 });
 
 it("draws a submitted comment at once, through a refresh, until Zotero confirms it", async () => {
