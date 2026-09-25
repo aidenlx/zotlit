@@ -60,9 +60,8 @@ export interface TagSectionProps {
 
 /**
  * Whether the tag section stands: while the Annotation has tags, or a session
- * elsewhere left it some, while the editor is open, while a session's save is
- * in flight, which the editor shows as saving until the read-back, and while
- * a tag draft is held.
+ * elsewhere left it some, while the editor is open, and while a tag draft is
+ * held.
  */
 export function tagSectionShows({
   annotation,
@@ -73,23 +72,21 @@ export function tagSectionShows({
   TagSectionProps,
   "annotation" | "draft" | "tagging" | "held"
 >): boolean {
-  return (
-    tagging ||
-    draft?.state.kind === "pending" ||
-    held !== null ||
-    sessionNames(annotation, draft).length > 0
-  );
+  return tagging || held !== null || sessionNames(annotation, draft).length > 0;
 }
 
 /**
- * The names the section draws: a session's own, while one stands on either
- * surface, so the card and the popup show the same unsaved change.
+ * The names the section draws: a session's own, while one stands unsaved on
+ * either surface, so the card and the popup show the same unsaved change. A
+ * saving session's names are the record's Pending Proposal.
  */
 function sessionNames(
   annotation: AnnotationRecord,
   draft: TagDraft | null,
 ): readonly string[] {
-  return draft?.names ?? annotation.tags;
+  return draft && draft.state.kind !== "pending"
+    ? draft.names
+    : annotation.tags;
 }
 
 /**
@@ -186,16 +183,14 @@ function TagSection({
   endSession,
   suggestRef,
 }: TagSectionProps & Pick<TagEditorProps, "endSession" | "suggestRef">) {
-  const saving = draft?.state.kind === "pending";
   // Read once per record, as the card reads it: an unknown tag type logs.
   const auto = useMemo(() => autoTags(annotation), [annotation]);
   // Editing that becomes unavailable closes the editor, which holds the draft.
-  if (saving || (tagging && !readOnly)) {
+  if (tagging && !readOnly) {
     return (
       <TagEditor
         names={sessionNames(annotation, draft)}
         auto={auto}
-        saving={saving}
         hint={hint}
         libraryNames={libraryNames}
         onChange={onChange}

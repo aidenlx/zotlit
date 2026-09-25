@@ -333,6 +333,11 @@ export function annotationReads(
   const histories = new Map<string, number>();
   return {
     read: vi.fn(() => Promise.resolve(list)),
+    peek: vi.fn(() => ({
+      value: list,
+      status: "fresh" as const,
+      settled: Promise.resolve(list),
+    })),
     refresh: vi.fn(() => Promise.resolve(list)),
     capabilityFor: vi.fn(() => current),
     mutationFor: vi.fn((): MutationState => IDLE),
@@ -728,7 +733,6 @@ export function readerSurfaces({
     sortIndex,
     adjustRange,
     textRotation,
-    refreshed: () => Promise.resolve(),
     now: () => READER_NOW,
   });
   selection.load();

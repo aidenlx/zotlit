@@ -3,6 +3,7 @@
 import { abortable } from "@std/async/abortable";
 import {
   CancelledError,
+  focusManager,
   partialMatchKey,
   QueryClient,
 } from "@tanstack/query-core";
@@ -93,6 +94,11 @@ export class QueryClientService extends Service {
   }: QueryClientServiceDeps = {}) {
     super();
     this.#now = now;
+    // A mutation waiting its turn in a scope starts only while Query Core
+    // counts the window focused, which it reads from the document when no
+    // mounted client tracks focus. A minimised or covered window reports its
+    // document hidden, and would hold the waiting write for good.
+    focusManager.setFocused(true);
     this.ready = this.#load();
   }
 

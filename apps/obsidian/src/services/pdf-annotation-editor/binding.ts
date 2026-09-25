@@ -31,6 +31,7 @@ import type { HistorySurface } from "@/services/annotation-repository/actions";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { CapabilityAffordance } from "@/services/annotation-repository/capability-copy";
 import type {
+  AnnotationList,
   AnnotationRecord,
   AnnotationRepository,
   HistoryDirection,
@@ -148,6 +149,7 @@ export type AnnotationReads = Pick<
   | "openHistory"
   | "patchColor"
   | "patchGeometry"
+  | "peek"
   | "probe"
   | "read"
   | "redo"
@@ -580,7 +582,12 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#mountToolbar();
     this.#surfaces.defer(
       this.#annotations.on("annotations-changed", (changedKey) => {
-        if (changedKey === attachmentKey) this.#refresh();
+        if (changedKey !== attachmentKey) return;
+        // What the repository holds now, a write's Pending Proposal among it,
+        // is drawn in the same task; the read that follows replaces it.
+        const held = this.#read ? this.#annotations.peek(attachmentKey) : null;
+        if (held) this.#draw(held.value);
+        this.#refresh();
       }),
     );
     this.#surfaces.use(
@@ -834,7 +841,6 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
       sortIndex: (position) => this.sortIndex(position),
       adjustRange: (adjustment) => this.adjustRange(adjustment),
       textRotation: this.#textRotation,
-      refreshed: () => this.refreshed,
       now: this.#now,
     });
     this.#selection = selection;
@@ -1383,27 +1389,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
           return;
         }
         this.#read = true;
-        this.#records = list.annotations;
-        this.#marks = groupAnnotationsByPage(list.annotations);
-        if (this.#surfaceState)
-          ingestAnnotations(
-            this.#surfaceState,
-            list.annotations,
-            this.#annotations,
-          );
-        logger.debug("Annotation marks rebuilt for a PDF view", {
-          path: this.filePath,
-          source: list.source.kind,
-          annotations: list.annotations.length,
-          pages: this.#marks.size,
-        });
-        this.#repaint();
-        // A mark the read retired took its selection with it above; one that
-        // moved takes the popup along.
-        this.#popupHost?.sync();
-        // The Attachment's marks now stand, which is what an Anchor waiting on
-        // this view — a cold open, or a read that answered after it — needs.
-        this.#land();
+        this.#draw(list);
       })
       .catch((error: unknown) => {
         logger.warn("Failed to read the annotations of an open PDF", {
@@ -1412,6 +1398,31 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
           attachmentKey,
         });
       });
+  }
+
+  /** Draws one list the repository answered: its marks, and what floats. */
+  #draw(list: AnnotationList): void {
+    this.#records = list.annotations;
+    this.#marks = groupAnnotationsByPage(list.annotations);
+    if (this.#surfaceState)
+      ingestAnnotations(
+        this.#surfaceState,
+        list.annotations,
+        this.#annotations,
+      );
+    logger.debug("Annotation marks rebuilt for a PDF view", {
+      path: this.filePath,
+      source: list.source.kind,
+      annotations: list.annotations.length,
+      pages: this.#marks.size,
+    });
+    this.#repaint();
+    // A mark the read retired took its selection with it above; one that
+    // moved takes the popup along.
+    this.#popupHost?.sync();
+    // The Attachment's marks now stand, which is what an Anchor waiting on
+    // this view — a cold open, or a read that answered after it — needs.
+    this.#land();
   }
 
   /**

@@ -756,6 +756,40 @@ it("rejects a queued write when another Zotero database takes the same key", asy
   ).toHaveLength(1);
 });
 
+it("draws a Pending Proposal only over the list of the Zotero database it was sent to", async () => {
+  await using stack = new AsyncDisposableStack();
+  let serverID = SERVER_ID;
+  const first = Promise.withResolvers<Response>();
+  const sending = Promise.withResolvers<void>();
+  const { repository, client, dbEvents } = await writable(stack, {
+    root: () => rootOk({ "Zotero-Server-ID": serverID }),
+    children: () => annotationPage(ROUGIER_ANNOTATIONS, { serverID }),
+    write: () => {
+      sending.resolve();
+      return first.promise;
+    },
+  });
+
+  const running = repository.patchColor("PUPR5FG5", "#ff6666");
+  expect(colorOf(repository.peek("RGRPDF24")?.value ?? null, "PUPR5FG5")).toBe(
+    "#ff6666",
+  );
+  await sending.promise;
+  // Zotero now runs on another database, which the Local API serves too.
+  serverID = "Zzzz11119999";
+  client.$client.exec(
+    `update settings set value = '${serverID}' where setting = 'localAPI' and key = 'serverID'`,
+  );
+  dbEvents.emit("changed");
+  await repository.refresh("RGRPDF24");
+  const other = await repository.read("RGRPDF24");
+
+  expect(other?.source).toEqual({ kind: "zotero-local-api", serverID });
+  expect(colorOf(other, "PUPR5FG5")).toBe("#2ea8e5");
+  first.resolve(writeAccepted());
+  await running;
+});
+
 it("refreshes an uninitialized database identity before enabling its API", async () => {
   await using stack = new AsyncDisposableStack();
   const { repository, client, db, dbEvents } = await setup(stack, {
@@ -1504,11 +1538,11 @@ it("keeps newer typing when a reviewed comment retry succeeds", async () => {
 
   const sent = requests.length;
   const retrying = repository.retryCommentDraft("PUPR5FG5");
+  // A submit of the same text joins the retry rather than sending again.
   const duplicate = repository.submitComment("PUPR5FG5");
-  expect(duplicate).toBe(retrying);
   repository.editComment("PUPR5FG5", "typed during retry");
   accepted.resolve(writeAccepted());
-  await retrying;
+  expect(await duplicate).toEqual(await retrying);
 
   expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
     baseline: "reviewed draft",
@@ -2259,7 +2293,7 @@ it("requires explicit authorization before any annotation mutation", async () =>
   expect(requests.slice(sent)).toEqual([]);
 });
 
-it("shows a write in flight as pending, and draws no provisional value", async () => {
+it("shows a write in flight as pending, and draws its Pending Proposal at once", async () => {
   await using stack = new AsyncDisposableStack();
   let answer!: (response: Response) => void;
   const inFlight = new Promise<Response>((resolve) => {
@@ -2276,15 +2310,35 @@ it("shows a write in flight as pending, and draws no provisional value", async (
       states.push(repository.mutationFor(key).kind);
     }),
   );
+  // What a surface redrawing on the announcement reads, in the same task.
+  const announced: (string | null)[] = [];
+  stack.defer(
+    repository.on("annotations-changed", (key) => {
+      announced.push(colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"));
+    }),
+  );
 
-  const running = repository.patchColor("PUPR5FG5", "#5fb236");
+  const sending = new Promise<void>((resolve) => {
+    const off = repository.on("mutation-changed", () => {
+      off();
+      resolve();
+    });
+  });
 
+  // Zotero stores lower case, so the proposal is drawn as Zotero will answer.
+  const running = repository.patchColor("PUPR5FG5", "#5FB236");
+
+  expect(announced).toEqual(["#5fb236"]);
+  await sending;
   expect(repository.mutationFor("PUPR5FG5")).toEqual({
     kind: "pending",
     write: "color",
   });
   expect(colorOf(repository.peek("RGRPDF24")?.value ?? null, "PUPR5FG5")).toBe(
-    "#2ea8e5",
+    "#5fb236",
+  );
+  expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
+    "#5fb236",
   );
   answer(writeAccepted());
   await running;
@@ -2293,6 +2347,177 @@ it("shows a write in flight as pending, and draws no provisional value", async (
     "#5fb236",
   );
 });
+
+it("draws a submitted comment at once, through a refresh, until Zotero confirms it", async () => {
+  await using stack = new AsyncDisposableStack();
+  const answer = Promise.withResolvers<Response>();
+  const { repository } = await writable(stack, {
+    write: () => answer.promise,
+    item: () =>
+      annotationItem(afterWrite("PUPR5FG5", { comment: "Blurred words" })),
+  });
+  const commentOf = (list: AnnotationList | null) =>
+    list?.annotations.find(({ key }) => key === "PUPR5FG5")?.comment ?? null;
+  const drawn: (string | null)[] = [];
+  stack.defer(
+    repository.on("annotations-changed", (key) => {
+      drawn.push(commentOf(repository.peek(key)?.value ?? null));
+    }),
+  );
+  const before = commentOf(repository.peek("RGRPDF24")?.value ?? null);
+
+  // The editor closing on blur submits what it holds.
+  repository.editComment("PUPR5FG5", "Blurred words");
+  const saving = repository.submitComment("PUPR5FG5", { automatic: true });
+
+  expect(drawn).toEqual(["Blurred words"]);
+  // A read that lands while the write is away answers the old comment, and
+  // the proposal is still drawn over it.
+  await repository.refresh("RGRPDF24");
+  expect(commentOf(repository.peek("RGRPDF24")?.value ?? null)).toBe(
+    "Blurred words",
+  );
+  expect(drawn).not.toContain(before);
+
+  answer.resolve(writeAccepted());
+  await saving;
+  expect(drawn).not.toContain(before);
+  expect(commentOf(await repository.read("RGRPDF24"))).toBe("Blurred words");
+});
+
+it("draws the newest comment asked for behind a save in flight, and sends only that one after it", async () => {
+  await using stack = new AsyncDisposableStack();
+  const first = Promise.withResolvers<Response>();
+  const sent: string[] = [];
+  // Zotero holds what the last accepted write sent, in its list as in its
+  // item answer.
+  const stored = () => afterWrite("PUPR5FG5", { comment: sent.at(-1) ?? "" });
+  const { repository } = await writable(stack, {
+    write: (request) => {
+      sent.push(String(JSON.parse(request.body ?? "{}").annotationComment));
+      return sent.length === 1 ? first.promise : writeAccepted();
+    },
+    children: () =>
+      annotationPage(
+        ROUGIER_ANNOTATIONS.map((entry) =>
+          entry.key === "PUPR5FG5" && sent.length > 0 ? stored() : entry,
+        ),
+      ),
+    item: () => annotationItem(stored()),
+  });
+  const drawn = () =>
+    repository
+      .peek("RGRPDF24")
+      ?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.comment;
+
+  repository.editComment("PUPR5FG5", "first");
+  const saved = repository.submitComment("PUPR5FG5");
+  await vi.waitFor(() => expect(sent).toEqual(["first"]));
+  // Two more submits while the first is away: the later text replaces the
+  // earlier one, on screen at once and in what Zotero is sent next.
+  repository.editComment("PUPR5FG5", "second");
+  void repository.submitComment("PUPR5FG5");
+  repository.editComment("PUPR5FG5", "third");
+  void repository.submitComment("PUPR5FG5");
+  expect(drawn()).toBe("third");
+
+  first.resolve(writeAccepted());
+  await saved;
+  await vi.waitFor(() =>
+    expect(repository.commentDraftFor("PUPR5FG5")).toBeNull(),
+  );
+  expect(sent).toEqual(["first", "third"]);
+  expect(drawn()).toBe("third");
+});
+
+it("sends a comment asked for behind a save while the window is hidden", async () => {
+  await using stack = new AsyncDisposableStack();
+  // A minimised or covered window reports its document hidden.
+  vi.stubGlobal("document", { visibilityState: "hidden" });
+  stack.defer(() => {
+    vi.unstubAllGlobals();
+  });
+  const first = Promise.withResolvers<Response>();
+  const sent: string[] = [];
+  const { repository } = await writable(stack, {
+    write: (request) => {
+      sent.push(String(JSON.parse(request.body ?? "{}").annotationComment));
+      return sent.length === 1 ? first.promise : writeAccepted();
+    },
+  });
+
+  repository.editComment("PUPR5FG5", "first");
+  void repository.submitComment("PUPR5FG5");
+  await vi.waitFor(() => expect(sent).toEqual(["first"]));
+  repository.editComment("PUPR5FG5", "second");
+  const queued = repository.submitComment("PUPR5FG5");
+  first.resolve(writeAccepted());
+
+  await expect(queued).resolves.toMatchObject({ kind: "idle" });
+  expect(sent).toEqual(["first", "second"]);
+});
+
+it("holds a comment asked for behind a save that fails, for Save comment", async () => {
+  await using stack = new AsyncDisposableStack();
+  const first = Promise.withResolvers<Response>();
+  const sent: string[] = [];
+  const { repository } = await writable(stack, {
+    write: (request) => {
+      sent.push(String(JSON.parse(request.body ?? "{}").annotationComment));
+      return first.promise;
+    },
+  });
+
+  repository.editComment("PUPR5FG5", "first");
+  const saved = repository.submitComment("PUPR5FG5");
+  await vi.waitFor(() => expect(sent).toEqual(["first"]));
+  repository.editComment("PUPR5FG5", "second");
+  const queued = repository.submitComment("PUPR5FG5");
+
+  first.reject(new AbortError("reader closed"));
+  await saved;
+  await queued;
+
+  // The failure holds the draft with its newest text, and nothing more goes
+  // to Zotero until the researcher saves again.
+  expect(sent).toEqual(["first"]);
+  expect(repository.commentDraftFor("PUPR5FG5")).toMatchObject({
+    text: "second",
+    manualSave: true,
+    state: { kind: "failed" },
+  });
+});
+
+it.each([
+  ["conflicts", () => staleVersion()],
+  ["loses its reply", () => Promise.reject(new AbortError("reader closed"))],
+] as const)(
+  "draws the confirmed colour again once a write that %s settles",
+  async (_, write) => {
+    await using stack = new AsyncDisposableStack();
+    const { repository } = await writable(stack, {
+      write,
+      // Zotero's own copy, which a conflict re-reads.
+      item: () => annotationItem(afterWrite("PUPR5FG5", { color: "#5fb236" })),
+    });
+    const drawn: (string | null)[] = [];
+    stack.defer(
+      repository.on("annotations-changed", (key) => {
+        drawn.push(colorOf(repository.peek(key)?.value ?? null, "PUPR5FG5"));
+      }),
+    );
+
+    const outcome = await repository.patchColor("PUPR5FG5", "#ff6666");
+
+    expect(outcome.kind).not.toBe("idle");
+    expect(drawn[0]).toBe("#ff6666");
+    expect(drawn.at(-1)).not.toBe("#ff6666");
+    // The list Zotero answers still holds the Fixture's colour.
+    expect(colorOf(await repository.read("RGRPDF24"), "PUPR5FG5")).toBe(
+      "#2ea8e5",
+    );
+  },
+);
 
 it.each([
   ["color", "#5fb236"],
@@ -2789,6 +3014,43 @@ it("saves a Geometry Edit in one patch and publishes the record Zotero answers",
     )?.position,
   ).toEqual(moved);
   expect(announced).toEqual([["FDRFQ7C2", moved]]);
+});
+
+it("draws a Geometry Edit while it saves as Zotero will store it, and announces pixels only once it lands", async () => {
+  await using stack = new AsyncDisposableStack();
+  const answer = Promise.withResolvers<Response>();
+  const { repository } = await writable(stack, {
+    write: () => answer.promise,
+    item: () =>
+      annotationItem(afterWrite("FDRFQ7C2", { ...WIDER_IMAGE, version: 21 })),
+  });
+  const drawn = () =>
+    repository
+      .peek("RGRPDF24")
+      ?.value.annotations.find(({ key }) => key === "FDRFQ7C2");
+  const pixels: string[] = [];
+  stack.defer(
+    repository.on("excerpt-pixels-changed", ({ key }) => pixels.push(key)),
+  );
+
+  // The reader's own edge, before Zotero's three decimals.
+  const saving = repository.patchGeometry(
+    "FDRFQ7C2",
+    {
+      ...WIDER_IMAGE,
+      position: { pageIndex: 1, rects: [[48.75, 395.509, 610.0004, 743.723]] },
+    },
+    "pointer",
+  );
+
+  expect(drawn()).toMatchObject({
+    position: { kind: "pdf-rects", ...WIDER_IMAGE.position },
+    sortIndex: WIDER_IMAGE.sortIndex,
+  });
+  expect(pixels).toEqual([]);
+  answer.resolve(writeAccepted());
+  expect(await saving).toEqual({ kind: "idle" });
+  expect(pixels).toEqual(["FDRFQ7C2"]);
 });
 
 it("refuses a Geometry Edit longer than Zotero accepts before the write", async () => {
@@ -4650,6 +4912,33 @@ function zoteroTagging(
 /** The Fixture's highlight with a manual, an automatic, and a manual tag. */
 const TAGGED = ["review", { tag: "nlp", type: 1 }, "todo"] as const;
 
+it("draws a tag session's merged tags while it saves, and a tag undo's too", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const drawn = () =>
+    repository
+      .peek("RGRPDF24")
+      ?.value.annotations.find(({ key }) => key === "PUPR5FG5")?.tags;
+
+  let release = zotero.holdWrites();
+  repository.editTags("PUPR5FG5", ["review", "todo", "figure"]);
+  const saving = repository.submitTags("PUPR5FG5");
+  expect(drawn()).toEqual(["review", "todo", "figure"]);
+  release();
+  await saving;
+  expect(drawn()).toEqual(["review", "todo", "figure"]);
+
+  release = zotero.holdWrites();
+  const undoing = repository.undo("RGRPDF24");
+  // The undo puts the automatic tag back after the kept ones, as it merges.
+  expect(drawn()).toEqual(["review", "todo", "nlp"]);
+  release();
+  expect(await undoing).toMatchObject({ kind: "stepped" });
+  expect(zotero.tags).toEqual(["review", "todo", { tag: "nlp", type: 1 }]);
+});
+
 it("saves one tag session as one PATCH of the whole list, with the precondition", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
@@ -4801,7 +5090,7 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
   expect(repository.tagDraftFor("PUPR5FG5")?.state).toEqual({
     kind: "pending",
   });
-  // The editor is saving, so a change meanwhile is not taken.
+  // The draft is saving, so a change meanwhile is not taken.
   repository.editTags("PUPR5FG5", ["review"]);
   expect(repository.tagDraftFor("PUPR5FG5")?.names).toEqual([
     "review",

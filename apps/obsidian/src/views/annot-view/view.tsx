@@ -902,6 +902,10 @@ export class AnnotationView extends ItemView implements HistorySurface {
           if (changedKey !== this.#store.getState().selectedAttachmentKey) {
             return;
           }
+          // What the repository holds now, a write's Pending Proposal among
+          // it, stands in the same task; the read that follows replaces it.
+          const held = this.#heldList(changedKey);
+          if (held) this.#store.setState(held);
           this.#readAnnotations(changedKey, { restoreFilter: false });
         }),
       );
@@ -931,11 +935,11 @@ export class AnnotationView extends ItemView implements HistorySurface {
   }
 
   /**
-   * The list the repository holds for the Attachment on screen, for the update
-   * that drops a tag draft. The repository drops a saved draft only once the
-   * read-back stands in that list, and the view's own re-read lands later; so
-   * the draft and the confirmed chips change in one update, and the editor
-   * closes onto the new chips.
+   * The list the repository holds for the Attachment on screen, for an update
+   * that cannot wait for the view's own re-read: a write's Pending Proposal as
+   * it starts, and the drop of a tag draft, which the repository makes only
+   * once the read-back stands in that list, so the draft and the chips change
+   * in one update.
    */
   #heldList(
     attachmentKey: string,

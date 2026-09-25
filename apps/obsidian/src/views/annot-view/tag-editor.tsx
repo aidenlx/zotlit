@@ -36,8 +36,6 @@ export interface TagEditorProps {
   names: readonly string[];
   /** The names Zotero holds as automatic tags. */
   auto: ReadonlySet<string>;
-  /** The save is in flight: the input and the remove buttons rest disabled. */
-  saving: boolean;
   /**
    * The line under the editor, as the comment editor says it: why the last
    * save failed, or why editing stopped while a save is in flight.
@@ -79,7 +77,6 @@ export interface TagEditorProps {
 export function TagEditor({
   names,
   auto,
-  saving,
   hint,
   libraryNames,
   onChange,
@@ -93,7 +90,6 @@ export function TagEditor({
       <TagsInput.Root
         value={names}
         onValueChange={onChange}
-        aria-busy={saving}
         // A press on a chip keeps the focus in the field, so it neither ends the
         // session nor lands on the surface around the editor. A press on the
         // editor's own empty space is Root's to answer.
@@ -132,7 +128,6 @@ export function TagEditor({
             <TagsInput.ItemText className="zt:block zt:truncate" />
             <TagsInput.ItemRemove
               className="zt-annot-tag-remove clickable-icon"
-              disabled={saving}
               {...tooltipAttrs(m.annot_view_card_tag_remove({ name }))}
             >
               <Icon name="x" size={12} />
@@ -140,7 +135,6 @@ export function TagEditor({
           </TagsInput.Item>
         ))}
         <TagField
-          saving={saving}
           libraryNames={libraryNames}
           onClose={onClose}
           endSession={endSession}
@@ -165,7 +159,6 @@ export function TagEditor({
  * popup. The field takes focus as the editor opens.
  */
 function TagField({
-  saving,
   libraryNames,
   onClose,
   endSession,
@@ -173,7 +166,7 @@ function TagField({
   suggestRef,
 }: Pick<
   TagEditorProps,
-  "saving" | "libraryNames" | "onClose" | "endSession" | "within" | "suggestRef"
+  "libraryNames" | "onClose" | "endSession" | "within" | "suggestRef"
 >) {
   const app = useObsidianApp();
   const { value, add } = useTagsInput();
@@ -275,12 +268,7 @@ function TagField({
       <TagsInput.Input
         inputRef={inputRef}
         className="zt-annot-tag-input zt:min-w-[8ch] zt:flex-1 zt:px-1 zt:outline-none"
-        disabled={saving}
-        placeholder={
-          saving
-            ? m.annot_view_card_saving()
-            : m.annot_view_card_tag_placeholder()
-        }
+        placeholder={m.annot_view_card_tag_placeholder()}
         aria-labelledby={labelId}
         autoComplete="off"
         onKeyDown={onKeyDown}
