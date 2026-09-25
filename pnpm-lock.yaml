@@ -908,9 +908,6 @@ importers:
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../scripts
-      arkregex:
-        specifier: 'catalog:'
-        version: 0.0.5
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

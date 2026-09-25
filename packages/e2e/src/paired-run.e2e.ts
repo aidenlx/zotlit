@@ -1,22 +1,18 @@
 // The Paired Run scenario — ZotLit in a real desktop Obsidian window and a
-// real Zotero serving its Local API on the same Fixture. Reproduce it with
-// `pnpm fixture open --local-api` (or `dev`), then `pnpm e2e`; see
-// packages/e2e/AGENTS.md and docs/fixture.md § "Run a Paired Run".
+// real Zotero serving its Local API on the same Fixture. Run it with
+// `pnpm e2e`; see packages/e2e/AGENTS.md.
 //
-// It attaches to a Paired Run that is already up and never rebuilds the
-// Fixture: a rebuild would pull `zotero.sqlite` out from under the Paired
-// Zotero holding it open. So it drives the Development Vault that run opened.
+// Each run opens a Paired Run of its own (`openPairedEnvironment`): a new
+// Fixture, a new purged vault, and a Paired Zotero started on them, all
+// disposed when the file ends. Every test therefore starts from the Fixture
+// Spec, and a developer's own Paired Run stays as it is.
 //
-// Skips cleanly (not fails) in three independent steps, each `describe.skipIf`
-// evaluated at module scope before collection: nothing serving the Local API
-// skips the whole file, no remote debugging port skips the tiers that need one,
-// and no Development Vault skips the tests that drive Obsidian.
+// Skips cleanly (not fails) when no desktop Obsidian answers, decided at module
+// scope before collection.
 
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import {
   afterAll,
   afterEach,
@@ -27,16 +23,10 @@ import {
   it,
 } from "vitest";
 
-import { getDevVaultDir } from "@zotlit/scripts/dev-vault";
-import {
-  ANNOTATIONS,
-  ATTACHMENTS,
-  getFixtureRoot,
-} from "@zotlit/scripts/fixture";
-import { createNodePairedRunPorts } from "@zotlit/scripts/fixture/paired-run-node";
+import { ANNOTATIONS, ATTACHMENTS } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { keepRendering, restoreRendering } from "./background-throttling.ts";
+import { keepRendering } from "./background-throttling.ts";
 import { verifySavedEditDisplay } from "./excerpt-acceptance.ts";
 import { verifyExcerptRefresh } from "./excerpt-refresh.ts";
 import {
@@ -44,6 +34,7 @@ import {
   verifyZoteroExcerptParity,
 } from "./excerpt-rendering.ts";
 import { cli, obEval, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import { openPairedEnvironment } from "./paired-environment.ts";
 import {
   authorizationCount,
   authorize,
@@ -55,7 +46,6 @@ import {
   grantRememberedKey,
   heldAnnotationKeys,
   openZoteroRdp,
-  probePairedRun,
   readerAnnotation,
   readerSettled,
   readServerID,
@@ -85,12 +75,9 @@ import {
   toolButtonOf,
   watchExcerptPixels,
 } from "./reader-gestures.ts";
+import { isObsidianReachable } from "./vault-script.ts";
 
-const execFileAsync = promisify(execFile);
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
-/** A prepared Paired Run may belong to another worktree under review. */
-const pairedWorkspaceRoot =
-  process.env.ZOTLIT_PAIRED_WORKSPACE_ROOT ?? workspaceRoot;
 
 /** The Fixture Attachment this scenario reads, writes and never rewrites. */
 const attachment = ATTACHMENTS.find(({ key }) => key === "RGRPDF24")!;
@@ -111,180 +98,62 @@ const KEY_SHAPE = expect.stringMatching(
   /^[0-9A-Za-z]{32}$/,
 ) as unknown as string;
 
-const reach = await probePairedRun(getFixtureRoot(pairedWorkspaceRoot)).catch(
-  () => null,
-);
-const vaultId = await developmentVaultId();
-
-/**
- * The Development Vault a Paired Run opened, by its registered id — and only
- * where its window answers. `obsidian-vault id` prints an id for a vault that
- * is merely registered, including one whose window is closed, and that id
- * would let the ZotLit tier start and then fail on its first `obEval` instead
- * of skipping. Empty output, a failing script and a silent window are all the
- * same answer here, so this never throws.
- *
- * The probe itself opens what it finds closed: `obsidian vault=<id> eval` is
- * the Obsidian CLI's only way to reach a window, and reaching a registered
- * vault is what opens it. So the skip holds on the first run of a session and
- * not on the next one — the vault this probe opened answers from then on. A
- * non-opening liveness check needs the `open` flag the `vault-list` IPC already
- * carries, which no command of `obsidian-vault.ts` prints today.
- */
-async function developmentVaultId(): Promise<string | null> {
-  const script = join(
-    pairedWorkspaceRoot,
-    "packages",
-    "scripts",
-    "scripts",
-    "obsidian-vault.ts",
-  );
-  const result = await execFileAsync(process.execPath, [script, "id"], {
-    windowsHide: true,
-  }).catch(() => null);
-  const id = result?.stdout.trim().split("\n").at(-1)?.trim();
-  if (!id) return null;
-  const answered = await obEval(id, "String(!!app.vault.adapter)").catch(
-    () => "",
-  );
-  return answered === "true" ? id : null;
-}
+const environment = (await isObsidianReachable(workspaceRoot))
+  ? await openPairedEnvironment(workspaceRoot)
+  : null;
+// File scope, so it runs after every suite's own `afterAll` has used the run.
+afterAll(async () => {
+  await environment?.[Symbol.asyncDispose]();
+}, 120000);
+const vaultId = environment?.vaultId ?? null;
 
 function obJson<T>(code: string): Promise<T> {
   return obEval(vaultId!, code).then((reply) => JSON.parse(reply) as T);
 }
 
-const baseUrl = reach?.baseUrl ?? null;
-const debuggerPort = reach?.debuggerPort ?? null;
+const baseUrl = environment?.baseUrl ?? null;
+const debuggerPort = environment?.debuggerPort ?? null;
 
 describe.skipIf(!baseUrl)("Paired Run", () => {
   const api = baseUrl!;
   let serverID = "";
-  let authorizationFixture:
-    | { native: string | null; secret: string | null; rdp: ZoteroRdp }
-    | undefined;
+  let authorizationFixture: { secret: string; rdp: ZoteroRdp } | undefined;
 
   beforeAll(async () => {
     serverID = await readServerID(api);
-    if (!debuggerPort) return;
-    const rdp = await openZoteroRdp(debuggerPort);
     authorizationFixture = {
-      native: await rdp.json<string | null>(
-        `(async()=>{const path=PathUtils.join(Zotero.Profile.dir,'localAPIKeys.json');return await IOUtils.exists(path)?await IOUtils.readUTF8(path):null})()`,
+      // The vault half of the seeded Write Authorization. Each tier that
+      // clears Zotero's keys puts a new key into it afterward.
+      secret: await obJson<string>(
+        `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization'))`,
       ),
-      secret: vaultId
-        ? await obJson<string | null>(
-            `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization'))`,
-          )
-        : null,
-      rdp,
+      rdp: await openZoteroRdp(debuggerPort!),
     };
   });
 
-  // The run seldom shows the Development Vault's windows, and a hidden window
-  // gets no animation frames. The vault is the developer's, so it gets its
-  // throttling back when the run ends.
+  // The run seldom shows the vault's windows, and a hidden window gets no
+  // animation frames. The windows close with the vault when the run ends.
   beforeAll(async () => {
-    if (vaultId) await keepRendering(vaultId);
-  });
-
-  afterAll(async () => {
-    if (vaultId) await restoreRendering(vaultId);
+    await keepRendering(vaultId!);
   });
 
   const prepareAuthorizationFixture = async (): Promise<void> => {
     if (!authorizationFixture) return;
-    const { native, secret, rdp } = authorizationFixture;
+    const { secret, rdp } = authorizationFixture;
     await restorePrompt(rdp);
-    if (native === null || secret === null) {
-      await resetAuthorizations(rdp);
-      await stubPrompt(rdp, { allow: true, remember: true });
-      return;
-    }
     const key = await grantRememberedKey(api, rdp, {
       serverID,
       appName: "ZotLit Fixture",
     });
-    if (vaultId && secret !== null) {
-      await obEval(
-        vaultId,
-        `(function(){const record=JSON.parse(${JSON.stringify(secret)});record.key=${JSON.stringify(key)};app.secretStorage.setSecret('zotlit-zotero-write-authorization',JSON.stringify(record));return true;})()`,
-      );
-    }
-  };
-
-  const restoreAuthorizationFixture = async (): Promise<void> => {
-    if (!authorizationFixture) return;
-    const { native, secret, rdp } = authorizationFixture;
-    let nativeFailure: unknown;
-    try {
-      await restorePrompt(rdp);
-      const exact = await rdp.json<boolean>(`(async()=>{
-        await Zotero.Server.LocalAPI.clearAuthorizations();
-        const path=PathUtils.join(Zotero.Profile.dir,'localAPIKeys.json');
-        if (${JSON.stringify(native)} !== null) {
-          await IOUtils.writeUTF8(path,${JSON.stringify(native)});
-        }
-        const held=await IOUtils.exists(path)?await IOUtils.readUTF8(path):null;
-        return held===${JSON.stringify(native)};
-      })()`);
-      expect(exact).toBe(true);
-    } catch (error) {
-      nativeFailure = error;
-    }
-    if (vaultId) {
-      if (secret !== null) {
-        await obEval(
-          vaultId,
-          `app.secretStorage.setSecret('zotlit-zotero-write-authorization',${JSON.stringify(secret)});true`,
-        );
-      }
-      expect(
-        await obJson<boolean>(
-          `JSON.stringify(app.secretStorage.getSecret('zotlit-zotero-write-authorization')===${JSON.stringify(secret)})`,
-        ),
-      ).toBe(true);
-    }
-    if (nativeFailure) throw nativeFailure;
-  };
-
-  afterAll(async () => {
-    let restoreFailure: unknown;
-    try {
-      await restoreAuthorizationFixture();
-    } catch (error) {
-      restoreFailure = error;
-    } finally {
-      authorizationFixture?.rdp[Symbol.dispose]();
-    }
-    if (!authorizationFixture) return;
-    const ports = createNodePairedRunPorts({
-      workspaceRoot: pairedWorkspaceRoot,
-      layout: reach!.layout,
-    });
-    await ports.stopLivePairedZotero();
-    let restartFailure: unknown;
-    try {
-      const restarted = await ports.openPairedZotero();
-      if (restarted.debuggerPort === undefined)
-        throw new Error("restarted Paired Zotero has no debugger port");
-      using rdp = await openZoteroRdp(restarted.debuggerPort);
-      const expected =
-        authorizationFixture.native === null
-          ? 0
-          : JSON.parse(authorizationFixture.native).keys.filter(
-              ({ remember }: { remember: boolean }) => remember,
-            ).length;
-      expect(await authorizationCount(rdp)).toBe(expected);
-    } catch (error) {
-      restartFailure = error;
-    }
-    const failures = [restoreFailure, restartFailure].filter(
-      (failure) => failure !== undefined,
+    await obEval(
+      vaultId!,
+      `(function(){const record=JSON.parse(${JSON.stringify(secret)});record.key=${JSON.stringify(key)};app.secretStorage.setSecret('zotlit-zotero-write-authorization',JSON.stringify(record));return true;})()`,
     );
-    if (failures.length > 0)
-      throw new AggregateError(failures, "authorization cleanup failed");
-  }, 120000);
+  };
+
+  afterAll(() => {
+    authorizationFixture?.rdp[Symbol.dispose]();
+  });
 
   // ── Tier 1 ────────────────────────────────────────────────────────────────
   // The Local API alone, no dialog and no debugging port: the read contract
@@ -350,7 +219,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   // The RDP stub (Route A): every authorization branch, driven through a real
   // `POST /api/local/authorize`. The stub picks the branch; the endpoint and
   // `getAuthorizationCount()` are the oracles.
-  describe.skipIf(!debuggerPort)("Tier 2 — the authorization branches", () => {
+  describe("Tier 2 — the authorization branches", () => {
     let rdp: ZoteroRdp;
 
     beforeAll(async () => {
@@ -610,7 +479,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   // modal event loop spins, so the window can be found and its buttons pressed.
   // Buttons are matched by slot, never by label: this Zotero runs in the host
   // OS locale.
-  describe.skipIf(!debuggerPort)("Tier 3 — Zotero's own dialog", () => {
+  describe("Tier 3 — Zotero's own dialog", () => {
     let rdp: ZoteroRdp;
 
     beforeAll(async () => {
@@ -699,7 +568,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
   // The native concurrency boundary. Each case pauses one Zotero operation at
   // a controlled completion point, then drives the competing operation through
   // the real Reader or Local API before it releases the first one.
-  describe.skipIf(!debuggerPort)("Tier 4 — native concurrent writes", () => {
+  describe("Tier 4 — native concurrent writes", () => {
     let rdp: ZoteroRdp;
     let key = "";
     let cleanup: AsyncDisposableStack | null = null;
@@ -899,7 +768,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
         });
         // The PDF is a `vault`-rooted linked file, so it is only readable where
-        // a Development Vault stands — which is exactly this block's gate.
+        // the run's vault stands — which is exactly this block's gate.
         pdfDigestBefore = await digestAttachmentPdf();
         // A digest of nothing would make the closing assertion vacuous.
         expect(pdfDigestBefore).toHaveLength(64);
@@ -930,7 +799,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // Two setup preconditions, asserted here so a mis-prepared environment
         // says so instead of timing out later. The Attachment must resolve to
         // its Fixture key — `obsidian-vault open` repoints the linked file at
-        // the Development Vault, and a bare Fixture build leaves it pointing
+        // the run's vault, and a bare Fixture build leaves it pointing
         // elsewhere, which draws no marks. And Live Updates must be connected,
         // because the Companion's Freshness Signal is the only thing that
         // invalidates the Zotero Local API partition.
@@ -942,7 +811,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         );
         expect(
           resolution,
-          "the Fixture PDF does not resolve inside the Development Vault; open the Paired Run with `pnpm fixture open --local-api`",
+          "the Fixture PDF does not resolve inside the run's vault",
         ).toMatchObject({ kind: "resolved", attachmentKey: attachment.key });
         expect(
           await obEval(
@@ -5289,9 +5158,9 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
       }, 120000);
 
       it("updates one managed note to a new immutable excerpt version", async () => {
-        const vaultPath = getDevVaultDir(pairedWorkspaceRoot);
+        const { vaultPath } = environment!;
         const legacySource = join(
-          reach!.layout.dataDir,
+          environment!.layout.dataDir,
           "cache",
           "library",
           "FDRFQ7C2.png",
@@ -5509,10 +5378,10 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
 /**
  * SHA-256 of the Fixture PDF. It is a `vault`-rooted linked file, so it lives
- * in the Development Vault a Paired Run opened.
+ * in the run's vault.
  */
 async function digestAttachmentPdf(): Promise<string> {
-  const file = join(getDevVaultDir(pairedWorkspaceRoot), attachmentPath);
+  const file = join(environment!.vaultPath, attachmentPath);
   return createHash("sha256")
     .update(await readFile(file))
     .digest("hex");

@@ -12,7 +12,6 @@
     "@zotlit/config": "workspace:*",
     "@zotlit/protocol": "workspace:*",
     "@zotlit/scripts": "workspace:*",
-    "arkregex": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "zx": "catalog:"
