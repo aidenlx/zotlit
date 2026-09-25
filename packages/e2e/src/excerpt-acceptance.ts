@@ -1146,6 +1146,13 @@ export async function verifySavedEditDisplay(
     }),
     "the card must paint an excerpt before a saved edit can replace it",
   ).toBe(true);
+  // The derived cache is keyed by what the pixels depend on, not by version, so
+  // an earlier run's edit left the edited colour's image cached, and the edit
+  // would be served from it without the replacement rendering held below.
+  await obEval(
+    vaultId,
+    `(async()=>{await app.plugins.plugins.zotlit.services.excerptImage.clear();return true;})()`,
+  );
 
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(() =>
