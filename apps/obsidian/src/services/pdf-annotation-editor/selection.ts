@@ -60,6 +60,7 @@ import type {
   CommentSheet,
   HeldDraftActions,
 } from "@/views/annot-view/comment-sheet";
+import { confirmDelete } from "@/views/annot-view/delete-confirm";
 import type { EndTagSession } from "@/views/annot-view/tag-editor";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
@@ -159,6 +160,7 @@ export type AnnotationEdits = Pick<
   AnnotationRepository,
   | "commentDraftFor"
   | "deleteAnnotation"
+  | "deleteAnnotations"
   | "discardCommentDraft"
   | "discardTagDraft"
   | "editComment"
@@ -615,6 +617,23 @@ export class MarkSelection implements Disposable {
       this.#deps.navigate(next);
       return;
     }
+    // The Mac keyboards that print "delete" on the backspace key send
+    // `Backspace`, so both reach the same verb. It erases every selected mark.
+    if (event.key === "Delete" || event.key === "Backspace") {
+      const selected = this.#selectedKeys();
+      if (selected.length === 0) return;
+      event.preventDefault();
+      if (!this.#live()) this.#deps.gestures.reportBlockedGesture();
+      else if (selected.length === 1)
+        this.#write(this.#deps.annotations.deleteAnnotation(selected[0]!));
+      // A group asks once and names its count, as the Annotation View does.
+      else
+        void confirmDelete(this.#deps.app, this.#deps.annotations, {
+          annotationKeys: selected,
+          now: () => this.#deps.now(),
+        });
+      return;
+    }
     const key = this.#selectedKey();
     if (key === null) return;
     // `1`–`8` are the palette's own order, so the key and the swatch can never
@@ -633,12 +652,6 @@ export class MarkSelection implements Disposable {
       }
       return;
     }
-    // The Mac keyboards that print "delete" on the backspace key send
-    // `Backspace`, so both reach the same verb.
-    if (event.key !== "Delete" && event.key !== "Backspace") return;
-    event.preventDefault();
-    if (this.#live()) this.#write(this.#deps.annotations.deleteAnnotation(key));
-    else this.#deps.gestures.reportBlockedGesture();
   }
 
   /**

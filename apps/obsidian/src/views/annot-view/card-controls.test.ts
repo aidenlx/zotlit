@@ -17,6 +17,7 @@ import {
   commentLabel,
   commentEditorControls,
   editingBlockedReason,
+  groupControl,
   heldCommentDraft,
   heldTagDraft,
   shownComment,
@@ -599,5 +600,29 @@ describe("what a surface draws of an Annotation", () => {
     expect(shownTagNames(record, null)).toEqual(["review", "figure"]);
     expect(shownComment(record, null)).toBe("Saved note");
     expect(shownComment({ comment: null }, null)).toBe("");
+  });
+});
+
+describe("a verb over a group of cards", () => {
+  it("is dimmed for the same reason one card is, under a blocked capability", () => {
+    for (const capability of BLOCKED) {
+      const one = controlsOf(capability).delete;
+      expect(groupControl([one, one])).toEqual({
+        disabled: false,
+        blocked: one.blocked,
+      });
+    }
+  });
+
+  it("is refused while a write is in flight on any card of it", () => {
+    const idle = controlsOf(LIVE).delete;
+    const pending = controlsOf(LIVE, {
+      kind: "pending",
+      write: "color",
+    }).delete;
+    expect(groupControl([idle, pending])).toEqual({
+      disabled: true,
+      blocked: null,
+    });
   });
 });

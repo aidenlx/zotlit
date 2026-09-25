@@ -203,6 +203,14 @@ export function Annotation({ annot, collapsed, tabStop }: AnnotationCardProps) {
               : "click",
         );
       }}
+      // A right-click opens the "…" menu at the pointer. A text field keeps
+      // its own menu.
+      onContextMenu={(e) => {
+        if (inTextEntry(e.target)) return;
+        e.preventDefault();
+        e.currentTarget.focus({ preventScroll: true });
+        actions.onCardMenu(e, annot);
+      }}
     >
       {/* A grid row holds its content in a cell; the card's parts stack in it. */}
       <div role="gridcell" className="zt:flex zt:flex-col zt:gap-1.5">

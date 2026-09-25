@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
 import { AbortError } from "@/lib/abort-error";
+import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
@@ -478,9 +479,8 @@ it("takes a group the Card Selection sends with no popup, and Escape clears it",
   expect(h.reported.at(-1)).toEqual(["PARA7777", "WRDS2222"]);
   expect(h.popup()).toBeNull();
 
-  // The reader's colour and delete keys leave a group alone.
+  // The reader's colour keys leave a group alone.
   key(h, "3");
-  key(h, "Delete");
   await settled(h, "PARA7777");
   await settled(h, "WRDS2222");
   expect(h.writes()).toEqual([]);
@@ -488,6 +488,25 @@ it("takes a group the Card Selection sends with no popup, and Escape clears it",
   key(h, "Escape");
   expect(h.selection.selected.size).toBe(0);
   expect(h.reported.at(-1)).toEqual([]);
+});
+
+it("deletes every mark of a group for Delete, after one confirmation that counts them", async () => {
+  await using h = await setup();
+  using ask = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
+  h.selection.selectMarks(["PARA7777", "WRDS2222"]);
+
+  key(h, "Delete");
+
+  await vi.waitFor(() => expect(h.zotero.at("PARA7777")).toBeNull());
+  await vi.waitFor(() => expect(h.zotero.at("WRDS2222")).toBeNull());
+  expect(h.writes()).toEqual([
+    { method: "DELETE", key: "PARA7777", body: null },
+    { method: "DELETE", key: "WRDS2222", body: null },
+  ]);
+  expect(ask).toHaveBeenCalledOnce();
+  expect(ask.mock.calls[0]?.[0].title).toBe(
+    m.annot_view_delete_group_confirm_title({ count: 2 }),
+  );
 });
 
 it("keeps the marks of a group the last read still holds", async () => {

@@ -3996,6 +3996,147 @@ it("writes nothing where one Annotation of a gesture moved in Zotero", async () 
   expect(repository.canUndo("RGRPDF24")).toBe(false);
 });
 
+it("takes a group delete in one step, and one undo puts every Annotation back", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository, requests } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  const seeds = ["HRK7BG32", "C94NJNYG"].map((key) => zotero.at(key)!);
+  const sent = requests.length;
+
+  expect(await repository.deleteAnnotations(["HRK7BG32", "C94NJNYG"])).toEqual([
+    { kind: "idle" },
+    { kind: "idle" },
+  ]);
+  // One request per Annotation.
+  expect(
+    requests.slice(sent).filter(({ method }) => method === "DELETE"),
+  ).toHaveLength(2);
+  expect(zotero.at("HRK7BG32")).toBeNull();
+  expect(zotero.at("C94NJNYG")).toBeNull();
+
+  await repository.undo("RGRPDF24");
+  // Both come back, each under a key Zotero picked, from the one press.
+  for (const [index, seed] of seeds.entries()) {
+    expect(zotero.at(`MADE234${5 + index}`)).toMatchObject({
+      type: seed.type,
+      comment: seed.comment,
+      sortIndex: seed.sortIndex,
+      position: seed.position,
+    });
+  }
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("puts the tags of every Annotation of a group delete back with it, each of its own type", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary(
+    ROUGIER_ANNOTATIONS.map((entry) =>
+      entry.key === "HRK7BG32"
+        ? { ...entry, tags: ["figure", { tag: "from-pdf", type: 1 }] }
+        : entry.key === "C94NJNYG"
+          ? { ...entry, tags: ["method"] }
+          : entry,
+    ),
+  );
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  await repository.deleteAnnotations(["HRK7BG32", "C94NJNYG"]);
+  await repository.undo("RGRPDF24");
+
+  expect(zotero.at("MADE2345")?.tags).toEqual([
+    "figure",
+    { tag: "from-pdf", type: 1 },
+  ]);
+  expect(zotero.at("MADE2346")?.tags).toEqual(["method"]);
+});
+
+it("records a group delete as one step in key order, over a write that landed between its deletes", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  // Zotero holds its answer to the first delete, so the second lands first
+  // and a recolour of another Annotation lands between the two.
+  const held = Promise.withResolvers<void>();
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: async (request) => {
+      if (
+        request.method === "DELETE" &&
+        request.url.pathname.endsWith("HRK7BG32")
+      )
+        await held.promise;
+      return zotero.answers.write!(request);
+    },
+  });
+  repository.openHistory("RGRPDF24");
+  const seeds = ["HRK7BG32", "C94NJNYG"].map((key) => zotero.at(key)!);
+
+  const group = repository.deleteAnnotations(["HRK7BG32", "C94NJNYG"]);
+  expect(await repository.patchColor("PUPR5FG5", "#ff6666")).toEqual({
+    kind: "idle",
+  });
+  held.resolve();
+  expect(await group).toEqual([{ kind: "idle" }, { kind: "idle" }]);
+
+  // One press puts the whole group back, in the order the gesture named it:
+  // the first restore is the first key's.
+  await repository.undo("RGRPDF24");
+  expect(zotero.at("MADE2345")).toMatchObject({
+    type: seeds[0]!.type,
+    comment: seeds[0]!.comment,
+    position: seeds[0]!.position,
+  });
+  expect(zotero.at("MADE2346")).toMatchObject({
+    type: seeds[1]!.type,
+    comment: seeds[1]!.comment,
+    position: seeds[1]!.position,
+  });
+  // The recolour is a step of its own, below the group.
+  expect(zotero.at("PUPR5FG5")?.color).toBe("#ff6666");
+  await repository.undo("RGRPDF24");
+  expect(zotero.at("PUPR5FG5")?.color).toBe("#2ea8e5");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("keeps each Annotation's own outcome where one delete of a group is refused", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroLibrary();
+  const { repository } = await writable(stack, {
+    ...zotero.answers,
+    write: (request) =>
+      request.method === "DELETE" && request.url.pathname.endsWith("PUPR5FG5")
+        ? staleVersion()
+        : zotero.answers.write!(request),
+  });
+  repository.openHistory("RGRPDF24");
+  // Zotero recoloured one of them since ZotLit read it.
+  zotero.changeInZotero("PUPR5FG5", { color: "#5fb236" });
+
+  const outcomes = await repository.deleteAnnotations([
+    "HRK7BG32",
+    "PUPR5FG5",
+    "C94NJNYG",
+  ]);
+
+  expect(outcomes[0]).toEqual({ kind: "idle" });
+  expect(outcomes[1]).toMatchObject({
+    kind: "conflict",
+    conflict: { write: "delete" },
+  });
+  expect(outcomes[2]).toEqual({ kind: "idle" });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual(outcomes[1]);
+  expect(zotero.at("PUPR5FG5")?.color).toBe("#5fb236");
+
+  // The step holds the two deletes that landed and nothing of the refused one.
+  await repository.undo("RGRPDF24");
+  expect(zotero.at("MADE2345")).not.toBeNull();
+  expect(zotero.at("MADE2346")).not.toBeNull();
+  expect(zotero.at("MADE2347")).toBeNull();
+  expect(zotero.at("PUPR5FG5")?.color).toBe("#5fb236");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
 it("drops the step where Zotero already erased the Annotation a create made", async () => {
   await using stack = new AsyncDisposableStack();
   const zotero = zoteroLibrary();

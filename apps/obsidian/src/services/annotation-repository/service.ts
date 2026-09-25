@@ -478,6 +478,67 @@ type ConfirmedWrite =
   | { kind: "created"; record: AnnotationRecord }
   | { kind: "deleted"; annotationKey: string };
 
+/** One write of a group that landed, held until the whole group settles. */
+interface GroupWrite {
+  attachmentKey: string;
+  /** The held record the write was sent against. */
+  before: AnnotationRecord;
+  /** What Zotero answered the write with. */
+  applied: ConfirmedWrite;
+}
+
+/**
+ * The kind of History Step a group records. A group of deletes is the only
+ * group a gesture sends.
+ */
+type GroupKind = Extract<FieldHistoryStep["kind"], "existence">;
+
+/** Where the writes of one group put what they landed. */
+interface GroupWrites {
+  /** The one kind of step every write of the group joins. */
+  kind: GroupKind;
+  writes: GroupWrite[];
+}
+
+/**
+ * What one confirmed write changed, as the History Step that puts it back
+ * names it: a delete the whole Annotation, a patch of one field that field's
+ * value. A comment and a tag session are recorded by rules of their own, and
+ * have no change here.
+ */
+function historyChangeOf(
+  before: AnnotationRecord,
+  applied: ConfirmedWrite,
+): { kind: FieldHistoryStep["kind"]; change: HistoryChange } | null {
+  if (applied.kind === "deleted") {
+    const content = contentOf(before);
+    return content
+      ? {
+          kind: "existence",
+          change: {
+            annotationKey: applied.annotationKey,
+            before: { content },
+            after: { content: null },
+          },
+        }
+      : null;
+  }
+  if (
+    applied.kind !== "record" ||
+    applied.write === "comment" ||
+    applied.write === "tags"
+  )
+    return null;
+  const was = historyFieldsOf(applied.write, before);
+  const now = historyFieldsOf(applied.write, applied.record);
+  return was && now
+    ? {
+        kind: applied.write,
+        change: { annotationKey: applied.record.key, before: was, after: now },
+      }
+    : null;
+}
+
 interface CommentSave {
   idleTimer: ReturnType<typeof setTimeout> | null;
   burstTimer: ReturnType<typeof setTimeout> | null;
@@ -1454,12 +1515,83 @@ export class AnnotationRepository extends Service<void> {
    * @param annotationKey the Annotation's Indexed Key.
    */
   async deleteAnnotation(annotationKey: string): Promise<MutationState> {
+    return await this.#erase(annotationKey);
+  }
+
+  /**
+   * @param gather where a delete of a group puts its landed write, rather than
+   *   recording a step of its own.
+   */
+  async #erase(
+    annotationKey: string,
+    gather?: GroupWrites,
+  ): Promise<MutationState> {
     this.#cancelCommentSave(annotationKey);
     return await this.#command(annotationKey, {
       write: "delete",
       attempted: null,
       request: eraseRequest,
       settle: "drop",
+      ...(gather && { gather }),
+    });
+  }
+
+  /**
+   * Erase a group of Annotations in Zotero, from one gesture on the Card
+   * Selection. Each Annotation goes out as a request of its own and keeps its
+   * own outcome, a Write Conflict included. The deletes that land are one
+   * History Step, so one undo puts all of them back; a delete that did not
+   * land is not in it.
+   *
+   * @param annotationKeys Indexed Keys, in the order the step names them.
+   * @returns one outcome per key, in the order of `annotationKeys`.
+   */
+  async deleteAnnotations(
+    annotationKeys: readonly string[],
+  ): Promise<MutationState[]> {
+    return await this.#groupWrite("existence", annotationKeys, (key, gather) =>
+      this.#erase(key, gather),
+    );
+  }
+
+  /**
+   * Send one write per Annotation of a group at once, and record what landed
+   * as one History Step once every write has settled. A write another surface
+   * confirms meanwhile is a step of its own and stays below this one, so one
+   * undo still takes the whole group.
+   *
+   * A write that threw is an outcome ZotLit never learned, so the other
+   * Annotations keep theirs.
+   *
+   * @param kind the one kind of step every write of the group joins.
+   * @param write one Annotation's write, which puts what it landed in `gather`.
+   * @returns one outcome per key, in the order of `annotationKeys`.
+   */
+  async #groupWrite(
+    kind: GroupKind,
+    annotationKeys: readonly string[],
+    write: (
+      annotationKey: string,
+      gather: GroupWrites,
+    ) => Promise<MutationState>,
+  ): Promise<MutationState[]> {
+    const gather: GroupWrites = { kind, writes: [] };
+    const settled = await Promise.allSettled(
+      annotationKeys.map((key) => write(key, gather)),
+    );
+    const byAttachment = Map.groupBy(
+      gather.writes,
+      (entry) => entry.attachmentKey,
+    );
+    for (const [attachmentKey, writes] of byAttachment)
+      this.#recordGroup(attachmentKey, annotationKeys, { kind, writes });
+    return settled.map((result, index) => {
+      if (result.status === "fulfilled") return result.value;
+      logger.warn("A write of a group threw", {
+        annotationKey: annotationKeys[index],
+        error: result.reason,
+      });
+      return { kind: "failed", failure: { kind: "unknown-outcome" } };
     });
   }
 
@@ -1677,6 +1809,7 @@ export class AnnotationRepository extends Service<void> {
       /** The fields the write proposes, from the confirmed record it goes to. */
       propose?: (record: AnnotationRecord) => ProposedFields;
       run?: WriteTurn;
+      gather?: GroupWrites;
     },
   ): Promise<MutationState> {
     const expectedServerID = this.#localApi.demandSource()?.serverID ?? null;
@@ -1740,6 +1873,11 @@ export class AnnotationRepository extends Service<void> {
       request: (target: WriteTarget, record: AnnotationRecord) => WriteRequest;
       settle?: "re-read" | "drop";
       join?: HistoryJoin;
+      /**
+       * Where a write of a group puts what it landed; the group records one
+       * step for all of them once every write settles.
+       */
+      gather?: GroupWrites;
       /** Set on the second send of a tag write, after its `412` re-read. */
       reapplied?: true;
     },
@@ -1871,10 +2009,18 @@ export class AnnotationRepository extends Service<void> {
       );
     }
     await this.#refreshConfirmed(held.attachmentKey, applied.value);
-    this.#recordStep(held.attachmentKey, held.record, {
-      applied: applied.value,
-      join: command.join,
-    });
+    if (command.gather) {
+      command.gather.writes.push({
+        attachmentKey: held.attachmentKey,
+        before: held.record,
+        applied: applied.value,
+      });
+    } else {
+      this.#recordStep(held.attachmentKey, held.record, {
+        applied: applied.value,
+        join: command.join,
+      });
+    }
     this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
     return this.#leave(annotationKey, IDLE);
@@ -2253,19 +2399,7 @@ export class AnnotationRepository extends Service<void> {
   ): void {
     const history = this.#histories.get(attachmentKey);
     if (!history || this.#steppingWrites.has(before.key)) return;
-    if (applied.kind === "deleted") {
-      const content = contentOf(before);
-      if (content) {
-        this.#recordExistence(attachmentKey, {
-          annotationKey: applied.annotationKey,
-          before: { content },
-          after: { content: null },
-        });
-      }
-      return;
-    }
-    if (applied.kind !== "record") return;
-    if (applied.write === "tags") {
+    if (applied.kind === "record" && applied.write === "tags") {
       this.#recordTagStep(history, {
         attachmentKey,
         before,
@@ -2273,7 +2407,7 @@ export class AnnotationRepository extends Service<void> {
       });
       return;
     }
-    if (applied.write === "comment") {
+    if (applied.kind === "record" && applied.write === "comment") {
       this.#recordCommentStep(history, {
         attachmentKey,
         before,
@@ -2281,18 +2415,21 @@ export class AnnotationRepository extends Service<void> {
       });
       return;
     }
-    const was = historyFieldsOf(applied.write, before);
-    const now = historyFieldsOf(applied.write, applied.record);
-    if (!was || !now) return;
+    const made = historyChangeOf(before, applied);
+    if (!made) return;
+    if (made.kind === "existence") {
+      this.#recordExistence(attachmentKey, made.change);
+      return;
+    }
     const joined = history.record({
-      kind: applied.write,
-      changes: [{ annotationKey: applied.record.key, before: was, after: now }],
+      kind: made.kind,
+      changes: [made.change],
       ...(join && { join }),
     });
     logger.debug("An edit was recorded in the annotation history", {
       attachmentKey,
-      annotationKey: applied.record.key,
-      kind: applied.write,
+      annotationKey: made.change.annotationKey,
+      kind: made.kind,
       joined,
     });
     this.#emitter.emit("history-changed", attachmentKey);
@@ -2402,6 +2539,55 @@ export class AnnotationRepository extends Service<void> {
       annotationKey: record.key,
       added: tags.added.length,
       removed: tags.removed.length,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Take the writes of one group that landed on one Attachment into its
+   * Annotation History as one step, in the order of `annotationKeys`: the
+   * order the gesture named them in, the Card Selection's list order. A group
+   * where nothing landed records nothing.
+   *
+   * The group's kind is the step's kind. A landed write that changed another
+   * kind of step is a caller's mistake: it is refused from the step and
+   * logged, rather than letting any one write decide what the step is.
+   *
+   * @param group.writes the landed writes on this Attachment.
+   */
+  #recordGroup(
+    attachmentKey: string,
+    annotationKeys: readonly string[],
+    { kind, writes }: GroupWrites,
+  ): void {
+    const history = this.#histories.get(attachmentKey);
+    if (!history || this.#steppingAttachments.has(attachmentKey)) return;
+    const order = (entry: GroupWrite) =>
+      annotationKeys.indexOf(entry.before.key);
+    const changes: HistoryChange[] = [];
+    for (const { before, applied } of writes.toSorted(
+      (a, b) => order(a) - order(b),
+    )) {
+      if (this.#steppingWrites.has(before.key)) continue;
+      const made = historyChangeOf(before, applied);
+      if (!made) continue;
+      if (made.kind === kind) {
+        changes.push(made.change);
+        continue;
+      }
+      logger.error("A write of a group changed another kind of step", {
+        attachmentKey,
+        annotationKey: before.key,
+        group: kind,
+        write: made.kind,
+      });
+    }
+    if (changes.length === 0) return;
+    history.record({ kind, changes });
+    logger.debug("A group write was recorded in the history as one step", {
+      attachmentKey,
+      kind,
+      annotations: changes.length,
     });
     this.#emitter.emit("history-changed", attachmentKey);
   }

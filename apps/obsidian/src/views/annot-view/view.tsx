@@ -144,6 +144,7 @@ export interface AnnotViewDeps {
     | "capabilityFor"
     | "commentDraftFor"
     | "deleteAnnotation"
+    | "deleteAnnotations"
     | "discardCommentDraft"
     | "discardTagDraft"
     | "discardConflict"
@@ -401,6 +402,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       excerptImageRequest: (target) => this.#excerptRequest(target),
       annotations: this.#deps.annotations,
       deleteControl: (annot) => this.#cardControls(annot).delete,
+      selectedCards: () => this.#selectedCards(),
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
       libraryTagNames: (annot) => this.#deps.libraryTagNames(annot.key),
@@ -568,6 +570,19 @@ export class AnnotationView extends ItemView implements HistorySurface {
       return false;
     });
     this.register(() => all[Symbol.dispose]());
+
+    // Delete and Backspace erase every Selected Card. The Mac keyboards that
+    // print "delete" on the backspace key send `Backspace`. One on any other
+    // control goes on to it, so a field still deletes its own text.
+    for (const key of ["Delete", "Backspace"]) {
+      const erase = registerKeymap(this.scope, [], key, (event) => {
+        if (!this.#onCardList(event.target)) return;
+        if (this.#store.getState().cardSelection.selected.length === 0) return;
+        this.#actions?.onDeleteSelection();
+        return false;
+      });
+      this.register(() => erase[Symbol.dispose]());
+    }
 
     // The platform's undo and redo keys, which a card answers with the
     // Annotation History of the Attachment this view shows.
@@ -1329,6 +1344,13 @@ export class AnnotationView extends ItemView implements HistorySurface {
       this.contentEl.contains(node) &&
       node.matches('.zt-annot-card, .annots-container, [role="grid"]')
     );
+  }
+
+  /** The Selected Cards, in list order. */
+  #selectedCards(): AnnotationRecord[] {
+    const { annotations, cardSelection } = this.#store.getState();
+    const byKey = new Map(annotations?.map((annot) => [annot.key, annot]));
+    return cardSelection.selected.flatMap((key) => byKey.get(key) ?? []);
   }
 
   /**

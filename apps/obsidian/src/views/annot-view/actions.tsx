@@ -6,7 +6,6 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react";
 import { annotationOpenUri, parseIndexedKey } from "@zotlit/db";
 
 import { buildColorMenu } from "@/lib/annotation-colors";
-import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { showMenuAtButton } from "@/lib/menu";
 import type { MenuAlign } from "@/lib/menu";
@@ -29,20 +28,31 @@ import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
+import { groupControl } from "./card-controls";
 import type { CardBlock, CardControl } from "./card-controls";
 import type { CardClick } from "./card-selection";
 import type { CommentRenderer } from "./comment-render";
+import { confirmDelete } from "./delete-confirm";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
 import { attachmentLine, headerMenu } from "./presentation";
 import type { AnnotState, FollowMode } from "./store";
 
 export interface AnnotActions {
-  /** Open a card's overflow menu, from the control that carries it. */
+  /**
+   * Open a card's overflow menu, from the control that carries it. On a card
+   * inside the Card Selection the menu acts on the whole selection; on one
+   * outside it, the card is selected alone first.
+   */
   onMoreOptions(
     evt: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>,
     annot: AnnotationRecord,
   ): void;
+  /**
+   * Open the same menu as {@link AnnotActions.onMoreOptions} at the pointer,
+   * from a right-click on the card.
+   */
+  onCardMenu(evt: MouseEvent<HTMLElement>, annot: AnnotationRecord): void;
   /** Open the header block's one grouped menu, from the block itself. */
   onHeaderMenu(evt: MouseEvent<HTMLElement>): void;
   /** Choose another Attachment of the Item on screen, in a suggester. */
@@ -128,6 +138,11 @@ export interface AnnotActions {
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
   onDeleteAnnotation(annot: AnnotationRecord): void;
   /**
+   * Erase every Selected Card's Annotation, from Delete or Backspace on the
+   * view: after a confirmation, which names the count for two or more.
+   */
+  onDeleteSelection(): void;
+  /**
    * Send a conflicted write again, against the value Zotero holds now — the
    * card's "Apply again", and its "Delete anyway".
    */
@@ -161,6 +176,7 @@ export interface AnnotActionDeps {
   annotations: Pick<
     AnnotationRepository,
     | "deleteAnnotation"
+    | "deleteAnnotations"
     | "discardCommentDraft"
     | "discardConflict"
     | "discardTagDraft"
@@ -181,6 +197,8 @@ export interface AnnotActionDeps {
    * in its store, and the native menu is built outside React.
    */
   deleteControl: (annot: AnnotationRecord) => CardControl;
+  /** The Selected Cards, in list order. */
+  selectedCards: () => readonly AnnotationRecord[];
   /**
    * The numeric id the Zotero database holds for an Annotation, or `null` for
    * one it does not hold yet — an Annotation created through the Zotero Local
@@ -293,26 +311,21 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
-   * An erase leaves Zotero holding nothing, and the Annotation History puts it
-   * back only under a new key, so the delete asks once against the card the
-   * user can see.
+   * The delete over these cards, after the one confirmation that says what an
+   * erase costs.
    *
    * @see apps/obsidian/policies/ui-seams.md
    */
-  const confirmDeleteAnnotation = async (
-    annot: AnnotationRecord,
-  ): Promise<void> => {
-    const confirmed = await confirm(
-      {
-        title: m.annot_view_delete_confirm_title(),
-        content: m.annot_view_delete_confirm_content(),
-        action: m.annot_view_delete_confirm_action(),
-        destructive: true,
-      },
-      deps.app,
-    );
-    if (confirmed) onDeleteAnnotation(annot);
-  };
+  const deleteCards = (annots: readonly AnnotationRecord[]): Promise<void> =>
+    confirmDelete(deps.app, deps.annotations, {
+      annotationKeys: annots.map(({ key }) => key),
+      now,
+    });
+  /** The delete verb over these cards, which one card's control decides alone. */
+  const deleteControlOf = (
+    annots: readonly AnnotationRecord[],
+  ): Pick<CardControl, "disabled" | "blocked"> =>
+    groupControl(annots.map(deps.deleteControl));
   const commentConflict = (annotationKey: string): boolean => {
     const mutation = deps.getState().mutations.get(annotationKey);
     return (
@@ -348,6 +361,24 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
       pageLabel: annot.pageLabel,
       groupID: annotation.groupID,
     });
+  };
+
+  const onBlockedPress = (block: CardBlock): void => {
+    if (block.action === null) {
+      new BaseNotice(block.reason);
+      return;
+    }
+    const notice = new BaseNotice(
+      BaseNotice.render((renderer) => {
+        renderer.setTitle(block.reason);
+        renderer.addAction((button) => {
+          button.setButtonText(m.capability_enable_editing()).onClick(() => {
+            notice.hide();
+            deps.onAllowEditing();
+          });
+        });
+      }),
+    );
   };
 
   /**
@@ -464,20 +495,60 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
         });
     });
 
-    // Every entry here is a verb. A blocked write shows as a dimmed entry and
-    // says why once, in the header menu's capability row and in the notice a
-    // card verb raises, rather than in a label under each menu it blocks. A menu
-    // row is dimmed by either reason: the notice is reached from a card verb,
-    // and a menu cannot raise one.
-    const deleteControl = deps.deleteControl(annot);
+    addDeleteItem(menu, [annot]);
+  };
+
+  /**
+   * The menu for two or more Selected Cards: the verbs that act on every one
+   * of them. The single-card entries — backlink, key, citation, insert,
+   * explore — name one Annotation and are left out.
+   */
+  const fillGroupMenu = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    addDeleteItem(menu, annots);
+  };
+
+  /**
+   * The delete entry, for one card or a group. Every entry here is a verb. A
+   * blocked write shows as a dimmed entry and says why once, in the header
+   * menu's capability row and in the notice a card verb raises, rather than in
+   * a label under each menu it blocks. A menu row is dimmed by either reason:
+   * the notice is reached from a card verb, and a menu cannot raise one.
+   */
+  const addDeleteItem = (
+    menu: Menu,
+    annots: readonly AnnotationRecord[],
+  ): void => {
+    const control = deleteControlOf(annots);
     menu.addItem((item) => {
       item
-        .setTitle(m.annot_view_menu_delete())
+        .setTitle(
+          annots.length === 1
+            ? m.annot_view_menu_delete()
+            : m.annot_view_menu_delete_group({ count: annots.length }),
+        )
         .setIcon("trash-2")
         .setWarning(true)
-        .setDisabled(deleteControl.disabled || deleteControl.blocked !== null)
-        .onClick(() => void confirmDeleteAnnotation(annot));
+        .setDisabled(control.disabled || control.blocked !== null)
+        .onClick(() => void deleteCards(annots));
     });
+  };
+
+  /**
+   * The menu a card opens: the group's where the card is one of several
+   * Selected Cards, and else its own. A card outside the Card Selection is
+   * selected alone first, so the menu acts on the card the user pressed.
+   */
+  const fillMenuFor = (menu: Menu, annot: AnnotationRecord): void => {
+    const selected = deps.selectedCards();
+    if (selected.length > 1 && selected.some(({ key }) => key === annot.key)) {
+      fillGroupMenu(menu, selected);
+      return;
+    }
+    deps.selectAlone(annot);
+    fillCardMenu(menu, annot);
   };
 
   return {
@@ -497,8 +568,24 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onDeleteAnnotation,
     onApplyAgain,
     onDiscardConflict,
+    onDeleteSelection() {
+      const annots = deps.selectedCards();
+      if (annots.length === 0) return;
+      const control = deleteControlOf(annots);
+      if (control.disabled) return;
+      if (control.blocked) {
+        onBlockedPress(control.blocked);
+        return;
+      }
+      void deleteCards(annots);
+    },
     onMoreOptions(evt, annot) {
-      showMenu(evt, (menu) => fillCardMenu(menu, annot), "end");
+      showMenu(evt, (menu) => fillMenuFor(menu, annot), "end");
+    },
+    onCardMenu(evt, annot) {
+      const menu = new Menu();
+      fillMenuFor(menu, annot);
+      menu.showAtMouseEvent(evt.nativeEvent);
     },
     onHeaderMenu(evt) {
       showMenu(evt, (menu) =>
@@ -517,23 +604,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     },
     onChooseAttachment,
     onAllowEditing: deps.onAllowEditing,
-    onBlockedPress(block) {
-      if (block.action === null) {
-        new BaseNotice(block.reason);
-        return;
-      }
-      const notice = new BaseNotice(
-        BaseNotice.render((renderer) => {
-          renderer.setTitle(block.reason);
-          renderer.addAction((button) => {
-            button.setButtonText(m.capability_enable_editing()).onClick(() => {
-              notice.hide();
-              deps.onAllowEditing();
-            });
-          });
-        }),
-      );
-    },
+    onBlockedPress,
     onColorMenu(evt, annot) {
       showMenu(evt, (menu) =>
         buildColorMenu(menu, {
@@ -577,6 +648,7 @@ const NOOP_DEMAND: ExcerptDisplayDemand = {
 
 const NOOP_ACTIONS: AnnotActions = {
   onMoreOptions: () => {},
+  onCardMenu: () => {},
   onHeaderMenu: () => {},
   onChooseAttachment: () => {},
   onAllowEditing: () => {},
@@ -601,6 +673,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onDiscardTags: () => {},
   libraryTagNames: () => [],
   onDeleteAnnotation: () => {},
+  onDeleteSelection: () => {},
   onApplyAgain: () => {},
   onDiscardConflict: () => {},
   onRefresh: () => {},

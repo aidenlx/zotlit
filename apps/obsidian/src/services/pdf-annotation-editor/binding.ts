@@ -141,6 +141,7 @@ export type AnnotationReads = Pick<
   | "commentDraftFor"
   | "createAnnotation"
   | "deleteAnnotation"
+  | "deleteAnnotations"
   | "discardCommentDraft"
   | "discardTagDraft"
   | "editComment"
