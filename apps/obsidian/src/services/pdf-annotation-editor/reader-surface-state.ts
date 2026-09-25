@@ -965,7 +965,7 @@ export function ingestCommentDraft(
  * repository hands back the same draft while it stands unchanged, so a comment
  * change announced on the same event leaves this one alone.
  */
-export function ingestTagDraft(
+function ingestTagDraft(
   store: ReaderSurfaceStore,
   key: string,
   draft: TagDraft | null,
@@ -988,7 +988,7 @@ export function hideCommentDraft(store: ReaderSurfaceStore, key: string): void {
  * A database switch hid this tag draft; its editor closes in the same update,
  * with nothing to save.
  */
-export function hideTagDraft(store: ReaderSurfaceStore, key: string): void {
+function hideTagDraft(store: ReaderSurfaceStore, key: string): void {
   const { tagDrafts, floating } = store.getState();
   store.setState({
     tagDrafts: withDraft(tagDrafts, key, null),
@@ -1174,7 +1174,7 @@ export interface SelectedRowHead {
  * re-read hands back new records for the same tags. The type is absent where
  * the record holds names alone.
  */
-export type SelectedRowTag = Pick<AnnotationTag, "name"> &
+type SelectedRowTag = Pick<AnnotationTag, "name"> &
   Partial<Pick<AnnotationTag, "type">>;
 
 /**

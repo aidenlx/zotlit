@@ -19,10 +19,17 @@ import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 import type { AnnotationRecord } from "@/services/annotation-repository/service";
 
-import type { HeldTags, HeldTagsActions } from "./card-controls";
+import { sameHeldTags } from "./card-controls";
+import type { HeldTags } from "./card-controls";
 import { renderHeldTagsPanel } from "./comment-sheet";
-import type { CommentSurface } from "./comment-sheet";
+import type { CommentSurface, HeldDraftActions } from "./comment-sheet";
 import { tagChipVariants } from "./tag-chip";
+
+/**
+ * Ends a tag editing session as its editor would: the text still typed is
+ * added first, unless `withText` is `false`, as for Escape.
+ */
+export type EndTagSession = (withText?: boolean) => void;
 
 export interface TagEditorProps {
   /** The session's current names, in order. */
@@ -43,10 +50,9 @@ export interface TagEditorProps {
   onClose: () => void;
   /**
    * Where the editor puts its own end of the session, for a gesture outside
-   * it, such as the card's tag toggle. That end adds the typed text first,
-   * unless `withText` is `false`, as for Escape.
+   * it, such as the card's tag toggle.
    */
-  endRef: RefObject<((withText?: boolean) => void) | null>;
+  endSession: RefObject<EndTagSession | null>;
   /**
    * What focus may move within without ending the session; the editor itself
    * by default. The Mark Popup passes its content, so its own verbs stand
@@ -64,7 +70,7 @@ export interface TagEditorProps {
 /**
  * One tag editing session, drawn in place of the tag chips. Enter adds the
  * typed name and a comma stays part of it. Focus leaving the editor, the
- * editor going away, or {@link TagEditorProps.endRef} ends the session with
+ * editor going away, or {@link TagEditorProps.endSession} ends the session with
  * the typed text added; Escape anywhere in the editor ends it without that
  * text. After the end, a change such as a late pick changes nothing.
  *
@@ -78,7 +84,7 @@ export function TagEditor({
   libraryNames,
   onChange,
   onClose,
-  endRef,
+  endSession,
   within,
   suggestRef,
 }: TagEditorProps) {
@@ -137,7 +143,7 @@ export function TagEditor({
           saving={saving}
           libraryNames={libraryNames}
           onClose={onClose}
-          endRef={endRef}
+          endSession={endSession}
           within={within}
           suggestRef={suggestRef}
         />
@@ -162,12 +168,12 @@ function TagField({
   saving,
   libraryNames,
   onClose,
-  endRef,
+  endSession,
   within,
   suggestRef,
 }: Pick<
   TagEditorProps,
-  "saving" | "libraryNames" | "onClose" | "endRef" | "within" | "suggestRef"
+  "saving" | "libraryNames" | "onClose" | "endSession" | "within" | "suggestRef"
 >) {
   const app = useObsidianApp();
   const { value, add } = useTagsInput();
@@ -238,19 +244,19 @@ function TagField({
     };
     editor.addEventListener("focusout", leave as EventListener);
     editor.addEventListener("keydown", escape as EventListener);
-    endRef.current = (withText = true) => end(withText);
+    endSession.current = (withText = true) => end(withText);
     input.focus({ preventScroll: true });
     return () => {
       editor.removeEventListener("focusout", leave as EventListener);
       editor.removeEventListener("keydown", escape as EventListener);
       suggest.current?.close();
       suggest.current = null;
-      endRef.current = null;
+      endSession.current = null;
       // An editor that goes with no blur — the view closing, the item
       // changing, the card leaving the list — still ends its session.
       end(true);
     };
-  }, [app, endRef]);
+  }, [app, endSession]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
     // The popup answers Enter with the highlighted name, which is the typed
@@ -303,17 +309,23 @@ export function HeldTagsPanel({
 }: {
   held: HeldTags;
   surface: CommentSurface;
-  actions: HeldTagsActions;
+  actions: HeldDraftActions;
   onOpen?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // The panel outlives renders; its verbs read this render's callbacks.
   const latest = useRef({ actions, onOpen });
   latest.current = { actions, onOpen };
+  // A redraw between press and release would drop the click, so the panel
+  // redraws only when what it shows changes, compared by value: both
+  // surfaces build a fresh `held` on every render.
+  const shown = useRef(held);
+  if (!sameHeldTags(shown.current, held)) shown.current = held;
+  const stable = shown.current;
   const openable = onOpen !== undefined;
   useLayoutEffect(() => {
     if (!ref.current) return;
-    renderHeldTagsPanel(ref.current, held, {
+    renderHeldTagsPanel(ref.current, stable, {
       surface,
       actions: {
         save: () => latest.current.actions.save(),
@@ -322,9 +334,7 @@ export function HeldTagsPanel({
       },
       onOpen: openable ? () => latest.current.onOpen?.() : undefined,
     });
-    // A redraw between press and release would drop the click, so the panel
-    // redraws only when what it shows changes.
-  }, [held, surface, openable]);
+  }, [stable, surface, openable]);
   return <div ref={ref} />;
 }
 

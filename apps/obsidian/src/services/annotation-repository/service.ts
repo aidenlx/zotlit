@@ -16,7 +16,6 @@ import type {
   Annotation,
   AnnotationPosition,
   ResolvedAnnotationTypeName,
-  TagType,
   TemplateTag,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
@@ -50,12 +49,14 @@ import {
   stillHolds,
 } from "./history";
 import type {
+  FieldHistoryStep,
   HistoryChange,
   HistoryDirection,
   HistoryFields,
   HistoryJoin,
   HistoryOutcome,
   HistoryStep,
+  TagHistoryStep,
 } from "./history";
 import {
   resolvesSilently,
@@ -69,6 +70,7 @@ import {
   eraseRequest,
   geometryPatch,
   IDLE,
+  MANUAL_TAG_TYPE,
   MAX_POSITION_LENGTH,
   mergeTags,
   newWriteToken,
@@ -100,7 +102,6 @@ export type {
 } from "./history";
 export type {
   AnnotationDraft,
-  AnnotationTag,
   GeometryEdit,
   GeometryInput,
   MutationState,
@@ -447,7 +448,8 @@ interface HeldAnnotation {
 type WriteAttempt =
   | { write: Exclude<ConflictedWrite, "geometry">; attempted: string | null }
   | { write: "geometry"; attempted: GeometryEdit; input: GeometryInput }
-  | { write: "tags" };
+  /** `session` marks a tag editing session's own save, not a tag undo or redo. */
+  | { write: "tags"; session?: true };
 
 type ConfirmedWrite =
   | {
@@ -1074,6 +1076,7 @@ export class AnnotationRepository extends Service<void> {
     });
     const outcome = await this.#command(annotationKey, {
       write: "tags",
+      session: true,
       request: (target, record) =>
         tagsPatch(target, mergeTags(annotationTags(record), change)),
     });
@@ -1577,7 +1580,11 @@ export class AnnotationRepository extends Service<void> {
       });
     }
 
-    this.#settle(annotationKey, { kind: "pending", write: command.write });
+    this.#settle(annotationKey, {
+      kind: "pending",
+      write: command.write,
+      ...("session" in command && command.session && { session: true }),
+    });
     const blocked = this.#writeBlocked(held.attachmentKey);
     if (blocked) {
       return this.#settle(annotationKey, {
@@ -1726,9 +1733,11 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * Whether an Annotation Draft is open on an Annotation this step changes. An
-   * open draft is a session still being shaped, and the comment editor holding
-   * it answers these keys with its own text undo.
+   * Whether an Annotation Draft stands on an Annotation this step changes: a
+   * comment draft, or a tag draft, whether its editor is open or it is held
+   * for Save tags with no editor. A draft is a session Zotero does not hold
+   * yet. An open comment editor answers these keys with its own text undo,
+   * and a tag draft ends by its save or its discard before a step is taken.
    */
   #beingEdited(step: HistoryStep): boolean {
     return step.changes.some(
@@ -1873,7 +1882,7 @@ export class AnnotationRepository extends Service<void> {
    * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
    */
   async #takeTagStep(
-    step: HistoryStep,
+    step: TagHistoryStep,
     {
       attachmentKey,
       direction,
@@ -1884,9 +1893,7 @@ export class AnnotationRepository extends Service<void> {
       history: AnnotationHistory;
     },
   ): Promise<HistoryOutcome> {
-    // A tag session writes one Annotation, so its step holds one change,
-    // and a tag step always carries what the session changed.
-    const { annotationKey, tags } = step.changes[0]!;
+    const [{ annotationKey, tags }] = step.changes;
     const record = this.#holding(annotationKey)?.record;
     if (!record) {
       logger.debug("A history step was dropped: Zotero no longer holds it", {
@@ -1899,8 +1906,8 @@ export class AnnotationRepository extends Service<void> {
     }
     // Taking the step writes its change the other way round.
     const reverse: TagChange<AnnotationTag> = {
-      added: tags!.removed,
-      removed: tags!.added,
+      added: tags.removed,
+      removed: tags.added,
     };
     const current = annotationTags(record);
     if (noTagChange(tagChange(current, mergeTags(current, reverse)))) {
@@ -1938,7 +1945,7 @@ export class AnnotationRepository extends Service<void> {
     if (left && !noTagChange(left)) {
       history.push(opposite(direction), {
         kind: step.kind,
-        changes: [{ annotationKey, before: {}, after: {}, tags: left }],
+        changes: [{ annotationKey, tags: left }],
       });
     }
     return { kind: "stepped", annotationKey };
@@ -1956,7 +1963,7 @@ export class AnnotationRepository extends Service<void> {
    * @see apps/obsidian/docs/adr/0059-annotation-history-is-per-attachment-checked-by-field-value-and-restores-under-a-new-key.md
    */
   async #takeExistenceStep(
-    step: HistoryStep,
+    step: FieldHistoryStep,
     {
       attachmentKey,
       direction,
@@ -2193,7 +2200,7 @@ export class AnnotationRepository extends Service<void> {
     if (noTagChange(tags)) return;
     history.record({
       kind: "tags",
-      changes: [{ annotationKey: record.key, before: {}, after: {}, tags }],
+      changes: [{ annotationKey: record.key, tags }],
     });
     logger.debug("A tag session was recorded in the annotation history", {
       attachmentKey,
@@ -3259,7 +3266,7 @@ function freshValueOf(
 function annotationTags(record: AnnotationRecord): readonly AnnotationTag[] {
   return (
     record.tagDetails ??
-    record.tags.map((name) => ({ name, type: 0 satisfies TagType }))
+    record.tags.map((name) => ({ name, type: MANUAL_TAG_TYPE }))
   );
 }
 

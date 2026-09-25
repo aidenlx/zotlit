@@ -29,8 +29,7 @@ import type { NoteFeature } from "@/services/note-feature";
 import { InertTemplateError } from "@/services/template/errors";
 
 import { chooseAttachment } from "./attachment-suggester";
-import { heldTagsActions } from "./card-controls";
-import type { CardBlock, CardControl, HeldTagsActions } from "./card-controls";
+import type { CardBlock, CardControl } from "./card-controls";
 import type { CommentRenderer } from "./comment-render";
 import type { ExcerptImageTarget } from "./excerpt-image-state";
 import { buildHeaderMenu } from "./menus";
@@ -102,14 +101,14 @@ export interface AnnotActions {
   onOpenTags(annot: AnnotationRecord): boolean;
   onEditTags(annot: AnnotationRecord, names: readonly string[]): void;
   /**
-   * Save the card's tag session as its editor closes.
+   * Save the card's tag session as its editor closes, or on Save tags.
    *
    * @param options.automatic whether the editor closing asks, which holds a
    *   draft that needs Save tags rather than saving it.
    */
   onSaveTags(annot: AnnotationRecord, options?: { automatic?: boolean }): void;
-  /** The held tags panel's verbs for one card. */
-  heldTags(annot: AnnotationRecord): HeldTagsActions;
+  /** Drop a held tag draft and keep the tags Zotero holds. */
+  onDiscardTags(annot: AnnotationRecord): void;
   /** The tag names of the Annotation's Library, which the editor suggests. */
   libraryTagNames(annot: AnnotationRecord): readonly string[];
   /** Erase one Annotation in Zotero, from the card's overflow menu. */
@@ -258,11 +257,8 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     annot: AnnotationRecord,
     { automatic = false }: { automatic?: boolean } = {},
   ): void => report(deps.annotations.submitTags(annot.key, { automatic }));
-  const heldTags = (annot: AnnotationRecord): HeldTagsActions =>
-    heldTagsActions(deps.annotations, annot.key, {
-      allowEditing: deps.onAllowEditing,
-      report,
-    });
+  const onDiscardTags = (annot: AnnotationRecord): void =>
+    deps.annotations.discardTagDraft(annot.key);
   const onDeleteAnnotation = (annot: AnnotationRecord): void =>
     report(deps.annotations.deleteAnnotation(annot.key));
   /**
@@ -462,7 +458,7 @@ export function createAnnotActions(deps: AnnotActionDeps): AnnotActions {
     onOpenTags,
     onEditTags,
     onSaveTags,
-    heldTags,
+    onDiscardTags,
     libraryTagNames: deps.libraryTagNames,
     onOpenComment,
     onEditComment,
@@ -569,11 +565,7 @@ const NOOP_ACTIONS: AnnotActions = {
   onOpenTags: () => false,
   onEditTags: () => {},
   onSaveTags: () => {},
-  heldTags: () => ({
-    save: () => {},
-    allowEditing: () => {},
-    discard: () => {},
-  }),
+  onDiscardTags: () => {},
   libraryTagNames: () => [],
   onDeleteAnnotation: () => {},
   onApplyAgain: () => {},

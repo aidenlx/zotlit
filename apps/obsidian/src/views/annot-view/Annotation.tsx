@@ -47,7 +47,11 @@ import {
   renderConflictPanel,
   renderHeldDraftPanel,
 } from "./comment-sheet";
-import type { CommentDraftActions, CommentSheet } from "./comment-sheet";
+import type {
+  CommentDraftActions,
+  CommentSheet,
+  HeldDraftActions,
+} from "./comment-sheet";
 import {
   excerptImageOwnership,
   excerptImageTarget,
@@ -65,6 +69,7 @@ import {
 } from "./store";
 import { tagChipVariants } from "./tag-chip";
 import { autoTags, HeldTagsPanel, TagEditor } from "./tag-editor";
+import type { EndTagSession } from "./tag-editor";
 
 const TYPE_ICON: Record<string, string> = {
   highlight: "align-left",
@@ -126,7 +131,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
   );
   const editing = useAnnotStore((s) => s.editingCommentKey === annot.key);
   const controls = useCardControls(annot);
-  const endTags = useRef<(() => void) | null>(null);
+  const endSession = useRef<EndTagSession | null>(null);
 
   return (
     <div
@@ -197,7 +202,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
           annot={annot}
           controls={controls}
           editing={editing}
-          endTags={endTags}
+          endSession={endSession}
         />
       </div>
 
@@ -207,7 +212,7 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
 
       <CommentSlot annot={annot} editing={editing} control={controls.comment} />
 
-      <TagSlot annot={annot} control={controls.tags} endRef={endTags} />
+      <TagSlot annot={annot} control={controls.tags} endSession={endSession} />
     </div>
   );
 }
@@ -257,6 +262,19 @@ function cardDraftActions(
   };
 }
 
+/** The held tags panel's verbs, bound to the Annotation View's own actions. */
+function cardHeldTagsActions(
+  actions: AnnotActions,
+  annot: AnnotationRecord,
+): HeldDraftActions {
+  return {
+    // Save tags is the explicit save, never the editor's automatic one.
+    save: () => actions.onSaveTags(annot),
+    allowEditing: () => actions.onAllowEditing(),
+    discard: () => actions.onDiscardTags(annot),
+  };
+}
+
 /**
  * The card's verbs, as the same `clickable-icon` row the Mark Popup draws over
  * a selected mark, so a write reached from either surface wears the same
@@ -273,13 +291,13 @@ function CardActionBar({
   annot,
   controls,
   editing,
-  endTags,
+  endSession,
 }: {
   annot: AnnotationRecord;
   controls: CardControls;
   editing: boolean;
   /** Ends the open tag session through its editor, typed text and all. */
-  endTags: RefObject<(() => void) | null>;
+  endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
   const setEditing = useSetEditingComment();
@@ -346,7 +364,7 @@ function CardActionBar({
             if (tags.open) evt.preventDefault();
           }}
           onClick={press(controls.tags, () => {
-            if (tags.open) endTags.current?.();
+            if (tags.open) endSession.current?.();
             else tags.start();
           })}
           {...tooltipAttrs(controls.tags.tooltip)}
@@ -396,26 +414,22 @@ function useTagSession(annot: AnnotationRecord) {
 function TagSlot({
   annot,
   control,
-  endRef,
+  endSession,
 }: {
   annot: AnnotationRecord;
   control: CardControl;
-  endRef: RefObject<(() => void) | null>;
+  endSession: RefObject<EndTagSession | null>;
 }) {
   const actions = useContext(AnnotActionsContext);
   const session = useTagSession(annot);
   const auto = useMemo(() => autoTags(annot), [annot]);
   const capability = useAnnotStore((s) => s.capability);
   const { draft } = session;
-  // Held by identity while the draft and the capability stand, as the held
-  // comment panel is.
-  const { editor, held } = useMemo(() => {
-    const now = Temporal.Now.instant();
-    return {
-      editor: tagEditorControls(capability, draft, now),
-      held: heldTagDraft(capability, draft, now),
-    };
-  }, [capability, draft]);
+  const now = Temporal.Now.instant();
+  const editor = tagEditorControls(capability, draft, now);
+  // A fresh value on each render: the held panel compares it by value
+  // before it draws again.
+  const held = heldTagDraft(capability, draft, now);
   const editable = !control.disabled && control.blocked === null;
   // Editing that becomes unavailable closes the editor, which holds the
   // draft for Save tags; a save in flight keeps it open until the read-back.
@@ -435,7 +449,7 @@ function TagSlot({
           libraryNames={() => actions.libraryTagNames(annot)}
           onChange={(names) => actions.onEditTags(annot, names)}
           onClose={session.close}
-          endRef={endRef}
+          endSession={endSession}
         />
       </div>
     );
@@ -447,13 +461,20 @@ function TagSlot({
         <HeldTagsPanel
           held={held}
           surface="card"
-          actions={actions.heldTags(annot)}
+          actions={cardHeldTagsActions(actions, annot)}
           onOpen={editable ? session.start : undefined}
         />
       </div>
     );
   }
-  return <TagRow annot={annot} onOpen={editable ? session.start : undefined} />;
+  return (
+    <TagRow
+      // While a tag draft stands, the row shows its names, as the Mark Popup
+      // does, so the two surfaces show the same unsaved change.
+      names={draft?.names ?? annot.tags}
+      onOpen={editable ? session.start : undefined}
+    />
+  );
 }
 
 /**
@@ -465,19 +486,21 @@ function TagSlot({
  * A chip is a filter toggle, so a tag seen on one card is the gesture that
  * narrows the list to it, and a chip already in the filter rests in the accent.
  *
+ * @param names the names the row draws: a tag draft's while one stands, and
+ *   the Annotation's own otherwise. The filter reads the Annotation's own.
  * @param onOpen opens the tag editor from a click on the row's empty space;
  *   absent while editing is unavailable.
  */
 function TagRow({
-  annot,
+  names,
   onOpen,
 }: {
-  annot: AnnotationRecord;
+  names: readonly string[];
   onOpen?: () => void;
 }) {
   const selectedTags = useAnnotStore((s) => s.selectedTags);
   const toggleTag = useToggleSelectedTag();
-  if (annot.tags.length === 0) return null;
+  if (names.length === 0) return null;
 
   return (
     <div
@@ -489,7 +512,7 @@ function TagRow({
         onOpen();
       }}
     >
-      {annot.tags.map((tag) => {
+      {names.map((tag) => {
         const selected = selectedTags.includes(tag);
         return (
           <span

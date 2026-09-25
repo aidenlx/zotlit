@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { RangeAdjustment, SelectedText } from "@zotlit/pdf-structure";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationRecord,
@@ -16,10 +17,11 @@ import {
   annotation,
   annotationEdits,
   pageView,
+  READER_NOW,
   readerSurfaces,
   viewport,
 } from "./__fixtures__";
-import { setCommenting } from "./reader-surface-state";
+import { ingestCapability, setCommenting } from "./reader-surface-state";
 import type { OverlayPageView } from "./render";
 
 /**
@@ -817,6 +819,47 @@ it("opens no tag editor while no tag session can start", () => {
   popup.hoverEl.querySelector<HTMLElement>("[data-zt-verb='tags']")!.click();
 
   expect(h.store.getState().floating).toMatchObject({ tagging: false });
+});
+
+it("binds the held tags panel to Save tags and Discard, and keeps it through a refresh", () => {
+  using h = setup([PARAGRAPH, WORD], { kind: "writable" });
+  h.annotations.tagDraftFor.mockReturnValue({
+    ...WORD_TAGS,
+    names: ["figure"],
+    manualSave: true,
+    held: true,
+  });
+  h.annotations.emit("comment-draft-changed", "WORD2222");
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const button = (label: string) =>
+    [...popup.hoverEl.querySelectorAll("button")].find(
+      (el) => el.textContent === label,
+    );
+  const save = button(m.annot_view_tags_save());
+  expect(save).toBeDefined();
+
+  // A comment write in flight refreshes the popup, and the held panel it
+  // draws again is the same, so a click between press and release lands.
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "comment",
+  });
+  h.annotations.emit("mutation-changed", "WORD2222");
+  expect(button(m.annot_view_tags_save())).toBe(save);
+
+  save!.click();
+  // Save tags carries no `automatic`, so the held draft is written.
+  expect(h.annotations.submitTags).toHaveBeenCalledExactlyOnceWith("WORD2222");
+  button(m.annot_view_comment_discard())!.click();
+  expect(h.annotations.discardTagDraft).toHaveBeenCalledExactlyOnceWith(
+    "WORD2222",
+  );
+
+  // Editing that needs Allow editing puts the reader's own route on the panel.
+  ingestCapability(h.store, { kind: "authorization-required" }, READER_NOW);
+  button(m.capability_enable_editing())!.click();
+  expect(h.gestures.allowEditing).toHaveBeenCalledOnce();
 });
 
 it("falls back to the row, and closes the editor, when no draft can be started", () => {

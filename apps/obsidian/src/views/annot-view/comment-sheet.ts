@@ -20,7 +20,6 @@ import type {
   HeldDraft,
   HeldDraftAction,
   HeldTags,
-  HeldTagsActions,
 } from "./card-controls";
 import { createCommentEditor } from "./comment-editor";
 import type { CommentEditor } from "./comment-editor";
@@ -286,16 +285,25 @@ export function renderCommentSheet(
 }
 
 /**
- * What the held-draft and Write Conflict panels' verbs run. Each surface binds
- * them to its own write path; which press runs which is decided here, once.
+ * What a held-draft panel's verbs run, for a held comment and held tags
+ * alike. Each surface binds them to its own write path; which press runs
+ * which is decided here, once.
  */
-export interface CommentDraftActions {
-  /** Store the held text in Zotero. */
+export interface HeldDraftActions {
+  /** Store the held draft in Zotero: Save comment, or Save tags. */
   save: () => void;
   /** Ask Zotero for editing again. */
   allowEditing: () => void;
-  /** Drop the held text. */
+  /** Drop the held draft and keep what Zotero holds. */
   discard: () => void;
+}
+
+/**
+ * What the held comment and Write Conflict panels' verbs run. Each surface
+ * binds them to its own write path; which press runs which is decided here,
+ * once.
+ */
+export interface CommentDraftActions extends HeldDraftActions {
   /** Send the conflicting write again, or delete anyway. */
   applyAgain: () => void;
   /** Drop the conflicting write and keep what Zotero holds. */
@@ -357,7 +365,7 @@ function buttons(
   }
 }
 
-const HELD_DRAFT_VERB: Record<HeldDraftAction["kind"], keyof HeldTagsActions> =
+const HELD_DRAFT_VERB: Record<HeldDraftAction["kind"], keyof HeldDraftActions> =
   {
     save: "save",
     "allow-editing": "allowEditing",
@@ -429,7 +437,7 @@ export function renderHeldTagsPanel(
     onOpen,
   }: {
     surface: CommentSurface;
-    actions: HeldTagsActions;
+    actions: HeldDraftActions;
     onOpen?: () => void;
   },
 ): void {
@@ -462,7 +470,7 @@ export function renderHeldTagsPanel(
 function heldReasonAndVerbs(
   box: HTMLElement,
   held: Pick<HeldDraft, "reason" | "actions">,
-  actions: HeldTagsActions,
+  actions: HeldDraftActions,
 ): void {
   if (held.reason !== null) {
     // The reason runs to three and four lines in a narrow dock, past where

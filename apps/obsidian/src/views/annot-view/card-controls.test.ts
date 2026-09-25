@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
@@ -19,7 +19,6 @@ import {
   editingBlockedReason,
   heldCommentDraft,
   heldTagDraft,
-  heldTagsActions,
 } from "./card-controls";
 import type { CardBlock, CardControls } from "./card-controls";
 
@@ -264,13 +263,24 @@ it("gives the tag toggle the comment toggle's enabled state and blocked reason",
   });
 });
 
-it("keeps every verb live while tags save, since a tag save is no gesture", () => {
-  const tags = { kind: "pending", write: "tags" } as const;
+it("keeps every verb live while a tag session saves, since that save is no gesture", () => {
+  const tags = { kind: "pending", write: "tags", session: true } as const;
 
   expect(controlsOf({ kind: "writable" }, tags)).toEqual(
     controlsOf({ kind: "writable" }),
   );
   expect(editingBlockedReason({ kind: "writable" }, tags, NOW)).toBeNull();
+});
+
+it("stands every verb down while a tag undo or redo is in flight", () => {
+  const step = { kind: "pending", write: "tags" } as const;
+
+  expect(controlsOf({ kind: "writable" }, step)).toEqual(
+    controlsOf({ kind: "writable" }, { kind: "pending", write: "color" }),
+  );
+  expect(editingBlockedReason({ kind: "writable" }, step, NOW)).toBe(
+    m.annot_view_card_saving(),
+  );
 });
 
 it("names the tag toggle for what pressing it would do", () => {
@@ -543,31 +553,5 @@ describe("the held tags panel", () => {
         primary: false,
       },
     ]);
-  });
-
-  it("binds Save tags to the explicit save, and Discard to the draft", async () => {
-    const annotations = {
-      submitTags: vi.fn(async (): Promise<MutationState> => IDLE),
-      discardTagDraft: vi.fn(),
-    };
-    const reported: Promise<MutationState>[] = [];
-    const allowEditing = vi.fn();
-    const actions = heldTagsActions(annotations, "PUPR5FG5", {
-      allowEditing,
-      report: (outcome) => reported.push(outcome),
-    });
-
-    actions.save();
-    // Save tags carries no `automatic`, so a held draft is written.
-    expect(annotations.submitTags).toHaveBeenCalledExactlyOnceWith("PUPR5FG5");
-    expect(reported).toHaveLength(1);
-    await expect(reported[0]).resolves.toEqual(IDLE);
-
-    actions.discard();
-    expect(annotations.discardTagDraft).toHaveBeenCalledExactlyOnceWith(
-      "PUPR5FG5",
-    );
-    actions.allowEditing();
-    expect(allowEditing).toHaveBeenCalledOnce();
   });
 });

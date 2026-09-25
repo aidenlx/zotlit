@@ -4810,7 +4810,7 @@ it("keeps the verbs live and the draft saving until the read-back lands", async 
     "figure",
   ]);
   const mutation = repository.mutationFor("PUPR5FG5");
-  expect(mutation).toEqual({ kind: "pending", write: "tags" });
+  expect(mutation).toEqual({ kind: "pending", write: "tags", session: true });
   const verbs = cardControls({
     capability: repository.capabilityFor("RGRPDF24"),
     mutation,
@@ -5184,6 +5184,38 @@ it("sends the tag undo again after a 412, applied to the fresh tags", async () =
   expect(conflicts).toBe(0);
   expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
   expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("stands the verbs down while a tag undo is in flight, as a gesture's write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "figure"]);
+  const release = zotero.holdWrites();
+
+  const undone = repository.undo("RGRPDF24");
+  await vi.waitFor(() => expect(zotero.patches).toHaveLength(2));
+
+  const mutation = repository.mutationFor("PUPR5FG5");
+  expect(mutation).toEqual({ kind: "pending", write: "tags" });
+  const verbs = cardControls({
+    capability: repository.capabilityFor("RGRPDF24"),
+    mutation,
+    hasComment: false,
+    hasTags: true,
+    now: NOW,
+  });
+  expect([verbs.color, verbs.comment, verbs.tags, verbs.delete]).toMatchObject([
+    { disabled: true },
+    { disabled: true },
+    { disabled: true },
+    { disabled: true },
+  ]);
+
+  release();
+  expect(await undone).toMatchObject({ kind: "stepped" });
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
 });
 
 it("takes a tag step with no write where Zotero already holds what the undo would write", async () => {

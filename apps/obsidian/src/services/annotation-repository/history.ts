@@ -117,23 +117,28 @@ export interface HistoryChange {
   before: HistoryFields;
   /** What Zotero confirmed after the edit, which an undo checks against. */
   after: HistoryFields;
-  /**
-   * What one tag editing session changed, each tag with its type. Only a
-   * `tags` step carries it, and its `before` and `after` then hold no field:
-   * the step is reversed by name against the tags Zotero holds now rather
-   * than written back by value, so a tag Zotero changed since stays.
-   *
-   * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
-   */
-  tags?: TagChange<AnnotationTag>;
+}
+
+/**
+ * What one tag editing session did to one Annotation: the tags it added and
+ * removed, each with its type. The step is reversed by name against the tags
+ * Zotero holds now rather than written back by value, so a tag Zotero changed
+ * since stays.
+ *
+ * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+ */
+export interface TagHistoryChange {
+  /** The Annotation's Indexed Key. */
+  annotationKey: string;
+  tags: TagChange<AnnotationTag>;
 }
 
 /**
  * One user action in the Annotation History, held as the before and after
  * values of the fields it changed on each Annotation it touched.
  */
-export interface HistoryStep {
-  kind: HistoryEditKind;
+export interface FieldHistoryStep {
+  kind: Exclude<HistoryEditKind, "tags">;
   /** One entry per Annotation the action touched, in reading order. */
   changes: readonly HistoryChange[];
   /** What a following edit of the same kind joins this step by. */
@@ -146,6 +151,15 @@ export interface HistoryStep {
    */
   group?: string;
 }
+
+/** One tag editing session in the Annotation History. It joins no other step. */
+export interface TagHistoryStep {
+  kind: "tags";
+  /** A tag session writes one Annotation. */
+  changes: readonly [TagHistoryChange];
+}
+
+export type HistoryStep = FieldHistoryStep | TagHistoryStep;
 
 /**
  * The Annotation as a restore would write it, or `null` for a record whose
@@ -205,7 +219,7 @@ function sameStringField(written: string, held: string | null): boolean {
  * either.
  */
 export function historyFieldsOf(
-  kind: HistoryEditKind,
+  kind: FieldHistoryStep["kind"],
   record: HistoryRecord,
 ): HistoryFields | null {
   switch (kind) {
@@ -218,10 +232,6 @@ export function historyFieldsOf(
       // and none on the other, which a record on its own cannot say. Their
       // fields are built by contentOf over the whole record a restore writes
       // back, so there is nothing for one confirmed record to answer here.
-      return null;
-    case "tags":
-      // A tag step holds the names one write changed, which only the two
-      // records around that write can say, in its own `tags`.
       return null;
     case "comment":
       // Zotero stores a cleared comment as no comment, so the empty string is
@@ -343,7 +353,7 @@ export type HistoryOutcome =
  * grouping, so no other kind meets this, and steps of different kinds never
  * merge: a colour pick between two nudges ends the run.
  */
-function joins(standing: HistoryStep, made: HistoryStep): boolean {
+function joins(standing: FieldHistoryStep, made: FieldHistoryStep): boolean {
   if (made.kind !== "geometry" || standing.kind !== made.kind) return false;
   if (!standing.join || !made.join) return false;
   const [held] = standing.changes;
@@ -361,7 +371,10 @@ function joins(standing: HistoryStep, made: HistoryStep): boolean {
  * still one stroke, so its creates are one step. A step that names no group
  * stands alone, so no other rule's step is ever drawn into one.
  */
-function joinsGroup(standing: HistoryStep, made: HistoryStep): boolean {
+function joinsGroup(
+  standing: FieldHistoryStep,
+  made: FieldHistoryStep,
+): boolean {
   return (
     standing.kind === made.kind &&
     made.group !== undefined &&
@@ -374,7 +387,10 @@ function joinsGroup(standing: HistoryStep, made: HistoryStep): boolean {
  * undoing ten nudges goes back to where the mark was before the first one, and
  * the new edit supplies the `after` an undo checks Zotero against.
  */
-function joinedStep(standing: HistoryStep, made: HistoryStep): HistoryStep {
+function joinedStep(
+  standing: FieldHistoryStep,
+  made: FieldHistoryStep,
+): FieldHistoryStep {
   const held = standing.changes[0];
   const next = made.changes[0];
   if (!held || !next) return made;
@@ -449,16 +465,18 @@ export class AnnotationHistory {
     this.#stacks.redo.length = 0;
     const standing = this.peek("undo");
     const stack = this.#stacks.undo;
-    if (standing && joinsGroup(standing, step)) {
-      stack[stack.length - 1] = {
-        ...standing,
-        changes: [...standing.changes, ...step.changes],
-      };
-      return true;
-    }
-    if (standing && joins(standing, step)) {
-      stack[stack.length - 1] = joinedStep(standing, step);
-      return true;
+    if (standing && standing.kind !== "tags" && step.kind !== "tags") {
+      if (joinsGroup(standing, step)) {
+        stack[stack.length - 1] = {
+          ...standing,
+          changes: [...standing.changes, ...step.changes],
+        };
+        return true;
+      }
+      if (joins(standing, step)) {
+        stack[stack.length - 1] = joinedStep(standing, step);
+        return true;
+      }
     }
     this.push("undo", step);
     return false;
@@ -474,14 +492,14 @@ export class AnnotationHistory {
       for (const [index, step] of stack.entries()) {
         if (!step.changes.some(({ annotationKey }) => annotationKey === from))
           continue;
-        stack[index] = {
-          ...step,
-          changes: step.changes.map((change) =>
-            change.annotationKey === from
-              ? { ...change, annotationKey: to }
-              : change,
-          ),
-        };
+        const renamed = <C extends { annotationKey: string }>(change: C): C =>
+          change.annotationKey === from
+            ? { ...change, annotationKey: to }
+            : change;
+        stack[index] =
+          step.kind === "tags"
+            ? { ...step, changes: [renamed(step.changes[0])] }
+            : { ...step, changes: step.changes.map(renamed) };
       }
     }
   }

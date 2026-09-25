@@ -11,7 +11,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import { editingCapabilityCopy } from "@/services/annotation-repository/capability-copy";
 import type {
-  AnnotationRepository,
   CommentDraft,
   TagDraft,
 } from "@/services/annotation-repository/service";
@@ -165,14 +164,14 @@ export function editingBlockedReason(
  * Whether a write in flight stands the verbs down. A comment write does not:
  * its text is already drawn by the editor, and a verb pressed meanwhile queues
  * behind it, so disabling the row would only flicker it on every autosave. A
- * tag save does not either: the tag editor shows it as saving, and it is no
- * gesture's write.
+ * tag editing session's own save does not either: the tag editor shows it as
+ * saving. A tag undo or redo is a gesture's write, and does.
  */
 function gestureInFlight(mutation: MutationState): boolean {
   return (
     mutation.kind === "pending" &&
     mutation.write !== "comment" &&
-    mutation.write !== "tags"
+    !mutation.session
   );
 }
 
@@ -377,39 +376,27 @@ export function heldTagDraft(
   };
 }
 
-/** What the held tags panel's verbs run. */
-export interface HeldTagsActions {
-  /** Save tags: the explicit save, which a held draft waits for. */
-  save: () => void;
-  /** Ask Zotero for editing again. */
-  allowEditing: () => void;
-  /** Drop the held tags and keep what Zotero holds. */
-  discard: () => void;
-}
-
 /**
- * The held tags panel's verbs for one Annotation, bound to the repository:
- * the card and the Mark Popup bind them the same way.
- *
- * @param report where the save's outcome goes, which raises its notice.
+ * Whether two held tag panels show the same thing: the names, the reason, and
+ * each verb as drawn. A surface that draws the panel again for an equal value
+ * would drop a click between its press and its release.
  */
-export function heldTagsActions(
-  annotations: Pick<AnnotationRepository, "discardTagDraft" | "submitTags">,
-  annotationKey: string,
-  {
-    allowEditing,
-    report,
-  }: {
-    allowEditing: () => void;
-    report: (outcome: Promise<MutationState>) => void;
-  },
-): HeldTagsActions {
-  return {
-    // Save tags is the explicit save, never the editor's automatic one.
-    save: () => report(annotations.submitTags(annotationKey)),
-    allowEditing,
-    discard: () => annotations.discardTagDraft(annotationKey),
-  };
+export function sameHeldTags(a: HeldTags, b: HeldTags): boolean {
+  return (
+    a.reason === b.reason &&
+    a.names.length === b.names.length &&
+    a.names.every((name, i) => name === b.names[i]) &&
+    a.actions.length === b.actions.length &&
+    a.actions.every((action, i) => {
+      const other = b.actions[i]!;
+      return (
+        action.kind === other.kind &&
+        action.label === other.label &&
+        action.enabled === other.enabled &&
+        action.primary === other.primary
+      );
+    })
+  );
 }
 
 /**

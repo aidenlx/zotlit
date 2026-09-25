@@ -49,10 +49,8 @@ import {
   editingLive,
   heldCommentDraft,
   heldTagDraft,
-  heldTagsActions,
   tagEditorControls,
 } from "@/views/annot-view/card-controls";
-import type { HeldTags } from "@/views/annot-view/card-controls";
 import type { CommentRenderer } from "@/views/annot-view/comment-render";
 import {
   renderCommentSheet,
@@ -63,6 +61,7 @@ import {
 import type {
   CommentDraftActions,
   CommentSheet,
+  HeldDraftActions,
 } from "@/views/annot-view/comment-sheet";
 
 import { inTextEntry, isEditGesture } from "./capability-affordance";
@@ -297,8 +296,6 @@ export class MarkSelection implements Disposable {
   } | null = null;
   /** The popup's tag section, while it stands in the popup's content. */
   #tags: MarkPopupTags | null = null;
-  /** The held tags panel the popup last drew; see {@link #keepHeldTags}. */
-  #heldTags: HeldTags | null = null;
   #pressedAt: Point | null = null;
   /** The pointer a Geometry Edit holds, and where it last stood. */
   #dragging: { pointerId: number; client: Point } | null = null;
@@ -1048,7 +1045,7 @@ export class MarkSelection implements Disposable {
     const draft = selectSelectedTagDraft(this.#state());
     const capability = this.#capability();
     const { readOnly, hint } = tagEditorControls(capability, draft, input.now);
-    const held = this.#keepHeldTags(heldTagDraft(capability, draft, input.now));
+    const held = heldTagDraft(capability, draft, input.now);
     const shows = tagSectionShows({ annotation, draft, tagging, held });
     if (this.#tags && (!shows || this.#tags.key !== annotation.key))
       this.#dropTags();
@@ -1063,10 +1060,7 @@ export class MarkSelection implements Disposable {
       readOnly,
       hint,
       held,
-      heldActions: heldTagsActions(annotations, annotation.key, {
-        allowEditing: () => this.#deps.gestures.allowEditing(),
-        report: (outcome) => this.#write(outcome),
-      }),
+      heldActions: this.#heldTagsActions(annotation),
       onOpen: readOnly ? undefined : () => this.#toggleTags(annotation),
       libraryNames: () => this.#deps.libraryTagNames(annotation.key),
       onChange: (names) => {
@@ -1084,18 +1078,6 @@ export class MarkSelection implements Disposable {
       onClose: () => setTagging(surfaceState, false),
       within: content,
     });
-  }
-
-  /**
-   * The held tags panel as the popup last drew it, kept while what it shows
-   * is unchanged: every refresh rebuilds the popup, and a panel drawn again
-   * between press and release drops the click.
-   */
-  #keepHeldTags(next: HeldTags | null): HeldTags | null {
-    const kept = this.#heldTags;
-    if (!next || !kept || JSON.stringify(next) !== JSON.stringify(kept))
-      this.#heldTags = next;
-    return this.#heldTags;
   }
 
   /**
@@ -1222,6 +1204,17 @@ export class MarkSelection implements Disposable {
       applyAgain: () =>
         this.#write(annotations.retryCommentDraft(annotation.key)),
       discardConflict: discard,
+    };
+  }
+
+  /** The held tags panel's verbs, bound to the repository's own writes. */
+  #heldTagsActions(annotation: AnnotationRecord): HeldDraftActions {
+    const { annotations, gestures } = this.#deps;
+    return {
+      // Save tags is the explicit save, never the editor's automatic one.
+      save: () => this.#write(annotations.submitTags(annotation.key)),
+      allowEditing: () => gestures.allowEditing(),
+      discard: () => annotations.discardTagDraft(annotation.key),
     };
   }
 

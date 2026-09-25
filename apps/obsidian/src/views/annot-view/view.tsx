@@ -47,7 +47,6 @@ import {
   IDLE,
   writeFailureMessage,
 } from "@/services/annotation-repository/write";
-import { libraryTagNames } from "@/services/database/library-tag-names";
 import type { DatabaseService } from "@/services/database/service";
 import type { ExcerptDisplayService } from "@/services/excerpt-image/display";
 import { savedExcerptRequest } from "@/services/excerpt-image/request";
@@ -164,6 +163,8 @@ export interface AnnotViewDeps {
    * @param attachmentKey the Attachment's Indexed Key.
    */
   reportBlockedGesture: (attachmentKey: string) => void;
+  /** The tag names of an Annotation's Library, which the tag editor suggests. */
+  libraryTagNames: (annotationKey: string) => readonly string[];
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   /** The plugin's live display surface for Excerpt Images. */
   excerptDisplay: Pick<
@@ -377,7 +378,7 @@ export class AnnotationView extends ItemView implements HistorySurface {
       deleteControl: (annot) => this.#cardControls(annot).delete,
       resolveAnnotationID: (indexedKey) =>
         this.#resolveAnnotationID(indexedKey),
-      libraryTagNames: (annot) => libraryTagNames(this.#deps.db, annot.key),
+      libraryTagNames: (annot) => this.#deps.libraryTagNames(annot.key),
       getState: () => this.#store.getState(),
       setSelectedAttachmentKey: (key) =>
         this.#store.setState({ selectedAttachmentKey: key }),

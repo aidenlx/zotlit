@@ -93,8 +93,10 @@ describe("markPopupRow", () => {
     });
   });
 
-  it("keeps the tag verb live while a tag save is in flight", () => {
-    const built = row({ mutation: { kind: "pending", write: "tags" } });
+  it("keeps the tag verb live while a tag session's save is in flight", () => {
+    const built = row({
+      mutation: { kind: "pending", write: "tags", session: true },
+    });
     expect(verbs(built).tags).toEqual([false, m.annot_view_card_add_tags()]);
   });
 

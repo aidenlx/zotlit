@@ -6,6 +6,7 @@
 // @see apps/obsidian/docs/adr/0042-the-surfaces-inside-the-pdf-reader-are-vanilla-dom-on-obsidians-popover.md
 // @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
 import type { App } from "obsidian";
+import { useMemo } from "react";
 import type { RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -15,17 +16,18 @@ import type {
   AnnotationRecord,
   TagDraft,
 } from "@/services/annotation-repository/service";
-import type {
-  HeldTags,
-  HeldTagsActions,
-} from "@/views/annot-view/card-controls";
+import type { HeldTags } from "@/views/annot-view/card-controls";
+import type { HeldDraftActions } from "@/views/annot-view/comment-sheet";
 import { tagChipVariants } from "@/views/annot-view/tag-chip";
 import {
   autoTags,
   HeldTagsPanel,
   TagEditor,
 } from "@/views/annot-view/tag-editor";
-import type { TagEditorProps } from "@/views/annot-view/tag-editor";
+import type {
+  EndTagSession,
+  TagEditorProps,
+} from "@/views/annot-view/tag-editor";
 
 export interface TagSectionProps {
   annotation: AnnotationRecord;
@@ -42,7 +44,7 @@ export interface TagSectionProps {
   hint: string | null;
   /** The held tag draft the section shows in the chips' place, if any. */
   held: HeldTags | null;
-  heldActions: HeldTagsActions;
+  heldActions: HeldDraftActions;
   /** Opens the tag editor from the held chips; absent while editing is unavailable. */
   onOpen?: () => void;
   libraryNames: () => readonly string[];
@@ -103,9 +105,7 @@ export class MarkPopupTags implements Disposable {
   readonly #app: App;
   readonly #root: Root;
   /** The open editor's own end of its session. */
-  readonly #end: RefObject<((withText?: boolean) => void) | null> = {
-    current: null,
-  };
+  readonly #endSession: RefObject<EndTagSession | null> = { current: null };
   /** The editor's suggestion popup while it shows, outside the popup. */
   readonly #suggest: RefObject<HTMLElement | null> = { current: null };
 
@@ -119,7 +119,11 @@ export class MarkPopupTags implements Disposable {
   render(props: TagSectionProps): void {
     this.#root.render(
       <AppContext value={this.#app}>
-        <TagSection {...props} endRef={this.#end} suggestRef={this.#suggest} />
+        <TagSection
+          {...props}
+          endSession={this.#endSession}
+          suggestRef={this.#suggest}
+        />
       </AppContext>,
     );
   }
@@ -148,7 +152,7 @@ export class MarkPopupTags implements Disposable {
    * @returns whether an editor was open to end.
    */
   end(withText = true): boolean {
-    const end = this.#end.current;
+    const end = this.#endSession.current;
     end?.(withText);
     return end !== null;
   }
@@ -172,22 +176,24 @@ function TagSection({
   onChange,
   onClose,
   within,
-  endRef,
+  endSession,
   suggestRef,
-}: TagSectionProps & Pick<TagEditorProps, "endRef" | "suggestRef">) {
+}: TagSectionProps & Pick<TagEditorProps, "endSession" | "suggestRef">) {
   const saving = draft?.state.kind === "pending";
+  // Read once per record, as the card reads it: an unknown tag type logs.
+  const auto = useMemo(() => autoTags(annotation), [annotation]);
   // Editing that becomes unavailable closes the editor, which holds the draft.
   if (saving || (tagging && !readOnly)) {
     return (
       <TagEditor
         names={sessionNames(annotation, draft)}
-        auto={autoTags(annotation)}
+        auto={auto}
         saving={saving}
         hint={hint}
         libraryNames={libraryNames}
         onChange={onChange}
         onClose={onClose}
-        endRef={endRef}
+        endSession={endSession}
         within={within}
         suggestRef={suggestRef}
       />

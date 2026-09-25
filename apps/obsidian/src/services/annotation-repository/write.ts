@@ -91,13 +91,15 @@ export type PendingWrite = ConflictedWrite | "create" | "tags";
  * never as a provisional value. A comment write shows as nothing: its text
  * stands in the comment draft the editor already draws, and any verb pressed
  * meanwhile queues behind it, so the save is a background sync the user only
- * hears about when it fails.
+ * hears about when it fails. A tag editing session's own save is marked
+ * `session`: the tag editor shows it as saving. A tag undo or redo carries no
+ * mark, and is a gesture's write like any other.
  *
  * A conflict stands on one Annotation and carries both values the card offers.
  */
 export type MutationState =
   | { kind: "idle" }
-  | { kind: "pending"; write: PendingWrite }
+  | { kind: "pending"; write: PendingWrite; session?: true }
   | { kind: "conflict"; conflict: WriteConflict }
   | { kind: "failed"; failure: WriteFailure };
 
@@ -164,9 +166,16 @@ export function commentPatch(
 /** One Annotation Tag as Zotero stores it: a name and the tag's type. */
 export interface AnnotationTag {
   name: string;
-  /** Zotero's own number, which a tag write sends back unchanged. */
+  /**
+   * Zotero's own number, which a tag write sends back unchanged. It is wider
+   * than the db's `TagType`, because a Zotero reply can name a type that
+   * Zotero added after that mapping was written.
+   */
   type: number;
 }
+
+/** The type Zotero stores for a tag the user adds by hand. */
+export const MANUAL_TAG_TYPE = 0 satisfies TagType;
 
 /**
  * What one change to an Annotation's tags added and removed. A tag editing
@@ -236,9 +245,7 @@ function tagName(tag: string | AnnotationTag): string {
 
 /** A bare name is a tag the user adds, which is a manual tag. */
 function typedTag(tag: string | AnnotationTag): AnnotationTag {
-  return typeof tag === "string"
-    ? { name: tag, type: 0 satisfies TagType }
-    : tag;
+  return typeof tag === "string" ? { name: tag, type: MANUAL_TAG_TYPE } : tag;
 }
 
 /**
