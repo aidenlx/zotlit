@@ -1061,6 +1061,8 @@ export interface SelectedRowHead {
   /** Held by identity: the store keeps the object while it means the same. */
   mutation: MutationState;
   draft: CommentDraft | null;
+  /** The stored comment the popup renders under its row. */
+  comment: string | null;
 }
 
 /**
@@ -1083,6 +1085,7 @@ export function selectSelectedRow(
       stackTotal: input.stack.total,
       mutation: input.mutation,
       draft: selectSelectedDraft(state),
+      comment: input.annotation.comment,
     },
   ];
 }
@@ -1108,7 +1111,7 @@ export function selectCreateRowInput({
     colors,
     swatches: offeredSwatches(recentColors, CREATE_POPUP_SWATCHES),
     capability,
-    mutation: floating.inFlight ? { kind: "pending" } : IDLE,
+    mutation: floating.inFlight ? { kind: "pending", write: "create" } : IDLE,
     commenting: floating.commenting,
     now: capabilityAt,
   };

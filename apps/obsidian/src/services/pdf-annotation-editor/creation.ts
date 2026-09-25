@@ -19,6 +19,7 @@
 // @see https://github.com/aidenlx/zotlit/issues/1209
 // @see https://github.com/aidenlx/zotlit/issues/1214
 // @see https://github.com/aidenlx/zotlit/issues/1215
+import { Platform } from "obsidian";
 import type { App } from "obsidian";
 
 import type { PdfTextStructure, SelectedText } from "@zotlit/pdf-structure";
@@ -1398,7 +1399,11 @@ function sheetStatus(
   return {
     ...controls,
     manual: false,
-    hint: controls.hint ?? m.pdf_create_popup_comment_hint(),
+    hint:
+      controls.hint ??
+      (Platform.isMacOS
+        ? m.pdf_create_popup_comment_hint_mac()
+        : m.pdf_create_popup_comment_hint()),
   };
 }
 

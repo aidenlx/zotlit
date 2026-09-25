@@ -375,9 +375,9 @@ it("stands the selection down when the next read no longer holds its Annotation"
 it("drops a deleted Annotation, its selection, and what was held on it at once", () => {
   const store = reader();
   selectMark(store, "WORD2222");
-  ingestMutation(store, "WORD2222", { kind: "pending" });
+  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
   ingestCommentDraft(store, "WORD2222", draft("WORD2222"));
-  ingestMutation(store, "PARA1111", { kind: "pending" });
+  ingestMutation(store, "PARA1111", { kind: "pending", write: "color" });
 
   dropRecord(store, "WORD2222");
 
@@ -393,14 +393,17 @@ it("takes a read's records with the drafts and write states that stood before it
   const repository = annotationEdits();
   repository.editComment("WORD2222", "worth quoting");
   repository.mutationFor.mockImplementation(
-    (key): MutationState => (key === "PARA1111" ? { kind: "pending" } : IDLE),
+    (key): MutationState =>
+      key === "PARA1111" ? { kind: "pending", write: "color" } : IDLE,
   );
 
   ingestAnnotations(store, [PARAGRAPH, WORD], repository);
 
   const { records, mutations, commentDrafts } = store.getState();
   expect(records).toEqual([PARAGRAPH, WORD]);
-  expect([...mutations]).toEqual([["PARA1111", { kind: "pending" }]]);
+  expect([...mutations]).toEqual([
+    ["PARA1111", { kind: "pending", write: "color" }],
+  ]);
   expect(commentDrafts.get("WORD2222")?.text).toBe("worth quoting");
 });
 
@@ -410,12 +413,13 @@ it("takes the four per-Annotation announcements until it is disposed", () => {
   const repository = annotationEdits();
   const listening = listenAnnotationEvents(store, repository);
 
-  repository.mutationFor.mockReturnValue({ kind: "pending" });
+  repository.mutationFor.mockReturnValue({ kind: "pending", write: "color" });
   repository.emit("mutation-changed", "PARA1111");
   repository.editComment("WORD2222", "worth quoting");
   repository.emit("comment-draft-changed", "WORD2222");
   expect(store.getState().mutations.get("PARA1111")).toEqual({
     kind: "pending",
+    write: "color",
   });
   expect(store.getState().commentDrafts.get("WORD2222")?.text).toBe(
     "worth quoting",
@@ -434,9 +438,10 @@ it("takes the four per-Annotation announcements until it is disposed", () => {
 it("holds what a write left on an Annotation, and forgets it once idle", () => {
   const store = reader();
 
-  ingestMutation(store, "WORD2222", { kind: "pending" });
+  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
   expect(store.getState().mutations.get("WORD2222")).toEqual({
     kind: "pending",
+    write: "color",
   });
 
   ingestMutation(store, "WORD2222", IDLE);
@@ -446,11 +451,11 @@ it("holds what a write left on an Annotation, and forgets it once idle", () => {
 it("fires no row subscriber for a mutation announced again unchanged", () => {
   const store = reader();
   selectMark(store, "WORD2222");
-  ingestMutation(store, "WORD2222", { kind: "pending" });
+  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
   const row = vi.fn();
   store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
 
-  ingestMutation(store, "WORD2222", { kind: "pending" });
+  ingestMutation(store, "WORD2222", { kind: "pending", write: "color" });
   expect(row).not.toHaveBeenCalled();
 
   ingestMutation(store, "WORD2222", IDLE);
@@ -463,7 +468,7 @@ it("fires no row subscriber for a mutation on an Annotation not selected", () =>
   const row = vi.fn();
   store.subscribe(selectSelectedRow, row, { equalityFn: sameFlatList });
 
-  ingestMutation(store, "PARA1111", { kind: "pending" });
+  ingestMutation(store, "PARA1111", { kind: "pending", write: "color" });
 
   expect(row).not.toHaveBeenCalled();
 });
@@ -537,7 +542,7 @@ it("leaves another Annotation's editor alone when a draft is hidden", () => {
 it("draws the selected row from the record, its mutation, and its stack", () => {
   const store = reader();
   selectMark(store, "PARA1111", { stack: ["WORD2222", "PARA1111"] });
-  ingestMutation(store, "PARA1111", { kind: "pending" });
+  ingestMutation(store, "PARA1111", { kind: "pending", write: "color" });
 
   const row = selectSelectedRow(store.getState());
 

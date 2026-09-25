@@ -33,39 +33,137 @@ export type CommentSurface = "card" | "popup";
 const FIELD =
   "zt-annot-comment-editor zt:bg-(--background-modifier-form-field) zt:text-foreground zt:ring-1 zt:ring-(--background-modifier-border) zt:focus-within:ring-2 zt:focus-within:ring-(--background-modifier-border-focus)";
 
+/** The field fades in around text that stays where it stood. */
+const FIELD_ENTER =
+  "zt:motion-safe:transition-[box-shadow,background-color] zt:starting:bg-transparent zt:starting:ring-transparent";
+
+/** Where the popup's comment text stands, read or edited. */
+const POPUP_TEXT = "zt:px-1.5 zt:py-1 zt:text-sm";
+
+/** The popup's panels and its rendered comment take the row's width, as the sheet does. */
+const POPUP_WIDTH = "zt:w-0 zt:min-w-[max(100%,12em)]";
+
 /**
  * Each surface's own spacing, corners and width, its sheet's theme hook, and
  * the inset the element a sheet or a panel is drawn into takes from the
- * surface's border.
+ * surface's border. `field` and `view` put the comment's text in one place, so
+ * opening the editor over the rendered comment moves nothing.
  */
 const SURFACE: Record<
   CommentSurface,
-  { sheet: string; inset: string; field: string; footer: string; panel: string }
+  {
+    sheet: string;
+    inset: string;
+    field: string;
+    view: string;
+    viewEditable: string;
+    viewFrame: string;
+    footer: string;
+    panel: string;
+  }
 > = {
   // The field's inset is taken back out of the margin on every side, so the
-  // text keeps the place the rendered comment held and opening the editor
-  // moves nothing; the field fades in around it. A panel runs to the card's
-  // edges.
+  // text keeps the place the rendered comment held. A panel runs to the
+  // card's edges.
   card: {
     sheet: "",
     inset: "",
-    field:
-      "zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs zt:motion-safe:transition-[box-shadow,background-color] zt:starting:bg-transparent zt:starting:ring-transparent",
+    field: `zt:-mx-1.5 zt:-my-1 zt:rounded-(--input-radius) zt:px-1.5 zt:py-1 zt:text-xs ${FIELD_ENTER}`,
+    view: "zt:text-xs",
+    viewEditable: "",
+    viewFrame: "",
     footer: "zt:mt-2",
     panel: "zt:-mx-3 zt:px-3 zt:py-1.5",
   },
   // The popover's padding is the row's, which leaves a field or a panel under
   // it close to the border, so what stands under the row keeps its own inset.
-  // The panels take the row's width, as the sheet does.
+  // The rendered comment is the field at rest: a recessed well with the
+  // field's box and corners, so it reads as content apart from the verbs, and
+  // opening the editor turns the well into the field without moving the text.
   popup: {
     sheet: themeHook.pdfCommentSheet,
     inset: "zt:px-1.5 zt:pb-1.5",
-    field: "zt:rounded-(--radius-s) zt:px-1.5 zt:py-1 zt:text-sm",
+    field: `zt:rounded-(--radius-s) ${POPUP_TEXT} ${FIELD_ENTER}`,
+    view: `zt:rounded-(--radius-s) zt:bg-(--background-secondary) ${POPUP_TEXT}`,
+    viewEditable:
+      "zt:hover:bg-(--background-modifier-hover) zt:motion-safe:transition-[background-color] zt:duration-150",
+    viewFrame: POPUP_WIDTH,
     footer: "zt:mt-1",
-    panel:
-      "zt:w-0 zt:min-w-[max(100%,12em)] zt:rounded-(--radius-s) zt:px-2 zt:py-1.5",
+    panel: `${POPUP_WIDTH} zt:rounded-(--radius-s) zt:px-2 zt:py-1.5`,
   },
 };
+
+/**
+ * The rendered comment's classes. `markdown-rendered` is what buys the theme's
+ * own prose styling: Obsidian declares those rules unlayered, so they outrank
+ * the scoped Tailwind preflight. `zt-annot-comment` is the hook the view
+ * stylesheet compacts them through.
+ */
+export function commentViewClass(
+  surface: CommentSurface,
+  editable: boolean,
+): string {
+  return [
+    "markdown-rendered zt-annot-comment zt:overflow-x-auto zt:break-words zt:text-foreground zt:select-text",
+    SURFACE[surface].view,
+    editable ? `zt:cursor-text ${SURFACE[surface].viewEditable}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Whether a click on the rendered comment asks for its editor. A link keeps
+ * its own click, and a click that ends a text selection is the user copying
+ * rather than asking to edit.
+ */
+export function opensCommentEditor(
+  event: Pick<MouseEvent, "target" | "currentTarget">,
+): boolean {
+  const target = event.target as Node | null;
+  if (target?.instanceOf(HTMLElement) && target.closest("a")) return false;
+  const el = event.currentTarget as HTMLElement;
+  return el.win.getSelection()?.isCollapsed !== false;
+}
+
+export interface CommentViewProps {
+  surface: CommentSurface;
+  /** Renders the stored HTML into an element; returns what undoes it. */
+  render: (el: HTMLElement, html: string) => () => void;
+  html: string;
+  /** Whether a click opens the editor, or the comment is read-only here. */
+  editable: boolean;
+  /** Opens the comment sheet in the view's place. */
+  onOpen: () => void;
+}
+
+/**
+ * The rendered comment for a vanilla surface, the Annotation Card's `Comment`
+ * drawn from the same pieces: its text stands where the comment sheet's
+ * editor will put it, and a click on it opens that sheet.
+ *
+ * @param frame the element the view is drawn into, replacing what it held.
+ * @returns what tears the rendered Markdown down.
+ */
+export function renderCommentView(
+  frame: HTMLElement,
+  { surface, render, html, editable, onOpen }: CommentViewProps,
+): () => void {
+  const look = SURFACE[surface];
+  frame.empty();
+  frame.addClasses(
+    `${look.viewFrame} ${look.inset}`.split(" ").filter(Boolean),
+  );
+  const view = frame.createDiv({ cls: commentViewClass(surface, editable) });
+  if (editable) {
+    view.addEventListener("click", (event) => {
+      if (!opensCommentEditor(event)) return;
+      event.stopPropagation();
+      onOpen();
+    });
+  }
+  return render(view, html);
+}
 
 /** What the sheet says under its editor, and whether it takes a write. */
 export type CommentSheetStatus = Pick<

@@ -337,6 +337,27 @@ it("stands the selection down on a press outside the reader", () => {
   expect(h.popup()).toBeNull();
 });
 
+it("leaves the selection standing for a press on a surface that drives it", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const opened = h.popup();
+  const list = document.body.appendChild(document.createElement("div"));
+  const card = list.appendChild(document.createElement("div"));
+  const release = h.session.addSelectionSurface(list);
+
+  // The card's own click, after this press, says what becomes selected.
+  press(card, { x: 700, y: 50 });
+
+  expect([...h.selection.selected]).toEqual(["WORD2222"]);
+  expect(h.popup()).toBe(opened);
+
+  release();
+  press(card, { x: 700, y: 50 });
+
+  expect(h.selection.selected.size).toBe(0);
+  list.remove();
+});
+
 it("leaves the selection standing for a press inside the popup", () => {
   using h = setup();
   click(h.page.div, ON_WORD);
@@ -607,9 +628,92 @@ it("keeps the row's nodes through a mutation announced again unchanged", () => {
   h.annotations.emit("mutation-changed", "WORD2222");
   expect(del()).toBe(drawn);
 
-  h.annotations.mutationFor.mockReturnValue({ kind: "pending" });
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "color",
+  });
   h.annotations.emit("mutation-changed", "WORD2222");
   expect(del()?.getAttribute("aria-disabled")).toBe("true");
+});
+
+it("keeps the row as it stands while a comment write is in flight", () => {
+  using h = setup();
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  const verbs = () =>
+    [...popup.hoverEl.querySelectorAll<HTMLElement>("[data-zt-verb]")].map(
+      (el) => [
+        el,
+        el.getAttribute("aria-label"),
+        el.getAttribute("aria-disabled"),
+      ],
+    );
+  const drawn = verbs();
+
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "comment",
+  });
+  h.annotations.emit("mutation-changed", "WORD2222");
+
+  expect(verbs()).toEqual(drawn);
+});
+
+const COMMENTED = { ...WORD, comment: "<p>worth quoting</p>" };
+
+/** The rendered comment under the popup's row, or `null` while none stands. */
+function commentText(root: HTMLElement): HTMLElement | null {
+  return root.querySelector<HTMLElement>(".zt-annot-comment");
+}
+
+it("shows the stored comment under the row, and none for a mark without one", () => {
+  using h = setup([PARAGRAPH, COMMENTED]);
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+
+  expect(commentText(popup.hoverEl)?.textContent).toBe("<p>worth quoting</p>");
+
+  h.selection.select("PARA1111");
+  expect(commentText(popup.hoverEl)).toBeNull();
+});
+
+it("opens the comment editor in the comment's place on a click on it", () => {
+  using h = setup([PARAGRAPH, COMMENTED]);
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+
+  commentText(popup.hoverEl)!.click();
+
+  expect(h.store.getState().floating).toMatchObject({ commenting: true });
+  expect(commentView(popup.hoverEl)).not.toBeNull();
+  expect(commentText(popup.hoverEl)).toBeNull();
+});
+
+it("draws the comment read-only while a write is pending on it", () => {
+  using h = setup([PARAGRAPH, COMMENTED]);
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+  expect(commentText(popup.hoverEl)?.classList).toContain("zt:cursor-text");
+
+  h.annotations.mutationFor.mockReturnValue({
+    kind: "pending",
+    write: "color",
+  });
+  h.annotations.emit("mutation-changed", "WORD2222");
+
+  expect(commentText(popup.hoverEl)?.classList).not.toContain("zt:cursor-text");
+  expect(commentText(popup.hoverEl)?.textContent).toBe("<p>worth quoting</p>");
+});
+
+it("shows a blocked comment without opening its editor", () => {
+  using h = setup([PARAGRAPH, COMMENTED], { kind: "authorization-required" });
+  click(h.page.div, ON_WORD);
+  const popup = h.popup() as unknown as { hoverEl: HTMLElement };
+
+  commentText(popup.hoverEl)!.click();
+
+  expect(h.store.getState().floating).toMatchObject({ commenting: false });
+  expect(commentView(popup.hoverEl)).toBeNull();
 });
 
 it("selects a landed mark without a popup, and opens one for the next selection", () => {

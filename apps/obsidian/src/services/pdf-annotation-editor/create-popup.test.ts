@@ -112,7 +112,7 @@ it.each([
 );
 
 it("stands the creating verbs down while a create is in flight", () => {
-  const controls = row({ mutation: { kind: "pending" } });
+  const controls = row({ mutation: { kind: "pending", write: "create" } });
 
   expect(
     controls.filter(({ disabled }) => !disabled).map(({ id }) => id),

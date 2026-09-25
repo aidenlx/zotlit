@@ -140,12 +140,19 @@ it("answers every reader surface with the same reason string", () => {
   ).toBe(m.capability_authorization_required_detail());
   expect(editingBlockedReason({ kind: "writable" }, IDLE, NOW)).toBeNull();
   expect(
-    editingBlockedReason({ kind: "writable" }, { kind: "pending" }, NOW),
+    editingBlockedReason(
+      { kind: "writable" },
+      { kind: "pending", write: "color" },
+      NOW,
+    ),
   ).toBe(m.annot_view_card_saving());
 });
 
 it("shows a write in flight as disabled verbs, whatever the capability says", () => {
-  const pending = controlsOf({ kind: "writable" }, { kind: "pending" });
+  const pending = controlsOf(
+    { kind: "writable" },
+    { kind: "pending", write: "color" },
+  );
   const idle = controlsOf({ kind: "writable" });
 
   expect(states(pending)).toEqual([true, true, true]);
@@ -154,6 +161,36 @@ it("shows a write in flight as disabled verbs, whatever the capability says", ()
   // One reason, and it is the write rather than the capability.
   expect(new Set(tooltips(pending)).size).toBe(1);
   expect(tooltips(pending)[0]).not.toBe(tooltips(idle)[0]);
+});
+
+it("draws a comment write in flight as nothing at all", () => {
+  const comment = { kind: "pending", write: "comment" } as const;
+
+  expect(controlsOf({ kind: "writable" }, comment)).toEqual(
+    controlsOf({ kind: "writable" }),
+  );
+  expect(editingBlockedReason({ kind: "writable" }, comment, NOW)).toBeNull();
+});
+
+it("says a comment is saving only where the user pressed to save it", () => {
+  const draft = {
+    annotationKey: "PUPR5FG5",
+    attachmentKey: "RGRPDF24",
+    serverID: "fixture",
+    baseline: "",
+    text: "Research note",
+    state: { kind: "pending" },
+  } as const;
+
+  expect(commentEditorControls({ kind: "writable" }, draft, NOW)).toEqual({
+    readOnly: false,
+    saveDisabled: false,
+    manual: false,
+    hint: null,
+  });
+  expect(
+    commentEditorControls({ kind: "writable", oneTime: true }, draft, NOW),
+  ).toMatchObject({ saveDisabled: true, hint: m.annot_view_card_saving() });
 });
 
 it("leaves a settled write's verbs to the capability, so the user can try again", () => {

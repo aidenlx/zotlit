@@ -44,6 +44,7 @@ import type { BorrowedExcerptDocument } from "@/services/excerpt-image/reader-bo
 import { ReaderSessionHost } from "@/services/reader-session/session";
 import type { ReaderSession } from "@/services/reader-session/session";
 import { editingLive } from "@/views/annot-view/card-controls";
+import { createCommentRenderer } from "@/views/annot-view/comment-render";
 
 import { dropPendingAnchor, peekPendingAnchor } from "./anchor-capture";
 import { borrowReaderDocument } from "./borrow";
@@ -173,6 +174,11 @@ export interface CapabilityGestures {
   allowEditing: () => void;
 }
 
+/** The one read a rendered comment takes from the Note Index. */
+export interface CommentNotes {
+  getNotesByItemKey: (itemKey: string) => readonly { path: string }[];
+}
+
 export interface PdfViewBindingDeps {
   view: PDFFileView;
   adapter: FileSystemAdapter;
@@ -186,6 +192,8 @@ export interface PdfViewBindingDeps {
   markGestures: Pick<MarkGestures, "revealAnnotation">;
   /** Each annotation tool's own colour, which every open PDF view shares. */
   toolColors: ToolColorStore;
+  /** The Literature Notes a rendered comment's links resolve against. */
+  noteIndex: CommentNotes;
   /** The clock the affordance's cooldown countdown is read against. */
   now?: () => Temporal.Instant;
 }
@@ -213,6 +221,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
   readonly #gestures;
   readonly #markGestures;
   readonly #toolColors;
+  readonly #noteIndex;
   readonly #now;
   readonly #probes = new PdfSeamProbeLog(() => this.filePath);
   /**
@@ -307,6 +316,7 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     capabilityGestures,
     markGestures,
     toolColors,
+    noteIndex,
     now = () => Temporal.Now.instant(),
   }: PdfViewBindingDeps) {
     this.#view = view;
@@ -316,7 +326,19 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#gestures = capabilityGestures;
     this.#markGestures = markGestures;
     this.#toolColors = toolColors;
+    this.#noteIndex = noteIndex;
     this.#now = now;
+  }
+
+  /**
+   * The Literature Note a rendered comment's links resolve against, as the
+   * Annotation View's are; `""` for the vault root.
+   */
+  #commentSourcePath(): string {
+    if (this.#attachment.kind !== "resolved") return "";
+    const { itemKey } = this.#attachment;
+    if (itemKey === null) return "";
+    return this.#noteIndex.getNotesByItemKey(itemKey)[0]?.path ?? "";
   }
 
   /**
@@ -771,8 +793,14 @@ export class PdfViewBinding implements Disposable, HistorySurface, HoverParent {
     this.#creation = creation;
     const selection = new MarkSelection({
       app: this.#view.app,
+      renderComment: createCommentRenderer({
+        app: this.#view.app,
+        component: this.#view,
+        getSourcePath: () => this.#commentSourcePath(),
+      }),
       containerEl: this.#view.containerEl,
       popup,
+      selectionSurfaces: this.#session,
       marks: () => this.#visibleMarks(),
       records: () => this.#records,
       pageAt: (pageIndex) =>

@@ -74,16 +74,22 @@ export type WriteConflict =
       fresh: { position: AnnotationPosition; text: string | null };
     };
 
+/** Which write is in flight: one of the four editing verbs, or a create. */
+export type PendingWrite = ConflictedWrite | "create";
+
 /**
- * What a write left on one Annotation. `pending` is the only state a surface
- * draws a value for, and what it draws is disabled verbs: no provisional
- * value is ever shown.
+ * What a write left on one Annotation. `pending` names its write, because not
+ * every write in flight is drawn. A gesture's write shows as disabled verbs,
+ * never as a provisional value. A comment write shows as nothing: its text
+ * stands in the comment draft the editor already draws, and any verb pressed
+ * meanwhile queues behind it, so the save is a background sync the user only
+ * hears about when it fails.
  *
  * A conflict stands on one Annotation and carries both values the card offers.
  */
 export type MutationState =
   | { kind: "idle" }
-  | { kind: "pending" }
+  | { kind: "pending"; write: PendingWrite }
   | { kind: "conflict"; conflict: WriteConflict }
   | { kind: "failed"; failure: WriteFailure };
 
