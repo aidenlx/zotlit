@@ -284,6 +284,14 @@ _Avoid_: empty state (that is no Attachment or no Annotations), no results
 One live Annotation presented as a card in the annotation-view sidebar — type icon, page label, Excerpt Block, comment, and tag chips. A deliberately dense surface: prose inside it renders compact.
 _Avoid_: annotation item, annotation row
 
+**Card Selection**:
+The Annotation Cards an Annotation View has selected — none, one, or several; each view holds its own, whatever its Follow Mode. It is kept in step with the Obsidian PDF view the Follow Mode follows, and each Zotero Reader selection replaces it. It holds only cards the Annotation Filter shows.
+_Avoid_: selected annotations (the reader's are selected Annotation Marks), multi-selection (as a separate thing), primary card
+
+**Selected Card**:
+An Annotation Card in the Card Selection. A card selected alone opens its full text and offers its edit controls; a card selected with others offers neither.
+_Avoid_: focused card, active card, primary card
+
 **Excerpt Block**:
 The quoted region of an Annotation Card showing the Annotation's live text (with Zotero's inline rich-text formatting) or its area image. Distinct from the Annotation Excerpt, which is a frozen snapshot inside a Child Note.
 _Avoid_: annotation excerpt (that's the frozen Child-Note snapshot), quote block
@@ -321,7 +329,7 @@ The part of an Attachment File Link, and of the ephemeral state an open carries,
 _Avoid_: annotation id (that is Obsidian's PDF-native one), annotation param, deep link, annotation target (see Reader Session)
 
 **Mark Landing**:
-Opening or re-aiming a Reader Session so the Annotation an Annotation Anchor names is the selected Annotation Mark, scrolled into view. An Anchor the Annotation reads cannot place lands on the page alone rather than reporting a failure.
+Opening or re-aiming a Reader Session so one Annotation is the selected Annotation Mark, scrolled into view, without the Mark Popup. An Annotation Anchor, a History Step, or a card click in the Annotation View names the Annotation; one the reader cannot place lands on the page alone rather than reporting a failure.
 _Avoid_: navigate, reveal (that is the Annotation View's card), jump to annotation, annotation target (see Reader Session)
 
 **Annotation Source**:
