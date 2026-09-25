@@ -1297,11 +1297,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         afterEach(() => disarmTool(vaultId!, { pdfView, tool: "image" }));
 
         /**
-         * Brings page one on screen in a window that lays it out, and arms the
-         * image tool from the Creation Toolbar.
+         * Brings page one on screen in a window that lays it out, with the
+         * PDF point `at` in the middle of the window, and arms the image tool
+         * from the Creation Toolbar. A drag point off screen hit-tests to
+         * nothing, and how much of page one shows depends on the window.
          */
-        const armOnFirstPage = () =>
-          armToolOnFirstPage(vaultId!, { pdfView, tool: "image" });
+        const armOnFirstPage = (at: readonly [number, number]) =>
+          armToolOnFirstPage(vaultId!, { pdfView, tool: "image", at });
 
         /**
          * Drags a rectangle between two PDF points on page one, clear of every
@@ -1316,7 +1318,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           );
 
         it("creates an image Annotation from a rectangle dragged on the page", async () => {
-          await armOnFirstPage();
+          await armOnFirstPage([150, 170]);
           const before = await annotationKeys();
 
           // Drawn in full while the pointer is down: both sides pass ten points.
@@ -1396,7 +1398,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         }, 120000);
 
         it("creates nothing from a rectangle released under ten points on a side", async () => {
-          await armOnFirstPage();
+          await armOnFirstPage([85, 350]);
           const before = await annotationKeys();
 
           // Nine points wide: drawn faint, and released to nothing. Clear of
@@ -1812,6 +1814,13 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         it("stands down from a toolbar press over a page scrolled under the toolbar", async () => {
           await armInk([150, 355]);
           const before = await annotationKeys();
+          // Where page one's top falls depends on the window's height, so the
+          // page is scrolled until its top sits one toggle height above the
+          // toggle's middle. The press below measures it in its own eval.
+          await obEval(
+            vaultId!,
+            `(function(){const box=${tool}.getBoundingClientRect();const page=${pdfView}.viewer.child.getPage(1).div.getBoundingClientRect();${pageContainerOf(pdfView)}.scrollTop+=page.top-(box.top+box.height/2)+box.height;return true;})()`,
+          );
 
           // The press lands on the ink toggle, inside the box of the page
           // scrolled up under it, and draws no stroke. A stroke would hold
