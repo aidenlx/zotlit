@@ -15,7 +15,7 @@ A file or URL linked to an Item — typically a PDF, EPUB, or web snapshot. Each
 _Avoid_: file, PDF
 
 **Annotation**:
-A mark within an Attachment's content — a highlight, underline, note, image region, ink stroke, or text selection. Carries text, comment, color, page label, sort index, and position.
+A mark within an Attachment's content — a highlight, underline, note, image region, ink stroke, or text selection. Carries text, comment, color, tags, page label, sort index, and position.
 _Avoid_: highlight (too narrow), mark (that term is used for the HTML representation in notes)
 
 **Child Note** _(Zotero)_:
@@ -33,8 +33,12 @@ A user-organized folder within a Library. Collections form a tree; an Item can b
 _Avoid_: folder, category, tag
 
 **Tag**:
-A label applied to an Item — either **manual** (user-added) or **auto** (added by a Zotero plugin such as a retrieval-metadata service). Carries a name and a type; its numeric IDs are Zotero-internal and never surface to users. In string contexts a Tag reads as its name.
+A label applied to an Item or an Annotation — either **manual** (user-added) or **auto** (added by a Zotero plugin such as a retrieval-metadata service). Carries a name and a type; its numeric IDs are Zotero-internal and never surface to users. In string contexts a Tag reads as its name.
 _Avoid_: keyword, label (in code), category
+
+**Annotation Tags**:
+The Tags on one Annotation, each keeping its own manual or auto type. Separate from the Tags of the Annotation's parent Item.
+_Avoid_: annotation labels, highlight tags
 
 ### Identification
 
