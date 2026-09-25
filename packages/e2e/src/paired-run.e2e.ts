@@ -1266,49 +1266,16 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
         // session with its one write. The session ends through the toggle
         // rather than through a blur: a window without the system focus sends
         // no focus events.
-        const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(createdKey)}]')).find(Boolean)`;
-        const press = (target: string) =>
-          obEvalUntil(
-            vaultId!,
-            `(function(){const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';target.click();return 'pressed';})()`,
-            { expected: "pressed" },
-          );
-        const toggle = ".clickable-icon:has(svg.lucide-tag)";
-        const editorOpen = () =>
-          obEvalUntil(
-            vaultId!,
-            `String(!!(${card})?.querySelector('.zt-annot-tag-input'))`,
-            { expected: "true" },
-          );
-        /** The names Zotero holds, read straight off the Local API. */
-        const storedTags = async () => {
-          const reply = await zoteroFetch(api, `users/0/items/${createdKey}`, {
-            headers: { "Zotero-Server-ID": serverID },
-          });
-          expect(reply.status).toBe(200);
-          const record = (await reply.json()) as {
-            data: { tags: { tag: string; type?: number }[] };
-          };
-          return record.data.tags
-            .map(({ tag, type }) => `${tag}:${type ?? 0}`)
-            .toSorted();
-        };
-        const cardTags = () =>
-          obEval(
-            vaultId!,
-            `JSON.stringify([...((${card})?.querySelectorAll('[aria-pressed]')??[])].map(chip=>chip.textContent))`,
-          ).then((reply) => JSON.parse(reply) as string[]);
-        const editorChips = () =>
-          obEval(
-            vaultId!,
-            `JSON.stringify([...((${card})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
-          ).then((reply) => JSON.parse(reply) as string[]);
-        /** Text typed into the tag field; `enter` presses Enter after it. */
-        const type = (text: string, { enter }: { enter: boolean }) =>
-          obEval(
-            vaultId!,
-            `(function(){const field=(${card}).querySelector('.zt-annot-tag-input');field.value=${JSON.stringify(text)};field.dispatchEvent(new Event('input',{bubbles:true}));if(${enter})field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return 'typed';})()`,
-          );
+        const {
+          press,
+          toggle,
+          editorOpen,
+          cardTags,
+          editorChips,
+          type,
+          remove,
+        } = cardTagEditor(createdKey);
+        const storedTags = () => annotationTags(api, serverID, createdKey);
         const poll = { timeout: 10_000, interval: 250 };
         const kept = "End-to-end Run tag, kept whole";
         const dropped = "End-to-end Run tag dropped";
@@ -1335,12 +1302,7 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
 
         expect(await press("[data-editable]")).toBe(true);
         expect(await editorOpen()).toBe(true);
-        expect(
-          await obEval(
-            vaultId!,
-            `(function(){const chip=[...(${card}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.textContent===${JSON.stringify(dropped)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
-          ),
-        ).toBe("removed");
+        expect(await remove(dropped)).toBe("removed");
         await expect.poll(editorChips, poll).toEqual([kept]);
         // The toggle ends the session with the text still in the field.
         await type(typed, { enter: false });
@@ -4532,6 +4494,92 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
               await waitFor(async () => (await storedColor()) === seedColor),
             ).toBe(true);
           }, 120000);
+
+          describe("a tag session", () => {
+            /** The Fixture's own tags on the Annotation, which each test puts back. */
+            const seededTags: WireTag[] = (seeded.tags ?? []).map(
+              ({ name, type }) => ({ tag: name, type }),
+            );
+            /** An automatic tag the session removes, so its undo must restore the type. */
+            const autoTag = { tag: "e2e-auto", type: 1 };
+            /** The name the session adds, which Zotero stores as manual. */
+            const addedName = "e2e-card";
+            const poll = { timeout: 10_000, interval: 250 };
+            const { press, toggle, editorOpen, editorChips, type, remove } =
+              cardTagEditor(historyKey);
+            const storedTags = () => annotationTags(api, serverID, historyKey);
+
+            /** Sets the tags in Zotero itself, and waits until ZotLit reads them. */
+            async function setTagsInZotero(tags: readonly WireTag[]) {
+              await rdp.json(`(async () => {
+                const item = Zotero.Items.getByLibraryAndKey(
+                  Zotero.Libraries.userLibraryID,
+                  ${JSON.stringify(historyKey)},
+                );
+                item.setTags(${JSON.stringify(tags)});
+                await item.saveTx();
+                return "saved";
+              })()`);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `(async()=>{const repository=app.plugins.plugins.zotlit.services.annotationRepository;const list=await repository.refresh(${JSON.stringify(attachment.key)});const record=list?.annotations.find((annotation)=>annotation.key===${JSON.stringify(historyKey)});return JSON.stringify((record?.tagDetails??[]).map(({name,type})=>name+':'+type).toSorted());})()`,
+                  { expected: JSON.stringify(spelledTags(tags)) },
+                ),
+              ).toBe(true);
+            }
+
+            /**
+             * The toggle's second press, which ends the session and saves it
+             * once. Settles when the editor has closed onto the confirmed tags.
+             */
+            async function closeTagEditor(): Promise<void> {
+              expect(await press(toggle)).toBe(true);
+              expect(
+                await obEvalUntil(
+                  vaultId!,
+                  `(function(){const repository=app.plugins.plugins.zotlit.services.annotationRepository;return String(!(${card})?.querySelector('.zt-annot-tag-input')&&repository.mutationFor(${JSON.stringify(historyKey)}).kind==='idle'&&!repository.tagDraftFor(${JSON.stringify(historyKey)}));})()`,
+                  { expected: "true" },
+                ),
+              ).toBe(true);
+            }
+
+            beforeEach(async () => {
+              await setTagsInZotero([...seededTags, autoTag]);
+            });
+
+            afterEach(async () => {
+              await setTagsInZotero(seededTags);
+            });
+
+            it("puts the tags a card session changed back for the undo key, and applies them again for redo", async () => {
+              expect(await press(toggle)).toBe(true);
+              expect(await editorOpen()).toBe(true);
+              expect(await remove(autoTag.tag)).toBe("removed");
+              await type(addedName, { enter: true });
+              // The chip is the signal that Enter added the name.
+              await expect
+                .poll(editorChips, poll)
+                .toEqual([...seededTags.map(({ tag }) => tag), addedName]);
+              await closeTagEditor();
+              const edited = spelledTags([...seededTags, { tag: addedName }]);
+              await expect.poll(storedTags, poll).toEqual(edited);
+
+              expect(await undoKey()).toEqual({ handled: true });
+              await stepSettled();
+
+              // The whole session went back: the added name left, and the
+              // automatic tag came back as automatic.
+              await expect
+                .poll(storedTags, poll)
+                .toEqual(spelledTags([...seededTags, autoTag]));
+
+              expect(await redoKey()).toEqual({ handled: true });
+              await stepSettled();
+
+              await expect.poll(storedTags, poll).toEqual(edited);
+            }, 120000);
+          });
         });
 
         describe("a create and a delete", () => {
@@ -5871,6 +5919,87 @@ function eraseConcurrencyAnnotations(rdp: ZoteroRdp): Promise<string> {
 }
 
 /** Independent Local API read used as the final-state oracle. */
+/** A Zotero tag as the Local API and Zotero's own `setTags` spell it. */
+interface WireTag {
+  tag: string;
+  type?: number;
+}
+
+/** Tags as comparable text: `name:type` in sorted order, a manual tag typed `0`. */
+function spelledTags(tags: readonly WireTag[]): string[] {
+  return tags.map(({ tag, type }) => `${tag}:${type ?? 0}`).toSorted();
+}
+
+/** The tags the Local API holds for one Annotation, spelled by {@link spelledTags}. */
+async function annotationTags(
+  api: string,
+  serverID: string,
+  annotationKey: string,
+): Promise<string[]> {
+  const reply = await zoteroFetch(api, `users/0/items/${annotationKey}`, {
+    headers: { "Zotero-Server-ID": serverID },
+  });
+  expect(reply.status).toBe(200);
+  const record = (await reply.json()) as { data: { tags: WireTag[] } };
+  return spelledTags(record.data.tags);
+}
+
+/**
+ * One Annotation Card's tag gestures, through the card's own controls: the tag
+ * toggle and a click on the tag row's empty space open the editor, Enter adds
+ * the typed name, a chip's remove button drops it, and the toggle's second
+ * press ends the session. A window without the system focus sends no focus
+ * events, so no blur ends a session here.
+ *
+ * @param annotationKey the Annotation whose card, in whichever Annotation View
+ *   holds it, the gestures act on.
+ */
+function cardTagEditor(annotationKey: string) {
+  const card = `app.workspace.getLeavesOfType('zotero-annotation-view').map(leaf=>leaf.view.containerEl.querySelector('.zt-annot-card[data-zotero-annotation-key=${JSON.stringify(annotationKey)}]')).find(Boolean)`;
+  return {
+    /** One click on a part of the card, once the card draws it. */
+    press: (target: string) =>
+      obEvalUntil(
+        vaultId!,
+        `(function(){const target=(${card})?.querySelector(${JSON.stringify(target)});if(!target)return 'absent';target.click();return 'pressed';})()`,
+        { expected: "pressed" },
+      ),
+    /** The tag toggle in the card's action bar. */
+    toggle: ".clickable-icon:has(svg.lucide-tag)",
+    editorOpen: () =>
+      obEvalUntil(
+        vaultId!,
+        `String(!!(${card})?.querySelector('.zt-annot-tag-input'))`,
+        { expected: "true" },
+      ),
+    /** The names the card draws while no session is open. */
+    cardTags: () =>
+      obJson<string[]>(
+        `JSON.stringify([...((${card})?.querySelectorAll('[aria-pressed]')??[])].map(chip=>chip.textContent))`,
+      ),
+    /** The names the open editor draws as chips. */
+    editorChips: () =>
+      obJson<string[]>(
+        `JSON.stringify([...((${card})?.querySelectorAll('[data-slot=tags-input-item-text]')??[])].map(chip=>chip.textContent))`,
+      ),
+    /** Text typed into the tag field; `enter` presses Enter after it. */
+    type: (text: string, { enter }: { enter: boolean }) =>
+      obEval(
+        vaultId!,
+        `(function(){const field=(${card}).querySelector('.zt-annot-tag-input');field.value=${JSON.stringify(text)};field.dispatchEvent(new Event('input',{bubbles:true}));if(${enter})field.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return 'typed';})()`,
+      ),
+    /**
+     * One chip's remove button. The chip is found by its name part, because
+     * an automatic chip also holds its label.
+     */
+    remove: (name: string) =>
+      obEval(
+        vaultId!,
+        `(function(){const chip=[...(${card}).querySelectorAll('[data-slot=tags-input-item]')].find(item=>item.querySelector('[data-slot=tags-input-item-text]')?.textContent===${JSON.stringify(name)});if(!chip)return 'absent';chip.querySelector('[data-slot=tags-input-item-remove]').click();return 'removed';})()`,
+      ),
+  };
+}
+
 async function readAnnotationState(
   api: string,
   serverID: string,

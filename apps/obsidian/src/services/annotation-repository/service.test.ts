@@ -4875,3 +4875,170 @@ it("hides an old database's tag draft when the database switches", async () => {
 });
 
 // #endregion
+
+// #region tag session history
+
+/** Save one tag session that ends on `names`, as the editor closing does. */
+async function saveTags(
+  repository: AnnotationRepository,
+  names: readonly string[],
+): Promise<void> {
+  repository.editTags("PUPR5FG5", names);
+  expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
+}
+
+it("makes one step of a tag session and puts the previous tags back with their types", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+
+  // One session adds two names and removes a manual and an automatic tag.
+  repository.editTags("PUPR5FG5", ["review", "nlp", "todo", "figure"]);
+  repository.editTags("PUPR5FG5", ["review", "figure"]);
+  await saveTags(repository, ["review", "figure", "Smith, J."]);
+  expect(zotero.tags).toEqual(["review", "figure", "Smith, J."]);
+
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.tags).toEqual(["review", { tag: "nlp", type: 1 }, "todo"]);
+  // The whole session was one step.
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("keeps the tags Zotero changed after the session when it is undone", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "nlp", "figure", "draft"]);
+
+  // Zotero adds a tag of its own and removes one the session added.
+  zotero.changeInZotero({
+    tags: ["review", { tag: "nlp", type: 1 }, "figure", "from Zotero"],
+  });
+  await repository.refresh("RGRPDF24");
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  // No field check stops the undo: it removes what the session added and
+  // restores what it removed, and `from Zotero` stays.
+  expect(zotero.tags).toEqual([
+    "review",
+    { tag: "nlp", type: 1 },
+    "from Zotero",
+    "todo",
+  ]);
+});
+
+it("redoes a tag session from the undo's own confirmed result", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "figure"]);
+  await repository.undo("RGRPDF24");
+
+  expect(await repository.redo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.tags).toEqual(["review", "figure"]);
+  // Stepping back and forth reverses the same names as often as asked.
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.tags).toEqual(["review", { tag: "nlp", type: 1 }, "todo"]);
+});
+
+it("discards the redo steps when a new tag session is recorded", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "figure"]);
+  await repository.undo("RGRPDF24");
+
+  await saveTags(repository, ["review", "nlp", "todo", "method"]);
+
+  expect(repository.canRedo("RGRPDF24")).toBe(false);
+  expect(await repository.redo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.tags).toEqual([
+    "review",
+    { tag: "nlp", type: 1 },
+    "todo",
+    "method",
+  ]);
+});
+
+it("sends the tag undo again after a 412, applied to the fresh tags", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  let conflicts = 0;
+  stack.defer(repository.on("write-conflict", () => (conflicts += 1)));
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "nlp", "figure"]);
+  const sent = zotero.patches.length;
+
+  // Zotero moves under the undo, and ZotLit has not read it yet.
+  zotero.changeInZotero({
+    tags: ["review", { tag: "nlp", type: 1 }, "figure", "from Zotero"],
+  });
+
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  // The refused write, and the one built on the re-read tags.
+  expect(zotero.patches.slice(sent).map(({ version }) => version)).toEqual([
+    12, 13,
+  ]);
+  expect(zotero.tags).toEqual([
+    "review",
+    { tag: "nlp", type: 1 },
+    "from Zotero",
+    "todo",
+  ]);
+  expect(conflicts).toBe(0);
+  expect(repository.mutationFor("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(repository.canRedo("RGRPDF24")).toBe(true);
+});
+
+it("takes a tag step with no write where Zotero already holds what the undo would write", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "nlp", "figure"]);
+  const sent = zotero.patches.length;
+
+  zotero.changeInZotero({ tags: [...TAGGED] });
+  await repository.refresh("RGRPDF24");
+
+  // An equal value is no conflict, so the undo is taken, not refused.
+  expect(await repository.undo("RGRPDF24")).toEqual({
+    kind: "stepped",
+    annotationKey: "PUPR5FG5",
+  });
+  expect(zotero.patches).toHaveLength(sent);
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+});
+
+it("does nothing while a tag session is open on the Annotation the top step touches", async () => {
+  await using stack = new AsyncDisposableStack();
+  const zotero = zoteroTagging("PUPR5FG5", [...TAGGED]);
+  const { repository } = await writable(stack, zotero.answers);
+  repository.openHistory("RGRPDF24");
+  await saveTags(repository, ["review", "nlp", "figure"]);
+
+  // The tag editor is open again, so the keys belong to it.
+  repository.editTags("PUPR5FG5");
+  expect(repository.canUndo("RGRPDF24")).toBe(false);
+  expect(await repository.undo("RGRPDF24")).toEqual({ kind: "idle" });
+  expect(zotero.tags).toEqual(["review", { tag: "nlp", type: 1 }, "figure"]);
+
+  // The editor closed with no change.
+  expect(await repository.submitTags("PUPR5FG5")).toEqual({ kind: "idle" });
+  expect(await repository.undo("RGRPDF24")).toMatchObject({ kind: "stepped" });
+  expect(zotero.tags).toEqual(["review", { tag: "nlp", type: 1 }, "todo"]);
+});
+
+// #endregion

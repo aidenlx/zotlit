@@ -168,45 +168,77 @@ export interface AnnotationTag {
   type: number;
 }
 
-/** What one tag editing session changed, by name. */
-export interface TagChange {
-  added: readonly string[];
-  removed: readonly string[];
+/**
+ * What one change to an Annotation's tags added and removed. A tag editing
+ * session names its tags by name; a History Step holds them with their types.
+ */
+export interface TagChange<T extends string | AnnotationTag = string> {
+  added: readonly T[];
+  removed: readonly T[];
 }
 
 /**
- * The names a session added and removed, from the names it started from and
- * the names it ends on. Names compare case-sensitively, as Zotero's do.
+ * The tags one side holds and the other lacks, compared by name. Names
+ * compare case-sensitively, as Zotero's do.
+ *
+ * @param before the names a session started from, or the tags a write was
+ *   built against.
+ * @param after the names it ends on, or the tags Zotero confirmed.
+ * @returns what went from `before` to `after`.
  */
-export function tagChange(
-  baseline: readonly string[],
-  names: readonly string[],
-): TagChange {
+export function tagChange<T extends string | AnnotationTag>(
+  before: readonly T[],
+  after: readonly T[],
+): TagChange<T> {
   return {
-    added: names.filter((name) => !baseline.includes(name)),
-    removed: baseline.filter((name) => !names.includes(name)),
+    added: after.filter((tag) => !hasTag(before, tag)),
+    removed: before.filter((tag) => !hasTag(after, tag)),
   };
 }
 
+/** Whether a change adds and removes no name at all. */
+export function noTagChange({
+  added,
+  removed,
+}: TagChange<string | AnnotationTag>): boolean {
+  return added.length === 0 && removed.length === 0;
+}
+
 /**
- * One session's names applied to the tags Zotero holds now. A kept tag keeps
- * its type, a new tag is manual, and an automatic tag can be removed. A tag
- * that Zotero added or removed during the session is left as Zotero holds it,
- * so the merge never needs a Write Conflict.
+ * One change applied to the tags Zotero holds now. A kept tag keeps its type,
+ * an added name is manual, an added tag keeps the type it carries, and an
+ * automatic tag can be removed. A tag that Zotero added or removed beside the
+ * change is left as Zotero holds it, so the merge never needs a Write
+ * Conflict.
  *
  * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
  */
 export function mergeTags(
   current: readonly AnnotationTag[],
-  { added, removed }: TagChange,
+  { added, removed }: TagChange<string | AnnotationTag>,
 ): AnnotationTag[] {
-  const kept = current.filter(({ name }) => !removed.includes(name));
-  const fresh = added.filter((name) => !kept.some((tag) => tag.name === name));
-  // A tag the user adds is a manual tag.
-  return [
-    ...kept,
-    ...fresh.map((name) => ({ name, type: 0 satisfies TagType })),
-  ];
+  const kept = current.filter((tag) => !hasTag(removed, tag));
+  const fresh = added.filter((tag) => !hasTag(kept, tag)).map(typedTag);
+  return [...kept, ...fresh];
+}
+
+function hasTag(
+  tags: readonly (string | AnnotationTag)[],
+  tag: string | AnnotationTag,
+): boolean {
+  const name = tagName(tag);
+  return tags.some((other) => tagName(other) === name);
+}
+
+function tagName(tag: string | AnnotationTag): string {
+  return typeof tag === "string" ? tag : tag.name;
+}
+
+/** A bare name is a tag the user adds, which is a manual tag. */
+function typedTag(tag: string | AnnotationTag): AnnotationTag {
+  return typeof tag === "string"
+    ? { name: tag, type: 0 satisfies TagType }
+    : tag;
 }
 
 /**

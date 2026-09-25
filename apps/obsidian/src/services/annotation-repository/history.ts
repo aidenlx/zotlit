@@ -14,7 +14,9 @@ import {
 import { writablePosition, writePosition } from "./write";
 import type {
   AnnotationDraft,
+  AnnotationTag,
   GeometryEdit,
+  TagChange,
   WriteConflict,
   WriteFailure,
 } from "./write";
@@ -36,8 +38,14 @@ export type HistoryDirection = "undo" | "redo";
  * different kinds never merge, so a colour pick made after a comment session is
  * a step of its own. `existence` is a create and a delete alike: undoing one
  * leaves the other, so the two are one kind read in opposite directions.
+ * `tags` is one tag editing session.
  */
-export type HistoryEditKind = "color" | "comment" | "existence" | "geometry";
+export type HistoryEditKind =
+  | "color"
+  | "comment"
+  | "existence"
+  | "geometry"
+  | "tags";
 
 /**
  * Everything a restore writes back for one Annotation, which is everything a
@@ -109,6 +117,15 @@ export interface HistoryChange {
   before: HistoryFields;
   /** What Zotero confirmed after the edit, which an undo checks against. */
   after: HistoryFields;
+  /**
+   * What one tag editing session changed, each tag with its type. Only a
+   * `tags` step carries it, and its `before` and `after` then hold no field:
+   * the step is reversed by name against the tags Zotero holds now rather
+   * than written back by value, so a tag Zotero changed since stays.
+   *
+   * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+   */
+  tags?: TagChange<AnnotationTag>;
 }
 
 /**
@@ -201,6 +218,10 @@ export function historyFieldsOf(
       // and none on the other, which a record on its own cannot say. Their
       // fields are built by contentOf over the whole record a restore writes
       // back, so there is nothing for one confirmed record to answer here.
+      return null;
+    case "tags":
+      // A tag step holds the names one write changed, which only the two
+      // records around that write can say, in its own `tags`.
       return null;
     case "comment":
       // Zotero stores a cleared comment as no comment, so the empty string is

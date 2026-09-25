@@ -72,6 +72,7 @@ import {
   MAX_POSITION_LENGTH,
   mergeTags,
   newWriteToken,
+  noTagChange,
   tagChange,
   tagsPatch,
   writePosition,
@@ -83,6 +84,7 @@ import type {
   GeometryEdit,
   GeometryInput,
   MutationState,
+  TagChange,
   WriteConflict,
   WriteFailure,
   WriteRequest,
@@ -1017,7 +1019,7 @@ export class AnnotationRepository extends Service<void> {
     if (!draft) return IDLE;
     if (draft.state.kind === "pending") return this.mutationFor(annotationKey);
     const change = tagChange(draft.baseline, draft.names);
-    if (change.added.length === 0 && change.removed.length === 0) {
+    if (noTagChange(change)) {
       this.#dropTagDraft(draft);
       return IDLE;
     }
@@ -1669,8 +1671,9 @@ export class AnnotationRepository extends Service<void> {
    * it answers these keys with its own text undo.
    */
   #beingEdited(step: HistoryStep): boolean {
-    return step.changes.some(({ annotationKey }) =>
-      this.commentDraftFor(annotationKey),
+    return step.changes.some(
+      ({ annotationKey }) =>
+        this.commentDraftFor(annotationKey) || this.tagDraftFor(annotationKey),
     );
   }
 
@@ -1693,6 +1696,13 @@ export class AnnotationRepository extends Service<void> {
   ): Promise<HistoryOutcome> {
     if (step.kind === "existence") {
       return await this.#takeExistenceStep(step, {
+        attachmentKey,
+        direction,
+        history,
+      });
+    }
+    if (step.kind === "tags") {
+      return await this.#takeTagStep(step, {
         attachmentKey,
         direction,
         history,
@@ -1790,6 +1800,88 @@ export class AnnotationRepository extends Service<void> {
     } finally {
       this.#steppingWrites.delete(annotationKey);
     }
+  }
+
+  /**
+   * One tag editing session, taken in the other direction: the names the step
+   * added leave the tags Zotero holds now, and the names it removed come back
+   * with their old types. No field is compared, so a tag Zotero changed since
+   * the session stays; a `412` re-reads the Annotation and applies the same
+   * names again, as a session's own save does. The step left for the other
+   * direction is what this write confirmed.
+   *
+   * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+   */
+  async #takeTagStep(
+    step: HistoryStep,
+    {
+      attachmentKey,
+      direction,
+      history,
+    }: {
+      attachmentKey: string;
+      direction: HistoryDirection;
+      history: AnnotationHistory;
+    },
+  ): Promise<HistoryOutcome> {
+    // A tag session writes one Annotation, so its step holds one change,
+    // and a tag step always carries what the session changed.
+    const { annotationKey, tags } = step.changes[0]!;
+    const record = this.#holding(annotationKey)?.record;
+    if (!record) {
+      logger.debug("A history step was dropped: Zotero no longer holds it", {
+        attachmentKey,
+        annotationKey,
+        kind: step.kind,
+      });
+      history.drop(direction, step);
+      return { kind: "changed", annotationKey };
+    }
+    // Taking the step writes its change the other way round.
+    const reverse: TagChange<AnnotationTag> = {
+      added: tags!.removed,
+      removed: tags!.added,
+    };
+    const current = annotationTags(record);
+    if (noTagChange(tagChange(current, mergeTags(current, reverse)))) {
+      // An equal value is no conflict: Zotero already holds what the step
+      // would write, so it is taken with no write.
+      logger.debug("A tag step had nothing to write: Zotero holds its names", {
+        attachmentKey,
+        annotationKey,
+      });
+      history.drop(direction, step);
+      return { kind: "stepped", annotationKey };
+    }
+
+    let sent = record;
+    this.#steppingWrites.add(annotationKey);
+    let outcome: MutationState;
+    try {
+      outcome = await this.#command(annotationKey, {
+        write: "tags",
+        request: (target, against) => {
+          sent = against;
+          return tagsPatch(target, mergeTags(annotationTags(against), reverse));
+        },
+      });
+    } finally {
+      this.#steppingWrites.delete(annotationKey);
+    }
+    history.drop(direction, step);
+    if (outcome.kind === "failed") {
+      return { kind: "failed", failure: outcome.failure };
+    }
+    const settled = this.#holding(annotationKey)?.record;
+    const left =
+      settled && tagChange(annotationTags(sent), annotationTags(settled));
+    if (left && !noTagChange(left)) {
+      history.push(opposite(direction), {
+        kind: step.kind,
+        changes: [{ annotationKey, before: {}, after: {}, tags: left }],
+      });
+    }
+    return { kind: "stepped", annotationKey };
   }
 
   /**
@@ -1911,8 +2003,14 @@ export class AnnotationRepository extends Service<void> {
       return;
     }
     if (applied.kind !== "record") return;
-    // A tag session's History Step is aidenlx/zotlit#1230.
-    if (applied.write === "tags") return;
+    if (applied.write === "tags") {
+      this.#recordTagStep(history, {
+        attachmentKey,
+        before,
+        record: applied.record,
+      });
+      return;
+    }
     if (applied.write === "comment") {
       this.#recordCommentStep(history, {
         attachmentKey,
@@ -2005,6 +2103,43 @@ export class AnnotationRepository extends Service<void> {
       attachmentKey,
       annotationKey: record.key,
       recorded: !!step,
+    });
+    this.#emitter.emit("history-changed", attachmentKey);
+  }
+
+  /**
+   * Take one confirmed tag session into the Attachment's Annotation History,
+   * as one step holding the names it added and removed with their types. The
+   * names are read off the two records around the write, so a session whose
+   * names Zotero already held leaves no step.
+   *
+   * @see apps/obsidian/docs/adr/0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md
+   */
+  #recordTagStep(
+    history: AnnotationHistory,
+    {
+      attachmentKey,
+      before,
+      record,
+    }: {
+      attachmentKey: string;
+      /** The record the write was built against. */
+      before: AnnotationRecord;
+      /** The record Zotero confirmed. */
+      record: AnnotationRecord;
+    },
+  ): void {
+    const tags = tagChange(annotationTags(before), annotationTags(record));
+    if (noTagChange(tags)) return;
+    history.record({
+      kind: "tags",
+      changes: [{ annotationKey: record.key, before: {}, after: {}, tags }],
+    });
+    logger.debug("A tag session was recorded in the annotation history", {
+      attachmentKey,
+      annotationKey: record.key,
+      added: tags.added.length,
+      removed: tags.removed.length,
     });
     this.#emitter.emit("history-changed", attachmentKey);
   }
