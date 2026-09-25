@@ -60,8 +60,8 @@ export function editingCapabilityCopy(
         spinning: false,
       };
     case "authorization-required":
-      // The same icon as writable: the control stays live, and Allow editing is
-      // what opens Zotero's dialog.
+      // The same icon as writable: the card verbs stay blocked until one Allow
+      // editing, which is what opens Zotero's dialog.
       return {
         icon: "pencil",
         tone: "action",

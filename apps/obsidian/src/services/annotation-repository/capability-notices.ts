@@ -1,6 +1,7 @@
-// What the user is told when a gesture meets a block or a write comes back
-// refused, and every "once per …" promise the spec makes about it — decided as
-// data, so a test reads the answer instead of watching for a notice.
+// What the user is told when a gesture meets a block, a write comes back
+// refused, or Zotero answers an Allow editing, and every "once per …" promise
+// the spec makes about it — decided as data, so a test reads the answer instead
+// of watching for a notice.
 //
 // @see apps/obsidian/policies/ui-seams.md
 // @see https://github.com/aidenlx/zotlit/issues/1147

@@ -27,7 +27,7 @@ it("shows the capability from the one shared copy table", () => {
   expect(model.status.detail).toBe(m.capability_local_api_disabled_detail());
 });
 
-it("drops 'Enable editing' once editing is on", () => {
+it("drops 'Allow editing' once editing is on", () => {
   expect(row({ kind: "writable" }).enable.shown).toBe(false);
   expect(row({ kind: "authorization-required" }).enable.shown).toBe(true);
 });

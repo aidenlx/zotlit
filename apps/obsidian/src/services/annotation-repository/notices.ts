@@ -135,12 +135,12 @@ export class CapabilityNotices extends Service<void> {
   }
 
   /**
-   * The affordance's click, in both renderers: re-check Zotero, then show the
-   * one row that both explains the state and offers the gestures that change
-   * it — which renders the same enum from the same copy table.
+   * The reader's held-draft Allow editing: re-check Zotero, then open the
+   * "Zotero editing" settings row, which both explains the state and offers the
+   * gestures that change it — rendering the same enum from the same copy table.
    *
    * @returns when the row is open, so a caller need not count microtasks to
-   *   know the gesture is done. A renderer ignores it.
+   *   know the gesture is done. The reader ignores it.
    */
   async showEditingCapability(): Promise<void> {
     await this.#capabilities.probe();

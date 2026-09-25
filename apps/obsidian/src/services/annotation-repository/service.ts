@@ -215,7 +215,10 @@ export interface CommentDraft {
   /** Current shared input. */
   text: string;
   state: CommentDraftState;
-  /** The next save requires an explicit action after a grant or interruption. */
+  /**
+   * The next save requires an explicit action: set after a failed or
+   * unconfirmed write, or when editing is lost while this draft is open.
+   */
   manualSave?: boolean;
 }
 
