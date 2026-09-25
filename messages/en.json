@@ -305,6 +305,8 @@
   "settings_zotero_editing_enable": "Allow editing",
   "settings_zotero_editing_forget": "Forget authorization",
   "notice_zotero_editing_enabled": "Zotero editing is enabled.",
+  "notice_zotero_editing_not_remembered": "To edit annotations, choose Always Allow in Zotero.",
+  "notice_zotero_editing_not_saved": "ZotLit could not save the permission on this device.",
   "capability_writable": "Ready to edit",
   "capability_enable_editing": "Allow editing",
   "capability_authorization_required": "Allow editing to change annotations",

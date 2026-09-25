@@ -725,21 +725,22 @@ A capability episode is one unbroken run in which an attachment cannot be edited
 
 **If a countdown keeps running:** an interval was armed on the wrong window, or it is not cleared on teardown. Both surfaces arm on the node's own window.
 
-### Authorization from the reader gesture
+### Allow leaves ZotLit read-only, and says so
 
-**Why it is not automated:** it needs a click in Zotero's own modal together with the Obsidian half. The Zotero half alone is already probed. Provenance: [#1150](https://github.com/aidenlx/zotlit/issues/1150).
+**Why it is not automated:** the End-to-end Run answers Zotero's prompt with a stub. This check presses the **Allow** button of Zotero's real dialog and reads Zotero's key store. Provenance: [#1251](https://github.com/aidenlx/zotlit/issues/1251).
 
-**Setup:** the Paired Run with no remembered authorization. Clear one from **Settings → Advanced → Clear Write Authorizations**.
+**Setup:** the Paired Run with no remembered authorization, and `rougier-2014.pdf` open with the Annotation View beside it. In Zotero, select **Settings → Advanced → Clear Write Authorizations**. In ZotLit's "Zotero editing" row, select **Forget authorization** if it is shown. `<profile>` is the Fixture Zotero profile directory that `pnpm fixture paths` names.
 
 **Steps:**
 
-1. Select text in Obsidian's reader and press `h`.
-2. Answer Zotero's dialog with **Allow**.
-3. Clear the authorization again, repeat step 1, and answer with **Deny**.
+1. In Obsidian, open **Settings → ZotLit → Zotero → Connection** and select **Allow editing**. Answer Zotero's dialog with **Allow**.
+2. Read the notice and the "Zotero editing" row. Then open `<profile>/localAPIKeys.json`.
+3. In the notice, select **Allow editing**. Answer Zotero's dialog with **Always Allow**.
+4. In the Annotation View, change the colour of one annotation card.
 
-**Expected:** Zotero's dialog opens once. After **Allow** the annotation is created with no second gesture, and no "authorization required" notice appears beside it. After **Deny** nothing is created, and one notice names the refusal.
+**Expected:** after step 1 a notice says "To edit annotations, choose Always Allow in Zotero." and shows an **Allow editing** button. The row reads "Allow editing to change annotations", shows **Allow editing**, and hides **Forget authorization**. In step 2 the key store holds one key with `"remember": false`. In step 3 Zotero's dialog opens again, and a notice says "Zotero editing is enabled.". The row reads "Ready to edit" and shows **Forget authorization**. In step 4 the colour is saved to Zotero with no dialog.
 
-**If a notice appears beside the dialog:** the edit-gesture listener is reporting a block for a capability the gesture itself clears.
+**If editing is available after step 1:** ZotLit kept the single-use key from **Allow**. **If no notice appears after step 1:** the settings row asks Zotero directly, not through the Allow editing action that reports Zotero's answer.
 
 ## Known limitations
 
@@ -758,6 +759,12 @@ Widening this needs a repository re-read on an "object gone" shaped failure, whi
 Zotero reports a dismissed dialog as its second button, which is **Always Allow**. Closing the dialog with `Esc` or with the window close button therefore writes a remembered key to `localAPIKeys.json`, confirmed twice against the real dialog. The default button, which `Return` activates, is **Deny**.
 
 Dismissal is not distinguishable from **Always Allow**, and it is the opposite of a refusal. ZotLit cannot treat a dismissed dialog as a refusal, because Zotero does not report one, and it must not pretend the grant did not happen. A user who closes the dialog and wants it back clears it from **Settings → Advanced → Clear Write Authorizations**. This looks like a Zotero defect and is worth reporting upstream.
+
+### The key from Allow stays in Zotero's store until Clear
+
+When the user answers Zotero's dialog with **Allow**, Zotero writes a single-use key to `localAPIKeys.json`. ZotLit discards that key and never sends it, so Zotero never spends it. An unused single-use key has no expiry, and the Local API cannot revoke a key. The key stays in the store until **Settings → Advanced → Clear Write Authorizations** in Zotero.
+
+The key permits only writes to a database that every local process can already read. ADR 0062 records this decision.
 
 ### A stale list is not signposted when the Live Updates listener is off
 

@@ -6,7 +6,10 @@
 // @see https://github.com/aidenlx/zotlit/issues/1147
 
 import * as m from "@/lib/i18n/generated/messages";
-import type { LocalApiFailure } from "@/services/zotero-local-api/service";
+import type {
+  LocalApiFailure,
+  LocalApiResult,
+} from "@/services/zotero-local-api/service";
 
 import { capabilityReason } from "./capability";
 import type { EditingCapability } from "./capability";
@@ -22,6 +25,39 @@ export interface CapabilityNotice {
   sticky: boolean;
   /** The one action offered, or null where there is nothing to open. */
   action: string | null;
+}
+
+/**
+ * What Zotero's answer to Allow editing is worth saying. A grant, an Allow, and
+ * an Always Allow this device could not save each speak. Every other refusal —
+ * a Deny, a cooldown, an unknown outcome, a lost connection — is already on
+ * the capability's own status, and a Deny is the user's clear choice.
+ *
+ * @returns what to tell the user, or null where the status says it already.
+ * @see apps/obsidian/docs/adr/0062-editing-requires-a-remembered-authorization-and-allow-leaves-zotlit-read-only.md
+ */
+export function allowEditingNotice(
+  result: LocalApiResult<void>,
+): CapabilityNotice | null {
+  if (!("failure" in result)) {
+    return plainNotice(m.notice_zotero_editing_enabled());
+  }
+  switch (result.failure.kind) {
+    // The one answer whose notice asks Zotero again, from the user's press.
+    case "not-remembered":
+      return {
+        ...plainNotice(m.notice_zotero_editing_not_remembered()),
+        action: m.capability_enable_editing(),
+      };
+    case "not-saved":
+      return plainNotice(m.notice_zotero_editing_not_saved());
+    default:
+      return null;
+  }
+}
+
+function plainNotice(title: string): CapabilityNotice {
+  return { title, lines: [], sticky: false, action: null };
 }
 
 /**

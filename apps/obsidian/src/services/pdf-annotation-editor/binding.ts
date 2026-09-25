@@ -170,7 +170,10 @@ export interface CapabilityGestures {
    * behind it. The seam says why, once per reason per capability episode.
    */
   reportBlockedGesture: (attachmentKey: string) => void;
-  /** Ask Zotero for editing again, from a gesture that names the grant itself. */
+  /**
+   * Open the "Zotero editing" settings row, whose Allow editing asks Zotero,
+   * from a gesture that names the grant itself.
+   */
   allowEditing: () => void;
 }
 

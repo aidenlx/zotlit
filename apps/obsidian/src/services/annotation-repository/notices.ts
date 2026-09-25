@@ -7,7 +7,10 @@ import { BaseNotice } from "@/lib/notice";
 import { Service } from "@/services/service-base";
 import type { ZoteroLocalApiClient } from "@/services/zotero-local-api/service";
 
-import { CapabilityNoticeLedger } from "./capability-notices";
+import {
+  allowEditingNotice,
+  CapabilityNoticeLedger,
+} from "./capability-notices";
 import type { CapabilityNotice } from "./capability-notices";
 import type { AnnotationRepository } from "./service";
 
@@ -57,8 +60,11 @@ export interface CapabilityNoticesDeps {
     AnnotationRepository,
     "capabilityFor" | "mutationFor" | "on" | "probe"
   >;
-  /** What a refused write, a swapped database and a retired mark are heard on. */
-  writes: Pick<ZoteroLocalApiClient, "on">;
+  /**
+   * What a refused write, a swapped database and a retired mark are heard on,
+   * and the one request Allow editing sends.
+   */
+  writes: Pick<ZoteroLocalApiClient, "authorize" | "on">;
   /** Reveals the "Zotero editing" settings row. */
   openEditingSettings: () => void;
   /** Whether an Annotation View on screen already shows this card. */
@@ -66,6 +72,12 @@ export interface CapabilityNoticesDeps {
   /** Opens the Annotation View and brings one Annotation's card forward. */
   revealAnnotation: (annotationKey: string) => void;
   now?: () => Temporal.Instant;
+  /**
+   * Puts one notice on screen.
+   *
+   * @default showCapabilityNotice
+   */
+  showNotice?: (notice: CapabilityNotice, runAction: () => void) => void;
 }
 
 /**
@@ -83,6 +95,7 @@ export class CapabilityNotices extends Service<void> {
   readonly #cardShown;
   readonly #revealAnnotation;
   readonly #ledger;
+  readonly #showNotice;
 
   ready: Promise<void>;
 
@@ -93,6 +106,7 @@ export class CapabilityNotices extends Service<void> {
     cardShown,
     revealAnnotation,
     now = () => Temporal.Now.instant(),
+    showNotice = showCapabilityNotice,
   }: CapabilityNoticesDeps) {
     super();
     this.#capabilities = capabilities;
@@ -101,7 +115,23 @@ export class CapabilityNotices extends Service<void> {
     this.#cardShown = cardShown;
     this.#revealAnnotation = revealAnnotation;
     this.#ledger = new CapabilityNoticeLedger(now);
+    this.#showNotice = showNotice;
     this.ready = this.#load();
+  }
+
+  /**
+   * Allow editing, from every entry that offers it: ask Zotero once, then say
+   * what its answer left. An Allow's notice offers this same gesture again;
+   * nothing here asks a second time on its own.
+   *
+   * @returns when Zotero has answered and its notice, if any, is on screen.
+   * @see apps/obsidian/docs/adr/0038-write-authorization-starts-only-from-a-user-gesture.md
+   */
+  async allowEditing(): Promise<void> {
+    const result = await this.#writes.authorize();
+    const notice = allowEditingNotice(result);
+    if (!notice) return;
+    this.#showNotice(notice, () => void this.allowEditing());
   }
 
   /**
@@ -128,7 +158,7 @@ export class CapabilityNotices extends Service<void> {
     const notice = this.#ledger.blockedGesture(attachmentKey, capability);
     if (!notice) return;
     logger.debug("An edit gesture met a block", { attachmentKey, capability });
-    showCapabilityNotice(notice, this.#openEditingSettings);
+    this.#showNotice(notice, this.#openEditingSettings);
   }
 
   async #load(): Promise<void> {
@@ -187,10 +217,10 @@ export class CapabilityNotices extends Service<void> {
     logger.debug("A write conflict stands on a card no view shows", {
       annotationKey,
     });
-    showCapabilityNotice(notice, () => this.#revealAnnotation(annotationKey));
+    this.#showNotice(notice, () => this.#revealAnnotation(annotationKey));
   }
 
   #show(notice: CapabilityNotice | null): void {
-    if (notice) showCapabilityNotice(notice, this.#openEditingSettings);
+    if (notice) this.#showNotice(notice, this.#openEditingSettings);
   }
 }

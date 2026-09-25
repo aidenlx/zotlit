@@ -1503,6 +1503,8 @@
   "settings_zotero_editing_enable": "允许编辑",
   "settings_zotero_editing_forget": "清除授权",
   "notice_zotero_editing_enabled": "已启用 Zotero 编辑。",
+  "notice_zotero_editing_not_remembered": "如需编辑标注，请在 Zotero 中选择“始终允许”。",
+  "notice_zotero_editing_not_saved": "ZotLit 无法在此设备上保存授权。",
   "capability_writable": "可以编辑",
   "capability_enable_editing": "允许编辑",
   "capability_authorization_required": "允许编辑后即可修改标注",

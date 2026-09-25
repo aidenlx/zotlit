@@ -5047,6 +5047,86 @@ describe.skipIf(!baseUrl)("Paired Run", () => {
           expect(await readFile(join(vaultPath, target))).toEqual(bytes);
       }, 120000);
 
+      // It clears both key stores and leaves a fresh Always Allow key behind,
+      // so it runs after every test that writes with the block's own key.
+      it("Allow leaves ZotLit read-only, and says so", async () => {
+        /** Whether ZotLit's stored record holds a key; a forgotten one keeps only its server. */
+        const keySaved =
+          "String(!!JSON.parse(app.secretStorage.getSecret('zotlit-zotero-write-authorization')??'{}').key)";
+        /** Whether ZotLit is showing the notice with exactly this title. */
+        const noticeShows = (title: string) =>
+          obEvalUntil(
+            vaultId!,
+            `String([...document.querySelectorAll('.zt-notice .zt-notice-text')].some((node)=>node.textContent===${JSON.stringify(title)}))`,
+            { expected: "true" },
+          );
+        const notAllowed =
+          "To edit annotations, choose Always Allow in Zotero.";
+
+        await using restore = new AsyncDisposableStack();
+        const popout = await obEval(
+          vaultId!,
+          "JSON.stringify(app.vault.getConfig('settingsPopoutWindow')??null)",
+        );
+        restore.defer(async () => {
+          await obEval(
+            vaultId!,
+            `app.setting.close();app.vault.setConfig('settingsPopoutWindow',${popout});true`,
+          );
+        });
+
+        await resetAuthorizations(rdp);
+        await obEval(
+          vaultId!,
+          "(async()=>{await app.plugins.plugins.zotlit.services.zoteroLocalApi.forgetAuthorization();for(const node of document.querySelectorAll('.notice'))node.remove();return true;})()",
+        );
+        await stubPrompt(rdp, { allow: true, remember: false });
+        expect(
+          await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
+            expected: "authorization-required",
+          }),
+        ).toBe(true);
+
+        // The settings row, where the capability notices open it: the
+        // settings modal in the main window, which eval can reach.
+        await obEval(
+          vaultId!,
+          "(async()=>{app.vault.setConfig('settingsPopoutWindow',false);await app.plugins.plugins.zotlit.services.capabilityNotices.showEditingCapability();return true;})()",
+        );
+        expect(
+          await obEvalUntil(
+            vaultId!,
+            `(function(){const row=[...app.setting.containerEl.querySelectorAll('.setting-item')].find((el)=>el.querySelector('.setting-item-name')?.textContent==='Zotero editing');const button=row&&[...row.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button||button.disabled||button.style.display==='none')return 'false';button.click();return 'true';})()`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+
+        expect(await noticeShows(notAllowed)).toBe(true);
+        expect(
+          await obEval(vaultId!, capabilityOf(attachment.key, "kind")),
+        ).toBe("authorization-required");
+        expect(await obEval(vaultId!, keySaved)).toBe("false");
+        expect(await authorizationCount(rdp)).toBe(0);
+
+        // The notice's own button asks again, and Zotero now answers Always
+        // Allow.
+        await stubPrompt(rdp, { allow: true, remember: true });
+        expect(
+          await obEval(
+            vaultId!,
+            `(function(){const notice=[...document.querySelectorAll('.zt-notice')].find((node)=>node.textContent.includes(${JSON.stringify(notAllowed)}));const button=notice&&[...notice.querySelectorAll('button')].find((el)=>el.textContent.trim()==='Allow editing');if(!button)return 'false';button.click();return 'true';})()`,
+          ),
+        ).toBe("true");
+
+        expect(await noticeShows("Zotero editing is enabled.")).toBe(true);
+        expect(
+          await obEvalUntil(vaultId!, capabilityOf(attachment.key, "kind"), {
+            expected: "writable",
+          }),
+        ).toBe(true);
+        expect(await obEval(vaultId!, keySaved)).toBe("true");
+      }, 120000);
+
       // Last in this block, so it covers every write above: ZotLit writes
       // Annotations, never the PDF the Annotations hang from.
       it("leaves the Attachment's PDF byte-identical", async () => {

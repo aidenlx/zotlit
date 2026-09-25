@@ -144,9 +144,15 @@ function renderEditingRow(
     }
   };
 
-  /** Re-read what the keystore holds, which no event announces. */
+  let reads = 0;
+  /**
+   * Re-read what the keystore holds, which no event announces. Only the latest
+   * read lands, so reads that overlap cannot finish out of order.
+   */
   const refreshRemembered = (): void => {
+    const read = ++reads;
     void ctx.writeAuthorization.remembered().then((value) => {
+      if (read !== reads) return;
       remembered = value;
       apply();
     });
@@ -159,7 +165,7 @@ function renderEditingRow(
         .setButtonText(m.settings_zotero_editing_enable())
         .setCta()
         .onClick(() => {
-          void enableEditing(ctx).then(refreshRemembered);
+          void ctx.writeAuthorization.allowEditing();
         });
     })
     .addButton((button) => {
@@ -201,21 +207,18 @@ function renderEditingRow(
   apply();
   refreshRemembered();
   void ctx.annotations.probe();
-  stack.defer(ctx.annotations.on("capability-changed", apply));
+  // An Allow editing from outside this row, such as a notice's button, can
+  // save or drop a key, and the capability moves with it. The status redraws
+  // at once; the key's line follows when the keystore answers.
+  stack.defer(
+    ctx.annotations.on("capability-changed", () => {
+      apply();
+      refreshRemembered();
+    }),
+  );
   stack.defer(() => stopCountdown?.());
 
   return () => stack.dispose();
-}
-
-/**
- * The settings half of the authorization gesture. Zotero's own dialog carries
- * every refusal, and the status line carries what the session is left in, so
- * only a grant is worth a notice.
- */
-async function enableEditing(ctx: SettingTabContext): Promise<void> {
-  const result = await ctx.writeAuthorization.authorize();
-  if ("failure" in result) return;
-  new BaseNotice(m.notice_zotero_editing_enabled());
 }
 
 function applyAction(
