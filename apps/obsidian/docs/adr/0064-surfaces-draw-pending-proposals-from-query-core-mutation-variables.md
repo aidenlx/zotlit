@@ -1,0 +1,26 @@
+# Surfaces draw Pending Proposals from query-core mutation variables
+
+Supersedes the "confirmed data while pending" paragraph of [ADR 0048](0048-annotation-drafts-and-pending-writes-stay-in-memory.md) and both of its amendments, and the rejected option "Close at once and draw the draft chips as pending" of [ADR 0063](0063-annotation-tags-save-once-per-editing-session-and-merge-by-name.md). Builds on [ADR 0060](../../../../docs/adr/0060-held-reads-are-realized-on-tanstack-query-core.md).
+
+Decided on 2026-09-25, after a comment saved on blur made the Mark Popup show the old comment for one frame. The editor closed, the draft was pending, and every surface drew the confirmed record, as ADR 0048 asked. Each surface had its own exception for this gap: geometry drew the drag's proposal until the write settled, the tag editor stayed open in a saving state, and the comment editor had none. We removed the exceptions and made one rule at the repository.
+
+Every Annotation write that changes a field runs as a `@tanstack/query-core` mutation in the plugin's `MutationCache`. Its variables are the write's **Pending Proposal**: the comment, colour, tags, or position, sortIndex, and text that Zotero will store. The mutation's scope is the Annotation, so writes to one Annotation run in order, and a write that waits behind another is already `pending` with its variables. This follows TanStack's "optimistic updates via the UI" pattern: the query cache keeps only confirmed data, and the proposal is read from the pending mutations.
+
+The repository's published list (`read()`, `peek()`, and the Held Read it announces) is the confirmed list with each pending mutation's fields applied over it, later writes over earlier ones. Everything that decides a write reads the confirmed list: versions, Write Conflicts, the tag merge, and History Steps. A proposal applies only over a list from the Zotero database that the write was sent to. The repository announces `annotations-changed` synchronously when a proposing write starts and when it settles, and the Annotation View and the PDF binding draw from `peek()` in the same task, so there is no frame between the closed editor and the new value. A confirmed write then draws what Zotero answered; a refused, conflicted, or lost write draws the confirmed value again and reports as before.
+
+The tag editor closes at once onto the proposed chips. A Geometry Edit draws the Reader Surface State's drag proposal while the pointer is down and the repository's proposal from release, rounded as Zotero stores it. Pixels (the Excerpt Image) are announced only on confirmation. Delete and create keep their visible behaviour. The `MutationState` a surface reads for saving, failure, and verb stand-down is unchanged.
+
+A comment saved behind a comment save in flight coalesces: a waiting comment mutation sends nothing when a later comment or delete write waits after it, or when its draft is gone or in conflict. Only the newest text reaches Zotero.
+
+## Considered Options
+
+- **Write the proposal into the query cache and roll it back on failure** (TanStack's "via the cache" pattern, rejected): the cache feeds versions, conflicts, the tag merge, and History Steps, which must see only confirmed values. Concurrent writes also need the rollback bookkeeping described in "Concurrent Optimistic Updates in React Query", which the scoped mutation variables make unnecessary.
+- **A hand-rolled proposal map beside the query cache** (rejected): query-core already holds each write's variables, status, scope order, and settlement, and the repository already depends on it.
+- **Keep per-surface exceptions and add one for the comment** (rejected): each new field would need its own gap fix, and the surfaces would disagree about what is saved.
+
+## Consequences
+
+- A filter, a note insertion, and a copy read the displayed record, so they see the Pending Proposal.
+- The query-client service pins Query Core's focus to true. A mutation that waits in a scope starts only while Query Core counts the window focused, and with no mounted client it reads that from the document, which a minimised or covered window reports hidden. This keeps ADR 0060's rule of no focus tracking.
+- A comment save applies its outcome to the draft before the next write on the Annotation starts, so a save queued behind a failed one is held for **Save comment**, as ADR 0048 asks.
+- Deriving `MutationState` from the `MutationCache` too, in place of the repository's own map, is possible later.
