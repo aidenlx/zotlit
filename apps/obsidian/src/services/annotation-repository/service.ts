@@ -572,11 +572,14 @@ export class AnnotationRepository extends Service<void> {
    */
   readonly #lastCapability = new Map<string | null, string>();
   /**
-   * What a write left on each Annotation it touched, by Indexed Key. An
-   * Annotation no write is standing on has no entry, so the map holds only the
-   * few a session has edited.
+   * The failure or conflict a settled write left standing on each Annotation,
+   * by Indexed Key, until the next write on it or a dismissal. A write in
+   * flight is read from the mutation cache instead, so an Annotation that is
+   * idle has no entry.
    */
-  readonly #mutations = new Map<string, MutationState>();
+  readonly #outcomes = new Map<string, MutationState>();
+  /** The pending state each write in the mutation cache shows while it stands. */
+  readonly #pendingStates = new WeakMap<AnnotationMutation, MutationState>();
   readonly #commentDrafts = new Map<string, CommentDraft>();
   readonly #commentDraftSources = new Map<string, string>();
   readonly #commentSaves = new Map<string, CommentSave>();
@@ -780,12 +783,19 @@ export class AnnotationRepository extends Service<void> {
   }
 
   /**
-   * What a write left on one Annotation, for the card that draws its verbs.
+   * What a write left on one Annotation, for the card that draws its verbs:
+   * `pending` from the moment a write is asked for until the last write queued
+   * on it settles, then the failure or conflict the last one left standing.
    *
    * @param annotationKey the Annotation's Indexed Key.
    */
   mutationFor(annotationKey: string): MutationState {
-    return this.#mutations.get(annotationKey) ?? IDLE;
+    const [running] = this.#pendingWrites(annotationKey);
+    return (
+      (running && this.#pendingStates.get(running)) ??
+      this.#outcomes.get(annotationKey) ??
+      IDLE
+    );
   }
 
   /** The active Zotero database's shared draft for one Annotation. */
@@ -951,7 +961,7 @@ export class AnnotationRepository extends Service<void> {
   /** Keep Zotero's reviewed comment and discard the local draft. */
   discardCommentDraft(annotationKey: string): void {
     this.#dropCommentDraft(annotationKey);
-    const mutation = this.#mutations.get(annotationKey);
+    const mutation = this.#outcomes.get(annotationKey);
     if (
       mutation?.kind === "conflict" &&
       mutation.conflict.write === "comment"
@@ -1416,7 +1426,7 @@ export class AnnotationRepository extends Service<void> {
    *   another conflict where Zotero moved again.
    */
   async retryWrite(annotationKey: string): Promise<MutationState> {
-    const standing = this.#mutations.get(annotationKey);
+    const standing = this.#outcomes.get(annotationKey);
     if (standing?.kind !== "conflict") return standing ?? IDLE;
     const { conflict } = standing;
     switch (conflict.write) {
@@ -1444,7 +1454,7 @@ export class AnnotationRepository extends Service<void> {
    * @param annotationKey the Annotation's Indexed Key.
    */
   discardConflict(annotationKey: string): void {
-    if (this.#mutations.get(annotationKey)?.kind !== "conflict") return;
+    if (this.#outcomes.get(annotationKey)?.kind !== "conflict") return;
     logger.debug("A write conflict was discarded", { annotationKey });
     this.#settle(annotationKey, IDLE);
   }
@@ -1650,16 +1660,27 @@ export class AnnotationRepository extends Service<void> {
       });
     // The mutation holds its proposal from here on, so a surface redrawing on
     // this announcement draws it in the same task.
+    this.#pendingStates.set(mutation, {
+      kind: "pending",
+      write: command.write,
+      ...("session" in command && command.session && { session: true }),
+    });
     const operation = mutation.execute(proposal);
     this.#operations.set(mutation, operation);
     if (proposal) {
       this.#emitter.emit("annotations-changed", proposal.attachmentKey);
-      // A write that settles lets its proposal go: confirmed, the list already
-      // holds the same value; refused, the confirmed value is drawn again.
-      const settled = () =>
-        this.#emitter.emit("annotations-changed", proposal.attachmentKey);
-      void operation.then(settled, settled);
     }
+    this.#emitter.emit("mutation-changed", annotationKey);
+    // A write that settles lets its proposal go: confirmed, the list already
+    // holds the same value; refused, the confirmed value is drawn again. What
+    // it left on the Annotation is announced in the same turn.
+    const settled = () => {
+      if (proposal) {
+        this.#emitter.emit("annotations-changed", proposal.attachmentKey);
+      }
+      this.#emitter.emit("mutation-changed", annotationKey);
+    };
+    void operation.then(settled, settled);
     return await this.#counted(held?.attachmentKey, operation);
   }
 
@@ -1687,33 +1708,31 @@ export class AnnotationRepository extends Service<void> {
     const held = this.#holding(annotationKey);
     const parsed = parseIndexedKey(annotationKey);
     if (!held || !parsed) {
-      return this.#settle(annotationKey, {
+      return this.#leave(annotationKey, {
         kind: "failed",
         failure: { kind: "unknown-annotation" },
       });
     }
     if (!this.#compatibleApiSource(held.attachmentKey)) {
-      return this.#settle(annotationKey, {
+      return this.#leave(annotationKey, {
         kind: "failed",
         failure: { kind: "db-source" },
       });
     }
     const { version } = held.record;
     if (version === null) {
-      return this.#settle(annotationKey, {
+      return this.#leave(annotationKey, {
         kind: "failed",
         failure: { kind: "db-source" },
       });
     }
 
-    this.#settle(annotationKey, {
-      kind: "pending",
-      write: command.write,
-      ...("session" in command && command.session && { session: true }),
-    });
+    // The write takes over the Annotation: a failure or conflict it left
+    // before is over once this one runs.
+    this.#outcomes.delete(annotationKey);
     const blocked = this.#writeBlocked(held.attachmentKey);
     if (blocked) {
-      return this.#settle(annotationKey, {
+      return this.#leave(annotationKey, {
         kind: "failed",
         failure: blocked,
       });
@@ -1741,7 +1760,7 @@ export class AnnotationRepository extends Service<void> {
       ) {
         return { kind: "failed", failure: { kind: "server-changed" } };
       }
-      return this.#settle(annotationKey, {
+      return this.#leave(annotationKey, {
         kind: "failed",
         failure: { kind: "server-changed" },
       });
@@ -1770,7 +1789,7 @@ export class AnnotationRepository extends Service<void> {
           ? { kind: "failed", failure: reply.failure }
           : refused;
       if (state.kind === "failed") await this.refresh(held.attachmentKey);
-      this.#settle(annotationKey, state);
+      this.#leave(annotationKey, state);
       if (state.kind === "conflict") {
         this.#emitter.emit("write-conflict", annotationKey, held.attachmentKey);
       }
@@ -1785,7 +1804,7 @@ export class AnnotationRepository extends Service<void> {
     });
     if ("failure" in applied) {
       await this.refresh(held.attachmentKey);
-      return this.#settle(annotationKey, {
+      return this.#leave(annotationKey, {
         kind: "failed",
         failure: applied.failure,
       });
@@ -1810,7 +1829,7 @@ export class AnnotationRepository extends Service<void> {
     });
     this.#announcePixels(held.record, applied.value, source);
     this.#emitter.emit("annotations-changed", held.attachmentKey);
-    return this.#settle(annotationKey, IDLE);
+    return this.#leave(annotationKey, IDLE);
   }
 
   /**
@@ -2727,11 +2746,24 @@ export class AnnotationRepository extends Service<void> {
     this.#emitter.emit("annotations-changed", attachmentKey);
   }
 
-  /** Records one Annotation's mutation state and announces it. */
+  /** Records the outcome one Annotation is left with, and announces it. */
   #settle(annotationKey: string, state: MutationState): MutationState {
-    if (state.kind === "idle") this.#mutations.delete(annotationKey);
-    else this.#mutations.set(annotationKey, state);
+    this.#leave(annotationKey, state);
     this.#emitter.emit("mutation-changed", annotationKey);
+    return state;
+  }
+
+  /**
+   * Records the outcome a running write leaves on its Annotation. The write's
+   * own settle announces it, once the mutation cache no longer holds it
+   * pending.
+   */
+  #leave(annotationKey: string, state: MutationState): MutationState {
+    if (state.kind === "failed" || state.kind === "conflict") {
+      this.#outcomes.set(annotationKey, state);
+    } else {
+      this.#outcomes.delete(annotationKey);
+    }
     return state;
   }
 
@@ -3045,7 +3077,7 @@ export class AnnotationRepository extends Service<void> {
       }
       for (const { key } of this.#publishedLists.get(attachmentKey)
         ?.annotations ?? []) {
-        if (this.#mutations.delete(key)) {
+        if (this.#outcomes.delete(key)) {
           this.#emitter.emit("mutation-changed", key);
         }
       }

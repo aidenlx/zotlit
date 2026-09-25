@@ -86,10 +86,11 @@ export type WriteConflict =
 export type PendingWrite = ConflictedWrite | "create" | "tags";
 
 /**
- * What a write left on one Annotation. `pending` names its write, because not
- * every write in flight stands the verbs down. Every surface draws what a
- * write proposes as its Pending Proposal; a gesture's write also shows as
- * disabled verbs. A comment write shows as nothing more: any verb pressed
+ * What a write left on one Annotation. `pending` stands from the moment a
+ * write is asked for, through every write queued behind it, and names the one
+ * in flight, because not every write in flight stands the verbs down. Every
+ * surface draws what a write proposes as its Pending Proposal; a gesture's
+ * write also shows as disabled verbs. A comment write shows as nothing more: any verb pressed
  * meanwhile queues behind it, so the save is a background sync the user only
  * hears about when it fails. A tag editing session's own save is marked
  * `session`, and stands down no verb either. A tag undo or redo carries no
