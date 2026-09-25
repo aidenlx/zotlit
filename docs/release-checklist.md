@@ -417,7 +417,7 @@ Two remembered choices per item change shape in this release and fall back silen
 
 ## The write path
 
-Every check in this group needs a Write Authorization. Grant one from **Settings → ZotLit → Zotero → Connection → Enable editing** and answer Zotero's dialog with **Always Allow**, unless the check says otherwise.
+Every check in this group needs a Write Authorization. Grant one from **Settings → ZotLit → Zotero → Connection → Allow editing** and answer Zotero's dialog with **Always Allow**, unless the check says otherwise.
 
 ### The card controls follow the Editing Capability
 
@@ -427,36 +427,40 @@ Every check in this group needs a Write Authorization. Grant one from **Settings
 
 **Steps:**
 
-1. With Zotero closed, read each card verb's `aria-disabled` and `aria-label`, click the colour dot and the comment button, and open the overflow menu.
-2. Select an Annotation Mark in the reader and read each popup verb the same way. Press `Delete`.
-3. Start Zotero with the Local API on and grant no authorization. Repeat steps 1 and 2.
-4. Grant **Always Allow**. Repeat steps 1 and 2.
+1. With Zotero closed, read the `aria-disabled`, `aria-label`, and `data-blocked` of a card's colour dot and comment button. Click each, then open the card's overflow menu.
+2. Select an Annotation Mark in the reader and read each popup verb's `aria-disabled` and `aria-label`. Press `Delete`.
+3. Start Zotero with the Local API on and grant no authorization. Repeat steps 1 and 2. On the notice that the colour dot raises in the repeated step 1, select **Allow editing**, and answer Zotero's dialog with **Deny**.
+4. Select **Allow editing** again and answer **Always Allow**. Repeat steps 1 and 2.
 
-**Expected:** with Zotero closed, the colour, comment, and delete verbs read `aria-disabled="true"` on both surfaces and each carries the reason "Start Zotero to edit annotations. ZotLit still reads your Zotero database." No menu opens and nothing is written; the overflow menu's **Delete annotation** row is disabled with that reason on the line beneath it; `Delete` in the reader raises the same capability notice a blocked `h` does, once. Copy and reveal stay live, and the excerpt text stays selectable, in every state. Under authorization required, no verb is disabled, each label is its own verb, and the gesture opens Zotero's dialog and continues after **Allow**. When writable, the write goes straight through.
+**Expected:** with Zotero closed, the card's colour dot and comment button carry `data-blocked` and rest dimmed. They have no `aria-disabled`, and each keeps its own name in `aria-label`. A click writes nothing and opens no menu. It raises a notice that reads "Check that Zotero is open, then check the connection in ZotLit settings." and has no button. The overflow menu's **Delete annotation** row is disabled. In the reader, the colour, comment, and delete verbs read `aria-disabled="true"`, and each carries that same sentence as its `aria-label`. `Delete` in the reader raises the same capability notice a blocked `h` does, once. Copy and reveal stay live, and the excerpt text stays selectable, in every state.
+
+Under authorization required, the verbs are blocked in the same way, with the sentence "Select Allow editing in the annotation view or ZotLit settings." No verb and no key opens Zotero's dialog. A click on a blocked card verb raises a notice with that sentence as its title and one button, **Allow editing**. That button opens Zotero's dialog directly, with no settings row in between. After **Deny**, nothing is written and the verbs stay blocked. When writable, the write goes straight through.
 
 **If it fails:** the capability decision is tested as data, so a mismatch is in the wiring: the capability slice of the store, the `capability-changed` subscription, or the selected-attachment subscription that re-reads it.
 
-### The affordance shows every capability value in both toolbars
+### The reader affordance shows only the waiting and cooldown states
 
-**Why it is not automated:** this reason is not an intrinsic barrier for most values, and the `authorization-required` value is already probed as identical on both surfaces. The remaining values need a live Zotero in six different states, and one of them needs a real read-only group library. Provenance: [#1147](https://github.com/aidenlx/zotlit/issues/1147).
+**Why it is not automated:** this reason is not an intrinsic barrier for most values. The values need a live Zotero in seven different states, and one of them needs a real read-only group library. Provenance: [#1147](https://github.com/aidenlx/zotlit/issues/1147).
 
 **Setup:** the Paired Run, with the PDF open and the Annotation View beside it.
 
-**Steps:** reach each capability value in turn, and read the affordance in the reader toolbar and in the Annotation View after each.
+**Steps:** reach each capability value in turn. After each, read the reader toolbar, and select the Annotation View's mode button to open its menu.
 
 | Capability | How to reach it |
 | --- | --- |
 | `read-only:zotero-unavailable` | Zotero closed |
 | `read-only:local-api-disabled` | Zotero open, the Local API off in **Settings → Advanced** |
 | `authorization-required` | the Local API on, no key stored |
-| `authorizing` | press the gesture and leave Zotero's dialog unanswered |
+| `authorizing` | select **Allow editing** and leave Zotero's dialog unanswered |
 | `writable` | answer **Always Allow** |
-| `cooldown` | six authorization requests inside one minute |
+| `cooldown` | six **Allow editing** requests inside one minute |
 | `read-only:library-read-only` | a write to a read-only group library |
 
-**Expected:** both surfaces report the same tone, icon, and label for every value. Specifically: a pencil icon and a ready tone with no detail while writable; a pencil icon and an action tone with "Edit an annotation, or select Enable editing, to ask Zotero for permission." under authorization required; a loader icon, a busy tone, `aria-busy="true"`, and a turning icon while probing or authorizing; a clock icon, a busy tone, and a seconds count under cooldown; an alert-triangle icon and a warning tone with the reason elsewhere.
+**Expected:** the reader toolbar holds a `zt-pdf-capability` node in two values only. Under `authorizing` it shows a turning loader icon and "Waiting for approval in Zotero", with `data-zt-capability-tone="busy"` and `aria-busy="true"`. Under `cooldown` it shows a clock icon, "Too many permission requests", and a seconds count, with the busy tone. In every other value the toolbar holds no such node. The node is a `role="status"` element, not a button, and a click on it does nothing.
 
-**If the two surfaces disagree:** one renderer is not using the shared capability copy table. The fault is in that renderer, not in the table.
+In the Annotation View, the mode button's menu names every value except writable, in the words of the shared copy table: "Cannot connect to Zotero", "Enable communication with Zotero", "Allow editing to change annotations", "Waiting for approval in Zotero", "Too many permission requests", and "This Zotero library is read-only". Only under authorization required does the menu also offer **Allow editing**.
+
+**If the reader shows the affordance in another value:** the reader's selection of the affordance is not limited to `authorizing` and `cooldown`. **If the two surfaces use different words:** one renderer is not using the shared capability copy table.
 
 ### A blocked keystroke raises one notice per reason per episode
 
@@ -471,10 +475,10 @@ A capability episode is one unbroken run in which an attachment cannot be edited
 1. Press `h`. Then press `h` five more times, and press `u`, `c`, and `3`.
 2. Start Zotero with the Local API on, but grant no authorization. Press `h`.
 3. Press `h` twice more.
-4. Grant **Always Allow** so editing works, then close Zotero again and press `h`.
+4. Select **Allow editing** and answer **Always Allow** so editing works, then close Zotero again and press `h`.
 5. Focus the Annotation View's search box and type `huc123`.
 
-**Expected:** step 1 raises exactly one notice, titled "Zotero is not running", carrying "Start Zotero to edit annotations. ZotLit still reads your Zotero database." and one button, **Open editing settings**. Step 2 raises one new notice, "Authorization needed". Step 3 raises nothing. Step 4 raises one notice again, because the episode closed in between. Step 5 raises no notice at all. The button on any of these notices opens the "Zotero editing" settings row.
+**Expected:** step 1 raises exactly one notice, titled "Cannot connect to Zotero", carrying "Check that Zotero is open, then check the connection in ZotLit settings." and one button, **Open editing settings**. Step 2 raises one new notice, titled "Allow editing to change annotations", carrying "Select Allow editing in the annotation view or ZotLit settings.", and opens no Zotero dialog. Step 3 raises nothing. Step 4 raises one notice again, because the episode closed in between. Step 5 raises no notice at all. The button on any of these notices opens the "Zotero editing" settings row.
 
 **If a notice appears per keypress:** the ledger is closing an episode it should hold open.
 
@@ -488,10 +492,10 @@ A capability episode is one unbroken run in which an attachment cannot be edited
 
 1. Make Zotero answer `400` or `428` to a write.
 2. Make it answer `501`, by sending an API version other than 3.
-3. Swap the Zotero database under the port. Write twice. Then, with no write at all, swap the database back and let a Freshness Signal or an affordance click run a Capability Probe.
-4. Write to a read-only group library twice. Then click the affordance, which probes, and write once more.
+3. Swap the Zotero database under the port. Write twice. Then, with no write at all, swap the database back and run a Capability Probe: let a Freshness Signal arrive, or open the "Zotero editing" settings row.
+4. Write to a read-only group library twice. Then open the "Zotero editing" settings row, which runs a Capability Probe, and write once more.
 
-**Expected:** step 1 raises one sticky notice, "Zotero did not save the change.", carrying "Zotero sent an answer ZotLit cannot read" and "Check the ZotLit log for details." It stays until dismissed. Step 2 raises one sticky notice naming "Zotero version is not supported", and a fresh Capability Probe follows it in the console, leaving every affordance on the warning tone. Step 3 raises one notice for the change and none for the second write, and the probe with no write behind it raises its own notice for the swap back. Step 4 raises one notice on the first refusal only and marks that library read-only in place; after the probe behind the affordance click the controls are live again, and the write that follows raises a second notice.
+**Expected:** step 1 raises one sticky notice, "Zotero did not save the change.", carrying "Zotero sent an answer ZotLit cannot read" and "Check the ZotLit log for details." It stays until dismissed. Step 2 raises one sticky notice naming "Zotero version is not supported". A fresh Capability Probe follows it in the console, and the "Zotero editing" settings row reads "Zotero version is not supported". Step 3 raises one notice for the change and none for the second write, and the probe with no write behind it raises its own notice for the swap back. Step 4 raises one notice on the first refusal only and marks that library read-only in place; after the probe that the settings row runs, the controls are live again, and the write that follows raises a second notice.
 
 **If it fails:** `400` and `428` classify as an invalid response, and `501` as an incompatible Zotero. A read-only library is marked in memory until the next Capability Probe clears it, not for the whole session.
 
@@ -648,7 +652,7 @@ A capability episode is one unbroken run in which an attachment cannot be edited
 
 **Steps:**
 
-1. In Obsidian, select an Annotation Mark and change its colour, so Zotero raises its dialog.
+1. In Obsidian, open **Settings → ZotLit → Zotero → Connection** and select **Allow editing**, so Zotero raises its dialog.
 2. Read the dialog end to end: its title, its body text, and every button label.
 3. Confirm that ZotLit's own Client Name appears in it, and that it names one application, not two.
 4. Repeat with Zotero in another interface language, if the release supports one.
@@ -665,7 +669,7 @@ A capability episode is one unbroken run in which an attachment cannot be edited
 
 **Steps:**
 
-1. In Obsidian, open **Settings → ZotLit → Zotero → Connection** and select **Enable editing**. Answer Zotero's dialog with **Always Allow**.
+1. In Obsidian, open **Settings → ZotLit → Zotero → Connection** and select **Allow editing**. Answer Zotero's dialog with **Always Allow**.
 2. Confirm the key is remembered: `<profile>/localAPIKeys.json` exists and holds an entry for ZotLit. Copy the 32-character key out of it.
 3. Edit an annotation colour in Obsidian. It writes with no further dialog.
 4. In Zotero, open **Settings → Advanced** and select **Clear Write Authorizations**.
@@ -683,43 +687,41 @@ A capability episode is one unbroken run in which an attachment cannot be edited
      "http://127.0.0.1:<port>/api/users/0/items/<annotation-key>"
    ```
 
-7. In Obsidian, re-read the "Zotero editing" settings row and edit an annotation again.
+7. In Obsidian, edit an annotation colour again, then re-read the "Zotero editing" settings row.
 
-**Expected:** step 5 leaves no key file. Step 6 answers `401` with `www-authenticate: Zotero-API-Key realm="Zotero Local API"`: a key issued before the clear no longer works. In step 7 the row reads the authorization-required capability again, **Enable editing** is shown and **Forget authorization** is hidden, and the next edit raises Zotero's dialog once more.
+**Expected:** step 5 leaves no key file. Step 6 answers `401` with `www-authenticate: Zotero-API-Key realm="Zotero Local API"`: a key issued before the clear no longer works. In step 7 the edit is not saved, no Zotero dialog opens, and ZotLit forgets the key that Zotero refused. The row reads "Allow editing to change annotations" again, **Allow editing** is shown, and **Forget authorization** is hidden. Selecting **Allow editing** raises Zotero's dialog once more.
 
 **If the replayed key still writes:** Zotero did not revoke the key it forgot, and a cleared authorization is not a revoked one. Say so in the release notes and report it upstream.
 
-A key from **Allow** is single-use, and the first **authenticated** request consumes it, whether that request succeeds or fails. So a write that Zotero refuses leaves no key behind, and the retry needs a second dialog. Only a key from **Always Allow** survives a failed write.
+### Allow editing in the Annotation View asks Zotero directly
 
-### A click on the affordance re-checks Zotero and opens the settings row
+**Why it is not automated:** this reason is not an intrinsic barrier. It grants a real authorization against the Fixture's key store, and was deferred for that reason. Provenance: [#1147](https://github.com/aidenlx/zotlit/issues/1147).
 
-**Why it is not automated:** this reason is not an intrinsic barrier. It opens the real settings modal and grants a real authorization against the Fixture's key store, and was deferred for that reason. Provenance: [#1147](https://github.com/aidenlx/zotlit/issues/1147).
-
-**Setup:** the Paired Run, with the PDF open and the Annotation View beside it.
+**Setup:** the Paired Run with no remembered authorization, and the PDF open with the Annotation View beside it.
 
 **Steps:**
 
-1. Close Zotero. Click the affordance in the reader toolbar.
-2. Start Zotero with the Local API on. Click it again.
-3. Repeat both from the Annotation View's affordance.
+1. Select the Annotation View's mode button, and in its menu select **Allow editing**. Leave Zotero's dialog open.
+2. Click the affordance in the reader toolbar. Then answer Zotero's dialog with **Deny**.
+3. Repeat step 1, and answer **Always Allow**.
 
-**Expected:** each click opens **Settings → ZotLit**, scrolls to the "Zotero editing" row, and flashes it the way a settings search hit does. The row's status line carries the same words as the affordance's tooltip, because a Capability Probe ran before the row opened. One "Zotero Local API probed" debug record appears per click.
+**Expected:** step 1 opens Zotero's dialog and no settings modal. While the dialog is open, the reader toolbar shows "Waiting for approval in Zotero", and the mode button's menu reports the same words with no **Allow editing** row. In step 2 the click does nothing. After **Deny** the reader toolbar holds no affordance, and the mode button's menu offers **Allow editing** again. After **Always Allow** in step 3 the reader toolbar holds no affordance, the mode button's menu has no editing row, and the card verbs act.
 
-**If the row opens with stale copy:** the reveal did not wait for the probe.
+**If a settings modal opens:** the Annotation View's **Allow editing** goes through the settings row instead of straight to Zotero.
 
 ### The cooldown countdown
 
 **Why it is not automated:** it needs six real authorization dialogs inside one minute, and the stub route that drives a dialog consumes the dialog the countdown measures. Provenance: [#1147](https://github.com/aidenlx/zotlit/issues/1147).
 
-**Setup:** the Paired Run, with the PDF open and the Annotation View beside it. Request authorization six times inside one minute, answering **Deny** each time, until Zotero answers `429`.
+**Setup:** the Paired Run, with the PDF open and the "Zotero editing" settings row open beside it. Select **Allow editing** six times inside one minute, answering **Deny** each time, until Zotero answers `429`.
 
 **Steps:**
 
-1. Read the seconds value on the affordance in the reader and in the Annotation View, three times about a second apart.
+1. Read the seconds value on the affordance in the reader and in the settings row's detail line, three times about a second apart.
 2. Wait for the cooldown to lift and read both once more.
 3. Close the PDF leaf mid-cooldown and watch the console.
 
-**Expected:** the number falls by one each second on both surfaces, reaches `0`, and then disappears; the icon returns to the pencil and the action tone, and no seconds element is left. Nothing keeps logging or redrawing after the leaf closes.
+**Expected:** the number falls by one each second on both surfaces and reaches `0`. Then the reader affordance leaves the toolbar with no seconds element left behind, and the settings row reads "Allow editing to change annotations" and shows **Allow editing** again. Nothing keeps logging or redrawing after the leaf closes.
 
 **If a countdown keeps running:** an interval was armed on the wrong window, or it is not cleared on teardown. Both surfaces arm on the node's own window.
 
@@ -764,12 +766,6 @@ Measured on a wired Paired Run: with Live Updates connected, a Zotero-side creat
 With the listener off, none of them arrives. That is the documented degradation, because the Freshness Signal is the only trigger on the Zotero Local API path. What is not signposted is the state: the card keeps its stale text, the header keeps its old count, and the view gives the user no sign that it can no longer hear Zotero. The live-updates state is surfaced in one place only, the empty state of the **Zotero reader** follow mode. Under **Active tab** or **Pinned**, with a list showing, nothing surfaces it. Turning the channel back on recovers the list on the next Zotero-side save.
 
 The numbers are in [PDF annotation probes](pdf-annotation-probes.md).
-
-### ZotLit does not re-authorize after a `401` inside one gesture
-
-When Zotero has forgotten a key that ZotLit still holds, the first write of an edit gesture answers `401`, and the gesture fails in about 59 ms with no dialog raised. The user must grant the authorization again from **Settings → ZotLit → Zotero → Connection → Enable editing**.
-
-This sits beside the recorded gap that a card edit under the authorization-required capability attempts the write instead of opening Zotero's dialog. Both are worth one follow-up issue.
 
 ## See also
 

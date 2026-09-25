@@ -122,8 +122,8 @@ Obsidian's PDF reader shows a Zotero attachment's Annotations as an overlay, and
 | `zt-pdf-annotation-note-fill`         | The body of a note Annotation Mark's icon.                                                                                                         |
 | `zt-pdf-annotation-note-crease`       | The two segments creasing the folded bottom-right corner of a note Annotation Mark's icon. Stroked, with no fill of its own.                       |
 | `zt-pdf-text-draft`                   | The textarea a free-text Annotation is typed into on its page. It stays there until the saved mark takes its place.                                |
-| `zt-pdf-capability`                   | The always-present Editing Capability affordance in the reader's own toolbar.                                                                      |
-| `zt-pdf-creation-toolbar`             | The Creation Toolbar in the reader's own right toolbar slot, which also holds the Editing Capability affordance.                                   |
+| `zt-pdf-capability`                   | The editing indicator in the reader's own toolbar, shown only while ZotLit waits for Zotero and during a cooldown.                                 |
+| `zt-pdf-creation-toolbar`             | The Creation Toolbar in the reader's own right toolbar slot, which also holds the editing indicator.                                               |
 | `zt-pdf-tool`                         | One tool of that toolbar: its toggle and the chevron opening its colors, joined as one split button. Carries `is-active` while that tool is armed. |
 | `zt-pdf-mark-popup`                   | The Mark Popup, on Obsidian's own hover popover, in both of its modes.                                                                             |
 | `zt-pdf-comment-sheet`                | The comment sheet the Mark Popup opens under its row, in either mode.                                                                              |
@@ -136,9 +136,13 @@ Each mark carries `data-zotero-annotation-type` (one of `highlight`, `underline`
 
 While editing is on, a selected image region also carries eight `zt-pdf-annotation-handle` squares above its outline. Each handle carries `data-zt-grip`, naming the edges it moves (`tl`, `t`, `tr`, `r`, `br`, `b`, `bl`, or `l`, where `t` is the top of the page as it is stored, before any rotation), and `data-zt-cursor`, naming the cursor it shows. The image's own mark carries `data-zt-grip="body"` and `data-zt-cursor="move"`. A selected ink mark carries four corner handles (`tl`, `tr`, `br`, `bl`) on a box a little wider than its strokes, and its own mark carries `data-zt-grip="body"` in the same way. A selected highlight or underline carries two narrow strips: `data-zt-grip="start"` along the leading edge of its first line, and `data-zt-grip="end"` along the trailing edge of its last line, on the next page when the quote runs onto it. Its own mark carries no `data-zt-grip`. The handles and the image or ink body take pointer input, so a press there moves or resizes the mark instead of selecting text. A press on the body of a highlight or underline still selects text.
 
-### Editing Capability affordance [#pdf-capability]
+### Editing indicator [#pdf-capability]
 
-`zt-pdf-capability` sits inside the Creation Toolbar and shows at all times, whether or not editing is available right now. It carries `data-zt-capability-tone`, naming the state it shows: `ready` (editing is on), `action` (the user can fix something, such as authorizing Zotero, with the same click), `busy` (ZotLit or Zotero is working, or a cooldown is counting down), or `warning` (editing is off for a reason the affordance's tooltip explains).
+`zt-pdf-capability` sits inside the Creation Toolbar and shows in two states only: <UiLabel name={m.capability_authorizing()} />, while Zotero's permission dialog is open, and <UiLabel name={m.capability_cooldown()} />, while Zotero refuses new permission requests for a short time. In every other state the toolbar holds no indicator.
+
+The indicator is a status line with an icon and the state's label. It is not a button, and a click on it does nothing. During a cooldown it also shows the seconds left. It carries `data-zt-capability-tone="busy"` in both states, and `aria-busy="true"` while it waits for Zotero.
+
+To give ZotLit permission to edit, see [How to edit PDF annotations in Obsidian](/docs/how-to/edit-pdf-annotations#before-you-edit).
 
 ### Creation Toolbar [#pdf-creation-toolbar]
 
@@ -164,7 +168,7 @@ A control that cannot write right now keeps its seat, disabled, with the reason 
 
 A highlight mark blends with the page: 40% opacity with `multiply` blending in light themes, 30% opacity with `plus-lighter` blending in dark themes. A note's icon strokes in the Annotation's own color at a 1.4px hairline, with its body filled at 22% of that same color. A selected mark keeps its own color; a hairline outline, in `--text-accent`, traces round its own merged silhouette.
 
-The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The Editing Capability affordance is a bare `clickable-icon`; ZotLit adds Obsidian's own `mod-warning` class when its tone is `warning`, and leaves color otherwise to Obsidian and the theme.
+The Creation Toolbar lays its controls out in a flex row with Obsidian's own toolbar spacing; an armed tool keeps its Annotation color instead of Obsidian's accent-colored `is-active` fill. A tool's toggle wears that tool's color, so the toolbar shows what each tool draws in; the chevron beside it is left uncolored and drawn one icon step smaller, since it names a menu rather than a color. `zt-pdf-tool` is the seat, and it is what reads as the button: it carries the rounded corners and clips its two halves to them, and the padding where the halves meet is halved, so the pair is one compact control. Each half keeps Obsidian's own hover, so the two light separately. An armed tool takes `is-active` on the seat and fills with `--background-modifier-active-hover` across both halves at once; as with every active `clickable-icon` in Obsidian, that fill holds under the pointer instead of lighting further. Only the toggle reports the state through `aria-pressed`. The editing indicator draws its icon and label in muted text, and leaves color otherwise to Obsidian and the theme.
 
 The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsidian's default hover-popover sizing. The comment sheet takes the width of the row above it, and is at least 12em wide.
 
@@ -173,8 +177,8 @@ The Mark Popup sizes itself to the width its row of verbs needs, overriding Obsi
   mix-blend-mode: normal;
 }
 
-.zt-pdf-capability[data-zt-capability-tone="warning"] {
-  color: var(--text-error);
+.zt-pdf-capability[data-zt-capability-tone="busy"] {
+  color: var(--text-accent);
 }
 
 .zt-pdf-mark-popup [data-zt-verb="delete"] {
