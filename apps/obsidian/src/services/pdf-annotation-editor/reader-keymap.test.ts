@@ -5,40 +5,33 @@ import type { AnnotationRecord } from "@/services/annotation-repository/service"
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 import { createCommentEditor } from "@/views/annot-view/comment-editor";
 
-import {
-  annotation,
-  annotationEdits,
-  pageView,
-  readerSurfaces,
-} from "./__fixtures__";
+import { annotation, pageView, readerOverZotero } from "./__fixtures__";
 import { historyVerbOf } from "./reader-keymap";
 import type { OverlayPageView } from "./render";
 import { createTextDraftArea } from "./text-draft";
 
-const MARK: AnnotationRecord = annotation("PARA1111", "highlight", {
+const MARK: AnnotationRecord = annotation("PARA7777", "highlight", {
   pageIndex: 0,
   rects: [[100, 600, 500, 640]],
 });
 
 /** The reader surfaces of one PDF view on one platform. */
-function setup(isMacOS: boolean) {
+async function setup(isMacOS: boolean) {
+  const stack = new AsyncDisposableStack();
   const containerEl = document.body.appendChild(document.createElement("div"));
+  stack.defer(() => containerEl.remove());
   const page = pageView();
   containerEl.append(page.div);
-  const reader = readerSurfaces({
+  const reader = await readerOverZotero(stack, {
     containerEl,
     page: page as unknown as OverlayPageView,
     records: [MARK],
-    annotations: { ...annotationEdits(), createAnnotation: vi.fn() },
     isMacOS,
   });
   return {
     ...reader,
     containerEl,
-    [Symbol.dispose]() {
-      reader[Symbol.dispose]();
-      containerEl.remove();
-    },
+    [Symbol.asyncDispose]: () => stack.disposeAsync(),
   };
 }
 
@@ -110,15 +103,15 @@ it("reads Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y as the history keys elsewhere", () => 
   });
 });
 
-it("runs the platform's own history keys and leaves the other platform's", () => {
-  using mac = setup(true);
+it("runs the platform's own history keys and leaves the other platform's", async () => {
+  await using mac = await setup(true);
   mac.key({ key: "z", metaKey: true });
   mac.key({ key: "z", metaKey: true, shiftKey: true });
   mac.key({ key: "z", ctrlKey: true });
   mac.key({ key: "y", ctrlKey: true });
   expect(mac.stepped).toEqual(["undo", "redo"]);
 
-  using pc = setup(false);
+  await using pc = await setup(false);
   pc.key({ key: "z", ctrlKey: true });
   pc.key({ key: "z", ctrlKey: true, shiftKey: true });
   pc.key({ key: "y", ctrlKey: true });
@@ -126,15 +119,15 @@ it("runs the platform's own history keys and leaves the other platform's", () =>
   expect(pc.stepped).toEqual(["undo", "redo", "redo"]);
 });
 
-it("takes the key that acted, and leaves the one it did not", () => {
-  using h = setup(false);
+it("takes the key that acted, and leaves the one it did not", async () => {
+  await using h = await setup(false);
 
   expect(h.key({ key: "z", ctrlKey: true }).defaultPrevented).toBe(true);
   expect(h.key({ key: "z", metaKey: true }).defaultPrevented).toBe(false);
 });
 
-it("steps once for a held key", () => {
-  using h = setup(false);
+it("steps once for a held key", async () => {
+  await using h = await setup(false);
 
   h.key({ key: "z", ctrlKey: true });
   h.key({ key: "z", ctrlKey: true, repeat: true });
@@ -143,8 +136,8 @@ it("steps once for a held key", () => {
   expect(h.stepped).toEqual(["undo"]);
 });
 
-it("leaves the history keys to a text field they were typed into", () => {
-  using h = setup(false);
+it("leaves the history keys to a text field they were typed into", async () => {
+  await using h = await setup(false);
   const textarea = h.containerEl.appendChild(
     document.createElement("textarea"),
   );
@@ -155,8 +148,8 @@ it("leaves the history keys to a text field they were typed into", () => {
   expect(h.stepped).toEqual([]);
 });
 
-it("leaves the history keys to the comment editor holding focus", () => {
-  using h = setup(false);
+it("leaves the history keys to the comment editor holding focus", async () => {
+  await using h = await setup(false);
   const parent = h.containerEl.appendChild(document.createElement("div"));
   using editor = createCommentEditor({
     app: editorApp(),
@@ -186,8 +179,8 @@ it("leaves the history keys to the comment editor holding focus", () => {
   expect(h.stepped).toEqual(["undo"]);
 });
 
-it("leaves the history keys to a Text Draft holding focus", () => {
-  using h = setup(false);
+it("leaves the history keys to a Text Draft holding focus", async () => {
+  await using h = await setup(false);
   const area = h.containerEl.appendChild(
     createTextDraftArea(document, { input: vi.fn(), finish: vi.fn() }),
   );

@@ -11,13 +11,17 @@ import type { PdfPosition, PdfTextStructure } from "@zotlit/pdf-structure";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { withRecentColor } from "@/lib/annotation-colors";
+import {
+  nextChange,
+  writable,
+  zoteroLibrary,
+} from "@/services/annotation-repository/__fixtures__";
 import type { EditingCapability } from "@/services/annotation-repository/capability";
 import type {
   AnnotationList,
   AnnotationRecord,
   AnnotationRepositoryEvents,
   HistoryOutcome,
-  TagDraft,
 } from "@/services/annotation-repository/service";
 import { IDLE } from "@/services/annotation-repository/write";
 import type { MutationState } from "@/services/annotation-repository/write";
@@ -29,6 +33,8 @@ import { ReaderSessionHost } from "@/services/reader-session/session";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { freshnessSignal } from "@/services/zotero-local-api/__fixtures__";
+import type { WireAnnotation } from "@/services/zotero-local-api/__fixtures__";
 import { editorApp } from "@/views/annot-view/__fixtures__/editor-app";
 
 import { MarkCreation } from "./creation";
@@ -464,68 +470,6 @@ export function failedIn(
   return results.filter(({ ok }) => !ok).map(({ probe }) => probe);
 }
 
-/**
- * The repository, reduced to what the selected mark reads and writes through,
- * with a hand on its announcements.
- */
-export function annotationEdits() {
-  let commentDraft: {
-    annotationKey: string;
-    attachmentKey: string;
-    serverID: string;
-    baseline: string;
-    text: string;
-    state: { kind: "editing" };
-  } | null = null;
-  const listeners = new Map<string, Set<(...args: never[]) => void>>();
-  function on<K extends keyof AnnotationRepositoryEvents>(
-    event: K,
-    listener: AnnotationRepositoryEvents[K],
-  ): () => void {
-    const registered = listeners.get(event) ?? new Set();
-    const callback = listener as (...args: never[]) => void;
-    registered.add(callback);
-    listeners.set(event, registered);
-    return () => {
-      registered.delete(callback);
-    };
-  }
-  return {
-    mutationFor: vi.fn((_key: string): MutationState => IDLE),
-    patchColor: vi.fn(async () => IDLE),
-    patchGeometry: vi.fn(async (): Promise<MutationState> => IDLE),
-    deleteAnnotation: vi.fn(async () => IDLE),
-    commentDraftFor: vi.fn(() => commentDraft),
-    editComment: vi.fn((annotationKey: string, text = "") => {
-      commentDraft = {
-        annotationKey,
-        attachmentKey: "ABCD2345",
-        serverID: "test",
-        baseline: "",
-        text,
-        state: { kind: "editing" },
-      };
-      return commentDraft;
-    }),
-    submitComment: vi.fn(async () => IDLE),
-    discardCommentDraft: vi.fn(),
-    discardTagDraft: vi.fn(),
-    retryCommentDraft: vi.fn(async () => IDLE),
-    tagDraftFor: vi.fn((): TagDraft | null => null),
-    editTags: vi.fn((): TagDraft | null => null),
-    submitTags: vi.fn(async (): Promise<MutationState> => IDLE),
-    on: vi.fn(on),
-    hideCommentDraft() {
-      commentDraft = null;
-    },
-    emit(event: string, annotationKey: string) {
-      for (const listener of listeners.get(event) ?? []) {
-        listener(annotationKey as never);
-      }
-    },
-  };
-}
-
 const MODIFIER_HELD: Readonly<
   Record<string, (event: KeyboardEvent) => boolean>
 > = {
@@ -809,4 +753,96 @@ export function readerSurfaces({
       listening.dispose();
     },
   };
+}
+
+/** One reader record as the Zotero Local API writes it. */
+export function wireOf(record: AnnotationRecord): WireAnnotation {
+  return {
+    key: record.key,
+    version: record.version ?? 1,
+    type: record.type,
+    ...(record.color !== null && { color: record.color }),
+    ...(record.comment !== null && { comment: record.comment }),
+    ...(record.text !== null && { text: record.text }),
+    ...(record.pageLabel !== null && { pageLabel: record.pageLabel }),
+    sortIndex: record.sortIndex,
+    position:
+      record.position.kind === "unknown"
+        ? record.position.raw
+        : record.position,
+    tags: record.tags,
+  };
+}
+
+/**
+ * The real Annotation Repository over a Zotero that holds `records` on
+ * `RGRPDF24`, with Write Authorization already remembered and the list read.
+ * What Zotero holds, through `zotero`, is the oracle a write is checked by.
+ */
+export async function repositoryOver(
+  stack: AsyncDisposableStack,
+  records: readonly AnnotationRecord[],
+) {
+  const zotero = zoteroLibrary(records.map(wireOf));
+  const { repository, requests, client, dbEvents, serverEvents } =
+    await writable(stack, zotero.answers);
+  const list = await repository.read("RGRPDF24");
+  return {
+    repository,
+    zotero,
+    requests,
+    list,
+    /**
+     * Zotero quits, and the device's database turns out to be another one:
+     * the switch that hides every draft made against the first.
+     */
+    async switchDatabase(): Promise<void> {
+      zotero.quit();
+      const lost = nextChange(repository);
+      freshnessSignal(serverEvents);
+      await lost;
+      client.$client.exec(
+        "update settings set value = 'Zzzz11119999' where setting = 'localAPI' and key = 'serverID'",
+      );
+      dbEvents.emit("changed");
+      await repository.read("RGRPDF24");
+    },
+  };
+}
+
+/**
+ * The reader surfaces over {@link repositoryOver}. Every announcement is drawn
+ * as the binding draws it: the list the repository holds at once, then the
+ * list the read that follows answers. A test therefore sees the Pending
+ * Proposals, failures and conflicts the repository itself produces.
+ */
+export async function readerOverZotero(
+  stack: AsyncDisposableStack,
+  options: Omit<ReaderSurfacesOptions, "annotations">,
+) {
+  const zoteroSide = await repositoryOver(stack, options.records);
+  const { repository, list } = zoteroSide;
+  const reader = stack.use(
+    readerSurfaces({
+      ...options,
+      records: list?.annotations ?? [],
+      annotations: repository,
+    }),
+  );
+  let open = true;
+  stack.defer(() => {
+    open = false;
+  });
+  const draw = (next: AnnotationList | null | undefined) => {
+    if (!open || !next) return;
+    reader.replace(next.annotations);
+    reader.sync();
+  };
+  stack.defer(
+    repository.on("annotations-changed", (attachmentKey) => {
+      draw(repository.peek(attachmentKey)?.value);
+      void repository.read(attachmentKey).then(draw);
+    }),
+  );
+  return { ...reader, ...zoteroSide };
 }
